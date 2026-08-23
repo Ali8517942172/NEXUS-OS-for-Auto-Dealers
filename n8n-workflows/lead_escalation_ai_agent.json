@@ -388,6 +388,52 @@
         -32,
         640
       ]
+    },
+    {
+      "id": "46ca253e-441c-4c3b-98dd-ecd13fa963d9",
+      "name": "Mark Lead Escalated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1264,
+        444
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?email=eq.{{ encodeURIComponent($('Fetch Escalated Lead').first().json.email) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ escalated_at: $now.toUTC().toISO() }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -517,7 +563,7 @@
       "main": [
         [
           {
-            "node": "Return Result",
+            "node": "Mark Lead Escalated",
             "type": "main",
             "index": 0
           }
@@ -567,6 +613,17 @@
           }
         ]
       ]
+    },
+    "Mark Lead Escalated": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -582,7 +639,7 @@
   "_exported_from": {
     "id": "KI6P1Qcf3MIZakNa",
     "active": true,
-    "updatedAt": "2026-08-17T18:07:20.669Z",
+    "updatedAt": "2026-08-23T06:23:35.419Z",
     "published": true
   }
 }

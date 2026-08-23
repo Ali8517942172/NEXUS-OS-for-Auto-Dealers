@@ -178,17 +178,29 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $env.BITRIX24_WEBHOOK_URL }}crm.lead.list.json",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ select: ['ID','TITLE','NAME','LAST_NAME','EMAIL','PHONE'], order: { ID: 'DESC' }, start: 0 }) }}",
+        "method": "GET",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_customer_directory",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,name,email,phone"
+            },
+            {
+              "name": "order",
+              "value": "last_seen_at.desc"
+            }
+          ]
+        },
         "options": {
           "timeout": 30000
         }
       },
       "id": "c360-bitrix-01",
-      "name": "Bitrix24 - Get Customers",
+      "name": "Get Customer Directory",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -197,14 +209,20 @@
       ],
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// Bitrix24 returns EMAIL/PHONE as arrays of {VALUE, VALUE_TYPE} objects and\n// omits them entirely when empty. Flatten to a simple customer record.\nconst res = ($json && $json.result) || [];\nconst first = (arr) => Array.isArray(arr) && arr.length ? (arr[0].VALUE || null) : null;\n\nreturn res.map(c => {\n  const name = [c.NAME, c.LAST_NAME].filter(Boolean).join(' ').trim() || c.TITLE || null;\n  return { json: {\n    id: String(c.ID),\n    name: name,\n    email: first(c.EMAIL),\n    phone: first(c.PHONE)\n  } };\n}).filter(i => i.json.email || i.json.phone);"
+        "jsCode": "// Accepts two shapes on purpose.\n//\n// 1. Supabase v_customer_directory — already {id, name, email, phone}. The HTTP\n//    node may hand these over as one item per row, or as a single item holding\n//    the whole array, depending on version; handle both.\n// 2. The old Bitrix24 envelope — { result: [ {ID, NAME, EMAIL:[{VALUE}] ...} ] }.\n//    Kept so that pointing the source back at the CRM needs no edit here.\nconst raw = $input.all().map(i => i.json);\n\nif (raw.length === 1 && raw[0] && Array.isArray(raw[0].result)) {\n  const first = (a) => Array.isArray(a) && a.length ? (a[0].VALUE || null) : null;\n  return raw[0].result.map(c => ({ json: {\n    id: String(c.ID),\n    name: [c.NAME, c.LAST_NAME].filter(Boolean).join(' ').trim() || c.TITLE || null,\n    email: first(c.EMAIL),\n    phone: first(c.PHONE)\n  } })).filter(i => i.json.email || i.json.phone);\n}\n\nlet rows = raw;\nif (raw.length === 1 && Array.isArray(raw[0])) rows = raw[0];\n\nreturn rows\n  .filter(r => r && (r.email || r.phone))\n  .map(r => ({ json: {\n    id: String(r.id != null ? r.id : (r.email || '')),\n    name: r.name != null ? r.name : (r.customer_name || null),\n    email: r.email || null,\n    phone: r.phone || null\n  } }));\n"
       },
       "id": "c360-norm-01",
-      "name": "Normalise Bitrix Customers",
+      "name": "Normalise Customers",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -263,7 +281,7 @@
       "main": [
         [
           {
-            "node": "Bitrix24 - Get Customers",
+            "node": "Get Customer Directory",
             "type": "main",
             "index": 0
           }
@@ -347,18 +365,18 @@
         ]
       ]
     },
-    "Bitrix24 - Get Customers": {
+    "Get Customer Directory": {
       "main": [
         [
           {
-            "node": "Normalise Bitrix Customers",
+            "node": "Normalise Customers",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normalise Bitrix Customers": {
+    "Normalise Customers": {
       "main": [
         [
           {
@@ -385,7 +403,7 @@
   "_exported_from": {
     "id": "AZkGM5M4c1uzSH7S",
     "active": true,
-    "updatedAt": "2026-08-17T18:19:21.546Z",
+    "updatedAt": "2026-08-23T06:41:36.948Z",
     "published": true
   }
 }

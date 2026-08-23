@@ -19,15 +19,15 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first().json;\n\nif (item.lead) {\n  const lead = item.lead;\n  const interest = lead.vehicle_interest || lead.vehicleInterest || lead.message || 'a vehicle';\n  let chatId = String(lead.phone || lead.whatsapp || '').trim();\n  if (!chatId) return [];\n  if (!chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n  return [{ json: {\n    message: 'INITIAL_OUTREACH: Lead name: ' + (lead.name || 'there') + ', interested in: ' + interest + '. Send them a warm, personalised WhatsApp welcome message introducing the NEXUS OS dealership and asking how you can help.',\n    sender: chatId,\n    lead_email: lead.email || null,\n    direction: 'outbound',\n    // Outreach is not a WAHA delivery. Give it a unique id so the idempotency\n    // guard downstream always lets it through.\n    message_id: 'outreach:' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)\n  } }];\n}\n\nconst body = item.body || item;\nconst payload = body.payload || {};\n\nconst event = String(body.event || '');\nif (event && event !== 'message') return [];\n\n// Never reply to our own messages -> this is what caused the infinite loop\nif (payload.fromMe === true) return [];\n\n// Drop groups, status broadcasts and newsletters.\n// NOTE: '@lid' is NOT filtered - WhatsApp now uses LID addressing for real\n// 1:1 customer chats, so blocking it silently drops genuine messages.\nconst from = String(payload.from || '');\nif (!from || from.endsWith('@g.us') || from.startsWith('status@') || from.endsWith('@newsletter')) return [];\n\n// A customer sending their Emirates ID sends an IMAGE with no caption. The old\n// code did `if (!text) return []` and silently dropped it - the KYC workflow was\n// never reachable from WhatsApp at all. Detect media and carry it forward.\nconst text = typeof payload.body === 'string' ? payload.body.trim() : '';\nconst media = payload.media || {};\nconst isImage = payload.hasMedia === true && String(media.mimetype || '').startsWith('image/');\n\n// WAHA hands back its own file URL as localhost:3000 - that is localhost *inside\n// the WAHA container*. n8n must fetch it over the docker network instead.\nconst documentUrl = isImage\n  ? String(media.url || '').replace('http://localhost:3000', 'http://waha:3000')\n  : null;\n\nif (!text && !isImage) return [];\n\n// WhatsApp now addresses many 1:1 chats by LID (e.g. 158510264357112@lid), which\n// carries NO phone number -- matching a lead on its digits is impossible. The real\n// number is in _data.Info.SenderAlt. Keep `sender` as the chat id (replies must go\n// back to it) and expose the true number separately for lead matching.\nconst info = (payload._data && payload._data.Info) || {};\nconst alt = String(info.SenderAlt || '');\nconst senderPhone = (alt.includes('@') ? alt.split('@')[0] : alt) ||\n                    (from.endsWith('@lid') ? '' : from.split('@')[0]);\n\n// WAHA has delivered the same message three times in one second, repeatedly.\n// `payload.id` is the WhatsApp message id and is stable across those duplicates,\n// so it is what the idempotency guard downstream claims. Fall back to\n// sender+timestamp when WAHA omits it; empty means the guard cannot key on\n// anything and will let the message through.\nconst messageId = String(payload.id || (payload.timestamp ? from + ':' + payload.timestamp : ''));\n\nreturn [{ json: {\n  message_id: messageId,\n  message: text || '[Customer sent a document image]',\n  is_document: isImage,\n  document_url: documentUrl,\n  sender: from,\n  sender_phone: senderPhone,\n  push_name: info.PushName || null,\n  lead_email: null,\n  direction: 'inbound'\n} }];\n"
+        "jsCode": "// Reached either straight from `Called by Master Router` (outreach) or from\n// `Is New Message?`. In the second case the item we are handed is the dedupe\n// guard's HTTP response, not the webhook body -- an HTTP node's output REPLACES\n// the item -- so reach back to the webhook node for the real payload.\nlet item = $input.first().json;\nif (!item.lead && !item.body && !item.payload) {\n  try { item = $('WAHA Webhook (POST)').first().json; } catch (e) { /* outreach path */ }\n}\n\nif (item.lead) {\n  const lead = item.lead;\n  const interest = lead.vehicle_interest || lead.vehicleInterest || lead.message || 'a vehicle';\n  let chatId = String(lead.phone || lead.whatsapp || '').trim();\n  if (!chatId) return [];\n  if (!chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n  return [{ json: {\n    message: 'INITIAL_OUTREACH: Lead name: ' + (lead.name || 'there') + ', interested in: ' + interest + '. Send them a warm, personalised WhatsApp welcome message introducing the NEXUS OS dealership and asking how you can help.',\n    sender: chatId,\n    lead_email: lead.email || null,\n    direction: 'outbound',\n    // Outreach is not a WAHA delivery. Give it a unique id so the idempotency\n    // guard downstream always lets it through.\n    message_id: 'outreach:' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)\n  } }];\n}\n\nconst body = item.body || item;\nconst payload = body.payload || {};\n\nconst event = String(body.event || '');\nif (event && event !== 'message') return [];\n\n// Never reply to our own messages -> this is what caused the infinite loop\nif (payload.fromMe === true) return [];\n\n// Drop groups, status broadcasts and newsletters.\n// NOTE: '@lid' is NOT filtered - WhatsApp now uses LID addressing for real\n// 1:1 customer chats, so blocking it silently drops genuine messages.\nconst from = String(payload.from || '');\nif (!from || from.endsWith('@g.us') || from.startsWith('status@') || from.endsWith('@newsletter')) return [];\n\n// A customer sending their Emirates ID sends an IMAGE with no caption. The old\n// code did `if (!text) return []` and silently dropped it - the KYC workflow was\n// never reachable from WhatsApp at all. Detect media and carry it forward.\nconst text = typeof payload.body === 'string' ? payload.body.trim() : '';\nconst media = payload.media || {};\nconst isImage = payload.hasMedia === true && String(media.mimetype || '').startsWith('image/');\n\n// WAHA hands back its own file URL as localhost:3000 - that is localhost *inside\n// the WAHA container*. n8n must fetch it over the docker network instead.\nconst documentUrl = isImage\n  ? String(media.url || '').replace('http://localhost:3000', 'http://waha:3000')\n  : null;\n\nif (!text && !isImage) return [];\n\n// WhatsApp now addresses many 1:1 chats by LID (e.g. 158510264357112@lid), which\n// carries NO phone number -- matching a lead on its digits is impossible. The real\n// number is in _data.Info.SenderAlt. Keep `sender` as the chat id (replies must go\n// back to it) and expose the true number separately for lead matching.\nconst info = (payload._data && payload._data.Info) || {};\nconst alt = String(info.SenderAlt || '');\nconst senderPhone = (alt.includes('@') ? alt.split('@')[0] : alt) ||\n                    (from.endsWith('@lid') ? '' : from.split('@')[0]);\n\n// WAHA has delivered the same message three times in one second, repeatedly.\n// `payload.id` is the WhatsApp message id and is stable across those duplicates,\n// so it is what the idempotency guard downstream claims. Fall back to\n// sender+timestamp when WAHA omits it; empty means the guard cannot key on\n// anything and will let the message through.\nconst messageId = String(payload.id || (payload.timestamp ? from + ':' + payload.timestamp : ''));\n\nreturn [{ json: {\n  message_id: messageId,\n  message: text || '[Customer sent a document image]',\n  is_document: isImage,\n  document_url: documentUrl,\n  sender: from,\n  sender_phone: senderPhone,\n  push_name: info.PushName || null,\n  lead_email: null,\n  direction: 'inbound'\n} }];\n"
       },
       "id": "2",
       "name": "Extract Message & Sender",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        176,
-        320
+        780,
+        304
       ]
     },
     {
@@ -349,7 +349,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_email: $json.lead_email || $json.sender, channel: 'whatsapp', direction: 'inbound', message: $json.message }) }}",
+        "jsonBody": "={{ JSON.stringify({ lead_email: $json.lead_email || $json.sender, channel: 'whatsapp', direction: ($json.direction === 'outbound' ? 'outbound' : 'inbound'), message: ($json.direction === 'outbound' ? '[system] Initial outreach requested by the Master Router' : $json.message) }) }}",
         "options": {}
       },
       "id": "bdc-log-in-01",
@@ -634,7 +634,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ message_id: $json.message_id, source: ($json.direction === 'outbound' ? 'outreach' : 'waha'), chat_id: $json.sender }) }}",
+        "jsonBody": "={{ JSON.stringify({ message_id: ($json.message_id || ('nokey:' + $now.toMillis())), source: ($json.direction === 'outbound' ? 'outreach' : 'waha'), chat_id: $json.sender }) }}",
         "options": {
           "timeout": 10000
         }
@@ -642,8 +642,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        300,
-        320
+        460,
+        304
       ],
       "name": "Claim Message Id",
       "id": "fe363248-c216-4a23-b032-431b571de018",
@@ -657,17 +657,125 @@
       "alwaysOutputData": true
     },
     {
-      "parameters": {
-        "jsCode": "// WAHA re-delivers: three identical webhook calls in the same second has\n// happened repeatedly. `Claim Message Id` inserts the WhatsApp message id with\n// on-conflict-do-nothing, so concurrent deliveries race on the primary key and\n// exactly one wins. PostgREST hands the row back to the winner and [] to the\n// losers, which n8n surfaces as an empty item.\n//\n// This fails OPEN on purpose: if the guard table is unreachable, one duplicate\n// reply is far cheaper than dropping every customer message on the floor.\nconst src = $('Extract Message & Sender').first().json;\nconst claim = $input.first().json || {};\n\nif (!src.message_id) return [{ json: src }];   // nothing to key on\nif (claim.error) return [{ json: src }];       // guard unavailable -> fail open\nif (!claim.message_id) return [];              // already processed -> stop here\n\nreturn [{ json: src }];\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "b363bb7c-3a19-4ed3-8776-eeb2568c548d",
+      "name": "Prefilter",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
       "position": [
-        470,
-        320
+        140,
+        304
       ],
-      "name": "Drop If Duplicate",
-      "id": "9dd1d70d-bd97-4f4f-bb60-44ce88972626"
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "options": {},
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e473316f-50a0-4c97-ba4d-0d2bfa59db72",
+              "name": "message_id",
+              "type": "string",
+              "value": "={{ String($json.body?.payload?.id ?? ($json.body?.payload?.timestamp ? ($json.body?.payload?.from ?? '') + ':' + $json.body.payload.timestamp : '')) }}"
+            },
+            {
+              "id": "4c1216b7-f009-4fa2-a518-bd44499586ed",
+              "name": "sender",
+              "type": "string",
+              "value": "={{ String($json.body?.payload?.from ?? '') }}"
+            },
+            {
+              "id": "55d309b0-abe7-4350-a789-d1a5a7595993",
+              "name": "direction",
+              "type": "string",
+              "value": "inbound"
+            },
+            {
+              "id": "44091ef2-7cda-4e0c-9265-524672de6c6d",
+              "name": "is_real_inbound",
+              "type": "boolean",
+              "value": "={{ $json.body?.payload?.fromMe !== true && (!$json.body?.event || $json.body.event === 'message') && !!($json.body?.payload?.from) && !String($json.body.payload.from).endsWith('@g.us') && !String($json.body.payload.from).startsWith('status@') && !String($json.body.payload.from).endsWith('@newsletter') }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "288b2fe7-1bd6-4702-877c-72c4dd8d82f1",
+      "name": "Is Real Inbound?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        300,
+        304
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "8d05fbc3-1f5f-4b55-b4a1-33806b48863e",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.is_real_inbound }}",
+              "rightValue": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9f53c4e5-b7b7-4867-bd58-be7753247be5",
+      "name": "Is New Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        304
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "loose"
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "f88ccb86-4bb9-4bcd-9f0a-b425a4889c8c",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ !!$json.message_id }}",
+              "rightValue": ""
+            },
+            {
+              "id": "c28207ab-af91-4694-badb-a3230652c867",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ !!$json.error }}",
+              "rightValue": ""
+            }
+          ]
+        }
+      }
     }
   ],
   "connections": {
@@ -675,7 +783,7 @@
       "main": [
         [
           {
-            "node": "Extract Message & Sender",
+            "node": "Prefilter",
             "type": "main",
             "index": 0
           }
@@ -708,7 +816,7 @@
       "main": [
         [
           {
-            "node": "Claim Message Id",
+            "node": "Fetch All Leads",
             "type": "main",
             "index": 0
           }
@@ -931,22 +1039,46 @@
       "main": [
         [
           {
-            "node": "Drop If Duplicate",
+            "node": "Is New Message?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Drop If Duplicate": {
+    "Prefilter": {
       "main": [
         [
           {
-            "node": "Fetch All Leads",
+            "node": "Is Real Inbound?",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Is Real Inbound?": {
+      "main": [
+        [
+          {
+            "node": "Claim Message Id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Is New Message?": {
+      "main": [
+        [
+          {
+            "node": "Extract Message & Sender",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
@@ -964,7 +1096,7 @@
   "_exported_from": {
     "id": "BiyHk9ZXxJUVGbf6",
     "active": true,
-    "updatedAt": "2026-08-19T05:53:34.383Z",
+    "updatedAt": "2026-08-23T06:23:25.649Z",
     "published": true
   }
 }

@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-08-19T05:54:41.597445Z",
+  "exported_at": "2026-08-23T06:45:25.481795Z",
   "source": "https://35.224.126.225.nip.io (GCP nexus-vm)",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
@@ -57,7 +57,7 @@
       "id": "KI6P1Qcf3MIZakNa",
       "name": "Lead Escalation - AI Agent",
       "active": true,
-      "nodes": 16
+      "nodes": 17
     },
     {
       "file": "nexus_error_handler.json",
@@ -106,14 +106,14 @@
       "id": "dhy2DDjWUqwuzHLW",
       "name": "Sync Closed-Won Deals to Supabase pgvector",
       "active": true,
-      "nodes": 7
+      "nodes": 8
     },
     {
       "file": "whatsapp_bdc_ai_agent.json",
       "id": "BiyHk9ZXxJUVGbf6",
       "name": "WhatsApp BDC AI Agent",
       "active": true,
-      "nodes": 26
+      "nodes": 28
     },
     {
       "file": "wf_108_erp_sync_bitrix24_crm.json",

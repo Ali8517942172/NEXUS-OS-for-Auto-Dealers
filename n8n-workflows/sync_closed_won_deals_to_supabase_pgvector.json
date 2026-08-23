@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// -- Entry-path resolution ------------------------------------------------\n// Webhook - New Deal -> Verify JWT -> here   (public HTTP; auth enforced)\n// direct / sub-workflow call -> here         (already trusted)\n//\n// $('Webhook - New Deal') THROWS when that node did not run in this execution\n// -- it does NOT return undefined, so `?.` and `||` cannot rescue it, and an\n// Expression field cannot hold try/catch.\nlet webhookJson = null;\ntry {\n  webhookJson = $('Webhook - New Deal').first().json;\n} catch (e) {\n  // non-webhook path -- the trigger never executed.\n}\n\nlet raw;\nif (webhookJson) {\n  // 'Verify JWT' runs with onError = continueRegularOutput, so a rejected\n  // token arrives as data. This endpoint is fire-and-forget (the caller only\n  // ever sees 'Workflow was started'), so a failed execution is the right\n  // signal for an unauthorized attempt.\n  const auth = $input.first().json || {};\n  if (!auth.id) {\n    throw new Error('Closed-won sync aborted: unauthorized. A valid Supabase session token is required in the Authorization header.');\n  }\n  raw = webhookJson;\n} else {\n  raw = $input.first().json;\n}\n\n// -- Normalise the deal ---------------------------------------------------\n// The dashboard posts a closed-won deal as\n//   { lead_email, lead_name, phone, vehicle, sale_price_aed, closed_at }\n// with no deal_id at all, while this node used to demand deal_id and read\n// customer_name / amount_aed. That mismatch aborted every single run.\n// Both vocabularies are accepted now.\nconst d = raw.body || raw.deal || raw;\n\nconst clean = (v) => (v === undefined || v === null || v === '') ? null : String(v).trim();\n\nconst customer = clean(d.customer_name) || clean(d.lead_name) || clean(d.name);\nconst email    = clean(d.lead_email) || clean(d.email);\nconst vehicle  = clean(d.vehicle) || clean(d.vehicle_interest);\nconst amount   = (d.amount_aed !== undefined && d.amount_aed !== null) ? d.amount_aed : d.sale_price_aed;\nconst closedAt = clean(d.closed_at) || clean(d.closedAt);\n\nlet dealId = clean(d.deal_id) || clean(d.dealId) || clean(d.id);\nif (!dealId) {\n  // No id supplied. Derive a DETERMINISTIC one so that re-posting the same\n  // deal overwrites its existing vector row instead of adding a duplicate.\n  const key = email || customer;\n  if (!key) {\n    throw new Error('Rejected: closed-won deal has neither a deal_id nor a lead_email/customer name to derive one from. Keys received: ' + Object.keys(d).join(', '));\n  }\n  dealId = 'auto:' + key.toLowerCase() + '|' + (closedAt || 'no-close-date');\n}\n\nconst parts = [\n  customer ? 'Customer: ' + customer : null,\n  email ? 'Email: ' + email : null,\n  vehicle ? 'Vehicle: ' + vehicle : null,\n  (amount !== undefined && amount !== null && amount !== '') ? 'Deal value: AED ' + amount : null,\n  closedAt ? 'Closed at: ' + closedAt : null,\n  clean(d.notes) ? 'Notes: ' + clean(d.notes) : null\n].filter(Boolean);\n\nconst dealText = parts.join('. ');\nif (!dealText) throw new Error('Rejected: deal ' + dealId + ' produced no text to embed.');\n\nreturn [{ json: { dealId, dealText } }];"
+        "jsCode": "// -- Entry-path resolution ------------------------------------------------\n// Webhook - New Deal -> Verify JWT -> here   (public HTTP; auth enforced)\n// direct / sub-workflow call -> here         (already trusted)\n//\n// $('Webhook - New Deal') THROWS when that node did not run in this execution\n// -- it does NOT return undefined, so `?.` and `||` cannot rescue it, and an\n// Expression field cannot hold try/catch.\nlet webhookJson = null;\ntry {\n  webhookJson = $('Webhook - New Deal').first().json;\n} catch (e) {\n  // non-webhook path -- the trigger never executed.\n}\n\nlet raw;\nif (webhookJson) {\n  // 'Verify JWT' runs with onError = continueRegularOutput, so a rejected\n  // token arrives as data. This endpoint is fire-and-forget (the caller only\n  // ever sees 'Workflow was started'), so a failed execution is the right\n  // signal for an unauthorized attempt.\n  const auth = $input.first().json || {};\n  if (!auth.id) {\n    throw new Error('Closed-won sync aborted: unauthorized. A valid Supabase session token is required in the Authorization header.');\n  }\n  raw = webhookJson;\n} else {\n  raw = $input.first().json;\n}\n\n// -- Normalise the deal ---------------------------------------------------\n// The dashboard posts a closed-won deal as\n//   { lead_email, lead_name, phone, vehicle, sale_price_aed, closed_at }\n// with no deal_id at all, while this node used to demand deal_id and read\n// customer_name / amount_aed. That mismatch aborted every single run.\n// Both vocabularies are accepted now.\nconst d = raw.body || raw.deal || raw;\n\nconst clean = (v) => (v === undefined || v === null || v === '') ? null : String(v).trim();\n\nconst customer = clean(d.customer_name) || clean(d.lead_name) || clean(d.name);\nconst email    = clean(d.lead_email) || clean(d.email);\nconst vehicle  = clean(d.vehicle) || clean(d.vehicle_interest);\nconst amount   = (d.amount_aed !== undefined && d.amount_aed !== null) ? d.amount_aed : d.sale_price_aed;\nconst closedAt = clean(d.closed_at) || clean(d.closedAt);\n\nlet dealId = clean(d.deal_id) || clean(d.dealId) || clean(d.id);\nif (!dealId) {\n  // No id supplied. Derive a DETERMINISTIC one so that re-posting the same\n  // deal overwrites its existing vector row instead of adding a duplicate.\n  const key = email || customer;\n  if (!key) {\n    throw new Error('Rejected: closed-won deal has neither a deal_id nor a lead_email/customer name to derive one from. Keys received: ' + Object.keys(d).join(', '));\n  }\n  dealId = 'auto:' + key.toLowerCase() + '|' + (closedAt || 'no-close-date');\n}\n\nconst parts = [\n  customer ? 'Customer: ' + customer : null,\n  email ? 'Email: ' + email : null,\n  vehicle ? 'Vehicle: ' + vehicle : null,\n  (amount !== undefined && amount !== null && amount !== '') ? 'Deal value: AED ' + amount : null,\n  closedAt ? 'Closed at: ' + closedAt : null,\n  clean(d.notes) ? 'Notes: ' + clean(d.notes) : null\n].filter(Boolean);\n\nconst dealText = parts.join('. ');\nif (!dealText) throw new Error('Rejected: deal ' + dealId + ' produced no text to embed.');\n\n// Carry the structured fields through as well. `Record Purchase` needs them to\n// write the actual purchase_history row; the embedding chain reads only dealId\n// and dealText and is unaffected by the extra keys.\nreturn [{ json: {\n  dealId,\n  dealText,\n  customer_name: customer,\n  email,\n  phone: clean(d.phone) || clean(d.lead_phone),\n  vehicle,\n  amount_aed: (amount === undefined || amount === '') ? null : amount,\n  purchase_date: closedAt\n} }];"
       },
       "id": "2",
       "name": "Format Deal Text",
@@ -220,6 +220,51 @@
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
       "notes": "Guard for the public webhook path only. 401 arrives as data because onError = continueRegularOutput."
+    },
+    {
+      "id": "263e6e0c-0bf5-424e-9ad4-ba60fcdaaeb8",
+      "name": "Record Purchase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        656,
+        504
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/purchase_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=ignore-duplicates,return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ deal_id: $json.dealId, customer_name: $json.customer_name, email: $json.email, phone: $json.phone, vehicle: $json.vehicle, amount_aed: $json.amount_aed, purchase_date: $json.purchase_date }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "stopWorkflow"
     }
   ],
   "connections": {
@@ -228,6 +273,11 @@
         [
           {
             "node": "OpenRouter - Generate Embedding",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Record Purchase",
             "type": "main",
             "index": 0
           }
@@ -302,7 +352,7 @@
   "_exported_from": {
     "id": "dhy2DDjWUqwuzHLW",
     "active": true,
-    "updatedAt": "2026-08-17T16:36:54.857Z",
+    "updatedAt": "2026-08-23T06:27:38.068Z",
     "published": true
   }
 }
