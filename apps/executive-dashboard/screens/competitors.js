@@ -4,11 +4,10 @@
    The old screen printed the scrape's own `price_diff_aed` column and trusted
    it. That number is a snapshot of what our list price was at scrape time, so
    after any re-price it quietly describes a price we no longer ask. This screen
-   matches each scraped row against the stock we actually hold — make + model,
-   and the year when the scrape recorded one — and computes the gap against the
-   live list price in `inventory`. The stored figure is still shown in the
-   drawer, labelled as the scrape's own snapshot, and flagged when the two
-   disagree, because that disagreement is itself information.
+   matches each scraped row against the stock we actually hold and computes the
+   gap against the live list price in `inventory`. The stored figure is still
+   shown in the drawer, labelled as the scrape's own snapshot, and flagged when
+   the two disagree, because that disagreement is itself information.
 
    Freshness is stated rather than implied. A price comparison is only as good
    as the day it was collected, so the age of the newest row is on the screen at
@@ -23,25 +22,61 @@
    price we ask today — the view's `undercut` rows carry the gap as it was at
    scrape time, and that figure is currently over a month old.
 
-   Three failures the view does not model are raised here as well, because each
+   Five failures the view does not model are raised here as well, because each
    is a way this screen can be quietly wrong rather than visibly empty:
+     · what the match under every AED figure actually is — a model-name match,
+       and how far that is from being the same car;
+     · rows that are not a competitor at all: a scraper placeholder, or a
+       bot-detection page stored as a dealership;
      · rows the latest scrape did not refresh (the job still runs, but it has
        stopped covering those listings) and rows with no scrape date at all;
-     · a competitor every one of whose rows arrived with no price — it inflates
-       "Scraped prices" and contributes to no gap;
+     · a competitor every one of whose rows arrived with no price — it
+       contributes to no gap and can support no undercut claim;
      · an unsold unit of ours that no scraped row matches. That is the undercut
        we would never detect, and it is invisible by construction: there is no
        row to look at, which is exactly why it needs saying out loud.
    Every alert scrolls to and opens the comparison row it is about, or filters
    the table down to the rows it names.
 
-   Two figures in that strip are computed here rather than by the shared
-   helpers, and both for the same reason — a helper that rounds or blanks is
-   worse than no helper on a screen whose whole subject is how old a number is.
-   Severity is coloured from a local map because `tone()` returns '' for a
-   severity it has never seen, and a waiting time past a week is spelled out in
-   days because `ago()` collapses every one of the view's mid-July rows into the
-   same "1 mo ago". */
+   One figure in that strip is computed here rather than by a shared helper, for
+   the reason the screen exists: a helper that rounds is worse than no helper
+   where the subject is how old a number is, so a waiting time past a week is
+   spelled out in days rather than through `ago()`, which collapses every one of
+   the view's mid-July rows into the same "1 mo ago". Severity colour is
+   `tone()`'s job and the private map that used to live here is gone.
+
+   24 Aug 2026, second pass. An audit found the screen's central claim to be
+   false and the table under it to be partly junk.
+
+     · The match was never a make match. `uMake` read `make`/`brand` off an
+       inventory row and `inventory` has neither column, so it returned null on
+       every row and the "make · model" index was keyed on norm('' + ' ' + model)
+       — byte-identical to the model index. Every row that reached basis 'mm'
+       was drawn with a chip reading "make · model" and the tooltip "Same make
+       and model", over a match on the model string alone, with a confident AED
+       gap beside it: a cross-brand collision on a shared model name would have
+       priced us against the wrong car. `BASIS.exact` was dead for the same
+       reason — no year is recorded on either side either. Both are gone. The
+       chip, the tooltip and the drawer now say what the match is — a text match
+       on `model` — and warn wherever the name cannot rule out another
+       manufacturer, which today is every row.
+     · A manufacturer written *inside* a model string ("Toyota Land Cruiser",
+       which is what the unit form's own placeholder asks for) is read where it
+       is there, always labelled as inferred from the text, and never presented
+       as a make column. It can only weaken a match: two strings naming two
+       different manufacturers stop being compared at all.
+     · The competitors table holds rows that are not competitors. Two carry the
+       literal string "null" as the dealership name and one carries "Pardon Our
+       Interruption" — a bot-detection interstitial the scraper captured and
+       stored as a competitor. All three carry no price. They are reported as
+       the data-quality fault they are and excluded from every count, gap and
+       market claim here; a row with no price cannot support an undercut and is
+       never counted in one.
+     · Nothing has refreshed since mid-July. The scrape's n8n trigger was an
+       "every 24 hours" interval, which drifts and then stops silently after a
+       restart; it is on a cron now, but the prices below were collected six
+       weeks ago and that is said wherever a comparison is presented as
+       current. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, aedSigned, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
@@ -96,38 +131,155 @@ function pick(row, names) {
   return null;
 }
 
-const cName  = r => pick(r, ['competitor', 'competitor_name', 'dealer', 'dealership', 'name', 'source']);
-const cMake  = r => pick(r, ['make', 'brand', 'manufacturer']);
-const cModel = r => pick(r, ['model', 'vehicle_model', 'vehicle']);
-const cYear  = r => n0(pick(r, ['year', 'model_year']));
-const cPrice = r => n0(pick(r, ['price_aed', 'competitor_price_aed', 'listed_price_aed', 'price']));
-const cAt    = r => pick(r, ['scraped_at', 'checked_at', 'collected_at', 'updated_at', 'created_at']);
-/* The only person-shaped value a competitor row can carry: whoever the listing
-   named as its contact. The feed has never been guaranteed to record one, and
-   `select=*` means asking costs nothing and cannot 42703 the query, so it is
-   read defensively and rendered only where it actually exists. */
-const cContact = r => pick(r, ['contact_name', 'sales_contact', 'contact', 'agent_name', 'salesperson']);
-const cPhone   = r => pick(r, ['contact_phone', 'phone', 'phone_number', 'mobile', 'contact_number']);
+/* The two column lists, read off the live database on 24 Aug 2026:
 
-const uMake  = u => pick(u, ['make', 'brand']);
-const uModel = u => pick(u, ['model', 'vehicle']);
-const uYear  = u => n0(pick(u, ['year', 'model_year']));
-const uPrice = u => n0(pick(u, ['list_price_aed', 'price_aed']));
-const uRef   = u => pick(u, ['stock_id', 'id']);
+     competitors  id, competitor, model, our_price_aed, price_aed,
+                  price_diff_aed, scraped_at, ai_recommendation
+     inventory    id, model, vin, status, acquired_at, cost_aed, price_aed,
+                  days_in_stock, holding_cost_accrued, gross_margin, net_margin,
+                  vat_amount, aging_alert, ai_recommendation,
+                  recommended_commission
 
-const vehicleLabel = (make, model, year) =>
-  [year == null ? '' : String(year), make || '', model || ''].filter(Boolean).join(' ').trim();
+   Neither side has a make, a brand or a model year, and neither has a listing
+   contact. The alias lists below are what the feed has actually been called at
+   some point; the real column is first and nothing here reaches for a column
+   that does not exist on either table. */
+const cName  = r => pick(r, ['competitor', 'competitor_name', 'dealer']);
+const cModel = r => pick(r, ['model', 'vehicle_model']);
+const cPrice = r => n0(pick(r, ['price_aed', 'competitor_price_aed']));
+const cAt    = r => pick(r, ['scraped_at', 'checked_at', 'created_at']);
 
-const BASIS = {
-  exact:  { chip: 'make · model · year', why: 'Same make, model and year as a unit on the lot.' },
-  mm:     { chip: 'make · model',        why: 'Same make and model. The scrape did not record a year, so the year is not part of this match.' },
-  model:  { chip: 'model only',          why: 'Matched on the model name alone — the scrape or the stock record is missing a make, so this comparison is looser.' },
-  none:   { chip: 'no unit in stock',    why: 'Nothing on the lot matches this make and model, so there is no price of ours to compare.' },
+const uModel = u => pick(u, ['model']);
+const uPrice = u => n0(pick(u, ['price_aed']));
+const uRef   = u => pick(u, ['id']);          // `id` IS the stock number
+
+/* The sentence every match on this screen has to be read against. */
+const NO_MAKE = 'Neither table records a make or a model year — `model` is free text and it is the only thing there is to match on.';
+
+/* Manufacturer names, used for exactly one thing: spotting a make that somebody
+   already typed into a model string. It is never used to fill a make in. A name
+   found this way is labelled "inferred from the model text" everywhere it is
+   shown, and it can only ever weaken a match or add a caution — never create a
+   match, and never turn one into "same make". */
+const MAKE_WORDS = [
+  'toyota', 'lexus', 'nissan', 'infiniti', 'mitsubishi', 'honda', 'mazda',
+  'suzuki', 'subaru', 'isuzu', 'hyundai', 'kia', 'genesis', 'ford', 'chevrolet',
+  'chevy', 'gmc', 'cadillac', 'dodge', 'jeep', 'chrysler', 'ram', 'tesla',
+  'bmw', 'mini', 'mercedes', 'mercedes benz', 'benz', 'maybach', 'audi',
+  'volkswagen', 'vw', 'porsche', 'skoda', 'peugeot', 'citroen', 'renault',
+  'volvo', 'jaguar', 'land rover', 'range rover', 'bentley',
+  'rolls royce', 'aston martin', 'mclaren', 'ferrari', 'lamborghini',
+  'maserati', 'alfa romeo', 'fiat', 'byd', 'geely', 'chery', 'haval',
+  'changan', 'jetour', 'omoda', 'jaecoo', 'lincoln', 'buick', 'acura',
+];
+/* Different words for the same manufacturer. Without this a "Range Rover Sport"
+   and a "Land Rover Range Rover" would look like two different makes and stop
+   being compared, which is the opposite of the point. */
+const MAKE_CANON = {
+  'chevy': 'chevrolet', 'vw': 'volkswagen', 'benz': 'mercedes',
+  'mercedes benz': 'mercedes', 'maybach': 'mercedes',
+  'range rover': 'land rover',
 };
 
-/* The first five are always offered. The last two exist so an alert has
-   somewhere to land, and are only rendered when they would match something —
-   a filter chip reading "Not refreshed · 0" is a control that does nothing. */
+/* The manufacturer named inside a free-text model string, or null. Longest
+   match wins so "mercedes benz" beats "benz". */
+function makeIn(text) {
+  const s = ` ${norm(text)} `;
+  let hit = null;
+  for (const w of MAKE_WORDS) {
+    if (s.includes(` ${w} `) && (!hit || w.length > hit.length)) hit = w;
+  }
+  return hit ? (MAKE_CANON[hit] || hit) : null;
+}
+/* How a manufacturer's name is written when it is shown back to a human. The
+   handful that are initialisms would otherwise read as "Bmw". */
+const MAKE_DISPLAY = { bmw: 'BMW', gmc: 'GMC', mg: 'MG', byd: 'BYD', vw: 'Volkswagen' };
+const titleCase = m => MAKE_DISPLAY[m] || String(m || '').replace(/\b[a-z]/g, c => c.toUpperCase());
+
+/* A model string with the year and any manufacturer word taken out, so
+   "Toyota Land Cruiser 2024" on one side can still find "Land Cruiser" on the
+   other. This is a looser match than an identical string and is labelled as
+   one wherever it is used. */
+const YEAR_TOKEN = /^(19|20)\d{2}$/;
+function coreKey(text) {
+  const make = makeIn(text);
+  let t = norm(text).split(' ').filter(w => w && !YEAR_TOKEN.test(w));
+  if (make) {
+    const drop = new Set([...MAKE_WORDS, ...Object.keys(MAKE_CANON)]
+      .filter(w => MAKE_CANON[w] === make || w === make)
+      .flatMap(w => w.split(' ')));
+    const stripped = t.filter(w => !drop.has(w));
+    if (stripped.length) t = stripped;
+  }
+  return t.join(' ');
+}
+
+/* A model name of the shape manufacturers reuse — one bare word ("Patrol"), or
+   a short alphanumeric designation ("X5", "300", "Q7"). This is a heuristic
+   about the string, not knowledge about the market: it only ever adds a
+   caution, and it never removes one. */
+function reusableName(key) {
+  const t = String(key || '').split(' ').filter(Boolean);
+  if (!t.length) return false;
+  if (t.length === 1) return true;
+  return t.every(w => /^[a-z]{0,2}\d{1,4}[a-z]?$/.test(w));
+}
+
+/* What the match IS. There is no make basis and no year basis, because there is
+   no make column and no year column — the two that used to be listed here were
+   unreachable and the one that was reachable described itself as the loose
+   fallback from a make match that never happened. */
+const BASIS = {
+  model: { chip: 'model name',
+    why: `Matched because our stock carries the same model name, character for character. ${NO_MAKE} Two cars sold under the same model name are the same row to this match, whoever built them.` },
+  loose: { chip: 'model name · loose',
+    why: `Matched on the model name only after a year, or a manufacturer word somebody typed into the text, was set aside — the two strings were not even identical. ${NO_MAKE}` },
+  none:  { chip: 'no unit in stock',
+    why: 'No unit on the lot carries this model name, so there is no price of ours to compare it against.' },
+};
+
+/* How far the match is from being the same car. `both` is as good as it gets on
+   this data and it is still an inference off free text. */
+const RISK = {
+  mixed: { chip: 'make ambiguous', tone: 'hot',
+    text: 'The units carrying this model name do not all name the same manufacturer, so this name is used by more than one make. The gap beside it may be measured against a different car entirely.' },
+  onesided: { chip: 'make unconfirmed', tone: 'warm',
+    text: 'Only one of the two model strings names a manufacturer; the other names none, so it could be any make that uses this model name.' },
+  unnamed: { chip: 'make unknown', tone: 'warm',
+    text: `No manufacturer is named on either side. ${NO_MAKE} If two makes share this model name, nothing on this screen can tell them apart and the gap may be a Nissan measured against a Toyota.` },
+  both: { chip: 'make inferred', tone: '',
+    text: 'Both model strings happen to name the same manufacturer. That is read out of free text, not out of a make column — there is none — so it is an inference, not a confirmation that these are the same car.' },
+};
+const REUSABLE_NOTE = ' The name is a single short designation of the kind manufacturers reuse, which makes a collision more likely rather than less.';
+
+/* Rows that are not a competitor at all. Two of the fifteen rows in this table
+   carry the literal string "null" where the dealership name belongs — a scraper
+   that wrote the word instead of the value — and one carries "Pardon Our
+   Interruption", which is the heading of a bot-detection interstitial: the
+   scrape was blocked, captured the block page and stored its title as a rival
+   dealership. All three carry no price. They are shown, because a scraper being
+   blocked is worth knowing about, but they are shown as a data-quality fault and
+   excluded from every count, every gap and every claim about the market here. */
+const PLACEHOLDER_NAME = /^(null|undefined|nan|none|unknown|n\s*\/?\s*a|-{1,3}|\.)$/i;
+const INTERSTITIAL = /(pardon our interruption|are you a robot|robot check|verify (?:you are|you're)|just a moment|attention required|access denied|checking your browser|enable javascript|captcha|cloudflare|unusual traffic|request blocked|too many requests|rate limit|forbidden|not found|error 4\d\d)/i;
+
+function scrapeFault(name) {
+  const s = String(name == null ? '' : name).trim();
+  if (!s) return null;
+  if (PLACEHOLDER_NAME.test(s)) {
+    return { kind: 'placeholder',
+      why: `The scraper stored the literal text "${s}" where the dealership's name belongs, so this row does not say who is selling anything.` };
+  }
+  if (INTERSTITIAL.test(s)) {
+    return { kind: 'interstitial',
+      why: `"${s}" is the heading of a bot-detection page, not a dealership. The scraper was blocked, captured the block page and stored its title as a competitor — so the listing it was sent to read was never read at all.` };
+  }
+  return null;
+}
+
+/* The first five are always offered. The rest exist so an alert has somewhere
+   to land and are rendered only when they would match something — a filter chip
+   reading "Scrape failures · 0" is a control that does nothing. */
 const FILTERS = {
   ALL:    'All',
   ABOVE:  'We ask more',
@@ -136,6 +288,8 @@ const FILTERS = {
   NOSTOCK:'Not stocked',
   STALE:  'Not refreshed',
   NOPRICE:'No price',
+  UNNAMED:'Make unknown',
+  BROKEN: 'Scrape failures',
 };
 const ALWAYS_SHOWN = new Set(['ALL', 'ABOVE', 'BELOW', 'LEVEL', 'NOSTOCK']);
 const SORTS = {
@@ -148,20 +302,30 @@ const SORTS = {
 
 /* One competitor row, joined to the stock it can legitimately be compared with.
    Everything here is either a column Postgres returned or arithmetic over two
-   of them; nothing is filled in when a side is missing. */
+   of them; nothing is filled in when a side is missing. The join is a text match
+   on `model` and nothing more — see BASIS above for why there is no other. */
 function compare(r, index) {
-  const make = cMake(r), model = cModel(r), year = cYear(r), price = cPrice(r);
-  const keyed = index.lookup(make, model);
-  let units = keyed.units, basis = keyed.basis, yearNote = '';
+  const model = cModel(r), price = cPrice(r);
+  /* Inferred from the listing's own model text, never from a make column. */
+  const theirMake = makeIn(model);
+  const keyed = index.lookup(model);
+  let units = keyed.units, basis = keyed.basis;
+  let conflictNote = '';
 
-  if (units.length && year != null) {
-    const sameYear = units.filter(u => uYear(u) === year);
-    if (sameYear.length) { units = sameYear; basis = basis === 'mm' ? 'exact' : basis; }
-    else {
-      const years = [...new Set(units.map(uYear).filter(y => y != null))].sort();
-      yearNote = years.length
-        ? `We do not stock a ${year}; comparing against ${years.join(', ')}.`
-        : `The scrape says ${year}; our matching stock has no year recorded.`;
+  /* Two model strings that name two different manufacturers are not the same
+     car. This is the only place the manufacturer list changes an outcome, and
+     it can only ever take a unit out of a comparison. */
+  if (units.length && theirMake) {
+    const clash = units.filter(u => { const m = makeIn(uModel(u)); return m && m !== theirMake; });
+    if (clash.length) {
+      const named = [...new Set(clash.map(u => titleCase(makeIn(uModel(u)))))].join(', ');
+      const many = clash.length !== 1;
+      units = units.filter(u => !clash.includes(u));
+      conflictNote = `${clash.length} unit${many ? 's' : ''} carrying this model name name${many ? '' : 's'} a different manufacturer in ${many ? 'their' : 'its'} own model text (${named}) than this listing does (${titleCase(theirMake)})`
+        + (units.length
+          ? `, so ${many ? 'they are' : 'it is'} left out of the comparison.`
+          : ', so there is nothing left on the lot to compare this against.');
+      if (!units.length) basis = 'none';
     }
   }
 
@@ -170,6 +334,14 @@ function compare(r, index) {
   const onLot = units.filter(u => !isSold(u));
   const soldOnly = units.length > 0 && onLot.length === 0;
   if (onLot.length) units = onLot;
+
+  /* The basis is settled after the sold and manufacturer filters have run, not
+     before: a match that reached for the looser key but ends up comparing
+     against units whose model string is identical is an exact match, and saying
+     "loose" of it would be its own small untruth. */
+  if (units.length) {
+    basis = units.every(u => norm(uModel(u)) === keyed.exact) ? 'model' : 'loose';
+  }
 
   const pricedUnits = units.filter(u => uPrice(u) != null);
   const prices = pricedUnits.map(uPrice);
@@ -180,58 +352,91 @@ function compare(r, index) {
   const ourHigh = prices.length ? Math.max(...prices) : null;
   const delta = (ourPrice != null && price != null) ? ourPrice - price : null;
 
+  /* Which manufacturers, if any, the matched stock names in its own text. More
+     than one means this model name is demonstrably shared across makes — and a
+     single unit that names none is enough to stop the whole match claiming both
+     sides are the same manufacturer, because that unit could be anybody's. */
+  const ourMakes = [...new Set(units.map(u => makeIn(uModel(u))).filter(Boolean))];
+  const anonUnits = units.filter(u => !makeIn(uModel(u))).length;
+  const risk = !units.length ? null
+    : ourMakes.length > 1 ? 'mixed'
+      : (theirMake && ourMakes.length === 1 && ourMakes[0] === theirMake && !anonUnits) ? 'both'
+        : (theirMake || ourMakes.length === 1) ? 'onesided'
+          : 'unnamed';
+
+  const name = cName(r);
   return {
-    raw: r, id: pick(r, ['id']), name: cName(r), make, model, year, price,
-    contactName: cContact(r), contactPhone: cPhone(r),
-    label: vehicleLabel(make, model, year) || String(model || '') || 'Unnamed vehicle',
+    raw: r, id: pick(r, ['id']), name, model, price,
+    fault: scrapeFault(name),
+    theirMake, ourMakes, risk, reusable: reusableName(keyed.key), conflictNote,
+    /* A gap whose match cannot rule out another manufacturer. Today that is
+       every gap on the screen, and the filter chip counting them says so. */
+    makeUnconfirmed: risk != null && risk !== 'both',
+    label: String(model == null ? '' : model).trim() || 'Unnamed vehicle',
     at: cAt(r),
     storedOur: n0(pick(r, ['our_price_aed'])),
     storedDiff: n0(pick(r, ['price_diff_aed'])),
     rec: pick(r, ['ai_recommendation', 'recommendation', 'notes']),
     units, pricedUnits, unmatched: units.length === 0,
     basis: units.length ? basis : 'none',
-    yearNote, soldOnly, ourPrice, ourHigh, delta,
+    soldOnly, ourPrice, ourHigh, delta,
     deltaPct: (delta != null && price) ? (delta / price) * 100 : null,
   };
 }
 
-/* make+model first, model alone as the fallback, so a feed that puts the make
-   inside the model string still finds the car. */
+/* Two keys off the one column there is. The exact one is the model string as
+   stored; the core one is that string with a year and any manufacturer word
+   taken out, so "Toyota Land Cruiser 2024" can still find "Land Cruiser". The
+   second is a looser claim than the first and is reported as one — it is not a
+   make match, because there is no make on either side to match. */
 function buildIndex(inv) {
-  const byMakeModel = new Map(), byModel = new Map();
+  const byModel = new Map(), byCore = new Map();
   const add = (map, key, u) => { if (!key) return; if (!map.has(key)) map.set(key, []); map.get(key).push(u); };
   inv.forEach(u => {
-    const m = norm(uModel(u));
-    add(byModel, m, u);
-    add(byMakeModel, norm(`${uMake(u) || ''} ${uModel(u) || ''}`), u);
+    add(byModel, norm(uModel(u)), u);
+    add(byCore, coreKey(uModel(u)), u);
   });
   return {
-    lookup(make, model) {
-      const m = norm(model);
-      if (make) {
-        const hit = byMakeModel.get(norm(`${make} ${model}`));
-        if (hit) return { units: hit, basis: 'mm' };
-      }
-      const both = byMakeModel.get(m);        // feed put "Toyota Land Cruiser" in one field
-      if (both) return { units: both, basis: make ? 'mm' : 'model' };
-      const only = byModel.get(m);
-      if (only) return { units: only, basis: make ? 'model' : 'model' };
-      return { units: [], basis: 'none' };
+    /* Both sets, not the first one that hits. "Patrol" and "Nissan Patrol" are
+       one model name written two ways, and taking only the identical-string
+       match would have compared a scraped Patrol against the one sold unit
+       whose text happens to be bare while ignoring the one on the lot. The
+       basis stays 'model' only when every unit matched the string exactly;
+       the moment a unit needed a word taken out of it, the whole match is
+       reported as the looser thing it is. */
+    lookup(model) {
+      const exact = norm(model), core = coreKey(model);
+      const hit = byModel.get(exact) || [];
+      const loose = byCore.get(core) || [];
+      const units = [...new Set([...hit, ...loose])];
+      if (!units.length) return { units: [], basis: 'none', key: core || exact, exact };
+      return {
+        units,
+        basis: hit.length === units.length ? 'model' : 'loose',
+        key: core || exact,
+        exact,
+      };
     },
   };
 }
 
 const deltaCell = c => {
   if (c.delta == null) {
-    const why = c.unmatched ? BASIS.none.why
+    const why = c.unmatched ? (c.conflictNote || BASIS.none.why)
       : c.price == null ? 'This row has no competitor price recorded.'
         : 'The matching unit has no list price on record.';
     return `<span class="t-muted" title="${esc(why)}">—</span>`;
   }
   if (c.delta === 0) return '<span class="t-muted">level</span>';
   const worse = c.delta > 0;
+  /* The tooltip carries the two things the number itself cannot: when their
+     price was collected, and that the two cars were matched on a model name. */
+  const why = `Our ${aed(c.ourPrice)} (list price today) against their ${aed(c.price)}, collected `
+    + (c.at ? dt(c.at) : 'on a date this row does not record')
+    + `. Matched on the model name "${c.label}" alone`
+    + (c.makeUnconfirmed ? ', with no make recorded on either side.' : '.');
   return `<span class="${worse ? 't-hot' : 't-ok'}" style="font-weight:500"
-      title="${esc(`Our ${aed(c.ourPrice)} against their ${aed(c.price)}`)}">
+      title="${esc(why)}">
       <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px" aria-hidden="true">${worse ? 'arrow_upward' : 'arrow_downward'}</span>
       ${aedSigned(c.delta)}</span>
     ${c.deltaPct == null ? '' : `<div class="cell-sub">${pct(Math.abs(c.deltaPct))} ${worse ? 'above' : 'below'} theirs</div>`}`;
@@ -252,20 +457,13 @@ const NO_SCRAPE_HOOK = {
    generic icon rather than nothing. */
 const KIND_ICON = { undercut: 'trending_down', price_stale: 'update_disabled' };
 
-/* Severity is coloured from a map that lives here rather than through `tone()`
-   in lib/format.js. TONE there has no WARNING key, so `tone('WARNING')` returns
-   the empty string — and an empty class is not a missing colour, it is a pill
-   rendered with no tone at all, which reads as a neutral note rather than as a
-   warning. `v_needs_attention` is a shared view this screen does not own and is
-   free to emit a severity nobody here has seen, so anything unrecognised is
-   coloured as a warning rather than losing its colour silently. */
-/* 24 Aug: the private map above is gone — lib/format.js `tone()` now carries
-   every vocabulary that reaches this screen (HOT/WARM/COLD, CRITICAL/WARNING/OK,
-   HIGH/MEDIUM/LOW/INFO, and the workflow-health words) and maps anything it does
-   not recognise to 'cold' instead of ''. This screen keeps its own preference
-   for the unrecognised case: a severity nobody here has seen, arriving from a
-   shared view this screen does not own, is more usefully shown as a warning than
-   as a note nobody looks at. That single decision is all that is left local. */
+/* The private severity map this screen used to keep is gone. `tone()` in
+   lib/format.js now carries every vocabulary that reaches here — HOT/WARM/COLD,
+   CRITICAL/WARNING/HEALTHY, HIGH/MEDIUM/LOW/INFO and the workflow-health words
+   — and maps anything it does not recognise to 'cold' rather than to ''. One
+   preference is still local, and only one: a severity nobody here has seen,
+   arriving from a shared view this screen does not own, is more useful shown as
+   a warning than as a note nobody looks at. */
 const sevTone = s => {
   const t = tone(s);
   if (!t) return '';                 // genuinely blank severity — say nothing
@@ -328,8 +526,20 @@ SCREENS.competitors = async host => {
   const all = rows.map(r => compare(r, index));
   const reload = () => go('competitors');
 
+  /* Rows the scraper produced that are not competitors — a name of "null", or
+     the title of a bot-detection page. They are held apart from here down.
+     `live` is what every count, gap, KPI, group and market claim on this screen
+     is computed from; `junk` is reported as a data-quality fault and is
+     reachable through its own filter, never charted as a rival dealership. */
+  const junk = all.filter(c => c.fault);
+  const live = all.filter(c => !c.fault);
+  const junkPriced = junk.filter(c => c.price != null).length;
+
   const dated = c => !!(c.at && !Number.isNaN(Date.parse(c.at)));
-  const stamped = all.filter(dated);
+  /* Freshness is read off the real rows only: a scrape failure carries no price,
+     so letting one set the "newest price collected" clock would date the screen
+     by a row that priced nothing. */
+  const stamped = live.filter(dated);
   const newest = stamped.length ? stamped.reduce((a, c) => (Date.parse(c.at) > Date.parse(a.at) ? c : a)).at : null;
   const oldest = stamped.length ? stamped.reduce((a, c) => (Date.parse(c.at) < Date.parse(a.at) ? c : a)).at : null;
   const ageHours = newest ? (Date.now() - Date.parse(newest)) / 3600000 : null;
@@ -350,60 +560,78 @@ SCREENS.competitors = async host => {
       + `. The scrape is expected every ${SCRAPE_EVERY_HOURS} h`
       + (stale ? `, so it has missed about ${num(missed)} ${plural(missed, 'cycle', 'cycles')}.` : '.');
 
-  if (!all.length) {
+  if (!all.length || !live.length) {
     strip.remove(); below.remove();
     /* An undercut alert that survives an empty competitors table is a real
        contradiction — the view read rows this screen cannot see — and saying
        nothing about it would leave the operator with an unexplained nav badge. */
     const orphan = (attn || []).length;
-    alertHost.innerHTML = orphan
-      ? `<div class="banner warm"><span class="material-symbols-outlined">rule</span>
-          <div>${num(orphan)} ${plural(orphan, 'alert', 'alerts')} in v_needs_attention ${plural(orphan, 'is', 'are')} filed against this screen, but the competitors table returned no rows at all, so none of them can be shown against the price it was raised on.</div></div>`
-      : '';
+    alertHost.innerHTML = [
+      orphan
+        ? `<div class="banner warm"><span class="material-symbols-outlined">rule</span>
+            <div>${num(orphan)} ${plural(orphan, 'alert', 'alerts')} in v_needs_attention ${plural(orphan, 'is', 'are')} filed against this screen, but the competitors table returned no usable rows, so none of them can be shown against the price it was raised on.</div></div>`
+        : '',
+      junk.length
+        ? `<div class="banner hot"><span class="material-symbols-outlined">bug_report</span>
+            <div>${num(junk.length)} ${plural(junk.length, 'row', 'rows')} came back and every one of them is a scrape failure rather than a dealership: ${esc(junk.map(c => c.name).join(', '))}. ${esc(junk.map(c => c.fault.why).join(' '))} There is no competitor price here at all.</div></div>`
+        : '',
+    ].filter(Boolean).join('');
     body.innerHTML = `<div class="card flush">
       <div class="card-head"><div><div class="card-title">Price comparison</div>
-        <div class="card-sub">Nothing has been scraped yet</div></div></div>
-      ${stateEmpty('No competitor prices yet',
-        `The scraping workflow writes this table and is expected to run every ${SCRAPE_EVERY_HOURS} hours. Until it has run once there is no market price to compare our stock against.`,
+        <div class="card-sub">${junk.length ? 'Every row the scrape wrote is a failure, not a price' : 'Nothing has been scraped yet'}</div></div></div>
+      ${stateEmpty(junk.length ? 'No usable competitor prices' : 'No competitor prices yet',
+        junk.length
+          ? `The scraping workflow wrote ${num(junk.length)} ${plural(junk.length, 'row', 'rows')}, none of which names a dealership or carries a price, so there is no market price to compare our stock against. Until the scrape gets past whatever is blocking it, this screen has nothing to say.`
+          : `The scraping workflow writes this table and is expected to run every ${SCRAPE_EVERY_HOURS} hours. Until it has run once there is no market price to compare our stock against.`,
         'trending_up')}</div>`;
     return;
   }
 
   /* ── Headline figures. Every one is a count or a difference of two stored
      prices; where a side is missing the row is excluded and said so. ─────── */
-  const comparable = all.filter(c => c.delta != null);
+  const comparable = live.filter(c => c.delta != null);
   const above = comparable.filter(c => c.delta > 0);
   const level = comparable.filter(c => c.delta === 0);
   const belowMkt = comparable.filter(c => c.delta < 0);
-  const notStocked = all.filter(c => c.unmatched);
+  const notStocked = live.filter(c => c.unmatched);
   const worstAbove = above.length ? above.reduce((a, c) => (c.delta > a.delta ? c : a)) : null;
   const bestBelow = belowMkt.length ? belowMkt.reduce((a, c) => (c.delta < a.delta ? c : a)) : null;
-  const competitorCount = new Set(all.map(c => norm(c.name)).filter(Boolean)).size;
-  const modelCount = new Set(all.map(c => norm(c.label)).filter(Boolean)).size;
+  const competitorCount = new Set(live.map(c => norm(c.name)).filter(Boolean)).size;
+  const modelCount = new Set(live.map(c => norm(c.label)).filter(Boolean)).size;
+  /* Gaps whose match cannot rule out a different manufacturer, and the harder
+     case: a model name our own stock demonstrably uses across two makes. */
+  const gapRows = comparable;
+  const unconfirmed = gapRows.filter(c => c.makeUnconfirmed);
+  const mixedRows = gapRows.filter(c => c.risk === 'mixed');
+  const reusableRows = unconfirmed.filter(c => c.reusable);
+  const staleNote = stale && daysOld != null
+    ? ` Measured against prices ${dayWord(daysOld)} old.` : '';
   const capped = all.length >= ROW_LIMIT;
 
   strip.innerHTML = [
-    kpi('Scraped prices', num(all.length),
-      `${num(competitorCount)} competitor${competitorCount === 1 ? '' : 's'} · ${num(modelCount)} vehicle${modelCount === 1 ? '' : 's'}${capped ? ` · capped at ${num(ROW_LIMIT)} rows` : ''}`),
+    kpi('Scraped prices', num(live.length),
+      `${num(competitorCount)} competitor${competitorCount === 1 ? '' : 's'} · ${num(modelCount)} vehicle${modelCount === 1 ? '' : 's'}${capped ? ` · capped at ${num(ROW_LIMIT)} rows` : ''}`
+      + (junk.length ? ` · <span class="t-hot">${num(junk.length)} more ${plural(junk.length, 'row is', 'rows are')} a scrape failure, not a dealership</span>` : '')),
     /* When inventory did not load nothing could be compared, so the honest
        value is "—", not the zero that arithmetic over an empty list produces.
        A zero here reads as "we checked and found none". */
     kpi('Comparable to our stock', invErr ? '—' : num(comparable.length),
       invErr
         ? '<span class="t-hot">Inventory did not load, so no comparison could be made</span>'
-        : `<span class="t-muted">${num(notStocked.length)} not stocked · ${num(all.length - comparable.length - notStocked.length)} missing a price</span>`),
+        : `<span class="t-muted">${num(notStocked.length)} not stocked · ${num(live.length - comparable.length - notStocked.length)} missing a price</span>`
+          + (unconfirmed.length ? ` <span class="t-warm">· ${num(unconfirmed.length)} matched on model name only</span>` : '')),
     kpi('We ask more', invErr ? '—' : num(above.length),
       invErr
         ? '<span class="t-hot">Not counted — our own prices are unknown</span>'
         : above.length
-          ? `<span class="t-hot">Worst ${aedSigned(worstAbove.delta)} on ${esc(worstAbove.label)}</span>`
+          ? `<span class="t-hot">Worst ${aedSigned(worstAbove.delta)} on ${esc(worstAbove.label)}</span>${esc(staleNote)}`
           : comparable.length ? '<span class="t-ok">No matched unit is above its scraped market price</span>' : '',
       above.length && !invErr ? 't-hot' : ''),
     kpi('We undercut', invErr ? '—' : num(belowMkt.length),
       invErr
         ? '<span class="t-hot">Not counted — our own prices are unknown</span>'
         : bestBelow
-          ? `<span class="t-ok">Best ${aedSigned(bestBelow.delta)} on ${esc(bestBelow.label)}</span>`
+          ? `<span class="t-ok">Best ${aedSigned(bestBelow.delta)} on ${esc(bestBelow.label)}</span>${esc(staleNote)}`
           : `<span class="t-muted">${num(level.length)} priced level</span>`),
     /* Stated in days rather than through ago(), which collapses everything past
        a month into "1 mo ago" — the exact rounding this KPI must not do. */
@@ -425,19 +653,22 @@ SCREENS.competitors = async host => {
      all join them — not because they are known to be old, but because they are
      invisible to every freshness figure on the screen, which is its own fault. */
   const lagHours = c => (newest && dated(c)) ? (Date.parse(newest) - Date.parse(c.at)) / 3600000 : null;
-  const trailing = all.filter(c => { const l = lagHours(c); return l != null && l > REFRESH_LAG_HOURS; });
-  const undatedRows = all.filter(c => !dated(c));
+  const trailing = live.filter(c => { const l = lagHours(c); return l != null && l > REFRESH_LAG_HOURS; });
+  const undatedRows = live.filter(c => !dated(c));
   const notRefreshed = trailing.concat(undatedRows);
   const staleSet = new Set(notRefreshed);
   const oldestTrail = trailing.length
     ? trailing.reduce((a, c) => (Date.parse(c.at) < Date.parse(a.at) ? c : a)) : null;
 
-  const pricelessRows = all.filter(c => c.price == null);
+  /* Real rows that carry no price. A row with no price cannot support an
+     undercut claim and is counted in none — the scrape failures are not in here
+     at all, because they are not listings. */
+  const pricelessRows = live.filter(c => c.price == null);
 
   /* One grouping, shared by the alert and by the By-competitor panel. */
   const groups = (() => {
     const by = new Map();
-    all.forEach(c => {
+    live.forEach(c => {
       const k = c.name || 'Unnamed source';
       if (!by.has(k)) by.set(k, { name: k, rows: [], above: 0, below: 0, cmp: 0, priced: 0, newest: null, stale: 0 });
       const g = by.get(k);
@@ -456,7 +687,7 @@ SCREENS.competitors = async host => {
      naming it here a competitor could undercut one of these units indefinitely
      and nothing on this page would ever change. */
   const covered = new Set();
-  all.forEach(c => c.units.forEach(u => covered.add(String(uRef(u)))));
+  live.forEach(c => c.units.forEach(u => covered.add(String(uRef(u)))));
   const blindUnits = invErr ? [] : inv
     .filter(u => !isSold(u) && !covered.has(String(uRef(u))))
     .sort((a, b) => (n0(b.days_in_stock) || 0) - (n0(a.days_in_stock) || 0));
@@ -486,7 +717,7 @@ SCREENS.competitors = async host => {
     push({
       sev: veryStale ? 'HOT' : 'WARM', icon: 'update_disabled',
       titleHtml: `The newest price here is ${dayWord(daysOld)} old`,
-      detailHtml: `${freshLine} Every gap on this screen is measured against prices that old, so none of them is safe to quote at a customer without being re-checked first.`,
+      detailHtml: `${freshLine} The scrape's own schedule is the reason: it was an n8n "every 24 hours" interval, which drifts on restart and then stops firing without failing, so nothing refreshed. It has been moved onto a cron, but until a run lands, every gap on this screen is measured against prices that old and none of them is safe to quote at a customer without being re-checked first.`,
       agoHtml: `<span title="${esc(dt(newest))}">price ${esc(dayWord(daysOld))} old</span>`,
       noHook: NO_SCRAPE_HOOK,
       actLabel: 'Oldest first',
@@ -505,14 +736,39 @@ SCREENS.competitors = async host => {
     });
   }
 
+  /* The claim this screen used to make and could not support. It is raised as
+     an alert rather than left in a tooltip because it qualifies every AED figure
+     on the page: a gap is only a gap if the two cars are the same car. */
+  if (!invErr && gapRows.length) {
+    const worst = mixedRows[0] || reusableRows[0] || unconfirmed[0];
+    push({
+      sev: mixedRows.length ? 'HOT' : unconfirmed.length ? 'WARM' : 'COLD',
+      icon: 'compare_arrows',
+      titleHtml: unconfirmed.length
+        ? `${num(unconfirmed.length)} of ${num(gapRows.length)} ${plural(gapRows.length, 'gap is', 'gaps are')} a model-name match, not a make match`
+        : 'Every gap here is matched on the model name',
+      detailHtml: esc(`${NO_MAKE} A gap below therefore says "a car called this costs that much elsewhere", not "the same car costs that much elsewhere".`
+        + (mixedRows.length
+          ? ` ${mixedRows.length} of them carry a model name our own stock uses across more than one manufacturer — ${[...new Set(mixedRows.map(c => c.label))].slice(0, 4).join(', ')} — so those are the likeliest to be pricing us against somebody else's car.`
+          : '')
+        + (reusableRows.length
+          ? ` ${reusableRows.length} ${plural(reusableRows.length, 'is a single short designation', 'are single short designations')} of the kind manufacturers reuse (${[...new Set(reusableRows.map(c => c.label))].slice(0, 4).join(', ')}).`
+          : '')
+        + (worst ? ` Check the Match column on each row before quoting one; ${worst.label} is the one to look at first.` : '')),
+      agoHtml: '<span class="t-muted">match quality</span>',
+      actLabel: 'Show them',
+      act: () => focusFilter(counts.UNNAMED ? 'UNNAMED' : 'ALL', ''),
+    });
+  }
+
   /* ── The centrally-raised rows ──────────────────────────────────────────
      `ref` is matched against the scraped row's id first, then against the stock
      id of a unit the row was matched to, then against the vehicle name. Which
      one hit is reported, because a match on a name is a weaker claim than a
      match on a key and the operator should know which they are looking at. */
-  const byId = new Map(); all.forEach(c => { if (c.id != null) byId.set(String(c.id), c); });
+  const byId = new Map(); live.forEach(c => { if (c.id != null) byId.set(String(c.id), c); });
   const byStock = new Map();
-  all.forEach(c => c.units.forEach(u => { const k = String(uRef(u)); if (k && !byStock.has(k)) byStock.set(k, c); }));
+  live.forEach(c => c.units.forEach(u => { const k = String(uRef(u)); if (k && !byStock.has(k)) byStock.set(k, c); }));
   /* Names are compared as a bag of words, not as a string. The view builds its
      title from the same parts this screen builds `label` from but not in the
      same order — "Nissan Patrol Nismo 2023" against "2023 Nissan Patrol Nismo"
@@ -523,7 +779,7 @@ SCREENS.competitors = async host => {
   const tokenKeyNoYear = s => norm(s).split(' ')
     .filter(t => t && !/^(19|20)\d{2}$/.test(t)).sort().join(' ');
   const byLabel = new Map(), byLabelLoose = new Map();
-  all.forEach(c => {
+  live.forEach(c => {
     const k = tokenKey(c.label); if (k && !byLabel.has(k)) byLabel.set(k, c);
     const l = tokenKeyNoYear(c.label); if (l && !byLabelLoose.has(l)) byLabelLoose.set(l, c);
   });
@@ -552,7 +808,7 @@ SCREENS.competitors = async host => {
       extra.push(`Against the list price we ask today the gap is ${esc(aedSigned(c.delta))}.`);
     } else if (c) {
       extra.push('This screen cannot re-check that figure: '
-        + (c.unmatched ? 'we hold no unit matching this make and model.'
+        + (c.unmatched ? 'no unit on the lot carries this model name.'
           : c.price == null ? 'the scraped row carries no price.'
             : 'the matching unit has no list price on record.'));
     }
@@ -575,6 +831,31 @@ SCREENS.competitors = async host => {
       why: c ? null : `v_needs_attention raised this against ref ${esc(String(it.ref == null ? '—' : it.ref))}, and no row loaded here carries that id or that vehicle name — so there is no comparison row on this screen to open.`,
     });
   });
+
+  if (junk.length) {
+    const blocked = junk.filter(c => c.fault.kind === 'interstitial');
+    const placeholder = junk.filter(c => c.fault.kind === 'placeholder');
+    const newestJunk = junk.filter(dated)
+      .reduce((a, c) => (!a || Date.parse(c.at) > Date.parse(a.at) ? c : a), null);
+    push({
+      sev: blocked.length ? 'HOT' : 'WARM', icon: 'bug_report',
+      titleHtml: `${num(junk.length)} scraped ${plural(junk.length, 'row is', 'rows are')} not a competitor`,
+      detailHtml: esc(
+        (placeholder.length
+          ? `${placeholder.length} ${plural(placeholder.length, 'row carries', 'rows carry')} the literal text ${[...new Set(placeholder.map(c => `"${c.name}"`))].join(', ')} where the dealership's name belongs. `
+          : '')
+        + (blocked.length
+          ? `${[...new Set(blocked.map(c => `"${c.name}"`))].join(', ')} ${plural(blocked.length, 'is the heading', 'are the headings')} of a bot-detection page rather than a dealership: the scraper was blocked, stored the block page as a competitor, and never read the listing it was sent to read — so this feed is quietly missing whatever ${plural(blocked.length, 'that run was', 'those runs were')} meant to collect. `
+          : '')
+        + `${junkPriced ? 'They are excluded' : 'None of them carries a price, and all are excluded'} from every count, gap and comparison on this screen, including "Scraped prices" above — ${live.length} of the ${all.length} rows returned are real listings.`),
+      agoHtml: newestJunk
+        ? `<span title="${esc(dt(newestJunk.at))}">written ${esc(ago(newestJunk.at))}</span>`
+        : '<span class="t-muted">no scrape date</span>',
+      noHook: NO_SCRAPE_HOOK,
+      actLabel: 'Show them',
+      act: () => focusFilter('BROKEN', ''),
+    });
+  }
 
   if (notRefreshed.length) {
     push({
@@ -632,7 +913,7 @@ SCREENS.competitors = async host => {
     push({
       sev: critical.length ? 'HOT' : 'WARM', icon: 'price_check',
       titleHtml: `${num(blindUnits.length)} unsold ${plural(blindUnits.length, 'unit has', 'units have')} no competitor price at all`,
-      detailHtml: `No scraped row matches ${plural(blindUnits.length, 'its', 'their')} make and model, so if a rival undercut ${plural(blindUnits.length, 'it', 'one of them')} today nothing on this screen would show it — this is the undercut we would never detect.${aged.length ? ` ${num(aged.length)} of them ${plural(aged.length, 'has', 'have')} been in stock ${AGING_DAYS} days or more${critical.length ? `, ${num(critical.length)} flagged CRITICAL` : ''}.` : ''}${listValue ? ` Together they list at ${esc(aed(listValue))}.` : ''}`,
+      detailHtml: `No scraped row carries ${plural(blindUnits.length, 'its', 'their')} model name, so if a rival undercut ${plural(blindUnits.length, 'it', 'one of them')} today nothing on this screen would show it — this is the undercut we would never detect.${aged.length ? ` ${num(aged.length)} of them ${plural(aged.length, 'has', 'have')} been in stock ${AGING_DAYS} days or more${critical.length ? `, ${num(critical.length)} flagged CRITICAL` : ''}.` : ''}${listValue ? ` Together they list at ${esc(aed(listValue))}.` : ''}`,
       agoHtml: longest ? `${esc(dayWord(longest))} in stock` : '',
       actLabel: 'Show them',
       act: () => focusBlind(),
@@ -647,8 +928,8 @@ SCREENS.competitors = async host => {
      obvious are "why is this list this long" and "what is missing from it". */
   const notes = [
     attnErr
-      ? `v_needs_attention did not load (${esc(attnErr.message)}), so alerts raised centrally for this screen — the nightly undercut check among them — are missing from this list entirely. The ${num(localCount)} above ${plural(localCount, 'was', 'were')} derived here from the ${num(all.length)} scraped ${plural(all.length, 'row', 'rows')} this screen loaded.`
-      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(all.length)} scraped ${plural(all.length, 'row', 'rows')} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
+      ? `v_needs_attention did not load (${esc(attnErr.message)}), so alerts raised centrally for this screen — the nightly undercut check among them — are missing from this list entirely. The ${num(localCount)} above ${plural(localCount, 'was', 'were')} derived here from the ${num(live.length)} usable scraped ${plural(live.length, 'row', 'rows')} this screen loaded.`
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(live.length)} usable scraped ${plural(live.length, 'row', 'rows')}${junk.length ? ` (of ${num(all.length)} returned; ${num(junk.length)} set aside as scrape failures)` : ''} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
     unresolved
       ? `${num(unresolved)} of the view's ${plural(unresolved, 'alert', 'alerts')} could not be matched to a row loaded here, so ${plural(unresolved, 'it opens', 'they open')} nothing.`
       : '',
@@ -711,7 +992,7 @@ SCREENS.competitors = async host => {
         <div style="flex:1;min-width:0">
           <div style="font-weight:500">Nothing on this screen needs a human right now</div>
           ${headSub}
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">Checked: rows the last scrape did not refresh, sources that sent no price, and unsold stock with no market reference. ${notesHtml}</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">Checked: what each match is actually matched on, rows the last scrape did not refresh, rows that are not a competitor at all, sources that sent no price, and unsold stock with no market reference. ${notesHtml}</div>
         </div></div></div>`;
   } else {
     alertHost.innerHTML = `<div class="card flush" style="margin-bottom:16px">
@@ -734,22 +1015,28 @@ SCREENS.competitors = async host => {
   /* ── Table chrome ────────────────────────────────────────────────────────── */
   const f = { view: 'ALL', q: '', sort: 'above_first' };
   const counts = {
-    ALL: all.length, ABOVE: above.length, BELOW: belowMkt.length,
+    ALL: live.length, ABOVE: above.length, BELOW: belowMkt.length,
     LEVEL: level.length, NOSTOCK: notStocked.length,
     STALE: notRefreshed.length, NOPRICE: pricelessRows.length,
+    UNNAMED: unconfirmed.length, BROKEN: junk.length,
   };
   const offered = Object.entries(FILTERS).filter(([k]) => ALWAYS_SHOWN.has(k) || counts[k] > 0);
 
   const visible = () => {
     const q = f.q.trim().toLowerCase();
-    return all.filter(c => {
+    /* Everything except the BROKEN filter reads the real rows only. A row whose
+       "competitor" is a bot-detection page must never appear in a list of
+       rivals; it is reachable, and labelled, in one place. */
+    const base = f.view === 'BROKEN' ? junk : live;
+    return base.filter(c => {
       if (f.view === 'ABOVE' && !(c.delta > 0)) return false;
       if (f.view === 'BELOW' && !(c.delta < 0)) return false;
       if (f.view === 'LEVEL' && c.delta !== 0) return false;
       if (f.view === 'NOSTOCK' && !c.unmatched) return false;
       if (f.view === 'STALE' && !staleSet.has(c)) return false;
       if (f.view === 'NOPRICE' && c.price != null) return false;
-      if (q && ![c.name, c.label, c.make, c.model].map(low).join(' ').includes(q)) return false;
+      if (f.view === 'UNNAMED' && !(c.delta != null && c.makeUnconfirmed)) return false;
+      if (q && ![c.name, c.label, c.model].map(low).join(' ').includes(q)) return false;
       return true;
     });
   };
@@ -768,11 +1055,18 @@ SCREENS.competitors = async host => {
     return known.concat(unknown);
   };
 
+  /* What the row is actually claiming. The first chip is the basis — always a
+     model-name match, because there is nothing else to match on — and the second
+     is how far that is from being the same car. Both carry the full sentence in
+     their tooltip; the drawer says it in full. */
   const matchChip = c => {
     const b = BASIS[c.basis] || BASIS.none;
+    const r = c.risk ? RISK[c.risk] : null;
+    const rWhy = r ? r.text + (c.reusable && c.risk !== 'both' ? REUSABLE_NOTE : '') : '';
     return `<span class="chip" title="${esc(b.why)}">${esc(b.chip)}</span>
-      ${c.soldOnly ? '<div class="cell-sub">Only a sold unit matches</div>' : ''}
-      ${c.yearNote ? `<div class="cell-sub" style="white-space:normal">${esc(c.yearNote)}</div>` : ''}`;
+      ${r ? `<span class="chip ${r.tone ? `t-${r.tone}` : ''}" title="${esc(rWhy)}">${esc(r.chip)}</span>` : ''}
+      ${c.soldOnly ? '<div class="cell-sub">Only a sold unit carries this model name</div>' : ''}
+      ${c.conflictNote ? `<div class="cell-sub t-warm" style="white-space:normal">${esc(c.conflictNote)}</div>` : ''}`;
   };
 
   /* The age of the price is in the first column of every row, coloured. A table
@@ -789,6 +1083,7 @@ SCREENS.competitors = async host => {
 
   const cols = [
     { label: 'Competitor', strong: true, render: c => `${esc(c.name || 'Unnamed source')}
+        ${c.fault ? `<div class="cell-sub t-hot" style="white-space:normal" title="${esc(c.fault.why)}">Not a dealership — ${esc(c.fault.kind === 'interstitial' ? 'a bot-detection page the scraper stored as a competitor' : 'a placeholder the scraper wrote instead of a name')}</div>` : ''}
         ${ageCell(c)}` },
     { label: 'Vehicle', render: c => `${esc(c.label)}
         ${c.units.length > 1 ? `<div class="cell-sub">${num(c.units.length)} comparable units in stock</div>` : ''}` },
@@ -797,7 +1092,7 @@ SCREENS.competitors = async host => {
       : aed(c.price)) },
     { label: 'Our list price', align: 'r', render: c => {
       if (invErr) return '<span class="t-muted" title="Inventory did not load.">—</span>';
-      if (c.unmatched) return '<span class="t-muted" title="We do not stock this make and model.">not stocked</span>';
+      if (c.unmatched) return `<span class="t-muted" title="${esc(c.conflictNote || 'No unit on the lot carries this model name. Model name is the only thing either table records, so there is nothing looser to fall back on.')}">not stocked</span>`;
       if (c.ourPrice == null) return '<span class="t-muted" title="The matching unit carries no list price.">no price on record</span>';
       return `${aed(c.ourPrice)}${c.ourHigh !== c.ourPrice
         ? `<div class="cell-sub">lowest of ${aed(c.ourPrice)}–${aed(c.ourHigh)}</div>` : ''}`;
@@ -809,13 +1104,13 @@ SCREENS.competitors = async host => {
   const card = el('div', 'card flush');
   card.innerHTML = `
     <div class="card-head"><div><div class="card-title">Price comparison</div>
-      <div class="card-sub">Every scraped price against the cheapest comparable unit we hold. A positive gap means we are asking more than they are.</div></div></div>
+      <div class="card-sub" style="white-space:normal">Every scraped price against the cheapest unit we hold whose <strong>model name</strong> matches. Neither table records a make or a model year, so the model string is all there is to match on — read the Match column before trusting a gap. A positive gap means we are asking more than they are${stale && daysOld != null ? `, against a price collected ${esc(dayWord(daysOld))} ago` : ''}.</div></div></div>
     <div class="toolbar">
       <div class="seg" id="cSeg" role="group" aria-label="Filter by where our price sits">
         ${offered.map(([k, l]) => `<button data-v="${k}">${esc(l)} · ${num(counts[k])}</button>`).join('')}
       </div>
       <div class="grow"><input type="search" id="cQ" aria-label="Search competitors and vehicles"
-        placeholder="Search competitor, make or model" /></div>
+        placeholder="Search competitor or model" /></div>
       <select id="cSort" aria-label="Sort rows" style="width:auto">
         ${Object.entries(SORTS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}
       </select>
@@ -878,6 +1173,9 @@ SCREENS.competitors = async host => {
   /* ── Drawer: the whole case for one row ──────────────────────────────────── */
   function drawer(c) {
     const disagrees = c.storedOur != null && c.ourPrice != null && c.storedOur !== c.ourPrice;
+    const basis = BASIS[c.basis] || BASIS.none;
+    const risk = c.risk ? RISK[c.risk] : null;
+    const riskWhy = risk ? risk.text + (c.reusable && c.risk !== 'both' ? REUSABLE_NOTE : '') : '';
     const best = c.pricedUnits.length
       ? c.pricedUnits.reduce((a, u) => (uPrice(u) < uPrice(a) ? u : a))
       : null;
@@ -886,10 +1184,12 @@ SCREENS.competitors = async host => {
     openDrawer(`
       <div class="drawer-head">
         <div style="flex:1"><h2 style="font-size:18px">${esc(c.label)}</h2>
-          <div class="cell-sub">${esc(c.name || 'Unnamed source')} · ${c.at ? `scraped ${esc(ago(c.at))}` : 'no scrape date recorded'}</div></div>
+          <div class="cell-sub">${c.fault ? `<span class="t-hot">${esc(c.name)} — not a dealership</span>` : esc(c.name || 'Unnamed source')} · ${c.at ? `scraped ${esc(ago(c.at))}` : 'no scrape date recorded'}</div></div>
         <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="drawer-body">
+        ${c.fault ? `<div class="banner hot"><span class="material-symbols-outlined">bug_report</span>
+          <div>${esc(c.fault.why)} It is held out of every count, gap and comparison on this screen, and there is nothing here to price against.</div></div>` : ''}
         ${!dated(c) ? `<div class="banner warm"><span class="material-symbols-outlined">schedule</span>
           <div>This row carries no scrape date, so there is no way to say how old the price below is.</div></div>`
         : rowStale ? `<div class="banner hot"><span class="material-symbols-outlined">sync_problem</span>
@@ -899,7 +1199,7 @@ SCREENS.competitors = async host => {
         : `<div class="banner info"><span class="material-symbols-outlined">schedule</span>
           <div>Collected ${esc(dt(c.at))} — ${esc(ago(c.at))}.</div></div>`}
         ${c.delta == null ? `<div class="banner info"><span class="material-symbols-outlined">info</span>
-          <div>${esc(c.unmatched ? BASIS.none.why : c.price == null
+          <div>${esc(c.unmatched ? (c.conflictNote || BASIS.none.why) : c.price == null
             ? 'This row has no competitor price, so no gap can be calculated.'
             : 'The matching unit has no list price on record, so no gap can be calculated.')}</div></div>`
           : `<div class="banner ${c.delta > 0 ? 'hot' : c.delta < 0 ? 'info' : 'warm'}">
@@ -909,31 +1209,30 @@ SCREENS.competitors = async host => {
                 /* The sign already lives in the words "more"/"less", so the figure
                    itself is stated unsigned here; the columns above keep aedSigned(). */
                 : `We are asking <strong>${esc(aed(Math.abs(c.delta)))}</strong>${c.deltaPct == null ? '' : ` (${esc(pct(Math.abs(c.deltaPct)))})`}
-                   ${c.delta > 0 ? 'more than' : 'less than'} ${esc(c.name || 'this competitor')} on this vehicle.`}</div></div>`}
+                   ${c.delta > 0 ? 'more than' : 'less than'} ${esc(c.name || 'this competitor')} for a car carrying the same model name${c.makeUnconfirmed ? ' — not, as far as this data can say, for the same car' : ''}.`}</div></div>`}
 
         <dl class="kv">
           <dt>Their price</dt><dd class="num">${c.price == null ? '—' : aed(c.price)}</dd>
           <dt>Our list price</dt><dd class="num">${c.ourPrice == null ? '—' : aed(c.ourPrice)}</dd>
           <dt>Gap</dt><dd class="num">${c.delta == null ? '—' : aedSigned(c.delta)}</dd>
-          <dt>Match basis</dt><dd>${esc((BASIS[c.basis] || BASIS.none).chip)}</dd>
+          <dt>Matched on</dt><dd>${esc(basis.chip)}${risk ? ` · ${esc(risk.chip)}` : ''}</dd>
           <dt>Scraped</dt><dd>${c.at ? `${esc(dt(c.at))} <span class="cell-sub">· ${esc(ago(c.at))}</span>` : '—'}</dd>
         </dl>
 
-        ${c.yearNote ? `<div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(c.yearNote)}</div>` : ''}
-
-        ${(c.contactName || c.contactPhone) ? `<div style="margin-top:20px"><div class="label-caps">Listing contact</div>
-          <dl class="kv" style="margin-top:8px">
-            <dt>Name</dt><dd>${c.contactName ? esc(c.contactName) : '<span class="t-muted">—</span>'}</dd>
-            <dt>Phone</dt><dd class="mono">${c.contactPhone ? esc(c.contactPhone) : '<span class="t-muted">—</span>'}</dd>
-          </dl>
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">Recorded by the scrape from the listing itself. Where one half is missing it is shown as —; nothing here is looked up or filled in.</div></div>` : ''}
+        <div style="margin-top:16px"><div class="label-caps">What this match is</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(basis.why)}</div>
+          ${risk ? `<div class="cell-sub ${risk.tone ? `t-${risk.tone}` : ''}" style="white-space:normal;margin-top:6px">${esc(riskWhy)}</div>` : ''}
+          ${c.conflictNote ? `<div class="cell-sub t-warm" style="white-space:normal;margin-top:6px">${esc(c.conflictNote)}</div>` : ''}
+          ${c.theirMake || c.ourMakes.length ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">Manufacturer${c.theirMake && c.ourMakes.length ? 's' : ''} read out of the model text${c.theirMake ? ` — theirs names ${esc(titleCase(c.theirMake))}` : ''}${c.ourMakes.length ? `${c.theirMake ? ',' : ' —'} ours names ${esc(c.ourMakes.map(titleCase).join(', '))}` : ''}. Inferred from free text, not from a make column: there is none on either table.</div>` : ''}
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">There is no listing contact recorded either — the scrape stores a dealership name, a model, a price and a date, and nothing else about who is selling it.</div>
+        </div>
 
         <div style="margin-top:20px"><div class="label-caps">Comparable stock${c.units.length ? ` · ${num(c.units.length)}` : ''}</div>
           ${c.units.length ? c.units.map(u => {
             const p = uPrice(u), d = (p != null && c.price != null) ? p - c.price : null;
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
               <div style="flex:1;min-width:0">
-                <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}${uYear(u) == null ? '' : ` · ${esc(String(uYear(u)))}`}</div>
+                <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}</div>
                 <div class="cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
                 <div class="cell-sub">${esc(String(u.status || 'status unknown'))}${n0(u.days_in_stock) == null ? '' : ` · ${num(u.days_in_stock)} days in stock`}</div>
               </div>
@@ -943,7 +1242,7 @@ SCREENS.competitors = async host => {
                 ${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? pill('CRITICAL', 'hot') : ''}
               </div></div>`;
           }).join('')
-          : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(BASIS.none.why)}</div>`}
+          : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(c.conflictNote || BASIS.none.why)}</div>`}
         </div>
 
         <div style="margin-top:20px"><div class="label-caps">As recorded by the scrape</div>
@@ -971,7 +1270,9 @@ SCREENS.competitors = async host => {
     card.querySelectorAll('#cSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === f.view));
     $('cSort').value = f.sort;
     const list = sorted(visible());
-    $('cCount').textContent = `${list.length} of ${all.length} rows`;
+    $('cCount').textContent = f.view === 'BROKEN'
+      ? `${list.length} of ${junk.length} broken rows`
+      : `${list.length} of ${live.length} rows`;
 
     const th = $('cTable');
     th.innerHTML = table(cols, list, {
@@ -996,7 +1297,7 @@ SCREENS.competitors = async host => {
   await Promise.all([
     panel(byCompHost, {
       title: 'By competitor',
-      sub: 'Where each source has us beaten, and how old its data is',
+      sub: `Where each source has us beaten, and how old its data is. ${stale && daysOld != null ? `Nothing here has refreshed for ${esc(dayWord(daysOld))}.` : ''} Every row is matched to our stock on the model name alone.`,
       load: async () => groups,
       render: gs => (gs.length ? `<div>${gs.map((g, i) => `
         <div class="list-item" role="button" tabindex="0" data-comp="${i}" style="align-items:flex-start">
@@ -1006,7 +1307,9 @@ SCREENS.competitors = async host => {
               ? '<span class="t-warm">no price on any row</span>'
               : g.cmp ? `${num(g.cmp)} comparable` : 'none comparable to our stock'}
               ${g.newest ? ` · scraped ${esc(ago(g.newest))}` : ' · <span class="t-warm">no scrape date</span>'}</div>
-            ${g.stale ? `<div class="cell-sub t-hot">${num(g.stale)} of its ${plural(g.rows.length, 'row', 'rows')} ${plural(g.stale, 'was', 'were')} not refreshed by the last scrape</div>` : ''}
+            ${g.stale ? `<div class="cell-sub t-hot">${g.rows.length === 1
+              ? 'Its only row was'
+              : `${num(g.stale)} of its ${num(g.rows.length)} rows ${plural(g.stale, 'was', 'were')}`} not refreshed by the last scrape</div>` : ''}
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div class="${g.above ? 't-hot' : 't-muted'}" style="font-weight:500">${num(g.above)}</div>
@@ -1034,7 +1337,7 @@ SCREENS.competitors = async host => {
         <div class="list-item" role="button" tabindex="0" data-unit="${i}" style="align-items:flex-start">
           <span class="material-symbols-outlined t-muted" style="font-size:20px" aria-hidden="true">price_check</span>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:500">${esc(vehicleLabel(uMake(u), uModel(u), uYear(u)) || 'Unnamed unit')}</div>
+            <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}</div>
             <div class="cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">

@@ -49,9 +49,35 @@ const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, Accept: 'application/js
  * Interpolations are always a filter VALUE or a limit, never a column, so the
  * static prefix carries every name worth checking. Trailing operators are
  * trimmed so the prefix is a valid query on its own. */
+/* A query built by concatenation —
+ *     db('v_workflow_health?select=id,name,category,'
+ *        + 'is_active,health&limit=' + N)
+ * — used to be read only as far as its FIRST literal, so the probe sent
+ * `...trigger_detail,` to PostgREST, got PGRST100 for a select ending in a
+ * comma, and reported a perfectly good query as rejected. Three files were
+ * failing that way. A checker that cries wolf gets ignored, and then it cannot
+ * report the real thing, so the concatenation is joined before anything is
+ * sent. Only string literals joined by `+` are followed; the moment an
+ * expression appears the prefix stops, which is the same rule the template
+ * branch below already uses. */
+function joinConcat(code, from) {
+  let i = from, out = '';
+  const re = /^\s*\+\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1/;
+  for (;;) {
+    const m = re.exec(code.slice(i));
+    if (!m) break;
+    if (m[2].includes('${')) break;      // a template with an interpolation
+    out += m[2];
+    i += m[0].length;
+  }
+  return out;
+}
+
 function pathsIn(code) {
   const out = new Set();
-  for (const m of code.matchAll(/db\(\s*[`'"]([^`'"$]+)[`'"]/g)) out.add(m[1]);
+  for (const m of code.matchAll(/db\(\s*[`'"]([^`'"$]+)[`'"]/g)) {
+    out.add(m[1] + joinConcat(code, m.index + m[0].length));
+  }
   for (const m of code.matchAll(/db\(\s*`([^`]*?)\$\{/g)) {
     let p = m[1];
     if (!p.includes('?')) continue;
@@ -60,7 +86,13 @@ function pathsIn(code) {
          .replace(/[&?]$/, '');
     out.add(p);
   }
-  return out;
+  /* Trim any path that still ends mid-expression, whichever branch produced it —
+     a select ending in a comma is a probe artefact, not a real defect. */
+  return new Set([...out].map(p => p
+    .replace(/[&?][a-z_0-9.]+=(eq|gte|lte|gt|lt|ilike|like|in|is|neq)?\.?$/i, '')
+    .replace(/[&?]limit=$/, '')
+    .replace(/,+$/, '')
+    .replace(/[&?]$/, '')));
 }
 
 function hooksIn(code) {

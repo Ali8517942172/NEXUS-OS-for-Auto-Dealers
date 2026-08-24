@@ -187,7 +187,18 @@ function makeResolver({ contacts, contactsErr, leads, leadsErr }) {
     const email = String(d.lead_email || (contact && contact.lead_email) || '').trim();
     const lead = email && !leadsErr ? byEmail.get(key(email)) || null : null;
     const push = String((contact && contact.push_name) || '').trim();
-    const phone = String((contact && contact.phone) || '').trim();
+    /* Two different phone numbers can exist for one person and they are not
+       interchangeable: `leads.phone` is the number the dealership captured on
+       the enquiry, `whatsapp_contacts.phone` is the number WAHA resolved from
+       the chat. The lead record wins because that is the number a rep dials,
+       and which one is on screen is stated — a number with no provenance is a
+       number nobody acts on. `users.phone` does not exist, so no staff number
+       is available anywhere on this screen; that is said where staff appear. */
+    const leadPhone = String((lead && lead.phone) || '').trim();
+    const contactPhone = String((contact && contact.phone) || '').trim();
+    const phone = leadPhone || contactPhone;
+    const phoneFrom = leadPhone ? 'from the lead record'
+      : contactPhone ? 'from the WhatsApp contact' : '';
     const rowName = String(d.lead_name || d.full_name || '').trim();
 
     let kind, name;
@@ -213,29 +224,33 @@ function makeResolver({ contacts, contactsErr, leads, leadsErr }) {
           : 'no name captured for this contact');
       bits.push('no lead behind this row');
     }
-    if (kind !== 'lead' && kind !== 'email_only') {
-      bits.push(phone ? phone : 'no phone stored for this contact');
-    } else if (phone) {
-      bits.push(phone);
-    }
     if (chatId) bits.push(chatId);
     else bits.push('no chat id on the row');
     if (contactsErr && !contact) bits.push('WhatsApp contact directory could not be read');
 
     const marks = kind === 'email_only' && leadsErr ? UNCONFIRMED : IDENTITY[kind];
-    return { kind, name, email, phone, chatId, contact, lead, contactMissing: !!chatId && !contact,
+    return { kind, name, email, phone, phoneFrom, chatId, contact, lead,
+             contactMissing: !!chatId && !contact,
              label: marks.label, chip: marks.chip, line: bits.join(' · ') };
   };
 }
 
 const whoLabel = w => w.name || w.chatId || 'Unidentified contact';
 
+/* The phone sits beside the name, not buried in the detail line: it is the one
+   field on this row somebody might act on, and a reviewer who has found a
+   problem needs to be able to ring the person about it. When there is no number
+   the cell says so — a blank there reads as "not looked up" rather than "never
+   captured", and the two call for different work. */
 function whoCell(w) {
+  const dup = w.phone && w.phone === w.name;
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
       ${w.name ? esc(w.name) : '<span class="t-muted">No name on record</span>'}
+      ${w.phone && !dup ? `<span class="mono">${esc(w.phone)}</span>` : ''}
       ${w.chip ? `<span class="chip">${esc(w.chip)}</span>` : ''}
     </div>
-    <div class="cell-sub ${w.kind === 'lead' ? '' : 't-warm'}" style="white-space:normal">${esc(w.line)}</div>`;
+    <div class="cell-sub ${w.kind === 'lead' ? '' : 't-warm'}" style="white-space:normal">${
+      w.phone ? esc(w.phoneFrom) : 'no phone stored for this contact'} · ${esc(w.line)}</div>`;
 }
 
 SCREENS.compliance = async host => {
@@ -252,10 +267,11 @@ SCREENS.compliance = async host => {
     db(`kyc_documents?select=*&order=created_at.desc&limit=${ROW_LIMIT}`),
     /* The WhatsApp contact directory is what turns an opaque @lid handle into
        the profile name and phone number WAHA actually captured. */
-    db('whatsapp_contacts?select=chat_id,phone,push_name,lead_email,message_count,first_seen,last_seen&limit=2000'),
-    /* Read only to answer one question per row: is there a lead behind this at
-       all? Nothing on this screen is rendered from a lead beyond its name. */
-    db('leads?select=name,email&limit=2000'),
+    db('whatsapp_contacts?select=chat_id,phone,push_name,lead_email&limit=2000'),
+    /* Read to answer two questions per row: is there a lead behind this at all,
+       and what number would a reviewer ring. `leads.phone` exists; `users.phone`
+       does not, which is why no staff number appears anywhere on this screen. */
+    db('leads?select=name,email,phone&limit=2000'),
     /* ilike rather than one exact workflow name, so a renamed or versioned KYC
        workflow keeps appearing here instead of silently dropping out. */
     db('audit_log?select=*&workflow=ilike.*KYC*&order=logged_at.desc&limit=200'),
@@ -297,7 +313,23 @@ SCREENS.compliance = async host => {
 
   const kycComms = (comms || []).filter(c => String(c.message || '').startsWith('[KYC-'));
   const kycCommsVoid = kycComms.filter(c => voidKeys.has(key(c.lead_email)));
-  const kycCommsLive = kycComms.filter(c => !voidKeys.has(key(c.lead_email)));
+  /* Every contact key that has a row in the register at all, voided or not.
+     A [KYC-APPROVED] message to one of these is NOT "an approval that survives
+     only in the message log" — that contact has rows, and communication_logs
+     carries no document id, so which row the message belongs to is unknowable.
+     The earlier version of this counted every message that was not addressed to
+     a void-only chat, which meant a contact who sent both a real document and a
+     greeting card had the greeting card's message counted as an extra approval
+     under the Approved tile. Restricting the count to keys with no row at all
+     is the only version of the claim the data supports. */
+  const docKeys = new Set();
+  (docs || []).forEach(d => { [key(d.chat_id), key(d.lead_email)].forEach(k => { if (k) docKeys.add(k); }); });
+  const kycCommsUnlinked = kycComms.filter(c => !docKeys.has(key(c.lead_email)));
+  /* Voided rows are identified from the register. If the register could not be
+     read there is no void list, so anything below that filters on one has to
+     say it could not. Silently reporting an unfiltered count as a filtered one
+     is the precise failure this screen exists to prevent. */
+  const voidFilterKnown = !!docs;
   /* audit_log carries no void marker, so voided routings are excluded the only
      honest way available: by the contact key they were logged against. */
   const escalations = (audit || []).filter(a =>
@@ -317,6 +349,34 @@ SCREENS.compliance = async host => {
     return kycComms.filter(c => ks.includes(key(c.lead_email)));
   };
 
+  /* One display name and one phone number per contact key, resolved from
+     whatsapp_contacts and leads rather than from whatever string the workflow
+     logged into the row. Defined here, above the banners, because the alert
+     strip has to be able to name the person an escalation is about — a banner
+     that says "1 case needs a human" without saying who is not actionable. */
+  const contactByKey = new Map();
+  (contacts || []).forEach(c => { const k = key(c.chat_id); if (k) contactByKey.set(k, c); });
+  const leadByEmail = new Map();
+  (leads || []).forEach(l => { const k = key(l.email); if (k) leadByEmail.set(k, l); });
+  const nameFor = raw => {
+    const k = key(raw);
+    if (!k) return { name: null, phone: '', note: 'no contact key on this log row' };
+    const lead = leadByEmail.get(k);
+    const c = contactByKey.get(k);
+    /* leads.phone first, then the number WAHA resolved for the chat. Neither is
+       invented and neither is derived from the chat id, which for a @lid handle
+       contains no phone digits at all. */
+    const phone = String((lead && lead.phone) || (c && c.phone) || '').trim();
+    if (lead) return { name: String(lead.name || '').trim() || String(raw), phone, note: 'lead on file' };
+    if (c && String(c.push_name || '').trim()) {
+      return { name: String(c.push_name).trim(), phone, note: 'WhatsApp profile name · no lead record' };
+    }
+    if (phone) return { name: phone, phone, note: 'phone only · no lead record' };
+    /* Falls through to the raw key, which for a WhatsApp-only contact is a chat
+       id. It is rendered as an id in mono, never as a name. */
+    return { name: null, phone: '', note: String(raw) };
+  };
+
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!docs) {
     /* A full-width failure notice, not one squeezed into the first of five
@@ -326,8 +386,8 @@ SCREENS.compliance = async host => {
   } else {
     const verdict = v => live.filter(d => String(d.verdict || '').toUpperCase() === v).length;
     const failures = live.filter(d => retentionOf(d).key === 'failed').length;
-    const legacyApproved = kycCommsLive.filter(c => c.message.startsWith('[KYC-APPROVED]')).length;
-    const legacyRejected = kycCommsLive.filter(c => c.message.startsWith('[KYC-REJECT]')).length;
+    const legacyApproved = kycCommsUnlinked.filter(c => c.message.startsWith('[KYC-APPROVED]')).length;
+    const legacyRejected = kycCommsUnlinked.filter(c => c.message.startsWith('[KYC-REJECT]')).length;
     const noVerdict = live.filter(d => !d.verdict).length;
 
     strip.innerHTML = [
@@ -340,9 +400,13 @@ SCREENS.compliance = async host => {
                   : '<span class="t-muted">Every row carries an auditor verdict</span>')
               : 'The KYC workflow has not written a record yet')),
       kpi('Approved', num(verdict('APPROVED')),
-        legacyApproved ? `<span class="t-muted">${num(legacyApproved)} older approval${legacyApproved === 1 ? ' exists' : 's exist'} only as a message log</span>` : ''),
+        legacyApproved
+          ? `<span class="t-muted">${num(legacyApproved)} older approval${legacyApproved === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all</span>`
+          : ''),
       kpi('Rejected', num(verdict('REJECTED')),
-        legacyRejected ? `<span class="t-muted">${num(legacyRejected)} older rejection${legacyRejected === 1 ? ' exists' : 's exist'} only as a message log</span>` : ''),
+        legacyRejected
+          ? `<span class="t-muted">${num(legacyRejected)} older rejection${legacyRejected === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all</span>`
+          : ''),
       kpi('Escalated to a human', num(verdict('ESCALATED')),
         escalations.length
           ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor workflow</span>`
@@ -365,6 +429,7 @@ SCREENS.compliance = async host => {
      together, so the filter row can never disagree with the list under it. */
   let focusRegister = () => {};
   let focusVoided = () => {};
+  let focusTrail = () => {};
 
   /* The incident banner leads, because a reviewer who reads the register without
      knowing about it will draw the wrong conclusion from every other number. */
@@ -405,6 +470,7 @@ SCREENS.compliance = async host => {
           Audited after ${esc(ARCHIVE_EPOCH_LABEL)} with <span class="mono">storage_path</span> null and no
           <span class="mono">purged_at</span>, so the evidence behind ${failed.length === 1 ? 'that verdict' : 'those verdicts'} cannot be produced on request.
           Oldest audited ${esc(ago(oldest.created_at))}. Voided rows are not counted here.
+          This is the same gap <span class="mono">v_needs_attention</span> files as <span class="mono">kyc_archive_gap</span>.
         </div>
         <button class="btn sm" id="cShowFailed">Show ${failed.length === 1 ? 'it' : 'them'}</button>`;
       banners.appendChild(b);
@@ -443,12 +509,41 @@ SCREENS.compliance = async host => {
   }
 
   if (escalations.length) {
+    /* The newest escalation, because audit_log came back logged_at.desc. An
+       escalation lives in audit_log, not in the register, so the button goes
+       where the thing it names actually is: the document row when the same
+       contact has one, and the activity trail when it does not. A banner that
+       counts something and then leaves the reviewer to find it by hand is how
+       these end up ignored. */
+    const first = escalations[0];
+    const fk = key(first.lead_email);
+    const inRegister = fk
+      ? live.find(d => key(d.lead_email) === fk || key(d.chat_id) === fk) || null
+      : null;
+    const n = nameFor(first.lead_email || first.lead_name);
     const b = el('div', 'banner warm');
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">block</span>
-      <div><strong>${num(escalations.length)} case${escalations.length === 1 ? ' needs' : 's need'} a human.</strong>
-      ${esc(escalations[0].summary || 'The retry loop gave up.')}</div>`;
+      <div style="flex:1">
+        <strong>${num(escalations.length)} KYC case${escalations.length === 1 ? '' : 's'} the auditor handed to a human.</strong>
+        Newest ${esc(ago(first.logged_at))} —
+        ${n.name
+          ? esc(n.name)
+          : `<span class="mono t-muted">${esc(n.note)}</span>`}${
+          n.phone && n.phone !== n.name ? ` <span class="mono">${esc(n.phone)}</span>` : ''}${
+          n.phone ? '' : ' <span class="t-muted">(no phone stored for this contact)</span>'}.
+        ${esc(first.summary || 'The retry loop gave up.')}
+        ${escalations.length > 1 ? `The other ${num(escalations.length - 1)} ${escalations.length - 1 === 1 ? 'is' : 'are'} in the activity trail at the foot of this screen.` : ''}
+        ${voidFilterKnown
+          ? ''
+          : '<span class="t-warm">The register could not be read, so escalations logged against voided rows could not be excluded from this count.</span>'}
+      </div>
+      <button class="btn sm" id="cShowEsc">${inRegister ? 'Show the document' : 'Show in the trail'}</button>`;
     banners.appendChild(b);
+    b.querySelector('#cShowEsc').addEventListener('click', () => {
+      if (inRegister) focusRegister({ q: String(first.lead_email || '') });
+      else focusTrail();
+    });
   }
 
   /* ── Retention position ────────────────────────────────────────────────── */
@@ -645,11 +740,11 @@ SCREENS.compliance = async host => {
        view. Clearing the fields it was not asked for is deliberate — a leftover
        search box silently hiding half of the rows the banner just counted is
        the failure mode this exists to prevent. */
-    focusRegister = ({ verdict = 'ALL', retention = 'ALL', flag = 'ALL' } = {}) => {
-      f.verdict = verdict; f.retention = retention; f.flag = flag; f.q = '';
+    focusRegister = ({ verdict = 'ALL', retention = 'ALL', flag = 'ALL', q = '' } = {}) => {
+      f.verdict = verdict; f.retention = retention; f.flag = flag; f.q = q;
       queue.querySelector('#cRet').value = retention;
       queue.querySelector('#cFlag').value = flag;
-      queue.querySelector('#cq').value = '';
+      queue.querySelector('#cq').value = q;
       queue.querySelectorAll('#cSegVerdict button').forEach(x => x.classList.toggle('on', x.dataset.v === verdict));
       draw();
       queue.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -734,8 +829,10 @@ SCREENS.compliance = async host => {
             <strong>${num(voided.length)} row${voided.length === 1 ? '' : 's'}${chats ? ` across ${num(chats)} WhatsApp chat${chats === 1 ? '' : 's'}` : ''}.</strong>
             No Approve, Reject or Re-ask control appears in this table on purpose: nothing was submitted, so there is no decision to record and nobody is waiting for one.
             ${withLead
-              ? `<span class="t-warm">${num(withLead)} of them do resolve to a lead on file — read those rows carefully before assuming the void was correct.</span>`
-              : 'None of them resolves to a lead on file.'}
+              ? `<span class="t-warm">${num(withLead)} of them ${withLead === 1 ? 'does' : 'do'} resolve to a lead on file — read ${withLead === 1 ? 'that row' : 'those rows'} carefully before assuming the void was correct.</span>`
+              : leadsErr
+                ? '<span class="t-warm">The leads table could not be read, so whether any of these resolves to a lead on file is not known on this page — the absence of a match here is not evidence there is none.</span>'
+                : 'None of them resolves to a lead on file.'}
           </div>
         </div>
         ${reasons.map(r => `<div class="quote" style="margin-top:12px">${esc(r)}</div>`).join('')}
@@ -812,7 +909,7 @@ SCREENS.compliance = async host => {
                 ? '<span class="t-muted">No whatsapp_contacts row for this chat id</span>'
                 : '<span class="t-muted">Not captured</span>')}</dd>
           <dt>Phone</dt><dd>${w.phone
-            ? esc(w.phone)
+            ? `<span class="mono">${esc(w.phone)}</span> <span class="t-muted">· ${esc(w.phoneFrom)}</span>`
             : '<span class="t-muted">Not stored — historic contacts predate phone capture, and none is inferred from the chat id</span>'}</dd>
           <dt>Chat id</dt><dd class="mono" style="word-break:break-all">${w.chatId
             ? esc(w.chatId)
@@ -941,7 +1038,9 @@ SCREENS.compliance = async host => {
           <dl class="kv" style="margin-top:12px">
             <dt>Confidence</dt><dd class="num">${conf == null ? '<span class="t-muted">Not scored</span>' : num(conf) + '%'}</dd>
             <dt>Attempt</dt><dd class="num">${a == null ? '<span class="t-muted">—</span>' : num(a) + (mx != null ? ` of ${num(mx)}` : '')}</dd>
-            <dt>Reviewed by</dt><dd>${d.reviewed_by ? esc(d.reviewed_by) : '<span class="t-muted">Not reviewed by a human</span>'}</dd>
+            <dt>Reviewed by</dt><dd>${d.reviewed_by
+              ? `${esc(d.reviewed_by)}<div class="cell-sub" style="white-space:normal">The name the workflow wrote on the row. Staff contact details are not recorded anywhere this dashboard reads — the users table holds no phone number — so this name cannot be turned into somebody to call.</div>`
+              : '<span class="t-muted">Not reviewed by a human</span>'}</dd>
             <dt>Reviewed at</dt><dd>${d.reviewed_at ? esc(ago(d.reviewed_at)) : '<span class="t-muted">—</span>'}</dd>
           </dl>
           ${d.remarks ? `<div class="quote" style="margin-top:12px">${esc(d.remarks)}</div>` : ''}
@@ -1035,27 +1134,6 @@ SCREENS.compliance = async host => {
   const hist = el('div', 'card flush'); hist.style.marginTop = '16px'; body.appendChild(hist);
   const down = [auditErr ? 'the audit log' : '', commsErr ? 'the message log' : ''].filter(Boolean);
 
-  /* One display name per contact key, resolved from whatsapp_contacts and leads
-     rather than from whatever string the workflow logged. */
-  const contactByKey = new Map();
-  (contacts || []).forEach(c => { const k = key(c.chat_id); if (k) contactByKey.set(k, c); });
-  const leadByEmail = new Map();
-  (leads || []).forEach(l => { const k = key(l.email); if (k) leadByEmail.set(k, l); });
-  const nameFor = raw => {
-    const k = key(raw);
-    if (!k) return { name: null, note: 'no contact key on this log row' };
-    const lead = leadByEmail.get(k);
-    if (lead) return { name: String(lead.name || '').trim() || String(raw), note: 'lead on file' };
-    const c = contactByKey.get(k);
-    if (c && String(c.push_name || '').trim()) {
-      return { name: String(c.push_name).trim(), note: 'WhatsApp profile name · no lead record' };
-    }
-    if (c && String(c.phone || '').trim()) return { name: String(c.phone).trim(), note: 'phone only · no lead record' };
-    /* Falls through to the raw key, which for a WhatsApp-only contact is a chat
-       id. It is rendered as an id in mono, never as a name. */
-    return { name: null, note: String(raw) };
-  };
-
   const events = [
     ...kycComms.map(c => ({ at: c.created_at, who: c.lead_email, text: c.message,
       kind: commKind(c.message), voided: voidKeys.has(key(c.lead_email)), source: 'message' })),
@@ -1075,8 +1153,10 @@ SCREENS.compliance = async host => {
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${n.name
               ? esc(n.name)
-              : `<span class="mono t-muted">${esc(n.note)}</span>`}</div>
-            <div class="cell-sub" style="white-space:normal">${n.name ? esc(n.note) + ' · ' : ''}${esc(String(e.text || '').slice(0, 180))}</div>
+              : `<span class="mono t-muted">${esc(n.note)}</span>`}${
+              n.phone && n.phone !== n.name ? ` <span class="mono t-muted" style="font-weight:400">${esc(n.phone)}</span>` : ''}</div>
+            <div class="cell-sub" style="white-space:normal">${n.name ? esc(n.note) + ' · ' : ''}${
+              n.phone ? '' : 'no phone stored · '}${esc(String(e.text || '').slice(0, 180))}</div>
             ${e.voided ? '<div class="cell-sub t-hot">Sent about a voided row — this was not a compliance decision, and the recipient was never a customer.</div>' : ''}
           </div>
           <div class="cell-sub">${esc(ago(e.at))}</div>
@@ -1085,11 +1165,16 @@ SCREENS.compliance = async host => {
       : stateEmpty('No KYC activity recorded', 'Nothing has passed through the auditor yet.', 'history');
 
   hist.innerHTML = `<div class="card-head"><div><div class="card-title">KYC activity</div>
-      <div class="card-sub">Auditor runs from audit_log and customer-facing KYC messages from communication_logs. Messages sent about voided rows are shown — they were really sent — but marked as void so they are never read as decisions.</div></div></div>
+      <div class="card-sub">Auditor runs from audit_log and customer-facing KYC messages from communication_logs. Messages sent about voided rows are shown — they were really sent — but marked as void so they are never read as decisions.${
+        voidFilterKnown ? '' : ' <span class="t-warm">The register could not be read on this page load, so nothing here could be checked against void_reason and no row is marked.</span>'}</div></div></div>
     ${down.length && !(auditErr && commsErr) ? `<div style="padding:14px 20px 0"><div class="banner warm">
       <span class="material-symbols-outlined">warning</span>
       <div>Could not read ${esc(down.join(' or '))} (${esc(auditErr || commsErr)}), so this trail is incomplete.</div></div></div>` : ''}
     <div>${trailBody}</div>`;
+
+  /* The escalation banner's fallback target. Assigned after the card exists;
+     the banner's handler cannot run before this line. */
+  focusTrail = () => hist.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 /* ==========================================================================

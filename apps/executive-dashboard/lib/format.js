@@ -50,7 +50,11 @@ const initials = name => (name || '?').split(/\s+/).filter(Boolean).slice(0,2).m
 
    Three vocabularies land here and they must all be covered:
      v_needs_attention.severity   HOT | WARM | COLD
-     inventory.aging_alert        CRITICAL | WARNING | OK
+     inventory.aging_alert        HEALTHY | WARNING | CRITICAL   (counted live 24 Aug:
+                                  9 / 2 / 1. An earlier note here said OK; the
+                                  database has never held that value. Both
+                                  spellings are covered below so nothing renders
+                                  wrong, but HEALTHY is the real one.)
      audit_log.status             SUCCESS | FAILED | REJECTED | ESCALATED
    plus v_workflow_health.health, which is the one with a genuine fourth state:
    NOT_INSTRUMENTED is not health, it is the absence of evidence, so it maps to
@@ -60,7 +64,15 @@ const TONE = {
   HOT:'hot', WARM:'warm', COLD:'cold',
   GOOD:'ok', OK:'ok', SUCCESS:'ok', APPROVED:'ok', HEALTHY:'ok', ACTIVE:'ok', SENT:'ok',
   FAILED:'hot', REJECTED:'hot', CRITICAL:'hot', ERROR:'hot', BREACHED:'hot',
-  ESCALATED:'warm', PENDING:'warm', WARNING:'warm', DEGRADED:'warm', PENDING_INVITE:'warm',
+  ESCALATED:'warm', PENDING:'warm', WARNING:'warm', PENDING_INVITE:'warm',
+  /* DEGRADED is 'hot', not 'warm', and the disagreement is worth settling here
+     rather than in five private maps. Automation, Settings, Ask and Overview had
+     each independently decided it was red; only this table said amber, so the
+     same workflow was two colours on two screens. A workflow that is failing in
+     production is not a note to read later — DEGRADED is exactly the state the
+     dead Gmail credential put Lead Escalation in, and it stopped every
+     escalation email the dealership sends. */
+  DEGRADED:'hot',
   NEVER_RAN:'cold', NOT_INSTRUMENTED:'cold', UNKNOWN:'cold', INACTIVE:'cold', VOIDED:'cold',
   /* The screens' own derived alerts speak a second vocabulary. It lives here
      rather than in five private maps so that one severity can never be two

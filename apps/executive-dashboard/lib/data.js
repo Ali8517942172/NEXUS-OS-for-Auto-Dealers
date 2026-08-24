@@ -7,6 +7,10 @@ import { N8N_BASE, SUPABASE_ANON, SUPABASE_URL, envErrors } from './env.js';
 const supabase = envErrors.length ? null : createClient(SUPABASE_URL, SUPABASE_ANON);
 let SESSION = null;
 let ME = null;
+/* Non-null when the `users` read FAILED, as opposed to succeeding and finding
+   nothing. Screens must check this before saying "you have no staff record" —
+   that sentence is only true when this is null. */
+let ME_READ_FAILED = null;
 
 /* Supabase access tokens expire after an hour. supabase-js refreshes them in the
    background, but SESSION was captured once at boot and never updated, so every
@@ -48,6 +52,8 @@ let onSessionEnded = () => {};
 function setSessionEndedHandler(fn) { onSessionEnded = fn; }
 function setSession(s) { SESSION = s; }
 function setMe(m) { ME = m; }
+function setMeReadFailed(e) { ME_READ_FAILED = e; }
+function meReadFailed() { return ME_READ_FAILED; }
 function sessionEnded() {
   SESSION = null;
   onSessionEnded('Your session expired. Please sign in again.');
@@ -78,13 +84,15 @@ async function dbWrite(method, path, body) {
    a recoverable condition — those screens degrade, the rest of the app works. */
 async function n8n(path, payload) {
   if (!N8N_BASE) throw new Error('VITE_N8N_BASE_URL is not set, so workflow calls are disabled.');
-  /* These webhooks are still unauthenticated on the n8n side, and since the GCP URL
-     now ships inside a public JS bundle, anyone who opens devtools can read it and
-     call them — ask-ai spends OpenRouter tokens on every call. Send the signed-in
-     user's Supabase JWT so the workflows can verify a real session per request.
-     A shared secret compiled into this bundle would be equally public and prove
-     nothing; a JWT is identity the browser cannot forge. Harmless until the
-     workflows check it, which is the next step and must land after this ships. */
+  /* The GCP URL ships inside a public JS bundle, so anyone who opens devtools can
+     read it and call these — and ask-ai spends OpenRouter tokens on every call.
+     Every workflow therefore verifies the signed-in user's Supabase JWT and
+     rejects the request without one; verified live on whatsapp-send, which
+     answers `Unauthorized. A valid Supabase session token is required`. A shared
+     secret compiled into this bundle would be equally public and prove nothing;
+     a JWT is identity the browser cannot forge.
+     (This comment used to end "harmless until the workflows check it, which is
+     the next step" — that step landed on 22 Aug.) */
   const token = await authToken();
   const res = await fetch(`${N8N_BASE}/webhook/${path}`, {
     method: 'POST',
@@ -147,4 +155,4 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe };
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe };

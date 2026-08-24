@@ -19,6 +19,15 @@
        first-four-last-four, no truncated token. Only presence — configured or
        not — is ever stated. A masked key still confirms which key is installed,
        and a dashboard that can show a key is a dashboard that can leak one.
+     · A count this screen derives stays on this screen. lib/badges.js owns
+       every nav badge and repaints all of them from one read of
+       v_needs_attention; a badge written from here was overwritten inside a
+       minute, and the number it wrote could not be reproduced from that view,
+       so the sidebar said one thing while this screen was open and another
+       thing a minute later. The tally lives in the alert strip below instead.
+     · `ME === null` is two different facts and this screen must say which one
+       it means. A `users` read that failed is not evidence that the account has
+       no staff record; meReadFailed() is what tells them apart.
      · Nothing here is a guess. The environment panel prints the exact values
        compiled into the bundle; the knowledge-base panel prints the columns
        rag_documents really returned, and where a column it would like does not
@@ -37,7 +46,7 @@
        `inventory` and `finance_quotes` is service-role only, and n8n exposes no
        credential API to a browser, so the repairs this screen can *diagnose*
        are deliberately rendered as disabled controls naming what is missing. */
-import { HOOK, ME, SESSION, db } from '../lib/data.js';
+import { HOOK, ME, SESSION, db, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pct, pill, tone } from '../lib/format.js';
@@ -92,13 +101,13 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const pickKey = (cols, list) => list.find(k => cols.includes(k)) || null;
 const charText = c => c == null ? '—' : `${num(c)} char${c === 1 ? '' : 's'}`;
 
-/* v_needs_attention's severity vocabulary is the view's, not TONE's. TONE has
-   no WARNING key, so `t-${tone('WARNING')}` renders the class `t-` — no colour
-   at all, and no error anywhere to notice it by. Map it here, then fall back to
-   TONE for the words TONE does know. */
-/* Was a private severity map. lib/format.js now carries every vocabulary this
-   screen can be handed, so the map is gone and only the name survives — one
-   severity cannot be two colours on two screens. */
+/* Was a private severity map, from back when TONE had no WARNING key and
+   `t-${tone('WARNING')}` rendered the colourless class `t-`. lib/format.js now
+   carries every vocabulary this screen can be handed — the view's
+   HOT/WARM/COLD, the CRITICAL/WARNING/INFO words the derived alerts speak, and
+   the workflow-health states — so the map is gone and only the name survives,
+   because `sevTone(a.sev)` reads better at the call sites than a bare tone()
+   would. One severity cannot be two colours on two screens. */
 const sevTone = s => tone(s);
 const SEV_RANK = { CRITICAL: 0, HIGH: 0, WARNING: 1, MEDIUM: 1, LOW: 2, INFO: 2 };
 const sevRank = s => SEV_RANK[up(s)] ?? 3;
@@ -112,35 +121,51 @@ const KIND_ICON = {
 };
 
 /* ── Health vocabulary ─────────────────────────────────────────────────────
-   The wording matters more than the colour here. NEVER_RAN and
-   NOT_INSTRUMENTED are both "we have no evidence", and neither is allowed the
-   ok tone: a workflow that has never reported has not been shown to work. Only
-   HEALTHY — every logged run inside the 30-day window succeeded — is green, and
-   it is green about the window, not about the workflow forever. */
-const HEALTH = {
+   Wording, icon and sort rank — and nothing else. The COLOUR is not decided
+   here. This map used to carry a `t` on every entry, which made it a private
+   severity map, and private severity maps disagree: DEGRADED was red on this
+   screen, on Automation, on Ask and on Overview while the shared table said
+   amber, so the same workflow was two colours depending on where you looked at
+   it. tone() in lib/format.js now owns all of it, DEGRADED included, and it is
+   'hot' — a workflow failing in production is not a note to read later.
+
+   What tone() answers for the rest, and why it matters: NEVER_RAN and
+   NOT_INSTRUMENTED are both 'cold', never 'ok'. Both are the absence of
+   evidence rather than evidence of health, and colouring an unmeasured workflow
+   green is how a dashboard lies without anyone writing a false sentence. Only
+   HEALTHY is green, and it is green about the 30-day window, not about the
+   workflow forever. */
+const HEALTH_WORDS = {
   DEGRADED: {
-    label: 'Degraded', t: 'hot', icon: 'error', rank: 0,
+    label: 'Degraded', icon: 'error', rank: 0,
     blurb: 'At least one run failed inside the 30-day window. This is the state that needs a human.',
   },
   NEVER_RAN: {
-    label: 'No runs yet', t: '', icon: 'schedule', rank: 1,
+    label: 'No runs yet', icon: 'schedule', rank: 1,
     blurb: 'This workflow is registered as writing to audit_log and has never written a row. That is not evidence of health, it is the absence of evidence: it has never been observed working in this deployment.',
   },
   NOT_INSTRUMENTED: {
-    label: 'Not logged', t: '', icon: 'visibility_off', rank: 2,
+    label: 'Not logged', icon: 'visibility_off', rank: 2,
     blurb: 'This workflow has no Audit Log node, so nothing it does reaches audit_log. Its health is unknown rather than good — from here, running perfectly and failing every time look identical.',
   },
   HEALTHY: {
-    label: 'Clean, 30 d', t: 'ok', icon: 'check_circle', rank: 3,
+    label: 'Clean, 30 d', icon: 'check_circle', rank: 3,
     blurb: 'Every run this workflow logged inside the 30-day window succeeded.',
   },
 };
 const UNKNOWN_HEALTH = {
-  label: 'Unrecognised', t: 'warm', icon: 'help', rank: 1,
-  blurb: 'v_workflow_health returned a health state this screen has no wording for. It is shown verbatim rather than folded into one of the states it might mean.',
+  label: 'Unrecognised', icon: 'help', rank: 1,
+  blurb: 'v_workflow_health returned a health state this screen has no wording for. It is shown verbatim rather than folded into one of the states it might mean, and tone() maps it to cold — a word nobody taught the shared table is not a pass.',
 };
-const stateKey = w => (Object.prototype.hasOwnProperty.call(HEALTH, up(w?.health)) ? up(w.health) : 'UNKNOWN');
-const healthOf = w => (stateKey(w) === 'UNKNOWN' ? UNKNOWN_HEALTH : HEALTH[stateKey(w)]);
+const stateKey = w => (Object.prototype.hasOwnProperty.call(HEALTH_WORDS, up(w?.health)) ? up(w.health) : 'UNKNOWN');
+const healthOf = w => {
+  const k = stateKey(w);
+  const words = k === 'UNKNOWN' ? UNKNOWN_HEALTH : HEALTH_WORDS[k];
+  /* One call, one source of truth. An unrecognised state is handed to tone()
+     verbatim rather than as the placeholder key, so it lands on the same
+     unknown-word rule as everything else the shared table has never seen. */
+  return { ...words, t: tone(k === 'UNKNOWN' ? str(w?.health) : k) };
+};
 
 /* 30-day rate computed here from the two columns whose window is documented,
    rather than taken on trust from `success_rate`, whose window is not. */
@@ -152,8 +177,9 @@ const rate30 = w => {
 
 /* ── Credential failures ───────────────────────────────────────────────────
    n8n reports a broken credential in the text of the failure it causes — the
-   live example today is: The credential "Gmail OAuth2 API" needs to be
-   reconnected. There is no credential table to read and no n8n API this bundle
+   worked example is: The credential "Gmail OAuth2 API" needs to be
+   reconnected, which is the wording the Gmail fault produced here for days
+   before it was fixed. There is no credential table to read and no n8n API this bundle
    may call, so a workflow failure is the only evidence a browser can have, and
    the match stays deliberately narrow: a bare 401 is NOT treated as a
    credential fault, because calling every auth error a revoked credential would
@@ -182,12 +208,35 @@ const CRED_IMPACT = [
   { re: /whatsapp|waha|twilio|meta/i,
     line: 'WhatsApp sending is affected: a reply posted from Conversations can be accepted by the workflow and still never reach the customer.' },
   { re: /odoo|bitrix|erp|crm|xml-?rpc/i,
-    line: 'The ERP/CRM sync cannot write, so records created here stop mirroring outward and the two systems drift apart silently.' },
+    /* Writes are the half that works on the current Bitrix24 plan — `crm.*`
+       reads already answer 403 there regardless of credential, which is a plan
+       limit and not a fault this panel can see. So a credential failure on this
+       channel takes out the only direction that was still working. */
+    line: 'The ERP/CRM sync cannot write, so records created here stop mirroring outward and the two systems drift apart silently. On the current Bitrix24 plan writing is the only direction that works at all — crm.* reads answer 403 whatever credential is presented — so this fault removes the half that was functioning.' },
   { re: /openrouter|openai|anthropic|gpt|gemini/i,
     line: 'The model calls fail, so leads arrive unscored and Ask AI answers nothing.' },
   { re: /supabase|postgres|database/i,
     line: 'The workflow cannot reach the database, so whatever it was supposed to record was not recorded.' },
 ];
+/* This panel reads failure HISTORY, not the credential itself — there is no
+   credential API a browser may call — so a credential repaired ten minutes ago
+   looks exactly like one still broken, until enough time passes with no new
+   failure. That is not a hypothetical: the Gmail OAuth2 credential really was
+   dead for days (the OAuth consent screen for the nexus-os-backend GCP project
+   was stuck in "Testing", where Google expires refresh tokens after seven days;
+   it is now published to production, which stops the expiry), and for hours
+   after the fix the newest logged failures still named it. A panel that said
+   "is failing" through that window would have sent someone to reconnect a
+   credential that was already working. Twenty-four hours is chosen against the
+   slowest workflow that uses a credential — the nightly aggregations — so that
+   "nothing since" means at least one run has had the chance to disagree. */
+const CRED_STALE_MS = 24 * 3600 * 1000;
+const credStale = newest => {
+  const t = Date.parse(newest || '');
+  return !Number.isNaN(t) && Date.now() - t > CRED_STALE_MS;
+};
+const CRED_STALE_LINE = 'No logged failure has named it since, so it may already have been reconnected — but this panel reads failure history, not the credential, so a fixed credential and one whose workflows simply have not run again look identical from here. The next run is what settles it.';
+
 const credImpact = (name, workflows) => {
   const hay = `${name} ${workflows.join(' ')}`;
   const hit = CRED_IMPACT.find(c => c.re.test(hay));
@@ -220,10 +269,14 @@ SCREENS.settings = async host => {
      nothing until the slowest one is in. */
   const alertCard = el('div', 'card flush');
   alertCard.id = 'setAlerts';
-  alertCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">System health</div>
-      <div class="card-sub" id="setAlertSub">Reading v_needs_attention, v_workflow_health and the newest failed runs…</div>
-    </div></div><div class="pbody" id="setAlertBody">${stateLoading(2)}</div>`;
+  alertCard.innerHTML = `<div class="card-head">
+      <div>
+        <div class="card-title">System health</div>
+        <div class="card-sub" id="setAlertSub">Reading v_needs_attention, v_workflow_health and the newest failed runs…</div>
+      </div>
+      <div style="flex:1"></div>
+      <div id="setAlertCount"></div>
+    </div><div class="pbody" id="setAlertBody">${stateLoading(2)}</div>`;
   host.appendChild(alertCard);
 
   const top = el('div', 'grid g2 top'); top.style.marginTop = '16px'; host.appendChild(top);
@@ -242,37 +295,67 @@ SCREENS.settings = async host => {
      dash and letting the operator assume the role is merely blank. */
   const email = SESSION?.user?.email || null;
   const exp = expiryText(SESSION?.expires_at);
-  const noMeRow = !!SESSION && !ME;
+
+  /* `ME === null` used to mean two different things at once. app.js read
+     `users` with `.catch(() => null)`, so a query that died and a query that
+     succeeded and found nothing arrived here identically — and this screen
+     asserted the second, three times: in the banner below, in the phone
+     explanation, and in a WARNING in the strip. All three were confident
+     sentences about a read that had merely failed.
+
+     meReadFailed() returns the error string when the read failed and null when
+     it succeeded, which is what makes the two sayable apart. "This account has
+     no staff record" is only sayable when it is null. When it is not, the
+     honest line is that the staff table could not be read and we therefore do
+     not know — which is a different finding, with a different fix. */
+  const meErr = meReadFailed();
+  const noMeRow  = !!SESSION && !ME && !meErr;   // read succeeded, found nothing: a real absence
+  const meUnknown = !!SESSION && !ME && !!meErr;  // read failed: absence is not established
+
+  /* Everything the users row would have told us is unknown rather than unset in
+     that case, and "not set" cannot carry the difference. */
+  const meMissing = whenAbsent => meUnknown
+    ? `<span class="t-muted" title="${esc(`users could not be read: ${meErr}`)}">unknown — <span class="mono">users</span> could not be read</span>`
+    : `<span class="t-muted">${esc(whenAbsent)}</span>`;
 
   /* The one person this screen lists is the one reading it, and a person is
-     shown with their number beside their name. `users` is read with select=*
-     at boot, so whether a phone column exists at all can be checked rather than
-     assumed — asking PostgREST for a column that does not exist 400s the whole
-     query. Absence is rendered as an em dash that says which kind of absence it
-     is; it is never filled in with a plausible-looking number. */
+     shown with their number beside their name. There is no number to show, and
+     the reason is a property of the SCHEMA, not of this account: `users` has no
+     phone column at all. That sentence stays true whether the row exists, is
+     genuinely missing, or could not be read — so it is stated unconditionally.
+     The old wording pinned a table-wide absence on whoever was signed in ("no
+     row in users matches this account, so no number is stored for it"), which
+     was both wrong about the cause and, when the read had merely failed, wrong
+     about the row too.
+
+     The column check survives as belt and braces for a future migration that
+     adds one; the sentence does not depend on it, and no plausible-looking
+     number is ever invented to fill the gap. */
+  const NO_STAFF_PHONE =
+    'The users table has no phone column, so this dashboard holds no number for any member of staff — that is a property of the schema, not of this account. Customer and lead numbers do exist and are shown beside those people: leads.phone, purchase_history.phone, v_conversations.phone and v_customer_360.phone. Staff numbers are recorded nowhere this dashboard can read.';
   const hasPhoneCol = !!ME && Object.prototype.hasOwnProperty.call(ME, 'phone');
   const mePhone = hasPhoneCol ? str(ME.phone) : '';
-  const phoneWhy = !ME
-    ? 'No row in users matches this account, so no number is stored for it.'
-    : !hasPhoneCol
-      ? 'The users table has no phone column at all, so this dashboard holds no number for any member of staff. Lead and customer numbers live on leads and customer_360_profiles; staff numbers are recorded nowhere it can read.'
-      : 'The users row for this account has a phone column and it is empty.';
+  const phoneWhy = hasPhoneCol && !mePhone
+    ? 'This account’s users row carries a phone column and it is empty.'
+    : NO_STAFF_PHONE;
   const phoneCell = mePhone
     ? `<span class="mono">${esc(mePhone)}</span>`
-    : `<span class="t-muted" title="${esc(phoneWhy)}">—</span>`;
+    : `<span class="t-muted" title="${esc(phoneWhy)}">no number on record</span>`;
 
   const prof = el('div', 'card');
   prof.id = 'setProfile';
   prof.innerHTML = `<div class="card-title" style="margin-bottom:4px">Signed in</div>
     <div class="card-sub" style="margin-bottom:14px">Identity as Supabase Auth and the <span class="mono">users</span> table each see it</div>
     ${noMeRow ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">person_alert</span>
-      <div>No row in <span class="mono">users</span> matches ${esc(email || 'this account')}. The account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
+      <div>No row in <span class="mono">users</span> matches ${esc(email || 'this account')}. The read succeeded and came back empty, which is what makes this a real absence: the account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
+    ${meUnknown ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">help</span>
+      <div>The <span class="mono">users</span> table could not be read for ${esc(email || 'this account')}, so whether this account has a staff record is <strong>unknown</strong> — not absent. The read failed with <span class="mono">${esc(meErr)}</span>. Name, role and status below are blank for that reason and no other; they are not evidence that nothing is stored. Role-keyed behaviour elsewhere in the dashboard is running without a role until this read succeeds.</div></div>` : ''}
     <dl class="kv">
       <dt>Email</dt><dd>${esc(email || 'unknown')}</dd>
-      <dt>Name</dt><dd>${ME?.name ? esc(ME.name) : '<span class="t-muted">not set in users</span>'}
+      <dt>Name</dt><dd>${ME?.name ? esc(ME.name) : meMissing('not set in users')}
         <span class="t-muted">·</span> ${phoneCell}</dd>
-      <dt>Role</dt><dd>${ME?.role ? esc(ME.role) : '<span class="t-muted">no role on record</span>'}</dd>
-      <dt>Account status</dt><dd>${ME?.status ? esc(ME.status) : '<span class="t-muted">not set</span>'}</dd>
+      <dt>Role</dt><dd>${ME?.role ? esc(ME.role) : meMissing('no role on record')}</dd>
+      <dt>Account status</dt><dd>${ME?.status ? esc(ME.status) : meMissing('not set')}</dd>
       <dt>Auth user id</dt><dd class="mono">${esc(SESSION?.user?.id || 'unknown')}</dd>
       <dt>Access token</dt><dd>${exp
         ? `<span class="${exp.bad ? 't-hot' : ''}">${esc(exp.text)}</span>`
@@ -553,11 +636,21 @@ SCREENS.settings = async host => {
       detail: `It ${esc(exp.text)}. supabase-js refreshes tokens in the background, so an expired one usually means the refresh itself is failing.`,
       target: 'setProfile',
     });
+    /* Two different findings that were one alert until 24 Aug, and which of
+       them is true depends entirely on meReadFailed(). Only the first is
+       allowed to say the row does not exist. */
     if (noMeRow) out.push({
       key: 'no-me', sev: 'WARNING', icon: 'person_alert',
       title: 'This account has no row in users',
-      detail: `${esc(email || 'The signed-in account')} can authenticate but has no name, role or status on record, so anything keyed on role treats it as unassigned.`,
+      detail: `${esc(email || 'The signed-in account')} can authenticate but has no name, role or status on record, so anything keyed on role treats it as unassigned. The users read succeeded and returned no row — that is what makes this an absence rather than a hole in what this screen knows.`,
       foot: 'Rows in users are created on the Team screen.',
+      target: 'setProfile',
+    });
+    if (meUnknown) out.push({
+      key: 'me-unread', sev: 'WARNING', icon: 'help',
+      title: 'The users table could not be read, so this account’s staff record is unknown',
+      detail: `Looking up ${esc(email || 'the signed-in account')} in <span class="mono">users</span> failed with: ${esc(meErr)}. Whether a staff row exists, and what role it carries, cannot be stated either way from here. This is not the finding above — it is the absence of the evidence that would settle it — and this screen used to report the two as the same thing.`,
+      foot: 'Reload once the database is answering. Until then everything keyed on role is running without one, which is not the same as running as unassigned.',
       target: 'setProfile',
     });
 
@@ -654,18 +747,27 @@ SCREENS.settings = async host => {
       detail: `audit_log returned: ${esc(s.failsErr)}. A broken credential names itself only in the text of the failure it causes, so with this read down the credentials panel is blank for lack of evidence, not for lack of faults.`,
       target: 'setCredsCard',
     });
-    (credGroups() || []).forEach(g => out.push({
-      key: `cred-${low(g.name)}`, sev: 'CRITICAL', icon: 'key_off',
-      title: `The ${g.name} credential is failing`,
-      detail: `${esc(credImpact(g.name, g.workflows))}<div class="cell-sub" style="margin-top:4px">${
-        g.count ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it` : 'No failed audit row in this window names it'}${
-        g.viewCount ? `, and v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
-        g.workflows.length ? ` · seen failing in ${esc(g.workflows.join(', '))}` : ''}.</div>`,
-      foot: g.newest
-        ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.`
-        : '',
-      target: 'setCredsCard',
-    }));
+    /* Severity stays CRITICAL even where the newest evidence is a day old — a
+       credential nobody has proved fixed is not a lesser fault — but the tense
+       does not. "Is failing" about a fault repaired this morning sends someone
+       to reconnect a credential that already works. */
+    (credGroups() || []).forEach(g => {
+      const stale = credStale(g.newest);
+      out.push({
+        key: `cred-${low(g.name)}`, sev: 'CRITICAL', icon: 'key_off',
+        title: stale
+          ? `The ${g.name} credential was failing, and nothing since proves it is fixed`
+          : `The ${g.name} credential is failing`,
+        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}<div class="cell-sub" style="margin-top:4px">${
+          g.count ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it` : 'No failed audit row in this window names it'}${
+          g.viewCount ? `, and v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
+          g.workflows.length ? ` · seen failing in ${esc(g.workflows.join(', '))}` : ''}.</div>`,
+        foot: g.newest
+          ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.${stale ? ` ${esc(CRED_STALE_LINE)}` : ''}`
+          : '',
+        target: 'setCredsCard',
+      });
+    });
 
     /* 6 · Ask AI has nothing to answer from. Derived from the knowledge-base
        read this screen already performs — no extra request. */
@@ -700,15 +802,25 @@ SCREENS.settings = async host => {
     const wfElsewhere = elsewhere.filter(it => it.kind === 'workflow_failure');
 
     const alerts = computeAlerts();
-    /* The badge counts what needs a human: CRITICAL and WARNING, not the
-       informational findings. The footer prints that arithmetic, so a number in
-       the sidebar never has to be reverse-engineered. */
+    /* What needs a human: CRITICAL and WARNING, not the informational findings.
+
+       This number used to be written straight into `#badge-settings`, and it is
+       not any more. lib/badges.js owns every nav badge: it clears all of them
+       and repaints them from ONE read of v_needs_attention on boot, every 60
+       seconds and on visibilitychange. So a write from here survived less than a
+       minute — and worse, `durable.length + mine.length` is not reproducible
+       from that view at all, because most of these findings are derived on this
+       screen and exist nowhere else. The sidebar therefore said one number while
+       Settings was open and a different one a minute later, and neither could be
+       explained by opening anything. The count belongs here, next to the rows it
+       counts, where clicking it lands on the evidence. */
     const durable = alerts.filter(a => a.sev === 'CRITICAL' || a.sev === 'WARNING');
-    const badge = $('badge-settings');
-    if (badge) {
+    const tally = $('setAlertCount');
+    if (tally) {
       const n = durable.length + mine.length;
-      badge.textContent = String(n);
-      badge.classList.toggle('hide', n === 0);
+      tally.innerHTML = n
+        ? pill(`${n} need${n === 1 ? 's' : ''} attention`, durable.some(a => a.sev === 'CRITICAL') ? 'hot' : 'warm')
+        : (s ? pill('clear', 'ok') : '');
     }
 
     const viewRows = mine.map(it => {
@@ -771,13 +883,14 @@ SCREENS.settings = async host => {
 
     const probeUnread = (probeState || []).filter(p => AUTO_PROBE.test(p.name) && p.state !== 'up' && p.state !== 'down');
     const notes = [
-      s?.attnErr ? `v_needs_attention is unreadable (${s.attnErr}), so any item the database itself filed against this screen is missing from the list above, and the badge counts only what this screen worked out for itself.` : '',
+      s?.attnErr ? `v_needs_attention is unreadable (${s.attnErr}), so any item the database itself filed against this screen is missing from the list above, and the count in the header covers only what this screen worked out for itself. The nav badge is painted from that same view by lib/badges.js, so it is blank right now for the same reason — not because there is nothing behind it.` : '',
       s && s.attn && s.attn.length >= ATTN_LIMIT ? `The attention read is capped at ${num(ATTN_LIMIT)} rows and hit the cap, so items beyond it are outside this window rather than absent.` : '',
       s && s.fails && s.fails.length >= FAIL_LIMIT ? `The failure read is capped at ${num(FAIL_LIMIT)} rows and hit the cap, so a credential that last failed before that is not counted above. Per-workflow failure totals in the table below come from v_workflow_health and are unaffected by this cap.` : '',
       s?.regErr ? `workflow_registry is unreadable (${s.regErr}), so failures are matched to workflows by display name only. A workflow that logs under a different name than it is registered with will show fewer failures here than it really had.` : '',
       probeState && probeUnread.length ? `The connectivity tile for ${probeUnread.map(p => p.name).join(', ')} did not resolve into a result this strip could read, so no claim is made either way about it — read the tile itself.` : '',
       wfElsewhere.length ? `${num(wfElsewhere.length)} workflow-failure ${plural(wfElsewhere.length, 'item is', 'items are')} filed by v_needs_attention against the Automation screen rather than this one. ${plural(wfElsewhere.length, 'It is', 'They are')} not listed above as this screen's work; ${plural(wfElsewhere.length, 'it feeds', 'they feed')} the credential check only.` : '',
-      `Badge counts ${num(durable.length)} critical or warning ${plural(durable.length, 'item', 'items')} this screen derived${mine.length ? ` plus ${num(mine.length)} v_needs_attention ${plural(mine.length, 'row', 'rows')} for this screen` : ' and nothing else'}${s ? '' : ' so far — the database reads have not landed yet, so this figure can only rise'}. Informational findings are listed but not counted.`,
+      `The count beside this card's title is ${num(durable.length)} critical or warning ${plural(durable.length, 'item', 'items')} this screen derived${mine.length ? ` plus ${num(mine.length)} v_needs_attention ${plural(mine.length, 'row', 'rows')} filed against this screen` : ' and nothing else'}${s ? '' : ' so far — the database reads have not landed yet, so this figure can only rise'}. Informational findings are listed but not counted.`,
+      `That count is deliberately not the nav badge. lib/badges.js paints every badge from one read of v_needs_attention, so the sidebar counts only the rows that view files against this screen — a missing environment variable, an expired token or a credential named inside a failure exist nowhere but here and cannot be reproduced from it. This screen used to write its own badge, and the sidebar then disagreed with itself a minute later, when badges.js repainted from the view.`,
     ].filter(Boolean);
 
     /* Two things this row must never say. It must not claim the view returned
@@ -1076,12 +1189,13 @@ SCREENS.settings = async host => {
           <div style="flex:1"></div>
           <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
         </div>
-        <div class="cell-sub" style="white-space:normal">${esc(credImpact(g.name, g.workflows))}</div>
+        <div class="cell-sub" style="white-space:normal">${credStale(g.newest) ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}</div>
         <div class="cell-sub">${g.count
           ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it`
           : 'No failed audit row in this window names it'}${
           g.viewCount ? ` · v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.newest ? ` · most recent ${esc(ago(g.newest))}` : ''}</div>
+        ${credStale(g.newest) ? `<div class="cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
         ${g.workflows.length
           ? `<div class="cell-sub">Seen failing in: ${g.workflows.map(w =>
               `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
@@ -1208,6 +1322,8 @@ SCREENS.settings = async host => {
         <div>${num(untitled)} section${untitled === 1 ? ' has' : 's have'} no <span class="mono">${esc(titleKey || 'title')}</span> value, so ${untitled === 1 ? 'it cannot' : 'they cannot'} be attributed to a document. Ask AI can still retrieve ${untitled === 1 ? 'it' : 'them'}, but a citation will have nothing to name.</div></div>` : ''}
       ${!titleKey ? `<div class="banner warm" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">info</span>
         <div>rag_documents has no recognised title column, so sections cannot be grouped by document. Columns returned: <span class="mono">${esc(cols.join(', '))}</span>.</div></div>` : ''}
+      ${!dateKey ? `<div class="banner info" style="margin:16px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">schedule</span>
+        <div><span class="mono">rag_documents</span> carries no timestamp of any kind — no <span class="mono">created_at</span>, no <span class="mono">updated_at</span>, nothing this read could find. So <strong>how fresh this knowledge base is cannot be answered from the data</strong>, and this panel does not guess one: inferring an ingest date from <span class="mono">id</span> order would be invention dressed as a fact. If Ask AI is citing a price list that was superseded a month ago, nothing on this screen will show it — the only way to know is to re-run the ingestion and compare. Columns returned: <span class="mono">${esc(cols.join(', '))}</span>.</div></div>` : ''}
       <div class="toolbar">
         <div class="seg" id="kbSeg" role="group" aria-label="Sort documents">
           <button type="button" data-s="name" class="on" aria-pressed="true">By name</button>

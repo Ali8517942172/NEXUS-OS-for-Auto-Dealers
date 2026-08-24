@@ -59,10 +59,11 @@ service-role only (n8n writes them).
 `audit-kyc`, `erp-sync`, `lead-escalation`. All verify the caller's Supabase
 JWT, which `n8n()` attaches automatically.
 
-**There is no WAHA "send message" webhook yet**, so Conversations cannot send.
-**There is no KYC approve/reject webhook yet.** If your screen needs one of
-these, build the UI and disable the control with a `title=` explaining what is
-missing — do not invent an endpoint and do not write to a service-role table
+~~There is no WAHA "send message" webhook yet~~ — **superseded 24 Aug**:
+`HOOK.whatsappSend` exists and Conversations sends through it. See ADDENDUM §3.
+**There is still no KYC approve/reject webhook.** If your screen needs an action
+with no hook, build the UI and disable the control with a `title=` explaining
+what is missing — do not invent an endpoint and do not write to a service-role table
 from the browser (RLS will reject it and the user will see a raw 401).
 
 ## KYC documents and Storage — important
@@ -71,8 +72,11 @@ Documents live in the private `kyc-documents` bucket. A row where
 `purged_at IS NOT NULL` has had its file **deleted on schedule** — never offer to
 open it. A row where `storage_path IS NULL AND purged_at IS NULL` is an
 **archive failure**, which is a compliance gap worth surfacing. Files must be
-read through a short-lived signed URL, never a public URL; there is no browser
-helper for that yet, so link-outs stay disabled for now.
+read through a short-lived signed URL, never a public URL. ~~there is no browser
+helper for that yet~~ — **superseded 24 Aug**: `signedUrl(path)` in
+`lib/data.js` mints a 60-second URL against the private bucket, backed by the
+two Storage RLS policies. Link-outs work; the only rows without one are those
+where `storage_path` is null or `purged_at` is set.
 
 ---
 
@@ -127,8 +131,13 @@ and, for the conversations screen, one view that does the resolution for you:
 should look different from one where we know who it is. Show `phone` when there
 is one.
 
-Historic contacts have `phone = null` because it was never stored; new inbound
-messages fill it in. Render the absence, do not invent one.
+~~Historic contacts have `phone = null`~~ — **superseded 24 Aug**: all 13
+unresolved handles were backfilled through WAHA's per-LID lookup
+(`/api/default/lids/{lid}` → `{lid, pn}`; the bulk `/lids` enumeration times out
+because the account holds 6,176 of them). Every `whatsapp_contacts` row now
+carries a number and no thread renders a handle as a name. Keep the
+absence-rendering paths — a brand-new contact can still arrive without one —
+but they are the exception now, not the normal case.
 
 ## 3. Replying from the dashboard now works
 
@@ -247,6 +256,14 @@ clean.
                          total_emails, total_slack_messages,
                          purchase_count, lifetime_value_aed, last_purchase_date
     v_customer_directory id, name, email, phone, source_records, last_seen_at
+    daily_metrics        snapshot_date, open_leads, hot_leads, warm_leads,
+                         cold_leads, avg_response_minutes, pipeline_aed,
+                         units_at_risk, holding_cost_aed, workflow_runs,
+                         workflow_failures, captured_at
+      One row per day, written by a nightly snapshot. NO id and NO created_at —
+      the timestamp is `captured_at`. This is the only table that can answer
+      "compared to yesterday", because nothing else stores history.
+
     v_conversations      thread_key, chat_id, phone, push_name, lead_email,
                          lead_name, lead_status, display_name, identified,
                          message_count, inbound_count, outbound_count,
@@ -255,6 +272,20 @@ clean.
 
 ## Severity vocabulary
 
-`v_needs_attention.severity` is `HOT` | `WARM` | `COLD`, and `aging_alert` on
-inventory is `CRITICAL` | `WARNING` | `OK`. `TONE` in `lib/format.js` now covers
-all of them; a screen no longer needs its own severity→tone map.
+`v_needs_attention.severity` is `HOT` | `WARM` | `COLD`.
+
+`inventory.aging_alert` is **`HEALTHY` | `WARNING` | `CRITICAL`** — counted live
+on 24 Aug as 9 / 2 / 1. An earlier version of this section said `OK` instead of
+`HEALTHY`, which was wrong and would have made `lib/unit-form.js` — which writes
+`HEALTHY`, correctly — look like a bug. `TONE` in `lib/format.js` covers both
+spellings, so nothing renders wrong either way, but `HEALTHY` is what the
+database actually holds and what the nightly recompute writes.
+
+`v_workflow_health.health` is `HEALTHY` | `DEGRADED` | `NEVER_RAN` |
+`NOT_INSTRUMENTED`. `NOT_INSTRUMENTED` is the absence of evidence, not health:
+it maps to `cold`, never to `ok`. Colouring an unmeasured workflow green is how a
+dashboard lies without anyone writing a false sentence.
+
+`tone()` in `lib/format.js` is the single source of truth for all of these and
+maps anything it does not recognise to `cold`. A screen must not keep its own
+severity→tone map; five had grown one and they disagreed with each other.

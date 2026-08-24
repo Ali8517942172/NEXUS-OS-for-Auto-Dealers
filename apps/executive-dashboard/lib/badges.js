@@ -37,7 +37,7 @@ import { $ } from './dom.js';
    the HOT item that arrives tomorrow. Only HOT and WARM count. */
 const COUNTS = new Set(['HOT', 'WARM']);
 
-let LAST = { at: null, rows: null, error: null };
+let LAST = { at: null, rows: null, error: null, homeless: 0 };
 
 function paintOne(screen, n, title) {
   const badge = $(`badge-${screen}`);
@@ -67,13 +67,20 @@ function clearAll() {
 async function refreshBadges() {
   try {
     const rows = await db('v_needs_attention?select=kind,severity,ref,screen&limit=500');
-    LAST = { at: new Date().toISOString(), rows, error: null };
+    LAST = { at: new Date().toISOString(), rows, error: null, homeless: 0 };
 
     const bySeverity = new Map();
+    /* A row the view files against no screen used to be dropped here and was
+       therefore invisible in the sidebar entirely — including in the Overview
+       grand total, which is supposed to be everything. It is still not paintable
+       on a nav item (there is no nav item to paint), but it MUST be counted, and
+       Overview's badge title has to admit it exists so the number can be
+       explained. Silently uncounted is how an attention item goes unseen. */
+    let homeless = 0;
     rows.forEach(r => {
       if (!COUNTS.has(String(r.severity || '').toUpperCase())) return;
       const s = String(r.screen || '').trim();
-      if (!s) return;
+      if (!s) { homeless += 1; return; }
       if (!bySeverity.has(s)) bySeverity.set(s, { hot: 0, total: 0, kinds: new Set() });
       const e = bySeverity.get(s);
       e.total += 1;
@@ -100,10 +107,15 @@ async function refreshBadges() {
        view cannot, and that number is a superset of this one. Two writers, one
        direction: this one is the floor, Overview's is the refinement. Anything
        else and the badge changes when you navigate, which reads as a bug. */
+    grand += homeless;
     paintOne('overview', grand,
-      grand ? `${grand} item${grand === 1 ? '' : 's'} across all screens` : '');
+      grand
+        ? `${grand} item${grand === 1 ? '' : 's'} across all screens`
+          + (homeless ? ` — ${homeless} of them belong to no screen and can only be seen here` : '')
+        : '');
 
-    return { ok: true, grand, screens: bySeverity.size };
+    LAST.homeless = homeless;
+    return { ok: true, grand, homeless, screens: bySeverity.size };
   } catch (e) {
     LAST = { at: new Date().toISOString(), rows: null, error: e.message };
     clearAll();

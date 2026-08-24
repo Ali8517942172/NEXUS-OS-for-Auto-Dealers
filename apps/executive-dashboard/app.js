@@ -26,7 +26,7 @@ import './styles.css';
 import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';
 import { envErrors } from './lib/env.js';
-import { ME, SESSION, db, sessionEnded, setMe, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
+import { ME, SESSION, db, sessionEnded, setMe, setMeReadFailed, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
@@ -102,7 +102,19 @@ async function boot() {
     if (!session && event !== 'INITIAL_SESSION') sessionEnded();
   });
 
-  setMe(await db(`users?select=*&email=eq.${encodeURIComponent(SESSION.user.email)}`).then(r => r[0]).catch(() => null));
+  /* `.catch(() => null)` made ME === null mean two different things: "this
+     account genuinely has no row in `users`" and "the read failed". Settings
+     believed the first and said so three times — a warm banner, a phone
+     explanation, and a WARNING in its alert strip, all asserting the staff
+     record does not exist when the query had merely died. Keep the failure so
+     the difference is expressible. */
+  try {
+    setMe(await db(`users?select=*&email=eq.${encodeURIComponent(SESSION.user.email)}`).then(r => r[0] || null));
+    setMeReadFailed(null);
+  } catch (e) {
+    setMe(null);
+    setMeReadFailed(String(e.message || e).slice(0, 160));
+  }
 
   $('boot').classList.add('hide');
   $('app').classList.remove('hide');

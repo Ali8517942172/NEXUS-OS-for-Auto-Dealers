@@ -3,6 +3,21 @@
    screens; it is to answer one question — "what needs a human right now?" —
    and then get out of the way with a link into the screen that can fix it.
 
+   Re-checked 24 Aug 2026 (evening) against the CORRECTION section of SCHEMA.md,
+   which was read off the live database. Every column this screen selects and
+   every property it reads off a row was confirmed to exist there. Two absences
+   shape what this screen can say at all:
+
+     · `inventory` records no sale date — no `sold_at`, no `updated_at`, and no
+       link from `purchase_history` back to a unit. So "what did we sell this
+       month" and "how long did that car take to sell" are not answerable from
+       this database, and the Units-at-risk tile says so in words rather than
+       leaving an executive to assume the number is simply zero.
+     · `users` has no phone column. Where this screen names a member of staff it
+       says that their number is recorded nowhere, instead of printing a dash
+       that looks like a lookup failure. Customer numbers do exist and are shown:
+       `leads.phone` and `v_conversations.phone`.
+
    Rewritten 24 Aug 2026 against three production faults:
 
    1. `v_needs_attention` gained an `unanswered_chat` branch — a WhatsApp thread
@@ -22,19 +37,25 @@
       count computed here excludes them too (`void_reason is null`); the voided
       rows with no stored file are reported separately as what they are.
 
-   3. The nav badge used to be the attention count plus a locally-computed KYC
-      number, which double-counted the moment the view grew a KYC branch. It is
-      now a union keyed on `ref`, and the panel says out loud what it adds up to.
+   3. The nav badge is no longer this screen's to own. `lib/badges.js` paints
+      every badge — including this one — from one read of `v_needs_attention`
+      grouped by its `screen` column, every 60 seconds, counting HOT and WARM
+      only. Overview may refine its own badge upward, because it can see KYC
+      archive gaps the view does not list, and only upward: the shared count is
+      a floor this file cannot go below. Where there is nothing to add, this
+      file does not write the badge at all.
 
    Everything below is a number Postgres produced. Nothing is estimated, and
    where a figure rests on a handful of rows the screen says how few — a single
    test record must not read as a trend. */
+import { LAST as BADGE_SNAPSHOT } from '../lib/badges.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, clock, esc, mins, n0, num, pill, tone } from '../lib/format.js';
+import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { kpi, panel, table, wireRows } from '../lib/ui.js';
 
 /* The reply-gap analysis is windowed so it is provably complete rather than
    merely likely: a reply to a lead can only be logged at or after that lead was
@@ -54,6 +75,20 @@ const KYC_LIMIT = 200;
    used only to explain why a thread that is awaiting a reply is absent from the
    list — never to compute a headline number, which stays the view's own. */
 const CHAT_WINDOW_DAYS = 7;
+/* And the bound on its `sla_breach` branch, added the same day. It used to be
+   unbounded, so every lead that ever missed the five-minute rule stayed on this
+   list forever and the list stopped being read. Stated on screen for the same
+   reason the chat window is: a bounded list that looks unbounded is a lie of
+   omission the moment an operator reads it as "everything that ever slipped". */
+const SLA_WINDOW_DAYS = 30;
+
+/* The severities `lib/badges.js` counts. COLD is excluded there deliberately —
+   a permanent number over a nav item for something nobody intends to act on
+   today is how a badge stops being read at all — and this file must apply the
+   same rule when it works out the floor it is not allowed to go below. If
+   badges.js ever changes this set, this line has to change with it; the
+   consequence of missing that is a badge that shrinks when Overview renders. */
+const BADGE_SEVERITIES = new Set(['HOT', 'WARM']);
 
 /* Below this many source rows a figure is a sample, not a signal, and the KPI
    says so instead of letting the number stand on its own. */
@@ -104,7 +139,10 @@ SCREENS.overview = async host => {
   const attentionRead = (async () => {
     const [items, threads] = await Promise.all([
       db(`v_needs_attention?select=kind,severity,ref,title,detail,at,screen&limit=${ATTN_LIMIT}`),
-      db('v_conversations?select=chat_id,display_name,identified,phone,push_name,last_message_at'
+      /* `push_name` is not selected: `display_name` already falls back through
+         it (lead name → profile name → phone → chat id), so a row where
+         display_name is still a raw handle has no push_name either. */
+      db('v_conversations?select=chat_id,display_name,identified,phone,last_message_at'
         + `&awaiting_reply=is.true&order=last_message_at.desc&limit=${AWAITING_LIMIT}`).catch(() => null),
     ]);
     return { items, threads };
@@ -125,27 +163,75 @@ SCREENS.overview = async host => {
      the rows that were never KYC at all, and they are excluded here exactly as
      v_needs_attention's own kyc_archive_gap branch excludes them. */
   const liveGaps = rows => (rows || []).filter(r => !str(r.void_reason));
-  /* Gaps the view has not already reported, so the badge counts each one once. */
+  /* Gaps the view has not already reported, so the badge counts each one once.
+     A gap the view DOES list is left entirely to the view — including one it
+     marked COLD, which badges.js therefore does not count. That is the view's
+     severity judgement and this screen does not overrule it: the alternative is
+     a badge that promotes an item the shared rule deliberately demotes, and the
+     two counts stop being reconcilable. The gap is still listed in the panel. */
   const extraGaps = (rows, items) => {
     const viewRefs = new Set((items || [])
       .filter(i => i.kind === 'kyc_archive_gap').map(i => str(i.ref)));
     return liveGaps(rows).filter(r => !viewRefs.has(str(r.id)));
   };
 
-  /* The badge is a union keyed on `ref`, not a sum. `v_needs_attention` already
-     emits `sla_breach`, `workflow_failure` and — since 24 Aug — `kyc_archive_gap`
-     rows, so adding a locally-counted KYC number on top would count the same
-     incident twice, which is a number the database did not produce. The KYC
-     panel contributes only the gaps the view did NOT list (its branch carries a
-     recency cut-off of its own), and the Needs-attention panel prints the
-     arithmetic so the badge is never an unexplained number. */
-  const need = { attention: null, kycExtra: null };
+  /* ── The badge ──────────────────────────────────────────────────────────
+     `lib/badges.js` owns every nav badge and paints this one, every 60 seconds,
+     as the grand total of HOT and WARM rows in `v_needs_attention` grouped by
+     `screen`. Overview is the one documented exception allowed to refine its
+     own badge, and it exists for exactly one reason: a KYC archive gap that the
+     view's `kyc_archive_gap` branch does not list (its branch carries a recency
+     cut-off of its own) is a compliance hole no badge would otherwise mention.
+
+     Two rules make that refinement safe rather than a second opinion:
+
+       1. It is a superset or it is nothing. The number written here is the
+          shared count plus the gaps the view did not list — never a count of
+          this panel's own rows, which include COLD items badges.js deliberately
+          leaves out and would therefore make the badge mean two different
+          things depending on which screen you were last looking at.
+       2. If there is nothing to add, nothing is written. badges.js keeps it.
+
+     The floor comes from badges.js's own snapshot (`LAST`, a live binding) so
+     the two cannot be counting different moments, with this panel's own rows as
+     a fallback for the first render, before the first badge poll has returned.
+     Note that the refinement is transient by design: the next 60-second poll
+     repaints the floor. That is the documented direction of travel and not a
+     bug — the KYC panel below still shows the gap either way. */
+  const need = { attention: null, items: null, kycExtra: null, floor: null, floorFrom: null, badge: null };
+
+  /* Counted the way badges.js counts, from the snapshot badges.js last read:
+     HOT or WARM, and attributable to a screen. Null when it has not read yet. */
+  const sharedFloor = () => {
+    const rows = BADGE_SNAPSHOT && BADGE_SNAPSHOT.rows;
+    if (!rows) return null;
+    return rows.filter(r => BADGE_SEVERITIES.has(str(r.severity).toUpperCase()) && str(r.screen)).length;
+  };
+  /* The same rule applied to the rows this screen read, so the first render has
+     a floor before badges.js has polled once. */
+  const ownFloor = items => (items || [])
+    .filter(i => BADGE_SEVERITIES.has(str(i.severity).toUpperCase()) && str(i.screen)).length;
+
   const setBadge = () => {
+    const extra = need.kycExtra || 0;
+    const shared = sharedFloor();
+    const own = need.attention == null ? 0 : ownFloor(need.items);
+    /* max(), not a choice between them: whichever snapshot saw more rows is the
+       one this badge must not fall below. badges.js reads 500 rows and this
+       screen reads 200, so on a busy morning the shared count is the larger. */
+    need.floor = shared == null ? own : Math.max(shared, own);
+    need.floorFrom = shared == null ? 'own' : 'shared';
+    need.badge = need.floor + extra;
     const badge = $('badge-overview');
-    if (!badge || need.attention == null) return;
-    const n = need.attention + (need.kycExtra || 0);
-    badge.textContent = String(n);
-    badge.classList.toggle('hide', n === 0);
+    if (!badge) return;
+    /* Nothing to add — badges.js owns this badge outright, and writing the same
+       number again would only risk disagreeing with it on the next poll. */
+    if (!extra) return;
+    badge.textContent = need.badge > 99 ? '99+' : String(need.badge);
+    badge.classList.toggle('hide', need.badge === 0);
+    badge.title = `${need.floor} item${need.floor === 1 ? '' : 's'} need attention across all screens`
+      + ` (HOT and WARM only), plus ${extra} KYC archive gap${extra === 1 ? '' : 's'}`
+      + ` that v_needs_attention does not list`;
   };
 
   /* ── Core read ──────────────────────────────────────────────────────────
@@ -156,11 +242,26 @@ SCREENS.overview = async host => {
   let core = null, coreErr = null;
   try {
     const [leads, inv, metrics, outbound] = await Promise.all([
-      db(`leads?select=id,name,email,status,ai_score,vehicle_interest,source,budget_aed,response_time_minutes,created_at,assigned_to_id&order=created_at.desc&limit=${LEAD_LIMIT}`),
-      db(`inventory?select=id,model,status,days_in_stock,price_aed,holding_cost_accrued,aging_alert&limit=${INV_LIMIT}`),
+      /* `phone` and `assigned_to` are real columns on leads (probed 24 Aug) and
+         both are read below: a lead waiting for a reply is a person somebody has
+         to ring, and the rep's name is what makes "unanswered" somebody's job.
+         There is no `lead_score` and no `updated_at` on this table — the score
+         is `ai_score`, and nothing records when a lead was last modified. */
+      db(`leads?select=id,name,email,phone,status,ai_score,vehicle_interest,source,budget_aed,response_time_minutes,created_at,assigned_to,assigned_to_id&order=created_at.desc&limit=${LEAD_LIMIT}`),
+      /* `id` is the stock number ("NX-1010"); money on this table is
+         `price_aed` / `cost_aed`, and there is no `sold_at`, `make` or `year`.
+         Nothing below reads a sale date, because none is recorded. */
+      db(`inventory?select=id,model,days_in_stock,price_aed,holding_cost_accrued,aging_alert&limit=${INV_LIMIT}`),
       /* daily_metrics is the snapshot table the deltas below are read from. It
          is optional — where it has not been provisioned no delta line renders
-         at all, which is the correct outcome. It is never substituted for. */
+         at all, which is the correct outcome. It is never substituted for.
+
+         It is the one table on this screen that was NOT probed on 24 Aug, so
+         the select stays `*` and no column is ever named in it: an invented
+         name in a select is a 42703 that takes the whole query down, while an
+         invented name read off a returned row is merely `undefined` — which
+         delta() already treats as "no comparison available" and renders as
+         nothing at all. Read defensively, select nothing specific. */
       db('daily_metrics?select=*&order=snapshot_date.desc&limit=2').catch(() => []),
       db(`communication_logs?select=lead_email,created_at&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
     ]);
@@ -183,6 +284,10 @@ SCREENS.overview = async host => {
        same one. */
     const riskHolding = risk.reduce((a, i) => a + (n0(i.holding_cost_accrued) || 0), 0);
     const holding = inv.reduce((a, i) => a + (n0(i.holding_cost_accrued) || 0), 0);
+    /* Asking price, not capital and not realised revenue: `price_aed` is what
+       the unit is listed at. `cost_aed` would be the money actually tied up and
+       is not read here; nothing on this table records what a unit sold for. */
+    const riskList = risk.reduce((a, i) => a + (n0(i.price_aed) || 0), 0);
 
     const sinceMs = Date.parse(since);
     const answered = new Set(outbound.map(c => norm(c.lead_email)).filter(Boolean));
@@ -196,7 +301,7 @@ SCREENS.overview = async host => {
       .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 
     core = { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
-             risk, warning, riskHolding, holding, metrics, waiting, unmatchable,
+             risk, warning, riskHolding, riskList, holding, metrics, waiting, unmatchable,
              recentCount: recent.length,
              leadsCapped: leads.length >= LEAD_LIMIT,
              invCapped: inv.length >= INV_LIMIT,
@@ -214,7 +319,7 @@ SCREENS.overview = async host => {
     pipeCard.innerHTML = stateError('pipeline by stage', coreErr.message);
   } else {
     const { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
-            risk, warning, riskHolding, holding, metrics, waiting, recentCount,
+            risk, warning, riskHolding, riskList, holding, metrics, waiting, recentCount,
             leadsCapped, invCapped } = core;
 
     /* Deltas only exist once there are two snapshots. Until then no delta line
@@ -222,8 +327,14 @@ SCREENS.overview = async host => {
        hardcoded string with nothing behind it. */
     const prev = metrics.length > 1 ? metrics[1] : null;
     const delta = (now, before, fmt, lowerIsBetter) => {
-      if (!prev || before == null || now == null) return '';
+      if (!prev || now == null) return '';
       const when = prev.snapshot_date ? `the ${esc(prev.snapshot_date)} snapshot` : 'the previous snapshot';
+      /* A snapshot exists but carries nothing comparable for this figure. Said
+         once, plainly, rather than leaving the KPI looking as though nothing
+         has changed since yesterday. daily_metrics is the one table on this
+         screen whose columns were never probed, so this is a real possibility
+         and not a defensive flourish. */
+      if (before == null) return `<span class="t-muted">${when.charAt(0).toUpperCase() + when.slice(1)} records no comparable figure, so no change is shown</span>`;
       const d = Number(now) - Number(before);
       if (!d) return `<span class="t-muted">No change against ${when}</span>`;
       const good = lowerIsBetter ? d < 0 : d > 0;
@@ -278,9 +389,14 @@ SCREENS.overview = async host => {
     const riskSub = (risk.length
         ? `<span class="t-hot">Oldest ${num(oldestRisk)} days in stock</span> ${muted(`· ${num(risk.length)} of ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read`)}`
           + `<br>${muted(`${aed(riskHolding)} holding cost on ${plural(risk.length, 'that unit', 'those units')} · ${aed(holding)} across all ${num(inv.length)}`)}`
+          + `<br>${muted(`${plural(risk.length, 'It is', 'They are')} listed at ${aed(riskList)} in total`)}`
         : muted(`No unit is flagged CRITICAL across the ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read · ${aed(holding)} holding cost accrued in total`))
       + (warning.length ? `<br>${warn(`${num(warning.length)} further ${plural(warning.length, 'unit is', 'units are')} flagged WARNING and not counted above.`)}` : '')
-      + (invCapped ? `<br>${warn(`Inventory read was capped at ${num(INV_LIMIT)} rows.`)}` : '');
+      + (invCapped ? `<br>${warn(`Inventory read was capped at ${num(INV_LIMIT)} rows.`)}` : '')
+      /* The absence an owner will look for first on this strip, said in words.
+         Ageing is measured from `days_in_stock`, which the nightly job keeps;
+         there is no counterpart for the other end of the unit's life. */
+      + `<br>${muted('Inventory records no sale date, so this screen cannot show what sold, what it sold for, or how long a sold unit sat on the lot. Days in stock is the only ageing figure the database keeps.')}`;
 
     strip.innerHTML = [
       kpi('Open leads', num(leads.length), leadsSub),
@@ -310,6 +426,69 @@ SCREENS.overview = async host => {
       : stateEmpty('Nothing to chart yet', 'No lead has been scored HOT, WARM or COLD.', 'donut_small');
   }
 
+  /* ── Opening the row an item is about ───────────────────────────────────
+     A line that names a waiting customer and then hands the operator a list to
+     find them in again is half an alert. Every lead named on this screen opens
+     the same drawer the Leads screen opens, on that lead, with its phone number
+     and its history in it.
+
+     The row is re-read with `select=*,users(id,name)` — the convention the
+     Leads and Conversations screens already use — because the drawer renders
+     fields this screen has no reason to fetch for a list, and a drawer full of
+     dashes reads as missing data rather than as an unfetched column. The
+     failure is reported into the row itself; a click that silently does nothing
+     is the one outcome that must not happen. */
+  const openLead = async (id, msg) => {
+    const say = html => { if (msg) msg.innerHTML = html; };
+    try {
+      say('<span class="t-muted">Opening…</span>');
+      const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(id)}&limit=1`);
+      /* Awaited, not fired: the drawer does its own reads, and an unawaited
+         rejection would land in the console instead of in the row that was
+         clicked. */
+      if (rows.length) { say(''); await leadDrawer(rows[0]); }
+      else say(`<span class="t-warm">${esc('That lead is no longer in the leads table, so there is nothing to open.')}</span>`);
+    } catch (e) {
+      say(`<span class="t-hot">${esc(`Could not open this lead — ${e.message}`)}</span>`);
+    }
+  };
+  /* Keyboard-operable for the same reason the attention rows are: this is the
+     only route from the alert to the record it is about. */
+  const wireLeadRows = card => {
+    card.querySelectorAll('[data-lead]').forEach(n => {
+      const run = () => {
+        if (n.dataset.busy) return;
+        n.dataset.busy = '1';
+        openLead(n.dataset.lead, n.querySelector('[data-leadmsg]'))
+          .finally(() => { delete n.dataset.busy; });
+      };
+      n.addEventListener('click', run);
+      n.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+      });
+    });
+  };
+
+  /* The other half of "click through to the thing it is about": where there is
+     no row to open from here — a workflow, a KYC document nobody can repair
+     from the browser — the row still goes to the screen that can act on it,
+     rather than leaving the operator to find the nav item themselves. Keyboard
+     operable for the same reason the lead rows are. */
+  const wireGoto = card => {
+    card.querySelectorAll('[data-goto]').forEach(n => {
+      const jump = () => go(n.dataset.goto);
+      n.addEventListener('click', jump);
+      n.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
+      });
+    });
+  };
+
+  /* Staff numbers. `users` has no phone column — probed live — so a rep's name
+     is the whole of what can be shown, and the screen says that rather than
+     printing an empty field next to it. */
+  const NO_STAFF_PHONE = 'Staff phone numbers are stored nowhere the dashboard can read: the users table has no phone column, so a rep is named but cannot be called from here. Customer numbers below come from leads.phone and v_conversations.phone, which do exist.';
+
   /* ── Triage row ─────────────────────────────────────────────────────────── */
 
   const panels = [];
@@ -321,10 +500,13 @@ SCREENS.overview = async host => {
     actions: `<button class="btn sm" data-act="leads">Open Leads</button>`,
     load: async () => requireCore(),
     render: d => {
+      const noPhone = d.waiting.filter(l => !str(l.phone)).length;
       const notes = [
         d.unmatchable ? `${num(d.unmatchable)} of the ${num(d.recentCount)} leads in this window have no email address, so communication_logs cannot be matched to them.` : '',
         d.outboundCapped ? `Outbound history was capped at ${num(OUTBOUND_LIMIT)} messages for this window, so this list may be incomplete.` : '',
         d.recentCount && d.recentCount <= THIN ? `Only ${num(d.recentCount)} ${plural(d.recentCount, 'lead was', 'leads were')} created in this window, so an empty list here is a very small sample.` : '',
+        noPhone ? `${num(noPhone)} of these ${plural(noPhone, 'lead has', 'leads have')} no phone number on the lead record, so ${plural(noPhone, 'it', 'they')} can only be answered by email.` : '',
+        d.waiting.length ? NO_STAFF_PHONE : '',
       ].filter(Boolean);
       const foot = notes.length
         ? `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
@@ -338,22 +520,34 @@ SCREENS.overview = async host => {
       }
       const shown = d.waiting.slice(0, 8);
       return `<div>${shown.map(l => `
-        <div class="list-item" style="cursor:default;align-items:flex-start">
-          ${pill(l.status || 'NEW')}
+        <div class="list-item" role="button" tabindex="0" data-lead="${esc(l.id)}"
+             title="Open this lead" style="align-items:flex-start">
+          ${pill(l.status || 'Unscored')}
           <div style="flex:1;min-width:0">
-            <div style="font-weight:500">${esc(l.name || 'Unnamed lead')}</div>
-            <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle recorded')}${l.source ? ' · ' + esc(l.source) : ''}</div>
+            <div style="font-weight:500;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+              <span>${esc(str(l.name) || 'Unnamed lead')}</span>
+              ${str(l.phone)
+                ? `<span class="mono cell-sub">${esc(str(l.phone))}</span>`
+                : `<span class="cell-sub t-warm" title="The router captured no phone number for this lead. leads.phone is empty on this row.">No phone on the lead</span>`}
+            </div>
+            <div class="cell-sub">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
+            <div class="cell-sub" aria-live="polite" data-leadmsg></div>
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div class="t-hot">${esc(ago(l.created_at))}</div>
-            <div class="cell-sub">${l.assigned_to_id ? 'assigned' : 'unassigned'}</div>
+            <div class="cell-sub">${str(l.assigned_to)
+              ? esc(str(l.assigned_to))
+              : l.assigned_to_id ? 'assigned' : '<span class="t-warm">unassigned</span>'}</div>
           </div>
         </div>`).join('')}
         ${d.waiting.length > shown.length
           ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(d.waiting.length - shown.length)} more waiting — see Leads</div></div>`
           : ''}${foot}</div>`;
     },
-  }).then(card => card.querySelector('[data-act]')?.addEventListener('click', () => go('leads'))));
+  }).then(card => {
+    card.querySelector('[data-act]')?.addEventListener('click', () => go('leads'));
+    wireLeadRows(card);
+  }));
 
   /* 2 · Workflows that actually failed inside the health window. `health` is
      computed over 30 days, so failures_30d is the column that agrees with it —
@@ -374,12 +568,13 @@ SCREENS.overview = async host => {
            claims. A workflow that has barely run in the window is marked as
            such rather than being ranked on a rate nobody can trust. */
         const scarce = runs != null && runs <= THIN;
-        return `<div class="list-item" style="cursor:default;align-items:flex-start">
+        return `<div class="list-item" role="button" tabindex="0" data-goto="automation"
+             title="Open Automation, where this workflow's runs and failures are" style="align-items:flex-start">
           <span class="material-symbols-outlined t-hot" style="font-size:20px">error</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(w.name)}</span>
-              ${pill(w.health === 'DEGRADED' ? 'Degraded' : String(w.health || 'Unknown'), w.health === 'DEGRADED' ? 'hot' : '')}
+              ${pill(w.health === 'DEGRADED' ? 'Degraded' : String(w.health || 'Unknown'), tone(w.health))}
               ${w.is_active === false ? pill('Inactive', 'cold') : ''}
             </div>
             <div class="cell-sub">${esc(w.category || 'Uncategorised')}${w.last_failure ? ' · last failed ' + esc(ago(w.last_failure)) : ''}${
@@ -392,7 +587,10 @@ SCREENS.overview = async host => {
         </div>`;
       }).join('')}</div>`;
     },
-  }).then(card => card.querySelector('[data-act]')?.addEventListener('click', () => go('automation'))));
+  }).then(card => {
+    card.querySelector('[data-act]')?.addEventListener('click', () => go('automation'));
+    wireGoto(card);
+  }));
 
   /* 3 · KYC archive gaps.
      Three separate conditions live in this table and only one of them is a
@@ -445,11 +643,15 @@ SCREENS.overview = async host => {
             ? 'This is a single row. It is a real gap, but it is one.'
             : '',
         capped ? `Read was capped at ${num(KYC_LIMIT)} rows, so there may be more.` : '',
+        /* Rule: where a person is shown, show their phone. This table does not
+           hold one — it holds lead_email and chat_id — so the address is shown
+           instead and the absence is stated rather than left as a blank field. */
+        live.length ? 'kyc_documents stores no phone number, so these contacts are shown by the address the submission was filed under. Their number, if there is one, is on the lead record in Leads.' : '',
       ].filter(Boolean);
 
       const foot = `<div class="list-item" style="cursor:default">
           <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-          <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}Repairing these needs a service-role job. The document itself cannot be opened from the browser either — private-bucket files require a short-lived signed URL and there is no helper for that yet.</div>
+          <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}${esc('Repairing these needs a service-role job. There is also nothing here to open: signing a private-bucket file is possible now (signedUrl in lib/data.js mints a 60-second link), but storage_path is null on every row in this list — the missing file is the gap.')}</div>
         </div>`;
 
       if (!live.length) {
@@ -462,7 +664,8 @@ SCREENS.overview = async host => {
       }
 
       return `<div>${live.map(d => `
-        <div class="list-item" style="cursor:default;align-items:flex-start">
+        <div class="list-item" role="button" tabindex="0" data-goto="compliance"
+             title="Open Compliance, where this document's audit trail is" style="align-items:flex-start">
           <span class="material-symbols-outlined t-warm" style="font-size:20px">folder_off</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -470,6 +673,9 @@ SCREENS.overview = async host => {
               ${d.verdict ? pill(d.verdict) : ''}
             </div>
             <div class="cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${d.retain_until ? ' · retain until ' + esc(d.retain_until) : ''}</div>
+            <div class="cell-sub">${str(d.lead_email)
+              ? `<span class="mono">${esc(str(d.lead_email))}</span>`
+              : '<span class="t-warm">No address on the submission</span>'}</div>
           </div>
           <button class="btn sm" disabled
             title="No re-archive endpoint exists. kyc_documents and the private kyc-documents bucket are service-role only, and there is no n8n webhook for re-running the archive step, so the browser cannot repair this row.">Re-archive</button>
@@ -477,6 +683,7 @@ SCREENS.overview = async host => {
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('compliance'));
+    wireGoto(card);
   }));
 
   /* ── Needs attention + the live feed ────────────────────────────────────── */
@@ -502,7 +709,7 @@ SCREENS.overview = async host => {
 
   panels.push(panel(attnHost, {
     title: 'Needs attention',
-    sub: 'Live union from v_needs_attention — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock',
+    sub: `Live union from v_needs_attention — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock. The view bounds two of these itself: unanswered threads to ${CHAT_WINDOW_DAYS} days and SLA breaches to ${SLA_WINDOW_DAYS}, so this is what is still live, not everything that ever slipped`,
     load: async () => {
       const { items, threads } = await attentionRead;
       const sorted = [...items].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9)
@@ -514,8 +721,24 @@ SCREENS.overview = async host => {
     },
     render: ({ items, threads, gapRows }) => {
       need.attention = items.length;
+      need.items = items;
       need.kycExtra = gapRows ? extraGaps(gapRows, items).length : null;
       setBadge();
+
+      /* Leads already read for the strip, indexed both ways the view keys its
+         refs. A matched ref means the item is about a lead we hold, which buys
+         two things: the customer's phone number beside their name, and a click
+         that opens that record rather than the screen it lives on. */
+      const leadById = new Map(), leadByEmail = new Map();
+      (core?.leads || []).forEach(l => {
+        leadById.set(str(l.id), l);
+        const e = str(l.email).toLowerCase();
+        if (e) leadByEmail.set(e, l);
+      });
+      const LEAD_KINDS = new Set(['lead_unassigned', 'sla_breach']);
+      const leadFor = it => (LEAD_KINDS.has(it.kind)
+        ? leadById.get(str(it.ref)) || leadByEmail.get(str(it.ref).toLowerCase()) || null
+        : null);
 
       const byChat = new Map();
       (threads || []).forEach(t => { const k = str(t.chat_id); if (k) byChat.set(k, t); });
@@ -546,25 +769,49 @@ SCREENS.overview = async host => {
 
       const shownRefs = new Set(items.filter(i => i.kind === 'unanswered_chat').map(i => str(i.ref)));
 
+      let matchedLeads = 0, unmatchedLeadRefs = 0;
+
       const body = items.map(it => {
         const target = SCREENS[it.screen] ? it.screen : (KIND_SCREEN[it.kind] || 'overview');
         const icon = KIND_ICON[it.kind] || 'warning';
+        /* `at` is a real column on the view. How long a thing has been waiting
+           is most of what ranks it, so it is shown — and where the view left it
+           null that is said, not rendered as an em dash. */
+        const waited = it.at
+          ? `<span class="t-muted">waiting ${esc(ago(it.at))}</span>`
+          : '<span class="t-muted">no timestamp on this item, so how long it has waited is unknown</span>';
+        const lead = leadFor(it);
+        if (LEAD_KINDS.has(it.kind)) { if (lead) matchedLeads += 1; else unmatchedLeadRefs += 1; }
         let head, sub;
         if (it.kind === 'unanswered_chat') {
           const c = chatRow(it);
           head = `${c.named ? esc(c.name) : '<span class="t-warm">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
-          sub = `${esc(it.detail)}<div class="cell-sub">${
-            c.phone ? `<span class="mono">${esc(c.phone)}</span>` : '<span class="t-muted">No phone number stored</span>'
+          sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
+            c.phone ? `<span class="mono">${esc(c.phone)}</span>` : '<span class="t-muted">No phone number stored for this thread</span>'
           } · <span class="mono" title="WhatsApp chat handle — a LID contains no phone digits and identifies nobody on its own">${esc(c.ref)}</span></div>`;
+        } else if (lead) {
+          head = esc(it.title);
+          sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
+            str(lead.phone) ? `<span class="mono">${esc(str(lead.phone))}</span>`
+              : '<span class="t-warm">No phone number on this lead record</span>'
+          }${str(lead.email) ? ` · <span class="mono">${esc(str(lead.email))}</span>` : ''}</div>`;
         } else {
           head = esc(it.title);
-          sub = esc(it.detail);
+          sub = `${esc(it.detail)} · ${waited}`;
         }
-        return `<div class="list-item" role="button" tabindex="0" data-goto="${esc(target)}">
+        /* A matched lead opens that lead. Everything else goes to the screen the
+           view named, which is as close to the row as this app can get from
+           here — there is no cross-screen deep link. */
+        const jump = lead
+          ? `data-lead="${esc(lead.id)}" title="Open this lead"`
+          : `data-goto="${esc(target)}" title="Open ${esc(target)}"`;
+        return `<div class="list-item" role="button" tabindex="0" ${jump}>
           <span class="material-symbols-outlined t-${tone(it.severity)}" style="font-size:20px">${icon}</span>
           <div style="flex:1;min-width:0">
-            <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}</div>
+            <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${
+              pill(str(it.severity) || 'Unrated')}</div>
             <div class="cell-sub">${sub}</div>
+            ${lead ? '<div class="cell-sub" aria-live="polite" data-leadmsg></div>' : ''}
           </div>
           <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
         </div>`;
@@ -579,13 +826,40 @@ SCREENS.overview = async host => {
       const stale = missing.filter(t => Date.parse(t.last_message_at) < cutoff).length;
       const other = missing.length - stale;
 
+      /* The badge and this list are two different counts and always will be:
+         the badge is the sidebar's summary of what needs doing, the list is
+         everything the view returned. Rather than quietly differing, the
+         difference is named — item counts, the COLD exclusion, and the one
+         thing this screen adds that the view cannot see. */
+      const coldItems = items.filter(i => !BADGE_SEVERITIES.has(str(i.severity).toUpperCase())).length;
+      const unscreened = items.filter(i => !str(i.screen)).length;
+
       const notes = [
         !threads ? 'v_conversations did not load, so WhatsApp threads above could not be checked against their contact records, and threads waiting outside this list could not be counted.' : '',
         stale ? `${num(stale)} further ${plural(stale, 'thread is', 'threads are')} awaiting a reply but older than the ${CHAT_WINDOW_DAYS}-day window this list uses — see Conversations.` : '',
         other ? `${num(other)} further ${plural(other, 'thread is', 'threads are')} marked awaiting_reply in v_conversations but ${plural(other, 'does', 'do')} not appear above.` : '',
+        items.length >= ATTN_LIMIT ? `This read was capped at ${num(ATTN_LIMIT)} items, so there may be more than are listed.` : '',
+        coreErr
+          ? 'The leads read failed, so SLA and unassigned-lead items above are shown as the view worded them, without a phone number or a link into the record.'
+          : unmatchedLeadRefs
+            ? `${num(unmatchedLeadRefs)} lead ${plural(unmatchedLeadRefs, 'item', 'items')} above could not be matched to a row in the ${num((core?.leads || []).length)} leads read, so ${plural(unmatchedLeadRefs, 'it opens', 'they open')} the Leads screen rather than the record.`
+            : '',
+        matchedLeads
+          ? `${num(matchedLeads)} of these ${plural(matchedLeads, 'item opens', 'items open')} the lead record itself, with the customer's number on it; the rest open the screen that can act on them.`
+          : '',
+        /* Badge arithmetic, in words, every time — a badge nobody can reproduce
+           from the screen under it is a number people learn to ignore. */
+        `This panel lists all ${num(items.length)} ${plural(items.length, 'item', 'items')} the view returned${
+          coldItems ? `, including ${num(coldItems)} not marked HOT or WARM` : ''}${
+          unscreened ? ` and ${num(unscreened)} the view attributes to no screen` : ''}.`,
+        `Nav badges are painted by lib/badges.js from one read of v_needs_attention every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading.`,
         gapRows == null
-          ? `Nav badge counts the ${num(items.length)} ${plural(items.length, 'item', 'items')} here only — the KYC archive-gap read failed, so any gap it would have added is missing from the badge.`
-          : `Nav badge counts ${num(items.length)} ${plural(items.length, 'item', 'items')} here${need.kycExtra ? ` plus ${num(need.kycExtra)} KYC archive ${plural(need.kycExtra, 'gap', 'gaps')} this view does not list` : ' and nothing else'}.`,
+          ? `The KYC archive-gap read failed, so the badge is the shared count alone${need.floor == null ? '' : ` (${num(need.floor)})`} and any gap it would have added is missing from it.`
+          : need.kycExtra
+            ? `The Overview badge reads ${num(need.badge)}: the shared count of ${num(need.floor)}${
+                need.floorFrom === 'own' ? ' (computed from this panel, as the shared badge read has not returned yet)' : ''
+              } plus ${num(need.kycExtra)} KYC archive ${plural(need.kycExtra, 'gap', 'gaps')} the view does not list at all.`
+            : `Nothing here is missing from that count, so the Overview badge is left exactly as badges.js painted it${need.floor == null ? '' : ` — ${num(need.floor)}`}.`,
       ].filter(Boolean);
       const foot = `<div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
@@ -602,13 +876,8 @@ SCREENS.overview = async host => {
     /* These rows are keyboard-operable: the row is the only way into the screen
        that can act on the item, so a mouse-only affordance would strand anyone
        navigating by keyboard. */
-    card.querySelectorAll('[data-goto]').forEach(n => {
-      const jump = () => go(n.dataset.goto);
-      n.addEventListener('click', jump);
-      n.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
-      });
-    });
+    wireLeadRows(card);
+    wireGoto(card);
   }));
 
   const FEED_LIMIT = 8;
@@ -616,24 +885,44 @@ SCREENS.overview = async host => {
     title: 'Live lead feed',
     sub: 'Newest first',
     actions: `<button class="btn sm" data-act="leads">View all</button>`,
-    load: () => db(`leads?select=id,name,status,ai_score,vehicle_interest,source,created_at&order=created_at.desc&limit=${FEED_LIMIT}`),
-    render: rows => {
+    /* `phone` is on the lead row, so the newest enquiry can be rung from the
+       first screen an owner opens. `ai_score` is the router's score — there is
+       no `lead_score` column on this table, whatever older code called it. */
+    load: () => db(`leads?select=id,name,phone,status,ai_score,vehicle_interest,source,created_at&order=created_at.desc&limit=${FEED_LIMIT}`),
+    /* `card` is handed the rows so they can be wired to the drawer once this
+       HTML is actually in the document — render() runs before it is. */
+    render: (rows, card) => {
+      card.__rows = rows;
       if (!rows.length) return stateEmpty('No leads yet', 'They appear here the moment the router webhook receives one.');
       /* Fewer rows than the page size means this is not the top of a long list,
          it is the whole list — which reads very differently. */
-      const note = rows.length < FEED_LIMIT
-        ? `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-             <div class="cell-sub" style="white-space:normal">${esc(`The query asked for the newest ${FEED_LIMIT} leads and got ${rows.length}, so this is the whole leads table, not the top of it.`)}</div></div>`
-        : '';
+      const notes = [
+        rows.length < FEED_LIMIT
+          ? `The query asked for the newest ${FEED_LIMIT} leads and got ${rows.length}, so this is the whole leads table, not the top of it.`
+          : '',
+        'A row opens that lead. Leads has no last-modified timestamp, so this is ordered by when each one arrived, which is the only time the table records.',
+      ].filter(Boolean);
+      const note = `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+             <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}
+               <div aria-live="polite" data-feedmsg></div></div></div>`;
       return table([
         { label:'When', render: r => `<div class="t-muted">${esc(ago(r.created_at))}</div><div class="cell-sub mono">${esc(clock(r.created_at))}</div>` },
-        { label:'Status',  render: r => pill(r.status || 'NEW') },
-        { label:'Name',    strong: true, render: r => esc(r.name) },
-        { label:'Interest',render: r => `<span class="t-2">${esc(r.vehicle_interest || '—')}</span>` },
+        { label:'Status',  render: r => pill(str(r.status) || 'Unscored') },
+        { label:'Name',    strong: true, render: r => esc(str(r.name) || 'Unnamed lead') },
+        { label:'Phone',   render: r => str(r.phone)
+            ? `<span class="mono">${esc(str(r.phone))}</span>`
+            : `<span class="cell-sub t-warm">Not captured</span>` },
+        { label:'Interest',render: r => `<span class="t-2">${str(r.vehicle_interest) ? esc(str(r.vehicle_interest)) : '<span class="cell-sub">Not recorded</span>'}</span>` },
         { label:'Score', align:'r', render: r => num(r.ai_score) },
-      ], rows) + note;
+      ], rows, { onRow: true }) + note;
     },
-  }).then(card => card.querySelector('[data-act]')?.addEventListener('click', () => go('leads'))));
+  }).then(card => {
+    card.querySelector('[data-act]')?.addEventListener('click', () => go('leads'));
+    /* The same drawer the Leads screen opens, on the row that was clicked. A
+       failed read reports itself in the footnote under the table rather than
+       leaving a click that did nothing. */
+    wireRows(card, card.__rows || [], r => openLead(r.id, card.querySelector('[data-feedmsg]')));
+  }));
 
   await Promise.all(panels);
 };

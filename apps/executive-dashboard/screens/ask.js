@@ -34,9 +34,14 @@
 
      · an EMPTY knowledge base means every answer is the model guessing, so the
        Ask button is disabled outright rather than left to produce fiction,
-     · a STALE knowledge base — nothing ingested for months — means answers are
-       grounded in documents that may since have been superseded, which is the
-       quieter version of the same fault,
+     · the FRESHNESS of that knowledge base cannot be established at all.
+       `rag_documents` stores no timestamp of any kind — id, doc_title,
+       source_file, section, page_number, content, search_vector is the whole
+       table — so "nothing has been ingested for months" and "this was updated
+       last week" are both sentences this screen is not entitled to say. It says
+       the absence instead, in the composer line, the alert strip and under
+       every citation list, because an answer drawn confidently from a
+       superseded rate sheet is precisely this screen's failure mode,
      · an answer with NO CITATIONS is the model speaking for itself. It gets a
        different border, a different pill and its own banner, because the two
        must never be skim-read as the same thing,
@@ -47,11 +52,23 @@
    no branch that targets this screen today, so it returns nothing — the strip
    says that out loud instead of showing a reassuring empty box, because "the
    view found nothing wrong here" and "the view does not look here" are very
-   different sentences and only one of them is true. */
+   different sentences and only one of them is true.
+
+   It is also why this screen writes nothing to the nav badges. `lib/badges.js`
+   owns every `.nav-badge`: it clears them all and repaints them from a single
+   read of `v_needs_attention` on boot, every 60 s and on `visibilitychange`.
+   A number written here from this screen's own alerts survived a minute at
+   most, and could not be reproduced from the view afterwards — the sidebar said
+   one thing while Ask AI was open and something else once it had been closed,
+   which is how an operator learns to stop reading badges altogether. Almost
+   everything this screen knows (an empty knowledge base, a DEGRADED workflow, a
+   question that failed in this tab) is invisible to that view anyway, so it is
+   stated in the strip below where each row can say where it came from — not
+   compressed into a digit in the sidebar that nothing can explain. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { ago, clock, esc, n0, num, pill } from '../lib/format.js';
+import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { panel, table } from '../lib/ui.js';
@@ -68,11 +85,6 @@ const DEADLINE_MS = 45000;
    screen. Deliberately well above the 8.8 s good run: a normal answer must
    never raise an alert. */
 const SLOW_MS = 15000;
-
-/* A knowledge base nobody has added to in this long is not necessarily wrong,
-   but it can no longer be assumed right — three months is a finance rate sheet
-   and a warranty policy out of date. It is a warning, never a block. */
-const STALE_DAYS = 90;
 
 /* Bounded reads. Where a cap is hit the screen says the number is a floor
    rather than letting a windowed count read as a total. */
@@ -96,7 +108,6 @@ const secs = ms => (ms == null ? null : (ms / 1000).toFixed(1) + ' s');
 const str = v => String(v == null ? '' : v).trim();
 const low = v => str(v).toLowerCase();
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
-const daysBetween = ms => Math.floor(ms / 86400000);
 
 /* Never rejects, so a read that fails cannot surface as an unhandled rejection
    in the console instead of in the panel that is supposed to report it. */
@@ -109,19 +120,18 @@ const settled = p => p.then(v => ({ ok: true, v }), e => ({ ok: false, err: e?.m
 const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 const isHandle = v => HANDLE.test(str(v));
 
-/* rag_documents is populated by the ingestion workflow rather than by a
-   migration this repo owns, so its exact column names are not guaranteed here.
-   They are discovered from one probe row instead of assumed: asking PostgREST
-   for a column that does not exist returns 42703 and kills the whole query, not
-   just that field — which would take the document count and the starting chips
-   down together with the freshness check. First match wins. */
-const TITLE_KEYS = ['doc_title', 'title', 'document_title', 'doc_name', 'name'];
-const DATE_KEYS  = ['created_at', 'inserted_at', 'indexed_at', 'updated_at'];
-const META_KEYS  = ['section', 'source_file'];
-/* An embedding is 1536 floats per row. Selecting it would turn a listing of a
-   few hundred sections into a multi-megabyte download for no visible benefit. */
-const HEAVY_KEYS = ['embedding', 'embeddings', 'vector'];
-const pickKey = (cols, list) => list.find(k => cols.includes(k)) || null;
+/* rag_documents was read off the live database on 24 Aug 2026 and its complete
+   column list is: id, doc_title, source_file, section, page_number, content,
+   search_vector. This screen used to discover those names from a probe row
+   because they were not guaranteed; they are now, so the probe is gone and the
+   names are selected outright. What the probe cannot bring back is a date
+   column, because THERE IS NONE — not created_at, not indexed_at, not
+   updated_at. Freshness is not a hard question here, it is an unanswerable one,
+   and the honest handling is to say so rather than to order by id and call the
+   top row the newest. `content` is several kilobytes per section and
+   `search_vector` is larger still; neither is ever displayed, so neither is
+   fetched. */
+const KB_COLS = 'id,doc_title,source_file,section,page_number';
 
 /* ── Reading the workflow's reply ───────────────────────────────────────────
    The Ask-AI workflow has been rewritten more than once and its Format Response
@@ -324,6 +334,7 @@ function entryBody(e) {
                 ].filter(Boolean).join(' · ') || 'No section recorded'}</div>
                ${s.snippet ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
              </div></div>`).join('')}
+      <div class="cell-sub" style="white-space:normal;margin-top:8px">A citation says which indexed section an answer came from. It cannot say how old that section is: rag_documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
     </div>` : '';
 
   return head + body + zeroDocs + uncited + sources
@@ -417,7 +428,7 @@ SCREENS.ask = async host => {
      v_needs_attention, and conditions computed here out of reads this screen
      was making anyway. Nothing below issues a request of its own. */
   let attnState = null;   /* { rows } | { err } */
-  let kbState = null;     /* { count, capped, titles, cols, dateKey, newest } | { err } */
+  let kbState = null;     /* { count, capped, titles } | { err } — no date: see KB_COLS */
   let healthState = null; /* { row, how, rows } | { err } */
 
   const reveal = id => {
@@ -433,19 +444,21 @@ SCREENS.ask = async host => {
     setTimeout(() => node.classList.remove('flash'), 800);
   };
 
+  /* Ranks tones for ordering; it is not a severity map. The severity map — the
+     one that turns HOT/CRITICAL/DEGRADED/NEVER_RAN into a colour — is `tone()`
+     in lib/format.js and there is exactly one of it. */
   const SEV_RANK = { hot: 0, warm: 1, cold: 2, ok: 2, '': 3 };
-  const VIEW_TONE = { CRITICAL: 'hot', HIGH: 'hot', HOT: 'hot', FAILED: 'hot',
-                      WARNING: 'warm', WARN: 'warm', MEDIUM: 'warm', WARM: 'warm',
-                      LOW: 'cold', INFO: 'cold', COLD: 'cold' };
 
   /* `durable` marks an alert that is a fact about the system rather than about
-     this browser tab, and it is what gates the "this session" chip. The nav
-     badge is the narrower set: durable AND hot-or-warm. A failed or uncited
-     question is real and is shown here, but it disappears on reload, and a
-     badge that outlives what it counts is a lie in the sidebar; a cold row — a
-     read that was capped, an endpoint that keeps no history by design — is a
-     durable fact worth stating and not a thing to go and fix, so it carries no
-     chip and does not inflate the badge either. */
+     this browser tab, and it is what gates the "this session" chip. A failed or
+     uncited question is real and is shown here, but it exists only in this tab
+     and is gone on reload, so it is labelled that way rather than presented
+     alongside a DEGRADED workflow as if the two had the same standing. A cold
+     row — a read that was capped, a table with no ingest date, an endpoint that
+     keeps no history by design — is a durable fact worth stating and not a
+     thing to go and fix, so it carries no chip either. Nothing here feeds a nav
+     badge: those are painted centrally by lib/badges.js from v_needs_attention
+     and this screen writes to none of them. */
   function computeAlerts() {
     const out = [];
 
@@ -454,7 +467,14 @@ SCREENS.ask = async host => {
       for (const it of attnState.rows) {
         out.push({
           id: `view-${str(it.kind)}-${str(it.ref)}`,
-          tone: VIEW_TONE[str(it.severity).toUpperCase()] || 'warm',
+          /* A private VIEW_TONE table used to sit here. Every value it listed
+             agreed with `tone()`, so it bought nothing — but it fell back to
+             'warm' for anything it did not list, which meant an unrecognised
+             severity, and an empty one, were painted amber: a claim that
+             something needs a human, made out of a word nobody had taught the
+             table. `tone()` maps an unknown value to 'cold' and a blank to no
+             tone at all, which is what not knowing actually looks like. */
+          tone: tone(it.severity),
           icon: 'priority_high',
           durable: true,
           title: str(it.title) || str(it.kind) || 'Needs attention',
@@ -493,7 +513,7 @@ SCREENS.ask = async host => {
       out.push({
         id: 'kb-failed', tone: 'warm', icon: 'quiz', durable: true,
         title: 'The knowledge base could not be counted',
-        detail: `${esc(kbState.err)}<br>So this screen cannot say how many sections Ask AI can reach, or when the newest one was added. Ask is deliberately left enabled: a failed read here says nothing about whether the workflow works. Judge each answer by its citations instead.`,
+        detail: `${esc(kbState.err)}<br>So this screen cannot say how many sections Ask AI can reach, or which documents they came from. When they were ingested was never knowable — rag_documents keeps no date — so that much is unchanged. Ask is deliberately left enabled: a failed read here says nothing about whether the workflow works. Judge each answer by its citations instead.`,
         target: 'askComposer', settings: true,
       });
     } else if (kbState) {
@@ -504,30 +524,27 @@ SCREENS.ask = async host => {
           detail: 'rag_documents holds no rows, so retrieval can return nothing and every answer would be the model guessing from its training data. Ask is disabled until a document is ingested — an ungrounded answer that looks grounded is worse than no answer at all.',
           target: 'askComposer', settings: true,
         });
-      } else if (kbState.dateKey && kbState.newest != null) {
-        const age = daysBetween(Date.now() - kbState.newest);
-        if (age >= STALE_DAYS) {
-          out.push({
-            id: 'kb-stale', tone: 'warm', icon: 'update_disabled', durable: true,
-            title: `Nothing has been indexed for ${num(age)} days`,
-            detail: `The newest of the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} was added ${esc(ago(new Date(kbState.newest).toISOString()))}, by <span class="mono">${esc(kbState.dateKey)}</span>. Answers are still grounded — but grounded in documents that may since have been superseded, which is the usual way this screen becomes confidently wrong about a rate or a policy.`,
-            foot: 'Ingestion writes rag_documents; no endpoint accepts a document from the browser, so this is fixed upstream.',
-            target: 'askComposer', settings: true,
-          });
-        }
-      } else if (kbState.count) {
+      } else {
+        /* Permanent, and stated every single time the knowledge base is not
+           empty, because it is a permanent property of the table rather than a
+           condition that comes and goes. Cold on purpose: an operator cannot
+           fix it and there is nothing here to go and do, so it must not sit in
+           the same colour as a workflow that is down. It is still said out
+           loud, every time, because the alternative is a screen that quietly
+           implies its documents are current. */
         out.push({
           id: 'kb-undated', tone: 'cold', icon: 'help', durable: true,
-          title: 'Knowledge-base freshness cannot be checked',
-          detail: `rag_documents returned no date column this build recognises — it has <span class="mono">${esc(kbState.cols.join(', '))}</span> — so the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} could have been ingested yesterday or last year. The count is real; its freshness is unknown and is not being implied.`,
-          target: 'askComposer',
+          title: 'We cannot know when this knowledge base was last updated',
+          detail: `<span class="mono">rag_documents</span> stores no timestamp of any kind — the table is <span class="mono">id, doc_title, source_file, section, page_number, content, search_vector</span> and none of those records when a section was ingested. So the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} below could have been written last night or two years ago, and this screen will not guess: row order is insertion order at best and arbitrary at worst, so "the newest document" is not a thing that can be computed here. Every answer on this screen is therefore grounded in documents of unknown vintage. Before repeating a finance rate, a warranty term or a policy to a customer, open the cited document and check its own date.`,
+          foot: 'Fixing this needs a timestamp column on rag_documents and a re-ingest. Nothing in the browser can add one, and no webhook accepts a document.',
+          target: 'askComposer', settings: true,
         });
       }
       if (kbState.capped) {
         out.push({
           id: 'kb-capped', tone: 'cold', icon: 'filter_alt', durable: true,
           title: 'The section count is a floor, not a total',
-          detail: `This screen read the first ${esc(num(KB_LIMIT))} sections only. There are at least that many and possibly more, and the newest-section date above is the newest inside that window.`,
+          detail: `This screen read ${esc(num(KB_LIMIT))} sections and stopped. There are at least that many and possibly more, so the count above is a floor, and the document list offered as starting points is drawn from that window rather than from everything indexed.`,
           target: 'askComposer',
         });
       }
@@ -597,7 +614,7 @@ SCREENS.ask = async host => {
            alert at all, and the all-clear underneath then claimed the workflow
            "is not reporting failures" — which is not what an unknown says. Cold
            on purpose: not knowing is not a fault, so it is stated and not
-           counted into the badge. */
+           dressed up as one. */
         out.push({
           id: 'wf-unreported', tone: 'cold', icon: 'help', durable: true,
           title: h ? `Unrecognised workflow health: ${h}` : 'The registry reports no health for this workflow',
@@ -609,8 +626,9 @@ SCREENS.ask = async host => {
       }
     }
 
-    /* 5 · This session. Not durable — these vanish on reload, and the strip
-       says so rather than letting them inflate a badge that outlives them. */
+    /* 5 · This session. Not durable — these exist only in this tab and vanish
+       on reload, and each one carries a chip saying so rather than sitting in
+       the list as though it were a standing fact about the system. */
     const slow = HISTORY.find(e => e.status === 'pending' && Date.now() - e.at >= SLOW_MS);
     if (slow) {
       out.push({
@@ -651,14 +669,12 @@ SCREENS.ask = async host => {
     const alerts = computeAlerts();
     const durable = alerts.filter(a => a.durable && (a.tone === 'hot' || a.tone === 'warm'));
 
-    /* Every number on this strip is explainable, the badge included: it counts
-       the durable alerts only and the footer says so, so nobody has to
-       reverse-engineer where a "2" in the sidebar came from. */
-    const badge = $('badge-ask');
-    if (badge) {
-      badge.textContent = String(durable.length);
-      badge.classList.toggle('hide', durable.length === 0);
-    }
+    /* No badge is written from here. lib/badges.js owns every .nav-badge and
+       repaints all of them from one read of v_needs_attention, so a count
+       written from this screen was overwritten inside a minute and, until it
+       was, disagreed with the only query that can explain it. `durable` still
+       earns its keep: it is the count this strip reports about itself, in the
+       footer, where there is room to say what it is made of. */
 
     /* What was actually checked, and what could not be. A screen that quietly
        drops a failed read reports fewer alerts and looks healthier for it. */
@@ -673,7 +689,8 @@ SCREENS.ask = async host => {
         : healthState ? 'workflow health: no matching workflow'
         : 'workflow health: still reading',
     ];
-    $('askAlertSub').textContent = checked.join(' · ');
+    const subNode = $('askAlertSub');
+    if (subNode) subNode.textContent = checked.join(' · ');
 
     /* Reads still in flight. An all-clear printed before the answers are back
        is the most confident lie this strip could tell, so until every check has
@@ -684,7 +701,8 @@ SCREENS.ask = async host => {
       attnState?.rows && !attnState.rows.length
         ? 'v_needs_attention has no branch that targets this screen today, so an empty result from it is expected rather than evidence that nothing is wrong. Everything else above is computed here, from reads this screen already makes.'
         : '',
-      `Nav badge counts the ${num(durable.length)} alert${plural(durable.length, '', 's')} here that are both durable — a fact about the system, from the view, the knowledge base or the workflow — and severe enough to act on. Two kinds are shown and not counted: session alerts (a question that failed, an answer that cited nothing), because they vanish on reload and a badge that outlives what it counts is worse than no badge; and informational rows, because there is nothing there to go and fix.`,
+      `${num(durable.length)} of the ${num(alerts.length)} row${plural(alerts.length, '', 's')} above ${plural(durable.length, 'is', 'are')} durable and worth acting on — a fact about the system, read from v_needs_attention, the knowledge base or v_workflow_health, that will still be true after a reload. The rest are shown and deliberately not counted: session alerts (a question that failed, an answer that cited nothing) exist only in this tab and vanish when it reloads, and informational rows state something that cannot be fixed from here.`,
+      'The sidebar badge over Ask AI is not this number and is not written by this screen. Nav badges are painted centrally from v_needs_attention alone, and that view has no branch that files anything against this screen — so the sidebar is silent here even when the list above is not, and this strip is the only place these are reported.',
       waiting ? `${num(waiting)} of the three checks ${plural(waiting, 'has', 'have')} not finished reading, so this list is not final yet.` : '',
     ].filter(Boolean);
     const foot = `<div class="list-item" style="cursor:default;align-items:flex-start">
@@ -700,10 +718,7 @@ SCREENS.ask = async host => {
        that was actually read, quoting what it said. */
     const cleared = [
       kbState && !kbState.err
-        ? `${num(kbState.count)}${kbState.capped ? '+' : ''} indexed section${plural(kbState.count, '', 's')} in the knowledge base${
-            kbState.dateKey && kbState.newest != null
-              ? `, newest added ${ago(new Date(kbState.newest).toISOString())}`
-              : ''}.`
+        ? `${num(kbState.count)}${kbState.capped ? '+' : ''} indexed section${plural(kbState.count, '', 's')} in the knowledge base, of unknown vintage — rag_documents keeps no ingest date, so nothing here can say whether they are current.`
         : '',
       healthState?.row
         ? `v_workflow_health reports the ask-ai workflow ${str(healthState.row.health) || 'with no health value'}.`
@@ -901,29 +916,16 @@ SCREENS.ask = async host => {
   const auditP  = settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`));
   const regP    = settled(db('workflow_registry?select=id,name,audit_name,audit_aliases'));
 
-  /* Two round trips on purpose: one probe row to learn the column names, then a
-     targeted select. Guessing at `created_at` and being wrong returns 42703 and
-     takes the document count down together with the freshness check. */
+  /* One round trip, no probe, no order-by. The probe existed to discover the
+     column names and a date column; the names are now known (KB_COLS) and the
+     date column does not exist, so both halves of it are gone. There is
+     deliberately no `order=` here either: any ordering this could pick would
+     be presented on screen as meaning something, and none of them would. */
   const kbP = settled((async () => {
-    const probe = await db('rag_documents?select=*&limit=1');
-    if (!probe.length) return { count: 0, capped: false, titles: [], cols: [], titleKey: null, dateKey: null, newest: null };
-    const cols = Object.keys(probe[0]);
-    const titleKey = pickKey(cols, TITLE_KEYS);
-    const dateKey = pickKey(cols, DATE_KEYS);
-    let sel = [...new Set([titleKey, dateKey, ...META_KEYS].filter(k => k && cols.includes(k)))];
-    if (!sel.length) sel = cols.filter(c => !HEAVY_KEYS.includes(c));
-    const rows = await db(`rag_documents?select=${sel.join(',')}${dateKey ? `&order=${dateKey}.desc` : ''}&limit=${KB_LIMIT}`);
-    let newest = null;
-    if (dateKey) {
-      for (const r of rows) {
-        const t = Date.parse(r[dateKey]);
-        if (!Number.isNaN(t) && (newest == null || t > newest)) newest = t;
-      }
-    }
-    const titles = titleKey
-      ? [...new Set(rows.map(r => str(r[titleKey])).filter(Boolean))].sort((a, b) => a.localeCompare(b))
-      : [];
-    return { count: rows.length, capped: rows.length >= KB_LIMIT, titles, cols, titleKey, dateKey, newest };
+    const rows = await db(`rag_documents?select=${KB_COLS}&limit=${KB_LIMIT}`);
+    const titles = [...new Set(rows.map(r => str(r.doc_title)).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    return { count: rows.length, capped: rows.length >= KB_LIMIT, titles };
   })());
 
   /* ── What the knowledge base actually contains ──────────────────────────
@@ -944,11 +946,13 @@ SCREENS.ask = async host => {
     }
     const kb = res.v;
     kbState = kb;
-    const fresh = kb.dateKey && kb.newest != null
-      ? ` · newest section added ${ago(new Date(kb.newest).toISOString())}`
-      : kb.count ? ' · no date column on this table, so freshness is unknown' : '';
+    /* The freshness clause is not conditional and never will be: rag_documents
+       has no timestamp, so this line can only ever say that it does not know.
+       It is said next to the count rather than only in the alert strip, because
+       the count is the number an operator reads just before deciding to trust
+       an answer. */
     $('askKb').innerHTML = kb.count
-      ? `${esc(kb.capped ? 'At least ' : '')}${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')} across ${esc(num(kb.titles.length))} document${plural(kb.titles.length, '', 's')}${esc(fresh)} · answers are drawn only from these`
+      ? `${esc(kb.capped ? 'At least ' : '')}${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')} across ${esc(num(kb.titles.length))} document${plural(kb.titles.length, '', 's')} · answers are drawn only from these · <span class="t-muted">rag_documents records no ingest date, so how current they are cannot be known from here</span>`
       : 'No documents are indexed';
 
     if (!kb.count) {
@@ -1006,10 +1010,17 @@ SCREENS.ask = async host => {
       } else {
         const w = m.row;
         const h = str(w.health).toUpperCase();
-        const t = h === 'HEALTHY' ? 'ok' : h === 'DEGRADED' ? 'hot' : h === 'NEVER_RAN' ? 'warm' : '';
+        /* Was an inline HEALTHY/DEGRADED/NEVER_RAN ternary, which painted
+           NEVER_RAN amber. A workflow that has never run is the absence of
+           evidence, not a warning, and amber here made it shout louder than a
+           workflow that is genuinely failing two doors down. `tone()` gives it
+           'cold' — and gives DEGRADED 'hot', which is the value that was
+           settled centrally after four screens each decided it privately.
+           A blank health falls through tone('') === '' to pill()'s own
+           fallback, which reads the UNREPORTED label and lands on 'cold'. */
         const bits = [
           `<span class="mono">${esc(HOOK.askAi)}</span>`,
-          pill(h || 'UNREPORTED', t),
+          pill(h || 'UNREPORTED', tone(h)),
           w.is_active === false ? '<span class="t-hot">registered inactive</span>' : '',
           n0(w.runs_30d) != null
             ? `${esc(num(w.runs_30d))} run${plural(w.runs_30d, '', 's')} in 30 d, ${esc(num(n0(w.failures_30d) || 0))} failed`

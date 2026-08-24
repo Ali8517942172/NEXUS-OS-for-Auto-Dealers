@@ -62,9 +62,26 @@ function unitRow(u) {
   };
 }
 
+/* This hardcoded `VH-` and a 3-digit pad, but every unit in the database is
+   `NX-1001` … `NX-1012`. So the only ids this ever matched were ones it had
+   minted itself, and a vehicle added from the browser landed in a namespace of
+   its own — which also means `v_needs_attention.ref`, which carries the stock
+   number for an ageing unit, could never resolve it back to a row.
+
+   Read the prefix and the width off the rows we already hold instead of
+   asserting either. The fallback only applies to a genuinely empty inventory. */
 function nextStockId(inv) {
-  const nums = inv.map(u => /^VH-(\d+)$/.exec(String(u.id || ''))).filter(Boolean).map(m => Number(m[1]));
-  return 'VH-' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
+  const seen = (inv || [])
+    .map(u => /^([A-Za-z]+)-(\d+)$/.exec(String(u.id || '')))
+    .filter(Boolean);
+  if (!seen.length) return 'NX-1001';
+  const counts = new Map();
+  seen.forEach(m => counts.set(m[1].toUpperCase(), (counts.get(m[1].toUpperCase()) || 0) + 1));
+  const prefix = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const mine = seen.filter(m => m[1].toUpperCase() === prefix);
+  const width = Math.max(...mine.map(m => m[2].length));
+  const next = Math.max(...mine.map(m => Number(m[2]))) + 1;
+  return `${prefix}-${String(next).padStart(width, '0')}`;
 }
 
 /* Local calendar date, not UTC. toISOString() on local midnight in Dubai (UTC+4)

@@ -2,13 +2,19 @@
  *
  * This is NOT the earlier equivalence test — the screens are supposed to differ
  * now. This checks the things that must stay true no matter what an agent did:
- *   1. the bundle builds
+ *   1. the bundle builds — ACTUALLY builds. This header claimed it for days
+ *      while the file only ever served whatever was already in ./dist/, so a
+ *      run against 20-minute-old output reported green on code nobody had
+ *      tested. A gate that grades a stale artefact is worse than no gate: it
+ *      is a green light with no lamp behind it, which is the same fault the
+ *      schema stub had. It builds first now, and refuses to run if it cannot.
  *   2. the app boots and still registers all 14 screens
  *   3. every screen renders with zero page errors
  *   4. every screen produces real content, and none collapses into its error state
  *   5. nobody invented data or reached outside the helper contract
  */
 import { chromium } from 'playwright';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -91,7 +97,13 @@ const SCHEMA = {
   v_customer_360: ['name','email','phone','lead_count','best_ai_score','latest_status','is_vip','last_contact_at','message_count','total_emails','total_slack_messages','purchase_count','lifetime_value_aed','last_purchase_date'],
   v_customer_directory: ['id','name','email','phone','source_records','last_seen_at'],
   v_conversations: ['thread_key','chat_id','phone','push_name','lead_email','lead_name','lead_status','display_name','identified','message_count','inbound_count','outbound_count','last_message_at','last_message','last_direction','awaiting_reply'],
-  daily_metrics: ['id','snapshot_date','leads_total','leads_hot','revenue_aed','created_at'],
+  /* Probed live 24 Aug. The first version of this entry was invented from the
+     table's name -- id/leads_total/leads_hot/revenue_aed/created_at, none of
+     which exist -- which would have made the gate reject overview.js's real,
+     working delta reads. A guessed schema in the schema checker is the exact
+     failure this file was rewritten to end, so it is worth saying plainly:
+     every list here must come from the database, not from a plausible guess. */
+  daily_metrics: ['snapshot_date','open_leads','hot_leads','warm_leads','cold_leads','avg_response_minutes','pipeline_aed','units_at_risk','holding_cost_aed','workflow_runs','workflow_failures','captured_at'],
 };
 
 /* Plausible values by column name, so a screen gets something it can format
@@ -170,6 +182,38 @@ function stubRest(url) {
     }
   }
   const row = fabricate(table);
+  /* Two rows, deliberately NOT identical for the tables where the interesting
+     branch is a per-row flag. The stub used to return [row, row] with
+     void_reason and purged_at hardcoded null, which meant the compliance
+     screen's voided partition -- the whole reason that screen was rewritten --
+     was never exercised by the gate. A screen that counted voided rows into its
+     approval rate would still have gated green. Same for a purged file, whose
+     "do not offer a link" branch is a real compliance obligation. */
+  if (table === 'kyc_documents') {
+    return { status: 200, body: [
+      row,
+      { ...row, id: '00000000-0000-4000-8000-000000000002',
+        void_reason: 'not a document — greeting image auto-routed to the auditor',
+        voided_at: '2026-08-24T00:00:00Z', document_type: 'Religious Banner',
+        verdict: 'APPROVED', confidence_score: 100 },
+      { ...row, id: '00000000-0000-4000-8000-000000000003',
+        purged_at: '2026-08-20T00:00:00Z' },
+      { ...row, id: '00000000-0000-4000-8000-000000000004',
+        storage_path: null },              // archive gap
+    ] };
+  }
+  if (table === 'competitors') {
+    /* The scraper really did store `"null"` (the string) and
+       `"Pardon Our Interruption"` — a bot-detection interstitial — as competitor
+       names, with no price at all. A screen that counts those as rival
+       dealerships, or builds an undercut claim on a null price, must fail here
+       rather than in front of the owner. */
+    return { status: 200, body: [
+      row,
+      { ...row, id: 98, competitor: 'null', price_aed: null, price_diff_aed: null },
+      { ...row, id: 99, competitor: 'Pardon Our Interruption', price_aed: null, price_diff_aed: null },
+    ] };
+  }
   return { status: 200, body: [row, row] };
 }
 
@@ -234,6 +278,20 @@ async function run(port) {
   }
   await browser.close();
   return { loggedIn, nav, screens, errs, schemaRejections };
+}
+
+/* Build before serving. `--outDir dist` with no --emptyOutDir, because on the
+   Cowork device mount unlink is denied and emptying the directory fails the
+   whole build; vite overwrites the files it produces either way, and the hashed
+   filenames in index.html are what the page actually loads. */
+console.log('=== build ===');
+try {
+  execFileSync('node_modules/.bin/vite', ['build', '--outDir', 'dist', '--logLevel', 'warn'],
+    { cwd: new URL('.', import.meta.url).pathname, stdio: 'inherit' });
+  console.log('  built');
+} catch (e) {
+  console.log('  BUILD FAILED — not gating a stale bundle.');
+  process.exit(1);
 }
 
 const srv = await serve(new URL('./dist/', import.meta.url).pathname, 8071);

@@ -9,7 +9,24 @@
    totals and computes `health` on a rolling 30-day window, so this screen leads
    with the recent window and keeps the all-time figures as context behind it.
 
-   Three rules this screen holds itself to:
+   Rebuilt again on 24 Aug 2026 evening, for three backend changes it was
+   misrepresenting:
+
+     · Every workflow now carries a hard five-minute `executionTimeout`, with one
+       deliberate exception (the 7-Day Warm Lead Drip, which holds Wait nodes).
+       That ceiling is stated here rather than left in a config file, because a
+       run stopped by it arrives in these counts as a *failure* and would
+       otherwise be read as the workflow being broken.
+     · A scheduled job that silently stops is invisible to `v_workflow_health` —
+       no runs means no failures means nothing to colour red. This screen now
+       judges every scheduled workflow against its own cadence, the way
+       `scripts/nexus_healthcheck.py` section 7 does server-side, and says
+       plainly how much weaker its evidence is.
+     · Run history is matched through `workflow_registry.audit_name` and
+       `audit_aliases`, never on an exact name, because audit_log names drift
+       from n8n workflow names and an unmatched alias reads as "never ran".
+
+   The rules this screen holds itself to:
 
      · The 30-day success rate is computed here from `runs_30d` and
        `failures_30d` — the two columns whose window is documented — rather than
@@ -45,6 +62,10 @@ import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
    log that looks complete but is a window is the same class of lie this screen
    was rebuilt to stop telling. */
 const AUDIT_LIMIT = 500;
+/* Same shape of bound on the lead read used only to put a phone number next to a
+   customer's name. Where the email is not found the row says so rather than
+   showing a blank. */
+const LEAD_LIMIT = 2000;
 
 /* audit_log has no execution_id column, which is why "Open in n8n" used to be a
    permanently disabled button. But the Error Handler already writes the
@@ -228,9 +249,205 @@ function triggerState(w) {
     why: `The ${hook} webhook exists, but it needs ${NEEDS_SUBJECT[hook] || 'a subject record this screen does not have'} Firing it from here with nothing attached would either fail or act on the wrong record.` };
 }
 
+/* ── The five-minute execution ceiling ─────────────────────────────────────
+   Set on the n8n side on 24 Aug 2026: every workflow on the instance carries
+   `executionTimeout: 300`. It was added because two WhatsApp BDC executions ran
+   for 1.1 hours each and dragged the whole instance's API latency from 0.34 s to
+   7.8 s — a run that hangs is not a private problem, it taxes every other
+   workflow on the box.
+
+   Two things follow that this screen has to say out loud, because neither is
+   visible in the data:
+
+     · A run the ceiling stops arrives here as a FAILURE. n8n keeps it with
+       `saveDataErrorExecution: 'all'`, so the row and its input survive. That is
+       the ceiling working, not the workflow being broken, and the two must not
+       be read as the same finding.
+     · The ceiling is n8n configuration. `v_workflow_health` has no timeout
+       column, so this screen cannot verify the setting per workflow — it states
+       the policy it was built against and says that it is stating it. */
+const CEILING_SECONDS = 300;
+const CEILING = {
+  chip: '5-min ceiling',
+  why: `Every workflow on this instance carries executionTimeout: ${CEILING_SECONDS} — a hard five-minute wall-clock ceiling, set on 24 Aug 2026 after two WhatsApp BDC executions ran for 1.1 hours each and took the instance's API latency from 0.34 s to 7.8 s.`,
+  onTimeout: "A run the ceiling stops is not lost. n8n saves it with saveDataErrorExecution: 'all', so it lands in the failure counts here with its input data intact. Read it as the ceiling doing its job — the run was cut off at five minutes — rather than as the workflow itself failing. The thing to look at is what made that execution slow, and the saved execution in n8n still holds it.",
+  provenance: 'The ceiling is n8n deployment configuration; v_workflow_health carries no timeout column, so this screen is stating the policy this build was written against rather than reading each workflow’s real setting. A change made in n8n will not show up here.',
+};
+
+/* The single deliberate exception, and the reason it is on screen rather than
+   buried in a config file: the next person to add a Wait node needs to know that
+   the ceiling exists and that an exemption is a decision somebody has to make. */
+const CEILING_EXEMPT = [
+  {
+    test: w => /warm\s*lead\s*drip/.test(low(w.name)),
+    chip: 'No ceiling — Wait nodes',
+    why: 'This is the one workflow deliberately exempt from the five-minute ceiling. It holds Wait nodes at Day 1, Day 3, Day 5 and Day 7, so one execution is meant to stay open for a week; a wall-clock timeout would cut it off partway and the customer would receive half a campaign. Any new workflow with a Wait node needs the same exemption made explicitly, or its run will be stopped at five minutes.',
+  },
+];
+const exemptFrom = w => CEILING_EXEMPT.find(e => e.test(w)) || null;
+
+/* A failure whose summary reads like the ceiling stopping a run. Matched on the
+   summary text because audit_log has no separate reason column — so this is
+   worded as a reading of the text, never as a fact the database asserted. */
+const TIMEOUT_RE = /\btimed?\s*-?\s*out\b|\btimeout\b|execution time(?: limit)? exceeded|exceeded the (?:maximum )?execution|max(?:imum)? execution time|ETIMEDOUT/i;
+const looksTimedOut = a =>
+  ['FAILED', 'REJECTED'].includes(up(a.status)) && TIMEOUT_RE.test(String(a.summary || ''));
+
+/* ── Schedule cadence: has a scheduled job silently stopped? ────────────────
+   `v_workflow_health.health` cannot answer this. A workflow that stops firing
+   logs no runs, and therefore logs no failures, so it stays HEALTHY — or drifts
+   to NEVER_RAN — while nothing happens at all. That is exactly what Competitor
+   Price Scraping did: its n8n trigger was an "every 24 hours" *interval*, which
+   counts from the last activation rather than from the clock, so every VM
+   restart silently moved its fire time and after the 19 Aug outage it stopped
+   landing altogether — one run in 36 hours, with a green health record. It is
+   now on a cron.
+
+   So the check here is the one `scripts/nexus_healthcheck.py` section 7 makes
+   server-side: judge each scheduled job against its OWN cadence rather than
+   against "did anything run recently". The grace period matches that script —
+   an hourly job is late after 2 h, a daily job after 26 h.
+
+   The one honest difference, stated wherever this is rendered: the script reads
+   n8n executions, this screen only has `last_run`, which comes from audit_log
+   and records runs that COMPLETED AND WROTE A ROW. For a workflow that writes a
+   row only when it finds something — the Silence Detector writes when somebody
+   is actually silent — a quiet week looks the same as a stopped schedule. So
+   "overdue" here means "worth confirming in n8n", not "proven dead". It is still
+   the only warning this dashboard can give for a failure mode nothing else on
+   the screen can see. */
+const HOUR_MS = 3600000;
+
+/* Number of values a single cron field fires on. Returns null when the field is
+   not something this parser understands, and an unparsed field means no cadence
+   claim is made at all — a wrong cadence would produce a false "overdue". */
+function cronFieldCount(f, span) {
+  if (f === '*') return span;
+  let total = 0;
+  for (const part of String(f).split(',')) {
+    const [rangeRaw, stepRaw] = part.split('/');
+    const step = stepRaw == null ? 1 : Number(stepRaw);
+    if (!Number.isFinite(step) || step <= 0) return null;
+    let lo, hi;
+    if (rangeRaw === '*' || rangeRaw === '') { lo = 0; hi = span - 1; }
+    else if (rangeRaw.includes('-')) {
+      const [a, b] = rangeRaw.split('-').map(Number); lo = a; hi = b;
+    } else {
+      const a = Number(rangeRaw); lo = a; hi = stepRaw == null ? a : span - 1;
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < lo) return null;
+    hi = Math.min(hi, span - 1);
+    total += Math.floor((hi - lo) / step) + 1;
+  }
+  return total > 0 ? total : null;
+}
+
+/* Five- or six-field cron, found inside whatever prose trigger_detail holds. */
+const CRON_RE = /(?:^|[\s:=("'])((?:[\d*/,-]+\s+){4,5}[\d*/,-]+)(?=$|[\s)"'.,])/;
+
+function cronHours(expr) {
+  let f = String(expr).trim().split(/\s+/);
+  if (f.length === 6) f = f.slice(1);          // leading seconds field
+  if (f.length !== 5) return null;
+  const [m, h, dom, , dow] = f;
+  const perDay = (cronFieldCount(m, 60) || 0) * (cronFieldCount(h, 24) || 0);
+  if (!perDay) return null;
+  let dayFactor = 1;
+  if (dow !== '*') { const d = cronFieldCount(dow, 7); if (!d) return null; dayFactor = 7 / d; }
+  else if (dom !== '*') { const d = cronFieldCount(dom, 31); if (!d) return null; dayFactor = 30 / d; }
+  return (24 / perDay) * dayFactor;
+}
+
+const PHRASES = [
+  [/every\s+(\d+)\s*h(?:ou)?rs?\b/i,   m => Number(m[1])],
+  [/every\s+(\d+)\s*min(?:ute)?s?\b/i, m => Number(m[1]) / 60],
+  [/every\s+(\d+)\s*days?\b/i,         m => Number(m[1]) * 24],
+  [/\b(?:hourly|every hour)\b/i,       () => 1],
+  [/\b(?:daily|nightly|every night|every day|once a day)\b/i, () => 24],
+  [/\b(?:weekly|every week)\b/i,       () => 168],
+];
+
+const SCHEDULEY = /schedul|cron|timer|interval|hourly|daily|nightly|weekly|every\s/i;
+
+/* Grace on top of the cadence, matching nexus_healthcheck.py section 7:
+   hourly → late at 2 h, daily → late at 26 h. */
+const allowanceFor = hours => hours + (hours <= 1 ? 1 : 2);
+
+const fmtHours = h =>
+  h == null ? '—'
+    : h < 1 ? `${Math.round(h * 60)} min`
+    : h < 48 ? `${Number.isInteger(h) ? h : h.toFixed(1)} h`
+    : `${(h / 24).toFixed(h % 24 ? 1 : 0)} days`;
+
+function cadenceOf(w) {
+  /* A webhook-triggered workflow has no cadence to miss: it runs when something
+     calls it, and silence means nobody called, not that a schedule broke. */
+  if (hookFor(w)) return null;
+  const detail = String(w.trigger_detail || '');
+  const text = `${w.trigger_type || ''} ${detail}`;
+  if (!SCHEDULEY.test(text)) return null;
+
+  const cron = (detail.match(CRON_RE) || text.match(CRON_RE) || [])[1];
+  if (cron) {
+    const hours = cronHours(cron);
+    if (hours) return { hours, allowance: allowanceFor(hours), kind: 'cron', expr: cron.trim(), drifts: false };
+  }
+  for (const [re, calc] of PHRASES) {
+    const m = text.match(re);
+    if (!m) continue;
+    const hours = calc(m);
+    if (!Number.isFinite(hours) || hours <= 0) continue;
+    /* "every N hours" with no clock time in it is how an n8n *interval* is
+       described, and an interval counts from the last activation, so a restart
+       moves it. That is the fault Competitor Price Scraping had. */
+    const interval = /interval/i.test(text) || /every\s+\d+\s*(?:h|m|d)/i.test(text);
+    return {
+      hours, allowance: allowanceFor(hours),
+      kind: interval ? 'interval' : 'phrase', expr: m[0].trim(), drifts: interval,
+    };
+  }
+  return null;
+}
+
+const SCHED = {
+  OVERDUE:     { tone: 'hot',  icon: 'alarm', label: 'Overdue' },
+  NO_RUN:      { tone: 'warm', icon: 'alarm', label: 'Never logged a run' },
+  ON_TIME:     { tone: 'ok',   icon: 'schedule', label: 'On cadence' },
+  UNCHECKABLE: { tone: '',     icon: 'visibility_off', label: 'Cannot be checked' },
+};
+
+/* The verdict for one scheduled workflow. Deliberately conservative: anything it
+   cannot stand behind comes back UNCHECKABLE with the reason, not as a pass. */
+function scheduleOf(w) {
+  const c = cadenceOf(w);
+  if (!c) return null;
+  if (!w.writes_audit_log) {
+    return { c, state: 'UNCHECKABLE', ageH: null,
+      why: `This job is on a ${fmtHours(c.hours)} cadence but writes nothing to audit_log, so there is no last_run to measure and this screen cannot tell whether it is still firing. n8n's own execution list is the only place that can answer it.` };
+  }
+  const t = w.last_run ? Date.parse(w.last_run) : NaN;
+  if (Number.isNaN(t)) {
+    return { c, state: 'NO_RUN', ageH: null,
+      why: `Nothing has ever been logged for this job, so a ${fmtHours(c.hours)} schedule has produced no evidence of firing at all. A schedule that never fires raises no failures, which is why nothing else on this screen calls it unhealthy.` };
+  }
+  const ageH = (Date.now() - t) / HOUR_MS;
+  if (ageH > c.allowance) {
+    return { c, ageH, state: 'OVERDUE',
+      why: `Last logged run ${fmtHours(ageH)} ago. On a ${fmtHours(c.hours)} cadence it should have logged one within ${fmtHours(c.allowance)}, so it has missed at least one. A stopped schedule produces no failures and no degraded health — this gap is the only signal it gives.` };
+  }
+  return { c, ageH, state: 'ON_TIME',
+    why: `Last logged run ${fmtHours(ageH)} ago, inside the ${fmtHours(c.allowance)} this ${fmtHours(c.hours)} cadence allows.` };
+}
+const OVERDUE_STATES = ['OVERDUE', 'NO_RUN'];
+
+/* Said wherever a cadence verdict is shown, because the evidence is indirect. */
+const CADENCE_CAVEAT = 'last_run comes from audit_log, which records runs that completed and wrote a row — not every fire of the trigger. A job that only writes a row when it finds something (the Silence Detector writes when somebody is actually silent) looks overdue on a quiet week. Treat this as "confirm it in n8n", not as proof. scripts/nexus_healthcheck.py section 7 makes the same judgement against n8n executions, which is the stronger source.';
+
 SCREENS.automation = async host => {
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
   const banners = el('div'); banners.style.marginTop = '16px'; host.appendChild(banners);
+  const schedCard = el('div', 'card flush'); schedCard.style.marginTop = '16px'; host.appendChild(schedCard);
+  schedCard.innerHTML = stateLoading(3);
   const healthCard = el('div', 'card flush'); healthCard.style.marginTop = '16px'; host.appendChild(healthCard);
   healthCard.innerHTML = stateLoading(6);
   const logCard = el('div', 'card flush'); logCard.style.marginTop = '16px'; host.appendChild(logCard);
@@ -241,10 +458,16 @@ SCREENS.automation = async host => {
      is down" are different sentences and each panel is entitled to the right
      one. Swallowing either into an empty array would render a green screen over
      a dead system, which is the exact failure this screen exists to prevent. */
-  const [healthR, auditR, regR] = await Promise.allSettled([
+  const [healthR, auditR, regR, leadR] = await Promise.allSettled([
     db('v_workflow_health?select=*'),
     db(`audit_log?select=workflow,status,lead_name,lead_email,lead_score,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`),
     db('workflow_registry?select=id,name,audit_name,audit_aliases'),
+    /* audit_log holds a customer's name and email but no phone. `leads.phone`
+       is where the number lives, so it is joined here on email — a person shown
+       with no way to reach them is half a record. There is deliberately no staff
+       phone anywhere on this screen: `users` has no phone column, so a number
+       for whoever owns a workflow is not recorded anywhere the dashboard reads. */
+    db(`leads?select=name,email,phone&limit=${LEAD_LIMIT}`),
   ]);
 
   const health = healthR.status === 'fulfilled' ? healthR.value : null;
@@ -252,6 +475,22 @@ SCREENS.automation = async host => {
   const audit = auditR.status === 'fulfilled' ? auditR.value : null;
   const auditErr = auditR.status === 'rejected' ? (auditR.reason?.message || 'Unknown error') : null;
   const registry = regR.status === 'fulfilled' ? regR.value : null;
+
+  const leadsOk = leadR.status === 'fulfilled';
+  const phoneByEmail = new Map();
+  if (leadsOk) {
+    (leadR.value || []).forEach(l => { if (l && l.email) phoneByEmail.set(low(l.email), l.phone || null); });
+  }
+  /* Four distinct answers, never collapsed into one dash: we have a number, the
+     lead exists and carries none, no lead matches this email at all, or the lead
+     table could not be read. */
+  const phoneLine = email => {
+    if (!email) return '<span class="t-muted">no email on the run, so no number to look up</span>';
+    if (!leadsOk) return '<span class="t-muted">leads could not be read, so no phone</span>';
+    if (!phoneByEmail.has(low(email))) return '<span class="t-muted">no lead record for this email, so no phone</span>';
+    const p = phoneByEmail.get(low(email));
+    return p ? `<span class="mono">${esc(p)}</span>` : '<span class="t-muted">no phone on the lead record</span>';
+  };
 
   /* The registry is what ties an n8n workflow to the string it writes into
      audit_log. Without it the drawer falls back to matching on the display
@@ -283,6 +522,29 @@ SCREENS.automation = async host => {
   const byDesign = rows.filter(w => stateKey(w) === 'RETURNS_RESULT');
   const auditCapped = (audit || []).length >= AUDIT_LIMIT;
 
+  /* Cadence verdicts, computed once. `sched` is null for anything without a
+     recognisable schedule, and the scheduled set is ordered worst-first. */
+  const schedOf = new Map(rows.map(w => [w, scheduleOf(w)]));
+  const scheduled = rows.filter(w => schedOf.get(w));
+  const schedRank = { OVERDUE: 0, NO_RUN: 1, UNCHECKABLE: 2, ON_TIME: 3 };
+  scheduled.sort((a, b) =>
+    (schedRank[schedOf.get(a).state] - schedRank[schedOf.get(b).state])
+    || ((schedOf.get(b).ageH || 0) - (schedOf.get(a).ageH || 0))
+    || String(a.name || '').localeCompare(String(b.name || '')));
+  const overdue = scheduled.filter(w => OVERDUE_STATES.includes(schedOf.get(w).state));
+  const drifting = scheduled.filter(w => schedOf.get(w).c.drifts);
+  const isOverdue = w => OVERDUE_STATES.includes(schedOf.get(w)?.state);
+
+  /* The ceiling is the same policy for every row, so the chip is short and the
+     whole explanation — including that this is n8n configuration the dashboard
+     cannot read back — lives in its title. */
+  const ceilingChip = w => {
+    const ex = exemptFrom(w);
+    return ex
+      ? `<span class="chip" title="${esc(`${ex.why} ${CEILING.provenance}`)}">${esc(ex.chip)}</span>`
+      : `<span class="chip" title="${esc(`${CEILING.why} ${CEILING.onTimeout} ${CEILING.provenance}`)}">${esc(CEILING.chip)}</span>`;
+  };
+
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!health) {
     strip.classList.remove('grid', 'g5');
@@ -311,7 +573,12 @@ SCREENS.automation = async host => {
         degraded.length
           ? `<span class="t-hot">${esc(degraded.map(w => w.name).slice(0, 2).join(', '))}${degraded.length > 2 ? ` +${degraded.length - 2} more` : ''}</span>`
           : (logged
-              ? '<span class="t-ok">No logged workflow failed inside the 30-day window</span>'
+              /* "Nothing is failing" must never be allowed to read as "nothing is
+                 wrong" while a schedule has silently stopped: a stopped job fails
+                 nothing, by definition. */
+              ? (overdue.length
+                  ? `<span class="t-ok">No logged workflow failed inside the 30-day window</span><br><span class="t-warm">but ${num(overdue.length)} scheduled job${overdue.length === 1 ? ' has' : 's have'} not run on cadence</span>`
+                  : '<span class="t-ok">No logged workflow failed inside the 30-day window</span>')
               : '<span class="t-muted">Nothing writes to audit_log, so nothing can be measured</span>'),
         degraded.length ? 't-hot' : ''),
       kpi('Runs · last 30 days', num(runs30),
@@ -328,7 +595,8 @@ SCREENS.automation = async host => {
       kpi('Success rate · 30 days', r30 == null ? '—' : pct(r30),
         r30 == null
           ? '<span class="t-muted">No runs inside the window to divide by</span>'
-          : `Across ${num(runs30)} logged run${runs30 === 1 ? '' : 's'}${rAll == null ? '' : ` · ${pct(rAll)} all-time`}${esc30 ? ` · ${num(esc30)} escalation${esc30 === 1 ? '' : 's'}` : ''}`,
+          : `Across ${num(runs30)} logged run${runs30 === 1 ? '' : 's'} in the window${rAll == null ? '' : ` · ${pct(rAll)} all-time`}${
+              esc30 ? ` · ${num(esc30)} escalation${esc30 === 1 ? '' : 's'} all-time` : ''}`,
         r30 == null ? '' : (fails30 ? 't-hot' : 't-ok')),
     ].join('');
   }
@@ -338,6 +606,7 @@ SCREENS.automation = async host => {
      A degraded workflow must be impossible to miss and impossible to lose. */
   let focusHealth = () => {};
   let focusLog = () => {};
+  let focusSched = () => {};
 
   if (degraded.length) {
     /* rows are already worst-first, so the first degraded entry is the one with
@@ -360,6 +629,49 @@ SCREENS.automation = async host => {
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">check_circle</span>
       <div>No instrumented workflow has failed inside the 30-day window. This statement only covers the
       ${num(rows.filter(w => w.writes_audit_log).length)} of ${num(rows.length)} workflows that write to audit_log.</div>`;
+    banners.appendChild(b);
+  }
+
+  /* The silent one. A schedule that has stopped firing raises no failures and no
+     DEGRADED health, so without this banner nothing on the screen would mention
+     it at all. The wording carries its own evidence limit rather than claiming
+     more than last_run can support. */
+  if (overdue.length) {
+    const worst = overdue[0];
+    const s = schedOf.get(worst);
+    const hard = overdue.some(w => {
+      const x = schedOf.get(w);
+      return x.state === 'NO_RUN' || (x.ageH != null && x.ageH > x.c.allowance * 2);
+    });
+    const b = el('div', `banner ${hard ? 'hot' : 'warm'}`);
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">alarm</span>
+      <div style="flex:1"><strong>${num(overdue.length)} scheduled job${overdue.length === 1 ? ' has' : 's have'} not logged a run inside ${overdue.length === 1 ? 'its' : 'their'} own cadence.</strong>
+      ${esc(worst.name || 'One job')} is on a ${esc(fmtHours(s.c.hours))} schedule and ${
+        s.state === 'NO_RUN'
+          ? 'has never logged a run at all'
+          : `last logged one ${esc(fmtHours(s.ageH))} ago, past the ${esc(fmtHours(s.c.allowance))} that cadence allows`}.
+      A schedule that stops firing produces no failures and no degraded health, so this is the only place it shows up.
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(CADENCE_CAVEAT)}</div></div>
+      <button class="btn sm" id="aShowOverdue">Show ${overdue.length === 1 ? 'it' : 'them'}</button>`;
+    banners.appendChild(b);
+    b.querySelector('#aShowOverdue').addEventListener('click', () => focusSched('LATE'));
+  }
+
+  /* Not a fault — a policy, and one that changes how a failure below should be
+     read. Stated once, at the top, because it applies to every row on the page. */
+  if (rows.length) {
+    const exempt = rows.filter(w => exemptFrom(w));
+    const b = el('div', 'banner info');
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">timer</span>
+      <div style="flex:1"><strong>Every workflow is capped at ${CEILING_SECONDS / 60} minutes of wall-clock time.</strong>
+      ${esc(CEILING.why)}
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(CEILING.onTimeout)}</div>
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${
+        exempt.length
+          ? `One deliberate exception: <strong>${esc(exempt.map(w => w.name).join(', '))}</strong> carries no ceiling. ${esc(exempt.map(w => exemptFrom(w).why)[0])}`
+          : 'The one workflow exempt from it — the 7-Day Warm Lead Drip, whose Wait nodes hold an execution open for a week — is not in this list, so nothing on screen is currently exempt.'}
+      </div>
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(CEILING.provenance)}</div></div>`;
     banners.appendChild(b);
   }
 
@@ -402,12 +714,21 @@ SCREENS.automation = async host => {
     const orphans = [...new Set((audit || []).map(a => a.workflow).filter(w => w && !known.has(low(w))))];
     if (orphans.length) {
       const b = el('div', 'banner warm');
+      /* Each unmatched name is a button that filters the log to it, so the claim
+         hands over the exact runs it is about rather than leaving someone to
+         search for them. */
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">help</span>
         <div style="flex:1"><strong>${num(orphans.length)} name${orphans.length === 1 ? '' : 's'} in the activity log match no registered workflow.</strong>
-        ${esc(orphans.slice(0, 4).join(', '))}${orphans.length > 4 ? ` and ${orphans.length - 4} more` : ''}.
-        Runs logged under ${orphans.length === 1 ? 'that name' : 'those names'} are not counted in any health figure above until
-        workflow_registry records ${orphans.length === 1 ? 'it' : 'them'} as an audit_name or alias.</div>`;
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          ${orphans.slice(0, 6).map(n => `<button class="btn sm ghost" data-orphan="${esc(n)}">${esc(n)}</button>`).join('')}
+          ${orphans.length > 6 ? `<span class="cell-sub">and ${orphans.length - 6} more</span>` : ''}
+        </div>
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">Runs logged under ${orphans.length === 1 ? 'that name' : 'those names'} are not counted in any health figure above until
+        workflow_registry records ${orphans.length === 1 ? 'it' : 'them'} as an <span class="mono">audit_name</span> or in <span class="mono">audit_aliases</span> —
+        which is the join every figure on this screen uses, precisely because audit_log names drift from the names n8n shows.</div></div>`;
       banners.appendChild(b);
+      b.querySelectorAll('[data-orphan]').forEach(btn =>
+        btn.addEventListener('click', () => focusLog('ALL', btn.dataset.orphan)));
     }
   }
 
@@ -417,6 +738,117 @@ SCREENS.automation = async host => {
       <div>workflow_registry could not be read (${esc(regR.status === 'rejected' ? (regR.reason?.message || 'Unknown error') : 'no rows')}),
       so a workflow's run history is matched on its display name alone. A workflow that logs under an alias will look quieter than it is.</div>`;
     banners.appendChild(b);
+  }
+
+  /* ── Scheduled jobs, each against its own cadence ──────────────────────── */
+  /* The check v_workflow_health cannot make. Its `health` column needs runs to
+     judge, and a job that has stopped firing has none — so it stays HEALTHY
+     while nothing happens. This card asks a different question: given what this
+     job's own trigger says its cadence is, is a run overdue? */
+  if (!health) {
+    schedCard.innerHTML = `<div class="card-head"><div><div class="card-title">Scheduled jobs</div></div></div>
+      ${stateError('workflow health', healthErr)}`;
+  } else if (!scheduled.length) {
+    schedCard.innerHTML = `<div class="card-head"><div>
+        <div class="card-title">Scheduled jobs</div>
+        <div class="card-sub">Cadence is read from <span class="mono">trigger_type</span> and <span class="mono">trigger_detail</span> in workflow_registry.</div>
+      </div></div>
+      ${stateEmpty('No schedule this screen can read',
+        `None of the ${rows.length} registered workflows records a cadence in trigger_type or trigger_detail that can be parsed — a cron expression, or wording like "every 6 hours" or "nightly". Without one there is nothing to measure last_run against, so a stopped schedule would go unnoticed here. Recording the real cron expression in workflow_registry.trigger_detail is what turns this panel on.`, 'schedule')}`;
+  } else {
+    let sf = 'ALL';
+    const lateCount = overdue.length;
+    schedCard.innerHTML = `<div class="card-head"><div>
+        <div class="card-title">Scheduled jobs — each against its own cadence</div>
+        <div class="card-sub">${num(scheduled.length)} of ${num(rows.length)} registered workflows run on a schedule this screen can read. A job that quietly stops firing raises no failures and no degraded health, so it is checked against its own interval instead: hourly is late after 2 h, daily after 26 h — the same thresholds <span class="mono">scripts/nexus_healthcheck.py</span> section 7 uses.</div>
+      </div></div>
+      <div class="toolbar">
+        <div class="seg" id="aSegSched" role="group" aria-label="Filter scheduled jobs">
+          <button data-s="ALL" class="on">All · ${num(scheduled.length)}</button>
+          ${lateCount ? `<button data-s="LATE">Overdue · ${num(lateCount)}</button>` : ''}
+        </div>
+        <div class="grow"></div>
+        <div class="t-muted num" id="aSchedCount"></div>
+      </div>
+      <div id="aSchedList"></div>
+      <div class="toolbar" style="background:var(--surface-sunken)">
+        <div class="cell-sub" style="white-space:normal;flex:1">
+          <strong>How this is judged, and how far it can be trusted.</strong> ${esc(CADENCE_CAVEAT)}
+        </div>
+      </div>
+      <div class="toolbar" style="background:var(--surface-sunken)">
+        <div class="cell-sub" style="white-space:normal;flex:1">
+          <strong>Interval or cron is not a detail.</strong> An n8n “every N hours” interval counts from the workflow's last activation, not from the clock, so every VM restart moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, with a perfectly green health record the whole time. It is on a cron now. ${
+            drifting.length
+              ? `<span class="t-warm">${num(drifting.length)} job${drifting.length === 1 ? ' still records its trigger as an interval' : 's still record their triggers as intervals'}: ${esc(drifting.map(w => w.name).join(', '))}. Worth checking in n8n whether ${drifting.length === 1 ? 'it is' : 'they are'} a real interval rather than a cron.</span>`
+              : 'No job in this list records its trigger as an interval.'}
+        </div>
+      </div>`;
+
+    const schedList = schedCard.querySelector('#aSchedList');
+    const schedCount = schedCard.querySelector('#aSchedCount');
+
+    const schedRow = (w, i) => {
+      const s = schedOf.get(w);
+      const v = SCHED[s.state];
+      return `<div class="list-item" data-sched="${i}" role="button" tabindex="0"
+        aria-label="Open ${esc(w.name || 'workflow')} — ${esc(v.label)}" style="align-items:flex-start">
+        <span class="material-symbols-outlined ${v.tone === 'hot' ? 't-hot' : v.tone === 'ok' ? 't-ok' : 't-muted'}"
+          style="margin-top:2px">${esc(v.icon)}</span>
+        <div style="flex:1;min-width:0">
+          <div class="wf-head">
+            <span style="font-weight:500">${esc(w.name || 'Unnamed workflow')}</span>
+            ${pill(v.label, v.tone || undefined)}
+            ${w.is_active === false ? pill('Inactive', 'warm') : ''}
+            <span class="chip" title="${esc(s.c.kind === 'cron'
+              ? `Cron expression read from workflow_registry.trigger_detail: ${s.c.expr}`
+              : s.c.kind === 'interval'
+                ? `Recorded as an interval (${s.c.expr}). An n8n interval counts from the last activation, so a restart moves the fire time.`
+                : `Recorded as “${s.c.expr}”. Whether that is a cron or an n8n interval is not written down, so the mechanism — and whether a restart moves it — is unknown here.`)}"
+              >${esc(s.c.kind === 'cron' ? `cron ${s.c.expr}` : s.c.expr)}${s.c.drifts ? ' · interval, drifts' : ''}</span>
+            <span class="chip">expects a run every ${esc(fmtHours(s.c.hours))}</span>
+          </div>
+          <div class="cell-sub ${s.state === 'OVERDUE' ? 't-hot' : ''}" style="margin-top:6px;white-space:normal">${esc(s.why)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div class="cell-sub">${w.last_run ? 'last logged run' : ''}</div>
+          <div class="num" style="font-weight:500">${w.last_run
+            ? `<span class="${s.state === 'OVERDUE' ? 't-hot' : ''}">${esc(ago(w.last_run))}</span>`
+            : '<span class="t-muted">never</span>'}</div>
+          <div class="cell-sub">late after ${esc(fmtHours(s.c.allowance))}</div>
+        </div>
+      </div>`;
+    };
+
+    function drawSched() {
+      const vis = sf === 'LATE' ? scheduled.filter(isOverdue) : scheduled;
+      schedCount.textContent = `${vis.length} of ${scheduled.length}`;
+      schedList.innerHTML = vis.length
+        ? vis.map(w => schedRow(w, scheduled.indexOf(w))).join('')
+        : stateEmpty('Nothing overdue', 'Every scheduled job has logged a run inside its own cadence.', 'schedule');
+      schedList.querySelectorAll('[data-sched]').forEach(node => {
+        const open = () => openWorkflow(scheduled[Number(node.dataset.sched)]);
+        node.addEventListener('click', open);
+        node.addEventListener('keydown', ev => {
+          if (ev.key !== 'Enter' && ev.key !== ' ') return;
+          ev.preventDefault(); open();
+        });
+      });
+    }
+
+    schedCard.querySelectorAll('#aSegSched button').forEach(b => b.addEventListener('click', () => {
+      schedCard.querySelectorAll('#aSegSched button').forEach(x => x.classList.toggle('on', x === b));
+      sf = b.dataset.s; drawSched();
+    }));
+
+    focusSched = (state = 'ALL') => {
+      sf = state;
+      schedCard.querySelectorAll('#aSegSched button').forEach(x => x.classList.toggle('on', x.dataset.s === state));
+      drawSched();
+      schedCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    drawSched();
   }
 
   /* ── Workflow health, grouped by category ──────────────────────────────── */
@@ -429,19 +861,26 @@ SCREENS.automation = async host => {
   } else {
     const f = { health: 'ALL', q: '' };
     const hCount = k => rows.filter(w => stateKey(w) === k).length;
-    const segs = [['ALL', rows.length], ['DEGRADED', hCount('DEGRADED')], ['HEALTHY', hCount('HEALTHY')],
+    /* SCHED_LATE is not a health state and is not presented as one — it is a
+       filter over the same list for the condition `health` cannot express. */
+    const segs = [['ALL', rows.length], ['DEGRADED', hCount('DEGRADED')], ['SCHED_LATE', overdue.length],
+                  ['HEALTHY', hCount('HEALTHY')],
                   ['NEVER_RAN', hCount('NEVER_RAN')], ['NOT_INSTRUMENTED', hCount('NOT_INSTRUMENTED')],
                   ['RETURNS_RESULT', hCount('RETURNS_RESULT')]]
       .filter(([k, c]) => k === 'ALL' || c > 0);
+    const segLabel = k => k === 'ALL' ? 'All'
+      : k === 'SCHED_LATE' ? 'Schedule overdue'
+      : STATES[k] ? STATES[k].label : k;
 
     healthCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Workflow health by category</div>
-        <div class="card-sub">Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>; all-time totals sit underneath as context. Click a workflow for its full record and recent runs.</div>
+        <div class="card-sub">Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>; the all-time <span class="mono">runs</span>/<span class="mono">failures</span> totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
-          ${segs.map(([k, c], i) => `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}">${
-            k === 'ALL' ? 'All' : esc(STATES[k] ? STATES[k].label : k)} · ${num(c)}</button>`).join('')}
+          ${segs.map(([k, c], i) => `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
+            k === 'SCHED_LATE' ? ' title="Not a health state — these are scheduled jobs whose last logged run is older than their own cadence allows. v_workflow_health cannot express this: a job that stops firing logs no failures."' : ''
+            }>${esc(segLabel(k))} · ${num(c)}</button>`).join('')}
         </div>
         <div class="grow"><input type="search" id="aWfQ" aria-label="Search workflows"
           placeholder="Search workflow, category, trigger or description" /></div>
@@ -455,7 +894,8 @@ SCREENS.automation = async host => {
     const visible = () => {
       const q = f.q.trim().toLowerCase();
       return rows.filter(w => {
-        if (f.health !== 'ALL' && stateKey(w) !== f.health) return false;
+        if (f.health === 'SCHED_LATE') { if (!isOverdue(w)) return false; }
+        else if (f.health !== 'ALL' && stateKey(w) !== f.health) return false;
         if (!q) return true;
         return [w.name, w.category, w.trigger_type, w.trigger_detail, w.description, healthLabel(w)]
           .some(v => low(v).includes(q));
@@ -478,6 +918,7 @@ SCREENS.automation = async host => {
             ${pill(healthLabel(w), h.tone || undefined)}
             ${w.is_active === false ? pill('Inactive', 'warm') : ''}
             <span class="chip">${esc(w.trigger_type || 'trigger not recorded')}${w.trigger_detail ? ' · ' + esc(w.trigger_detail) : ''}</span>
+            ${ceilingChip(w)}
           </div>
           <div class="cell-sub" style="margin-top:4px;white-space:normal">${esc(w.description || 'No description in workflow_registry.')}</div>
           ${runBar(w)}
@@ -493,6 +934,16 @@ SCREENS.automation = async host => {
             ${w.runs ? ` · <span class="t-muted">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${rAll == null ? '' : ` (${pct(rAll)})`}</span>` : ''}
           </div>
           ${w.last_failure ? `<div class="cell-sub t-hot" style="margin-top:2px">Last failure ${esc(ago(w.last_failure))}</div>` : ''}
+          ${(() => {
+            const s = schedOf.get(w);
+            if (!s) return '';
+            const late = OVERDUE_STATES.includes(s.state);
+            return `<div class="cell-sub ${late ? 't-hot' : ''}" style="margin-top:2px;white-space:normal">
+              <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px">alarm</span>
+              ${esc(SCHED[s.state].label)} · every ${esc(fmtHours(s.c.hours))}, late after ${esc(fmtHours(s.c.allowance))}${
+                late ? ` — ${esc(s.state === 'NO_RUN' ? 'no run has ever been logged' : `nothing logged for ${fmtHours(s.ageH)}`)}` : ''}
+            </div>`;
+          })()}
         </div>
         <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <div class="num" style="font-weight:500;font-size:16px"
@@ -593,10 +1044,20 @@ SCREENS.automation = async host => {
     const h = healthOf(w);
     const r30 = rate30(w), rAll = rateAll(w);
     const viewRate = n0(w.success_rate);
-    /* Cross-check rather than trust. If the view's success_rate ever stops
-       agreeing with runs_30d/failures_30d the window behind it has moved, and
-       the reader is told instead of being handed the wrong denominator. */
-    const drift = (viewRate != null && r30 != null && Math.abs(viewRate - r30) > 0.6);
+    /* `success_rate` sits with runs/failures in the view, which are all-time,
+       while `health` is judged on 30 days — so which window it belongs to is not
+       documented anywhere. Rather than assume, the drawer works it out from the
+       numbers: whichever computed rate it matches is the window it is in. It is
+       only reported as a discrepancy when it matches neither, which is the case
+       that would genuinely mean the view's window has moved. */
+    const near = (a, b) => a != null && b != null && Math.abs(a - b) <= 0.6;
+    const rateWindow = viewRate == null ? null
+      : near(viewRate, rAll) ? 'all-time'
+      : near(viewRate, r30) ? '30-day'
+      : 'neither';
+    const drift = rateWindow === 'neither';
+    const sched = schedOf.get(w) || null;
+    const exempt = exemptFrom(w);
     const t = triggerState(w);
     const history = auditFor(w);
     const known = registry ? 'workflow_registry aliases' : 'the display name only';
@@ -626,6 +1087,34 @@ SCREENS.automation = async host => {
         </div>
 
         <div class="section">
+          <div class="label-caps">Execution ceiling</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            ${/* Neither of these is a fault, so neither is coloured as one — the
+                 words carry the difference. */ ''}
+            ${exempt ? pill(exempt.chip, 'cold') : pill(`${CEILING_SECONDS / 60} minutes`, 'cold')}
+          </div>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(exempt ? exempt.why : CEILING.why)}</div>
+          ${exempt ? '' : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(CEILING.onTimeout)}</div>`}
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(CEILING.provenance)}</div>
+        </div>
+
+        ${sched ? `<div class="section">
+          <div class="label-caps">Schedule</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            ${pill(SCHED[sched.state].label, SCHED[sched.state].tone || undefined)}
+            <span class="chip">${esc(sched.c.kind === 'cron' ? `cron ${sched.c.expr}` : sched.c.expr)}</span>
+            <span class="chip">every ${esc(fmtHours(sched.c.hours))}</span>
+            <span class="chip">late after ${esc(fmtHours(sched.c.allowance))}</span>
+          </div>
+          <div class="cell-sub ${sched.state === 'OVERDUE' ? 't-hot' : ''}" style="margin-top:8px;white-space:normal">${esc(sched.why)}</div>
+          ${sched.c.drifts ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">restart_alt</span>
+            <div>This trigger is recorded as an interval rather than a cron. An n8n interval counts from the workflow's last activation, not from the clock,
+            so every restart of the VM quietly moves when it fires — which is how Competitor Price Scraping went from daily to one run in 36 hours after the
+            19 Aug outage without anything turning red. A cron expression fires on the clock and survives a restart.</div></div>` : ''}
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
+        </div>` : ''}
+
+        <div class="section">
           <div class="label-caps">Last 30 days</div>
           ${runBar(w) || `<div class="cell-sub" style="margin-top:8px;white-space:normal">${
             answers
@@ -638,9 +1127,11 @@ SCREENS.automation = async host => {
             <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
           </dl>
           ${drift ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">warning</span>
-            <div>The view reports <span class="mono">success_rate</span> ${esc(pct(viewRate))}, but ${esc(pct(r30))} is what
-            <span class="mono">runs_30d</span> and <span class="mono">failures_30d</span> divide out to. The headline above uses the two count
-            columns, whose window is documented. Treat the difference as a signal that the view's window has moved.</div></div>` : ''}
+            <div>The view reports <span class="mono">success_rate</span> ${esc(pct(viewRate))}, which matches neither the 30-day rate
+            (${esc(r30 == null ? 'no runs in the window' : pct(r30))}) nor the all-time rate
+            (${esc(rAll == null ? 'no runs ever' : pct(rAll))}) computed from the count columns. Every figure on this screen is computed from
+            <span class="mono">runs</span>/<span class="mono">failures</span> and <span class="mono">runs_30d</span>/<span class="mono">failures_30d</span>,
+            whose windows are documented; treat the difference as a signal that the window behind <span class="mono">success_rate</span> has moved.</div></div>` : ''}
         </div>
 
         <div class="section">
@@ -650,7 +1141,10 @@ SCREENS.automation = async host => {
             <dt>Failures</dt><dd class="num">${w.failures == null ? '<span class="t-muted">—</span>' : num(w.failures)}</dd>
             <dt>Escalations</dt><dd class="num">${w.escalations == null ? '<span class="t-muted">—</span>' : num(w.escalations)}</dd>
             <dt>Success rate</dt><dd class="num">${rAll == null ? '<span class="t-muted">no runs to divide by</span>' : esc(pct(rAll))}</dd>
-            <dt>success_rate (view)</dt><dd class="num">${viewRate == null ? '<span class="t-muted">null</span>' : esc(pct(viewRate))}</dd>
+            <dt>success_rate (view)</dt><dd class="num">${viewRate == null ? '<span class="t-muted">null</span>' : esc(pct(viewRate))}${
+              rateWindow && rateWindow !== 'neither'
+                ? `<div class="cell-sub">matches the ${esc(rateWindow)} figure, so that is the window it is in</div>`
+                : rateWindow === 'neither' ? '<div class="cell-sub t-warm">matches neither window — see the note above</div>' : ''}</dd>
             <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) : '<span class="t-muted">never logged</span>'}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">All-time counts start from the day each workflow gained an Audit Log node, not from the day it was built, so they understate anything older than instrumentation.</div>
@@ -686,7 +1180,9 @@ SCREENS.automation = async host => {
       </div>
       <div class="drawer-foot">
         <button class="btn primary" id="aRunDrawer" ${t.can ? '' : 'disabled'}
-          title="${esc(t.can ? `POSTs to the ${t.hook} webhook with your session token.` : t.why)}">${esc(t.label)}</button>
+          title="${esc(t.can ? `POSTs to the ${t.hook} webhook with your session token. That is this workflow's own production trigger — the dashboard is not driving n8n, it is doing what the caller normally does.` : t.why)}">${esc(t.label)}</button>
+        <button class="btn ghost" disabled
+          title="The dashboard cannot stop a run. HOOK in lib/data.js is the complete list of endpoints this build can call and none of them starts, stops or retries a workflow — the only live trigger anywhere on this screen is a POST to a workflow's own webhook. Stopping an execution is POST /api/v1/executions/{id}/stop on n8n, which needs an N8N_API_KEY; that key is not in the browser bundle and must not be, because anything shipped to the browser is public.">Stop a run</button>
         ${t.hook && !t.can && SUBJECT_SCREEN[t.hook]
           ? `<button class="btn" id="aGoSubject">Open ${esc(SUBJECT_SCREEN[t.hook].title)}</button>`
           : ''}
@@ -722,6 +1218,10 @@ SCREENS.automation = async host => {
       </dl>
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
         The counts on this screen come from audit_log. They will not change until the workflow writes a row and the screen is reloaded.
+      </div>
+      <div class="cell-sub" style="margin-top:8px;white-space:normal">
+        This run is capped at ${CEILING_SECONDS / 60} minutes of wall-clock time like every other execution on the instance. If it hits that ceiling it is stopped
+        and recorded as a failure with its data saved — the dashboard cannot stop it early, and there is no endpoint here that could.
       </div>`,
       `<button class="btn primary" id="aGo">${esc(t.label)}</button>
        <button class="btn ghost" id="aCancel">Cancel</button>`);
@@ -756,11 +1256,16 @@ SCREENS.automation = async host => {
     const other = audit.filter(a => a.status && !STATUSES.includes(up(a.status))).length;
     const unset = audit.filter(a => !a.status).length;
     const failedCount = sCount('FAILED');
+    /* Failures whose summary reads like the five-minute ceiling stopping the run
+       rather than the workflow itself breaking. Since 24 Aug those executions are
+       saved rather than discarded, so they arrive here in full. */
+    const timedOut = audit.filter(looksTimedOut);
 
     const wfNames = [...new Set(audit.map(a => a.workflow).filter(Boolean))]
       .sort((a, b) => String(a).localeCompare(String(b)));
 
     const segs = [['ALL', audit.length], ...STATUSES.map(s => [s, sCount(s)]).filter(([, c]) => c > 0)];
+    if (timedOut.length) segs.push(['TIMEOUT', timedOut.length]);
     if (other) segs.push(['OTHER', other]);
     if (unset) segs.push(['NONE', unset]);
 
@@ -768,13 +1273,14 @@ SCREENS.automation = async host => {
 
     logCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Activity log</div>
-        <div class="card-sub">Every row <span class="mono">audit_log</span> holds for the ${num(AUDIT_LIMIT)} most recent runs, newest first.${
+        <div class="card-sub">Every row <span class="mono">audit_log</span> holds for the ${num(AUDIT_LIMIT)} most recent runs, newest first. A run stopped by the ${CEILING_SECONDS / 60}-minute ceiling arrives here as a failure with its data kept, so failures on this list are two different findings and are labelled as such.${
           auditCapped ? ` <span class="t-warm">This read is capped at ${num(AUDIT_LIMIT)} rows, so anything older is not on this page.</span>` : ''}</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegStatus" role="group" aria-label="Filter runs by status">
-          ${segs.map(([k, c], i) => `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}">${
-            k === 'ALL' ? 'All' : k === 'OTHER' ? 'Other' : k === 'NONE' ? 'No status' : esc(k)} · ${num(c)}</button>`).join('')}
+          ${segs.map(([k, c], i) => `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
+            k === 'TIMEOUT' ? ` title="Failures whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run. audit_log has no reason column, so this is a reading of the summary, not something the database asserts."` : ''
+            }>${k === 'ALL' ? 'All' : k === 'OTHER' ? 'Other' : k === 'NONE' ? 'No status' : k === 'TIMEOUT' ? 'Hit the ceiling' : esc(k)} · ${num(c)}</button>`).join('')}
         </div>
         <div class="grow"><input type="search" id="aLogQ" aria-label="Search the activity log"
           placeholder="Search workflow, customer, intent or summary" /></div>
@@ -792,12 +1298,21 @@ SCREENS.automation = async host => {
       { label: 'Logged', render: a => `<span class="mono t-muted">${esc(clock(a.logged_at))}</span>
           <div class="cell-sub">${esc(ago(a.logged_at))}</div>` },
       { label: 'Status', render: a => a.status
-          ? `${pill(a.status)}${isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
+          ? `${pill(a.status)}${
+              looksTimedOut(a)
+                ? `<div class="cell-sub" title="${esc(CEILING.onTimeout)}">Reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run, not the workflow breaking</div>`
+                : isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
           : '<span class="t-muted">No status written</span>' },
       { label: 'Workflow', strong: true, render: a => `${esc(a.workflow || 'Unnamed')}
           ${a.intent ? `<div class="cell-sub">${esc(a.intent)}</div>` : ''}` },
+      /* Name, then the number to reach them on, then the email. The phone comes
+         from `leads.phone` matched on the run's lead_email — audit_log itself
+         carries no phone — and every way that lookup can come up empty is
+         spelled out rather than rendered as a dash. */
       { label: 'Customer', render: a => a.lead_name || a.lead_email
-          ? `${esc(a.lead_name || '—')}<div class="cell-sub">${esc(a.lead_email || 'no email on the row')}</div>`
+          ? `${esc(a.lead_name || 'Name not recorded on this run')}
+             <div class="cell-sub">${phoneLine(a.lead_email)}</div>
+             <div class="cell-sub">${esc(a.lead_email || 'no email on the row')}</div>`
           : '<span class="t-muted">Not a per-customer run</span>' },
       { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score) },
       { label: 'Summary', render: a => a.summary
@@ -812,6 +1327,7 @@ SCREENS.automation = async host => {
       const q = lf.q.trim().toLowerCase();
       return audit.filter(a => {
         if (lf.status === 'NONE') { if (a.status) return false; }
+        else if (lf.status === 'TIMEOUT') { if (!looksTimedOut(a)) return false; }
         else if (lf.status === 'OTHER') { if (!a.status || STATUSES.includes(up(a.status))) return false; }
         else if (lf.status !== 'ALL' && up(a.status) !== lf.status) return false;
         if (lf.wf !== 'ALL' && a.workflow !== lf.wf) return false;
@@ -862,7 +1378,10 @@ SCREENS.automation = async host => {
       const b = el('div', 'banner hot');
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">report</span>
         <div style="flex:1"><strong>${num(failedCount)} logged run${failedCount === 1 ? '' : 's'} failed.</strong>
-        Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.</div>
+        Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.
+        ${timedOut.length
+          ? `<div class="cell-sub" style="margin-top:6px;white-space:normal"><strong>${num(timedOut.length)} of them read as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run</strong> rather than the workflow breaking — since 24 Aug those executions are saved with their data, so what made the run slow is still in n8n to look at. Filter to “Hit the ceiling” below to see them. audit_log has no reason column, so this is read off the summary text and is worth confirming on the execution itself.</div>`
+          : ''}</div>
         <button class="btn sm" id="aShowFailed">Show failed runs</button>`;
       banners.appendChild(b);
       b.querySelector('#aShowFailed').addEventListener('click', () => focusLog('FAILED'));
@@ -882,6 +1401,7 @@ SCREENS.automation = async host => {
   function openRun(a) {
     if (!a) return;
     const bad = ['FAILED', 'REJECTED'].includes(up(a.status));
+    const ceilingHit = looksTimedOut(a);
     const trace = execUrl(a);
     const wf = (health || []).find(w => namesFor(w).has(low(a.workflow))) || null;
     openDrawer(`
@@ -900,18 +1420,25 @@ SCREENS.automation = async host => {
             ${a.intent ? `<span class="chip">${esc(a.intent)}</span>` : ''}
           </div>
           <div class="quote" style="margin-top:12px;white-space:pre-wrap">${esc(a.summary || 'The workflow wrote no summary for this run.')}</div>
+          ${ceilingHit ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">timer_off</span>
+            <div><strong>This reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run.</strong> ${esc(CEILING.onTimeout)}
+            <div class="cell-sub" style="margin-top:6px;white-space:normal">audit_log records a status and a summary but no reason code, so this is read off the summary text above.
+            The execution itself is the place that says for certain.</div></div></div>` : ''}
           ${bad ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">error</span>
             <div>This run did not complete. ${trace
-              ? 'The Error Handler recorded the execution\'s own n8n URL in the summary — <b>Open in n8n</b> below goes straight to the stack trace.'
+              ? 'The Error Handler recorded the execution\'s own n8n URL in the summary, so the link at the bottom of this drawer opens that execution in n8n. Inspecting or re-running it happens there — the dashboard has no endpoint that can.'
               : 'audit_log records the outcome and the summary above but not the n8n execution id, and this summary carries no execution link either, so the stack trace has to be found in the n8n execution list by timestamp.'}</div></div>` : ''}
         </div>
         <div class="section">
           <div class="label-caps">Subject</div>
           <dl class="kv" style="margin-top:8px">
             <dt>Customer</dt><dd>${a.lead_name ? esc(a.lead_name) : '<span class="t-muted">not a per-customer run</span>'}</dd>
+            <dt>Phone</dt><dd>${phoneLine(a.lead_email)}</dd>
             <dt>Email</dt><dd>${a.lead_email ? esc(a.lead_email) : '<span class="t-muted">—</span>'}</dd>
             <dt>Lead score</dt><dd class="num">${n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score)}</dd>
           </dl>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">The phone number is read from <span class="mono">leads.phone</span> matched on this run's email — audit_log carries no phone of its own.
+          No member of staff appears here at all: <span class="mono">users</span> has no phone column, so whoever owns this workflow has no number recorded anywhere the dashboard can read.</div>
         </div>
         <div class="section">
           <div class="label-caps">Workflow</div>
@@ -927,9 +1454,13 @@ SCREENS.automation = async host => {
       </div>
       <div class="drawer-foot">
         ${wf ? '<button class="btn" id="aOpenWf">Open workflow</button>' : ''}
+        <button class="btn ghost" disabled
+          title="The dashboard cannot re-run this. HOOK in lib/data.js is the complete list of endpoints this build can call and none of them retries an execution; retrying is done inside n8n, on the execution itself. Nothing here can start, stop or retry a workflow run on your behalf.">Retry this run</button>
         ${trace
-          ? `<a class="btn ghost" href="${esc(trace)}" target="_blank" rel="noopener noreferrer">Open in n8n</a>`
-          : `<button class="btn ghost" disabled title="This run's summary carries no n8n execution link, and audit_log has no execution_id column. The Error Handler writes the link on failures it catches; runs logged by a workflow's own Audit Log node do not carry one. Adding the execution id to those nodes is what would make this work everywhere.">Open in n8n</button>`}
+          ? `<a class="btn ghost" href="${esc(trace)}" target="_blank" rel="noopener noreferrer"
+               title="Opens n8n in a new tab at this execution. It is a link out of the dashboard, not something the dashboard does — n8n is where the run can be inspected and retried."
+               ><span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px">open_in_new</span> View this execution in n8n</a>`
+          : `<button class="btn ghost" disabled title="This run's summary carries no n8n execution link, and audit_log has no execution_id column. The Error Handler writes the link on failures it catches; runs logged by a workflow's own Audit Log node do not carry one. Adding the execution id to those nodes is what would make a link possible here.">View this execution in n8n</button>`}
       </div>`);
     $('aRunClose').addEventListener('click', closeDrawer);
     if (wf) $('aOpenWf').addEventListener('click', () => openWorkflow(wf));

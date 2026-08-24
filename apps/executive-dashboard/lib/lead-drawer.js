@@ -25,11 +25,19 @@ async function leadDrawer(lead) {
         <div class="label-caps">Contact</div>
         <dl class="kv">
           <dt>Email</dt><dd>${esc(lead.email || '—')}</dd>
-          <dt>Phone</dt><dd>${esc(lead.phone || '—')}</dd>
+          <dt>Phone</dt><dd>${lead.phone
+            ? esc(lead.phone)
+            : '<span class="cell-sub">No phone number is recorded on this lead.</span>'}</dd>
           <dt>Source</dt><dd>${esc(lead.source || '—')}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
           <dt>Budget</dt><dd>${n0(lead.budget_aed) == null ? '<span class="t-muted">Not captured by the router</span>' : aed(lead.budget_aed)}</dd>
-          <dt>Assigned to</dt><dd>${esc(lead.users?.name || 'Unassigned')}</dd>
+          <dt>Assigned to</dt><dd>${
+            /* `users?.name` only resolves when the caller selected the
+               `users(id,name)` embed. Overview and Conversations do not, so a
+               perfectly well-owned lead read "Unassigned" — the plain
+               `assigned_to` column is what every caller gets. */
+            esc(lead.users?.name || lead.assigned_to || '') || 'Unassigned'
+          }${lead.assigned_to_id ? '' : '<span class="cell-sub"> · no rep id on the row</span>'}</dd>
           <dt>Response time</dt><dd>${n0(lead.response_time_minutes) == null ? '—' :
             `${mins(lead.response_time_minutes)} ${Number(lead.response_time_minutes) > 5 ? '<span class="t-hot">· breaches the 5-minute rule</span>' : '<span class="t-ok">· within SLA</span>'}`}</dd>
           <dt>Created</dt><dd>${ago(lead.created_at)}</dd>
@@ -50,11 +58,27 @@ async function leadDrawer(lead) {
   $('dWhats').addEventListener('click', () => { closeDrawer(); go('conversations'); });
   $('dAssign').addEventListener('click', () => assignDialog(lead));
 
-  const [purch, comms, audit] = await Promise.all([
-    db(`purchase_history?select=*&email=eq.${encodeURIComponent(lead.email || '')}`).catch(() => []),
-    db(`communication_logs?select=*&lead_email=eq.${encodeURIComponent(lead.email || '')}&order=created_at.desc&limit=30`).catch(() => []),
-    db(`audit_log?select=*&lead_email=eq.${encodeURIComponent(lead.email || '')}&order=logged_at.desc&limit=30`).catch(() => []),
+  /* These three used to be `.catch(() => [])`, and that turned every failed read
+     into a confident false statement. A dead `communication_logs` fetch rendered
+     "Nothing has been logged against this email address yet" — indistinguishable
+     from a 500, an RLS change, or a token edge — on the screen a rep reads
+     immediately before phoning the customer. A dead `purchase_history` fetch was
+     worse: the returning-customer box collapsed to an empty string, so a repeat
+     buyer silently became a first-timer with no dash and no error to notice.
+
+     allSettled keeps the drawer opening when one read dies, and `ok` carries
+     whether we actually know. Nothing below may assert an absence unless its
+     read succeeded. */
+  const [purchR, commsR, auditR] = await Promise.allSettled([
+    db(`purchase_history?select=*&email=eq.${encodeURIComponent(lead.email || '')}`),
+    db(`communication_logs?select=*&lead_email=eq.${encodeURIComponent(lead.email || '')}&order=created_at.desc&limit=30`),
+    db(`audit_log?select=*&lead_email=eq.${encodeURIComponent(lead.email || '')}&order=logged_at.desc&limit=30`),
   ]);
+  const settle = r => r.status === 'fulfilled'
+    ? { ok: true,  rows: r.value || [], err: null }
+    : { ok: false, rows: [], err: String(r.reason?.message || r.reason).slice(0, 140) };
+  const purchase = settle(purchR), comm = settle(commsR), aud = settle(auditR);
+  const purch = purchase.rows, comms = comm.rows, audit = aud.rows;
 
   const vipBox = $('dVip');
   if (vipBox) {
@@ -63,7 +87,11 @@ async function leadDrawer(lead) {
          ${purch.map(p => `<div class="quote" style="margin-top:8px">
             <strong>${esc(p.vehicle)}</strong> · ${aed(p.amount_aed)}
             <div class="cell-sub">${esc(p.purchase_date || '')}</div></div>`).join('')}`
-      : '';
+      : purchase.ok
+        ? ''                       /* read succeeded and there are none — silence is honest */
+        : `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+           <div>Purchase history could not be read (${esc(purchase.err)}), so this customer is
+           <strong>not</strong> being shown as a first-time buyer — we do not know either way.</div></div>`;
   }
 
   const events = [
@@ -79,25 +107,61 @@ async function leadDrawer(lead) {
         <div style="margin-top:4px;white-space:pre-wrap">${esc(String(e.text || '').slice(0, 400))}</div>
       </div>
     </div>`).join('')}</div>`
-    : stateEmpty('No activity recorded', 'Nothing has been logged against this email address yet.', 'history');
+    : (comm.ok && aud.ok)
+      ? stateEmpty('No activity recorded', 'Nothing has been logged against this email address yet.', 'history')
+      : `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+         <div><strong>This timeline is incomplete — it is not empty.</strong>
+         ${!comm.ok ? `Messages could not be read (${esc(comm.err)}). ` : ''}
+         ${!aud.ok ? `Workflow activity could not be read (${esc(aud.err)}). ` : ''}
+         Do not treat this as "we have never contacted them".</div></div>`;
+
+  /* Even a populated timeline is a lie by omission if one of its two halves
+     failed — the rep sees messages and concludes that is everything. */
+  if (events.length && (!comm.ok || !aud.ok)) {
+    $('dTimeline').insertAdjacentHTML('afterbegin',
+      `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">warning</span>
+       <div>Showing only part of the history —
+       ${!comm.ok ? 'messages' : 'workflow activity'} could not be read
+       (${esc((!comm.ok ? comm.err : aud.err))}).</div></div>`);
+  }
 }
 
 async function assignDialog(lead) {
-  const users = await db('users?select=id,name,status&order=name').catch(() => []);
+  /* An empty roster with a live Save button was a trap: `#assignSel.value` is ''
+     and Save issued PATCH {assigned_to_id: '', assigned_to: null}, silently
+     UNASSIGNING the lead the operator was trying to assign. */
+  let users = [], rosterErr = null;
+  try { users = await db('users?select=id,name,status&order=name') || []; }
+  catch (e) { rosterErr = String(e.message || e).slice(0, 140); }
   const body = $('drawer').querySelector('.drawer-body');
   if (!body) return;
   body.scrollTop = 0;
   const box = el('div', 'card');
   box.style.marginBottom = '16px';
+  const canAssign = users.length > 0;
   box.innerHTML = `<div class="label-caps" style="margin-bottom:10px">Assign this lead</div>
-    <select id="assignSel">${users.map(u => `<option value="${esc(u.id)}" ${u.id === lead.assigned_to_id ? 'selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`).join('')}</select>
-    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary" id="assignGo">Save</button>
+    ${rosterErr
+      ? `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+         <div>The staff list could not be read (${esc(rosterErr)}), so there is nobody to pick.
+         This is not an empty team — reload and try again.</div></div>`
+      : !canAssign
+        ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">warning</span>
+           <div>There are no staff accounts to assign to.</div></div>`
+        : ''}
+    <select id="assignSel" ${canAssign ? '' : 'disabled'}>${users.map(u => `<option value="${esc(u.id)}" ${u.id === lead.assigned_to_id ? 'selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`).join('')}</select>
+    <div style="display:flex;gap:8px;margin-top:12px">
+    <button class="btn primary" id="assignGo" ${canAssign ? '' : 'disabled title="No staff list was loaded, so saving could only clear the current owner."'}>Save</button>
     <button class="btn" id="assignCancel">Cancel</button></div>
     <div class="cell-sub" id="assignMsg" style="margin-top:8px"></div>`;
   body.prepend(box);
   box.querySelector('#assignCancel').addEventListener('click', () => box.remove());
   box.querySelector('#assignGo').addEventListener('click', async () => {
     const id = box.querySelector('#assignSel').value;
+    if (!id) {                          /* belt and braces: never PATCH a blank owner */
+      box.querySelector('#assignMsg').innerHTML =
+        '<span class="t-hot">No rep selected — refusing to save, because that would clear the current owner.</span>';
+      return;
+    }
     const name = users.find(u => u.id === id)?.name || null;
     try {
       await dbWrite('PATCH', `leads?id=eq.${lead.id}`, { assigned_to_id: id, assigned_to: name });

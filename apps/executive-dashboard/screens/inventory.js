@@ -39,7 +39,12 @@ const isSold = u => low(u.status) === 'sold';
 const priced = u => n0(u.price_aed) != null || n0(u.cost_aed) != null;
 
 const ALERTS = ['CRITICAL', 'WARNING', 'HEALTHY'];
-const ALERT_TONE = { CRITICAL: 'hot', WARNING: 'warm', HEALTHY: 'ok' };
+/* Was a private map `{ CRITICAL:'hot', WARNING:'warm', HEALTHY:'ok' }`. Its three
+   values agreed with lib/format.js `tone()`, so it never rendered anything wrong
+   — but it was the fifth copy of that table in this app, and the other four had
+   drifted apart (DEGRADED was red on three screens and amber in the shared table
+   until 24 Aug). A duplicate that happens to agree today is a disagreement
+   waiting for the next edit, so the call sites go straight to `tone()`. */
 const ALERT_WHY = {
   CRITICAL: `${INV.CRITICAL_DAYS} days or more on the lot`,
   WARNING: `${INV.WARN_DAYS}–${INV.CRITICAL_DAYS - 1} days on the lot`,
@@ -407,7 +412,7 @@ SCREENS.inventory = async host => {
   const alertPill = r => {
     const a = up(r.aging_alert);
     return ALERTS.includes(a)
-      ? `<span title="${esc(ALERT_WHY[a])}">${pill(a, ALERT_TONE[a])}</span>`
+      ? `<span title="${esc(ALERT_WHY[a])}">${pill(a, tone(a))}</span>`
       : '<span class="t-muted">—</span>';
   };
   const marginCell = (r, field) => (priced(r)
@@ -419,7 +424,7 @@ SCREENS.inventory = async host => {
       label: 'Vehicle', strong: true, render: r => {
         const a = up(r.aging_alert);
         const flag = a === 'CRITICAL' || a === 'WARNING'
-          ? `<span class="material-symbols-outlined t-${ALERT_TONE[a]}" style="font-size:16px;vertical-align:-3px;margin-right:4px"
+          ? `<span class="material-symbols-outlined t-${tone(a)}" style="font-size:16px;vertical-align:-3px;margin-right:4px"
                title="${esc(a)} — ${esc(ALERT_WHY[a])}" aria-hidden="true">warning</span>` : '';
         return `${flag}${esc(r.model || 'Unnamed unit')}
           <div class="cell-sub mono">${esc(r.id)}${r.vin ? ' · ' + esc(r.vin) : ''}</div>`;
@@ -430,7 +435,7 @@ SCREENS.inventory = async host => {
       label: 'Days', align: 'r', render: r => {
         const d = n0(r.days_in_stock);
         if (d == null) return '<span class="t-muted" title="No acquisition date on record.">—</span>';
-        const t = ALERT_TONE[up(r.aging_alert)] || 'cold';
+        const t = tone(r.aging_alert) || 'cold';
         const w = Math.max(2, Math.min(100, (d / INV.CRITICAL_DAYS) * 100));
         /* deriveUnit() counts from acquired_at whether or not the unit sold, so a
            sold car keeps ticking. Say so rather than letting it read as lot age. */
@@ -562,7 +567,7 @@ SCREENS.inventory = async host => {
           ${statusPill(unit)}${alertPill(unit)}
           <span class="chip">${d == null ? 'No acquisition date' : `${num(d)} days in stock`}</span>
         </div>
-        ${up(unit.aging_alert) === 'CRITICAL' || up(unit.aging_alert) === 'WARNING' ? `<div class="banner ${ALERT_TONE[up(unit.aging_alert)]}">
+        ${up(unit.aging_alert) === 'CRITICAL' || up(unit.aging_alert) === 'WARNING' ? `<div class="banner ${tone(unit.aging_alert)}">
           <span class="material-symbols-outlined">warning</span>
           <div>${esc(ALERT_WHY[up(unit.aging_alert)])}. Holding cost so far is ${aed(unit.holding_cost_accrued)} and grows by ${aed(INV.HOLDING_PER_DAY)} a day while it stays on the lot.</div></div>` : ''}
         <div class="section"><div class="label-caps">AI recommendation</div>
