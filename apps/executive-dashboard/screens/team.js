@@ -16,6 +16,21 @@
       one the 5-minute rule applies to. The drawer states the count that would be
       orphaned instead of offering the button.
 
+   3. Nothing on this screen can show a member of staff's phone number, because
+      nothing in the database holds one. `users` has id, name, email, role,
+      status, slack_user_id and created_at — and no phone column. The absence is
+      rendered where the number would go, with the reason, rather than the
+      column being quietly dropped: a blank cell reads as "this rep left it
+      empty", which would be a lie. Leads are the opposite case — `leads.phone`
+      does exist, so every lead named on this screen is shown with it.
+
+   The alert strip at the top holds two kinds of row: what the database filed
+   against `screen = 'team'` in `v_needs_attention`, and the conditions only
+   this screen can see, each derived from the three reads it already makes. No
+   alert costs an extra round-trip, and a read that failed removes the alerts
+   that depended on it and says so, rather than leaving a shorter list to read
+   as a quieter dealership.
+
    Three users sit at status `pending_invite`. There is no endpoint that can
    invite them — `users` is service-role only from the browser and none of the
    deployed n8n webhooks sends an invitation — so the invite control is built,
@@ -24,7 +39,7 @@
    whose table failed to load says so rather than showing a plausible blank. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, esc, initials, mins, n0, num, pct, pill } from '../lib/format.js';
+import { aed, ago, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -42,6 +57,54 @@ const NO_ROLE_WRITE =
   'Changing a role means writing to the users table, which is service-role only — the browser would be rejected by RLS — and no workflow accepts a role change either.';
 const NO_DELETE =
   'Removing a user is deliberately not offered anywhere on this screen: leads.assigned_to_id points at users.id, so deleting the row would leave their leads with an owner that does not exist.';
+
+/* `users` has no phone column. Verified against the live schema on 24 Aug 2026,
+   not assumed: asking for one returns PostgREST 42703, and a 42703 does not blank
+   a field, it rejects the whole request — which is exactly how this screen lost
+   every per-rep lead count and its pipeline once already, by selecting
+   `leads.lead_score`, a column that has never existed either. So the number is
+   not fetched. Its absence is rendered where the number would go, because
+   "this rep has no phone on file" and "this system has nowhere to keep a rep's
+   phone" are different statements and only the second one is true. */
+const NO_STAFF_PHONE =
+  'No phone number is stored for any member of staff. The users table has no phone column at all, so there is nothing to show — this is a gap in what the database records, not a field this person left blank. Slack (slack_user_id) is the only staff handle the directory carries.';
+
+/* This screen's id in `v_needs_attention.screen`. */
+const SCREEN_ID = 'team';
+const ATTN_LIMIT = 200;
+
+/* Pipeline concentration. An even split across the reps who hold any pipeline is
+   1/N, so on a small team somebody is always "above average" — the alert needs a
+   floor as well as a multiple, and needs enough carriers for a share to mean
+   anything at all. Two reps 60/40 is not a finding; one rep in five holding 62%
+   of the money is. */
+const CONCENTRATION_FLOOR = 0.40;
+const MIN_CARRIERS = 3;
+
+/* A WhatsApp handle. `v_needs_attention.title` is written by whichever branch
+   raised the row, and on the conversations branch that column carries a display
+   name which falls back to the raw chat id — so a handle can reach this screen.
+   A LID contains no phone digits and identifies nobody; it is never rendered as
+   a person's name. */
+const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
+
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+const str = v => String(v == null ? '' : v).trim();
+const up = v => str(v).toUpperCase();
+const dt = ts => (ts && !Number.isNaN(Date.parse(ts)) ? new Date(ts).toLocaleString('en-GB', { hour12: false }) : '');
+const nameList = (rows, n = 4) => {
+  const names = rows.map(r => str(r.name)).filter(Boolean);
+  if (!names.length) return '';
+  const shown = names.slice(0, n).map(esc).join(', ');
+  return names.length > n ? `${shown} and ${num(names.length - n)} more` : shown;
+};
+
+/* A lead's phone, beside their name. `leads.phone` exists, so a missing one here
+   really is a lead we hold no number for — rendered as a dash that says so, not
+   as an empty cell and never as a placeholder number. */
+const leadPhone = l => (str(l?.phone)
+  ? `<span class="mono">${esc(str(l.phone))}</span>`
+  : '<span class="t-muted" title="No phone number is recorded on this lead.">\u2014</span>');
 
 const low = v => String(v ?? '').trim().toLowerCase();
 const valOf = r => (r.status === 'fulfilled' ? r.value : null);
@@ -90,26 +153,43 @@ const statusPill = r => {
 
 /* ── Screen ──────────────────────────────────────────────────────────────── */
 SCREENS.team = async host => {
+  /* The alert strip sits above the KPI row on purpose. "How many people are on
+     the team" is a fact; "one rep is holding nothing while four HOT leads have
+     no owner" is a job, and the job must not be the thing you scroll past. */
+  const alertHost = el('div'); alertHost.style.marginBottom = '16px'; host.appendChild(alertHost);
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
-  const banners = el('div'); banners.style.marginTop = '16px'; host.appendChild(banners);
   const body = el('div'); body.style.marginTop = '16px'; host.appendChild(body);
 
   /* allSettled, not catch(() => []): a directory that failed to read and a
      directory with nobody in it are opposite answers, and on this screen the
      second one would quietly imply the dealership has no staff. */
-  const [usersR, perfR, leadsR] = await Promise.allSettled([
-    db('users?select=id,name,email,role,status&order=name.asc'),
+  const [usersR, perfR, leadsR, attnR] = await Promise.allSettled([
+    /* Every column here was read off the live table. `slack_user_id` is the only
+       contact handle the directory carries; there is deliberately no `phone` in
+       this list because there is no such column — see NO_STAFF_PHONE. */
+    db('users?select=id,name,email,role,status,slack_user_id,created_at&order=name.asc'),
     db('v_team_performance?select=*'),
     /* `lead_score` is NOT a column on leads — the score lives in ai_score alone.
        Asking for both made PostgREST reject the entire request with 42703, which
        took the roster's per-rep lead counts and pipeline down with it. Verified
-       against the live schema, not the gate's stub. */
-    db(`leads?select=id,name,status,ai_score,budget_aed,vehicle_interest,assigned_to_id,created_at&order=created_at.desc&limit=${LEAD_LIMIT}`),
+       against the live schema, not the gate's stub, which happily serves a
+       lead_score and so reported the broken query as clean.
+       `phone` is on this list because leads really do carry one and every lead
+       named on this screen shows it; `response_time_minutes` and `escalated_at`
+       are what make "assigned but nothing has happened" answerable per lead
+       rather than only per rep. */
+    db('leads?select=id,name,email,phone,status,ai_score,source,vehicle_interest,budget_aed,'
+       + `assigned_to,assigned_to_id,response_time_minutes,escalated_at,created_at&order=created_at.desc&limit=${LEAD_LIMIT}`),
+    /* The shared alert view. Its failure costs the centrally-raised rows, not the
+       screen, so it is settled alongside the rest rather than awaited first. */
+    db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
+       + `&screen=eq.${SCREEN_ID}&order=at.desc&limit=${ATTN_LIMIT}`),
   ]);
 
   const users = valOf(usersR), usersErr = errOf(usersR);
   const perf  = valOf(perfR),  perfErr  = errOf(perfR);
   const leads = valOf(leadsR), leadsErr = errOf(leadsR);
+  const attn  = valOf(attnR),  attnErr  = errOf(attnR);
 
   /* ── Join the directory to the scoreboard ──────────────────────────────── */
   /* The view's key column is not guaranteed, so the match is tried on user id,
@@ -131,10 +211,17 @@ SCREENS.team = async host => {
 
   const fromUsers = (users || []).map(u => ({
     id: u.id, name: u.name, email: u.email, role: u.role, status: u.status,
+    /* The two contact fields the directory actually has. There is no third one:
+       `users` holds no phone number, which the Contact column states rather than
+       leaving a gap where a number would have gone. */
+    slack: u.slack_user_id, created_at: u.created_at,
     perf: matchPerf(u), unlinked: false,
   }));
   const fromView = (perf || []).filter(p => !matched.has(p)).map(p => ({
     id: p.user_id ?? p.id ?? null, name: p.name, email: p.email, role: p.role, status: p.status,
+    /* v_team_performance carries no Slack id and no created_at, so these stay
+       null and render as "not in the directory" rather than as "none set". */
+    slack: null, created_at: null,
     perf: p, unlinked: !!users,
   }));
   const roster = fromUsers.concat(fromView);
@@ -160,6 +247,59 @@ SCREENS.team = async host => {
 
   const pending = roster.filter(isPending);
   const withAccount = roster.filter(hasAccount);
+
+  /* ── The conditions this screen raises itself ──────────────────────────────
+     All of them come out of the three reads above. None adds a round-trip, and
+     each one is null-safe in the same way the rest of this file is: a figure the
+     view did not report is not a zero, so it never counts as evidence. */
+  const unassignedHot = unassigned.filter(l => up(l.status) === 'HOT');
+
+  /* "Holds nothing" is only claimable about someone who could hold something. A
+     pending_invite seat has no account to assign to and is a different alert, and
+     a rep the view never reported on has not been shown to be empty — only a
+     reported nought, or an absent performance row plus a leads read that names
+     them nowhere, is evidence of an idle rep. */
+  const holdsNothing = r => {
+    if (!hasAccount(r)) return false;
+    if (ownedBy(r).length > 0) return false;
+    const n = leadsAssigned(r);
+    if (n == null) return !r.perf && !!leads && !!r.id;
+    return n === 0;
+  };
+  const idle = roster.filter(holdsNothing);
+
+  /* Leads against their name and not one of them timed. This is not "slow" — it
+     is no response recorded at all, which is what the view reports when nobody
+     ever replied. Kept separate from "no activity" (which means no leads either),
+     because a rep sitting on work is a different problem from a rep with none. */
+  const stalled = r => (leadsAssigned(r) ?? 0) > 0 && !(measured(r) > 0) && avgResponse(r) == null;
+  const stalledReps = roster.filter(stalled);
+  /* Their book, as the leads read sees it: a lead with no response_time_minutes
+     has never been answered. Only counted where the leads read succeeded. */
+  const untouchedOf = r => ownedBy(r).filter(l => n0(l.response_time_minutes) == null);
+
+  const breachers = roster.filter(r => (breachedSla(r) ?? 0) > 0)
+    .sort((a, b) => breachedSla(b) - breachedSla(a));
+  const breachTotal = breachers.reduce((a, r) => a + breachedSla(r), 0);
+
+  /* Pipeline concentration. Measured against the reps who hold any pipeline at
+     all, not against the whole roster — including people with none would make
+     every team look concentrated. */
+  const carriers = roster.filter(r => (pipelineOf(r) ?? 0) > 0)
+    .sort((a, b) => pipelineOf(b) - pipelineOf(a));
+  const carriedTot = sumOf(carriers.map(r => r.perf), 'pipeline_aed');
+  let concentration = null;
+  if (carriers.length >= MIN_CARRIERS && carriedTot) {
+    const even = 1 / carriers.length;
+    const share = pipelineOf(carriers[0]) / carriedTot;
+    if (share >= Math.max(CONCENTRATION_FLOOR, even * 2)) {
+      concentration = { rep: carriers[0], share, even, total: carriedTot };
+    }
+  }
+
+  /* Rows the performance view has activity for that match nobody in the
+     directory. Only meaningful when the directory actually loaded. */
+  const unlinkedReps = users ? roster.filter(r => r.unlinked) : [];
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!users && !perf) {
@@ -206,54 +346,337 @@ SCREENS.team = async host => {
         !leads
           ? `<span class="t-muted">Leads could not be read</span>`
           : unassigned.length
-            ? '<span class="t-hot">Nobody owns these</span>'
+            /* Which of them are HOT is the whole point: an unowned COLD lead is
+               a queue, an unowned HOT lead is the auto-assign trigger failing. */
+            ? `<span class="t-hot">Nobody owns these</span>${unassignedHot.length ? ` · <span class="t-hot">${num(unassignedHot.length)} HOT</span>` : ' · none of them HOT'}`
             : '<span class="t-ok">Every lead read here has an owner</span>',
         leads && unassigned.length ? 't-hot' : ''),
     ].join('');
   }
 
-  /* ── Banners: the outstanding actions, each with the exact set behind it ── */
+  /* ── Alerts ───────────────────────────────────────────────────────────────
+     One strip, holding both halves of "what on this screen needs a human": the
+     rows the database filed against screen = 'team' in v_needs_attention, and
+     the conditions only this screen can see. Every derived alert is computed
+     from users / v_team_performance / leads, all three of which were read above
+     regardless — no alert here costs a round-trip of its own.
+
+     Severity colour goes through tone() in lib/format.js. That table now covers
+     HOT / WARM / COLD, PENDING_INVITE, DEGRADED and the rest, and maps anything
+     it has not been taught to 'cold' rather than to the empty string — which is
+     what used to make an unknown severity render as a neutral note. Five screens
+     had grown a private severity map to work around that; this one does not add
+     a sixth. */
   let focusRoster = () => {};
+  const alerts = [];
+  const add = a => alerts.push({ source: 'local', ...a });
+
+  const KIND_ICON = {
+    sla_breach: 'timer_off', unassigned_lead: 'person_add_disabled',
+    pending_invite: 'mark_email_unread', rep_idle: 'work_off',
+    workflow_failure: 'error', escalation: 'priority_high',
+  };
+
+  /* The view's `ref` for a team row could be a user id, an email or a name. All
+     three are tried, in that order, for the same reason the roster join uses it:
+     a name is the only one of the three that two people can share. */
+  const findRep = ref => {
+    const k = low(ref);
+    if (!k) return null;
+    return roster.find(r => low(r.id) === k)
+      || roster.find(r => low(r.email) === k)
+      || roster.find(r => low(r.name) === k) || null;
+  };
+
+  (attn || []).forEach(it => {
+    const who = findRep(it.ref);
+    const t = str(it.title);
+    const titleHtml = !t
+      ? '<span class="t-muted">This alert carries no title</span>'
+      : HANDLE.test(t)
+        ? `<span class="mono">${esc(t)}</span> <span class="t-muted">— a WhatsApp handle, not a name</span>`
+        : esc(t);
+    alerts.push({
+      source: 'view',
+      sev: str(it.severity) || 'WARM',
+      icon: KIND_ICON[low(it.kind)] || 'rule',
+      at: it.at,
+      titleHtml,
+      detailHtml: (str(it.detail) ? esc(str(it.detail)) : 'v_needs_attention recorded no detail on this row.')
+        + (who || it.ref == null ? ''
+          : ` <span class="t-muted">Raised against <span class="mono">${esc(str(it.ref))}</span>, which matches nobody on the roster read here, so there is no row on this screen for it to open.</span>`),
+      act: who ? () => openRep(who) : null,
+      actLabel: 'Open rep',
+    });
+  });
+
+  /* An invite nobody accepted is a seat nobody is covering. It is not an
+     administrative loose end — it is a person the router cannot route to. */
+  if (pending.length) {
+    const oldest = pending.map(r => r.created_at).filter(Boolean).sort()[0] || null;
+    add({
+      sev: 'PENDING_INVITE', icon: 'mark_email_unread', at: oldest, atLabel: 'oldest seat made',
+      titleHtml: `${num(pending.length)} ${plural(pending.length, 'seat is', 'seats are')} held by an invite nobody accepted`,
+      detailHtml: `${nameList(pending) || `${num(pending.length)} ${plural(pending.length, 'person', 'people')}`} `
+        + `${plural(pending.length, 'sits', 'sit')} at <span class="mono">pending_invite</span>. They cannot sign in, cannot be alerted when a HOT lead lands and cannot be assigned one, `
+        + `so their share of the floor is being carried by whoever else is on it. `
+        + (oldest ? `The oldest of these accounts was created ${esc(ago(oldest))}. ` : 'None of these rows carries a creation date, so how long they have been waiting is not knowable. ')
+        + 'Sending the invitation is not built, so this stays outstanding until the endpoint exists.',
+      act: () => focusRoster('PENDING'),
+      actLabel: 'Show them',
+      noHook: { label: `Send invite${plural(pending.length, '', 's')}`, why: NO_INVITE },
+    });
+  }
+
+  /* The pairing the auto-assign trigger exists to prevent: money waiting on the
+     doorstep and somebody standing in the showroom with nothing to do. */
+  if (leads && unassignedHot.length) {
+    const shown = unassignedHot.slice(0, 4).map(l =>
+      `${esc(str(l.name) || 'Unnamed lead')} ${leadPhone(l)} <span class="t-muted">(${esc(ago(l.created_at))})</span>`).join(' · ');
+    add({
+      sev: 'HOT', icon: 'person_add_disabled', at: unassignedHot[0].created_at, atLabel: 'oldest arrived',
+      titleHtml: `${num(unassignedHot.length)} HOT ${plural(unassignedHot.length, 'lead has', 'leads have')} no owner`
+        + (idle.length ? ` while ${num(idle.length)} ${plural(idle.length, 'rep holds', 'reps hold')} nothing` : ''),
+      detailHtml: `${shown}${unassignedHot.length > 4 ? ` and ${num(unassignedHot.length - 4)} more` : ''}. `
+        + (idle.length ? `${nameList(idle)} ${plural(idle.length, 'has', 'have')} no lead at all against ${plural(idle.length, 'their name', 'their names')}. ` : '')
+        + 'The auto-assign trigger is supposed to hand a HOT lead to the least-loaded rep, and these were handed to nobody, so on these rows it did not do its job. '
+        + 'Whether it never fired or fired and failed is <em>not</em> readable from here: <span class="mono">leads</span> records who owns a lead and carries no record of who set the owner or when — no assigned_by, no assigned_at, no updated_at — so a trigger assignment and a hand assignment look identical afterwards. '
+        + 'What can be said is that these rows have no owner of any kind.',
+      act: () => go('leads'),
+      actLabel: 'Open leads',
+    });
+  } else if (idle.length) {
+    add({
+      sev: 'WARM', icon: 'work_off',
+      titleHtml: `${num(idle.length)} ${plural(idle.length, 'rep is', 'reps are')} holding no leads at all`,
+      detailHtml: `${nameList(idle)} ${plural(idle.length, 'has', 'have')} an active account and no lead against ${plural(idle.length, 'their name', 'their names')} — `
+        + `neither in <span class="mono">v_team_performance</span> nor in the ${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here` : 'leads table, which did not load'}. `
+        + (leads ? 'No HOT lead is unassigned right now, so nothing is going unworked because of it. ' : '')
+        + 'A rep with nothing is new, away, or being skipped by the auto-assign trigger, and this screen cannot tell those three apart: the only thing stored is the finished assignment, never who made it.',
+      act: () => focusRoster('IDLE'),
+      actLabel: 'Show them',
+    });
+  }
+
+  /* Assigned, and nothing has happened. Distinct from a slow rep — the view has
+     not timed them on a single lead, which is what it reports when nobody ever
+     replied at all. */
+  if (stalledReps.length) {
+    const worst = stalledReps.slice().sort((a, b) => (leadsAssigned(b) ?? 0) - (leadsAssigned(a) ?? 0));
+    const held = worst.reduce((a, r) => a + (leadsAssigned(r) ?? 0), 0);
+    const untouched = leads ? worst.reduce((a, r) => a + untouchedOf(r).length, 0) : null;
+    add({
+      sev: 'WARM', icon: 'hourglass_disabled',
+      titleHtml: `${num(stalledReps.length)} ${plural(stalledReps.length, 'rep is', 'reps are')} holding ${num(held)} ${plural(held, 'lead', 'leads')} with no response recorded`,
+      detailHtml: `${nameList(worst)} ${plural(stalledReps.length, 'has', 'have')} leads assigned and no measured response against ${plural(stalledReps.length, 'that name', 'those names')} — `
+        + 'not a slow average, no <span class="mono">within_sla</span> or <span class="mono">breached_sla</span> count at all, which is what the view reports when nobody replied. '
+        + (untouched != null
+          ? `In the ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here, ${num(untouched)} of their ${plural(untouched, 'leads carries', 'leads carry')} no <span class="mono">response_time_minutes</span>${leadsCapped ? `, and that read is capped at ${num(LEAD_LIMIT)} so there may be more` : ''}.`
+          : 'Leads could not be read, so this cannot be confirmed lead by lead.'),
+      act: () => focusRoster('STALLED'),
+      actLabel: 'Show them',
+    });
+  }
+
+  /* The 5-minute rule, per rep. The team-wide figure is in the KPI strip; this
+     names the people it is made of, because "62% within SLA" is not something
+     anyone can act on and "Farah has nine breaches" is. */
+  if (breachers.length) {
+    add({
+      sev: 'HOT', icon: 'timer_off',
+      titleHtml: `${num(breachTotal)} ${plural(breachTotal, 'lead', 'leads')} breached the 5-minute rule across ${num(breachers.length)} ${plural(breachers.length, 'rep', 'reps')}`,
+      detailHtml: breachers.slice(0, 5).map(r =>
+        `${esc(str(r.name) || 'Unnamed')} <span class="t-hot">${num(breachedSla(r))}</span>`
+        + `${avgResponse(r) == null ? '' : ` <span class="t-muted">(${esc(mins(avgResponse(r)))} average)</span>`}`).join(' · ')
+        + `${breachers.length > 5 ? ` and ${num(breachers.length - 5)} more` : ''}. `
+        + 'Each of these is a lead that waited longer than five minutes for a first reply — the window in which the odds of qualifying it drop by about four fifths. '
+        + 'These counts come from the view itself and are all-time, not a window computed here.',
+      act: () => focusRoster('BREACHED'),
+      actLabel: 'Show them',
+    });
+  }
+
+  /* One rep holding most of the money. Reported as a fact about the data and
+     explicitly not as a diagnosis, because the data cannot support one. */
+  if (concentration) {
+    const c = concentration;
+    add({
+      sev: 'WARM', icon: 'balance',
+      titleHtml: `${esc(str(c.rep.name) || 'One rep')} is holding ${esc(pct(c.share * 100))} of the pipeline`,
+      detailHtml: `${esc(aed(pipelineOf(c.rep)))} of the ${esc(aed(c.total))} held across the ${num(carriers.length)} reps who carry any pipeline at all. `
+        + `An even split would be ${esc(pct(c.even * 100))} each. `
+        + `${leadsAssigned(c.rep) == null ? '' : `They are credited with ${num(leadsAssigned(c.rep))} ${plural(leadsAssigned(c.rep), 'lead', 'leads')}${hotLeads(c.rep) ? `, ${num(hotLeads(c.rep))} of them HOT` : ''}. `}`
+        + 'The imbalance is measured, not inferred. Its <em>cause</em> is not available: the auto-assign trigger is meant to give each HOT lead to the least-loaded rep, and since <span class="mono">leads</span> stores only the finished owner — no assigned_by, no assignment timestamp, not even an updated_at — a lead the trigger placed and a lead a manager placed by hand are indistinguishable on this screen. '
+        + (unassignedHot.length
+          ? `What is visible is that ${num(unassignedHot.length)} HOT ${plural(unassignedHot.length, 'lead', 'leads')} ${plural(unassignedHot.length, 'has', 'have')} no owner at all, which the trigger should have prevented — so it is demonstrably not covering everything.`
+          : leads
+            ? 'What is visible is that every HOT lead read here does have an owner, so the trigger is placing work; the concentration is therefore either its input — only these reps eligible — or assignment done around it, and this screen cannot tell which.'
+            : 'Leads could not be read, so whether any HOT lead is sitting unassigned could not be checked.'),
+      act: () => openRep(c.rep),
+      actLabel: 'Open rep',
+    });
+  }
+
+  /* The exact damage the missing delete button prevents. */
+  if (orphaned.length) {
+    const shown = orphaned.slice(0, 3).map(l =>
+      `${esc(str(l.name) || 'Unnamed lead')} ${leadPhone(l)}`).join(' · ');
+    add({
+      sev: 'HOT', icon: 'link_off', at: orphaned[0].created_at, atLabel: 'oldest arrived',
+      titleHtml: `${num(orphaned.length)} ${plural(orphaned.length, 'lead points', 'leads point')} at a user who is not on the roster`,
+      detailHtml: `${shown}${orphaned.length > 3 ? ` and ${num(orphaned.length - 3)} more` : ''}. `
+        + 'Their <span class="mono">assigned_to_id</span> matches no row in <span class="mono">users</span>, so nobody is on the hook for them, nobody is alerted about them and the 5-minute rule applies to no one. '
+        + 'This is what deleting a user does, which is why this screen never offers it.',
+      act: () => go('leads'),
+      actLabel: 'Open leads',
+    });
+  }
+
+  /* Unassigned leads that are not HOT. Counted separately so the HOT alert above
+     stays a statement about HOT leads and this one cannot double-count them. */
+  const unassignedRest = unassigned.length - unassignedHot.length;
+  if (leads && unassignedRest > 0) {
+    const rest = unassigned.filter(l => up(l.status) !== 'HOT');
+    add({
+      sev: 'WARM', icon: 'inbox',
+      at: rest[0]?.created_at || null, atLabel: 'oldest arrived',
+      titleHtml: `${num(unassignedRest)} further ${plural(unassignedRest, 'lead has', 'leads have')} no owner`,
+      detailHtml: `Not scored HOT, so ${plural(unassignedRest, 'it is', 'they are')} not in the alert above. `
+        + `The newest arrived ${esc(ago(rest[0]?.created_at))}. Assignment happens on the lead itself, not here`
+        + `${leadsCapped ? `, and this count comes from the ${num(LEAD_LIMIT)} most recent leads only, so it is a floor` : ''}.`,
+      act: () => go('leads'),
+      actLabel: 'Open leads',
+    });
+  }
+
+  /* Activity with no account behind it. Low severity because nothing is going
+     unworked — but the directory is wrong, and every count on this screen that
+     starts from `users` is short by exactly this many people. */
+  if (unlinkedReps.length) {
+    add({
+      sev: 'COLD', icon: 'person_search',
+      titleHtml: `${num(unlinkedReps.length)} ${plural(unlinkedReps.length, 'person has', 'people have')} activity but no row in the user directory`,
+      detailHtml: `${nameList(unlinkedReps)} ${plural(unlinkedReps.length, 'appears', 'appear')} in <span class="mono">v_team_performance</span> and ${plural(unlinkedReps.length, 'matches', 'match')} nobody in <span class="mono">users</span> by id, email or name. `
+        + 'They are shown on the roster below, labelled as unlinked rather than dropped — but they have no account record, so their role and status are unknown and no invite or role control can apply to them.',
+      act: () => focusRoster('ALL'),
+      actLabel: 'Show roster',
+    });
+  }
 
   if (usersErr && perf) {
-    const b = el('div', 'banner warm'); b.style.marginBottom = '12px';
-    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">person_off</span>
-      <div>The user directory could not be read (${esc(usersErr)}), so roles and account status below are whatever
-      <span class="mono">v_team_performance</span> carries. Anyone with no leads at all is missing from this page entirely.</div>`;
-    banners.appendChild(b);
+    add({
+      sev: 'WARM', icon: 'person_off',
+      atHtml: '<span class="t-muted" title="This is the state of this page load, not a stored condition.">this page load</span>',
+      titleHtml: 'The user directory could not be read',
+      detailHtml: `${esc(usersErr)}. Roles and account status below are whatever <span class="mono">v_team_performance</span> carries, `
+        + 'anyone with no leads at all is missing from this page entirely, and pending invites cannot be counted at all.',
+    });
   }
 
-  if (pending.length) {
-    const names = pending.map(p => p.name).filter(Boolean);
-    const b = el('div', 'banner warm'); b.style.marginBottom = '12px';
-    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">mark_email_unread</span>
-      <div style="flex:1"><strong>${num(pending.length)} team member${pending.length === 1 ? ' has' : 's have'} no account yet.</strong>
-        ${names.length ? esc(names.join(', ')) + ' ' : ''}sit${names.length === 1 ? 's' : ''} at
-        <span class="mono">pending_invite</span>, so they cannot sign in, cannot be alerted and cannot own a lead.
-        Sending the invitation is not built yet, so this stays outstanding until the endpoint exists.</div>
-      <button class="btn sm" id="tShowPending">Show ${pending.length === 1 ? 'them' : 'all ' + pending.length}</button>
-      <button class="btn sm" disabled title="${esc(NO_INVITE)}">Send invite${pending.length === 1 ? '' : 's'}</button>`;
-    banners.appendChild(b);
-    b.querySelector('#tShowPending').addEventListener('click', () => focusRoster('PENDING'));
-  }
+  /* ── Ordering and rendering ─────────────────────────────────────────────── */
+  /* Order is taken from tone(), not from a private list of severity names. A
+     second table here would be free to disagree with the colour on the same row —
+     an alert painted cold and sorted as if it were warm — and the shared view is
+     free to emit a severity nobody here has seen, which tone() already resolves. */
+  const TONE_RANK = { hot: 0, warm: 1, ok: 1, cold: 2 };
+  const rank = a => (TONE_RANK[tone(a.sev)] ?? 2);
+  alerts.sort((a, b) => rank(a) - rank(b)
+    || ((Date.parse(b.at || '') || 0) - (Date.parse(a.at || '') || 0)));
 
-  if (orphaned.length) {
-    const b = el('div', 'banner hot'); b.style.marginBottom = '12px';
-    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">link_off</span>
-      <div><strong>${num(orphaned.length)} lead${orphaned.length === 1 ? ' points' : 's point'} at a user who is not on the roster.</strong>
-        Their <span class="mono">assigned_to_id</span> matches no row in <span class="mono">users</span>, so nobody is on the hook for
-        ${orphaned.length === 1 ? 'it' : 'them'}. This is what deleting a user does, which is why this screen never offers it.</div>`;
-    banners.appendChild(b);
-  }
+  const derivedCount = alerts.filter(a => a.source === 'local').length;
+  const viewCount = (attn || []).length;
 
-  if (leads && unassigned.length) {
-    const b = el('div', 'banner warm'); b.style.marginBottom = '12px';
-    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">person_add_disabled</span>
-      <div style="flex:1"><strong>${num(unassigned.length)} lead${unassigned.length === 1 ? ' has' : 's have'} no owner.</strong>
-        The newest arrived ${esc(ago(unassigned[0].created_at))}. Assignment happens on the lead itself.</div>
-      <button class="btn sm" id="tGoLeads">Open leads</button>`;
-    banners.appendChild(b);
-    b.querySelector('#tGoLeads').addEventListener('click', () => go('leads'));
+  /* Every count in this strip has to be explainable, and the two things that are
+     not visible from the list itself are why it is this long and what is missing
+     from it. A read that failed removes alerts; saying which read failed is the
+     difference between a quiet screen and a screen that cannot see. */
+  const notes = [
+    attnErr
+      ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnErr)}), so anything the database filed against this screen — including any SLA branch it raises centrally — is missing from this strip. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = ${SCREEN_ID}${viewCount ? '' : ' (it returned none today)'}, and ${num(derivedCount)} derived here from `
+        + `${users ? `${num(users.length)} directory ${plural(users.length, 'row', 'rows')}` : 'no directory rows'}, `
+        + `${perf ? `${num(perf.length)} performance ${plural(perf.length, 'row', 'rows')}` : 'no performance rows'} and `
+        + `${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')}` : 'no leads'}.`,
+    perfErr
+      ? `<span class="t-warm">The performance view did not load (${esc(perfErr)}), so SLA breaches, pipeline concentration and reps holding unworked leads were not checked at all — they are absent from this list, not clear.</span>`
+      : '',
+    leadsErr
+      ? `<span class="t-warm">Leads did not load (${esc(leadsErr)}), so unassigned leads, HOT leads with no owner and assignments pointing at a missing user were not checked.</span>`
+      : '',
+    leadsCapped
+      ? `The leads read stopped at ${num(LEAD_LIMIT)} rows, so every lead-derived count in this strip is a floor rather than a total.`
+      : '',
+    `Staff phone numbers appear nowhere in this strip because they appear nowhere in the database: ${esc(NO_STAFF_PHONE)} Leads named above carry their own number, or an explicit dash where we hold none.`,
+  ].filter(Boolean);
+  const notesHtml = notes.join('<br>');
+
+  const CHECKED = 'Checked: every row v_needs_attention filed against this screen, seats still at pending_invite, '
+    + 'reps holding no leads while HOT leads sit unassigned, reps holding leads with no response recorded against a single one, '
+    + 'one rep carrying a disproportionate share of the pipeline, reps with an SLA breach, leads whose assignment points at a user who is not on the roster, '
+    + 'and performance rows with no account behind them.';
+
+  const waitedHtml = a => {
+    if (a.atHtml) return a.atHtml;
+    if (a.at && !Number.isNaN(Date.parse(a.at))) {
+      /* The label matters as much as the figure. A view row carries the moment
+         the condition was recorded, so it was "raised" then; a derived row is
+         timed off the oldest thing it is about, and calling that "raised" would
+         claim a clock this screen does not have. */
+      return `<span title="${esc(dt(a.at))}">${esc(a.atLabel || (a.source === 'view' ? 'raised' : 'oldest'))} ${esc(ago(a.at))}</span>`;
+    }
+    /* No clock is invented for a condition that has no moment attached. "How long
+       has one rep held 62% of the pipeline" is not a question v_team_performance
+       can answer — it reports a state, not when the state began. */
+    return `<span class="t-muted" title="${esc(a.source === 'view' ? 'This alert carries no timestamp.' : 'This is a standing condition computed from the current rows; nothing records when it started.')}">no start time</span>`;
+  };
+
+  const alertItem = (a, i) => {
+    const clickable = typeof a.act === 'function';
+    return `<div class="list-item"${clickable ? ` role="button" tabindex="0" data-alert="${i}"` : ' style="cursor:default"'}>
+      <span class="material-symbols-outlined t-${esc(tone(a.sev))}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev))}
+          ${a.source === 'view' ? '<span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
+        </div>
+        <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0" class="cell-sub">${waitedHtml(a)}
+        ${clickable ? `<div class="t-muted">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
+      ${a.noHook ? `<button class="btn sm" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
+      ${clickable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+    </div>`;
+  };
+
+  if (!alerts.length) {
+    /* No empty box. "Nothing needs a human" is only worth printing when it names
+       what was looked at — otherwise it is indistinguishable from a panel that
+       failed to render, and v_needs_attention genuinely returns nothing for this
+       screen today, so this is the branch that runs. */
+    alertHost.innerHTML = `<div class="card">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <span class="material-symbols-outlined t-ok" style="font-size:20px" aria-hidden="true">task_alt</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500">Nothing on the team screen needs a human right now</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(CHECKED)}</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
+        </div></div></div>`;
+  } else {
+    alertHost.innerHTML = `<div class="card flush">
+      <div class="card-head"><div style="min-width:0">
+        <div class="card-title">Needs attention · ${num(alerts.length)}</div>
+        <div class="card-sub" style="white-space:normal">${esc(CHECKED)}</div></div></div>
+      <div>${alerts.map(alertItem).join('')}</div>
+      <div class="list-item" style="cursor:default">
+        <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+        <div class="cell-sub" style="white-space:normal">${notesHtml}</div></div></div>`;
+    const fire = i => { const a = alerts[Number(i)]; if (a && typeof a.act === 'function') a.act(); };
+    alertHost.querySelectorAll('[data-alert]').forEach(node => {
+      node.addEventListener('click', () => fire(node.dataset.alert));
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(node.dataset.alert); }
+      });
+    });
   }
 
   if (!users && !perf) return;   /* the strip already carries the failure */
@@ -265,12 +688,25 @@ SCREENS.team = async host => {
     || (!(leadsAssigned(r) > 0) && !(hotLeads(r) > 0) && !(measured(r) > 0)
         && !(pipelineOf(r) > 0) && ownedBy(r).length === 0);
 
+  /* Each alert in the strip above hands the roster the exact set it counted, so
+     the list under the toolbar can never disagree with the number in the alert.
+     That is only true if every alert has a slice to land in — hence IDLE,
+     STALLED and BREACHED, which exist to be the destination of a specific
+     alert rather than as browsing filters. */
   const VIEWS = {
-    ALL:      { label: 'All',              match: () => true },
-    ACCOUNT:  { label: 'With an account',  match: hasAccount },
-    PENDING:  { label: 'Pending invite',   match: isPending },
-    QUIET:    { label: 'No activity yet',  match: noActivity },
+    ALL:      { label: 'All',                    match: () => true },
+    ACCOUNT:  { label: 'With an account',        match: hasAccount },
+    PENDING:  { label: 'Pending invite',         match: isPending },
+    IDLE:     { label: 'Holding nothing',        match: holdsNothing },
+    STALLED:  { label: 'Leads, no response',     match: stalled },
+    BREACHED: { label: 'Breached SLA',           match: r => (breachedSla(r) ?? 0) > 0 },
+    QUIET:    { label: 'No activity yet',        match: noActivity },
   };
+  /* Seven segments do not fit a toolbar. The three condition slices are only
+     offered when they contain somebody — an always-empty filter is furniture,
+     and a filter that is present and empty invites the reading that it was
+     checked and came back clean, which is the alert strip's job to say. */
+  const ALWAYS_SHOWN = new Set(['ALL', 'ACCOUNT', 'PENDING', 'QUIET']);
   const VIEW_KEYS = Object.keys(VIEWS);
 
   /* Sorting. Every key sinks the rows it cannot speak about to the bottom
@@ -308,9 +744,21 @@ SCREENS.team = async host => {
     { label: 'Name', strong: true, sort: 'name', render: r => `<div style="display:flex;align-items:center;gap:10px">
         <div class="avatar">${esc(initials(r.name))}</div>
         <div><div>${esc(r.name || 'Unnamed')}</div>
-          <div class="cell-sub">${esc(r.email || 'No email on file')}</div>
           ${r.unlinked ? '<div class="cell-sub t-warm">Not in the user directory</div>' : ''}
         </div></div>` },
+    /* Contact, spelled out rather than implied. The phone line is the point of
+       this column: every other screen shows a person's number beside their name,
+       and a rep is the one kind of person this dashboard cannot do that for. The
+       dash is rendered with the reason on it so nobody reads it as "this rep did
+       not give us their number" — the column does not exist to be empty. */
+    { label: 'Contact', render: r => `
+        <div class="cell-sub">${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</div>
+        <div class="cell-sub">Phone <span class="t-muted" title="${esc(NO_STAFF_PHONE)}">\u2014 not recorded anywhere</span></div>
+        <div class="cell-sub">${r.slack
+          ? `Slack <span class="mono">${esc(r.slack)}</span>`
+          : r.unlinked
+            ? '<span class="t-muted">No directory row, so no Slack id either</span>'
+            : '<span class="t-muted">No Slack id on file</span>'}</div>` },
     { label: 'Role', sort: 'role', render: r => r.role
         ? `<span class="chip">${esc(r.role)}</span>`
         : '<span class="t-muted">No role set</span>' },
@@ -348,6 +796,7 @@ SCREENS.team = async host => {
 
   const counts = {};
   VIEW_KEYS.forEach(k => { counts[k] = roster.filter(VIEWS[k].match).length; });
+  const offeredViews = VIEW_KEYS.filter(k => ALWAYS_SHOWN.has(k) || counts[k] > 0);
 
   card.innerHTML = `<div class="card-head"><div>
       <div class="card-title">Roster &amp; performance</div>
@@ -357,7 +806,7 @@ SCREENS.team = async host => {
     </div></div>
     <div class="toolbar">
       <div class="seg" id="tSegView" role="group" aria-label="Filter the roster">
-        ${VIEW_KEYS.map((k, i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(VIEWS[k].label)} · ${num(counts[k])}</button>`).join('')}
+        ${offeredViews.map((k, i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(VIEWS[k].label)} · ${num(counts[k])}</button>`).join('')}
       </div>
       <div class="grow"><input type="search" id="tq" aria-label="Search the roster" placeholder="Search name, email or role" /></div>
       <div class="t-muted num" id="tCount"></div>
@@ -476,7 +925,16 @@ SCREENS.team = async host => {
       </div>
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
         ${num(totalAssigned)} assigned lead${totalAssigned === 1 ? '' : 's'} across ${num(carrying.length)} of ${num(roster.length)} on the roster.
-        ${leads ? `${num(unassigned.length)} more ${unassigned.length === 1 ? 'is' : 'are'} unassigned${leadsCapped ? ` within the ${num(LEAD_LIMIT)} most recent leads read` : ''}.` : 'Leads could not be read, so unassigned leads are not counted here.'}
+        ${leads ? `${num(unassigned.length)} more ${unassigned.length === 1 ? 'is' : 'are'} unassigned${unassignedHot.length ? `, ${num(unassignedHot.length)} of them HOT` : ''}${leadsCapped ? ` within the ${num(LEAD_LIMIT)} most recent leads read` : ''}.` : 'Leads could not be read, so unassigned leads are not counted here.'}
+        ${idle.length ? `${nameList(idle)} ${plural(idle.length, 'holds', 'hold')} nothing at all and so ${plural(idle.length, 'has', 'have')} no bar here.` : ''}
+      </div>
+      <div class="cell-sub" style="margin-top:8px;white-space:normal">
+        ${concentration
+          ? `${esc(str(concentration.rep.name) || 'The top rep')} holds ${esc(pct(concentration.share * 100))} of the pipeline against an even share of ${esc(pct(concentration.even * 100))}. `
+          : 'No single rep holds twice an even share of the pipeline. '}
+        A HOT lead is supposed to be auto-assigned to the least-loaded rep, so an uneven bar chart is either that trigger not firing or assignments made by hand around it —
+        and this screen cannot tell you which: <span class="mono">leads</span> stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).
+        The one thing it can settle is whether the trigger is placing HOT work at all, which is the unassigned-HOT count above.
       </div>`;
   }
 
@@ -548,8 +1006,13 @@ SCREENS.team = async host => {
                 : 'No lead in the table names them as owner.', 'person_search')
           : `<div>${owned.slice(0, 10).map(l => `<div class="list-item" style="cursor:default">
               <div style="flex:1;min-width:0">
-                <div style="font-weight:500">${esc(l.name || 'Unnamed lead')}</div>
-                <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}</div>
+                <div style="font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+                  ${esc(l.name || 'Unnamed lead')} ${leadPhone(l)}</div>
+                <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
+                  ${n0(l.response_time_minutes) == null
+                    ? ' · <span class="t-hot">no reply recorded</span>'
+                    : ` · answered in ${esc(mins(l.response_time_minutes))}`}
+                  ${l.escalated_at ? ` · <span class="t-warm">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
               </div>
               ${l.status ? pill(l.status) : ''}
               <div class="num cell-sub">${n0(l.budget_aed) == null ? '' : aed(l.budget_aed)}</div>
@@ -567,6 +1030,19 @@ SCREENS.team = async host => {
         <button class="btn ghost sm" id="tClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="drawer-body">
+        <div class="section">
+          <div class="label-caps">Identity &amp; contact</div>
+          <dl class="kv" style="margin-top:8px">
+            <dt>Email</dt><dd>${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</dd>
+            <dt>Phone</dt><dd><span class="t-muted">\u2014</span></dd>
+            <dt>Slack</dt><dd>${r.slack ? `<span class="mono">${esc(r.slack)}</span>` : '<span class="t-muted">No Slack id on file</span>'}</dd>
+            <dt>User id</dt><dd class="mono">${esc(r.id ?? 'none')}</dd>
+            <dt>Account created</dt><dd>${r.created_at ? `${esc(ago(r.created_at))} <span class="t-muted">(${esc(dt(r.created_at))})</span>` : '<span class="t-muted">Not recorded on this row</span>'}</dd>
+          </dl>
+          <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_STAFF_PHONE)}
+            Their leads below each show their own number, because <span class="mono">leads.phone</span> does exist.</div>
+        </div>
+
         <div class="section">
           <div class="label-caps">Account</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">

@@ -6,10 +6,23 @@
 
    The write path is untouched. Create, edit and delete all still go through
    unitForm() in lib/unit-form.js — it is the only writer in the product and
-   this screen only ever calls it and reloads. */
+   this screen only ever calls it and reloads.
+
+   24 Aug 2026: gained an alert strip. It merges what Postgres already says
+   about this screen (`v_needs_attention?screen=eq.inventory`) with the checks
+   the view has no branch for, all derived from the stock rows this screen had
+   to fetch anyway. Every alert lands on the rows it is about, and every count
+   in the strip says which read it came from — a strip that quietly drops the
+   half it could not load is worse than no strip.
+
+   Written against the probed column list in SCHEMA.md's CORRECTION section, not
+   the stale table above it: `inventory` is id, model, vin, status, acquired_at,
+   cost_aed, price_aed and the derived columns. `id` IS the stock number
+   ("NX-1010"), which is why v_needs_attention.ref matches it directly, and
+   there is no sold_at anywhere on the table — see the sale-date note below. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, esc, n0, num, pill } from '../lib/format.js';
+import { aed, ago, esc, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -49,30 +62,285 @@ function sum(rows, pick) {
   return { total: n ? total : null, n, of: rows.length };
 }
 
+/* ── Alerts ───────────────────────────────────────────────────────────────
+   Two sources, deliberately kept apart.
+
+   `v_needs_attention` is what the database itself says about this screen —
+   today an `inventory_aging` branch whose `ref` is the stock number. It is read
+   in the same Promise.all as the stock, so the strip costs no extra round-trip.
+
+   Everything else is derived from rows already in memory and covers the faults
+   the view has no branch for: a unit listed under its cost, a unit with no list
+   price at all, a missing VIN, and the stored aging columns disagreeing with
+   what deriveUnit() computes live.
+
+   Ageing itself is deliberately NOT re-derived here. The view's own branch, the
+   banner under the toolbar and the Ageing-alerts KPI already carry it; a fourth
+   copy of one fact is how four numbers for it end up on one screen disagreeing. */
+
+const INV_LIMIT = 1000;
+const ATTN_LIMIT = 100;
+
+/* How far the stored columns may lag before they are called wrong. They are
+   recomputed nightly, so a row is legitimately a day stale for most of the
+   working day; two days means a run was missed. Holding cost is days × the
+   daily rate, so the same tolerance converts straight into money, and net
+   margin moves with holding cost. */
+const DRIFT_DAYS = 2;
+const DRIFT_AED = DRIFT_DAYS * INV.HOLDING_PER_DAY;
+const SHOWN_REFS = 4;
+
+const str = v => String(v == null ? '' : v).trim();
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+
+/* PostgREST returns every selected column on every row, nulls included, so a
+   key absent from the payload is a column absent from the table — not a row
+   that happens to be empty. That difference decides whether "no unit has a VIN"
+   is forty alerts or one sentence saying the check could not run. */
+const columnsOf = rows => {
+  const s = new Set();
+  (rows || []).forEach(r => Object.keys(r || {}).forEach(k => s.add(k)));
+  return s;
+};
+
+/* v_needs_attention.severity is HOT | WARM | COLD and the derived alerts below
+   use CRITICAL | WARNING | LOW. lib/format.js now colours all of them and sends
+   anything it does not recognise to 'cold' rather than to an unstyled pill that
+   would read as "fine", so this screen keeps no severity map of its own. */
+const sevRank = s => ({ hot: 0, warm: 1, cold: 2, ok: 3 }[tone(s)] ?? 2);
+
+/* The stored column says OK where deriveUnit() says HEALTHY: the same band
+   under two names. Normalising before any comparison stops every healthy unit
+   reading as a disagreement — and, the way that actually bites, stops a real
+   OK-stored / CRITICAL-live flip being dropped as an unrecognised word. */
+const band = v => (up(v) === 'OK' ? 'HEALTHY' : up(v));
+const KIND_ICON = { inventory_aging:'directions_car', undercut:'trending_down' };
+
+/* Derives every inventory-specific alert from rows already fetched. Returns the
+   alerts and, separately, the sentences that qualify them — a check that could
+   not run is not the same as a check that passed, and only the second one is
+   allowed to leave the strip silent. */
+function deriveAlerts(inv, raw) {
+  const notes = [];
+  if ((raw || []).length >= INV_LIMIT) {
+    notes.push(`The stock read was capped at ${num(INV_LIMIT)} rows, oldest first, so every alert below describes the oldest ${num(INV_LIMIT)} units and there may be more behind them.`);
+  }
+  if (!inv.length) {
+    notes.push('No unit is on the lot, so the checks this screen derives had nothing to run against.');
+    return { alerts: [], notes };
+  }
+
+  const cols = columnsOf(raw);
+  const has = c => cols.has(c);
+  const alerts = [];
+  const add = (key, severity, icon, title, detail, units) => {
+    const dates = (units || []).map(u => str(u.acquired_at)).filter(Boolean).sort();
+    alerts.push({
+      key, severity, icon, title, detail,
+      ids: (units || []).map(u => u.id),
+      /* These conditions carry no timestamp of their own — nothing records when
+         a VIN went missing. The oldest acquisition date in the group is the
+         closest true thing, and the tooltip says that is what it is rather than
+         letting it read as "waiting since". */
+      at: dates.length ? `${dates[0]}T00:00:00` : null,
+      atNote: dates.length
+        ? 'Acquisition date of the oldest unit in this alert. The condition itself carries no timestamp, so this is how long the record has existed, not how long it has been wrong.'
+        : 'This condition carries no timestamp of its own, and no unit in it has an acquisition date.',
+    });
+  };
+  const refList = units => {
+    const names = units.slice(0, SHOWN_REFS).map(u => str(u.id) || 'unnamed unit');
+    const more = units.length - names.length;
+    return names.join(', ') + (more > 0 ? ` and ${num(more)} more` : '');
+  };
+
+  /* price_aed and cost_aed, probed live — deriveUnit() was reading the right
+     columns all along and it was SCHEMA.md's older table that was stale. No
+     fallback to list_price_aed / cost_price_aed: those names do not exist on
+     this table, so a guard for them would be a branch that can never run. The
+     block below is only there to keep the two predicates out of the rest of
+     this function. */
+  {
+    const money = u => ({ price: n0(u.price_aed), cost: n0(u.cost_aed) });
+    const under = u => { const { price, cost } = money(u); return price != null && cost != null && price > 0 && price < cost; };
+
+    const belowCost = inv.filter(u => !isSold(u) && under(u));
+    if (belowCost.length) {
+      const shortfall = belowCost.reduce((t, u) => t + (n0(u.cost_aed) - n0(u.price_aed)), 0);
+      const soldUnder = inv.filter(u => isSold(u) && under(u)).length;
+      add('below_cost', 'CRITICAL', 'trending_down',
+        `${num(belowCost.length)} unsold ${plural(belowCost.length, 'unit is', 'units are')} listed below cost`,
+        `${refList(belowCost)}. Selling at the current ask gives up ${aed(shortfall)} against what ${plural(belowCost.length, 'it', 'they')} cost, before a single day of holding is counted`
+        + (soldUnder ? `. ${num(soldUnder)} already-sold ${plural(soldUnder, 'unit', 'units')} also closed below cost — that is history and is not counted here` : '') + '.',
+        belowCost);
+    }
+
+    const noPrice = inv.filter(u => !isSold(u) && (n0(u.price_aed) == null || n0(u.price_aed) === 0));
+    if (noPrice.length) {
+      const zeros = noPrice.filter(u => n0(u.price_aed) === 0).length;
+      const blanks = noPrice.length - zeros;
+      const withCost = noPrice.filter(u => n0(u.cost_aed) != null).length;
+      add('no_price', 'WARNING', 'money_off',
+        `${num(noPrice.length)} unsold ${plural(noPrice.length, 'unit has', 'units have')} no list price`,
+        `${refList(noPrice)}. `
+        + (zeros && blanks ? `${num(zeros)} ${plural(zeros, 'carries', 'carry')} a list price of exactly zero and ${num(blanks)} ${plural(blanks, 'carries', 'carry')} none at all. `
+          : zeros ? `The price is stored as exactly zero, which is a value somebody typed, not a blank. ` : '')
+        + 'Nothing on the lot can be quoted from a price that is not there'
+        + (withCost ? `, and where a cost is on record the Gross margin column reads minus that cost — ${num(withCost)} of ${num(noPrice.length)} here. deriveUnit() treats a missing price as zero, so what reads as a loss is the purchase price` : '') + '.',
+        noPrice);
+    }
+  }
+
+  if (has('vin')) {
+    const noVin = inv.filter(u => !str(u.vin));
+    if (noVin.length) {
+      const onLot = noVin.filter(u => !isSold(u)).length;
+      const sold = noVin.length - onLot;
+      add('no_vin', onLot ? 'WARNING' : 'LOW', 'tag',
+        `${num(noVin.length)} ${plural(noVin.length, 'unit has', 'units have')} no VIN on record`,
+        `${refList(noVin)}. `
+        + (!sold ? `${plural(noVin.length, 'It is', 'All of them are')} still on the lot`
+          : !onLot ? `${plural(noVin.length, 'It is', 'All of them are')} already sold`
+            : `${num(onLot)} ${plural(onLot, 'is', 'are')} still on the lot and ${num(sold)} ${plural(sold, 'is', 'are')} already sold`)
+        + `. The unit form accepts a blank VIN, so ${plural(noVin.length, 'it was', 'these were')} saved rather than rejected — but a car cannot be registered, insured or handed over on a stock number.`,
+        noVin);
+    }
+  } else {
+    notes.push('The inventory rows carry no vin column, so units missing a VIN could not be checked.');
+  }
+
+  /* Stored versus live. `days_in_stock`, `holding_cost_accrued`, `net_margin`
+     and `aging_alert` are written to the table by the nightly job AND computed
+     live by deriveUnit(); this screen shows the live figure, while n8n and the
+     Finance Desk read the stored one. Where the two disagree, neither is
+     "the truth" to quietly prefer — the disagreement is the finding. */
+  const storedCols = ['days_in_stock', 'holding_cost_accrued', 'net_margin', 'aging_alert'].filter(has);
+  if (!storedCols.length) {
+    notes.push('None of the stored aging columns came back with these rows, so the stored figures could not be compared against the live recompute.');
+  } else {
+    const rawById = new Map((raw || []).map(r => [String(r.id), r]));
+    const drift = [];
+    for (const u of inv) {
+      /* Sold units are excluded by construction, not by choice: deriveUnit()
+         hands a sold unit its stored holding cost straight back, so that column
+         can never disagree, while its day count keeps running from acquisition
+         after the sale. Comparing them would need a rule for what a sold unit's
+         day count means, and inventing one here would manufacture alerts. */
+      if (isSold(u)) continue;
+      const r = rawById.get(String(u.id));
+      if (!r) continue;
+      const why = [];
+      /* Without an acquisition date deriveUnit() falls back to the stored day
+         count, so comparing the two would be comparing a number with itself. */
+      const dated = !!u.acquired_at;
+      if (dated && has('days_in_stock')) {
+        const v = n0(r.days_in_stock);
+        if (v != null && Math.abs(v - u.days_in_stock) > DRIFT_DAYS) why.push(`days ${num(v)} stored vs ${num(u.days_in_stock)} live`);
+      }
+      if (dated && has('holding_cost_accrued')) {
+        const v = n0(r.holding_cost_accrued);
+        if (v != null && Math.abs(v - u.holding_cost_accrued) > DRIFT_AED) why.push(`holding cost ${aed(v)} stored vs ${aed(u.holding_cost_accrued)} live`);
+      }
+      let flipped = false;
+      if (has('aging_alert')) {
+        const v = band(r.aging_alert);
+        if (ALERTS.includes(v) && v !== band(u.aging_alert)) { flipped = true; why.push(`band ${v} stored vs ${band(u.aging_alert)} live`); }
+      }
+      if (has('net_margin') && priced(u)) {
+        const v = n0(r.net_margin);
+        /* Net margin legitimately moves with holding cost, so it is allowed the
+           same slack plus a rounding dirham; anything past that is a price or a
+           cost that changed after the last nightly run. */
+        if (v != null && Math.abs(v - u.net_margin) > DRIFT_AED + 1) why.push(`net margin ${aed(v)} stored vs ${aed(u.net_margin)} live`);
+      }
+      if (why.length) drift.push({ u, why, flipped });
+    }
+    if (drift.length) {
+      const flips = drift.filter(d => d.flipped).length;
+      const shown = drift.slice(0, SHOWN_REFS)
+        .map(d => `${str(d.u.id)} (${d.why.join(', ')})`).join('; ');
+      const more = drift.length - Math.min(drift.length, SHOWN_REFS);
+      add('stored_drift', flips ? 'CRITICAL' : 'WARNING', 'sync_problem',
+        `${num(drift.length)} unsold ${plural(drift.length, 'unit disagrees', 'units disagree')} with ${plural(drift.length, 'its', 'their')} stored figures`,
+        `${shown}${more > 0 ? `; and ${num(more)} more` : ''}. This screen shows the live recompute; the workflows and the Finance Desk read the stored columns, so the two are acting on different numbers`
+        + (flips ? `, and on ${num(flips)} of them the stored ageing band differs from the live one — an aging campaign keyed on the stored column will not fire for ${plural(flips, 'it', 'them')}` : '')
+        + `. Anything beyond ${num(DRIFT_DAYS)} days of lag means the nightly recompute has not run, not that the clock moved.`,
+        drift.map(d => d.u));
+    } else if (storedCols.length < 4) {
+      notes.push(`Only ${storedCols.join(', ')} came back, so the stored-versus-live comparison covered ${plural(storedCols.length, 'that column', 'those columns')} alone.`);
+    }
+  }
+
+  /* The sale date, said once rather than as an alert per sold unit. It is not a
+     row somebody can go and fix: `inventory` has no sold_at column at all, so
+     "when did we sell it" is not a question this table can answer, and
+     days_in_stock is no stand-in because deriveUnit() keeps counting it from
+     acquisition after the sale. Only worth saying where there are sold units on
+     screen for it to be true of. */
+  const soldCount = inv.filter(isSold).length;
+  if (soldCount) {
+    notes.push(`inventory records no sale date — there is no sold_at column — so for the ${num(soldCount)} sold ${plural(soldCount, 'unit', 'units')} here neither the true days on the lot nor the holding cost at the moment of sale is reconstructable, and days_in_stock is not a stand-in because it keeps counting after the sale.`
+      + (storedCols.length ? ` ${plural(soldCount, 'It is', 'They are')} also left out of the stored-versus-live comparison: deriveUnit() hands back ${plural(soldCount, 'its', 'their')} stored holding cost unchanged, so it cannot disagree with itself.` : ''));
+  }
+  alerts.sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || b.ids.length - a.ids.length);
+  return { alerts, notes };
+}
+
 SCREENS.inventory = async host => {
+  const attnHost = el('div'); attnHost.style.marginBottom = '16px'; host.appendChild(attnHost);
+  attnHost.innerHTML = `<div class="card flush">${stateLoading(2)}</div>`;
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
   const body = el('div'); body.style.marginTop = '16px'; host.appendChild(body);
   body.innerHTML = `<div class="card flush">${stateLoading(8)}</div>`;
 
-  let raw = [];
-  try { raw = await db('inventory?select=*&order=acquired_at.asc&limit=1000'); }
+  /* Both reads leave together; they are awaited apart. The attention read is
+     soft — it is an extra opinion about rows this screen already has, so losing
+     it degrades the strip and is reported there rather than taking the stock
+     table down with it. Awaiting them in one Promise.all would have thrown away
+     a perfectly good attention result whenever the stock read failed, which is
+     precisely the moment the operator most needs to be told what is wrong. */
+  let viewErr = null;
+  const stockRead = db(`inventory?select=*&order=acquired_at.asc&limit=${INV_LIMIT}`);
+  const attnRead = db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
+    + `&screen=eq.inventory&order=at.desc&limit=${ATTN_LIMIT}`)
+    .catch(e => { viewErr = e.message; return null; });
+  let raw = [], viewRows = null;
+  try { raw = await stockRead; }
   catch (e) {
+    viewRows = await attnRead;
     strip.remove();
+    /* The view's rows are still worth showing even when the stock read died —
+       they are the database's own list of what needs a human here. They just
+       cannot be opened, and paintAttention() says so rather than hiding them. */
+    paintAttention(viewRows, viewErr, null, null, null);
     body.innerHTML = `<div class="card">${stateError('inventory', e.message, 'inventory')}</div>`;
     body.querySelector('[data-retry]')?.addEventListener('click', () => go('inventory'));
     return;
   }
+  viewRows = await attnRead;
 
   /* Derived live from acquired_at rather than read off the stored columns, so the
      aging numbers are true on the day you look at them, not on the day they were written. */
   const inv = raw.map(deriveUnit);
   const reload = () => go('inventory');
 
+  /* v_needs_attention.ref is the stock number, and on this table the stock
+     number IS `id` (probed: there is no separate stock_id column), so the match
+     is direct. Indexed lower-cased anyway, because a ref that differs from the
+     row only in case would otherwise silently render as un-openable. */
+  const byRef = new Map();
+  inv.forEach(u => {
+    const k = str(u.id).toLowerCase();
+    if (k && !byRef.has(k)) byRef.set(k, u);
+  });
+  const derived = deriveAlerts(inv, raw);
+
   const addBtn = (id, cls = 'btn primary sm') => `<button class="${cls}" id="${id}">
     <span class="material-symbols-outlined">add</span>Add vehicle</button>`;
 
   if (!inv.length) {
     strip.remove();
+    paintAttention(viewRows, viewErr, derived, byRef, 0);
     body.innerHTML = `<div class="card flush">
       <div class="card-head"><div><div class="card-title">Stock</div>
         <div class="card-sub">Nothing on the lot yet</div></div>
@@ -96,11 +364,14 @@ SCREENS.inventory = async host => {
   const crit = alertCount('CRITICAL');
   const warn = alertCount('WARNING');
 
-  const f = { status: 'ALL', alert: 'ALL', q: '', sort: 'days_desc' };
+  const f = { status: 'ALL', alert: 'ALL', q: '', sort: 'days_desc', only: null };
 
   function visible() {
     const q = f.q.trim().toLowerCase();
     return inv.filter(u => {
+      /* Set by the alert strip, not by the toolbar, so it has to clear itself:
+         see focusUnits() and the bar it paints above the table. */
+      if (f.only && !f.only.ids.has(String(u.id))) return false;
       if (f.status !== 'ALL' && low(u.status) !== low(f.status)) return false;
       if (f.alert !== 'ALL' && up(u.aging_alert) !== f.alert) return false;
       if (q && ![u.id, u.model, u.vin].map(low).join(' ').includes(q)) return false;
@@ -213,6 +484,7 @@ SCREENS.inventory = async host => {
       <div class="t-muted num" id="invCount"></div>
       ${addBtn('invAdd')}
     </div>
+    <div id="invOnly"></div>
     ${banner}
     <div id="invAging"></div>
     <div id="invTable"></div>`;
@@ -317,10 +589,138 @@ SCREENS.inventory = async host => {
     $('dEdit').addEventListener('click', () => { closeDrawer(); unitForm(unit, inv, reload); });
   }
 
+  /* Renders the strip from whatever we have. A failed attention read still
+     leaves the derived alerts; a failed stock read still leaves the view's
+     rows. Whichever half is missing is named in the footnote, because a strip
+     that silently drops one of them is a smaller number presented as the whole
+     truth — exactly the failure this round is about. */
+  function paintAttention(rows, err, alerts, index, total) {
+    const clickable = [];
+    const item = a => {
+      /* tone() sends anything it does not recognise to 'cold'; only an empty
+         severity comes back blank, and blank would render as an unstyled pill. */
+      const t = tone(a.severity) || 'cold';
+      const idx = (a.ids && a.ids.length) ? clickable.push({ label: a.title, ids: a.ids }) - 1 : -1;
+      const attrs = idx >= 0
+        ? ` role="button" tabindex="0" data-focus="${idx}"`
+        : ` style="cursor:default" title="${esc(a.noFocus || 'This alert is not about one row, so there is nothing here to open.')}"`;
+      return `<div class="list-item"${attrs}>
+        <span class="material-symbols-outlined t-${t}" style="font-size:20px" aria-hidden="true">${esc(a.icon || 'warning')}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${pill(str(a.severity) || 'ALERT', t)}<span>${esc(a.title)}</span>
+          </div>
+          <div class="cell-sub" style="white-space:normal">${esc(a.detail)}</div>
+        </div>
+        <div class="cell-sub num" style="white-space:nowrap" title="${esc(a.atNote || '')}">${esc(a.at ? ago(a.at) : '—')}</div>
+        ${idx >= 0 ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+      </div>`;
+    };
+
+    /* The view's own rows first — they are Postgres's judgement about this
+       screen, not this file's — then the derived ones by severity. */
+    const fromView = (rows || []).map(r => {
+      const ref = str(r.ref);
+      const u = index ? index.get(ref.toLowerCase()) : null;
+      return {
+        severity: r.severity,
+        icon: KIND_ICON[r.kind] || 'warning',
+        title: str(r.title) || ref || 'Needs attention',
+        detail: [str(r.detail), ref ? `Stock ${ref}` : ''].filter(Boolean).join(' · '),
+        at: r.at,
+        atNote: 'How long v_needs_attention has been reporting this row.',
+        ids: u ? [u.id] : [],
+        noFocus: index
+          ? `v_needs_attention reports ${ref || 'a unit'}, which is not among the stock rows this screen loaded — it may sit beyond the row cap or have been removed since the view was refreshed.`
+          : 'The stock read failed, so this row cannot be opened here.',
+      };
+    });
+    const fromHere = (alerts && alerts.alerts) || [];
+
+    const notes = [
+      err ? `Needs attention did not load (${err}), so anything the database flags for this screen is missing from this strip — only the checks derived from the stock rows are shown.` : '',
+      !index ? 'The stock read failed, so nothing in this strip can be opened and no derived check could run.' : '',
+      ...((alerts && alerts.notes) || []),
+      total ? 'Ageing is not repeated here: v_needs_attention carries its own inventory_aging branch, and the banner and the Ageing-alerts KPI below already count it.' : '',
+    ].filter(Boolean);
+    const foot = `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+      <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+
+    if (!fromView.length && !fromHere.length) {
+      /* "Nothing needs you" and "nothing could be checked" are opposite facts
+         and must never share a sentence. Plainly, and in one line — an empty
+         card with a heading and a chevron reads as something to click. */
+      const ranHere = !!alerts;
+      const CHECKS = 'below cost, missing a list price or a VIN, or disagreeing with its stored figures';
+      const head = !ranHere ? 'Nothing on this screen could be checked'
+        : err ? 'Nothing flagged by the checks that ran'
+          : 'Nothing on the lot needs a human right now';
+      const line = !ranHere
+        ? 'The stock rows did not load, so none of the checks this screen derives could run, and v_needs_attention reported nothing for it either.'
+        : err ? `No unit is ${CHECKS} — but that is only the half of this strip the screen derives itself.`
+          : `v_needs_attention lists no inventory row, and no unit is ${CHECKS}.`;
+      attnHost.innerHTML = `<div class="card" style="display:flex;gap:10px;align-items:flex-start">
+        <span class="material-symbols-outlined t-${ranHere && !err ? 'ok' : 'muted'}" aria-hidden="true">${ranHere && !err ? 'task_alt' : 'help'}</span>
+        <div style="flex:1">
+          <div style="font-weight:500">${esc(head)}</div>
+          <div class="cell-sub" style="white-space:normal">${esc(line)}${notes.length ? '<br>' + notes.map(esc).join('<br>') : ''}</div>
+        </div></div>`;
+      return;
+    }
+
+    const counted = `${num(fromView.length)} from v_needs_attention · ${num(fromHere.length)} derived here`
+      + (total == null ? ' · the stock rows did not load' : ` from the ${num(total)} ${plural(total, 'unit', 'units')} on this screen`);
+    attnHost.innerHTML = `<div class="card flush">
+      <div class="card-head"><div>
+        <div class="card-title">Needs attention</div>
+        <div class="card-sub">${esc(counted)}</div>
+      </div><div style="flex:1"></div></div>
+      <div>${fromView.map(item).join('')}${fromHere.map(item).join('')}${foot}</div></div>`;
+
+    /* Keyboard-operable for the same reason as the overview list: the row is
+       the only way from the alert to the unit it is about. */
+    attnHost.querySelectorAll('[data-focus]').forEach(n => {
+      const c = clickable[Number(n.dataset.focus)];
+      const jump = () => focusUnits(c.label, c.ids);
+      n.addEventListener('click', jump);
+      n.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
+      });
+    });
+  }
+
+  /* An alert is only useful if it lands on the rows it is about, so this clears
+     every filter that could hide them rather than narrowing the view the
+     operator happens to be in and showing them nothing. */
+  function focusUnits(label, ids) {
+    f.status = 'ALL'; f.alert = 'ALL'; f.q = '';
+    const q = $('invQ'); if (q) q.value = '';
+    f.only = { label, ids: new Set(ids.map(String)) };
+    draw();
+    const th = $('invTable');
+    const first = th ? th.querySelector('tbody tr') : null;
+    if (first) {
+      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      /* Re-adding the class alone does not restart a running animation; reading
+         a layout property between the remove and the add does. */
+      first.classList.remove('flash'); void first.offsetWidth; first.classList.add('flash');
+    } else if (th) {
+      th.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
   function draw() {
     card.querySelectorAll('#segAlert button').forEach(b => b.classList.toggle('on', b.dataset.v === f.alert));
     $('invStatus').value = f.status;
     $('invSort').value = f.sort;
+
+    const only = $('invOnly');
+    only.innerHTML = f.only ? `<div class="banner info" style="margin:14px 20px 0">
+        <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+        <div style="flex:1">Showing only the ${num(f.only.ids.size)} ${plural(f.only.ids.size, 'unit', 'units')} behind the alert “${esc(f.only.label)}”. Every total and band below describes those rows.</div>
+        <button class="btn sm" id="invOnlyClear">Show all stock</button></div>` : '';
+    $('invOnlyClear')?.addEventListener('click', () => { f.only = null; draw(); });
 
     const rows = sorted(visible());
     $('invCount').textContent = `${rows.length} of ${inv.length} units`;
@@ -337,7 +737,7 @@ SCREENS.inventory = async host => {
     });
     wireRows(th, rows, drawer);
     $('invClear')?.addEventListener('click', () => {
-      f.status = 'ALL'; f.alert = 'ALL'; f.q = ''; $('invQ').value = ''; draw();
+      f.status = 'ALL'; f.alert = 'ALL'; f.q = ''; f.only = null; $('invQ').value = ''; draw();
     });
   }
 
@@ -350,6 +750,7 @@ SCREENS.inventory = async host => {
   $('invFocus')?.addEventListener('click', () => { f.alert = crit ? 'CRITICAL' : 'WARNING'; draw(); });
 
   draw();
+  paintAttention(viewRows, viewErr, derived, byRef, inv.length);
 };
 
 /* ==========================================================================

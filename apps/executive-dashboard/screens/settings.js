@@ -1,15 +1,19 @@
 /* NEXUS OS — screens/settings.js
-   Settings and diagnostics. Rebuilt on 20 Aug 2026.
+   Settings and diagnostics. Rebuilt on 20 Aug 2026; extended 24 Aug 2026 to
+   carry the system-health alerts nobody else owns.
 
-   This screen exists to answer, without hedging, four questions an operator or
+   This screen exists to answer, without hedging, the questions an operator or
    an on-call engineer asks when something looks wrong:
 
      · Who am I signed in as, and what does the database think my role is?
      · Which Supabase project and which n8n instance is THIS bundle talking to?
      · Are those two reachable right now, from this browser, at this moment?
+     · Is the automation actually wired up — every registered workflow, its
+       state, and which of them have never proved they work?
+     · Is a credential broken, and what has stopped working because of it?
      · What is Ask AI actually allowed to answer from?
 
-   Three rules it holds itself to:
+   Rules it holds itself to:
 
      · No secret is rendered, not even partially. There is no masked key, no
        first-four-last-four, no truncated token. Only presence — configured or
@@ -22,13 +26,23 @@
      · Webhook endpoints are listed but never probed. Firing lead-trigger to see
        whether it answers would enrol a real customer in a real drip campaign.
        The connectivity panel probes only what is free and side-effect-free;
-       everything else is named, not called. */
+       everything else is named, not called.
+     · Two honesty rules added 24 Aug and enforced below. A workflow whose
+       health is NOT_INSTRUMENTED has not been proven working — it has merely
+       never reported — so it is never coloured green, and the word used for it
+       is "not logged", not "fine". And `is_active` means only that n8n will run
+       the workflow: an active workflow with a revoked credential runs, and
+       fails, every single time. Neither state is allowed to read as success.
+     · Nothing on this screen writes. Every table it touches except `leads`,
+       `inventory` and `finance_quotes` is service-role only, and n8n exposes no
+       credential API to a browser, so the repairs this screen can *diagnose*
+       are deliberately rendered as disabled controls naming what is missing. */
 import { HOOK, ME, SESSION, db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
-import { ago, clock, esc, n0, num } from '../lib/format.js';
+import { ago, clock, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { renderIntegrations } from '../lib/integrations.js';
-import { SCREENS } from '../lib/nav.js';
+import { SCREENS, go } from '../lib/nav.js';
 import { applyDensity } from '../lib/prefs.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -38,6 +52,12 @@ import { closeDrawer, openDrawer, table, wireRows } from '../lib/ui.js';
    can reach, which is the opposite of what this panel is for. */
 const KB_LIMIT = 1000;
 const PREVIEW_CHARS = 400;
+
+/* Bounded reads for the health strip. Each cap is reported where it is hit,
+   for the same reason: a window that looks like a census is a lie. */
+const ATTN_LIMIT = 200;
+const HEALTH_LIMIT = 200;
+const FAIL_LIMIT = 300;
 
 /* rag_documents is populated by the ingestion workflow rather than by a
    migration this repo owns, so its exact column names are not guaranteed here.
@@ -58,9 +78,126 @@ const NO_PERSIST =
 const NO_KB_EDIT =
   'Editing the knowledge base is not built. rag_documents is written by the ingestion workflow and no endpoint accepts a document from the browser.';
 
+/* n8n's credential store is not reachable from a browser at all: there is no
+   webhook in HOOK for it, the n8n REST API needs an owner API key that must
+   never ship in a public bundle, and workflow_registry is service-role only.
+   So the control exists, disabled, and names exactly what is missing. */
+const NO_CRED_FIX =
+  'Reconnecting a credential is done in the n8n UI under Credentials — n8n exposes no browser-reachable endpoint for it, there is no webhook in HOOK for it, and its API key must not ship inside this bundle. This dashboard can only report the failures the credential caused.';
+
 const low = s => String(s || '').trim().toLowerCase();
+const str = v => String(v == null ? '' : v).trim();
+const up  = s => str(s).toUpperCase();
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const pickKey = (cols, list) => list.find(k => cols.includes(k)) || null;
 const charText = c => c == null ? '—' : `${num(c)} char${c === 1 ? '' : 's'}`;
+
+/* v_needs_attention's severity vocabulary is the view's, not TONE's. TONE has
+   no WARNING key, so `t-${tone('WARNING')}` renders the class `t-` — no colour
+   at all, and no error anywhere to notice it by. Map it here, then fall back to
+   TONE for the words TONE does know. */
+/* Was a private severity map. lib/format.js now carries every vocabulary this
+   screen can be handed, so the map is gone and only the name survives — one
+   severity cannot be two colours on two screens. */
+const sevTone = s => tone(s);
+const SEV_RANK = { CRITICAL: 0, HIGH: 0, WARNING: 1, MEDIUM: 1, LOW: 2, INFO: 2 };
+const sevRank = s => SEV_RANK[up(s)] ?? 3;
+
+/* Icons for the kinds v_needs_attention emits. Only a fallback: the view names
+   its own `screen`, and a kind this file has never seen still renders. */
+const KIND_ICON = {
+  unanswered_chat: 'mark_chat_unread', lead_unassigned: 'person_alert', sla_breach: 'timer',
+  kyc_archive_gap: 'folder_off', workflow_failure: 'error', undercut: 'trending_down',
+  inventory_aging: 'directions_car',
+};
+
+/* ── Health vocabulary ─────────────────────────────────────────────────────
+   The wording matters more than the colour here. NEVER_RAN and
+   NOT_INSTRUMENTED are both "we have no evidence", and neither is allowed the
+   ok tone: a workflow that has never reported has not been shown to work. Only
+   HEALTHY — every logged run inside the 30-day window succeeded — is green, and
+   it is green about the window, not about the workflow forever. */
+const HEALTH = {
+  DEGRADED: {
+    label: 'Degraded', t: 'hot', icon: 'error', rank: 0,
+    blurb: 'At least one run failed inside the 30-day window. This is the state that needs a human.',
+  },
+  NEVER_RAN: {
+    label: 'No runs yet', t: '', icon: 'schedule', rank: 1,
+    blurb: 'This workflow is registered as writing to audit_log and has never written a row. That is not evidence of health, it is the absence of evidence: it has never been observed working in this deployment.',
+  },
+  NOT_INSTRUMENTED: {
+    label: 'Not logged', t: '', icon: 'visibility_off', rank: 2,
+    blurb: 'This workflow has no Audit Log node, so nothing it does reaches audit_log. Its health is unknown rather than good — from here, running perfectly and failing every time look identical.',
+  },
+  HEALTHY: {
+    label: 'Clean, 30 d', t: 'ok', icon: 'check_circle', rank: 3,
+    blurb: 'Every run this workflow logged inside the 30-day window succeeded.',
+  },
+};
+const UNKNOWN_HEALTH = {
+  label: 'Unrecognised', t: 'warm', icon: 'help', rank: 1,
+  blurb: 'v_workflow_health returned a health state this screen has no wording for. It is shown verbatim rather than folded into one of the states it might mean.',
+};
+const stateKey = w => (Object.prototype.hasOwnProperty.call(HEALTH, up(w?.health)) ? up(w.health) : 'UNKNOWN');
+const healthOf = w => (stateKey(w) === 'UNKNOWN' ? UNKNOWN_HEALTH : HEALTH[stateKey(w)]);
+
+/* 30-day rate computed here from the two columns whose window is documented,
+   rather than taken on trust from `success_rate`, whose window is not. */
+const rate30 = w => {
+  const r = n0(w.runs_30d), f = n0(w.failures_30d);
+  if (r == null || !r) return null;
+  return ((r - (f || 0)) / r) * 100;
+};
+
+/* ── Credential failures ───────────────────────────────────────────────────
+   n8n reports a broken credential in the text of the failure it causes — the
+   live example today is: The credential "Gmail OAuth2 API" needs to be
+   reconnected. There is no credential table to read and no n8n API this bundle
+   may call, so a workflow failure is the only evidence a browser can have, and
+   the match stays deliberately narrow: a bare 401 is NOT treated as a
+   credential fault, because calling every auth error a revoked credential would
+   send someone to reconnect a credential that was never the problem. */
+const CRED_RE = /\bcredentials?\b|\bre-?connect(?:ed|ion)?\b|\boauth\b/i;
+const CRED_NAME_RES = [
+  /credentials?\s+["“”'`]([^"“”'`]{2,80})["“”'`]/i,
+  /["“]([^"”]{2,80})["”]\s+credentials?\b/i,
+  /credentials?\s+for\s+["“]?([^"”\n·]{2,60})["”]?\s+(?:are|is|has)\b/i,
+];
+const credName = txt => {
+  for (const re of CRED_NAME_RES) {
+    const m = String(txt || '').match(re);
+    if (m && str(m[1])) return str(m[1]);
+  }
+  return null;
+};
+/* What stops working, stated only where the credential names the channel. The
+   sentence is about the channel; the workflows actually seen failing are listed
+   beside it from the audit rows themselves, never assumed. */
+const CRED_IMPACT = [
+  { re: /gmail|smtp|\bmail\b|outlook|sendgrid|resend|postmark/i,
+    line: 'Outbound email is dead. Anything that mails a customer — the cold-lead drip, quote mail, and the nightly Gmail aggregation the Customer 360 totals are built from — reaches the send step and fails there. Enrolments still queue; nothing leaves.' },
+  { re: /slack/i,
+    line: 'Slack alerting is dead. A hot lead can be scored and routed correctly and still reach nobody, because the last step is the one that cannot authenticate.' },
+  { re: /whatsapp|waha|twilio|meta/i,
+    line: 'WhatsApp sending is affected: a reply posted from Conversations can be accepted by the workflow and still never reach the customer.' },
+  { re: /odoo|bitrix|erp|crm|xml-?rpc/i,
+    line: 'The ERP/CRM sync cannot write, so records created here stop mirroring outward and the two systems drift apart silently.' },
+  { re: /openrouter|openai|anthropic|gpt|gemini/i,
+    line: 'The model calls fail, so leads arrive unscored and Ask AI answers nothing.' },
+  { re: /supabase|postgres|database/i,
+    line: 'The workflow cannot reach the database, so whatever it was supposed to record was not recorded.' },
+];
+const credImpact = (name, workflows) => {
+  const hay = `${name} ${workflows.join(' ')}`;
+  const hit = CRED_IMPACT.find(c => c.re.test(hay));
+  return hit ? hit.line : 'Every run of the workflows listed here that reaches this credential fails at that step. Whatever those workflows were supposed to do is not being done.';
+};
+
+/* Which connectivity tiles the strip is entitled to raise an alarm about. The
+   Ask AI tile is deliberately excluded: it is not auto-probed (it spends
+   OpenRouter tokens), so "not green" there means "not asked", not "down". */
+const AUTO_PROBE = /^(supabase|n8n)$/i;
 
 /* Session expiry as a number the operator can act on. supabase-js refreshes in
    the background, so a small figure here is normal — it is a negative one that
@@ -76,7 +213,27 @@ function expiryText(expiresAt) {
 
 /* ── S14 · Settings ───────────────────────────────────────────────────────── */
 SCREENS.settings = async host => {
-  const top = el('div', 'grid g2 top'); host.appendChild(top);
+  /* ── The system-health strip ────────────────────────────────────────────
+     Rendered first and filled last. Its inputs arrive at three different
+     times — the database reads, the connectivity probes the tiles run, and the
+     knowledge-base read — so it is recomputed as each lands rather than showing
+     nothing until the slowest one is in. */
+  const alertCard = el('div', 'card flush');
+  alertCard.id = 'setAlerts';
+  alertCard.innerHTML = `<div class="card-head"><div>
+      <div class="card-title">System health</div>
+      <div class="card-sub" id="setAlertSub">Reading v_needs_attention, v_workflow_health and the newest failed runs…</div>
+    </div></div><div class="pbody" id="setAlertBody">${stateLoading(2)}</div>`;
+  host.appendChild(alertCard);
+
+  const top = el('div', 'grid g2 top'); top.style.marginTop = '16px'; host.appendChild(top);
+
+  /* Screen-scoped state. Each field is null until its read lands and carries
+     its own error, because "the health view is down" and "the audit log is
+     down" are different sentences and the strip is entitled to the right one. */
+  let sysState = null;    // { attn, attnErr, health, healthErr, fails, failsErr, reg, regErr, readAt }
+  let probeState = null;  // [{ name, state, msg }] read back off the connectivity tiles
+  let kbState = null;     // { count, docs, capped, err }
 
   /* ── Identity ───────────────────────────────────────────────────────────
      SESSION comes from Supabase Auth; ME is the matching row in `users`. They
@@ -87,14 +244,33 @@ SCREENS.settings = async host => {
   const exp = expiryText(SESSION?.expires_at);
   const noMeRow = !!SESSION && !ME;
 
+  /* The one person this screen lists is the one reading it, and a person is
+     shown with their number beside their name. `users` is read with select=*
+     at boot, so whether a phone column exists at all can be checked rather than
+     assumed — asking PostgREST for a column that does not exist 400s the whole
+     query. Absence is rendered as an em dash that says which kind of absence it
+     is; it is never filled in with a plausible-looking number. */
+  const hasPhoneCol = !!ME && Object.prototype.hasOwnProperty.call(ME, 'phone');
+  const mePhone = hasPhoneCol ? str(ME.phone) : '';
+  const phoneWhy = !ME
+    ? 'No row in users matches this account, so no number is stored for it.'
+    : !hasPhoneCol
+      ? 'The users table has no phone column at all, so this dashboard holds no number for any member of staff. Lead and customer numbers live on leads and customer_360_profiles; staff numbers are recorded nowhere it can read.'
+      : 'The users row for this account has a phone column and it is empty.';
+  const phoneCell = mePhone
+    ? `<span class="mono">${esc(mePhone)}</span>`
+    : `<span class="t-muted" title="${esc(phoneWhy)}">—</span>`;
+
   const prof = el('div', 'card');
+  prof.id = 'setProfile';
   prof.innerHTML = `<div class="card-title" style="margin-bottom:4px">Signed in</div>
     <div class="card-sub" style="margin-bottom:14px">Identity as Supabase Auth and the <span class="mono">users</span> table each see it</div>
     ${noMeRow ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">person_alert</span>
       <div>No row in <span class="mono">users</span> matches ${esc(email || 'this account')}. The account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
     <dl class="kv">
       <dt>Email</dt><dd>${esc(email || 'unknown')}</dd>
-      <dt>Name</dt><dd>${ME?.name ? esc(ME.name) : '<span class="t-muted">not set in users</span>'}</dd>
+      <dt>Name</dt><dd>${ME?.name ? esc(ME.name) : '<span class="t-muted">not set in users</span>'}
+        <span class="t-muted">·</span> ${phoneCell}</dd>
       <dt>Role</dt><dd>${ME?.role ? esc(ME.role) : '<span class="t-muted">no role on record</span>'}</dd>
       <dt>Account status</dt><dd>${ME?.status ? esc(ME.status) : '<span class="t-muted">not set</span>'}</dd>
       <dt>Auth user id</dt><dd class="mono">${esc(SESSION?.user?.id || 'unknown')}</dd>
@@ -102,7 +278,7 @@ SCREENS.settings = async host => {
         ? `<span class="${exp.bad ? 't-hot' : ''}">${esc(exp.text)}</span>`
         : '<span class="t-muted">no expiry on the session object</span>'}</dd>
     </dl>
-    <div class="cell-sub" style="margin-top:14px">Passwords, email changes and account creation are handled by Supabase Auth, not by this dashboard. Roles are edited on the Team screen.</div>`;
+    <div class="cell-sub" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by Supabase Auth, not by this dashboard. Roles are edited on the Team screen.</div>`;
   top.appendChild(prof);
 
   /* ── Environment ────────────────────────────────────────────────────────
@@ -116,23 +292,52 @@ SCREENS.settings = async host => {
   const mode = import.meta.env.MODE || null;
   const hooks = Object.values(HOOK);
 
+  /* Every VITE_ variable this bundle reads, and what breaks without it. env.js
+     validates the two that must exist — it measures the value rather than
+     testing it for truthiness, because a whole .env file pasted into one
+     variable is a thing that actually happened here. The n8n base is optional
+     in the sense that the app still boots, and precisely enumerated here in the
+     sense that nothing which calls a workflow works without it. */
+  const ENV_VARS = [
+    { name: 'VITE_SUPABASE_URL', value: SUPABASE_URL,
+      dead: 'Nothing on this dashboard can load — every screen reads through PostgREST.' },
+    { name: 'VITE_SUPABASE_ANON_KEY', opaque: true,
+      dead: 'Every request is rejected before it reaches a table, so every screen renders its error state.' },
+    { name: 'VITE_N8N_BASE_URL', value: N8N_BASE,
+      dead: 'Ask AI, the Finance Desk, drip enrolment, the ERP sync and WhatsApp replies all refuse outright — n8n() throws before it calls anything.' },
+  ];
+  const anonBroken = envErrors.some(e => /ANON_KEY/.test(e));
+
   const envCard = el('div', 'card');
+  envCard.id = 'setEnvCard';
   envCard.innerHTML = `<div class="card-title" style="margin-bottom:4px">Environment</div>
     <div class="card-sub" style="margin-bottom:14px">What this build points at — configuration values only, never secrets</div>
     ${envErrors.length ? `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
       <div>${envErrors.map(e => esc(e)).join('<br>')}</div></div>` : ''}
     ${!N8N_BASE ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
-      <div><span class="mono">VITE_N8N_BASE_URL</span> is not set, so every workflow call is disabled: Ask AI, Finance Desk, drip enrolment and the ERP sync will refuse outright rather than fail halfway.</div></div>` : ''}
+      <div><span class="mono">VITE_N8N_BASE_URL</span> is not set, so every workflow call is disabled: Ask AI, Finance Desk, drip enrolment, WhatsApp replies and the ERP sync will refuse outright rather than fail halfway.</div></div>` : ''}
     <dl class="kv">
       <dt>Supabase project</dt><dd class="mono">${projectRef ? esc(projectRef) : '<span class="t-hot">could not be parsed</span>'}</dd>
       <dt>Supabase URL</dt><dd class="mono">${esc(SUPABASE_URL || 'not set')}</dd>
-      <dt>Anon key</dt><dd>${envErrors.length
+      <dt>Anon key</dt><dd>${anonBroken
         ? '<span class="t-hot">missing or malformed — see above</span>'
         : 'configured <span class="t-muted">· never shown here, in full or masked</span>'}</dd>
       <dt>n8n base</dt><dd class="mono">${N8N_BASE ? esc(N8N_BASE) : '<span class="t-hot">not set</span>'}</dd>
       <dt>Build mode</dt><dd class="mono">${mode ? esc(mode) : '<span class="t-muted">unknown</span>'}</dd>
       <dt>Served from</dt><dd class="mono">${esc(location.origin)}</dd>
     </dl>
+    <div style="margin-top:16px">
+      <div class="label-caps" style="margin-bottom:8px">Build-time variables</div>
+      ${ENV_VARS.map(v => {
+        const bad = v.opaque ? anonBroken : !str(v.value);
+        return `<div class="list-item" style="cursor:default">
+          <span class="material-symbols-outlined t-${bad ? 'hot' : 'ok'}" style="font-size:18px">${bad ? 'error' : 'check_circle'}</span>
+          <div style="flex:1;min-width:0">
+            <div class="mono" style="font-weight:500">${esc(v.name)}</div>
+            <div class="cell-sub">${bad ? `<span class="t-hot">Missing or unusable.</span> ${esc(v.dead)}` : 'Set in this build.'}</div>
+          </div></div>`;
+      }).join('')}
+    </div>
     <div class="banner info" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">lock</span>
       <div>API keys, service-role keys and webhook secrets are never displayed or accepted on this screen, masked or otherwise. They live in n8n and in the server environment.</div>
@@ -144,7 +349,7 @@ SCREENS.settings = async host => {
      the n8n /healthz endpoint, and a free finance-calc round trip. It is the
      same helper the Automation screen uses, so the two screens cannot disagree
      about what "reachable" means. */
-  const conn = el('div', 'card'); conn.style.marginTop = '16px'; host.appendChild(conn);
+  const conn = el('div', 'card'); conn.id = 'setConn'; conn.style.marginTop = '16px'; host.appendChild(conn);
   conn.innerHTML = `<div class="card-head" style="padding:0 0 14px">
       <div><div class="card-title">Connectivity</div>
         <div class="card-sub" id="setConnSub">Live checks against ${esc(projectRef || 'Supabase')} and the n8n health endpoint</div></div>
@@ -159,23 +364,756 @@ SCREENS.settings = async host => {
             .map(p => `<span class="chip mono">${esc(N8N_BASE)}/webhook/${esc(p)}</span>`).join('')}</div>`
         : `<div class="cell-sub t-hot">No base URL is configured, so none of these can be called: ${
             hooks.map(p => esc(p)).join(', ')}.</div>`}
-      <div class="cell-sub" style="margin-top:8px">These are listed, not probed. Calling them to see whether they answer would do real work — <span class="mono">lead-trigger</span> enrols a customer in a drip campaign and <span class="mono">ask-ai</span> spends tokens — so a green dot here would cost more than it is worth. What they actually did is on the Automation screen, which reads what they logged.</div>
+      <div class="cell-sub" style="margin-top:8px">These are listed, not probed. Calling them to see whether they answer would do real work — <span class="mono">lead-trigger</span> enrols a customer in a drip campaign and <span class="mono">ask-ai</span> spends tokens — so a green dot here would cost more than it is worth. What they actually did is in the workflow table below, which reads what they logged.</div>
     </div>`;
+
+  /* The tiles report into their own DOM and return nothing, and this screen may
+     not re-run the checks itself: a screen calling the network directly is
+     outside the helper contract, and a second probe would double the load on a
+     one-vCPU box that has already been crashed twice by concurrent traffic. So
+     the strip reads the result back off the tiles renderIntegrations rendered.
+     Both outcomes are detected explicitly — the green dot and the red one — and
+     anything else is reported as unreadable rather than as healthy: a silent
+     fallback here would paint an outage green, which is the one thing this
+     screen must never do. */
+  const readProbes = () => {
+    const node = $('setIntg');
+    if (!node) return null;
+    const out = [];
+    node.querySelectorAll('.card').forEach(tile => {
+      /* Not `div[...]`: renderIntegrations writes the name into a <div> while a
+         check is pending and into a <span> once it resolves, so keying on the
+         element type would read every finished tile as nameless and leave this
+         strip saying "probing" through an outage. Match on the style only. */
+      const name = str(tile.querySelector('[style*="font-weight:500"]')?.textContent);
+      if (!name) return;
+      const okDot  = tile.querySelector('span[style*="var(--ok)"]');
+      const badDot = tile.querySelector('span[style*="var(--hot)"]');
+      const msg = str(tile.querySelector('.cell-sub')?.textContent);
+      out.push({
+        name,
+        state: okDot ? 'up' : badDot ? 'down' : /checking/i.test(msg) ? 'pending' : 'unknown',
+        msg,
+      });
+    });
+    return out.length ? out : null;
+  };
+
+  const PROBE_POLL_MS = 500;
+  const PROBE_WINDOW_MS = 20000;
+  let probeTimer = null;
+  const watchProbes = () => {
+    if (probeTimer) clearInterval(probeTimer);
+    const started = Date.now();
+    probeTimer = setInterval(() => {
+      const node = $('setIntg');
+      /* Navigating away replaces #screen wholesale; a timer left polling a
+         detached tree would run until the tab closed. */
+      if (!node || !document.body.contains(node)) { clearInterval(probeTimer); probeTimer = null; return; }
+      probeState = readProbes();
+      const done = (probeState || []).filter(p => AUTO_PROBE.test(p.name))
+        .every(p => p.state === 'up' || p.state === 'down');
+      if ((probeState && done) || Date.now() - started > PROBE_WINDOW_MS) {
+        clearInterval(probeTimer); probeTimer = null;
+      }
+      renderAlerts();
+    }, PROBE_POLL_MS);
+  };
 
   const runChecks = () => {
     const sub = $('setConnSub');
     if (sub) sub.textContent = `Checks started ${clock(new Date().toISOString())} — each tile stamps its own result`;
+    probeState = null;
     renderIntegrations($('setIntg'));
+    watchProbes();
   };
   $('setRecheck').addEventListener('click', runChecks);
   runChecks();
+
+  /* ── Wiring: workflows and credentials ──────────────────────────────────
+     Placeholders now, filled when the batch below lands, so the cards sit in
+     their final order instead of appearing underneath the knowledge base. */
+  const wfCard = el('div', 'card flush'); wfCard.id = 'setWfCard';
+  wfCard.style.marginTop = '16px'; host.appendChild(wfCard);
+  wfCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflows</div>
+    <div class="card-sub">Reading v_workflow_health…</div></div></div><div class="pbody">${stateLoading(5)}</div>`;
+
+  const credCard = el('div', 'card flush'); credCard.id = 'setCredsCard';
+  credCard.style.marginTop = '16px'; host.appendChild(credCard);
+  credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
+    <div class="card-sub">Reading the newest failed runs…</div></div></div><div class="pbody">${stateLoading(2)}</div>`;
+
+  /* ── The system read ────────────────────────────────────────────────────
+     One batch, settled individually. A shared catch would put one silence over
+     four different faults, and naming which thing is broken is this screen's
+     entire job.
+
+     v_needs_attention is read WITHOUT the screen=eq.settings filter on purpose.
+     This screen's own rows are the ones where screen='settings', and they are
+     the only ones rendered as its own — but a workflow_failure row is
+     system-health evidence wherever the view files it, and reading the view
+     once and partitioning it here costs one request instead of two. Rows
+     belonging to other screens are never presented as this screen's work: they
+     are counted, attributed, and left where they belong. */
+  const settle = p => p.then(v => ({ ok: true, value: v }), e => ({ ok: false, err: e?.message || 'Unknown error' }));
+  const sysRead = Promise.all([
+    settle(db(`v_needs_attention?select=kind,severity,ref,title,detail,at,screen&order=at.desc&limit=${ATTN_LIMIT}`)),
+    settle(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,description,is_active,'
+      + `writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,last_failure,health&limit=${HEALTH_LIMIT}`)),
+    /* Failures only. Per-workflow totals come from v_workflow_health, whose
+       windows are documented; this read exists to carry the text of the
+       failure, which is the only place a broken credential names itself. */
+    settle(db(`audit_log?select=workflow,status,summary,logged_at&status=eq.FAILED&order=logged_at.desc&limit=${FAIL_LIMIT}`)),
+    /* The registry is what ties an n8n workflow to the string it writes into
+       audit_log. Without it the failure list falls back to matching on the
+       display name, which is a weaker join — so the difference is stated rather
+       than hidden behind a suspiciously short failure history. */
+    settle(db('workflow_registry?select=id,name,audit_name,audit_aliases')),
+  ]).then(([attn, health, fails, reg]) => {
+    sysState = {
+      attn: attn.ok ? attn.value : null, attnErr: attn.ok ? null : attn.err,
+      health: health.ok ? health.value : null, healthErr: health.ok ? null : health.err,
+      fails: fails.ok ? fails.value : null, failsErr: fails.ok ? null : fails.err,
+      reg: reg.ok ? reg.value : null, regErr: reg.ok ? null : reg.err,
+      readAt: new Date().toISOString(),
+    };
+    return sysState;
+  });
+
+  /* ── Alert computation ──────────────────────────────────────────────────
+     Everything below is derived from reads this screen already made. Nothing
+     here costs a round trip of its own, and every count names the read it came
+     from so a smaller number can never quietly mean a failed one. */
+  const credGroups = () => {
+    const s = sysState;
+    if (!s || !s.fails) return null;
+    const groups = new Map();
+    for (const rowF of s.fails) {
+      const text = str(rowF.summary);
+      if (!CRED_RE.test(text)) continue;
+      const name = credName(text) || 'unnamed credential';
+      let g = groups.get(low(name));
+      if (!g) { g = { name, rows: [], workflows: new Set(), viewItems: [] }; groups.set(low(name), g); }
+      g.rows.push(rowF);
+      if (str(rowF.workflow)) g.workflows.add(str(rowF.workflow));
+    }
+    /* The same fault as reported by v_needs_attention. It is the same incident,
+       so it joins the group rather than being counted a second time; where the
+       view names a credential this read did not see, it becomes its own group,
+       so a fault is never dropped for being in the wrong place. */
+    for (const it of (s.attn || [])) {
+      const text = `${str(it.title)} ${str(it.detail)}`;
+      if (!CRED_RE.test(text)) continue;
+      const name = credName(text) || 'unnamed credential';
+      let g = groups.get(low(name));
+      if (!g) { g = { name, rows: [], workflows: new Set(), viewItems: [] }; groups.set(low(name), g); }
+      g.viewItems.push(it);
+    }
+    return [...groups.values()].map(g => {
+      const times = g.rows.map(r => Date.parse(r.logged_at))
+        .concat(g.viewItems.map(v => Date.parse(v.at)))
+        .filter(t => !Number.isNaN(t));
+      return {
+        name: g.name,
+        workflows: [...g.workflows],
+        count: g.rows.length,
+        viewCount: g.viewItems.length,
+        newest: times.length ? new Date(Math.max(...times)).toISOString() : null,
+        oldest: times.length ? new Date(Math.min(...times)).toISOString() : null,
+      };
+    }).sort((a, b) => (b.count + b.viewCount) - (a.count + a.viewCount));
+  };
+
+  function computeAlerts() {
+    const out = [];
+    const s = sysState;
+
+    /* 1 · Configuration. No timestamp on these: they are the state of the
+       build, not an event, and dressing them with an age would be invention. */
+    envErrors.forEach((e, i) => out.push({
+      key: `env${i}`, sev: 'CRITICAL', icon: 'settings_alert',
+      title: 'This build is missing a required environment variable',
+      detail: esc(e),
+      foot: 'Compiled into the bundle at build time — fixing it means redeploying with the variable set, not changing anything from here.',
+      target: 'setEnvCard',
+    }));
+    if (!N8N_BASE) out.push({
+      key: 'env-n8n', sev: 'CRITICAL', icon: 'link_off',
+      title: 'VITE_N8N_BASE_URL is not set, so no workflow can be called',
+      detail: 'n8n() throws before it makes a request, which means Ask AI, the Finance Desk, drip enrolment, WhatsApp replies from Conversations and the ERP sync are all dead in this build — not slow, not intermittent: refused at the first line.',
+      foot: 'Build-time configuration. The workflow table below still reads what n8n logged, because that comes from Supabase, not from n8n.',
+      target: 'setEnvCard',
+    });
+
+    /* 2 · Session. An expired token is what a screen full of 401s looks like,
+       and it is fixed by signing in again, not by anything on this page. */
+    if (exp?.bad) out.push({
+      key: 'session', sev: 'CRITICAL', icon: 'lock_clock',
+      title: 'The access token on this session has expired',
+      detail: `It ${esc(exp.text)}. supabase-js refreshes tokens in the background, so an expired one usually means the refresh itself is failing.`,
+      target: 'setProfile',
+    });
+    if (noMeRow) out.push({
+      key: 'no-me', sev: 'WARNING', icon: 'person_alert',
+      title: 'This account has no row in users',
+      detail: `${esc(email || 'The signed-in account')} can authenticate but has no name, role or status on record, so anything keyed on role treats it as unassigned.`,
+      foot: 'Rows in users are created on the Team screen.',
+      target: 'setProfile',
+    });
+
+    /* 3 · Reachability. Supabase is judged by this screen's own reads — the
+       most direct evidence there is — and cross-checked against the tile. n8n
+       has no evidence except the tile, and where the tile cannot be read the
+       strip says exactly that rather than assuming either answer. */
+    const probeFor = re => (probeState || []).find(p => re.test(p.name)) || null;
+    const sbProbe = probeFor(/^supabase$/i);
+    const n8nProbe = probeFor(/^n8n$/i);
+
+    if (s && s.attnErr && s.healthErr && s.failsErr) out.push({
+      key: 'sb-down', sev: 'CRITICAL', icon: 'cloud_off',
+      title: 'Every Supabase read from this screen failed',
+      detail: `All four queries came back with an error — v_workflow_health said: ${esc(s.healthErr)}. Nothing below this strip is a count of anything; the panels are empty because the database did not answer, not because the system is quiet.`,
+      target: 'setConn',
+    });
+    else if (sbProbe?.state === 'down') out.push({
+      key: 'sb-probe-down', sev: 'CRITICAL', icon: 'cloud_off',
+      title: 'The Supabase connectivity check failed',
+      detail: `The probe reported: ${esc(sbProbe.msg || 'no detail')}.${s && !s.healthErr ? ' This screen’s own reads did succeed, so the fault is narrower than “Supabase is down” — read what the probe actually said.' : ''}`,
+      target: 'setConn',
+    });
+
+    if (N8N_BASE && n8nProbe?.state === 'down') out.push({
+      key: 'n8n-down', sev: 'CRITICAL', icon: 'power_off',
+      title: 'n8n is not reachable from this browser',
+      detail: `The health endpoint at <span class="mono">${esc(N8N_BASE)}/healthz</span> reported: ${esc(n8nProbe.msg || 'no detail')}. Every workflow this dashboard calls goes to that host, so Ask AI, the Finance Desk, drip enrolment and WhatsApp replies will all fail while this is true. Workflows triggered inside n8n itself may still be running — this check says nothing about them.`,
+      target: 'setConn',
+    });
+
+    /* 4 · Workflow states from v_workflow_health. Each of these findings is a
+       different sentence, and only some of them are faults. */
+    if (s?.healthErr) out.push({
+      key: 'wf-read', sev: 'WARNING', icon: 'error',
+      title: 'The workflow health view could not be read',
+      detail: `v_workflow_health returned: ${esc(s.healthErr)}. This screen therefore cannot say whether any workflow is degraded, and the absence of a degraded-workflow alert below means nothing at all.`,
+      target: 'setWfCard',
+    });
+    if (s?.health) {
+      const rows = s.health;
+      const deg = rows.filter(w => stateKey(w) === 'DEGRADED');
+      const never = rows.filter(w => stateKey(w) === 'NEVER_RAN');
+      const blind = rows.filter(w => stateKey(w) === 'NOT_INSTRUMENTED');
+      const off = rows.filter(w => w.is_active === false);
+      const odd = rows.filter(w => stateKey(w) === 'UNKNOWN');
+
+      if (deg.length) {
+        const f30 = deg.reduce((a, w) => a + (n0(w.failures_30d) || 0), 0);
+        const last = deg.map(w => w.last_failure).filter(Boolean).sort().pop();
+        const stillOn = deg.filter(w => w.is_active !== false).length;
+        out.push({
+          key: 'wf-degraded', sev: 'CRITICAL', icon: 'error',
+          title: `${num(deg.length)} ${plural(deg.length, 'workflow is', 'workflows are')} degraded`,
+          detail: `${esc(deg.map(w => str(w.name)).join(', '))} — ${num(f30)} failed ${plural(f30, 'run', 'runs')} inside the 30-day window v_workflow_health measures.${
+            stillOn ? ` ${num(stillOn)} of ${plural(deg.length, 'them is', 'them are')} still active in n8n, which means n8n keeps running ${plural(stillOn, 'it', 'them')} and ${plural(stillOn, 'it keeps', 'they keep')} failing.` : ''}`,
+          foot: last ? `Most recent failure ${esc(ago(last))}.` : 'v_workflow_health recorded no last_failure timestamp for these.',
+          target: 'setWfCard', wf: 'DEGRADED',
+        });
+      }
+      if (never.length) out.push({
+        key: 'wf-never', sev: 'WARNING', icon: 'schedule',
+        title: `${num(never.length)} ${plural(never.length, 'workflow has', 'workflows have')} never recorded a run`,
+        detail: `${esc(never.map(w => str(w.name)).join(', '))} ${plural(never.length, 'is', 'are')} registered as writing to audit_log and ${plural(never.length, 'has', 'have')} never written a row. That is not evidence of health, it is the absence of evidence — ${plural(never.length, 'this workflow has', 'these workflows have')} never been observed working in this deployment.`,
+        target: 'setWfCard', wf: 'NEVER_RAN',
+      });
+      if (blind.length) out.push({
+        key: 'wf-blind', sev: 'INFO', icon: 'visibility_off',
+        title: `${num(blind.length)} ${plural(blind.length, 'workflow reports', 'workflows report')} nothing at all`,
+        detail: `${plural(blind.length, 'It has', 'They have')} no Audit Log node, so nothing ${plural(blind.length, 'it does', 'they do')} reaches audit_log and this dashboard cannot see ${plural(blind.length, 'it', 'them')} succeed or fail. Counted as healthy nowhere on this screen: unmeasured is not the same as working.`,
+        foot: 'The Automation screen separates out the few of these that answer their caller directly — those hand their result back in the HTTP reply, so a missing audit row is the design rather than a gap.',
+        target: 'setWfCard', wf: 'NOT_INSTRUMENTED',
+      });
+      if (off.length) out.push({
+        key: 'wf-off', sev: 'WARNING', icon: 'toggle_off',
+        title: `${num(off.length)} registered ${plural(off.length, 'workflow is', 'workflows are')} inactive in n8n`,
+        detail: `${esc(off.map(w => str(w.name)).join(', '))} — an inactive workflow has no live webhook, so anything posting to it gets a 404 however well-formed the request is.`,
+        target: 'setWfCard', wf: 'INACTIVE',
+      });
+      if (odd.length) out.push({
+        key: 'wf-odd', sev: 'WARNING', icon: 'help',
+        title: `${num(odd.length)} ${plural(odd.length, 'workflow reports', 'workflows report')} a health state this screen has no wording for`,
+        detail: `Reported verbatim as ${esc([...new Set(odd.map(w => str(w.health) || 'null'))].join(', '))} rather than folded into one of the states it might mean.`,
+        target: 'setWfCard', wf: 'ALL',
+      });
+    }
+
+    /* 5 · Credentials. Why this belongs on Settings rather than Automation: a
+       broken credential is not one workflow misbehaving, it is a whole channel
+       switched off underneath every workflow that uses it. */
+    if (s?.failsErr) out.push({
+      key: 'cred-read', sev: 'WARNING', icon: 'error',
+      title: 'Failed runs could not be read, so credential faults cannot be reported',
+      detail: `audit_log returned: ${esc(s.failsErr)}. A broken credential names itself only in the text of the failure it causes, so with this read down the credentials panel is blank for lack of evidence, not for lack of faults.`,
+      target: 'setCredsCard',
+    });
+    (credGroups() || []).forEach(g => out.push({
+      key: `cred-${low(g.name)}`, sev: 'CRITICAL', icon: 'key_off',
+      title: `The ${g.name} credential is failing`,
+      detail: `${esc(credImpact(g.name, g.workflows))}<div class="cell-sub" style="margin-top:4px">${
+        g.count ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it` : 'No failed audit row in this window names it'}${
+        g.viewCount ? `, and v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
+        g.workflows.length ? ` · seen failing in ${esc(g.workflows.join(', '))}` : ''}.</div>`,
+      foot: g.newest
+        ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.`
+        : '',
+      target: 'setCredsCard',
+    }));
+
+    /* 6 · Ask AI has nothing to answer from. Derived from the knowledge-base
+       read this screen already performs — no extra request. */
+    if (kbState?.err) out.push({
+      key: 'kb-read', sev: 'WARNING', icon: 'error',
+      title: 'The knowledge base could not be read',
+      detail: `rag_documents returned: ${esc(kbState.err)}. What Ask AI is allowed to answer from is therefore unknown from here.`,
+      target: 'setKbCard',
+    });
+    else if (kbState && kbState.count === 0) out.push({
+      key: 'kb-empty', sev: 'WARNING', icon: 'description',
+      title: 'The knowledge base is empty',
+      detail: 'rag_documents holds no rows, so Ask AI has nothing to retrieve and nothing to cite. A question asked there is answered from the model alone or not at all.',
+      target: 'setKbCard',
+    });
+
+    return out.sort((a, b) => sevRank(a.sev) - sevRank(b.sev));
+  }
+
+  /* ── The strip ──────────────────────────────────────────────────────────── */
+  function renderAlerts() {
+    const bodyHost = $('setAlertBody');
+    if (!bodyHost) return; /* navigated away while a read was in flight */
+    const s = sysState;
+
+    /* The view's own rows for this screen, kept separate from what this screen
+       worked out for itself: one is the database's finding and the other is
+       this file's, and merging them would let a bug here look like a row
+       there. */
+    const mine = (s?.attn || []).filter(it => str(it.screen) === 'settings');
+    const elsewhere = (s?.attn || []).filter(it => str(it.screen) !== 'settings');
+    const wfElsewhere = elsewhere.filter(it => it.kind === 'workflow_failure');
+
+    const alerts = computeAlerts();
+    /* The badge counts what needs a human: CRITICAL and WARNING, not the
+       informational findings. The footer prints that arithmetic, so a number in
+       the sidebar never has to be reverse-engineered. */
+    const durable = alerts.filter(a => a.sev === 'CRITICAL' || a.sev === 'WARNING');
+    const badge = $('badge-settings');
+    if (badge) {
+      const n = durable.length + mine.length;
+      badge.textContent = String(n);
+      badge.classList.toggle('hide', n === 0);
+    }
+
+    const viewRows = mine.map(it => {
+      const sev = str(it.severity);
+      return `<div class="list-item" style="cursor:default">
+        <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px">${esc(KIND_ICON[it.kind] || 'warning')}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${sev ? pill(sev, sevTone(sev)) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+            <span class="chip">${esc(str(it.kind) || 'item')}</span>
+          </div>
+          <div class="cell-sub">${esc(str(it.detail))}</div>
+          <div class="cell-sub t-muted">${it.at
+            ? `Waiting since ${esc(clock(it.at))} — ${esc(ago(it.at))}`
+            : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
+        </div></div>`;
+    }).join('');
+
+    const derivedRows = alerts.map(a => `
+      <div class="list-item" role="button" tabindex="0" data-target="${esc(a.target)}"${a.wf ? ` data-wf="${esc(a.wf)}"` : ''}
+        title="Show the panel this is about">
+        <span class="material-symbols-outlined t-${esc(sevTone(a.sev) || 'muted')}" style="font-size:20px">${esc(a.icon)}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${pill(a.sev, sevTone(a.sev))}${esc(a.title)}
+          </div>
+          <div class="cell-sub">${a.detail}</div>
+          ${a.foot ? `<div class="cell-sub t-muted">${a.foot}</div>` : ''}
+        </div>
+        <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
+      </div>`).join('');
+
+    /* What was actually checked, and what could not be. A screen that quietly
+       drops a failed read reports fewer alerts and looks healthier for it. */
+    const checked = [
+      !s ? 'v_needs_attention: still reading'
+        : s.attnErr ? 'v_needs_attention: unreadable'
+        : `v_needs_attention: ${num(mine.length)} row${plural(mine.length, '', 's')} for this screen`,
+      !s ? 'v_workflow_health: still reading'
+        : s.healthErr ? 'v_workflow_health: unreadable'
+        : `v_workflow_health: ${num(s.health.length)} workflow${plural(s.health.length, '', 's')}`,
+      !s ? 'failed runs: still reading'
+        : s.failsErr ? 'audit_log: unreadable'
+        : `audit_log: newest ${num(s.fails.length)} failed run${plural(s.fails.length, '', 's')}`,
+      !probeState ? 'connectivity: probing'
+        : (() => {
+            const named = probeState.filter(p => AUTO_PROBE.test(p.name));
+            const down = named.filter(p => p.state === 'down').map(p => p.name);
+            const unread = named.filter(p => p.state !== 'up' && p.state !== 'down').map(p => p.name);
+            if (down.length) return `connectivity: ${down.join(', ')} down`;
+            if (unread.length) return `connectivity: ${unread.join(', ')} not readable`;
+            return 'connectivity: Supabase and n8n both answered';
+          })(),
+      !kbState ? 'knowledge base: still reading'
+        : kbState.err ? 'knowledge base: unreadable'
+        : `knowledge base: ${num(kbState.count)}${kbState.capped ? '+' : ''} section${plural(kbState.count, '', 's')}`,
+    ];
+    const subNode = $('setAlertSub');
+    if (subNode) subNode.textContent = checked.join(' · ');
+
+    const probeUnread = (probeState || []).filter(p => AUTO_PROBE.test(p.name) && p.state !== 'up' && p.state !== 'down');
+    const notes = [
+      s?.attnErr ? `v_needs_attention is unreadable (${s.attnErr}), so any item the database itself filed against this screen is missing from the list above, and the badge counts only what this screen worked out for itself.` : '',
+      s && s.attn && s.attn.length >= ATTN_LIMIT ? `The attention read is capped at ${num(ATTN_LIMIT)} rows and hit the cap, so items beyond it are outside this window rather than absent.` : '',
+      s && s.fails && s.fails.length >= FAIL_LIMIT ? `The failure read is capped at ${num(FAIL_LIMIT)} rows and hit the cap, so a credential that last failed before that is not counted above. Per-workflow failure totals in the table below come from v_workflow_health and are unaffected by this cap.` : '',
+      s?.regErr ? `workflow_registry is unreadable (${s.regErr}), so failures are matched to workflows by display name only. A workflow that logs under a different name than it is registered with will show fewer failures here than it really had.` : '',
+      probeState && probeUnread.length ? `The connectivity tile for ${probeUnread.map(p => p.name).join(', ')} did not resolve into a result this strip could read, so no claim is made either way about it — read the tile itself.` : '',
+      wfElsewhere.length ? `${num(wfElsewhere.length)} workflow-failure ${plural(wfElsewhere.length, 'item is', 'items are')} filed by v_needs_attention against the Automation screen rather than this one. ${plural(wfElsewhere.length, 'It is', 'They are')} not listed above as this screen's work; ${plural(wfElsewhere.length, 'it feeds', 'they feed')} the credential check only.` : '',
+      `Badge counts ${num(durable.length)} critical or warning ${plural(durable.length, 'item', 'items')} this screen derived${mine.length ? ` plus ${num(mine.length)} v_needs_attention ${plural(mine.length, 'row', 'rows')} for this screen` : ' and nothing else'}${s ? '' : ' so far — the database reads have not landed yet, so this figure can only rise'}. Informational findings are listed but not counted.`,
+    ].filter(Boolean);
+
+    /* Two things this row must never say. It must not claim the view returned
+       nothing when the view could not be read — that is the difference between
+       a clean screen and a blind one — and it must not appear at all while the
+       reads are still in flight, because "nothing needs attention" arriving
+       half a second before the first alert is exactly the reassurance this
+       strip exists to withhold. */
+    const attnUnread = !!(s && s.attnErr);
+    const nothing = `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-${attnUnread ? 'muted' : 'ok'}" style="font-size:20px">${attnUnread ? 'help' : 'task_alt'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500">${attnUnread
+          ? 'Nothing this screen could check for itself is wrong'
+          : 'Nothing on this screen needs attention right now'}</div>
+        <div class="cell-sub">${attnUnread
+          ? 'v_needs_attention could not be read, so whether the database has filed anything against this screen is unknown'
+          : 'v_needs_attention returned no row for this screen'}${s && !s.healthErr
+          ? ', no registered workflow is degraded, inactive or still waiting for its first run, and no failed run in the window read here names a credential'
+          : ''}${envErrors.length ? '' : ', and every environment variable this build needs is set'}.</div>
+      </div></div>`;
+
+    const stillReading = `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-muted" style="font-size:20px">hourglass_top</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500">Still checking</div>
+        <div class="cell-sub">v_needs_attention, v_workflow_health and the newest failed runs have not answered yet, so anything they would report is missing from this list. The configuration findings above do not depend on them.</div>
+      </div></div>`;
+
+    const notesRow = notes.length ? `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+      <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>` : '';
+
+    bodyHost.innerHTML = viewRows + derivedRows
+      + (!s ? stillReading : (alerts.length || mine.length ? '' : nothing))
+      + notesRow;
+
+    /* An alert that only describes a problem is a poster. Every derived alert
+       carries the id of the panel showing the thing it is about, and the
+       workflow ones also set that panel's filter, so the click lands on the
+       rows rather than near them. Keyboard-operable, because this row is the
+       only route from the alert to its evidence. */
+    bodyHost.querySelectorAll('[data-target]').forEach(node => {
+      const jump = () => {
+        if (node.dataset.wf) setWfFilter(node.dataset.wf);
+        const dest = $(node.dataset.target);
+        if (dest) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      node.addEventListener('click', jump);
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
+      });
+    });
+  }
+  renderAlerts();
+
+  /* ── Workflows ──────────────────────────────────────────────────────────
+     Every registered workflow and the state v_workflow_health reports for it.
+     Automation owns the deep history; this table answers the narrower Settings
+     question — is the automation wired up, and which parts of it have never
+     proved they work. */
+  const WF_FILTERS = [
+    { key: 'ALL', label: 'All' },
+    { key: 'DEGRADED', label: 'Degraded' },
+    { key: 'NEVER_RAN', label: 'Never ran' },
+    { key: 'NOT_INSTRUMENTED', label: 'Not logged' },
+    { key: 'HEALTHY', label: 'Clean' },
+    { key: 'INACTIVE', label: 'Inactive' },
+  ];
+  const matchFilter = (w, key) =>
+    key === 'ALL' ? true : key === 'INACTIVE' ? w.is_active === false : stateKey(w) === key;
+
+  let wfFilter = 'ALL';
+  let drawWf = null;          /* assigned once the table has rendered */
+  const setWfFilter = key => {
+    wfFilter = key;
+    if (drawWf) drawWf();
+  };
+
+  sysRead.then(s => {
+    renderAlerts();
+
+    if (s.healthErr) {
+      wfCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflows</div>
+        <div class="card-sub">v_workflow_health could not be read</div></div></div>
+        <div class="pbody">${stateError('workflow health', s.healthErr)}</div>`;
+      credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
+        <div class="card-sub">Faults n8n reported in the text of a failed run</div></div></div>
+        <div class="pbody">${renderCreds()}</div>`;
+      wireCreds();
+      return;
+    }
+
+    const rows = (s.health || []).slice().sort((a, b) =>
+      healthOf(a).rank - healthOf(b).rank
+      || ((n0(b.failures_30d) || 0) - (n0(a.failures_30d) || 0))
+      || String(a.name || '').localeCompare(String(b.name || '')));
+
+    const active = rows.filter(w => w.is_active !== false).length;
+    const counts = {};
+    WF_FILTERS.forEach(f => { counts[f.key] = rows.filter(w => matchFilter(w, f.key)).length; });
+
+    /* The registry join, used only to attribute failures. Where it is missing
+       the fallback is the display name, and the shortfall is stated rather than
+       shown as a shorter, healthier-looking history. */
+    const regById = new Map((s.reg || []).map(r => [String(r.id), r]));
+    const namesFor = w => {
+      const r = regById.get(String(w.id));
+      const set = new Set();
+      [w.name, r?.name, r?.audit_name, ...(Array.isArray(r?.audit_aliases) ? r.audit_aliases : [])]
+        .filter(Boolean).forEach(n => set.add(low(n)));
+      return set;
+    };
+    const failsFor = w => {
+      if (!s.fails) return null;
+      const names = namesFor(w);
+      return s.fails.filter(f => names.has(low(f.workflow)));
+    };
+
+    wfCard.innerHTML = `<div class="card-head">
+        <div><div class="card-title">Workflows</div>
+          <div class="card-sub">${num(rows.length)} registered · ${num(active)} active in n8n · state and 30-day counts from <span class="mono">v_workflow_health</span>, read ${esc(clock(s.readAt))}</div></div>
+        <div style="flex:1"></div>
+        <button class="btn sm" id="setWfAutomation">Open Automation</button>
+      </div>
+      <div class="toolbar">
+        <div class="seg" id="setWfSeg" role="group" aria-label="Filter workflows by state">
+          ${WF_FILTERS.filter(f => f.key === 'ALL' || counts[f.key])
+            .map(f => `<button type="button" data-f="${f.key}" class="${f.key === wfFilter ? 'on' : ''}"
+              aria-pressed="${f.key === wfFilter ? 'true' : 'false'}">${esc(f.label)} <span class="t-muted">${num(counts[f.key])}</span></button>`).join('')}
+        </div>
+      </div>
+      <div id="setWfList"></div>
+      <div class="pbody" style="padding-top:0">
+        <div class="cell-sub" style="white-space:normal">${[
+          'Active means n8n will run the workflow. It does not mean the workflow succeeds — an active workflow with a revoked credential runs on every trigger and fails on every trigger, and both of those are true at once.',
+          'Not logged is not a pass. Those workflows have no Audit Log node, so nothing they do reaches audit_log; they are left uncoloured because this dashboard has no evidence either way, and colouring them green would manufacture some.',
+          'No runs yet is the same kind of absence: registered to log, never logged, never observed working.',
+          rows.length >= HEALTH_LIMIT ? `The read is capped at ${num(HEALTH_LIMIT)} workflows and hit the cap, so this is a window rather than the whole register.` : '',
+          s.failsErr ? `Failure detail is unavailable (${s.failsErr}), so a workflow's drawer shows its counts but not the text of what went wrong.` : '',
+        ].filter(Boolean).map(esc).join('<br>')}</div>
+      </div>`;
+
+    $('setWfAutomation').addEventListener('click', () => go('automation'));
+
+    drawWf = () => {
+      const seg = $('setWfSeg');
+      if (!seg) return;
+      seg.querySelectorAll('button').forEach(b => {
+        const on = b.dataset.f === wfFilter;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      const list = rows.filter(w => matchFilter(w, wfFilter));
+      const listHost = $('setWfList');
+      if (!listHost) return;
+      listHost.innerHTML = table([
+        { label: 'Workflow', strong: true, render: w => `
+          <div>${esc(str(w.name) || 'Unnamed workflow')}</div>
+          <div class="cell-sub">${esc([str(w.category), str(w.trigger_type)].filter(Boolean).join(' · ') || 'no category recorded')}${
+            w.is_active === false
+              ? ' · <span class="t-warm">inactive in n8n — its webhook is not live</span>'
+              : ' · <span class="t-muted" title="n8n will run this workflow. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
+        { label: 'State', render: w => {
+          const h = healthOf(w);
+          return `<span title="${esc(h.blurb)}">${pill(h.label, h.t)}</span>${
+            stateKey(w) === 'UNKNOWN' ? `<div class="cell-sub mono">${esc(str(w.health) || 'null')}</div>` : ''}`;
+        } },
+        { label: 'Runs 30 d', align: 'r', render: w => {
+          const r = n0(w.runs_30d);
+          return r == null ? '<span class="t-muted">—</span>' : num(r);
+        } },
+        { label: 'Failed 30 d', align: 'r', render: w => {
+          const f = n0(w.failures_30d);
+          if (f == null) return '<span class="t-muted">—</span>';
+          return f ? `<span class="t-hot">${num(f)}</span>` : num(0);
+        } },
+        { label: 'Success 30 d', align: 'r', render: w => {
+          const r = rate30(w);
+          /* No runs means no rate. Printing 0% or 100% for a workflow that has
+             never run would state a result the data does not contain. */
+          return r == null
+            ? '<span class="t-muted" title="No logged runs inside the 30-day window, so there is no rate to compute.">—</span>'
+            : esc(pct(r));
+        } },
+        { label: 'Last run', align: 'r', render: w => w.last_run
+          ? esc(ago(w.last_run))
+          : '<span class="t-muted">never</span>' },
+      ], list, {
+        empty: stateEmpty('No workflow in that state', 'Nothing in v_workflow_health matches this filter right now.', 'filter_alt'),
+        onRow: true,
+      });
+      wireRows(listHost, list, openWf);
+    };
+
+    function openWf(w) {
+      const h = healthOf(w);
+      const fails = failsFor(w);
+      const shown = (fails || []).slice(0, 6);
+      const r30 = n0(w.runs_30d), f30 = n0(w.failures_30d);
+      const viewRate = n0(w.success_rate);
+      const own30 = rate30(w);
+      openDrawer(`
+        <div class="drawer-head">
+          <div style="flex:1">
+            <h2 style="font-size:18px">${esc(str(w.name) || 'Unnamed workflow')}</h2>
+            <div class="cell-sub">${esc([str(w.category), str(w.trigger_type), str(w.trigger_detail)].filter(Boolean).join(' · ') || 'no trigger recorded')}</div>
+          </div>
+          <button class="btn ghost sm" id="wfClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <div class="drawer-body">
+          <div class="section">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${pill(h.label, h.t)}
+              ${w.is_active === false
+                ? '<span class="chip" title="No live webhook in n8n. Anything posting to it gets a 404.">Inactive</span>'
+                : '<span class="chip" title="n8n will run this workflow. It is not a statement about whether the run succeeds.">Active in n8n</span>'}
+              ${w.writes_audit_log ? '' : '<span class="chip" title="No Audit Log node, so nothing it does reaches audit_log.">Writes no audit row</span>'}</div>
+            <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(h.blurb)}</div>
+            ${w.description ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(str(w.description))}</div>` : ''}
+          </div>
+          <div class="section" style="margin-top:20px">
+            <div class="label-caps">What the view reports</div>
+            <dl class="kv" style="margin-top:10px">
+              <dt>Runs, 30 days</dt><dd>${r30 == null ? '<span class="t-muted">not reported</span>' : num(r30)}</dd>
+              <dt>Failures, 30 days</dt><dd>${f30 == null ? '<span class="t-muted">not reported</span>' : num(f30)}</dd>
+              <dt>Success, 30 days</dt><dd>${own30 == null
+                ? '<span class="t-muted">no runs in the window, so no rate exists</span>'
+                : `${esc(pct(own30))} <span class="t-muted">· computed here from runs_30d and failures_30d</span>`}</dd>
+              <dt>Runs, all time</dt><dd>${num(n0(w.runs) ?? 0)}</dd>
+              <dt>Failures, all time</dt><dd>${num(n0(w.failures) ?? 0)}</dd>
+              <dt>success_rate</dt><dd>${viewRate == null
+                ? '<span class="t-muted">not reported</span>'
+                : `${esc(pct(viewRate))} <span class="t-muted">· the view's own figure, over its own window</span>`}</dd>
+              <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) + ` <span class="t-muted mono">${esc(clock(w.last_run))}</span>` : '<span class="t-muted">never</span>'}</dd>
+              <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
+            </dl>
+            ${own30 != null && viewRate != null && Math.abs(own30 - viewRate) > 0.1
+              ? '<div class="cell-sub" style="margin-top:8px;white-space:normal">The two rates differ. They are not the same measurement — the first is the documented 30-day window, the second is the view’s own column over its own window — so neither is corrected against the other here.</div>'
+              : ''}
+          </div>
+          <div class="section" style="margin-top:20px">
+            <div class="label-caps">Recent failures</div>
+            ${fails == null
+              ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`audit_log could not be read (${s.failsErr || 'unknown error'}), so the text of any failure is unavailable. The counts above come from v_workflow_health and are unaffected.`)}</div>`
+              : shown.length
+                ? shown.map(f => `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
+                    <div class="cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</div>
+                    <div class="cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The workflow logged a failure with no summary text.')}</div>
+                  </div>`).join('')
+                : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either it has not failed inside that window, or it logs under a name the registry does not list.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
+            ${fails && fails.length > shown.length ? `<div class="cell-sub" style="margin-top:8px">${esc(`${fails.length - shown.length} older failures in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
+          </div>
+        </div>
+        <div class="drawer-foot">
+          <button class="btn ghost" id="wfClose2">Close</button>
+          <div style="flex:1"></div>
+          <button class="btn" disabled title="Running a workflow by hand needs an n8n endpoint for it. The HOOK map holds only the webhooks this dashboard is meant to call with a real subject record, and firing one from here to see whether it works would do real work — enrol a customer, send a message, spend tokens.">Run now</button>
+        </div>`);
+      $('wfClose').addEventListener('click', closeDrawer);
+      $('wfClose2').addEventListener('click', closeDrawer);
+    }
+
+    drawWf();
+    $('setWfSeg').querySelectorAll('button').forEach(b =>
+      b.addEventListener('click', () => setWfFilter(b.dataset.f)));
+
+    credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
+      <div class="card-sub">Faults n8n reported in the text of a failed run — the only credential evidence a browser can have</div></div></div>
+      <div class="pbody">${renderCreds()}</div>`;
+    wireCreds();
+  });
+
+  /* Rendered from the same failure read the strip used — no second round trip.
+     There is deliberately no repair control: n8n's credential store is not
+     reachable from a browser, and the only honest button is a disabled one that
+     says where the fix actually happens. */
+  function renderCreds() {
+    const s = sysState;
+    if (!s) return stateLoading(2);
+    if (s.failsErr) {
+      return stateError('credential faults',
+        `${s.failsErr}. A broken credential names itself only inside the failure it causes, so with audit_log unreadable this panel has no evidence to show — which is not the same as there being none.`);
+    }
+    const groups = credGroups() || [];
+    if (!groups.length) {
+      return stateEmpty('No credential fault in this window',
+        `None of the newest ${FAIL_LIMIT} failed runs mentions a credential. That covers the failures that were logged: a workflow with no Audit Log node could be failing on a credential right now and would not appear here.`,
+        'key');
+    }
+    return `<div>${groups.map(g => `
+      <div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%">
+          <span class="material-symbols-outlined t-hot" style="font-size:20px">key_off</span>
+          <span style="font-weight:500">${esc(g.name)}</span>
+          ${pill('CRITICAL', 'hot')}
+          <div style="flex:1"></div>
+          <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
+        </div>
+        <div class="cell-sub" style="white-space:normal">${esc(credImpact(g.name, g.workflows))}</div>
+        <div class="cell-sub">${g.count
+          ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it`
+          : 'No failed audit row in this window names it'}${
+          g.viewCount ? ` · v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
+          g.newest ? ` · most recent ${esc(ago(g.newest))}` : ''}</div>
+        ${g.workflows.length
+          ? `<div class="cell-sub">Seen failing in: ${g.workflows.map(w =>
+              `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
+                title="Show this in the workflow table above">${esc(w)}</button>`).join(' ')}</div>`
+          : '<div class="cell-sub t-muted">No failed run in this window records which workflow it belongs to.</div>'}
+      </div>`).join('')}
+      <div class="list-item" style="cursor:default">
+        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+        <div class="cell-sub" style="white-space:normal">${esc(NO_CRED_FIX)}</div>
+      </div></div>`;
+  }
+
+  /* The workflow chips are the route from "this credential is broken" to the
+     rows it broke, which is the point of listing them at all. The filter is
+     cleared first, so the table cannot come up empty on a workflow the chip
+     just promised was there. */
+  function wireCreds() {
+    credCard.querySelectorAll('[data-wf-name]').forEach(node => {
+      node.addEventListener('click', () => {
+        setWfFilter('ALL');
+        const dest = $('setWfCard');
+        if (dest) dest.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }
 
   /* ── Knowledge base ─────────────────────────────────────────────────────
      The documents Ask AI is permitted to answer from. Sections are the unit
      actually retrieved, so both counts are shown: an operator who sees "6
      documents" and gets a thin answer needs to know whether those six were
      chunked into 400 sections or into 6. */
-  const kb = el('div', 'card flush'); kb.style.marginTop = '16px'; host.appendChild(kb);
+  const kb = el('div', 'card flush'); kb.id = 'setKbCard'; kb.style.marginTop = '16px'; host.appendChild(kb);
 
   const kbShell = (sub, body) => {
     kb.innerHTML = `<div class="card-head">
@@ -194,6 +1132,11 @@ SCREENS.settings = async host => {
          trips is the price of not guessing a column name. */
       const probe = await db('rag_documents?select=*&limit=1');
       if (!probe.length) {
+        /* An empty knowledge base is a finding, not just an empty panel: Ask AI
+           answers from nothing. The strip is told from this read; it does not
+           repeat it. */
+        kbState = { count: 0, docs: 0, capped: false, err: null };
+        renderAlerts();
         kbShell('What Ask AI is allowed to answer from',
           stateEmpty('No documents indexed',
             'rag_documents is empty, so Ask AI has nothing to retrieve and nothing to cite. A document has to be ingested before it can answer anything.',
@@ -217,6 +1160,8 @@ SCREENS.settings = async host => {
         readAt:  new Date().toISOString(),
       });
     } catch (e) {
+      kbState = { count: null, docs: null, capped: false, err: e.message };
+      renderAlerts();
       kbShell('What Ask AI is allowed to answer from', stateError('the knowledge base', e.message));
     }
   }
@@ -249,6 +1194,9 @@ SCREENS.settings = async host => {
     }
     const docs = [...groups.values()];
     const totalChars = textKey ? docs.reduce((a, g) => a + g.chars, 0) : null;
+
+    kbState = { count: rows.length, docs: docs.length, capped, err: null };
+    renderAlerts();
 
     const sub = `${num(docs.length)} document${docs.length === 1 ? '' : 's'} · ${num(rows.length)} retrievable section${rows.length === 1 ? '' : 's'}${
       totalChars != null ? ` · ${charText(totalChars)} indexed` : ''} · read ${esc(clock(readAt))}`;
@@ -421,4 +1369,8 @@ SCREENS.settings = async host => {
     });
     $('setDensityHint').textContent = DENSITIES.find(d => d.id === b.dataset.d).hint;
   }));
+
+  /* The screen is not finished until its own reads are: returning earlier would
+     let nav.js call it done while three panels still say "loading". */
+  await sysRead;
 };

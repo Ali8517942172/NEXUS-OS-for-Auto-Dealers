@@ -19,24 +19,52 @@
    has grown columns at different times, so every money and date field is
    resolved against the keys the rows actually came back with. A figure whose
    column is absent is not estimated and not substituted — the tile says which
-   column it wanted. */
+   column it wanted.
+
+   24 Aug 2026 — the alert strip.
+
+   `deals/closed-won` writes BOTH purchase_history and deals_embeddings. Until
+   23 Aug it wrote only the embedding and the purchase row was silently lost:
+   revenue on this screen was missing deals that Ask AI could nevertheless quote
+   back. That is why the reconciliation between the two tables is the first
+   thing in the strip and is stated even when it passes — a guard you can only
+   see when it fires is a guard nobody notices has stopped working.
+
+   The unit checks (no linked unit, and a unit still marked Available after its
+   deal closed) need inventory, so inventory is read in the SAME wave as
+   everything else rather than fetched afterwards for decoration. If it does not
+   come back, those checks report as *unavailable*, never as zero — a check that
+   could not run and a check that passed are opposite facts.
+
+   There is deliberately no "sold unit with no sale date" check, because there is
+   no sale date: `inventory` carries no sold_at column at all. That is stated
+   once, as the schema fact it is, rather than as an alert on every row.
+
+   The vector-coverage banners that used to sit under the KPI strip are gone:
+   they are the same reconciliation, and two copies of one fact on one screen is
+   how two disagreeing numbers for it end up on one screen. They live in the
+   strip now, with the rows they counted one click away. */
 import { db } from '../lib/data.js';
 import { dealForm } from '../lib/deal-form.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, esc, n0, num, pct, pill } from '../lib/format.js';
+import { aed, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
 
-/* Both reads are capped, and both caps are disclosed when they are hit. A
-   capped deal list that quietly claims to be lifetime revenue is the worst
-   possible number on this screen; a capped vector read would mark genuinely
-   embedded deals as missing, so the label changes wording when it is capped
-   rather than asserting something it cannot know. */
+/* Every read is capped, and every cap is disclosed when it is hit. A capped
+   deal list that quietly claims to be lifetime revenue is the worst possible
+   number on this screen; a capped vector read would mark genuinely embedded
+   deals as missing, so the label changes wording when it is capped rather than
+   asserting something it cannot know. The same applies to inventory: a unit
+   beyond the cap is "not in the rows read", not "not in stock". */
 const DEAL_LIMIT = 1000;
 const VEC_LIMIT = 500;
 const VEC_SHOWN = 50;
+const INV_LIMIT = 2000;
+const ATTN_LIMIT = 100;
 const TREND_MONTHS = 12;
+const SHOWN_REFS = 4;
 
 /* No endpoint re-sends one existing deal to the embedder. deals_embeddings is
    service-role only and the Closed-Won webhook takes a whole deal record, not
@@ -44,6 +72,12 @@ const TREND_MONTHS = 12;
    exactly what is missing. */
 const NO_REEMBED =
   'There is no re-embed endpoint. deals_embeddings is written only by the Closed-Won workflow and is service-role only, so the browser cannot push an existing row into the vector store. Recording the deal again through "Record a deal" does re-send it, but this screen cannot pre-fill that form without a change to lib/deal-form.js.';
+
+/* Nor is there one for the inventory side. The unit checks below can find a
+   sold car still marked Available, but marking it Sold is an inventory edit and
+   it belongs on the screen that owns that write path. */
+const NO_UNIT_FIX =
+  'This screen cannot change an inventory unit. inventory is writable from the browser, but unitForm() in lib/unit-form.js is the only writer in the product and it lives on the Inventory screen — fix the unit there so one file keeps owning that write.';
 
 /* ── Column resolution ───────────────────────────────────────────────────── */
 const CANDIDATES = {
@@ -55,10 +89,33 @@ const CANDIDATES = {
   email:    ['email', 'lead_email', 'customer_email'],
   vehicle:  ['vehicle', 'vehicle_interest', 'vehicle_name', 'model'],
   phone:    ['phone', 'lead_phone', 'mobile'],
+  /* What ties a deal to the car that left the lot. The deployed table may key
+     it on the inventory row id, on the stock number or on the VIN, so whichever
+     one is present is matched against all three inventory vocabularies rather
+     than assuming which was meant. `vehicle` is NOT in this list: it is free
+     text typed into the deal form ("Toyota Land Cruiser 2024") and matching a
+     unit on it would invent a link that nobody recorded. */
+  unit:     ['unit_id', 'inventory_id', 'inventory_unit_id', 'vehicle_id', 'stock_id', 'stock_number', 'vin'],
 };
 
-const lower = v => String(v ?? '').trim().toLowerCase();
+const str = v => String(v == null ? '' : v).trim();
+const lower = v => str(v).toLowerCase();
 const day10 = v => String(v ?? '').slice(0, 10);
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+
+/* A WhatsApp handle. A LID contains no phone digits at all, so it identifies
+   nobody — the deal form's Phone box accepts free text and one of these can be
+   pasted into it. Rendered as a handle, in mono, and never as a phone number. */
+const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
+const isHandle = v => HANDLE.test(str(v));
+
+/* Severity colouring is tone()'s job, not this file's. It now knows CRITICAL
+   and WARNING, and it maps a value it was never taught to 'cold' rather than to
+   nothing — so an unfamiliar severity from v_needs_attention renders as a pill
+   somebody can see instead of as unstyled text that reads as "fine". This
+   screen only decides the ORDER, which is the one thing tone() cannot know. */
+const sevRank = s => ({ hot: 0, warm: 1, cold: 2, ok: 3 }[tone(s)] ?? 2);
+const KIND_ICON = { deal_unembedded: 'psychology_alt', deal_no_unit: 'car_crash', workflow_failure: 'error' };
 
 function resolveColumns(rows) {
   const keys = new Set();
@@ -86,6 +143,10 @@ const SORTS = {
 const PERIODS = [['ALL', 'All time'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['365', 'Last 12 months']];
 
 SCREENS.deals = async host => {
+  const attnHost = el('div'); attnHost.style.marginBottom = '16px';
+  attnHost.innerHTML = `<div class="card flush">${stateLoading(2)}</div>`;
+  host.appendChild(attnHost);
+
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
   const banners = el('div'); banners.style.marginTop = '16px'; host.appendChild(banners);
 
@@ -100,8 +161,10 @@ SCREENS.deals = async host => {
 
   /* allSettled, not catch(() => []). "The vector store is empty" and "the
      vector store could not be read" are opposite answers on this screen, and a
-     swallowed error turns the second into the first. */
-  const [dealsR, vecR, leadsR] = await Promise.allSettled([
+     swallowed error turns the second into the first. The same reasoning now
+     covers inventory and v_needs_attention: five reads, five separate verdicts,
+     one wave — the strip costs no extra round-trip. */
+  const [dealsR, vecR, leadsR, attnR, invR] = await Promise.allSettled([
     /* purchase_date is the close date on the deployed table, but it is not
        guaranteed by SCHEMA.md — if ordering on it is rejected, read the table
        unordered and sort in the browser, which this screen does anyway. */
@@ -109,14 +172,27 @@ SCREENS.deals = async host => {
       .catch(() => db(`purchase_history?select=*&limit=${DEAL_LIMIT}`)),
     db(`deals_embeddings?select=id,deal_id,content,created_at&order=created_at.desc&limit=${VEC_LIMIT}`),
     db('leads?select=id,name,email,phone,vehicle_interest,budget_aed,status&order=created_at.desc&limit=1000'),
+    db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
+      + `&screen=eq.deals&order=at.desc&limit=${ATTN_LIMIT}`),
+    /* Columns verified against the live table on 24 Aug 2026, NOT against
+       SCHEMA.md — the doc lists stock_id, make, year, colour and sold_at, and
+       none of the five exist. Asking for one returns PostgREST 42703, which
+       rejects the WHOLE query rather than the offending field, so a single
+       stale column name here would silently turn every unit check below into
+       "inventory could not be read" forever. `id` IS the stock number. */
+    db(`inventory?select=id,model,vin,status,acquired_at,days_in_stock&limit=${INV_LIMIT}`),
   ]);
 
   const deals    = dealsR.status === 'fulfilled' ? dealsR.value : null;
   const dealsErr = dealsR.status === 'rejected' ? (dealsR.reason?.message || 'Unknown error') : null;
   const vectors  = vecR.status === 'fulfilled' ? vecR.value : null;
   const vecErr   = vecR.status === 'rejected' ? (vecR.reason?.message || 'Unknown error') : null;
-  const leads    = leadsR.status === 'fulfilled' ? leadsR.value : [];
+  const leads    = leadsR.status === 'fulfilled' ? leadsR.value : null;
   const leadsErr = leadsR.status === 'rejected' ? (leadsR.reason?.message || 'Unknown error') : null;
+  const viewRows = attnR.status === 'fulfilled' ? attnR.value : null;
+  const viewErr  = attnR.status === 'rejected' ? (attnR.reason?.message || 'Unknown error') : null;
+  const inv      = invR.status === 'fulfilled' ? invR.value : null;
+  const invErr   = invR.status === 'rejected' ? (invR.reason?.message || 'Unknown error') : null;
 
   const col = resolveColumns(deals || []);
   const get  = (row, role) => (col[role] ? row[col[role]] : null);
@@ -124,6 +200,49 @@ SCREENS.deals = async host => {
   const dateOf   = row => (col.date ? row[col.date] : null);
   const nameOf   = row => get(row, 'customer');
   const emailOf  = row => get(row, 'email');
+
+  /* ── Identity ─────────────────────────────────────────────────────────────
+     Every place this screen names a person it must show their phone number too,
+     and show the absence as an absence. purchase_history carries its own phone
+     column and that is always preferred — the deal is the record of what the
+     customer gave us at the sale. The leads row keyed on the same email is a
+     fallback for a deal whose phone is null, and it is a different provenance,
+     so it is labelled rather than blended in. If the leads read failed there is
+     no fallback and the dash says why, instead of implying the customer has no
+     number on file. */
+  const leadPhone = new Map();
+  (leads || []).forEach(l => {
+    const k = lower(l.email);
+    if (k && !leadPhone.has(k) && str(l.phone)) leadPhone.set(k, str(l.phone));
+  });
+
+  const phoneInfo = row => {
+    const own = str(get(row, 'phone'));
+    if (own) return { value: own, from: 'deal', handle: isHandle(own) };
+    const fallback = leadPhone.get(lower(emailOf(row)));
+    if (fallback) return { value: fallback, from: 'lead', handle: isHandle(fallback) };
+    return null;
+  };
+  /* Why there is no number, in the operator's words. "—" is honest; "—" that
+     hides a failed read is not. */
+  const noPhoneWhy = row => {
+    if (!col.phone && leadsErr) return `purchase_history carries no phone column, and the leads read failed (${leadsErr}), so there was nothing to fall back to. This is unknown, not absent.`;
+    if (!col.phone && !lower(emailOf(row))) return 'purchase_history carries no phone column and this row has no email, so there is no lead record to take a number from.';
+    if (!col.phone) return 'purchase_history carries no phone column, and no lead with this email has a phone number stored.';
+    if (leadsErr) return `No phone on this deal row, and the leads read failed (${leadsErr}), so the lead record could not be checked for one.`;
+    return 'No phone number on this deal row, and none on a lead with this email.';
+  };
+  const phoneLine = row => {
+    const p = phoneInfo(row);
+    if (!p) return `<span class="t-muted" title="${esc(noPhoneWhy(row))}">—</span>`;
+    if (p.handle) {
+      /* A LID handle has no phone digits in it. It is not a number and must
+         never be dialled or read as one. */
+      return `<span class="mono" title="This is a WhatsApp chat handle, not a phone number — a LID contains no phone digits and identifies nobody on its own.">${esc(p.value)}</span> <span class="t-warm">handle, not a number</span>`;
+    }
+    return `<span class="mono">${esc(p.value)}</span>${
+      p.from === 'lead' ? ' <span class="t-muted" title="purchase_history has no phone for this deal. This number comes from the leads row with the same email address.">from the lead record</span>' : ''}`;
+  };
 
   /* Margin is taken from a margin column when the table has one. Otherwise it
      is amount − cost, and only when BOTH sides are present on that row —
@@ -144,6 +263,7 @@ SCREENS.deals = async host => {
 
   const dealsCapped = !!deals && deals.length >= DEAL_LIMIT;
   const vecCapped = !!vectors && vectors.length >= VEC_LIMIT;
+  const invCapped = !!inv && inv.length >= INV_LIMIT;
 
   /* ── Vector matching ──────────────────────────────────────────────────────
      The Closed-Won workflow derives `auto:<email>|<closed_at>` when the caller
@@ -173,6 +293,226 @@ SCREENS.deals = async host => {
   (deals || []).forEach(d => { const v = vectorFor(d); if (v) usedVectors.add(v); });
   const orphanVectors = (vectors || []).filter(v => !usedVectors.has(v));
   const embeddedCount = (deals || []).filter(d => vectorFor(d)).length;
+  const unembedded = deals ? deals.filter(d => !vectorFor(d)) : [];
+
+  /* ── Deal → inventory unit ────────────────────────────────────────────────
+     An inventory row is addressed by `id` — which IS the stock number,
+     "NX-1010", not a surrogate key — or by `vin`. There is no separate stock_id
+     column. Index both, so the link resolves whichever the deal stored; first
+     writer wins, so a VIN can never be shadowed by some other row's id. */
+  const invIndex = new Map();
+  (inv || []).forEach(u => [u.id, u.vin].forEach(v => {
+    const k = lower(v);
+    if (k && !invIndex.has(k)) invIndex.set(k, u);
+  }));
+  const unitRefOf = row => (col.unit ? str(row[col.unit]) : '');
+  const unitFor = row => {
+    if (!inv || !col.unit) return null;
+    const k = lower(unitRefOf(row));
+    return k ? (invIndex.get(k) || null) : null;
+  };
+  /* `id` is the stock number and is what the lot calls a car, so it leads; the
+     model is appended only as a reading aid. There is no make or year column to
+     build a fuller name from. */
+  const unitLabel = u => {
+    const id = str(u.id), model = str(u.model);
+    if (id && model) return `${id} (${model})`;
+    return id || model || 'unnamed unit';
+  };
+
+  /* ── Derived alerts ───────────────────────────────────────────────────────
+     Everything here comes from rows already in memory. `notes` carries the
+     sentences that qualify the alerts — a check that could not run is not a
+     check that passed, and only the second one is allowed to leave the strip
+     silent. */
+  function deriveAlerts() {
+    const alerts = [];
+    const notes = [];
+    const add = (key, severity, icon, title, detail, rows, extra = {}) => {
+      const dates = (rows || []).map(r => str(dateOf(r))).filter(Boolean).sort();
+      alerts.push({
+        key, severity, icon, title, detail,
+        rows: rows || [],
+        /* These conditions carry no timestamp of their own — nothing records
+           when a purchase row went missing or when a unit failed to be marked
+           sold. The oldest close date in the group is the closest true thing,
+           and the tooltip says that is what it is rather than letting it read
+           as "waiting since". */
+        at: dates.length ? dates[0] : null,
+        atNote: dates.length
+          ? 'Close date of the oldest deal in this alert. The condition itself carries no timestamp, so this is how long the deal has existed, not how long it has been wrong.'
+          : 'This condition carries no timestamp of its own, and no deal in it has a readable close date.',
+        ...extra,
+      });
+    };
+    const dealRef = d => {
+      const who = str(nameOf(d)) || str(emailOf(d)) || 'unnamed deal';
+      const when = day10(dateOf(d));
+      return when ? `${who} (${when})` : who;
+    };
+    const refList = rows => {
+      const shown = rows.slice(0, SHOWN_REFS).map(dealRef);
+      const more = rows.length - shown.length;
+      return shown.join(', ') + (more > 0 ? ` and ${num(more)} more` : '');
+    };
+
+    if (!deals) {
+      notes.push(`purchase_history could not be read (${dealsErr}), so none of the checks this screen derives could run. Nothing below is a zero — it is an unknown.`);
+      return { alerts, notes };
+    }
+    if (dealsCapped) {
+      notes.push(`The deal read was capped at ${num(DEAL_LIMIT)} rows, newest first, so every count below describes the ${num(DEAL_LIMIT)} most recent deals and there may be more behind them.`);
+    }
+
+    /* ── 1 · The two closed-won tables must agree ──────────────────────────
+       `deals/closed-won` writes purchase_history AND deals_embeddings in one
+       run. Until 23 Aug it wrote only the embedding, and every purchase was
+       silently lost; a vector with no purchase row behind it is that
+       regression's exact signature, which is why that direction is CRITICAL
+       and reported separately from a deal that merely has not been embedded
+       yet. Both directions are checked, and the passing case is stated in the
+       notes rather than left silent. */
+    if (!vectors) {
+      notes.push(`deals_embeddings could not be read (${vecErr}), so purchase_history and the vector memory could not be reconciled at all. The number of deals missing from the memory is unknown here, not zero — and so is the number of embedded deals with no purchase row.`);
+    } else {
+      if (orphanVectors.length) {
+        add('vector_without_deal', 'CRITICAL', 'money_off',
+          `${num(orphanVectors.length)} embedded ${plural(orphanVectors.length, 'deal has', 'deals have')} no row in purchase_history`,
+          `${plural(orphanVectors.length, 'A deal was', 'Deals were')} embedded into deals_embeddings that this screen cannot tie back to a purchase row. `
+          + 'Both tables are written by the same Closed-Won run, so they are supposed to agree. Until 23 Aug that workflow wrote only the embedding and the purchase row was lost silently — Ask AI could quote a sale that revenue never counted. '
+          + (dealsCapped
+              ? `The deal read is capped at ${num(DEAL_LIMIT)} rows, so ${plural(orphanVectors.length, 'this one', 'some of these')} may belong to an older deal outside the window rather than to a missing row. Widen the cap before treating it as the regression.`
+              : `The deal read was not capped, so ${plural(orphanVectors.length, 'that purchase row is', 'those purchase rows are')} genuinely absent from the ${num(deals.length)} ${plural(deals.length, 'row', 'rows')} in the table — or ${plural(orphanVectors.length, 'it carries', 'they carry')} a deal id this screen cannot match.`),
+          [], { focus: 'vectors', noFocus: 'These are vector rows, not deals — the Vector memory panel below lists them.' });
+      }
+
+      if (deals.length && !vectors.length) {
+        add('vector_empty', 'CRITICAL', 'database_off',
+          `${num(deals.length)} closed-won ${plural(deals.length, 'deal is', 'deals are')} recorded and the vector memory is completely empty`,
+          'deals_embeddings has no rows at all. It is written only by the Closed-Won workflow, so either that workflow has never run for these deals or its embedding step is failing. Until it writes, Ask AI answers questions about past deals from nothing.',
+          deals.slice());
+      } else if (unembedded.length) {
+        add('deal_unembedded', 'WARNING', 'psychology_alt',
+          `${num(unembedded.length)} recorded ${plural(unembedded.length, 'deal has', 'deals have')} no row in the vector memory`,
+          `${refList(unembedded)}. `
+          + (vecCapped
+              ? `The vector read is capped at ${num(VEC_LIMIT)} rows, so ${plural(unembedded.length, 'this deal', 'some of these')} may be embedded outside the window that was read — this count is an upper bound, not a fact.`
+              : 'Ask AI cannot quote these deals back. The two tables are written by the same Closed-Won run and are supposed to agree.'),
+          unembedded, { filter: { memory: 'OUT' } });
+      }
+
+      /* A count check as well as a row check. The row matcher falls back to
+         email-and-day, which can legitimately tie two deals to one vector; if
+         it ever does, the row checks come back clean while the tables still do
+         not agree. Comparing the totals catches that, and only fires when the
+         row checks found nothing, so one divergence is never reported twice. */
+      if (!orphanVectors.length && !unembedded.length && deals.length !== vectors.length) {
+        const capped = dealsCapped || vecCapped;
+        add('count_divergence', capped ? 'WARNING' : 'CRITICAL', 'balance',
+          `purchase_history holds ${num(deals.length)} ${plural(deals.length, 'row', 'rows')} and deals_embeddings holds ${num(vectors.length)}`,
+          'Every deal matched a vector row and every vector row matched a deal, yet the two totals differ — so the matcher has tied more than one deal to the same embedding. '
+          + (capped
+              ? 'At least one of the two reads was capped, so the difference may be the cap rather than the data. Compare the totals with the caps lifted before acting on this.'
+              : 'Neither read was capped, so this is a real disagreement between the two tables the Closed-Won workflow writes together.'),
+          [], { noFocus: 'This alert compares two totals, so there is no single row to open.' });
+      }
+    }
+
+    /* ── 2 · The car behind the deal ───────────────────────────────────────
+       The first thing to establish is whether the question can be asked at all.
+       If purchase_history stores no link to inventory, then "no deal has a
+       linked unit" is a fact about the schema, not about data entry, and
+       reporting it per row would put the same single finding on every deal on
+       the screen.
+
+       There are only two per-row checks here — not linked, and linked to a unit
+       still on sale — because the third one cannot exist. See the sale-date
+       block below the chain. */
+    if (!deals.length) {
+      /* With no rows, PostgREST returns no keys either, so nothing can be said
+         about which columns purchase_history has. Claiming it "carries no link
+         column" from an empty result would be asserting a schema fact from an
+         absence of evidence. */
+      notes.push('purchase_history came back empty, so no column could be resolved from it and neither deal-level check — linked unit, and unit status after the sale — had anything to run against.');
+    } else if (!col.unit) {
+      add('no_unit_column', 'WARNING', 'link_off',
+        'No deal on this screen can be tied to an inventory unit',
+        `purchase_history carries none of the columns that would link a deal to a car (looked for ${CANDIDATES.unit.join(', ')}). `
+        + 'The vehicle is stored as free text typed into the deal form, which is not a link — matching on it would invent one. '
+        + 'So the check for a unit still marked Available after its deal closed could not run at all, and its count below is unavailable rather than zero.',
+        [], { noFocus: 'This is a fact about the table, not about one deal.' });
+    } else if (!inv) {
+      notes.push(`Inventory could not be read (${invErr}), so both unit checks — deal with no linked unit, and a unit still marked Available after its deal closed — could not run. Their counts are unknown, not zero.`);
+    } else if (!inv.length) {
+      notes.push('The inventory table came back empty, so there is no unit for any deal to link to and neither unit check had anything to run against.');
+    } else {
+      if (invCapped) {
+        notes.push(`The inventory read was capped at ${num(INV_LIMIT)} rows, so a deal whose unit sits beyond the cap is reported below as linking to a unit that is not in inventory. That is "not in the rows read", not "not in stock".`);
+      }
+      const linked = [], unlinked = [], dangling = [];
+      deals.forEach(d => {
+        if (!unitRefOf(d)) { unlinked.push(d); return; }
+        const u = unitFor(d);
+        if (u) linked.push({ d, u }); else dangling.push(d);
+      });
+
+      if (unlinked.length) {
+        add('deal_no_unit', 'WARNING', 'car_crash',
+          `${num(unlinked.length)} closed ${plural(unlinked.length, 'deal is', 'deals are')} not linked to an inventory unit`,
+          `${refList(unlinked)}. The ${col.unit} column is empty on ${plural(unlinked.length, 'this row', 'these rows')}, so the sale cannot be tied to the car that left the lot: the unit keeps ageing and accruing holding cost on the Inventory screen, and nothing reconciles what was sold against what is in stock. `
+          + 'The deal form does not ask for a unit, so a deal recorded from this screen never carries one.',
+          unlinked);
+      }
+      if (dangling.length) {
+        add('deal_unit_missing', 'WARNING', 'search_off',
+          `${num(dangling.length)} ${plural(dangling.length, 'deal names', 'deals name')} an inventory unit that is not there`,
+          `${refList(dangling)}. Each carries a ${col.unit} value that matches no id (the stock number) or VIN among the ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read`
+          + (invCapped ? `, and that read was capped at ${num(INV_LIMIT)} rows, so the unit may simply sit beyond it` : ', and that read was not capped')
+          + '. Either the unit was deleted after the sale or the deal stores a reference in a vocabulary inventory does not use.',
+          dangling);
+      }
+
+      const stillAvailable = linked.filter(({ u }) => lower(u.status) === 'available');
+      if (stillAvailable.length) {
+        add('unit_still_available', 'CRITICAL', 'directions_car',
+          `${num(stillAvailable.length)} sold ${plural(stillAvailable.length, 'car is', 'cars are')} still marked Available in inventory`,
+          `${refList(stillAvailable.map(x => x.d))} — ${stillAvailable.slice(0, SHOWN_REFS).map(x => unitLabel(x.u)).join(', ')}. `
+          + `${plural(stillAvailable.length, 'This car', 'These cars')} closed as won and ${plural(stillAvailable.length, 'is', 'are')} still on the lot as far as every other screen is concerned: quotable on the Finance Desk, countable in stock value, and still accruing holding cost and ageing alerts. `
+          + `${plural(stillAvailable.length, 'It', 'They')} can be sold a second time.`,
+          stillAvailable.map(x => x.d), { fix: NO_UNIT_FIX });
+      }
+      const reserved = linked.filter(({ u }) => lower(u.status) === 'reserved');
+      if (reserved.length) {
+        notes.push(`${num(reserved.length)} further sold ${plural(reserved.length, 'car is', 'cars are')} marked Reserved rather than Sold. That is not counted above — Reserved at least takes the car off the forecourt — but it is not a closed sale either.`);
+      }
+
+    }
+
+    /* ── 3 · The sale date that does not exist ──────────────────────────────
+       Stated once, as a schema fact, and never as a per-row alert: there is no
+       row-level variation to report. `inventory` has no sold_at column — the
+       live columns are id, model, vin, status, acquired_at, cost_aed,
+       price_aed, days_in_stock, holding_cost_accrued, gross_margin, net_margin,
+       vat_amount, aging_alert, ai_recommendation and recommended_commission —
+       so a "sold unit with no sale date" check would flag every sold unit for
+       one reason that has nothing to do with any of them.
+
+       This is asserted from the schema, not derived from the payload, and it
+       has to be: the select above can only return columns it asked for, so a
+       missing key would prove nothing either way. It is raised whenever a deal
+       exists, because a closed deal is what makes the missing date matter. */
+    if (deals.length) {
+      add('no_sale_date_column', 'WARNING', 'event_busy',
+        'Nothing in inventory records when a car was sold',
+        'A deal records the day it closed; the car it was closed on records only that its status is now Sold. There is no sale-date column on inventory at all, so for every deal on this screen "how long did this car actually sit on the lot" and "what had it cost us in holding by the day it sold" cannot be answered from this database — not for one row, for any of them. '
+        + 'days_in_stock is not a substitute: it counts from acquired_at and is recomputed nightly, so on a sold car it keeps growing after the sale and measures the age of the record rather than the length of the sale cycle. '
+        + 'Closing the gap needs a column, not a correction — until then any holding-cost-at-sale figure anywhere in this product is an estimate.',
+        [], { noFocus: 'This is a fact about the inventory table, not about one deal.' });
+    }
+
+    alerts.sort((a, b) => sevRank(a.severity) - sevRank(b.severity) || b.rows.length - a.rows.length);
+    return { alerts, notes };
+  }
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!deals) {
@@ -198,72 +538,65 @@ SCREENS.deals = async host => {
             + (dealsCapped ? `<br><span class="t-warm">Capped at the ${num(DEAL_LIMIT)} most recent — older deals are not counted here</span>` : '')
           : 'Nothing recorded in purchase_history yet'),
 
+      /* An empty table returns no keys, so no column can be resolved from it.
+         "purchase_history has no amount column" would then be a claim about the
+         schema drawn from an absence of rows — which is how a brand-new table
+         gets reported as a broken one. */
       kpi('Revenue', col.amount ? aed(revenue) : '—',
-        col.amount
-          ? `<span class="t-muted">From ${num(amounts.length)} of ${num(deals.length)} deals · column <span class="mono">${esc(col.amount)}</span></span>`
-          : `<span class="t-warm">purchase_history has no amount column (looked for ${CANDIDATES.amount.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')})</span>`),
+        !deals.length
+          ? '<span class="t-muted">Nothing recorded, so there is no revenue to total and no row to read a column from</span>'
+          : col.amount
+            ? `<span class="t-muted">From ${num(amounts.length)} of ${num(deals.length)} deals · column <span class="mono">${esc(col.amount)}</span></span>`
+            : `<span class="t-warm">purchase_history has no amount column (looked for ${CANDIDATES.amount.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')})</span>`),
 
       kpi('Average deal', amounts.length ? aed(revenue / amounts.length) : '—',
         amounts.length
           ? `<span class="t-muted">Mean over the ${num(amounts.length)} deal${amounts.length === 1 ? '' : 's'} that carry an amount</span>`
-          : '<span class="t-muted">No deal carries a readable amount, so there is no average to take</span>'),
+          : `<span class="t-muted">${deals.length
+              ? 'No deal carries a readable amount, so there is no average to take'
+              : 'No deal has been recorded, so there is no average to take'}</span>`),
 
       kpi('Gross margin', withMargin.length ? aed(marginTotal) : '—',
         withMargin.length
           ? `<span class="t-muted">${marginSource} · from ${num(withMargin.length)} of ${num(deals.length)} deals${
               marginBase > 0 ? ` · ${esc(pct(marginTotal / marginBase * 100))} of their revenue` : ''}</span>`
-          : `<span class="t-muted">No margin recorded. purchase_history carries neither a margin column (${
-              CANDIDATES.margin.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) nor an amount and a cost column to subtract.</span>`),
+          : !deals.length
+            ? '<span class="t-muted">Nothing recorded, so there is no margin to total</span>'
+            : `<span class="t-muted">No margin recorded. purchase_history carries neither a margin column (${
+                CANDIDATES.margin.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) nor an amount and a cost column to subtract.</span>`),
 
+      /* The reconciliation, stated in both directions and in both outcomes.
+         "1 of 1 matched, no unmatched vectors" is the guard reporting that it
+         ran and passed; a silent tile would look identical on the day the
+         Closed-Won workflow stops writing one of the two tables. */
       kpi('In vector memory', vecErr ? '—' : num(vectors.length),
         vecErr
-          ? `<span class="t-hot">deals_embeddings could not be read — ${esc(vecErr)}</span>`
+          ? `<span class="t-hot">deals_embeddings could not be read — ${esc(vecErr)}. Whether the two closed-won tables agree is unknown, not fine.</span>`
           : vectors.length
-            ? `<span class="t-muted">${num(embeddedCount)} of ${num(deals.length)} recorded deals matched to a vector row</span>`
-            : '<span class="t-hot">deals_embeddings has no rows — Ask AI cannot cite a single recorded deal</span>',
-        (!vecErr && !vectors.length) || vecErr ? 't-hot' : ''),
+            ? `<span class="t-muted">${num(embeddedCount)} of ${num(deals.length)} recorded deal${deals.length === 1 ? '' : 's'} matched to a vector row</span>`
+              + (orphanVectors.length
+                  ? `<br><span class="t-hot">${num(orphanVectors.length)} vector row${orphanVectors.length === 1 ? '' : 's'} with no deal in purchase_history</span>`
+                  : (embeddedCount === deals.length && deals.length === vectors.length
+                      ? '<br><span class="t-ok">Both closed-won tables agree</span>'
+                      : ''))
+            : deals.length
+              ? '<span class="t-hot">deals_embeddings has no rows — Ask AI cannot cite a single recorded deal</span>'
+              : '<span class="t-muted">Nothing recorded and nothing embedded — the two agree, with nothing in them</span>',
+        vecErr || orphanVectors.length || (!vecErr && !vectors.length && deals.length) ? 't-hot' : ''),
     ].join('');
   }
 
   /* ── Banners ───────────────────────────────────────────────────────────── */
-  /* Each banner states a count and then hands over the exact rows it counted,
-     so the filter under it can never disagree with the number above it. */
+  /* The vector-coverage banners that used to live here are now alerts in the
+     strip at the top — same facts, one place, and each one hands over the exact
+     rows it counted. What is left is the one condition that is not an alert
+     about a deal: the deal FORM losing its lead picker. */
   let focusList = () => {};
-
-  if (deals && !vecErr && vectors) {
-    if (deals.length && !vectors.length) {
-      const b = el('div', 'banner hot'); b.style.marginBottom = '12px';
-      b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">database_off</span>
-        <div style="flex:1"><strong>${num(deals.length)} closed-won deal${deals.length === 1 ? ' is' : 's are'} recorded and the vector memory is completely empty.</strong>
-        <span class="mono">deals_embeddings</span> is written only by the Closed-Won workflow, so either it has never run for these rows or its embedding step is failing.
-        Until it writes, Ask AI answers about past deals from nothing.</div>`;
-      banners.appendChild(b);
-    } else if (deals.length && embeddedCount < deals.length) {
-      const missing = deals.length - embeddedCount;
-      const b = el('div', 'banner warm'); b.style.marginBottom = '12px';
-      b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">psychology_alt</span>
-        <div style="flex:1"><strong>${num(missing)} recorded deal${missing === 1 ? ' has' : 's have'} no matching row in the vector memory.</strong>
-        ${vecCapped
-          ? `The vector read is capped at ${num(VEC_LIMIT)} rows, so some of these may be embedded outside the window that was read.`
-          : 'Ask AI cannot quote those deals back.'}</div>
-        <button class="btn sm" id="dShowMissing">Show ${missing === 1 ? 'it' : 'them'}</button>`;
-      banners.appendChild(b);
-      b.querySelector('#dShowMissing').addEventListener('click', () => focusList({ memory: 'OUT' }));
-    }
-  }
-
-  if (orphanVectors.length) {
-    const b = el('div', 'banner info'); b.style.marginBottom = '12px';
-    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">link_off</span>
-      <div><strong>${num(orphanVectors.length)} vector row${orphanVectors.length === 1 ? '' : 's'} could not be matched to a deal on this page.</strong>
-      Either the deal predates the ${num(DEAL_LIMIT)}-row window read above, or the workflow embedded it under a deal id this screen cannot tie back to <span class="mono">purchase_history</span>.</div>`;
-    banners.appendChild(b);
-  }
 
   if (leadsErr) {
     const b = el('div', 'banner warm'); b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">person_off</span>
-      <div>Leads could not be read (${esc(leadsErr)}), so the deal form cannot offer a lead to pick from. Every field can still be typed in by hand.</div>`;
+      <div>Leads could not be read (${esc(leadsErr)}), so the deal form cannot offer a lead to pick from and no deal row can fall back to a lead's phone number. Every field can still be typed in by hand.</div>`;
     banners.appendChild(b);
   }
 
@@ -344,13 +677,18 @@ SCREENS.deals = async host => {
       const email = lower(emailOf(d));
       const key = email || `name:${lower(nameOf(d))}`;
       if (key === 'name:') return;
-      const g = groups.get(key) || { email, name: nameOf(d), n: 0, revenue: 0, withAmount: 0, last: null, byName: !email };
+      const g = groups.get(key) || { email, name: nameOf(d), n: 0, revenue: 0, withAmount: 0, last: null, byName: !email, phoneRow: null };
       g.n++;
       const a = amountOf(d);
       if (a != null) { g.revenue += a; g.withAmount++; }
       const t = stamp(dateOf(d));
       if (t != null && (g.last == null || t > g.last)) g.last = t;
       if (!g.name && nameOf(d)) g.name = nameOf(d);
+      /* Hold the row this group's contact line is drawn from, preferring one
+         that actually yields a number. Keeping the first row unconditionally
+         would show "—" for a customer whose phone is on their second deal. */
+      if (!g.phoneRow) g.phoneRow = d;
+      else if (!phoneInfo(g.phoneRow) && phoneInfo(d)) g.phoneRow = d;
       groups.set(key, g);
     });
     const repeat = [...groups.values()].filter(g => g.n > 1)
@@ -369,6 +707,7 @@ SCREENS.deals = async host => {
                 <div style="font-weight:500">${esc(g.name || g.email || 'Unnamed customer')}</div>
                 <div class="cell-sub">${esc(g.email || 'No email on these rows — grouped by name')}${
                   g.last != null ? ` · last deal ${esc(ago(g.last))}` : ''}</div>
+                <div class="cell-sub">${phoneLine(g.phoneRow)}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
                 <div class="num" style="font-weight:500">${g.withAmount ? aed(g.revenue) : '<span class="t-muted">—</span>'}</div>
@@ -392,7 +731,7 @@ SCREENS.deals = async host => {
     listCard.innerHTML = `<div class="card-head"><div><div class="card-title">Closed-won deals</div></div>
       <div style="flex:1"></div>${actions}</div>${stateError('closed-won deals', dealsErr)}`;
   } else {
-    const f = { q: '', memory: 'ALL', period: 'ALL', sort: 'new' };
+    const f = { q: '', memory: 'ALL', period: 'ALL', sort: 'new', only: null };
     const dated = deals.filter(d => stamp(dateOf(d)) != null).length;
 
     listCard.innerHTML = `<div class="card-head"><div>
@@ -402,7 +741,7 @@ SCREENS.deals = async host => {
       </div><div style="flex:1"></div>${actions}</div>
       <div class="toolbar">
         <div class="grow"><input type="search" id="dq" aria-label="Search closed-won deals"
-          placeholder="Search customer, email or vehicle" /></div>
+          placeholder="Search customer, email, phone or vehicle" /></div>
         <select id="dPeriod" aria-label="Filter by close date" style="width:auto">
           ${PERIODS.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}
         </select>
@@ -421,9 +760,24 @@ SCREENS.deals = async host => {
       <div id="dTable"></div>`;
 
     const cols = [
+      /* The phone sits with the name, not in a column of its own: this is the
+         line an operator reads before picking up the handset, and splitting the
+         two apart is how a number gets dialled against the wrong customer. */
       { label: 'Customer', strong: true, render: d => `${esc(nameOf(d) || 'Unnamed customer')}
-          <div class="cell-sub">${esc(emailOf(d) || 'No email on this row')}</div>` },
-      { label: 'Vehicle', render: d => esc(get(d, 'vehicle') || '—') },
+          <div class="cell-sub">${esc(emailOf(d) || 'No email on this row')}</div>
+          <div class="cell-sub">${phoneLine(d)}</div>` },
+      { label: 'Vehicle', render: d => {
+          const v = esc(get(d, 'vehicle') || '—');
+          if (!col.unit) return v;
+          const ref = unitRefOf(d);
+          if (!ref) return `${v}<div class="cell-sub t-warm" title="The ${esc(col.unit)} column is empty on this row, so the sale is not tied to a car in inventory.">No unit linked</div>`;
+          const u = unitFor(d);
+          if (!inv) return `${v}<div class="cell-sub mono" title="Inventory could not be read, so this reference could not be resolved to a unit.">${esc(ref)}</div>`;
+          if (!u) return `${v}<div class="cell-sub t-warm mono" title="No inventory row has this id, stock number or VIN among the rows read.">${esc(ref)} · not found</div>`;
+          const s = str(u.status);
+          return `${v}<div class="cell-sub mono">${esc(unitLabel(u))}${
+            s ? ` · <span class="${lower(s) === 'available' ? 't-hot' : 't-muted'}">${esc(s)}</span>` : ''}</div>`;
+        } },
       { label: 'Amount', align: 'r', render: d => {
           const a = amountOf(d);
           return a == null ? '<span class="t-muted">—</span>' : aed(a);
@@ -458,11 +812,13 @@ SCREENS.deals = async host => {
       const q = f.q.trim().toLowerCase();
       const cutoff = f.period === 'ALL' ? null : Date.now() - Number(f.period) * 86400000;
       return deals.filter(d => {
+        if (f.only && !f.only.rows.has(d)) return false;
         if (cutoff != null) { const t = stamp(dateOf(d)); if (t == null || t < cutoff) return false; }
         if (f.memory === 'IN' && !vectorFor(d)) return false;
         if (f.memory === 'OUT' && vectorFor(d)) return false;
         if (!q) return true;
-        return [nameOf(d), emailOf(d), get(d, 'vehicle'), get(d, 'phone')].some(v => lower(v).includes(q));
+        const p = phoneInfo(d);
+        return [nameOf(d), emailOf(d), get(d, 'vehicle'), get(d, 'phone'), p ? p.value : ''].some(v => lower(v).includes(q));
       });
     };
 
@@ -496,11 +852,22 @@ SCREENS.deals = async host => {
       if (f.memory !== 'ALL' && vecCapped) {
         notes.push(`The vector read is capped at ${num(VEC_LIMIT)} rows, so a deal embedded outside that window is filtered as "not embedded".`);
       }
-      noteEl.innerHTML = notes.length
+      /* When an alert has narrowed the list, say so in the list itself and
+         offer the way back. A filter the operator did not set and cannot see is
+         how a screen ends up accused of losing rows. */
+      const onlyBar = f.only
+        ? `<div class="list-item" style="cursor:default">
+             <span class="material-symbols-outlined t-warm" style="font-size:18px" aria-hidden="true">filter_alt</span>
+             <div class="cell-sub" style="white-space:normal;flex:1">Showing only the ${num(f.only.rows.size)} ${plural(f.only.rows.size, 'deal', 'deals')} in the alert &ldquo;${esc(f.only.label)}&rdquo;.</div>
+             <button class="btn sm" id="dClearOnly">Show all ${num(deals.length)} deals</button>
+           </div>`
+        : '';
+      noteEl.innerHTML = onlyBar + (notes.length
         ? `<div class="list-item" style="cursor:default">
              <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
              <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
-        : '';
+        : '');
+      noteEl.querySelector('#dClearOnly')?.addEventListener('click', () => { f.only = null; draw(); });
       th.innerHTML = table(cols, rows, {
         onRow: true,
         empty: stateEmpty('No deal matches these filters',
@@ -514,21 +881,30 @@ SCREENS.deals = async host => {
     listCard.querySelector('#dMem').addEventListener('change', e => { f.memory = e.target.value; draw(); });
     listCard.querySelector('#dSort').addEventListener('change', e => { f.sort = e.target.value; draw(); });
 
-    /* The coverage banner lands here. It resets the fields it was not asked
-       for, so a leftover search box cannot hide half the rows it just counted. */
-    focusList = ({ memory = 'ALL', period = 'ALL' } = {}) => {
-      f.memory = memory; f.period = period; f.q = '';
+    /* An alert is only useful if it lands on the rows it is about, so this
+       clears every filter that could hide them rather than narrowing whatever
+       view the operator happens to be in and showing them nothing. */
+    focusList = ({ memory = 'ALL', period = 'ALL', only = null } = {}) => {
+      f.memory = memory; f.period = period; f.q = ''; f.only = only;
       listCard.querySelector('#dMem').value = memory;
       listCard.querySelector('#dPeriod').value = period;
       listCard.querySelector('#dq').value = '';
       draw();
-      listCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const first = th.querySelector('tbody tr');
+      if (first) {
+        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        /* Re-adding the class alone does not restart a running animation;
+           reading a layout property between the remove and the add does. */
+        first.classList.remove('flash'); void first.offsetWidth; first.classList.add('flash');
+      } else {
+        listCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     };
 
     draw();
   }
 
-  $('newDeal')?.addEventListener('click', () => dealForm(leads, () => go('deals')));
+  $('newDeal')?.addEventListener('click', () => dealForm(leads || [], () => go('deals')));
 
   /* ── Vector memory ─────────────────────────────────────────────────────── */
   if (vecErr) {
@@ -550,7 +926,7 @@ SCREENS.deals = async host => {
           vecCapped ? ` · <span class="t-warm">capped at ${num(VEC_LIMIT)}, so this is a window rather than the whole store</span>` : ''}</div>
       </div></div>
       <div style="max-height:50vh;overflow-y:auto">${shown.map(x => `
-        <div class="list-item" style="cursor:default;align-items:flex-start">
+        <div class="list-item" style="cursor:default;align-items:flex-start"${usedVectors.has(x) ? '' : ' data-orphan="1"'}>
           <div style="flex:1;min-width:0">
             <div class="mono" style="font-weight:500;font-size:12px">${esc(x.deal_id || 'no deal_id')}</div>
             <div class="cell-sub" style="white-space:normal">${esc(String(x.content || '').slice(0, 220))}${
@@ -558,7 +934,7 @@ SCREENS.deals = async host => {
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div class="cell-sub">${esc(ago(x.created_at))}</div>
-            ${usedVectors.has(x) ? '' : '<div class="cell-sub t-muted">no deal on this page</div>'}
+            ${usedVectors.has(x) ? '' : '<div class="cell-sub t-hot">no row in purchase_history</div>'}
           </div>
         </div>`).join('')}
         ${vectors.length > shown.length
@@ -566,11 +942,159 @@ SCREENS.deals = async host => {
           : ''}</div>`;
   }
 
+  /* Sends the operator to the orphaned vector rows. They are not deals, so
+     there is nothing in the deal list to select — the Vector memory panel is
+     where they live and it marks them. */
+  function focusVectors() {
+    const first = vecCard.querySelector('[data-orphan]');
+    (first || vecCard).scrollIntoView({ behavior: 'smooth', block: first ? 'center' : 'start' });
+    if (first) { first.classList.remove('flash'); void first.offsetWidth; first.classList.add('flash'); }
+  }
+
+  /* ── The alert strip ───────────────────────────────────────────────────── */
+  /* Painted last, because every alert has to be able to open the thing it is
+     about and those targets are built above. */
+  function paintAttention() {
+    const derived = deriveAlerts();
+    const jumps = [];
+
+    const item = a => {
+      const t = tone(a.severity);
+      let idx = -1;
+      if (a.focus === 'vectors') idx = jumps.push({ kind: 'vectors' }) - 1;
+      else if (a.rows && a.rows.length && deals) idx = jumps.push({ kind: 'list', label: a.title, rows: a.rows, filter: a.filter }) - 1;
+      const attrs = idx >= 0
+        ? ` role="button" tabindex="0" data-jump="${idx}"`
+        : ` style="cursor:default" title="${esc(a.noFocus || 'This alert is not about one row on this screen, so there is nothing here to open.')}"`;
+      return `<div class="list-item"${attrs}>
+        <span class="material-symbols-outlined t-${t}" style="font-size:20px" aria-hidden="true">${esc(a.icon || 'warning')}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${pill(str(a.severity) || 'ALERT', t)}<span>${esc(a.title)}</span>
+          </div>
+          <div class="cell-sub" style="white-space:normal">${esc(a.detail)}</div>
+          ${a.fix ? `<div class="cell-sub t-muted" style="white-space:normal;margin-top:4px">${esc(a.fix)}</div>` : ''}
+        </div>
+        <div class="cell-sub num" style="white-space:nowrap" title="${esc(a.atNote || '')}">${esc(a.at ? ago(a.at) : '—')}</div>
+        ${idx >= 0 ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+      </div>`;
+    };
+
+    /* The view's own rows first — they are Postgres's judgement about this
+       screen, not this file's — then the ones derived here, by severity. */
+    const fromView = (viewRows || []).map(r => {
+      const ref = str(r.ref);
+      /* v_needs_attention.ref for a deals row could be a purchase_history id, a
+         deal id or an email; match it against all three rather than guessing,
+         and say plainly when it lands on nothing. */
+      const hit = (deals || []).filter(d => {
+        const keys = [d.id, d.deal_id, emailOf(d)].map(lower).filter(Boolean);
+        return keys.includes(lower(ref));
+      });
+      return {
+        severity: r.severity,
+        icon: KIND_ICON[r.kind] || 'warning',
+        title: str(r.title) || ref || 'Needs attention',
+        detail: [str(r.detail), ref ? `Ref ${ref}` : ''].filter(Boolean).join(' · '),
+        at: r.at,
+        atNote: 'How long v_needs_attention has been reporting this row.',
+        rows: hit,
+        noFocus: deals
+          ? `v_needs_attention reports ${ref || 'a deal'}, which matches no deal among the ${num(deals.length)} rows this screen loaded — it may sit beyond the row cap or key on something purchase_history does not carry.`
+          : 'The deal read failed, so this row cannot be opened here.',
+      };
+    });
+    const fromHere = derived.alerts;
+
+    const notes = [
+      viewErr
+        ? `v_needs_attention did not load (${viewErr}), so anything the database itself flags for this screen is missing from this strip. Only the checks derived from the rows here are shown, and the total above counts those alone.`
+        : '',
+      ...derived.notes,
+      /* The reconciliation is stated whether or not it fired. It is the guard
+         against a regression that already happened once, and a guard nobody can
+         see is a guard nobody notices has stopped working. */
+      deals && vectors
+        ? `Closed-won reconciliation: purchase_history holds ${num(deals.length)} ${plural(deals.length, 'row', 'rows')} and deals_embeddings holds ${num(vectors.length)}`
+          + (!deals.length && !vectors.length
+              /* Both empty is agreement in the arithmetic only. Saying "every
+                 deal has an embedding" over two empty tables is a pass nobody
+                 earned, and it would read identically on the day the workflow
+                 stops writing either one. */
+              ? ' — both are empty, so there is nothing to reconcile yet rather than a check that passed.'
+              : !orphanVectors.length && !unembedded.length && deals.length === vectors.length
+                ? ' — every deal has an embedding, every embedding has a deal, and the totals match.'
+                : '.')
+        : '',
+    ].filter(Boolean);
+    const foot = `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+      <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+
+    if (!fromView.length && !fromHere.length) {
+      /* "Nothing needs you" and "nothing could be checked" are opposite facts
+         and must never share a sentence. The empty case names every check that
+         actually ran, so it reads as a statement rather than as a blank. */
+      const ranHere = !!deals;
+      /* With nothing recorded, "every deal has an embedding" is vacuously true
+         and reads as reassurance about a table that is empty. Say that instead. */
+      const nothingYet = !!deals && !deals.length;
+      const checked = nothingYet ? [] : [
+        vectors ? 'every recorded deal has a row in the vector memory and every embedded deal has a row in purchase_history' : '',
+        (deals && col.unit && inv && inv.length) ? 'and every deal is linked to a unit in inventory that is no longer marked Available' : '',
+      ].filter(Boolean);
+      const head = !ranHere ? 'Nothing on this screen could be checked'
+        : nothingYet ? 'No deal has been recorded yet'
+          : viewErr ? 'Nothing flagged by the checks that ran'
+            : 'No closed-won deal needs a human right now';
+      const line = !ranHere
+        ? `purchase_history did not load, so none of the checks this screen derives could run, and v_needs_attention reported ${viewErr ? 'nothing usable' : 'nothing'} for it either.`
+        : nothingYet
+          ? `purchase_history is empty, so there is no deal to check and nothing here to act on. ${viewErr ? "v_needs_attention did not load either." : 'v_needs_attention returned no row for this screen.'}`
+          : viewErr
+            ? `${checked.length ? checked.join('; ') + '.' : 'None of the derived checks could run.'} That is only the half of this strip the screen derives itself — the database's own list did not load.`
+            : `v_needs_attention returned no row for this screen, and ${checked.length ? checked.join('; ') + '.' : 'none of the derived checks could run.'}`;
+      attnHost.innerHTML = `<div class="card" style="display:flex;gap:10px;align-items:flex-start">
+        <span class="material-symbols-outlined t-${ranHere && !viewErr ? 'ok' : 'muted'}" aria-hidden="true">${ranHere && !viewErr ? 'task_alt' : 'help'}</span>
+        <div style="flex:1">
+          <div style="font-weight:500">${esc(head)}</div>
+          <div class="cell-sub" style="white-space:normal">${esc(line)}${notes.length ? '<br>' + notes.map(esc).join('<br>') : ''}</div>
+        </div></div>`;
+      return;
+    }
+
+    const counted = `${num(fromView.length)} from v_needs_attention · ${num(fromHere.length)} derived here`
+      + (deals == null ? ' · the deal rows did not load' : ` from the ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} on this screen`);
+    attnHost.innerHTML = `<div class="card flush">
+      <div class="card-head"><div>
+        <div class="card-title">Needs attention</div>
+        <div class="card-sub">${esc(counted)}</div>
+      </div><div style="flex:1"></div></div>
+      <div>${fromView.map(item).join('')}${fromHere.map(item).join('')}${foot}</div></div>`;
+
+    /* Keyboard-operable: the row is the only way from the alert to the deals it
+       is about, so a mouse-only affordance would strand anyone on a keyboard. */
+    attnHost.querySelectorAll('[data-jump]').forEach(n => {
+      const j = jumps[Number(n.dataset.jump)];
+      const go_ = () => {
+        if (j.kind === 'vectors') return focusVectors();
+        focusList({ ...(j.filter || {}), only: { label: j.label, rows: new Set(j.rows) } });
+      };
+      n.addEventListener('click', go_);
+      n.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go_(); }
+      });
+    });
+  }
+  paintAttention();
+
   /* ── One deal, in full ─────────────────────────────────────────────────── */
   function openDeal(d) {
     const v = vectorFor(d);
     const m = marginOf(d);
     const a = amountOf(d);
+    const u = unitFor(d);
+    const ref = unitRefOf(d);
     /* Every column the row actually came back with is listed. This is the
        screen an argument about a number ends on, so nothing is hidden behind a
        curated subset — money columns are formatted, everything else is printed
@@ -582,6 +1106,28 @@ SCREENS.deals = async host => {
       if (typeof val === 'object') return `<span class="mono">${esc(JSON.stringify(val).slice(0, 200))}</span>`;
       return esc(String(val).slice(0, 300));
     };
+
+    /* What we can and cannot say about the car, in that order. "Not linked",
+       "linked to something that is not there" and "linked to a unit still on
+       sale" are three different problems with three different fixes. When the
+       unit does resolve, the line under it says what inventory cannot tell us:
+       there is no sale-date column, so a resolved unit still leaves the sale
+       cycle unmeasurable. */
+    const unitBlock = !col.unit
+      ? `<span class="t-muted">purchase_history has no column linking a deal to an inventory unit, so this sale is not tied to a car anywhere in the database.</span>`
+      : !ref
+        ? `<span class="t-warm">Not linked.</span> <span class="t-muted">The ${esc(col.unit)} column is empty on this row.</span>`
+        : !inv
+          ? `<span class="mono">${esc(ref)}</span> <span class="t-muted">— inventory could not be read (${esc(invErr)}), so this reference could not be resolved.</span>`
+          : !u
+            ? `<span class="mono">${esc(ref)}</span> <span class="t-warm">— no inventory row has this id (the stock number) or VIN among the ${num(inv.length)} read${invCapped ? `, and that read was capped at ${num(INV_LIMIT)}` : ''}.</span>`
+            : `<span class="mono">${esc(unitLabel(u))}</span> ${pill(str(u.status) || 'No status', lower(u.status) === 'available' ? 'hot' : lower(u.status) === 'sold' ? 'ok' : 'warm')}
+               <div class="cell-sub">${lower(u.status) === 'available'
+                 ? '<span class="t-hot">Still marked Available — it can be sold again.</span> '
+                 : ''}<span class="t-muted">inventory records no sale date, so this car\'s time on the lot cannot be measured against the deal above. ${
+                 n0(u.days_in_stock) != null
+                   ? `days_in_stock reads ${esc(num(u.days_in_stock))} and keeps counting from acquisition, so it is not that figure.`
+                   : 'days_in_stock counts from acquisition and does not stop at a sale, so it is not that figure either.'}</span></div>`;
 
     openDrawer(`
       <div class="drawer-head">
@@ -598,9 +1144,10 @@ SCREENS.deals = async host => {
           <div class="label-caps">Deal</div>
           <dl class="kv" style="margin-top:8px">
             <dt>Customer</dt><dd>${esc(nameOf(d) || '—')}</dd>
+            <dt>Phone</dt><dd>${phoneLine(d)}</dd>
             <dt>Email</dt><dd>${esc(emailOf(d) || '—')}</dd>
-            <dt>Phone</dt><dd>${esc(get(d, 'phone') || '—')}</dd>
             <dt>Vehicle</dt><dd>${esc(get(d, 'vehicle') || '—')}</dd>
+            <dt>Inventory unit</dt><dd>${unitBlock}</dd>
             <dt>Amount</dt><dd class="num">${a == null ? '<span class="t-muted">Not recorded</span>' : esc(aed(a))}</dd>
             <dt>Gross margin</dt><dd class="num">${m == null
               ? '<span class="t-muted">No margin column, and no amount and cost to subtract</span>'
@@ -633,6 +1180,7 @@ SCREENS.deals = async host => {
       <div class="drawer-foot">
         <button class="btn" id="ddDone">Close</button>
         <button class="btn" disabled title="${esc(NO_REEMBED)}">Re-embed this deal</button>
+        <button class="btn" disabled title="${esc(NO_UNIT_FIX)}">Mark unit sold</button>
       </div>`);
 
     $('ddClose')?.addEventListener('click', closeDrawer);

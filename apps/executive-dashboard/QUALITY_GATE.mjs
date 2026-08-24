@@ -51,28 +51,127 @@ function serve(root, port) {
   });
 }
 
-const ROW = {
-  id: '00000000-0000-4000-8000-000000000001', customer_id: '25',
-  name: 'Test Row', lead_name: 'Test Row', full_name: 'Test Row',
-  email: 'ali@example.com', lead_email: 'ali@example.com', phone: '+971500000000',
-  role: 'senior_rep', status: 'HOT', verdict: 'APPROVED', health: 'DEGRADED',
-  direction: 'inbound', message: 'hello there', channel: 'whatsapp',
-  ai_score: 88, lead_score: 88, confidence_score: 91, success_rate: 64.8,
-  runs: 71, failures: 25, runs_30d: 71, failures_30d: 25,
-  budget_aed: 280000, list_price_aed: 115000, cost_price_aed: 95000,
-  sale_price_aed: 275000, price_aed: 120000, net_margin: 12000,
-  holding_cost_accrued: 2400, days_in_stock: 130, aging_alert: 'CRITICAL',
-  make: 'Toyota', model: 'Land Cruiser', year: 2024, stock_id: 'ST-001',
-  vehicle: '2024 Toyota Land Cruiser', vehicle_interest: '2024 Toyota Land Cruiser',
-  title: 'Refund policy', category: 'Lead', trigger_type: 'webhook',
-  is_active: true, writes_audit_log: true, workflow: 'WhatsApp BDC Agent',
-  summary: 'Completed', total_emails: 3, total_slack_messages: 1,
-  storage_path: 'kyc/x/2026/08/a.jpg', retain_until: '2033-08-17', purged_at: null,
-  created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
-  logged_at: '2026-08-01T00:00:00Z', last_run: '2026-08-17T00:00:00Z',
-  last_failure: '2026-08-17T00:00:00Z', acquired_at: '2026-04-01T00:00:00Z',
-  last_synced_at: '2026-08-18T00:00:00Z', snapshot_date: '2026-08-19',
+/* ── The stub database ────────────────────────────────────────────────────
+
+   This used to be one flat object served with a fixed 200 for every path, and
+   that made the gate structurally incapable of catching the single most
+   expensive class of bug in this app. PostgREST answers an unknown column with
+   400 / 42703 and REJECTS THE WHOLE QUERY — not the field, the query — so one
+   stale column name blanks an entire screen. The old stub answered 200 to
+   anything, and its row literally carried `lead_score`, `stock_id`, `make`,
+   `year`, `cost_price_aed` and `updated_at`, none of which exist in the real
+   database. So `team.js` selecting `leads.lead_score` gated GREEN and shipped,
+   and the roster screen was blank in production until a human noticed.
+
+   A gate that passes the bug it exists to catch is worse than no gate: it is a
+   green light with no lamp behind it. So the stub now knows the real column
+   list of every table, read live off the database on 24 Aug 2026, and it fails
+   a query exactly the way production does. Keeping this list current is the
+   price of the gate being worth running — when the schema changes, change it
+   here, and SCHEMA.md's CORRECTION section is the same list in prose. */
+const SCHEMA = {
+  leads: ['id','name','email','phone','status','ai_score','source','vehicle_interest','budget_aed','assigned_to','assigned_to_id','response_time_minutes','escalated_at','created_at'],
+  inventory: ['id','model','vin','status','acquired_at','cost_aed','price_aed','days_in_stock','holding_cost_accrued','gross_margin','net_margin','vat_amount','aging_alert','ai_recommendation','recommended_commission'],
+  users: ['id','name','email','role','status','slack_user_id','created_at'],
+  communication_logs: ['id','lead_email','direction','message','channel','created_at'],
+  competitors: ['id','competitor','model','our_price_aed','price_aed','price_diff_aed','scraped_at','ai_recommendation'],
+  finance_quotes: ['id','lead_email','lead_name','vehicle_value_aed','loan_payoff_aed','equity_aed','equity_status','loan_to_value_pct','indicative_apr_pct','finance_tier','credit_score','disclaimer','quoted_by','source','created_at'],
+  rag_documents: ['id','doc_title','source_file','section','page_number','content','search_vector'],
+  purchase_history: ['id','deal_id','customer_name','email','phone','vehicle','amount_aed','purchase_date','created_at'],
+  deals_embeddings: ['id','deal_id','content','embedding','created_at'],
+  audit_log: ['id','workflow','status','lead_name','lead_email','lead_score','intent','summary','logged_at'],
+  kyc_documents: ['id','lead_email','lead_name','chat_id','document_type','full_name','date_of_birth','expiry_date','is_valid','tampering','confidence_score','remarks','attempt_number','max_attempts','verdict','reviewed_by','reviewed_at','storage_path','retain_until','purged_at','void_reason','voided_at','created_at'],
+  customer_360_profiles: ['id','customer_id','name','email','phone','total_emails','total_slack_messages','last_synced_at'],
+  workflow_registry: ['id','name','audit_name','audit_aliases','category','trigger_type','trigger_detail','description','is_active','writes_audit_log'],
+  processed_messages: ['chat_id','message_id','source','processed_at'],
+  whatsapp_contacts: ['chat_id','phone','push_name','lead_email','first_seen','last_seen','message_count'],
+  v_needs_attention: ['kind','severity','ref','title','detail','at','screen'],
+  v_workflow_health: ['id','name','category','trigger_type','trigger_detail','description','is_active','writes_audit_log','runs','failures','escalations','success_rate','last_run','runs_30d','failures_30d','last_failure','health'],
+  v_team_performance: ['id','name','email','role','status','leads_assigned','hot_leads','pipeline_aed','avg_response_minutes','within_sla','breached_sla'],
+  v_customer_360: ['name','email','phone','lead_count','best_ai_score','latest_status','is_vip','last_contact_at','message_count','total_emails','total_slack_messages','purchase_count','lifetime_value_aed','last_purchase_date'],
+  v_customer_directory: ['id','name','email','phone','source_records','last_seen_at'],
+  v_conversations: ['thread_key','chat_id','phone','push_name','lead_email','lead_name','lead_status','display_name','identified','message_count','inbound_count','outbound_count','last_message_at','last_message','last_direction','awaiting_reply'],
+  daily_metrics: ['id','snapshot_date','leads_total','leads_hot','revenue_aed','created_at'],
 };
+
+/* Plausible values by column name, so a screen gets something it can format
+   rather than a string in every numeric field. Anything unlisted falls back by
+   suffix, then to a string — the point of this object is realism, not coverage. */
+const VALUE = {
+  id: '00000000-0000-4000-8000-000000000001', customer_id: '25',
+  name: 'Test Row', lead_name: 'Test Row', full_name: 'Test Row', customer_name: 'Test Row',
+  competitor: 'Al Futtaim Toyota', doc_title: 'Refund policy', title: 'Refund policy',
+  email: 'ali@example.com', lead_email: 'ali@example.com',
+  phone: '+971500000000', push_name: 'Ali', display_name: 'Test Row', identified: 'lead',
+  chat_id: '971500000000@c.us', thread_key: '971500000000@c.us', message_id: 'ABC123',
+  role: 'senior_rep', status: 'HOT', lead_status: 'HOT', latest_status: 'HOT',
+  verdict: 'APPROVED', health: 'DEGRADED', severity: 'HOT', kind: 'unanswered_chat',
+  screen: 'conversations', ref: 'NX-1010', detail: 'Waiting since 19 Aug',
+  direction: 'inbound', last_direction: 'inbound', message: 'hello there',
+  last_message: 'hello there', channel: 'whatsapp', source: 'whatsapp',
+  model: 'Land Cruiser', vin: 'JTMHV05J104123456', vehicle: '2024 Toyota Land Cruiser',
+  vehicle_interest: '2024 Toyota Land Cruiser', aging_alert: 'CRITICAL',
+  category: 'Lead', trigger_type: 'webhook', trigger_detail: 'whatsapp-inbound',
+  workflow: 'WhatsApp BDC Agent', audit_name: 'WhatsApp BDC Agent', audit_aliases: [],
+  summary: 'Completed', intent: 'Buying', description: 'Handles inbound WhatsApp',
+  content: 'Refunds are processed within 14 days.', section: 'Policy',
+  source_file: 'policy.pdf', remarks: 'Looks clean', document_type: 'Passport',
+  equity_status: 'POSITIVE', finance_tier: 'A', disclaimer: 'Indicative only',
+  quoted_by: 'ali@example.com', ai_recommendation: 'Hold', assigned_to: 'Test Rep',
+  slack_user_id: 'U123', void_reason: null, voided_at: null, purged_at: null,
+  storage_path: 'kyc/x/2026/08/a.jpg', search_vector: null, embedding: null,
+  is_valid: true, tampering: false, is_active: true, is_vip: true,
+  writes_audit_log: true, awaiting_reply: true,
+};
+function fabricate(table) {
+  const cols = SCHEMA[table] || [];
+  const row = {};
+  for (const c of cols) {
+    if (c in VALUE) { row[c] = VALUE[c]; continue; }
+    if (/(_at|_date|^at$)$/.test(c)) row[c] = '2026-08-01T00:00:00Z';
+    else if (/^(is_|has_)/.test(c)) row[c] = true;
+    else if (/(_aed|_pct|_score|_count|_minutes|_number|count|runs|failures|escalations|_margin|_commission|days_in_stock|holding_cost_accrued|success_rate|page_number|credit_score)/.test(c)) row[c] = 120000;
+    else row[c] = 'Test Row';
+  }
+  return row;
+}
+
+/* Reproduce PostgREST's two rejections that actually bite this app:
+   42703 for a column that does not exist, and PGRST100 for a select it cannot
+   parse. Everything else answers 200 with rows shaped like the real table —
+   which is itself a check, because a screen reading a field the table does not
+   have now gets `undefined` here exactly as it would in production, instead of
+   the old stub's helpful lie. */
+function stubRest(url) {
+  const u = new URL(url);
+  const table = u.pathname.split('/rest/v1/')[1]?.split('?')[0]?.replace(/\/$/, '');
+  if (!table) return { status: 404, body: { message: 'no table in path' } };
+  if (!SCHEMA[table]) {
+    return { status: 404, body: { code: '42P01', message: `relation "public.${table}" does not exist`,
+      hint: 'Add it to SCHEMA in QUALITY_GATE.mjs if it is real.' } };
+  }
+  const sel = u.searchParams.get('select');
+  if (sel != null) {
+    if (/,\s*$/.test(sel) || sel.trim() === '') {
+      return { status: 400, body: { code: 'PGRST100',
+        message: `"failed to parse select parameter (${sel})"` } };
+    }
+    /* Strip embedded resources — `leads?select=*,users(id,name)` — and check
+       only the columns asked of THIS table. The embed's own columns belong to
+       the embedded table and are not this table's problem. */
+    const flat = sel.replace(/\w+\s*\([^()]*\)/g, '');
+    for (const raw of flat.split(',')) {
+      const c = raw.trim().split(':').pop().split('::')[0].trim();
+      if (!c || c === '*') continue;
+      if (!SCHEMA[table].includes(c)) {
+        return { status: 400, body: { code: '42703', details: null, hint: null,
+          message: `column ${table}.${c} does not exist` } };
+      }
+    }
+  }
+  const row = fabricate(table);
+  return { status: 200, body: [row, row] };
+}
 
 async function run(port) {
   /* This container ships a prebuilt Chromium at a fixed path; a normal checkout
@@ -84,6 +183,7 @@ async function run(port) {
   const browser = await chromium.launch(explicit ? { executablePath: explicit } : {});
   const page = await browser.newPage();
   const errs = [];
+  const schemaRejections = [];
   page.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   page.on('console', m => {
     if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errs.push(m.text());
@@ -93,8 +193,11 @@ async function run(port) {
   await page.route('https://example.supabase.co/auth/v1/**', r => r.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ id: 'u1', email: 'ali@example.com', role: 'authenticated' }) }));
-  await page.route('https://example.supabase.co/rest/v1/**', r => r.fulfill({
-    status: 200, contentType: 'application/json', body: JSON.stringify([ROW, ROW]) }));
+  await page.route('https://example.supabase.co/rest/v1/**', r => {
+    const out = stubRest(r.request().url());
+    if (out.status !== 200) schemaRejections.push(`${out.status} ${out.body.code || ''} ${out.body.message}`);
+    r.fulfill({ status: out.status, contentType: 'application/json', body: JSON.stringify(out.body) });
+  });
   await page.route('https://example.invalid/**', r => r.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ output: 'stubbed answer', sources: [] }) }));
@@ -130,7 +233,7 @@ async function run(port) {
     screens[id].newErrors = errs.length - before;
   }
   await browser.close();
-  return { loggedIn, nav, screens, errs };
+  return { loggedIn, nav, screens, errs, schemaRejections };
 }
 
 const srv = await serve(new URL('./dist/', import.meta.url).pathname, 8071);
@@ -154,5 +257,15 @@ for (const id of SCREEN_IDS) {
     ` ${String(s.errored).padStart(9)} ${String(s.newErrors).padStart(8)}` +
     (fail ? '   <-- FAIL' : ''));
 }
-console.log(`\nscreens failing: ${bad}/${SCREEN_IDS.length}   lint failures: ${lint.length}`);
-process.exit(bad === 0 && lint.length === 0 && r.loggedIn && r.nav === 14 ? 0 : 1);
+/* A rejected query is reported separately from a page error because it does not
+   necessarily produce one: a screen that catches its own fetch failure renders a
+   tidy "Couldn't load ..." and looks fine here, while in production that whole
+   panel is empty for a reason nobody can see. These are the bugs the old stub
+   could not express, so they get their own section and they fail the gate. */
+const rejects = [...new Set(r.schemaRejections)];
+console.log('\n=== queries the database would reject ===');
+console.log(rejects.length ? rejects.map(x => '  FAIL ' + x).join('\n')
+  : '  none — every select names columns that exist');
+
+console.log(`\nscreens failing: ${bad}/${SCREEN_IDS.length}   lint failures: ${lint.length}   rejected queries: ${rejects.length}`);
+process.exit(bad === 0 && lint.length === 0 && rejects.length === 0 && r.loggedIn && r.nav === 14 ? 0 : 1);

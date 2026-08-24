@@ -52,10 +52,15 @@ def ok(msg):   print('  ok   ' + msg)
 def bad(msg):  print('  FAIL ' + msg); problems.append(msg)
 
 
-def api(path, timeout=60):
-    r = urllib.request.Request(N8N + '/api/v1' + path, headers=H)
+def api(path, timeout=60, method='GET'):
+    """n8n's public API does have POST /executions/{id}/stop, contrary to what
+    this file used to advise. The old note said to use the n8n UI because DELETE
+    on a running execution returns 400 — true, but DELETE was the wrong verb.
+    Stopping is what clears a zombie, and it is one call."""
+    r = urllib.request.Request(N8N + '/api/v1' + path, headers=H, method=method)
     with urllib.request.urlopen(r, timeout=timeout) as x:
-        return json.loads(x.read().decode())
+        body = x.read().decode()
+        return json.loads(body) if body else {}
 
 
 def supa(path):
@@ -95,6 +100,10 @@ except Exception as e:
     print('\nCannot continue without the API.')
     sys.exit(1)
 
+# --stop actually cancels what [2] finds. Off by default: cancelling somebody
+# else's in-flight run is not a thing a health CHECK should do unasked.
+STOP = '--stop' in sys.argv
+
 # 2. stuck executions — the check the old watchdog did not have ---------------
 print('\n[2] stuck and queued executions')
 try:
@@ -107,8 +116,16 @@ try:
             f'— these are zombies and they degrade the whole instance')
         for eid, mins, wf in stuck[:6]:
             print(f'         id {eid}  {mins/60:.1f}h  {wf}')
-        print('         FIX: n8n UI -> Executions -> Stop all. The public API '
-              'returns 400 on a running execution.')
+        print('         FIX: run this script with --stop to cancel them.')
+        if STOP:
+            for eid, _m, _w in stuck:
+                try:
+                    api(f'/executions/{eid}/stop', method='POST')
+                    print(f'         stopped {eid}')
+                except Exception as e:
+                    print(f'         could not stop {eid}: {str(e)[:80]}')
+            print('         Re-run to confirm latency recovered — the API was '
+                  '7.8s with two zombies and 1.2s without them.')
     else:
         ok(f'{len(running)} running, none over {STUCK_MINUTES} min')
 except Exception as e:
@@ -192,6 +209,52 @@ for label, path in (('leads', 'leads?select=id'),
             ok(f'{label}: {n}')
     except Exception as e:
         bad(f'{label}: unreadable — {str(e)[:80]}')
+
+# 7. the scheduled jobs — a cron that silently stops is the quiet failure ------
+#
+# [3] only proves that SOMETHING completed, and the hourly Silence Detector is
+# frequent enough to satisfy it alone. That is exactly how a nightly job can
+# stop for a week unnoticed: the loudest heartbeat masks the missing one. Each
+# job is checked against its OWN cadence.
+#
+# The source here is n8n executions, deliberately NOT audit_log. audit_log
+# records what a workflow FOUND, not that it RAN — the Silence Detector writes a
+# row only when somebody is actually silent, so on a quiet week an audit_log
+# check would report a perfectly healthy job as dead. Executions answer the
+# question actually being asked.
+print('\n[7] scheduled jobs — each against its own cadence')
+SCHEDULED = (
+    ('Inventory Ageing Recompute',        26),   # 00:15 Dubai, daily
+    ('NEXUS Retention Purge',             26),   # 03:00 Dubai, daily
+    ('Customer 360 - Data Aggregation',   26),   # nightly
+    ('Competitor Price Scraping',         26),   # daily
+    ('Phase 6 - 12-Hour Silence Detector',  2),  # hourly
+)
+try:
+    wf_ids = {w['name']: w['id'] for w in api('/workflows?limit=250')['data']}
+    for name, max_h in SCHEDULED:
+        wid = next((i for n, i in wf_ids.items() if n.startswith(name[:22])), None)
+        if not wid:
+            bad(f'{name}: no such workflow in n8n')
+            continue
+        try:
+            runs = api(f'/executions?workflowId={wid}&status=success&limit=1')['data']
+        except Exception as e:
+            bad(f'{name}: could not read executions — {str(e)[:60]}')
+            continue
+        if not runs:
+            bad(f'{name}: no successful run on record — it has never completed')
+            continue
+        age = age_minutes(runs[0].get('stoppedAt') or runs[0].get('startedAt'))
+        if age is None:
+            bad(f'{name}: unreadable timestamp on its last run')
+        elif age / 60 > max_h:
+            bad(f'{name}: last success {age/60:.1f}h ago — it should run at least '
+                f'every {max_h}h, so it has missed a run')
+        else:
+            ok(f'{name}: {age/60:.1f}h ago')
+except Exception as e:
+    bad('could not check scheduled jobs: ' + str(e)[:100])
 
 print('\n' + ('HEALTHY — nothing needs attention' if not problems
               else f'{len(problems)} PROBLEM(S):\n  - ' + '\n  - '.join(problems)))

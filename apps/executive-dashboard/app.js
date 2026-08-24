@@ -30,6 +30,7 @@ import { ME, SESSION, db, sessionEnded, setMe, setSession, setSessionEndedHandle
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
+import { refreshBadges, startBadges } from './lib/badges.js';
 
 /* Screen modules, imported for their registration side effect only. Removing
    one of these lines silently removes that screen from the app. */
@@ -112,7 +113,10 @@ async function boot() {
   buildNav();
   applyDensity();
   $('signOutBtn').addEventListener('click', async () => { await supabase.auth.signOut(); location.reload(); });
-  $('refreshBtn').addEventListener('click', () => go(current));
+  /* Refresh means "tell me the truth right now", so it re-reads the badges as
+     well as the screen. Re-rendering the screen alone would leave the sidebar
+     asserting a number the operator just asked to have re-checked. */
+  $('refreshBtn').addEventListener('click', () => { go(current); refreshBadges(); });
   $('scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) go(h); });
@@ -121,6 +125,12 @@ async function boot() {
   db('leads?select=id&limit=1')
     .then(() => { conn.className = 'pill ok'; conn.innerHTML = '<span class="dot"></span>Live'; })
     .catch(e => { conn.className = 'pill hot'; conn.innerHTML = `<span class="dot"></span>${esc(String(e.message).slice(0,40))}`; });
+
+  /* Started after the nav exists — the badges write into spans lib/nav.js
+     creates — and before the first screen renders, so the sidebar is already
+     truthful by the time anything is on screen. Failures inside are swallowed
+     by design: a badge that cannot be computed must not stop the app booting. */
+  startBadges();
 
   go(location.hash.slice(1) || 'overview');
 }

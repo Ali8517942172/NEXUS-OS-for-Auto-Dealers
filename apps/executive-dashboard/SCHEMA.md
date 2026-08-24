@@ -4,34 +4,45 @@ RLS: everything is readable by `authenticated`. Writes are limited — `leads`,
 `inventory` and `finance_quotes` are writable from the browser; the rest are
 service-role only (n8n writes them).
 
-## Tables
+> **The column lists in this file were re-read off the live database on
+> 24 Aug 2026.** They are in the CORRECTION section at the bottom, and that
+> section is the authority. The narrative sections below describe what each
+> table is *for*; when a column name here disagrees with the CORRECTION, the
+> CORRECTION wins. This is not pedantry — PostgREST answers 42703 for an unknown
+> column and **rejects the whole query**, so one wrong name blanks an entire
+> screen while the render gate reports clean. That has already happened twice.
 
-* **leads** — id, name, email, phone, status, ai_score, lead_score,
-  vehicle_interest, budget_aed, source, assigned_to_id, created_at, updated_at
-* **inventory** — id, stock_id, make, model, year, vin, colour, cost_price_aed,
-  list_price_aed, status, acquired_at, sold_at, days_in_stock,
-  holding_cost_accrued, net_margin, aging_alert   *(the last four are stored and
-  recomputed nightly; the UI recomputes them live via `deriveUnit()` in
-  `lib/unit-form.js`)*
-* **communication_logs** — id, lead_email, direction ('inbound'|'outbound'),
-  message, channel, created_at
-* **kyc_documents** — id, lead_email, lead_name, chat_id, document_type,
-  full_name, date_of_birth, expiry_date, is_valid, tampering, confidence_score,
-  remarks, attempt_number, max_attempts, verdict
-  ('APPROVED'|'REJECTED'|'ESCALATED'), reviewed_by, reviewed_at, created_at,
-  **storage_path**, **retain_until** (date), **purged_at** (timestamptz)
-* **finance_quotes** — lead_email, lead_name, and the quote fields
-* **competitors** — competitor rows with prices
-* **rag_documents** — the Ask-AI knowledge base
-* **audit_log** — workflow, status ('SUCCESS'|'FAILED'|'REJECTED'|'ESCALATED'),
-  lead_name, lead_email, lead_score, intent, summary, logged_at
-* **users** — id, name, email, role, status (includes 'pending_invite')
-* **customer_360_profiles** — customer_id, name, email, phone, total_emails,
-  total_slack_messages, last_synced_at
-* **purchase_history**, **deals_embeddings** — closed-deal memory
-* **workflow_registry** — id, name, audit_name, audit_aliases[], category,
-  trigger_type, trigger_detail, description, is_active, writes_audit_log
-* **processed_messages** — WAHA idempotency guard (service-role only)
+## Tables — what each one is for
+
+* **leads** — every inbound enquiry. `ai_score` is the router's 1-100 score;
+  `assigned_to_id` points at `users`. There is no last-modified timestamp, so
+  "when was this lead last touched" has to come from `communication_logs` or
+  `escalated_at`.
+* **inventory** — the cars. `id` is the human stock number ("NX-1010"), not a
+  surrogate key. Money is `price_aed` / `cost_aed`. The ageing figures are
+  stored and recomputed nightly, and `lib/unit-form.js` `deriveUnit()` recomputes
+  them live in the browser; the two can disagree and that disagreement is worth
+  showing. **No sale date is recorded anywhere on this table.**
+* **communication_logs** — every message in and out, keyed on `lead_email`.
+  Carries no workflow id, so drip mail cannot be told apart from any other
+  outbound mail.
+* **kyc_documents** — see the KYC section below. `void_reason IS NOT NULL`
+  means the row was never a real submission.
+* **finance_quotes** — what the finance desk quoted. Stores no term, no monthly
+  payment and no validity date; a monthly instalment on screen is modelled by
+  the browser and must say so.
+* **competitors** — scraped rival prices against ours.
+* **rag_documents** — the Ask-AI knowledge base. Carries **no timestamp**, so
+  its freshness is not knowable from the data.
+* **audit_log** — one row per workflow run that completed. By construction it
+  cannot record a run that hung, which is why "healthy" read off this table
+  once hid a 26-hour stall.
+* **users** — staff. No phone numbers are stored.
+* **customer_360_profiles**, **purchase_history**, **deals_embeddings** —
+  customer memory. `purchase_history` has no link to an inventory unit.
+* **workflow_registry** — the catalogue behind `v_workflow_health`.
+* **processed_messages** — the WAHA idempotency guard (service-role only).
+* **whatsapp_contacts** — chat_id → real phone and profile name.
 
 ## Views
 
@@ -144,3 +155,106 @@ and an expired session (`db()`/`n8n()` already route that to the login screen).
 `unanswered_chat` — a thread whose newest message is inbound, within 7 days.
 `ref` is the chat_id, `screen` is `conversations`. This is the item an operator
 can act on right now, and it is what the nav badge should be counting.
+
+---
+
+# CORRECTION — 24 Aug 2026, probed live against the database
+
+**Everything in the "Tables" section above was written from memory and several
+entries are wrong.** The lists below were read off the live database with
+`select=*&limit=1` on the same afternoon. Where the two disagree, this section
+is right. A column named here does not exist is not a soft failure: PostgREST
+answers 42703 and **the entire query is rejected**, so one invented column name
+blanks a whole screen. This is not hypothetical — `team.js` selecting
+`leads.lead_score` did exactly that in production while the render gate reported
+clean.
+
+    leads                id, name, email, phone, status, ai_score, source,
+                         vehicle_interest, budget_aed, assigned_to,
+                         assigned_to_id, response_time_minutes, escalated_at,
+                         created_at
+      NO lead_score. NO updated_at. (`assigned_to` does exist, alongside the id.)
+
+    inventory            id, model, vin, status, acquired_at,
+                         cost_aed, price_aed,
+                         days_in_stock, holding_cost_accrued,
+                         gross_margin, net_margin, vat_amount,
+                         aging_alert, ai_recommendation, recommended_commission
+      NO stock_id, make, year, colour, sold_at, updated_at.
+      NO cost_price_aed / list_price_aed — the real names are cost_aed / price_aed,
+      so `lib/unit-form.js` was correct and the doc above was the stale half.
+      `id` is the human stock number (e.g. "NX-1010"), which is what
+      v_needs_attention puts in `ref`.
+      There is no sold date anywhere on this table: "when did we sell it" is
+      not answerable from `inventory`. Do not pretend otherwise.
+
+    users                id, name, email, role, status, slack_user_id, created_at
+      NO phone. Staff phone numbers are not recorded anywhere the dashboard reads.
+
+    communication_logs   id, lead_email, direction, message, channel, created_at
+
+    competitors          id, competitor, model, our_price_aed, price_aed,
+                         price_diff_aed, scraped_at, ai_recommendation
+
+    finance_quotes       id, lead_email, lead_name, vehicle_value_aed,
+                         loan_payoff_aed, equity_aed, equity_status,
+                         loan_to_value_pct, indicative_apr_pct, finance_tier,
+                         credit_score, disclaimer, quoted_by, source, created_at
+      NO term, NO monthly payment, NO validity/expiry column. A monthly
+      instalment shown on this screen is modelled by the browser, never stored,
+      and must say so.
+
+    rag_documents        id, doc_title, source_file, section, page_number,
+                         content, search_vector
+      NO created_at and no timestamp of any kind — KB freshness is NOT knowable.
+      Say that; do not infer it from id ordering.
+
+    purchase_history     id, deal_id, customer_name, email, phone, vehicle,
+                         amount_aed, purchase_date, created_at
+      Carries its own `phone`, so deals do not need to join leads for it.
+      NO inventory reference column — a purchase cannot be tied to a unit.
+
+    deals_embeddings     id, deal_id, content, embedding, created_at
+    audit_log            id, workflow, status, lead_name, lead_email,
+                         lead_score, intent, summary, logged_at
+    kyc_documents        id, lead_email, lead_name, chat_id, document_type,
+                         full_name, date_of_birth, expiry_date, is_valid,
+                         tampering, confidence_score, remarks, attempt_number,
+                         max_attempts, verdict, reviewed_by, reviewed_at,
+                         storage_path, retain_until, purged_at,
+                         void_reason, voided_at, created_at
+    customer_360_profiles id, customer_id, name, email, phone, total_emails,
+                         total_slack_messages, last_synced_at
+    workflow_registry    id, name, audit_name, audit_aliases, category,
+                         trigger_type, trigger_detail, description,
+                         is_active, writes_audit_log
+    processed_messages   chat_id, message_id, source, processed_at
+    whatsapp_contacts    chat_id, phone, push_name, lead_email,
+                         first_seen, last_seen, message_count
+
+## Views — full column lists
+
+    v_needs_attention    kind, severity, ref, title, detail, at, screen
+    v_workflow_health    id, name, category, trigger_type, trigger_detail,
+                         description, is_active, writes_audit_log,
+                         runs, failures, escalations, success_rate, last_run,
+                         runs_30d, failures_30d, last_failure, health
+    v_team_performance   id, name, email, role, status, leads_assigned,
+                         hot_leads, pipeline_aed, avg_response_minutes,
+                         within_sla, breached_sla
+    v_customer_360       name, email, phone, lead_count, best_ai_score,
+                         latest_status, is_vip, last_contact_at, message_count,
+                         total_emails, total_slack_messages,
+                         purchase_count, lifetime_value_aed, last_purchase_date
+    v_customer_directory id, name, email, phone, source_records, last_seen_at
+    v_conversations      thread_key, chat_id, phone, push_name, lead_email,
+                         lead_name, lead_status, display_name, identified,
+                         message_count, inbound_count, outbound_count,
+                         last_message_at, last_message, last_direction,
+                         awaiting_reply
+
+## Severity vocabulary
+
+`v_needs_attention.severity` is `HOT` | `WARM` | `COLD`, and `aging_alert` on
+inventory is `CRITICAL` | `WARNING` | `OK`. `TONE` in `lib/format.js` now covers
+all of them; a screen no longer needs its own severity→tone map.

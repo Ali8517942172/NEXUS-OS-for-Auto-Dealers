@@ -1,7 +1,32 @@
 /* NEXUS OS — screens/leads.js
-   Split out of the original monolithic app.js on 17 Aug 2026, then reworked on
-   19 Aug 2026 into a workable pipeline: filter, sort, search, and the two
-   workflow actions a rep actually takes on a row. */
+   Split out of the original monolithic app.js on 17 Aug 2026, reworked on
+   19 Aug 2026 into a workable pipeline (filter, sort, search, the two workflow
+   actions a rep actually takes), and given an alert strip on 24 Aug 2026.
+
+   What the strip is, and what it deliberately is not:
+
+   `v_needs_attention` is the only source here that speaks for the whole
+   database. It emits `lead_unassigned` and `sla_breach` rows with
+   `screen = 'leads'` — and today it emits none of them at all. So "nothing
+   right now" is the normal case and is written as a sentence rather than as an
+   empty box; the day a row does appear it renders on the view's own terms
+   (severity, title, detail, how long it has been waiting) and clicking it opens
+   that lead here.
+
+   Below the view's rows sit four checks the view does not make. Every one is
+   computed from rows this screen had already read, except "never contacted",
+   which needs communication_logs and therefore shares one bounded windowed read
+   with nothing else on the screen. None of them estimates: each states the
+   denominator it counted against, and a check whose read failed is withheld and
+   named rather than quietly reported as zero — a zero the operator would trust.
+
+   Identity: a lead's phone number now sits under the name in every place a lead
+   is named — the table, the alert strip, the confirm dialog — because "call
+   them" is the action almost every alert here resolves to. Where there is no
+   number the cell says so with an em dash. A `…@lid` WhatsApp handle is never
+   printed as if it were a person's name (see the 24 Aug addendum); leads are not
+   supposed to carry one, but the router has written stranger things into `name`
+   and a handle rendered as a name is exactly the fault that addendum is about. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
@@ -13,9 +38,57 @@ import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { table, wireRows } from '../lib/ui.js';
 
 const up  = s => String(s || '').toUpperCase();
-const low = s => String(s || '').toLowerCase();
+const low = s => String(s || '').trim().toLowerCase();
+const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? 0 : t; };
 const when = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? '' : new Date(t).toLocaleString('en-GB'); };
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+
+/* Read ceilings. Each one is stated on screen when it is hit, because a count
+   drawn from a truncated read is a smaller number, not a wrong-looking one, and
+   nothing about the page would otherwise reveal it. */
+const LEAD_LIMIT = 1000;
+const ATTN_LIMIT = 200;
+const COMM_LIMIT = 5000;
+
+/* The "never contacted" check is windowed so it is provably complete rather
+   than merely likely: a message to a lead can only be logged at or after that
+   lead was created, so reading *every* log line inside the window tells us the
+   true contact state of every lead created inside the same window. Reading "the
+   newest N log lines" instead would start accusing reps of ignoring leads they
+   had answered, the moment the dealership got busy. Leads older than the window
+   are therefore not judged by this check at all. */
+const CONTACT_WINDOW_DAYS = 30;
+
+/* No contact for this long is stale. Two weeks is the assumption in this
+   number — it is not a company policy the database knows about — so the alert
+   says "no contact in 14 days" rather than the word "stale" on its own. */
+const STALE_DAYS = 14;
+
+/* The router scores 1–100. Where its own Hot cut-off sits is a Make.com prompt,
+   not a column we can read, so this threshold is ours and the alert states it
+   in full ("scored 70 or higher") instead of claiming the router called them
+   hot. */
+const HIGH_SCORE = 70;
+
+/* Statuses that mean the lead is finished. A won deal that nobody has touched
+   in a month is not a neglected lead, and listing it as one trains people to
+   ignore the strip. */
+const TERMINAL = new Set(['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED']);
+
+/* Names shown per alert before it collapses into "+N more". The row itself
+   filters the table to the full set, so this is a glance, not the list. */
+const PREVIEW = 3;
+
+/* A WhatsApp handle. A LID carries no phone digits at all, so it identifies
+   nobody — it is never printed as a name. */
+const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
+
+/* `v_needs_attention.severity` is HOT | WARM | COLD, and TONE covers all three
+   (plus an unknown value, which it colours 'cold' rather than leaving unstyled).
+   So there is no severity map here: the checks below are labelled in the view's
+   own vocabulary so that one strip does not speak two of them. */
+const KIND_ICON = { lead_unassigned:'person_alert', sla_breach:'timer' };
 
 /* ── The two workflows this screen may trigger ────────────────────────────────
    Both already exist in n8n and both verify the caller's Supabase JWT, which
@@ -47,6 +120,10 @@ const ACTIONS = {
       lead_name: l.name || null,
       phone: l.phone || null,
       vehicle_interest: l.vehicle_interest || null,
+      /* A field name in the escalation webhook's payload, not a column: the
+         workflow reads `lead_score`, and the leads table has no such column
+         (selecting one is what blanked team.js in production). The value is
+         ai_score, which is the score the table actually stores. */
       lead_score: n0(l.ai_score),
       status: l.status || null,
       reason: 'Escalated by hand from the Leads screen',
@@ -88,17 +165,347 @@ function replyNote(res) {
     : 'The workflow accepted the request.';
 }
 
+/* Resolve to [value, null] or [null, error] so one failed read cannot abort the
+   others through Promise.all, and so every failure arrives as a fact the strip
+   can print rather than as a rejection somebody has to catch again. */
+const settle = p => p.then(v => [v, null], e => [null, e]);
+
+/* Identity, in one place, so the table, the strip and the dialog cannot drift
+   apart on what a nameless lead looks like. */
+function leadName(l) {
+  const n = str(l.name);
+  if (!n) return '<span class="t-warm">Unnamed lead</span>';
+  /* A chat handle is not a name. Leads should never carry one, but the router
+     has written worse into this column, and the whole point of the 24 Aug
+     addendum is that a handle printed as a name misleads whoever reads it. */
+  if (HANDLE.test(n)) {
+    return '<span class="t-warm">Unnamed lead</span> '
+      + `<span class="chip mono" title="This is a WhatsApp chat handle stored in the name column, not a person's name. A LID contains no phone digits and identifies nobody.">${esc(n)}</span>`;
+  }
+  return esc(n);
+}
+const phoneText = l => str(l.phone)
+  ? `<span class="mono">${esc(str(l.phone))}</span>`
+  : '<span class="t-muted" title="No phone number on this lead">—</span>';
+/* Name and number on one line, for the places that have no second line. */
+const nameAndPhone = l => `${leadName(l)} <span class="t-muted">·</span> ${phoneText(l)}`;
+
 SCREENS.leads = async host => {
-  const card = el('div', 'card flush'); host.appendChild(card);
+  const alertCard = el('div', 'card flush'); host.appendChild(alertCard);
+  alertCard.innerHTML = `<div class="card-head"><div><div class="card-title">Needs attention</div>
+    <div class="card-sub">v_needs_attention for this screen, plus four checks this screen runs on the leads it just read</div></div></div>
+    <div class="pbody">${stateLoading(2)}</div>`;
+
+  const card = el('div', 'card flush'); card.style.marginTop = '16px'; host.appendChild(card);
   card.innerHTML = stateLoading(8);
 
+  /* The strip's two extra reads are started before the leads read is awaited, so
+     the whole screen costs one round of requests rather than one per alert. */
+  const since = new Date(Date.now() - CONTACT_WINDOW_DAYS * 86400000).toISOString();
+  const attnRead = db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
+    + `&screen=eq.leads&limit=${ATTN_LIMIT}`);
+  const commRead = db('communication_logs?select=lead_email,direction,created_at'
+    + `&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${COMM_LIMIT}`);
+  /* Marked handled now: both are awaited later, and an early rejection would
+     otherwise surface in the console instead of in the strip that reports it. */
+  attnRead.catch(() => {});
+  commRead.catch(() => {});
+
   let all = [];
+  let leadsErr = null;
   try {
     // `users(id,name)` and not `users:assigned_to_id(...)` — the colon form is an
     // alias, not an FK hint, and PostgREST would look for a table called
     // `assigned_to_id`. leads has exactly one FK to users, so this is unambiguous.
-    all = await db('leads?select=*,users(id,name)&order=created_at.desc&limit=1000');
-  } catch (e) { card.innerHTML = stateError('leads', e.message); return; }
+    all = await db(`leads?select=*,users(id,name)&order=created_at.desc&limit=${LEAD_LIMIT}`);
+  } catch (e) { leadsErr = e; }
+
+  const [attn, attnErr] = await settle(attnRead);
+  const [comms, commsErr] = await settle(commRead);
+
+  const byId = new Map(all.map(l => [String(l.id), l]));
+  const byEmail = new Map(all.filter(l => low(l.email)).map(l => [low(l.email), l]));
+
+  /* ── The view's own rows ─────────────────────────────────────────────────
+     `ref` is whatever the view chose to key the item on. Match it to a loaded
+     lead by id and then by email; if neither hits, the row is still shown — it
+     is a real item — but it is not made clickable, and it says why, because a
+     click that silently does nothing is worse than a row that admits it cannot
+     be opened from here. */
+  const viewItems = (attn || []).slice().sort((a, b) => ts(b.at) - ts(a.at));
+  const matchRef = ref => byId.get(str(ref)) || byEmail.get(low(ref)) || null;
+
+  /* Refs the view already reported, so a check below does not repeat an item
+     the operator has just read three lines higher up. Kept per kind: only
+     `lead_unassigned` asks the same question as one of our checks. */
+  const unassignedRefs = new Set(viewItems.filter(i => i.kind === 'lead_unassigned')
+    .flatMap(i => [str(i.ref), low(i.ref)]).filter(Boolean));
+  const listedUnassigned = l => unassignedRefs.has(String(l.id)) || (low(l.email) && unassignedRefs.has(low(l.email)));
+
+  /* ── The four checks ────────────────────────────────────────────────────── */
+  const nowMs = Date.now();
+  const windowStart = nowMs - CONTACT_WINDOW_DAYS * 86400000;
+  const staleCut = nowMs - STALE_DAYS * 86400000;
+  const leadsCapped = all.length >= LEAD_LIMIT;
+  const commsCapped = !!comms && comms.length >= COMM_LIMIT;
+
+  const hot = all.filter(l => up(l.status) === 'HOT');
+  const hotNoRepAll = hot.filter(l => !l.assigned_to_id && !str(l.users?.name));
+  const hotNoRep = hotNoRepAll.filter(l => !listedUnassigned(l));
+  const hotNoRepDup = hotNoRepAll.length - hotNoRep.length;
+
+  const inWindow = all.filter(l => ts(l.created_at) >= windowStart);
+  /* communication_logs is keyed on lead_email. A lead with no email cannot be
+     matched to it in either direction, so it is neither contacted nor
+     uncontacted as far as this screen can prove: it is excluded here and
+     counted in the notes, not silently folded into the alert. */
+  const windowWithEmail = inWindow.filter(l => low(l.email));
+  const loggedAny = new Set((comms || []).map(c => low(c.lead_email)).filter(Boolean));
+  const loggedOut = new Set((comms || []).filter(c => low(c.direction) === 'outbound')
+    .map(c => low(c.lead_email)).filter(Boolean));
+  /* Withheld when the log read failed or hit its ceiling: with a partial log,
+     "never contacted" would name leads that were in fact answered. */
+  const contactUsable = !!comms && !commsErr && !commsCapped;
+  const neverContacted = contactUsable
+    ? windowWithEmail.filter(l => !loggedAny.has(low(l.email))).sort((a, b) => ts(a.created_at) - ts(b.created_at))
+    : [];
+  const inboundOnly = contactUsable
+    ? windowWithEmail.filter(l => loggedAny.has(low(l.email)) && !loggedOut.has(low(l.email)))
+    : [];
+
+  const scored = all.filter(l => n0(l.ai_score) != null);
+  const hotButNew = scored.filter(l => Number(l.ai_score) >= HIGH_SCORE
+    && (up(l.status) === 'NEW' || !str(l.status)))
+    .sort((a, b) => Number(b.ai_score) - Number(a.ai_score));
+
+  /* Staleness, measured from something that exists.
+
+     `leads` has no updated_at column at all — probed live on 24 Aug — so this
+     table carries no row-modified timestamp, and an earlier draft of this check
+     read `l.updated_at` and got `undefined` on every single row. That does not
+     throw and it does not look wrong: it quietly collapses into "created more
+     than 14 days ago", i.e. an age, while the caption still talks about
+     staleness. Age is not staleness. A lead created three months ago and
+     phoned yesterday is not neglected.
+
+     So it is measured from the events themselves: the newest communication_logs
+     row for the lead's email, and `escalated_at` on the row. That is a better
+     signal than a row-modified stamp would have been — it is a last *contact*
+     time, not a last-edited time — at the cost of one honest complication. The
+     log read covers a 30-day window, so a lead with nothing logged inside it is
+     one of two different things that look identical: never contacted (provable
+     when the lead is younger than the window), or last contacted before the
+     window opened, in which case the date is unknown and only "at least 30 days
+     ago" is known. Those two are counted apart and named, because an unknown
+     last contact is not an old one.
+
+     Leads with no email cannot be matched to communication_logs in either
+     direction, so they are excluded here and counted in the notes rather than
+     declared quiet. */
+  const lastLogged = new Map();
+  for (const c of (comms || [])) {
+    const em = low(c.lead_email); if (!em) continue;
+    const t = ts(c.created_at);
+    if (t > (lastLogged.get(em) || 0)) lastLogged.set(em, t);
+  }
+  const staleTouch = l => Math.max(lastLogged.get(low(l.email)) || 0, ts(l.escalated_at));
+  const openLeads = all.filter(l => !TERMINAL.has(up(l.status)));
+  const openWithEmail = openLeads.filter(l => low(l.email));
+  const openNoEmail = openLeads.length - openWithEmail.length;
+  /* Counted while filtering, so the breakdown is the same pass as the list and
+     the two cannot disagree. */
+  const staleParts = { measured: 0, never: 0, beforeWindow: 0 };
+  const staleLeads = (!contactUsable ? [] : openWithEmail.filter(l => {
+    const touch = staleTouch(l);
+    if (touch) { if (touch >= staleCut) return false; staleParts.measured++; return true; }
+    /* Nothing logged and never escalated. A lead cannot have been contacted
+       before it existed, so one younger than the threshold is new, not
+       neglected — that is the trap the old created_at fallback fell into. */
+    const born = ts(l.created_at);
+    if (!born || born >= staleCut) return false;
+    if (born >= windowStart) staleParts.never++; else staleParts.beforeWindow++;
+    return true;
+  })).sort((a, b) => (staleTouch(a) || ts(a.created_at)) - (staleTouch(b) || ts(b.created_at)));
+  const oldestMeasured = staleLeads.map(staleTouch).filter(Boolean).sort((a, b) => a - b)[0] || null;
+
+  const checks = [
+    {
+      key: 'unassigned',
+      sev: 'HOT',
+      icon: 'person_alert',
+      title: `${num(hotNoRep.length)} HOT ${plural(hotNoRep.length, 'lead has', 'leads have')} no assigned rep`,
+      detail: `${num(hotNoRep.length)} of the ${num(hot.length)} HOT ${plural(hot.length, 'lead', 'leads')} read here `
+        + `${plural(hotNoRep.length, 'carries', 'carry')} neither an assigned_to_id nor a rep on the joined users row. `
+        + 'Nobody owns the follow-up.'
+        + (hotNoRepDup ? ` ${num(hotNoRepDup)} further unassigned HOT ${plural(hotNoRepDup, 'lead is', 'leads are')} already listed above by v_needs_attention and ${plural(hotNoRepDup, 'is', 'are')} not counted twice here.` : ''),
+      leads: hotNoRep,
+    },
+    {
+      key: 'nocontact',
+      sev: 'HOT',
+      icon: 'phone_missed',
+      title: `${num(neverContacted.length)} ${plural(neverContacted.length, 'lead has', 'leads have')} no logged contact attempt`,
+      detail: `Of the ${num(windowWithEmail.length)} ${plural(windowWithEmail.length, 'lead', 'leads')} created in the last `
+        + `${CONTACT_WINDOW_DAYS} days with an email address, ${num(neverContacted.length)} ${plural(neverContacted.length, 'has', 'have')} `
+        + 'no row in communication_logs at all — inbound or outbound. '
+        + `The oldest arrived ${ago(neverContacted[0]?.created_at)}. `
+        + `Leads created before that ${CONTACT_WINDOW_DAYS}-day window are not judged by this check, because the log read covers the window only.`,
+      leads: neverContacted,
+      skip: !contactUsable,
+    },
+    {
+      key: 'untriaged',
+      sev: 'WARM',
+      icon: 'rocket_launch',
+      title: `${num(hotButNew.length)} high-scoring ${plural(hotButNew.length, 'lead is', 'leads are')} still NEW`,
+      detail: `${num(hotButNew.length)} of the ${num(scored.length)} scored ${plural(scored.length, 'lead', 'leads')} `
+        + `${plural(hotButNew.length, 'was', 'were')} scored ${HIGH_SCORE} or higher by the router, but the status on the row is still NEW — `
+        + 'the score arrived and nobody triaged it.'
+        /* Said only when there are unscored leads: this check can say nothing
+           at all about them, and silence about that is what makes the count
+           look like it covered the whole table. */
+        + (all.length - scored.length
+          ? ` ${num(all.length - scored.length)} ${plural(all.length - scored.length, 'lead', 'leads')} on this screen ${plural(all.length - scored.length, 'has', 'have')} no score at all and cannot be checked this way.`
+          : ''),
+      leads: hotButNew,
+    },
+    {
+      key: 'stale',
+      sev: 'WARM',
+      icon: 'hourglass_empty',
+      title: `${num(staleLeads.length)} open ${plural(staleLeads.length, 'lead has', 'leads have')} had no contact in ${STALE_DAYS} days`,
+      detail: `${num(staleLeads.length)} of the ${num(openWithEmail.length)} open ${plural(openWithEmail.length, 'lead', 'leads')} with an email address `
+        + `${plural(staleLeads.length, 'has', 'have')} had no logged message and no escalation for ${STALE_DAYS} days `
+        + `(${[...TERMINAL].slice(0, 4).join(', ')}… count as finished and are not open). `
+        + 'The leads table has no updated_at column at all, so this is measured from real events — the newest communication_logs row for the '
+        + 'lead\'s email, and escalated_at on the row — and never from a row-modified timestamp, which does not exist here. '
+        + (staleParts.measured
+          ? `${num(staleParts.measured)} of them ${plural(staleParts.measured, 'has', 'have')} a real last-contact date; the ${plural(staleParts.measured, 'only one', 'oldest')} was last touched ${ago(oldestMeasured)}. `
+          : '')
+        + (staleParts.never
+          ? `${num(staleParts.never)} ${plural(staleParts.never, 'has', 'have')} never been contacted at all — ${plural(staleParts.never, 'it was', 'they were')} created inside the ${CONTACT_WINDOW_DAYS}-day log window, so nothing was missed by reading only that window. `
+          : '')
+        + (staleParts.beforeWindow
+          ? `${num(staleParts.beforeWindow)} ${plural(staleParts.beforeWindow, 'was', 'were')} created before that window with nothing logged inside it: ${plural(staleParts.beforeWindow, 'its', 'their')} last contact is unknown rather than old — all that can be said is that there has been none for at least ${CONTACT_WINDOW_DAYS} days.`
+          : ''),
+      leads: staleLeads,
+      skip: !contactUsable,
+    },
+  ].filter(c => !c.skip && c.leads.length);
+
+  const checkByKey = new Map(checks.map(c => [c.key, c]));
+  checks.forEach(c => { c.ids = new Set(c.leads.map(l => String(l.id))); });
+
+  /* Everything the strip cannot claim, said out loud. An operator reading a
+     count needs to know which reads it rests on; a count quietly computed from
+     a failed or truncated read is the failure mode this whole file is written
+     against. */
+  const stripNotes = [
+    leadsErr
+      ? `The leads read failed (${leadsErr.message}), so none of this screen's own checks could run. Only what v_needs_attention returned is shown above.`
+      : '',
+    attnErr
+      ? `v_needs_attention could not be read (${attnErr.message}), so anything the database would have listed for this screen is missing from this strip. The checks below still ran.`
+      : '',
+    leadsCapped
+      ? `The leads read stopped at ${num(LEAD_LIMIT)} rows, so every count below covers those ${num(LEAD_LIMIT)} leads and not necessarily the whole table.`
+      : '',
+    commsErr
+      ? `communication_logs could not be read (${commsErr.message}), so neither the "no logged contact attempt" check nor the staleness check ran. The leads table has no updated_at column, so those logs are the only record of a lead being touched — both checks are missing from this strip rather than shown as zero.`
+      : '',
+    commsCapped
+      ? `The contact-log read hit its ${num(COMM_LIMIT)}-row ceiling, so a message may be missing from it. The contact and staleness checks are withheld rather than accusing a rep who did in fact reply.`
+      : '',
+    contactUsable && openNoEmail
+      ? `${num(openNoEmail)} open ${plural(openNoEmail, 'lead', 'leads')} ${plural(openNoEmail, 'has', 'have')} no email address. communication_logs is keyed on lead_email, so ${plural(openNoEmail, 'it', 'they')} cannot be matched to it in either direction and ${plural(openNoEmail, 'sits', 'sit')} outside both the contact and the staleness check — ${plural(openNoEmail, 'it is', 'they are')} in no count above.`
+      : '',
+    contactUsable && inboundOnly.length
+      ? `${num(inboundOnly.length)} further ${plural(inboundOnly.length, 'lead', 'leads')} in that window ${plural(inboundOnly.length, 'has', 'have')} inbound messages logged but no outbound one — the customer wrote and nothing went back. They are not counted above, which counts only leads with no log line at all.`
+      : '',
+    checks.length > 1
+      ? 'A lead can satisfy more than one check, so these counts overlap and do not add up to a total.'
+      : '',
+  ].filter(Boolean);
+
+  const previewOf = ls => {
+    const shown = ls.slice(0, PREVIEW).map(l =>
+      `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-lead="${esc(l.id)}"
+        title="Open this lead">${nameAndPhone(l)}</button>`).join(' ');
+    const rest = ls.length - Math.min(ls.length, PREVIEW);
+    return `${shown}${rest ? ` <span class="t-muted">+${num(rest)} more</span>` : ''}`;
+  };
+
+  const viewRows = viewItems.map(it => {
+    const lead = matchRef(it.ref);
+    const icon = KIND_ICON[it.kind] || 'warning';
+    const sev = str(it.severity);
+    const openable = !!lead;
+    const idLine = lead
+      ? `<div class="cell-sub">${nameAndPhone(lead)}</div>`
+      : `<div class="cell-sub t-muted">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} loaded here, so it cannot be opened from this screen.</div>`;
+    return `<div class="list-item"${openable
+        ? ` role="button" tabindex="0" data-open-lead="${esc(lead.id)}" title="Open this lead"`
+        : ' style="cursor:default"'}>
+      <span class="material-symbols-outlined t-${esc(tone(sev) || 'muted')}" style="font-size:20px">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${sev ? pill(sev) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+          <span class="chip">${esc(str(it.kind) || 'item')}</span>
+        </div>
+        <div class="cell-sub">${esc(str(it.detail))}</div>
+        ${idLine}
+        <div class="cell-sub t-muted">${it.at
+          ? `Waiting since ${esc(when(it.at))} — ${esc(ago(it.at))}`
+          : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
+      </div>
+      ${openable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>' : ''}
+    </div>`;
+  }).join('');
+
+  const checkRows = checks.map(c => `
+    <div class="list-item" role="button" tabindex="0" data-focus="${esc(c.key)}"
+      title="Show these ${esc(String(c.leads.length))} leads in the table below">
+      <span class="material-symbols-outlined t-${esc(tone(c.sev))}" style="font-size:20px">${c.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${pill(c.sev)}${esc(c.title)}
+        </div>
+        <div class="cell-sub">${esc(c.detail)}</div>
+        <div class="cell-sub" style="margin-top:4px">${previewOf(c.leads)}</div>
+      </div>
+      <span class="material-symbols-outlined t-muted" style="font-size:18px">filter_alt</span>
+    </div>`).join('');
+
+  /* The honest empty case, which today is the only case. Not a box with nothing
+     in it: a sentence naming what was checked and what came back, so "no alerts"
+     reads as a result rather than as a panel that failed to load. */
+  const nothing = `<div class="list-item" style="cursor:default">
+    <span class="material-symbols-outlined t-ok" style="font-size:20px">task_alt</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:500">Nothing on this screen needs attention right now</div>
+      <div class="cell-sub">v_needs_attention returned no row for this screen${
+        leadsErr ? '' : `, and across the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here no HOT lead is unassigned and `
+          + `no lead scored ${HIGH_SCORE} or higher is still sitting at NEW`
+          + (contactUsable
+            ? `, every lead created in the last ${CONTACT_WINDOW_DAYS} days has a logged message, and no open lead with an email address has gone ${STALE_DAYS} days without one`
+            : ' — the contact and staleness checks could not run this time, see below')}.</div>
+    </div>
+  </div>`;
+
+  const notesRow = stripNotes.length ? `<div class="list-item" style="cursor:default">
+    <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+    <div class="cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
+  </div>` : '';
+
+  alertCard.querySelector('.pbody').innerHTML =
+    (viewItems.length || checks.length ? viewRows + checkRows : nothing) + notesRow;
+
+  if (leadsErr) {
+    /* The strip above still says what the view reported and why the checks are
+       missing; the table is the thing that is actually broken. */
+    card.innerHTML = stateError('leads', leadsErr.message);
+    return;
+  }
 
   /* Two secondary reads. Neither is allowed to take the screen down, but a
      failure is not allowed to look like an answer either: with no purchase
@@ -135,10 +542,12 @@ SCREENS.leads = async host => {
      labelled as this session's doing — it is our own receipt, not a DB row. */
   const sent = new Map();
 
-  const f = { status: 'ALL', q: '', source: 'ALL', rep: 'ALL', sort: 'new' };
+  const f = { status: 'ALL', q: '', source: 'ALL', rep: 'ALL', sort: 'new', alert: null };
 
   function filtered() {
+    const focus = f.alert ? checkByKey.get(f.alert) : null;
     return all.filter(l => {
+      if (focus && !focus.ids.has(String(l.id))) return false;
       if (f.status !== 'ALL' && up(l.status) !== f.status) return false;
       if (f.source !== 'ALL' && l.source !== f.source) return false;
       if (f.rep === '__none' && l.assigned_to_id) return false;
@@ -158,11 +567,11 @@ SCREENS.leads = async host => {
     if (f.sort === 'new') return rows.slice().sort((a, b) => ts(b.created_at) - ts(a.created_at));
     if (f.sort === 'old') return rows.slice().sort((a, b) => ts(a.created_at) - ts(b.created_at));
     const dir = f.sort === 'low' ? 1 : -1;
-    const scored = rows.filter(r => n0(r.ai_score) != null)
+    const scoredRows = rows.filter(r => n0(r.ai_score) != null)
       .sort((a, b) => dir * (Number(a.ai_score) - Number(b.ai_score)));
     const unscored = rows.filter(r => n0(r.ai_score) == null)
       .sort((a, b) => ts(b.created_at) - ts(a.created_at));
-    return scored.concat(unscored);
+    return scoredRows.concat(unscored);
   }
 
   const count = s => all.filter(l => up(l.status) === s).length;
@@ -181,6 +590,7 @@ SCREENS.leads = async host => {
         .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
       <div class="t-muted num" id="resultCount"></div>
     </div>
+    <div id="focusNote" style="padding:0 20px"></div>
     ${notes.length ? `<div style="padding:14px 20px 0">${notes.map(n => `<div class="banner warm">
       <span class="material-symbols-outlined">warning</span><div>${esc(n)}</div></div>`).join('')}</div>` : ''}
     <div id="leadTable"></div>`;
@@ -208,8 +618,13 @@ SCREENS.leads = async host => {
 
   const cols = [
     { label:'Status', render: r => pill(r.status || 'NEW') },
-    { label:'Name', strong: true, render: r => `${esc(r.name)}${vipSet?.has(low(r.email)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}` },
-    { label:'Contact', render: r => `<div>${esc(r.email || '—')}</div><div class="cell-sub">${esc(r.phone || '—')}</div>` },
+    /* Name and phone in one cell, because every alert on this screen resolves to
+       somebody picking up a phone, and a number two columns away is a number
+       nobody reads out. */
+    { label:'Lead', strong: true, render: r =>
+        `${leadName(r)}${vipSet?.has(low(r.email)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}
+         <div class="cell-sub">${phoneText(r)}</div>` },
+    { label:'Email', render: r => esc(r.email) || '<span class="t-muted">—</span>' },
     { label:'Vehicle interest', render: r => `<span class="t-2">${esc(r.vehicle_interest || '—')}</span>` },
     /* budget_aed is NULL for router-created leads because the Master Router does
        not capture it. Rendering 0 would understate the pipeline silently. */
@@ -236,9 +651,9 @@ SCREENS.leads = async host => {
     const m = openModal(a.title, `
       <p class="t-2" style="margin:0 0 16px">${esc(a.blurb)}</p>
       <dl class="kv">
-        <dt>Lead</dt><dd>${esc(lead.name || '—')}</dd>
-        <dt>Email</dt><dd>${esc(lead.email || '—')}</dd>
-        <dt>Phone</dt><dd>${esc(lead.phone || '—')}</dd>
+        <dt>Lead</dt><dd>${leadName(lead)}</dd>
+        <dt>Phone</dt><dd>${phoneText(lead)}</dd>
+        <dt>Email</dt><dd>${esc(lead.email) || '<span class="t-muted">—</span>'}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
         <dt>Status</dt><dd>${pill(lead.status || 'NEW')}</dd>
         <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
@@ -271,8 +686,21 @@ SCREENS.leads = async host => {
   function draw() {
     card.querySelectorAll('#segStatus button').forEach(b =>
       b.classList.toggle('on', b.dataset.v === f.status));
+    const focus = f.alert ? checkByKey.get(f.alert) : null;
     const rows = sorted(filtered());
     $('resultCount').textContent = `${rows.length} of ${all.length} leads`;
+
+    const note = $('focusNote');
+    note.innerHTML = focus
+      ? `<div class="banner info" style="margin-top:14px"><span class="material-symbols-outlined">filter_alt</span>
+         <div style="flex:1">Showing only the ${num(focus.leads.length)} ${plural(focus.leads.length, 'lead', 'leads')} behind
+         “${esc(focus.title)}”. The status, source, rep and search filters were cleared so that set is not hidden by them.</div>
+         <button class="btn sm" id="focusClear">Show all leads</button></div>`
+      : '';
+    note.querySelector('#focusClear')?.addEventListener('click', () => { f.alert = null; draw(); });
+    alertCard.querySelectorAll('[data-focus]').forEach(n =>
+      n.classList.toggle('on', n.dataset.focus === f.alert));
+
     const host2 = $('leadTable');
     host2.innerHTML = all.length
       ? table(cols, rows, {
@@ -289,6 +717,45 @@ SCREENS.leads = async host => {
       if (lead && a) confirmAction(a, lead);
     }));
   }
+
+  /* An alert that only describes a problem is a poster. Clicking a check filters
+     the table to exactly its leads — and clears the other filters first, because
+     a focus that lands inside a HOT-only or searched view would show a shorter
+     list than the alert just promised, which reads as the alert lying. */
+  function focusCheck(key) {
+    f.alert = key; f.status = 'ALL'; f.source = 'ALL'; f.rep = 'ALL'; f.q = '';
+    $('q').value = ''; $('fSource').value = 'ALL'; $('fRep').value = 'ALL';
+    draw();
+    $('leadTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function openLead(id) {
+    const lead = byId.get(String(id));
+    if (lead) leadDrawer(lead);
+  }
+
+  alertCard.querySelectorAll('[data-focus]').forEach(n => {
+    const run = () => focusCheck(n.dataset.focus);
+    n.addEventListener('click', run);
+    /* Keyboard-operable, because this row is the only route from the alert to
+       the leads it is about. */
+    n.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+    });
+  });
+  alertCard.querySelectorAll('[data-open-lead]').forEach(n => {
+    const run = () => openLead(n.dataset.openLead);
+    n.addEventListener('click', run);
+    n.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
+    });
+  });
+  alertCard.querySelectorAll('[data-lead]').forEach(b => b.addEventListener('click', ev => {
+    /* The chip sits inside a row that filters the table; opening one lead and
+       filtering to all of them at once would be two answers to one click. */
+    ev.stopPropagation();
+    openLead(b.dataset.lead);
+  }));
 
   card.querySelectorAll('#segStatus button').forEach(b => b.addEventListener('click', () => {
     f.status = b.dataset.v; draw();
