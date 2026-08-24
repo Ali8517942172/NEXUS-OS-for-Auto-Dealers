@@ -43,7 +43,34 @@
    The vector-coverage banners that used to sit under the KPI strip are gone:
    they are the same reconciliation, and two copies of one fact on one screen is
    how two disagreeing numbers for it end up on one screen. They live in the
-   strip now, with the rows they counted one click away. */
+   strip now, with the rows they counted one click away.
+
+   24 Aug 2026, after the clean-out — one purchase, and it is a real one.
+
+   purchase_history holds a single row, deals_embeddings holds its embedding,
+   and the two agree. That makes almost every aggregate on this screen a
+   restatement of one number, so the ones that pretended otherwise are gone: the
+   average-deal tile is withdrawn at n=1 rather than reprinting the sale price
+   under a second name, the month chart says a single bar is a value and not a
+   trend, and the repeat-customer panel says one purchase cannot be repeat
+   business instead of reporting that every customer is unique.
+
+   Two schema facts, both re-probed live today, now decide what this screen may
+   claim about the car:
+
+     · purchase_history has NO column linking a deal to an inventory unit. Its
+       columns are id, deal_id, customer_name, email, phone, vehicle, amount_aed,
+       purchase_date, created_at. `vehicle` is free text typed into the deal
+       form, so which unit was sold is unanswerable from this side.
+     · inventory records NO sale date, and no reciprocal deal reference, so it is
+       unanswerable from that side too.
+
+   Together those two mean the sale and the stock cannot be reconciled row by
+   row at all — which is why the "Mark unit sold" control is gone from the deal
+   drawer when there is no link column. A disabled button implies a link that a
+   fix could re-enable; there is no link, and the sentence in its place says so.
+   What CAN still be said is a count against a count, and it is worth saying:
+   every unit in inventory is still marked Available while a sale is on record. */
 import { db } from '../lib/data.js';
 import { dealForm } from '../lib/deal-form.js';
 import { $, el } from '../lib/dom.js';
@@ -65,6 +92,13 @@ const INV_LIMIT = 2000;
 const ATTN_LIMIT = 100;
 const TREND_MONTHS = 12;
 const SHOWN_REFS = 4;
+
+/* At or below this many rows, a figure derived from them is described rather
+   than presented: the count is the whole table, not a sample of it. At exactly
+   one row the derived figures that are only meaningful across a population — an
+   average, a monthly trend, repeat business — are withdrawn outright and say
+   why, because a mean of one number is that number wearing a second label. */
+const THIN = 5;
 
 /* No endpoint re-sends one existing deal to the embedder. deals_embeddings is
    service-role only and the Closed-Won webhook takes a whole deal record, not
@@ -437,10 +471,43 @@ SCREENS.deals = async host => {
     } else if (!col.unit) {
       add('no_unit_column', 'WARNING', 'link_off',
         'No deal on this screen can be tied to an inventory unit',
-        `purchase_history carries none of the columns that would link a deal to a car (looked for ${CANDIDATES.unit.join(', ')}). `
+        `purchase_history carries none of the columns that would link a deal to a car (looked for ${CANDIDATES.unit.join(', ')}); the columns it does carry are ${col._keys.join(', ')}. `
         + 'The vehicle is stored as free text typed into the deal form, which is not a link — matching on it would invent one. '
-        + 'So the check for a unit still marked Available after its deal closed could not run at all, and its count below is unavailable rather than zero.',
+        + 'inventory has no reciprocal reference either, and no sale date, so the question is unanswerable from both sides: which car left the lot for this money is not recorded anywhere in this database. '
+        + 'So the check for a unit still marked Available after its deal closed could not run at all, and its count below is unavailable rather than zero. Closing that gap needs a column, not a query.',
         [], { noFocus: 'This is a fact about the table, not about one deal.' });
+
+      /* No link means no row-by-row reconciliation. It does not mean nothing can
+         be said: a count against a count is still evidence, and this one is the
+         reason the missing column matters rather than a note about schema
+         tidiness. Only raised on the no-link path — where the link exists, the
+         per-row `unit_still_available` check below reports the same condition
+         precisely, and one condition must not be reported twice. */
+      if (!inv) {
+        notes.push(`Inventory could not be read (${invErr}), so the recorded ${plural(deals.length, 'sale', 'sales')} could not even be counted against what is still in stock. That comparison is unknown here, not clean.`);
+      } else if (!inv.length) {
+        notes.push('The inventory table came back empty, so there is no stock for the recorded sales to be missing from.');
+      } else {
+        const statusCount = new Map();
+        inv.forEach(u => {
+          const s = str(u.status) || 'no status';
+          statusCount.set(s, (statusCount.get(s) || 0) + 1);
+        });
+        const breakdown = [...statusCount.entries()].sort((a, b) => b[1] - a[1])
+          .map(([s, n]) => `${num(n)} ${s}`).join(', ');
+        const soldUnits = inv.filter(u => lower(u.status) === 'sold');
+
+        if (!soldUnits.length) {
+          add('stock_never_marked_sold', 'CRITICAL', 'inventory',
+            `${num(deals.length)} ${plural(deals.length, 'sale is', 'sales are')} recorded and not one unit in inventory is marked Sold`,
+            `purchase_history holds ${num(deals.length)} closed ${plural(deals.length, 'deal', 'deals')}. The ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read from inventory carry ${breakdown}${invCapped ? `, and that read was capped at ${num(INV_LIMIT)} rows` : ''} — none of them Sold. `
+            + `Either the car that was sold was never marked, or it was never a row in this table; with no unit column on the deal and no deal reference on the unit, nothing in this database can tell those two apart, and which unit it was cannot be recovered. `
+            + 'What is certain either way is that the sale was never reflected in stock: every unit is still counted in stock value, still quotable on the Finance Desk, still accruing holding cost and ageing alerts. The car that was sold, whichever one it is, is still on the forecourt as far as every other screen is concerned, and can be sold a second time.',
+            [], { noFocus: 'There is no column tying a deal to a unit, so there is no row here to open — this is a count against a count.', fix: NO_UNIT_FIX });
+        } else if (soldUnits.length < deals.length) {
+          notes.push(`inventory marks ${num(soldUnits.length)} ${plural(soldUnits.length, 'unit', 'units')} Sold against ${num(deals.length)} recorded ${plural(deals.length, 'sale', 'sales')} (${breakdown}). With no column tying a deal to a unit, the two cannot be matched row by row — this is two totals that do not agree, and which sale is unaccounted for is not answerable here.`);
+        }
+      }
     } else if (!inv) {
       notes.push(`Inventory could not be read (${invErr}), so both unit checks — deal with no linked unit, and a unit still marked Available after its deal closed — could not run. Their counts are unknown, not zero.`);
     } else if (!inv.length) {
@@ -533,7 +600,11 @@ SCREENS.deals = async host => {
       kpi('Deals closed', num(deals.length),
         deals.length
           ? (stamps.length
-              ? `<span class="t-muted">Oldest ${esc(ago(stamps[0]))} · newest ${esc(ago(stamps[stamps.length - 1]))}</span>`
+              /* One deal has no oldest and newest. Printing the same relative
+                 time twice under two labels reads as a range. */
+              ? (stamps.length === 1
+                  ? `<span class="t-muted">Closed ${esc(ago(stamps[0]))} · the only dated row in the table</span>`
+                  : `<span class="t-muted">Oldest ${esc(ago(stamps[0]))} · newest ${esc(ago(stamps[stamps.length - 1]))}</span>`)
               : '<span class="t-muted">No readable close date on any row</span>')
             + (dealsCapped ? `<br><span class="t-warm">Capped at the ${num(DEAL_LIMIT)} most recent — older deals are not counted here</span>` : '')
           : 'Nothing recorded in purchase_history yet'),
@@ -546,15 +617,29 @@ SCREENS.deals = async host => {
         !deals.length
           ? '<span class="t-muted">Nothing recorded, so there is no revenue to total and no row to read a column from</span>'
           : col.amount
-            ? `<span class="t-muted">From ${num(amounts.length)} of ${num(deals.length)} deals · column <span class="mono">${esc(col.amount)}</span></span>`
+            ? `<span class="t-muted">From ${num(amounts.length)} of ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} · column <span class="mono">${esc(col.amount)}</span></span>`
+              + (deals.length <= THIN
+                  ? `<br><span class="t-warm">That is the whole of purchase_history — ${num(deals.length)} ${plural(deals.length, 'row', 'rows')}, not a period's takings.</span>`
+                  : '')
             : `<span class="t-warm">purchase_history has no amount column (looked for ${CANDIDATES.amount.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')})</span>`),
 
-      kpi('Average deal', amounts.length ? aed(revenue / amounts.length) : '—',
-        amounts.length
-          ? `<span class="t-muted">Mean over the ${num(amounts.length)} deal${amounts.length === 1 ? '' : 's'} that carry an amount</span>`
-          : `<span class="t-muted">${deals.length
-              ? 'No deal carries a readable amount, so there is no average to take'
-              : 'No deal has been recorded, so there is no average to take'}</span>`),
+      /* Withdrawn at one priced deal rather than printed. The mean of a single
+         number is that number, so this tile would repeat the Revenue tile
+         beside it under a word — "average" — that says a population was
+         measured. Two tiles showing AED 275,000 is how one sale becomes a
+         reader's idea of what a typical sale looks like. */
+      kpi('Average deal', amounts.length > 1 ? aed(revenue / amounts.length) : '—',
+        amounts.length > 1
+          ? `<span class="t-muted">Mean over the ${num(amounts.length)} deals that carry an amount</span>`
+            + (amounts.length <= THIN
+                ? `<br><span class="t-warm">A mean of ${num(amounts.length)} deals is a description of those ${num(amounts.length)}, not a typical sale.</span>`
+                : '')
+          : amounts.length === 1
+            ? `<span class="t-warm">Withdrawn: one priced deal is not an average</span>`
+              + `<br><span class="t-muted">The single recorded sale is ${esc(aed(revenue))}, which is the Revenue figure beside this one. There is nothing to average it against, so no mean is shown.</span>`
+            : `<span class="t-muted">${deals.length
+                ? 'No deal carries a readable amount, so there is no average to take'
+                : 'No deal has been recorded, so there is no average to take'}</span>`),
 
       kpi('Gross margin', withMargin.length ? aed(marginTotal) : '—',
         withMargin.length
@@ -562,8 +647,15 @@ SCREENS.deals = async host => {
               marginBase > 0 ? ` · ${esc(pct(marginTotal / marginBase * 100))} of their revenue` : ''}</span>`
           : !deals.length
             ? '<span class="t-muted">Nothing recorded, so there is no margin to total</span>'
-            : `<span class="t-muted">No margin recorded. purchase_history carries neither a margin column (${
-                CANDIDATES.margin.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) nor an amount and a cost column to subtract.</span>`),
+            /* Not "not recorded" — unsourceable. purchase_history stores what
+               the car sold for and nothing about what it cost, and there is no
+               unit reference to fetch a cost from inventory with, so no margin
+               on this screen can be derived from anything. inventory does carry
+               cost_aed, and reaching for it would mean guessing which unit this
+               deal was, which is the one thing this screen refuses to do. */
+            : `<span class="t-muted">Not recorded and not derivable. purchase_history carries no margin column (${
+                CANDIDATES.margin.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) and no cost column (${
+                CANDIDATES.cost.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) to subtract from the sale price. inventory holds a <span class="mono">cost_aed</span>, but no column ties a deal to a unit, so taking one from there would mean guessing which car this was. No margin is estimated here.</span>`),
 
       /* The reconciliation, stated in both directions and in both outcomes.
          "1 of 1 matched, no unmatched vectors" is the guard reporting that it
@@ -659,7 +751,16 @@ SCREENS.deals = async host => {
         <div class="cell-sub" style="margin-top:10px;white-space:normal">
           ${span.length > shown.length ? `Showing the last ${num(shown.length)} of ${num(span.length)} months on record. ` : ''}
           ${undated ? `${num(undated)} deal${undated === 1 ? ' has' : 's have'} no readable close date and ${undated === 1 ? 'is' : 'are'} not on this chart. ` : ''}
-          ${useRevenue && deals.some(d => amountOf(d) == null) ? 'Deals with no amount are counted but contribute nothing to the bars.' : ''}
+          ${useRevenue && deals.some(d => amountOf(d) == null) ? 'Deals with no amount are counted but contribute nothing to the bars. ' : ''}
+          ${/* A bar scaled against the largest month is drawn full-width when
+                there is only one month, which is the shape of a peak. Said
+                plainly: this is one value, and a chart of one value is a
+                reading of it rather than a direction of travel. */
+            deals.length <= THIN || months.length === 1
+              ? `<span class="t-warm">${esc(months.length === 1
+                  ? `This is ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} in a single month. Each bar is scaled against the largest month on the chart, so with one month that bar is full width by construction — it is a value, not a trend, and there is no earlier month to compare it with.`
+                  : `${num(deals.length)} deals across ${num(months.length)} months is too little to read a direction from. These bars are the deals themselves, not a trend.`)}</span>`
+              : ''}
         </div>`;
     }
   }
@@ -717,10 +818,22 @@ SCREENS.deals = async host => {
             ${repeat.length > 25 ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(repeat.length - 25)} more returning customers not shown</div></div>` : ''}
           </div>
           ${noKey ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(noKey)} deal${noKey === 1 ? ' has' : 's have'} neither an email nor a customer name and cannot be grouped.</div></div>` : ''}`
-        : stateEmpty(deals.length ? 'Every recorded deal is a different customer' : 'No deals recorded yet',
-            deals.length
-              ? 'No email or name appears twice in purchase_history, so there is no repeat business to report.'
-              : 'Repeat business appears here once the same customer buys twice.', 'group')}`;
+        /* "Every recorded deal is a different customer" is a sentence about a
+           book of business. Over one row it is arithmetically true and
+           editorially false — it invites the reader to picture a spread of
+           one-time buyers where there is a single purchase. */
+        : stateEmpty(
+            !deals.length ? 'No deals recorded yet'
+              : deals.length === 1 ? 'One purchase on record, so there is no repeat business to report'
+                : 'Every recorded deal is a different customer',
+            !deals.length
+              ? 'Repeat business appears here once the same customer buys twice.'
+              : deals.length === 1
+                ? `purchase_history holds a single row${
+                    groups.size === 1 ? ` — ${[...groups.values()][0].name || [...groups.values()][0].email || 'one customer'}` : ''
+                  }. Repeat business needs a second purchase by the same person, so this panel stays empty until there is one; it is not reporting that customers do not come back.`
+                : `No email or name appears twice across the ${num(deals.length)} rows in purchase_history, so there is no repeat business to report.`,
+            'group')}`;
   }
 
   /* ── The deal list ─────────────────────────────────────────────────────── */
@@ -737,7 +850,10 @@ SCREENS.deals = async host => {
     listCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Closed-won deals</div>
         <div class="card-sub">Straight from <span class="mono">purchase_history</span>. Recording a deal here posts to the Closed-Won workflow, which is what writes the pgvector memory — nothing on this screen writes the table directly. Click a row for the full record.${
-          dealsCapped ? ` <span class="t-warm">Showing the ${num(DEAL_LIMIT)} most recent rows — this read is capped.</span>` : ''}</div>
+          dealsCapped ? ` <span class="t-warm">Showing the ${num(DEAL_LIMIT)} most recent rows — this read is capped.</span>` : ''}${
+          /* Said once, under the column it is about, rather than as a repeated
+             sub-line on every row: it is one fact about the table. */
+          col.unit ? '' : ' <span class="t-muted">The vehicle column is free text captured on the deal form, not a reference to a unit — purchase_history has no inventory column, so no row here can say which car was sold.</span>'}</div>
       </div><div style="flex:1"></div>${actions}</div>
       <div class="toolbar">
         <div class="grow"><input type="search" id="dq" aria-label="Search closed-won deals"
@@ -1114,7 +1230,7 @@ SCREENS.deals = async host => {
        there is no sale-date column, so a resolved unit still leaves the sale
        cycle unmeasurable. */
     const unitBlock = !col.unit
-      ? `<span class="t-muted">purchase_history has no column linking a deal to an inventory unit, so this sale is not tied to a car anywhere in the database.</span>`
+      ? `<span class="t-warm">Not answerable.</span> <span class="t-muted">purchase_history has no column linking a deal to an inventory unit, and the vehicle above is free text typed into the deal form rather than a reference. inventory carries no deal reference and no sale date either, so which car left the lot for this money is not recorded on either side. It cannot be looked up, only re-entered — which is why there is no control below offering to fix it.</span>`
       : !ref
         ? `<span class="t-warm">Not linked.</span> <span class="t-muted">The ${esc(col.unit)} column is empty on this row.</span>`
         : !inv
@@ -1180,7 +1296,12 @@ SCREENS.deals = async host => {
       <div class="drawer-foot">
         <button class="btn" id="ddDone">Close</button>
         <button class="btn" disabled title="${esc(NO_REEMBED)}">Re-embed this deal</button>
-        <button class="btn" disabled title="${esc(NO_UNIT_FIX)}">Mark unit sold</button>
+        ${/* Only offered where there is a unit to mark. A disabled button says
+              "this is blocked", which invites someone to go and unblock it; with
+              no link column there is no unit to act on and nothing to unblock,
+              so the control is absent and the Inventory unit row above carries
+              the sentence instead. */
+          col.unit ? `<button class="btn" disabled title="${esc(NO_UNIT_FIX)}">Mark unit sold</button>` : ''}
       </div>`);
 
     $('ddClose')?.addEventListener('click', closeDrawer);

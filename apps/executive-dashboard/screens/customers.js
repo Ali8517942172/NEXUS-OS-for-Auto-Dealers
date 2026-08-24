@@ -31,18 +31,35 @@
    foot of the screen under a heading that says it is not a customer, with the
    reason. Nothing is hidden and nothing is promoted.
 
-   THE SECOND CORRECTION: every profile the nightly job has written reports 0
-   emails and 0 Slack messages. That is not what the customers did — it is what
-   the job collected. Customer 360's Gmail half authenticates with an OAuth2
-   credential that had been dead: the Google consent screen was left in Testing,
-   and Google expires a Testing app's refresh token after seven days, so the
-   token the job held stopped working and every run since has counted nothing.
-   The app has now been published and the credential re-authorised, so the cause
-   is fixed — but the figures here are still whatever the last run wrote. Until a
-   run completes after the fix, a 0 means "not counted", never "this customer
-   never wrote to us". This screen decides between those two per profile, from
-   that profile's own last_synced_at, and says which one it is every single time
-   it prints one of these numbers.
+   THE SECOND CORRECTION, AND WHERE IT STANDS TONIGHT: every profile the nightly
+   job has written reports 0 emails and 0 Slack messages. For days that was not
+   what the customers did — it was what the job collected. Customer 360's Gmail
+   half authenticates with an OAuth2 credential that had been dead: the Google
+   consent screen was left in Testing, and Google expires a Testing app's refresh
+   token after seven days, so the token the job held stopped working and every
+   run counted nothing.
+
+   That is now repaired. The app has been published to production, the credential
+   re-authorised, and a Customer 360 run completed afterwards — later than
+   GMAIL_FIXED_AT below — so the single profile in the database carries a
+   last_synced_at from a run that could reach the mailbox. Its 0 is therefore a
+   counted zero: the mailbox holds no mail for that address. That is a fact about
+   the customer, not a gap in the pipeline, and this screen now says so.
+
+   The distinction is kept in code rather than hard-coded to today's answer,
+   because the next credential expiry looks identical from the database side: a
+   0 written by a run older than the fix means "not counted", a 0 written by a
+   run after it means "counted, and it is none". This screen decides between
+   those two per profile from that profile's own last_synced_at, and says which
+   one it is every single time it prints one of these numbers.
+
+   THE DUPLICATE THAT WAS: a second customer_360_profiles row (customer_id '25',
+   a leftover from the Bitrix era) pointed at the same address as the live one
+   and has been deleted. One person is no longer two profiles. The collapse
+   handling below stays exactly where it is — two rows for one email is what an
+   import does, and it will happen again — but nothing on this screen is
+   currently collapsing anything, and the note that reports a collapse only
+   renders when there is one.
 
    THE THIRD CORRECTION: the customer list is read from Supabase and never from
    Bitrix24. Bitrix's crm.* read methods answer 403 on the dealership's current
@@ -111,17 +128,46 @@ const AGG_ZERO_CAUSE =
   'a run older than that fix means “not counted”; it is not evidence that the customer never wrote to us. The ' +
   'message counts elsewhere on this screen come from communication_logs and were never affected.';
 
-/* When the Gmail credential was repaired. A profile written before this was
-   written by a run that could not read Gmail at all, so its 0 counted nothing; a
-   profile written after it was written by a run that could, so its 0 is a real
-   answer. Every touch count on this screen is decided by that comparison, which
-   is the whole difference between an outage and a fact. */
+/* The same paragraph for the case the fix finally produced: a run that happened
+   after the credential was repaired, reporting nothing. The outage still has to
+   be told — a reader who remembers the warning needs to know why it is gone —
+   but the conclusion is the opposite one, and burying that in the outage wording
+   would leave a counted answer looking like a fault. */
+const AGG_ZERO_COUNTED =
+  'This is an answer, not a gap. Customer 360 aggregates Gmail through an OAuth2 credential that had stopped ' +
+  'working: its consent screen was left in Testing, and Google expires a Testing app’s refresh token after ' +
+  'seven days, so for days the job authenticated with a dead token and counted nothing. The app has since been ' +
+  'published and the credential re-authorised, and the run behind the figures here finished after that repair — ' +
+  'so the job could reach the mailbox and found nothing in it for this address. A 0 here means no mail, not no ' +
+  'count. The message counts elsewhere on this screen come from communication_logs and were never affected.';
+
+/* When the Gmail credential was repaired, in UTC. A profile written before this
+   was written by a run that could not read Gmail at all, so its 0 counted
+   nothing; a profile written after it was written by a run that could, so its 0
+   is a real answer. Every touch count on this screen is decided by that
+   comparison, which is the whole difference between an outage and a fact.
+
+   As of 24 Aug 2026 this branch has a live case for the first time: Customer 360
+   was re-run by hand at 19:46 UTC, after this timestamp, and the profile it
+   wrote still reports 0 emails. That 0 now resolves to “counted, and it is
+   none”, which is what the mailbox actually holds for that address.
+
+   The value is written here, not read from the database — nothing in Supabase
+   records when a credential was re-authorised — so it is stated as this screen's
+   own assumption wherever it decides a number, and it is deliberately set
+   earlier in the evening than the repair rather than later: erring early can
+   only mislabel a run that straddles the fix, while erring late would call a
+   genuinely counted zero an outage and hide a real answer behind a warning. */
 const GMAIL_FIXED_AT = '2026-08-24T18:00:00Z';
 const GMAIL_FIXED_MS = Date.parse(GMAIL_FIXED_AT);
 const syncedAfterFix = ts => {
   const t = Date.parse(str(ts));
   return Number.isNaN(t) ? false : t >= GMAIL_FIXED_MS;
 };
+
+/* Which of the two paragraphs a given figure has earned, decided by the run that
+   wrote it rather than by what is true tonight. */
+const aggNote = syncedAt => (syncedAfterFix(syncedAt) ? AGG_ZERO_COUNTED : AGG_ZERO_CAUSE);
 
 /* Where this screen's customers come from, and — just as important — where they
    do not. Both halves of the Bitrix position are stated, because "Bitrix is
@@ -147,7 +193,7 @@ function touchCell(v, syncedAt) {
   if (x > 0) return `<span class="num">${num(x)}</span>`;
   const when = ` title="Compared against ${esc(GMAIL_FIXED_AT)}, the recorded time the Gmail credential was re-authorised. That timestamp is written into this screen, not read from the database."`;
   if (syncedAfterFix(syncedAt)) {
-    return `<span class="num">0</span> <span class="t-muted"${when}>· collected by a run that finished after the Gmail credential was fixed, so this is a real zero</span>`;
+    return `<span class="num">0</span> <span class="t-muted"${when}>· counted by a run that finished after the Gmail credential was fixed — a real zero, not a missing figure</span>`;
   }
   return str(syncedAt)
     ? `<span class="num">0</span> <span class="t-warm"${when}>· not counted — the run that wrote this finished before the Gmail credential was fixed</span>`
@@ -399,7 +445,9 @@ SCREENS.customers = async host => {
         `<span class="t-muted">${esc(spineSource)} · a lead or a purchase on file</span>
          <div>${noPhone
             ? `<span class="t-warm">${num(noPhone)} with no phone number on any source</span>`
-            : `<span class="t-ok">All ${num(withPhone)} reachable by phone</span>`}</div>`),
+            : customers.length === 1
+              ? '<span class="t-ok">The one customer on file has a phone number</span>'
+              : `<span class="t-ok">All ${num(withPhone)} reachable by phone</span>`}</div>`),
       kpi('Recorded purchase value', aed(purchaseValue),
         buyErr
           ? '<span class="t-warm">purchase_history could not be read</span>'
@@ -411,18 +459,25 @@ SCREENS.customers = async host => {
       kpi('Contacts who are not customers', waErr && !otherList.length ? '—' : num(otherList.length),
         waErr
           ? '<span class="t-warm">whatsapp_contacts could not be read, so this is incomplete</span>'
-          : `<span class="t-muted">${num(contacts.length)} whatsapp_contacts row${contacts.length === 1 ? '' : 's'} read · ${num(linkedContacts)} linked to a customer</span>`),
+          : `<span class="t-muted">${num(contacts.length)} whatsapp_contacts row${contacts.length === 1 ? '' : 's'} read · ${num(linkedContacts)} linked to a customer</span>`
+            + (otherList.length
+                ? ''
+                /* Worth saying out loud rather than leaving as a bare 0: the 136
+                   messages from the owner's personal phone book that used to
+                   fill this list were deleted, and this is the count that proves
+                   none of them is being carried as a customer. */
+                : '<div><span class="t-ok">Nobody in the messaging or aggregation tables is being presented as a customer</span></div>')),
       kpi('Unified profiles', profErr ? '—' : num(profiles.length),
         profErr
           ? '<span class="t-warm">customer_360_profiles could not be read</span>'
-          : `<span class="t-muted">${num(withProfile)} of ${num(customers.length)} customers have one${orphanProfiles ? ` · ${num(orphanProfiles)} belong${orphanProfiles === 1 ? 's' : ''} to somebody who is not a customer` : ''}</span>`),
+          : `<span class="t-muted">${num(withProfile)} of ${num(customers.length)} customer${customers.length === 1 ? '' : 's'} ${withProfile === 1 ? 'has' : 'have'} one${orphanProfiles ? ` · ${num(orphanProfiles)} belong${orphanProfiles === 1 ? 's' : ''} to somebody who is not a customer` : ''}</span>`),
       kpi('Last aggregation run', profErr ? '—' : ago(newest),
         profErr
           ? '<span class="t-warm">Unknown — the profile table could not be read</span>'
           : newest
             ? `<span class="t-muted">Newest last_synced_at${oldest && oldest !== newest ? ` · oldest ${esc(ago(oldest))}` : ''}</span>
                <div>${syncedAfterFix(newest)
-                  ? `<span class="t-ok">Ran after the Gmail credential was fixed</span>`
+                  ? `<span class="t-ok">Ran after the Gmail credential was fixed${anyTouch ? '' : ', so the zeros below were counted'}</span>`
                   : `<span class="t-warm">No run since the Gmail credential was fixed</span>`}</div>`
             : '<span class="t-muted">No profile carries a last_synced_at value, so when this last ran is not knowable</span>'),
     ].join('');
@@ -441,17 +496,32 @@ SCREENS.customers = async host => {
       <div>customer_360_profiles could not be read (${esc(profErr)}), so no email or Slack touch counts and no
       sync times are shown. Identity, leads, purchases and messages below are read live and are current.</div></div>`);
   } else if (profiles.length && !anyTouch) {
-    notes.push(`<div class="banner ${postFix ? 'warm' : 'hot'}"><span class="material-symbols-outlined">sync_problem</span>
-      <div><strong>${postFix
-        ? 'Every email and Slack touch count on this screen is zero.'
-        : 'Email and Slack touch counts have not been collected — read every 0 on this screen as “not counted”.'}</strong>
-      All ${esc(String(profiles.length))} profile${profiles.length === 1 ? '' : 's'} written by the nightly
-      Customer 360 job report 0 emails and 0 Slack messages. ${esc(AGG_ZERO_CAUSE)}
-      ${postFix
-        ? `<strong>${esc(String(postFix))} of ${esc(String(profiles.length))}</strong> ${postFix === 1 ? 'was' : 'were'}
-           synced after the fix and still report zero, so ${postFix === 1 ? 'that one is' : 'those are'} a real count —
-           check the aggregation itself before assuming the mailbox is empty.`
-        : 'No profile has been synced since the fix, so nothing here has been counted by a job that could reach the mailbox. The next nightly run is what will make these figures mean anything.'}
+    /* Three different sentences, and which one is true is decided by
+       last_synced_at against GMAIL_FIXED_AT — never by the fact that the number
+       is zero. Every profile counted after the repair is the case this branch
+       waited days for: the figure is zero because the mailbox is empty, so it is
+       reported as an answer, in the neutral banner, and the warning is withdrawn
+       rather than left standing over a number that no longer deserves it. */
+    const allPostFix = postFix === profiles.length;
+    notes.push(`<div class="banner ${allPostFix ? 'info' : postFix ? 'warm' : 'hot'}">
+      <span class="material-symbols-outlined">${allPostFix ? 'mark_email_read' : 'sync_problem'}</span>
+      <div><strong>${allPostFix
+        ? 'Every email and Slack touch count on this screen is zero — and this time it was counted.'
+        : postFix
+          ? 'Every email and Slack touch count on this screen is zero.'
+          : 'Email and Slack touch counts have not been collected — read every 0 on this screen as “not counted”.'}</strong>
+      ${profiles.length === 1
+        ? 'The one profile the nightly Customer 360 job has written reports'
+        : `All ${esc(String(profiles.length))} profiles written by the nightly Customer 360 job report`}
+      0 emails and 0 Slack messages.
+      ${allPostFix
+        ? `${esc(AGG_ZERO_COUNTED)} The mailbox is genuinely empty for ${profiles.length === 1 ? 'this address' : 'these addresses'};
+           nothing here is waiting on another run.`
+        : `${esc(AGG_ZERO_CAUSE)} ${postFix
+            ? `<strong>${esc(String(postFix))} of ${esc(String(profiles.length))}</strong> ${postFix === 1 ? 'was' : 'were'}
+               synced after the fix and still report zero, so ${postFix === 1 ? 'that one is a counted zero' : 'those are counted zeros'};
+               the ${esc(String(profiles.length - postFix))} written before it ${profiles.length - postFix === 1 ? 'is' : 'are'} not evidence of anything yet.`
+            : 'No profile has been synced since the fix, so nothing here has been counted by a job that could reach the mailbox. The next run is what will make these figures mean anything.'}`}
       ${noStamp ? `${esc(String(noStamp))} profile${noStamp === 1 ? ' carries' : 's carry'} no last_synced_at at all, so which run wrote ${noStamp === 1 ? 'it' : 'them'} is unknown.` : ''}</div></div>`);
   } else if (zeroProfiles) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">sync_problem</span>
@@ -500,10 +570,16 @@ SCREENS.customers = async host => {
         <div class="toolbar" style="padding-top:0">
           <div class="seg" id="cSeg" role="group" aria-label="Filter customers">
             <button type="button" data-f="all" class="on" aria-pressed="true">All ${num(customers.length)}</button>
-            <button type="button" data-f="buyers" aria-pressed="false" ${buyErr ? 'disabled' : ''}
-              title="${buyErr ? esc('purchase_history could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.') : 'Customers with at least one row in purchase_history.'}">Buyers ${buyErr ? '—' : num(buyers)}</button>
-            <button type="button" data-f="enquiry" aria-pressed="false" ${buyErr ? 'disabled' : ''}
-              title="${buyErr ? esc('purchase_history could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.') : 'Customers with a lead on file but no purchase recorded.'}">Enquiries ${buyErr ? '—' : num(customers.length - buyers)}</button>
+            <button type="button" data-f="buyers" aria-pressed="false" ${buyErr || !buyers ? 'disabled' : ''}
+              title="${buyErr
+                ? esc('purchase_history could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
+                : buyers ? 'Customers with at least one row in purchase_history.'
+                         : 'No customer has a purchase recorded, so this filter would come back empty.'}">Buyers ${buyErr ? '—' : num(buyers)}</button>
+            <button type="button" data-f="enquiry" aria-pressed="false" ${buyErr || customers.length === buyers ? 'disabled' : ''}
+              title="${buyErr
+                ? esc('purchase_history could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
+                : customers.length === buyers ? 'Every customer on file has bought, so this filter would come back empty.'
+                                              : 'Customers with a lead on file but no purchase recorded.'}">Enquiries ${buyErr ? '—' : num(customers.length - buyers)}</button>
             <button type="button" data-f="nophone" aria-pressed="false" ${noPhone ? '' : 'disabled'}
               title="${esc(noPhone ? 'Customers with no phone number on v_customer_directory, v_customer_360, customer_360_profiles, purchase_history or whatsapp_contacts — nothing the dashboard reads can call them.' : 'Every customer has a phone number on at least one source, so there is nothing to filter to.')}">No phone ${num(noPhone)}</button>
           </div>
@@ -646,9 +722,13 @@ SCREENS.customers = async host => {
     const leadScores = (leads.rows || []).map(l => n0(l.ai_score)).filter(x => x != null);
     const bestScore = viewScore != null ? viewScore : (leadScores.length ? Math.max(...leadScores) : null);
     const scoreSub = viewScore != null
-      ? '<span class="t-muted">Highest score across this customer’s leads · v_customer_360</span>'
+      ? (leadCount === 1
+          /* A maximum over one row is that row. Calling it "highest across their
+             leads" dresses a single score up as a comparison. */
+          ? '<span class="t-muted">The score on their only lead · v_customer_360</span>'
+          : '<span class="t-muted">Highest score across this customer’s leads · v_customer_360</span>')
       : leadScores.length
-        ? `<span class="t-warm">Highest ai_score on the leads read here — ${esc(viewGap)}</span>`
+        ? `<span class="t-warm">${leadScores.length === 1 ? 'The ai_score on the one lead read here' : 'Highest ai_score on the leads read here'} — ${esc(viewGap)}</span>`
         : '<span class="t-muted">No lead of this customer’s carries an ai_score</span>';
 
     const viewMsgs = n0(v.message_count);
@@ -787,7 +867,7 @@ SCREENS.customers = async host => {
                      ? `<span class="mono">${esc(str(c.profile.phone))}</span>`
                      : '<span class="t-muted">None on this profile row</span>'}</dd>
                  </dl>
-                 <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
+                 <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at))}</div>`
               : (n0(v.total_emails) != null || n0(v.total_slack_messages) != null)
                 ? `<div class="cell-sub" style="white-space:normal">The nightly job has written no customer_360_profiles row for this customer.
                      v_customer_360 carries the same two counters for them and they are shown here — but that view records no sync
@@ -905,7 +985,8 @@ SCREENS.customers = async host => {
           /* Marks the rows clickable; wireRows() below is what binds them. */
           onRow: true,
           empty: stateEmpty('Nothing outside the customer list',
-            'Every row in the aggregation and WhatsApp tables matches a customer in the directory. Nothing here is being presented as a customer that is not one.',
+            'Every row in whatsapp_contacts, customer_360_profiles and v_customer_360 matches a customer in the directory, so nothing is being presented as a customer that is not one. '
+            + 'A row appears here the moment somebody messages the WhatsApp number, or the nightly job writes a profile, for an address with no lead and no purchase behind it — which is how thirteen people from a personal phone book once ended up on this screen.',
             'done_all'),
         })}`}</div>`;
 

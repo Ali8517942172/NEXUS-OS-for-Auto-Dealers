@@ -31,12 +31,31 @@
    that depended on it and says so, rather than leaving a shorter list to read
    as a quieter dealership.
 
-   Three users sit at status `pending_invite`. There is no endpoint that can
-   invite them — `users` is service-role only from the browser and none of the
-   deployed n8n webhooks sends an invitation — so the invite control is built,
-   surfaced prominently as outstanding work, and left disabled with the reason
-   on it. Nothing here is estimated: every number comes off a row, and a panel
-   whose table failed to load says so rather than showing a plausible blank. */
+   4. THE ROSTER IS ONE PERSON (24 Aug 2026). `users` held four rows; three were
+      seeded `sales_rep` records at `pending_invite` with a NULL email — nobody
+      was ever invited, because there was no address to invite — and they have
+      been deleted. What remains is Ali Asgher, senior_rep, online, and one row
+      in `v_team_performance` behind him.
+
+      That changes what this screen is allowed to say, not just what it shows.
+      One rep holding all the pipeline is not concentration, it is a roster of
+      one; a within-SLA rate over a single measured lead can only be 0% or 100%,
+      so the percentage adds authority without adding information; and a bar
+      chart of one bar is 100% wide by construction and reads as a full load.
+      Each of those is withdrawn below, with one line saying why, rather than
+      printed with a caveat under it. The comparisons come back on their own the
+      day a second person is on the floor — nothing here is disabled by hand.
+
+      What is kept in full is the branch behaviour: the pending-invite alert, the
+      invite control and the pending slice of the roster are all still here and
+      all currently empty, and an empty one of them renders as nothing at all
+      rather than as a heading with a blank under it. A dealership hires.
+
+   There is still no endpoint that can invite anybody — `users` is service-role
+   only from the browser and none of the deployed n8n webhooks sends an
+   invitation — so the invite control stays built and disabled with the reason on
+   it. Nothing here is estimated: every number comes off a row, and a panel whose
+   table failed to load says so rather than showing a plausible blank. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
@@ -72,6 +91,15 @@ const NO_STAFF_PHONE =
 /* This screen's id in `v_needs_attention.screen`. */
 const SCREEN_ID = 'team';
 const ATTN_LIMIT = 200;
+
+/* Below this many measured leads a rate is not a rate. Over a single lead the
+   only percentages that exist are 0% and 100%, and printing one of them turns
+   one outcome into a score for the team; between two and THIN it is a real
+   proportion but a tiny one, and it is captioned as such rather than withdrawn.
+   The same two thresholds decide the SLA panel and the KPI beside it, so the
+   headline figure and the panel under it can never disagree about what counts. */
+const MIN_RATE_SAMPLE = 2;
+const THIN = 5;
 
 /* Pipeline concentration. An even split across the reps who hold any pipeline is
    1/N, so on a small team somebody is always "above average" — the alert needs a
@@ -154,8 +182,8 @@ const statusPill = r => {
 /* ── Screen ──────────────────────────────────────────────────────────────── */
 SCREENS.team = async host => {
   /* The alert strip sits above the KPI row on purpose. "How many people are on
-     the team" is a fact; "one rep is holding nothing while four HOT leads have
-     no owner" is a job, and the job must not be the thing you scroll past. */
+     the team" is a fact; "a rep is holding nothing while a HOT lead has no
+     owner" is a job, and the job must not be the thing you scroll past. */
   const alertHost = el('div'); alertHost.style.marginBottom = '16px'; host.appendChild(alertHost);
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
   const body = el('div'); body.style.marginTop = '16px'; host.appendChild(body);
@@ -315,33 +343,52 @@ SCREENS.team = async host => {
     /* One team-wide response figure, weighted by how many leads each rep was
        actually timed on. An unweighted mean of per-rep means would let someone
        with a single fast lead cancel out someone carrying forty slow ones. */
-    let weightSum = 0, weighted = 0;
+    let weightSum = 0, weighted = 0, timedReps = 0;
     roster.forEach(r => {
       const a = avgResponse(r), m = measured(r);
-      if (a != null && m) { weighted += a * m; weightSum += m; }
+      if (a != null && m) { weighted += a * m; weightSum += m; timedReps++; }
     });
     const teamAvg = weightSum ? weighted / weightSum : null;
+    /* What that figure honestly is. Weighting across one rep is that rep's own
+       average, and across one lead it is that lead's first reply — calling
+       either a team average would be a claim about a team. */
+    const avgLabel = teamAvg == null ? ''
+      : weightSum < MIN_RATE_SAMPLE ? 'first reply took'
+        : timedReps < 2 ? 'their average is'
+          : 'weighted average';
 
     strip.innerHTML = [
       kpi('Team members', num(roster.length),
         usersErr
           ? '<span class="t-warm">Directory unreadable — counted from the performance view</span>'
-          : `${num(withAccount.length)} with an account · ${num(pending.length)} pending invite`),
+          /* "0 pending invite" beside a roster of one is a count of a thing that
+             is not happening. It appears when there is something to report. */
+          : `${num(withAccount.length)} with an account${pending.length ? ` · ${num(pending.length)} pending invite` : ''}`
+            + (roster.length === 1 ? '<div class="t-muted">The whole floor is one person</div>' : '')),
       kpi('Awaiting an invite', num(pending.length),
         pending.length
           ? '<span class="t-warm">No account, and nothing here can send one yet</span>'
-          : '<span class="t-ok">Everyone on the roster has an account</span>',
+          : '<span class="t-ok">Nobody is waiting on an invitation</span>'
+            + '<div class="t-muted">Sending one is not built either, so the first hire has to be added outside this dashboard</div>',
         pending.length ? 't-warm' : ''),
       kpi('Within the 5-minute rule',
         measuredTot ? `${num(withinTot ?? 0)} / ${num(measuredTot)}` : '—',
-        measuredTot
-          ? `${pct((withinTot ?? 0) / measuredTot * 100)} · weighted average ${mins(teamAvg)}`
-          : '<span class="t-muted">No rep row carries a response measurement</span>',
-        measuredTot && (withinTot ?? 0) / measuredTot < 0.5 ? 't-hot' : ''),
+        !measuredTot
+          ? '<span class="t-muted">No rep row carries a response measurement</span>'
+          /* One measured lead is an outcome, not a rate. The count stays — it is
+             the fact — and the percentage is withdrawn with the reason on it. */
+          : measuredTot < MIN_RATE_SAMPLE
+            ? `<span class="t-muted">One lead has been timed, so this is that lead's outcome and not a rate</span>`
+              + (teamAvg == null ? '' : `<div class="t-muted">Its ${esc(avgLabel)} ${esc(mins(teamAvg))}</div>`)
+            : `${pct((withinTot ?? 0) / measuredTot * 100)} · ${esc(avgLabel)} ${esc(mins(teamAvg))}`
+              + (measuredTot <= THIN ? `<div><span class="t-warm">Over ${num(measuredTot)} measured leads in total — a proportion this small moves a long way on one reply</span></div>` : ''),
+        measuredTot >= MIN_RATE_SAMPLE && (withinTot ?? 0) / measuredTot < 0.5 ? 't-hot' : ''),
       kpi('Pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
         pipelineTot == null
           ? '<span class="t-muted">The performance view reports no pipeline figure</span>'
-          : `Held by ${num(withPipeline)} of ${num(roster.length)} on the roster`),
+          : roster.length === 1
+            ? 'Held by the only person on the roster'
+            : `Held by ${num(withPipeline)} of ${num(roster.length)} on the roster`),
       kpi('Unassigned leads', leads ? num(unassigned.length) : '—',
         !leads
           ? `<span class="t-muted">Leads could not be read</span>`
@@ -349,7 +396,10 @@ SCREENS.team = async host => {
             /* Which of them are HOT is the whole point: an unowned COLD lead is
                a queue, an unowned HOT lead is the auto-assign trigger failing. */
             ? `<span class="t-hot">Nobody owns these</span>${unassignedHot.length ? ` · <span class="t-hot">${num(unassignedHot.length)} HOT</span>` : ' · none of them HOT'}`
-            : '<span class="t-ok">Every lead read here has an owner</span>',
+            : '<span class="t-ok">Every lead read here has an owner</span>'
+              + (leads.length <= THIN
+                  ? `<div class="t-muted">That is the whole leads table — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it</div>`
+                  : ''),
         leads && unassigned.length ? 't-hot' : ''),
     ].join('');
   }
@@ -606,13 +656,24 @@ SCREENS.team = async host => {
     leadsCapped
       ? `The leads read stopped at ${num(LEAD_LIMIT)} rows, so every lead-derived count in this strip is a floor rather than a total.`
       : '',
+    /* Why an absent alert is absent. A check that cannot mean anything on a
+       roster this size is skipped, and skipped is not the same as clear. */
+    roster.length < 2
+      ? `The roster is ${num(roster.length)} ${plural(roster.length, 'person', 'people')}, so the checks that compare reps with each other — pipeline concentration, workload spread, the SLA ranking — were skipped rather than run over a set of one: one person holding all of the pipeline is a roster of one, not a concentration. They return on their own when a second person is on the floor.`
+      : (perf && carriers.length < MIN_CARRIERS)
+        ? `Pipeline concentration was not checked: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any pipeline at all, and a share of the money says nothing spread across fewer than ${num(MIN_CARRIERS)}.`
+        : '',
     `Staff phone numbers appear nowhere in this strip because they appear nowhere in the database: ${esc(NO_STAFF_PHONE)} Leads named above carry their own number, or an explicit dash where we hold none.`,
   ].filter(Boolean);
   const notesHtml = notes.join('<br>');
 
+  /* Only the checks that were actually run are claimed. Listing concentration
+     here on a one-rep roster would be claiming a check this screen deliberately
+     did not make. */
   const CHECKED = 'Checked: every row v_needs_attention filed against this screen, seats still at pending_invite, '
     + 'reps holding no leads while HOT leads sit unassigned, reps holding leads with no response recorded against a single one, '
-    + 'one rep carrying a disproportionate share of the pipeline, reps with an SLA breach, leads whose assignment points at a user who is not on the roster, '
+    + (carriers.length >= MIN_CARRIERS ? 'one rep carrying a disproportionate share of the pipeline, ' : '')
+    + 'reps with an SLA breach, leads whose assignment points at a user who is not on the roster, '
     + 'and performance rows with no account behind them.';
 
   const waitedHtml = a => {
@@ -702,11 +763,16 @@ SCREENS.team = async host => {
     BREACHED: { label: 'Breached SLA',           match: r => (breachedSla(r) ?? 0) > 0 },
     QUIET:    { label: 'No activity yet',        match: noActivity },
   };
-  /* Seven segments do not fit a toolbar. The three condition slices are only
-     offered when they contain somebody — an always-empty filter is furniture,
-     and a filter that is present and empty invites the reading that it was
-     checked and came back clean, which is the alert strip's job to say. */
-  const ALWAYS_SHOWN = new Set(['ALL', 'ACCOUNT', 'PENDING', 'QUIET']);
+  /* Seven segments do not fit a toolbar, and every slice below the first two is
+     only offered when it contains somebody — an always-empty filter is
+     furniture, and a filter that is present and empty invites the reading that
+     it was checked and came back clean, which is the alert strip's job to say.
+     PENDING was in this always-shown set until the three seeded pending_invite
+     rows were deleted, at which point it became a permanent "Pending invite · 0"
+     next to a roster where nobody is pending — exactly the furniture this
+     comment warns about. It is conditional now like the rest, and it reappears
+     with the first real invite. */
+  const ALWAYS_SHOWN = new Set(['ALL', 'ACCOUNT']);
   const VIEW_KEYS = Object.keys(VIEWS);
 
   /* Sorting. Every key sinks the rows it cannot speak about to the bottom
@@ -776,11 +842,17 @@ SCREENS.team = async host => {
     { label: 'Avg response', align: 'r', sort: 'response', render: r => {
         const a = avgResponse(r);
         if (a == null) return '<span class="t-muted">Not measured</span>';
-        return `<span class="${a > 5 ? 't-hot' : 't-ok'}">${mins(a)}</span>`;
+        /* An average of one is that one. The figure is real either way; the word
+           "average" is what would be doing the lying. */
+        return `<span class="${a > 5 ? 't-hot' : 't-ok'}">${mins(a)}</span>`
+          + (measured(r) === 1 ? '<div class="cell-sub">one lead, not an average</div>' : '');
       } },
     { label: 'Within SLA', align: 'r', sort: 'sla', render: r => {
         const m = measured(r), w = withinSla(r);
         if (!m) return '<span class="t-muted">Nothing measured</span>';
+        if (m < MIN_RATE_SAMPLE) {
+          return `${num(w ?? 0)} / ${num(m)}<div class="cell-sub">${w ? 'answered in time' : 'breached'} — one lead, so no rate</div>`;
+        }
         const rate = slaRate(r);
         return `${num(w ?? 0)} / ${num(m)}<div class="cell-sub ${rate != null && rate < 50 ? 't-hot' : ''}">${pct(rate)}</div>`;
       } },
@@ -788,15 +860,26 @@ SCREENS.team = async host => {
         const p = pipelineOf(r);
         return p == null ? notReported : aed(p);
       } },
-    { label: 'Invite', align: 'r', render: r => isPending(r)
+    /* The invite column exists only while somebody is waiting on one. Kept in
+       the list rather than deleted — the day a seat is created it comes back by
+       itself — but a column of dashes across a roster where nobody is pending is
+       a control that looks available and is not, and it pushes the columns that
+       carry something off the width. */
+    ...(pending.length ? [{ label: 'Invite', align: 'r', render: r => isPending(r)
         ? `<button class="btn sm" disabled aria-label="Send an invite to ${esc(r.name || 'this team member')}"
              title="${esc(NO_INVITE)}">Invite</button>`
-        : '<span class="t-muted">—</span>' },
+        : '<span class="t-muted">—</span>' }] : []),
   ];
 
   const counts = {};
   VIEW_KEYS.forEach(k => { counts[k] = roster.filter(VIEWS[k].match).length; });
   const offeredViews = VIEW_KEYS.filter(k => ALWAYS_SHOWN.has(k) || counts[k] > 0);
+  /* Filters and a search box over a single row are furniture: every slice is
+     either that one person or nobody, and a segment reading "Pending invite · 0"
+     next to them invites the reading that somebody was found and filtered out.
+     The controls are not built at all in that case, and the line below says why
+     rather than leaving the toolbar mysteriously missing. */
+  const oneRow = roster.length < 2;
 
   card.innerHTML = `<div class="card-head"><div>
       <div class="card-title">Roster &amp; performance</div>
@@ -804,13 +887,20 @@ SCREENS.team = async host => {
         <span class="mono">v_team_performance</span>. Sort by any column header. Click a row for the full record.
         ${perfErr ? `<span class="t-warm">The performance view could not be read (${esc(perfErr)}), so only the roster is shown.</span>` : ''}</div>
     </div></div>
-    <div class="toolbar">
+    ${oneRow
+      /* Nothing at all when the roster is empty — the table's own empty state
+         below already says what is missing, and a toolbar above it explaining
+         that there is nothing to filter is a second empty box saying the same. */
+      ? (roster.length
+          ? `<div class="toolbar"><div class="cell-sub" style="white-space:normal">${esc('One person is on the roster, so there is nothing to filter or search for: every slice would return the same row. The filters come back when there is a second person to tell apart from the first.')}</div></div>`
+          : '')
+      : `<div class="toolbar">
       <div class="seg" id="tSegView" role="group" aria-label="Filter the roster">
         ${offeredViews.map((k, i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(VIEWS[k].label)} · ${num(counts[k])}</button>`).join('')}
       </div>
       <div class="grow"><input type="search" id="tq" aria-label="Search the roster" placeholder="Search name, email or role" /></div>
       <div class="t-muted num" id="tCount"></div>
-    </div>
+    </div>`}
     <div id="tTable"></div>`;
 
   const th = card.querySelector('#tTable');
@@ -854,13 +944,13 @@ SCREENS.team = async host => {
 
   function draw() {
     if (!roster.length) {
-      countEl.textContent = '';
+      if (countEl) countEl.textContent = '';
       th.innerHTML = stateEmpty('Nobody on the team yet',
         'The users table has no rows and the performance view returned none either, so there is no roster to report on.', 'groups');
       return;
     }
     const rows = sortRows(visible());
-    countEl.textContent = `${rows.length} of ${roster.length}`;
+    if (countEl) countEl.textContent = `${rows.length} of ${roster.length}`;
     th.innerHTML = table(cols, rows, {
       onRow: true,
       /* The empty state names the reason it is empty. "Everyone has activity" is
@@ -880,14 +970,16 @@ SCREENS.team = async host => {
     card.querySelectorAll('#tSegView button').forEach(x => x.classList.toggle('on', x === b));
     f.view = b.dataset.v; draw();
   }));
-  card.querySelector('#tq').addEventListener('input', e => { f.q = e.target.value; draw(); });
+  /* Absent on a one-row roster, by design above — not a missing element. */
+  card.querySelector('#tq')?.addEventListener('input', e => { f.q = e.target.value; draw(); });
 
   /* The pending-invite banner hands over the exact set it counted, search
      cleared, so the list under the toolbar can never disagree with the number
      in the banner above it. */
   focusRoster = view => {
     f.view = view; f.q = '';
-    card.querySelector('#tq').value = '';
+    const box = card.querySelector('#tq');
+    if (box) box.value = '';
     card.querySelectorAll('#tSegView button').forEach(x => x.classList.toggle('on', x.dataset.v === view));
     draw();
     card.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -911,6 +1003,12 @@ SCREENS.team = async host => {
   } else {
     const top = leadsAssigned(carrying[0]) || 1;
     const totalAssigned = carrying.reduce((a, r) => a + leadsAssigned(r), 0);
+    /* The bars are drawn against the busiest rep, so with one carrier the only
+       bar is full — which reads as "at capacity" when it means "the only one".
+       Below two carriers the counts are printed on their own and the missing
+       chart is explained, rather than a chart being drawn that says something
+       nobody measured. */
+    const spread = carrying.length >= 2;
     workload.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Workload by rep</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         ${carrying.map(r => {
@@ -918,11 +1016,16 @@ SCREENS.team = async host => {
           const hot = hotLeads(r);
           return `<div style="display:flex;align-items:center;gap:12px">
             <div style="width:120px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name || 'Unnamed')}</div>
-            <div class="bar" style="flex:1;height:10px"><i style="width:${(n / top * 100).toFixed(1)}%"></i></div>
+            ${spread
+              ? `<div class="bar" style="flex:1;height:10px"><i style="width:${(n / top * 100).toFixed(1)}%"></i></div>`
+              : `<div style="flex:1" class="cell-sub">${num(n)} ${plural(n, 'lead', 'leads')} against their name</div>`}
             <div class="num t-muted" style="width:88px;text-align:right">${num(n)}${hot ? ` · <span class="t-hot">${num(hot)} hot</span>` : ''}</div>
           </div>`;
         }).join('')}
       </div>
+      ${spread ? '' : `<div class="cell-sub" style="margin-top:10px;white-space:normal">
+        ${num(carrying.length)} ${plural(carrying.length, 'rep holds', 'reps hold')} any lead at all, so there is no distribution to chart:
+        a single bar is the full width of itself by construction and would read as a rep at capacity. The count above is the whole finding.</div>`}
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
         ${num(totalAssigned)} assigned lead${totalAssigned === 1 ? '' : 's'} across ${num(carrying.length)} of ${num(roster.length)} on the roster.
         ${leads ? `${num(unassigned.length)} more ${unassigned.length === 1 ? 'is' : 'are'} unassigned${unassignedHot.length ? `, ${num(unassignedHot.length)} of them HOT` : ''}${leadsCapped ? ` within the ${num(LEAD_LIMIT)} most recent leads read` : ''}.` : 'Leads could not be read, so unassigned leads are not counted here.'}
@@ -931,9 +1034,16 @@ SCREENS.team = async host => {
       <div class="cell-sub" style="margin-top:8px;white-space:normal">
         ${concentration
           ? `${esc(str(concentration.rep.name) || 'The top rep')} holds ${esc(pct(concentration.share * 100))} of the pipeline against an even share of ${esc(pct(concentration.even * 100))}. `
-          : 'No single rep holds twice an even share of the pipeline. '}
-        A HOT lead is supposed to be auto-assigned to the least-loaded rep, so an uneven bar chart is either that trigger not firing or assignments made by hand around it —
-        and this screen cannot tell you which: <span class="mono">leads</span> stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).
+          : carriers.length >= MIN_CARRIERS
+            ? 'No single rep holds twice an even share of the pipeline. '
+            /* Not "the pipeline is evenly held" — nothing was measured. A share
+               needs somebody to hold the other part of it. */
+            : `Concentration is not measured here: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any pipeline, and one person holding all of the money is a roster of one rather than a concentration. `}
+        ${spread
+          ? `A HOT lead is supposed to be auto-assigned to the least-loaded rep, so an uneven bar chart is either that trigger not firing or assignments made by hand around it —
+             and this screen cannot tell you which: <span class="mono">leads</span> stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`
+          : `A HOT lead is supposed to be auto-assigned to the least-loaded rep, and with ${num(carrying.length)} ${plural(carrying.length, 'rep', 'reps')} carrying work there is only one place it can go — so nothing about how work is shared out is visible from here either way.
+             <span class="mono">leads</span> would not answer it in any case: it stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`}
         The one thing it can settle is whether the trigger is placing HOT work at all, which is the unassigned-HOT count above.
       </div>`;
   }
@@ -953,8 +1063,18 @@ SCREENS.team = async host => {
     const breach = m - w;
     const worst = timed.filter(r => (breachedSla(r) ?? 0) > 0)
       .sort((a, b) => breachedSla(b) - breachedSla(a)).slice(0, 5);
+    /* Everything below the headline count is a proportion, and a proportion over
+       one lead is that lead wearing a percent sign: 100% within SLA and 0%
+       breached is the same statement as "the one lead was answered in time", but
+       it looks like a record. Under MIN_RATE_SAMPLE the split bar, both
+       percentages and the breach ranking are withdrawn and the outcome is
+       written as the sentence it is. The counts themselves are never withdrawn —
+       they are what actually happened. */
+    const rateable = m >= MIN_RATE_SAMPLE;
+    const only = timed.length === 1 ? timed[0] : null;
     sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule · ${num(m)} measured lead${m === 1 ? '' : 's'}</div>
-      <div class="stackbar">
+      ${rateable
+        ? `<div class="stackbar">
         <i style="width:${(w / m * 100).toFixed(1)}%;background:var(--ok)"></i>
         <i style="width:${(breach / m * 100).toFixed(1)}%;background:var(--hot)"></i>
       </div>
@@ -966,17 +1086,28 @@ SCREENS.team = async host => {
           <span style="width:8px;height:8px;border-radius:50%;background:var(--hot)"></span>
           <span style="font-weight:500">Breached</span><span class="t-muted num">${num(breach)} · ${pct(breach / m * 100)}</span></div>
       </div>
-      ${worst.length ? `<div class="label-caps" style="margin:16px 0 8px">Most breaches</div>
+      ${m <= THIN ? `<div class="cell-sub" style="margin-top:10px;white-space:normal"><span class="t-warm">These proportions are ${num(m)} leads in total — one more reply moves them by ${esc(pct(100 / m))}.</span></div>` : ''}`
+        : `<div style="margin-top:4px">
+             <span class="${breach ? 't-hot' : 't-ok'}" style="font-weight:500">${breach
+               ? 'The one lead anyone has been timed on waited longer than five minutes for its first reply.'
+               : 'The one lead anyone has been timed on was answered inside five minutes.'}</span>
+             ${only ? `<div class="cell-sub" style="margin-top:6px">${esc(str(only.name) || 'The rep it is assigned to')} — ${esc(avgResponse(only) == null ? 'no response time on their row' : mins(avgResponse(only)) + ' to first reply')}.</div>` : ''}
+           </div>
+           <div class="cell-sub" style="margin-top:10px;white-space:normal">No percentage, split bar or breach ranking is drawn from it: over a single lead the only figures that exist are 0% and 100%, and neither says anything the sentence above does not. They come back at ${num(MIN_RATE_SAMPLE)} measured leads.</div>`}
+      ${rateable
+        ? (worst.length ? `<div class="label-caps" style="margin:16px 0 8px">Most breaches</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${worst.map(r => `<div style="display:flex;align-items:center;gap:12px">
             <div style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name || 'Unnamed')}</div>
             <div class="cell-sub">${mins(avgResponse(r))} average</div>
             <div class="num t-hot" style="width:64px;text-align:right">${num(breachedSla(r))}</div>
           </div>`).join('')}
-        </div>` : '<div class="cell-sub" style="margin-top:12px">Nobody on the roster has a breach against their name.</div>'}
+        </div>` : '<div class="cell-sub" style="margin-top:12px">Nobody on the roster has a breach against their name.</div>')
+        : ''}
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
-        ${num(timed.length)} of ${num(roster.length)} on the roster have been timed on a lead. The rest carry no measurement,
-        which is not the same as being fast.</div>`;
+        ${num(timed.length)} of ${num(roster.length)} on the roster ${plural(timed.length, 'has', 'have')} been timed on a lead. ${roster.length > timed.length
+          ? 'The rest carry no measurement, which is not the same as being fast.'
+          : 'Nobody on the roster is unmeasured.'}</div>`;
   }
 
   /* ── One rep, in full ──────────────────────────────────────────────────── */
@@ -1034,7 +1165,7 @@ SCREENS.team = async host => {
           <div class="label-caps">Identity &amp; contact</div>
           <dl class="kv" style="margin-top:8px">
             <dt>Email</dt><dd>${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</dd>
-            <dt>Phone</dt><dd><span class="t-muted">\u2014</span></dd>
+            <dt>Phone</dt><dd><span class="t-muted" title="${esc(NO_STAFF_PHONE)}">\u2014 no column to hold one</span></dd>
             <dt>Slack</dt><dd>${r.slack ? `<span class="mono">${esc(r.slack)}</span>` : '<span class="t-muted">No Slack id on file</span>'}</dd>
             <dt>User id</dt><dd class="mono">${esc(r.id ?? 'none')}</dd>
             <dt>Account created</dt><dd>${r.created_at ? `${esc(ago(r.created_at))} <span class="t-muted">(${esc(dt(r.created_at))})</span>` : '<span class="t-muted">Not recorded on this row</span>'}</dd>
@@ -1062,8 +1193,14 @@ SCREENS.team = async host => {
           <dl class="kv" style="margin-top:8px">
             <dt>Leads assigned</dt><dd class="num">${leadsAssigned(r) == null ? notReported : num(leadsAssigned(r))}</dd>
             <dt>HOT leads</dt><dd class="num">${hotLeads(r) == null ? notReported : num(hotLeads(r))}</dd>
-            <dt>Avg response</dt><dd class="num">${avgResponse(r) == null ? '<span class="t-muted">Not measured</span>' : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>`}</dd>
-            <dt>Within 5 min</dt><dd class="num">${m ? `${num(w ?? 0)} / ${num(m)} · ${pct(slaRate(r))}` : '<span class="t-muted">Nothing measured</span>'}</dd>
+            <dt>Avg response</dt><dd class="num">${avgResponse(r) == null
+              ? '<span class="t-muted">Not measured</span>'
+              : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="cell-sub">· one lead, not an average</span>' : ''}`}</dd>
+            <dt>Within 5 min</dt><dd class="num">${!m
+              ? '<span class="t-muted">Nothing measured</span>'
+              : m < MIN_RATE_SAMPLE
+                ? `${num(w ?? 0)} / ${num(m)} <span class="cell-sub">· one lead, so no percentage</span>`
+                : `${num(w ?? 0)} / ${num(m)} · ${pct(slaRate(r))}`}</dd>
             <dt>Breached</dt><dd class="num">${b == null ? notReported : `<span class="${b > 0 ? 't-hot' : ''}">${num(b)}</span>`}</dd>
             <dt>Pipeline</dt><dd class="num">${pipelineOf(r) == null ? notReported : aed(pipelineOf(r))}</dd>
           </dl>

@@ -1,9 +1,8 @@
 /* NEXUS OS — screens/conversations.js
-   Rebuilt 24 Aug 2026 against v_conversations, and revised the same evening
-   after two things changed under it: every LID handle was backfilled with a real
-   phone number, and the bot turned out to have a reply allowlist.
+   Rebuilt 24 Aug 2026 against v_conversations, and revised twice the same
+   evening as the data underneath it changed.
 
-   ── 1. Who the person is ────────────────────────────────────────────────────
+   ── 1. Who the person is, and where a reply goes ────────────────────────────
    The thread list used to be built in the browser by grouping communication_logs
    on `lead_email` and printing that key as the contact's name, so a WhatsApp
    thread appeared in the inbox as "163188003877036@lid". A LID handle contains
@@ -11,26 +10,61 @@
    contact in the database — lead name → WhatsApp profile name → phone → the raw
    key — and reports in `identified` which of those it managed.
 
-   That chain used to reach its last link. It no longer does. WAHA's per-LID
-   lookup was run against every historic contact on 24 Aug 2026 and backfilled
-   all thirteen that had no number, so `whatsapp_contacts.phone` is populated on
-   every row and `display_name` falls back to a chat id for nobody. Two states
-   this screen was built to render honestly — `unidentified`, and "no phone
-   number stored" — therefore describe something the data no longer contains.
-   Both are kept, because a row that arrives before the contact lookup answers
-   would land there and must not be dressed up as a known customer. Neither gets
-   headline space any more: a KPI permanently reading 0 and a filter tab that can
-   only ever be empty are how an operator learns to stop reading the strip. Where
-   they do appear they now say that they are the exception, not the norm.
+   The view was then rebuilt again, and the rebuild changed a shape this file
+   depends on. `communication_logs.lead_email` holds an email when the lead was
+   known at the time the message was logged and a WhatsApp handle when it was
+   not, so one person could be logged under two keys and the old view grouped on
+   the raw value — the same customer appeared twice, 46 messages under his email
+   and 20 under his LID. The view now resolves every log row to a canonical
+   person before grouping, which means:
+
+     · `thread_key` is the identity — one value per person, stable, and the key
+       this screen selects, filters, searches and opens rows on;
+     · `chat_id` is the address — the only thing WAHA can send to.
+
+   They are no longer the same string and nothing may be sent to `thread_key`.
+   The one place that was still keyed wrongly was the per-thread message read:
+   selecting `lead_email=eq.thread_key` returned only the rows that happened to
+   be logged under that key — two thirds of this customer's history, rendered as
+   though it were all of it. Messages are now read under every key the view
+   resolved onto the person, and the pane says which keys those were.
+
+   `whatsapp_contacts.phone` was backfilled from WAHA on 24 Aug, so
+   `display_name` falls back to a chat id for nobody and `unidentified` and "no
+   phone number stored" both now describe something the data does not contain.
+   Both branches are kept, because a row that arrives before the contact lookup
+   answers would land there and must not be dressed up as a known customer.
+   Neither gets headline space: a KPI permanently reading 0 and a filter tab that
+   can only ever be empty are how an operator learns to stop reading the strip.
 
    The phone is shown beside the name in every place a thread is listed — alert
-   strip, list row, pane header and send confirmation — not only in the detail
-   view. It is the one identifier that is now true for everybody, and it is what
-   an operator dials or searches for in WhatsApp. It is formatted for reading
-   (+971 50 123 4567) and the stored value is on the `title` of every one of
-   them, because the grouping is a rendering and the digits are the record.
+   strip, list row, pane header and send confirmation. It is the one identifier
+   that is true for everybody, and it is what an operator dials or searches for
+   in WhatsApp. It is formatted for reading (+971 50 123 4567) and the stored
+   value is on the `title` of every one of them, because the grouping is a
+   rendering and the digits are the record.
 
-   ── 2. Silence is not always a failure ──────────────────────────────────────
+   ── 2. One conversation ─────────────────────────────────────────────────────
+   Every thread that was not a customer was deleted on 24 Aug — thirteen handles
+   belonging to the owner's personal phone book, and with them both open
+   `unanswered_chat` rows. The inbox now holds exactly one person, and a list
+   built for forty threads looks broken holding one: a 360px column with a search
+   box, four filter tabs and a single row in it reads as a screen that failed to
+   load the rest.
+
+   So the layout follows the data. Below SPLIT_MIN threads there is no list
+   column, no search and no filter tabs — there is nothing to choose between, and
+   a control that cannot change what is on screen is furniture. The summary above
+   says plainly that what is shown is the whole of the inbox. Above SPLIT_MIN the
+   list, the search and the tabs come back, and a tab whose count is zero is not
+   drawn at all rather than sitting there able only to say "no conversation
+   matches".
+
+   Nothing here is averaged, rated or distributed. Every figure on this screen is
+   a count of rows the view returned, which is the only kind of number that
+   survives an inbox of one.
+
+   ── 3. Silence is not always a failure ──────────────────────────────────────
    The bot answers automatically only when the number is already in `leads`, or
    when the message carries a dealership keyword. Everything else is logged and
    left alone, deliberately, while the business WhatsApp number is Ali's own
@@ -46,8 +80,12 @@
    tripped a keyword, because the keyword list is not in the database. Wherever
    that distinction matters it is stated rather than glossed over.
 
-   ── 3. Sending ──────────────────────────────────────────────────────────────
+   ── 4. Sending ──────────────────────────────────────────────────────────────
    HOOK.whatsappSend is live and goes out on the dealership's real number, so:
+     · it is addressed to `chat_id`, never to `thread_key`, and the address is
+       printed under the composer as well as in the confirmation, because the two
+       are now different strings and an operator must be able to see which one a
+       message is going to;
      · the composer never sends on Enter — Enter is a line break, and the send
        button opens a confirmation naming the exact address the message goes to;
      · the workflow's own answer decides the outcome. {status:'sent'} is success,
@@ -56,8 +94,8 @@
      · nothing is optimistically appended. The workflow writes the outbound to
        communication_logs, so a confirmed send re-reads the thread, the list and
        the alert strip, and shows only what the database actually holds;
-     · a thread with no chat_id (the older email-keyed rows) has no WhatsApp
-       address at all, so the composer is disabled and names the missing field.
+     · a thread with no chat_id has no WhatsApp address at all, so the composer
+       is disabled and names the missing field.
 
    communication_logs has no read state and no delivery state, so "Reply due" is
    `awaiting_reply` from the view — newest message inbound, nothing sent after —
@@ -86,6 +124,14 @@ const ATTN_LIMIT = 100;
    that crossed this line is still waiting; it is simply no longer being
    reported by anything but this screen, and that is worth saying out loud. */
 const CHAT_WINDOW_DAYS = 7;
+
+/* Below this many threads the inbox is not a list. One row in a 360px column
+   beside a search box and four tabs looks like a list that failed to load the
+   rest of itself; the same row rendered as the screen's only subject looks like
+   what it is. Two, because a chooser needs something to choose between. */
+const SPLIT_MIN = 2;
+
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
 const VIEW_COLS = 'thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_status,'
   + 'display_name,identified,message_count,inbound_count,outbound_count,'
@@ -315,6 +361,17 @@ function phoneHtml(t, cls) {
   return `<span class="t-warm ${c}" title="${esc(NO_PHONE_WHY)}">No number on file</span>`;
 }
 
+/* The reply address, as itself. Since the view was rebuilt the identity and the
+   address are two different strings — this customer is keyed on his email and
+   answered on a LID handle — so anywhere a message is about to be sent, the
+   address it is going to is printed rather than inferred from the name above it.
+   Rendered in mono and never in a name position: a chat id names nobody. */
+function chatHtml(t, cls) {
+  const c = cls == null ? 'cell-sub' : cls;
+  if (!t.chat_id) return `<span class="t-warm ${c}">no WhatsApp address stored</span>`;
+  return `<span class="mono ${c}" title="${esc('v_conversations.chat_id — the WhatsApp address WAHA sends to (' + keyKind(t.chat_id) + '). The thread itself is keyed on "' + t.key + '", which identifies the person; it is not an address and nothing is ever sent to it.')}">${esc(t.chat_id)}</span>`;
+}
+
 /* The line under the name. The phone has moved up beside it, so what is left
    here is the rest of what we hold: the matched lead\u2019s email, or — when
    nothing in leads matches — the fact that the bot is not allowed to answer them
@@ -345,6 +402,11 @@ SCREENS.conversations = async host => {
   let threads = [], dropped = 0, capped = false;
   let attn = [], attnError = null;
   let q = '', filter = 'all', selected = null;
+  /* Which of the two layouts is currently on screen. The shell is a function of
+     how many threads there are, so a re-read that crosses SPLIT_MIN has to
+     rebuild it — otherwise a second thread arrives into a screen with nowhere to
+     list it, or the last one leaves a list column holding one row. */
+  let shellSolo = null;
 
   /* ── Read the view ───────────────────────────────────────────────────── */
   async function readThreads() {
@@ -446,14 +508,38 @@ SCREENS.conversations = async host => {
 
     if (!rows.length) {
       /* No box. An empty bordered card with a heading over it reads as a panel
-         that failed to load, and it takes up the space the real thing needs. */
+         that failed to load, and it takes up the space the real thing needs.
+
+         What goes here instead is a sentence that says what is empty, why it is
+         empty and what would put a row in it. Since the non-customer threads
+         were deleted this is the branch that renders every day, so it has to
+         read as an answer rather than as an absence. */
+      const waitingNow = threads.filter(t => t.awaiting).length;
+      const icon = attnError ? 'error' : (waitingNow ? 'schedule' : 'check_circle');
+      const cls  = attnError ? 't-warm' : (waitingNow ? 't-warm' : 't-ok');
       const why = attnError
-        ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnError)}), so whether anything on this `
-          + 'screen needs a human is unknown right now — the list below is complete, but nothing has been triaged.</span>'
-        : `<span class="t-ok">Nobody is waiting.</span> <span class="t-muted">v_needs_attention lists no `
-          + `unanswered chat for this screen, and no thread here has been waiting longer than the `
-          + `${num(CHAT_WINDOW_DAYS)}-day window that view looks back over.</span>`;
-      alertHost.innerHTML = `<div class="cell-sub" style="padding:2px 2px 0">${why}</div>`;
+        ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnError)}), so whether anybody is `
+          + 'waiting on a human is unknown right now. The conversations below are complete; none of them has been '
+          + 'triaged.</span>'
+        : !threads.length
+          ? '<span class="t-muted">Nothing to triage, because there are no conversations. A row appears here the '
+            + 'moment somebody messages the dealership number and no answer goes back.</span>'
+          : waitingNow
+            ? `<span class="t-warm">${num(waitingNow)} ${plural(waitingNow, 'conversation', 'conversations')} below `
+              + `${plural(waitingNow, 'ends', 'end')} on a message from the customer, but v_needs_attention has filed `
+              + 'none of them against this screen.</span> <span class="t-muted">Nothing outside this page is '
+              + 'reminding anyone about them — check the thread before assuming it is handled.</span>'
+            : `<span class="t-ok">Nobody is waiting on a reply.</span> <span class="t-muted">v_needs_attention lists `
+              + `no unanswered chat for this screen, and ${threads.length === 1
+                  ? 'the one conversation in the inbox does not end'
+                  : `none of the ${num(threads.length)} conversations ends`} on a message from a customer that has `
+              + 'gone unanswered. A row appears here when one does, stays for the '
+              + `${num(CHAT_WINDOW_DAYS)} days the view looks back over, and after that this screen goes on `
+              + 'reporting it here on its own.</span>';
+      alertHost.innerHTML = `<div class="cell-sub" style="padding:2px 2px 0;display:flex;gap:8px;align-items:flex-start">
+          <span class="material-symbols-outlined ${cls}" aria-hidden="true" style="font-size:18px">${icon}</span>
+          <span style="white-space:normal">${why}</span>
+        </div>`;
       return;
     }
 
@@ -518,11 +604,7 @@ SCREENS.conversations = async host => {
            behind a filter looks like a click that did nothing. */
         q = ''; filter = 'all';
         const box = $('cvQ'); if (box) box.value = '';
-        wrap.querySelectorAll('.seg button').forEach(x => {
-          const on = x.dataset.f === 'all';
-          x.classList.toggle('on', on);
-          x.setAttribute('aria-pressed', on ? 'true' : 'false');
-        });
+        pressFilter();
         drawList();
         openThread(a.thread.key);
         $('cvPane')?.scrollIntoView({ block: 'nearest' });
@@ -542,6 +624,9 @@ SCREENS.conversations = async host => {
 
   async function boot() {
     alertHost.innerHTML = `<div class="cell-sub" style="padding:2px">${esc('Checking what needs a human\u2026')}</div>`;
+    /* The strip chooses its own layout once the rows are counted, so it loads
+       and fails as one box rather than as a quarter of a four-up grid. */
+    strip.className = 'card flush';
     strip.innerHTML = stateLoading(2);
     wrap.style.display = 'block';
     wrap.style.minHeight = '';
@@ -563,6 +648,7 @@ SCREENS.conversations = async host => {
       const a = await alertsRead;
       attn = a.rows; attnError = a.error;
       renderAlerts();
+      strip.className = 'card flush';
       strip.innerHTML = stateError('the inbox summary', e.message);
       wrap.innerHTML = stateError('conversations', e.message, 'reload');
       wrap.querySelector('[data-retry]')?.addEventListener('click', boot);
@@ -579,9 +665,12 @@ SCREENS.conversations = async host => {
       wrap.innerHTML = stateEmpty(
         dropped ? 'No conversation can be addressed' : 'No conversations yet',
         dropped
-          ? `${num(dropped)} ${dropped === 1 ? 'row has' : 'rows have'} no thread_key in v_conversations, `
-            + 'so there is no contact to attach those messages to.'
-          : 'Threads appear here once the WhatsApp agent writes its first row to communication_logs.',
+          ? `${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread_key in v_conversations, so there is `
+            + 'no contact to attach those messages to and no thread that could be opened or replied to.'
+          : 'v_conversations returned no rows, so no message in communication_logs resolves to a person. A thread '
+            + 'appears here as soon as somebody messages the dealership WhatsApp number, or the agent sends its '
+            + 'first message — the view groups every log row onto one contact, so the first message is also the '
+            + 'first thread.',
         'forum');
       return;
     }
@@ -597,11 +686,65 @@ SCREENS.conversations = async host => {
     return w.length ? w.reduce((a, t) => (ts(t.last_at) < ts(a.last_at) ? t : a)) : null;
   };
 
-  /* ── Summary strip. Every number here is a count of rows the view returned. */
+  /* ── Summary strip ──────────────────────────────────────────────────────
+     Every number here is a count of rows the view returned. Nothing is averaged
+     or expressed as a share: with one thread in the inbox a percentage is a
+     restatement of 100%, and a "distribution" over one row is a sentence about
+     that row wearing a chart's clothes. */
   function renderStrip() {
     const awaiting = threads.filter(t => t.awaiting);
     const oldest = oldestWaiting();
     const msgs = threads.reduce((s, t) => s + t.count, 0);
+    const capNote = capped
+      ? `<span class="t-warm">Only the newest ${num(THREAD_LIMIT)} threads were read, so this is not the whole inbox.</span>`
+      : '';
+    const dropNote = dropped
+      ? `<span class="t-warm">${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread_key in v_conversations and could not be attached to anybody.</span>`
+      : '';
+
+    /* One thread is not an inbox, and four KPI tiles reading 1 / 0 / 1 / 1 make
+       it look like one that has been emptied by an outage. The same facts are
+       stated as facts instead, and the tiles come back when there is more than
+       one thread to compare. */
+    if (threads.length === 1) {
+      const t = threads[0];
+      const who = t.name || (addressPhone(t.phone) ? addressPhone(t.phone) : 'this contact');
+      const reply = t.awaiting
+        ? `<span class="t-hot">Reply due.</span> The newest message is theirs, logged ${esc(ago(t.last_at))}, and nothing has gone back.`
+        : (t.outbound
+            ? '<span class="t-ok">No reply due.</span> The newest message in the thread is one the dealership sent.'
+            : '<span class="t-muted">No reply due, and nothing has ever been sent to this contact either.</span>');
+      const send = !N8N_BASE
+        ? `<span class="t-hot">Sending is off.</span> ${esc(NO_N8N)}`
+        : (t.chat_id
+            ? `<span class="t-ok">Repliable from here.</span> Replies go to ${chatHtml(t, '')}.`
+            : '<span class="t-warm">Not repliable from here.</span> No chat_id is stored for this thread, so there is no WhatsApp address to send to.');
+      /* "Customer" is a claim about a person, not a synonym for "contact": it is
+         only made when a row in leads matches. */
+      const whole = (capped || dropped)
+        ? ''
+        : 'This is every conversation the view holds — not a page of a longer list. ';
+      strip.className = 'card';
+      strip.innerHTML = `
+        <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start">
+          <div style="flex:1 1 340px;min-width:0">
+            <div class="label-caps">The whole inbox</div>
+            <div class="kpi-value sm" style="white-space:normal">${num(msgs)} ${plural(msgs, 'message', 'messages')}, ${t.lead_email ? 'one customer' : 'one contact'}</div>
+            <div class="kpi-sub" style="white-space:normal">
+              ${num(t.inbound)} from ${esc(who)}, ${num(t.outbound)} sent back, newest ${esc(ago(t.last_at))}.
+              ${whole}One thread is not a sample, so nothing on this screen is averaged, ranked or shown as a share.
+              ${capNote}${capNote && dropNote ? ' ' : ''}${dropNote}
+            </div>
+          </div>
+          <div style="flex:1 1 260px;min-width:0">
+            <div class="label-caps">Where it stands</div>
+            <div class="cell-sub" style="margin-top:8px;white-space:normal">${reply}</div>
+            <div class="cell-sub" style="margin-top:6px;white-space:normal">${send}</div>
+          </div>
+        </div>`;
+      return;
+    }
+
     const by = { lead: 0, whatsapp_profile: 0, phone_only: 0, unidentified: 0 };
     threads.forEach(t => { by[t.identified] = (by[t.identified] || 0) + 1; });
     const withChat = threads.filter(t => t.chat_id).length;
@@ -616,11 +759,12 @@ SCREENS.conversations = async host => {
       return d != null && d > CHAT_WINDOW_DAYS;
     }).length;
 
+    strip.className = 'grid g4';
     strip.innerHTML = [
       kpi('Conversations', num(threads.length),
-        `${num(msgs)} ${msgs === 1 ? 'message' : 'messages'} logged`
-        + (capped ? ` · <span class="t-warm">only the newest ${num(THREAD_LIMIT)} threads were read</span>` : '')
-        + (dropped ? ` · <span class="t-warm">${num(dropped)} row(s) had no thread key</span>` : '')),
+        `${num(msgs)} ${plural(msgs, 'message', 'messages')} logged`
+        + (capped ? ` · ${capNote}` : '')
+        + (dropped ? ` · ${dropNote}` : '')),
 
       kpi('Reply due', num(awaiting.length),
         awaiting.length
@@ -639,7 +783,7 @@ SCREENS.conversations = async host => {
          when there is one, and then loudly, because it is now an anomaly. */
       kpi('Numbers on file', num(withPhone),
         (noPhone
-          ? `<span class="t-warm">${num(noPhone)} thread(s) still have none</span>`
+          ? `<span class="t-warm">${num(noPhone)} ${plural(noPhone, 'thread has', 'threads have')} none</span>`
           : '<span class="t-ok">Every thread has a real phone number</span>')
         + ` · ${num(by.lead)} matched to a lead · ${num(by.whatsapp_profile)} WhatsApp name · ${num(by.phone_only)} number only`
         + (by.unidentified ? ` · <span class="t-hot">${num(by.unidentified)} unidentified</span>` : ''),
@@ -649,24 +793,55 @@ SCREENS.conversations = async host => {
         !N8N_BASE
           ? '<span class="t-hot">n8n host not configured — sending is off</span>'
           : noChat
-            ? `<span class="t-warm">${num(noChat)} thread(s) have no chat_id and cannot be replied to</span>`
+            ? `<span class="t-warm">${num(noChat)} ${plural(noChat, 'thread has', 'threads have')} no chat_id and cannot be replied to</span>`
             : '<span class="t-ok">Every thread has a WhatsApp address</span>'),
     ].join('');
   }
 
   /* ── Shell ───────────────────────────────────────────────────────────── */
+
+  /* The tabs, described once. `optional` means the tab is drawn only when
+     something is behind it: a filter that can only ever answer "no conversation
+     matches" is furniture, and three of them in a row above a single conversation
+     make a working screen look broken. `all` is never optional, because it is
+     what the others return to. */
+  const TABS = [
+    { f: 'all', label: 'All', optional: false, count: () => threads.length, title: '' },
+    { f: 'await', label: 'Reply due', optional: true,
+      count: () => threads.filter(t => t.awaiting).length,
+      title: 'Threads whose newest message is inbound with nothing sent after it (awaiting_reply in '
+           + 'v_conversations). communication_logs has no read state, so this is derived from direction — it is not '
+           + 'an unread flag.' },
+    /* Not in leads is the distinction that decides whether anyone is coming: a
+       number in `leads` may get an automatic reply, a number that is not only
+       gets one if the message happened to carry a dealership keyword — and that
+       keyword list is not in the database, so this tab is honest about being
+       half the rule. */
+    { f: 'notlead', label: 'Not in leads', optional: true,
+      count: () => threads.filter(t => !t.lead_email).length, title: NOT_A_LEAD },
+    { f: 'unknown', label: 'Unidentified', optional: true,
+      count: () => threads.filter(t => t.identified === 'unidentified').length,
+      title: 'Threads where no lead, profile name or phone number resolves — all we hold is the chat handle. Every '
+           + 'historic contact was backfilled with a real number on 24 Aug 2026, so this should be empty; it is '
+           + 'shown because it is not.' },
+  ];
+
   function renderShell() {
-    const awaiting = threads.filter(t => t.awaiting).length;
-    const unknown = threads.filter(t => t.identified === 'unidentified').length;
-    /* The old third tab filtered to `unidentified`, which the backfill emptied.
-       A tab that can only ever show "no conversation matches" is furniture, so
-       it is rendered only if there is actually something behind it. What
-       replaces it is the distinction that now decides whether anyone is coming:
-       a number in `leads` may get an automatic reply, a number that is not in
-       `leads` only gets one if the message happened to carry a dealership
-       keyword — and that keyword list is not in the database, so this tab is
-       honest about being half the rule. */
-    const notLead = threads.filter(t => !t.lead_email).length;
+    /* One conversation needs no chooser. A search box, four tabs and a 360px
+       column holding a single row is a list that looks like it failed to load
+       the rest of itself; the reading pane simply becomes the screen, and the
+       summary above it says that this is the whole inbox rather than a page of
+       it. The list comes back the moment there is a second thread. */
+    shellSolo = threads.length < SPLIT_MIN;
+    if (shellSolo) {
+      wrap.style.display = 'block';
+      wrap.style.gridTemplateColumns = '';
+      wrap.style.minHeight = '';
+      wrap.innerHTML = '<div style="display:flex;flex-direction:column;min-width:0;min-height:560px" id="cvPane"></div>';
+      return;
+    }
+
+    const tabs = TABS.filter(t => !t.optional || t.count() > 0);
     wrap.style.display = 'grid';
     wrap.style.gridTemplateColumns = '360px minmax(0,1fr)';
     wrap.style.minHeight = '640px';
@@ -678,36 +853,39 @@ SCREENS.conversations = async host => {
             <input type="search" id="cvQ" placeholder="Search name, number, email, handle, last message" />
           </div>
         </div>
-        <div class="toolbar" style="padding-top:0;border-bottom:1px solid var(--border-subtle)">
+        ${tabs.length > 1 ? `<div class="toolbar" id="cvTabs" style="padding-top:0;border-bottom:1px solid var(--border-subtle)">
           <div class="seg" role="group" aria-label="Filter conversations">
-            <button type="button" data-f="all" class="on" aria-pressed="true">All ${num(threads.length)}</button>
-            <button type="button" data-f="await" aria-pressed="false"
-              title="Threads whose newest message is inbound with nothing sent after it (awaiting_reply in v_conversations). communication_logs has no read state, so this is derived from direction — it is not an unread flag.">Reply due ${num(awaiting)}</button>
-            <button type="button" data-f="notlead" aria-pressed="false"
-              title="${esc(NOT_A_LEAD)}">Not in leads ${num(notLead)}</button>
-            ${unknown ? `<button type="button" data-f="unknown" aria-pressed="false"
-              title="Threads where no lead, profile name or phone number resolves — all we hold is the chat handle. Every historic contact was backfilled with a real number on 24 Aug 2026, so this should be empty; it is shown because it is not.">Unidentified ${num(unknown)}</button>` : ''}
+            ${tabs.map(t => `<button type="button" data-f="${esc(t.f)}"${t.f === filter ? ' class="on"' : ''}
+              aria-pressed="${t.f === filter ? 'true' : 'false'}"${t.title ? ` title="${esc(t.title)}"` : ''}
+              >${esc(t.label)} ${num(t.count())}</button>`).join('')}
           </div>
-        </div>
+        </div>` : ''}
         <div id="cvList" style="overflow-y:auto;flex:1"></div>
       </div>
       <div style="display:flex;flex-direction:column;min-width:0" id="cvPane"></div>`;
 
     $('cvQ').addEventListener('input', e => { q = low(e.target.value); drawList(); });
     wrap.querySelectorAll('.seg button').forEach(b => {
-      b.addEventListener('click', () => {
-        filter = b.dataset.f;
-        wrap.querySelectorAll('.seg button').forEach(x => {
-          const on = x === b;
-          x.classList.toggle('on', on);
-          x.setAttribute('aria-pressed', on ? 'true' : 'false');
-        });
-        drawList();
-      });
+      b.addEventListener('click', () => { filter = b.dataset.f; pressFilter(); drawList(); });
     });
   }
 
-  const haystack = t => `${t.name} ${t.key} ${t.phone || ''} ${addressPhone(t.phone)} ${t.lead_email || ''} ${t.push_name || ''} ${t.last_message}`.toLowerCase();
+  /* The pressed tab is painted from `filter`, never from which button was
+     clicked, because a tab can also be removed underneath the operator — a reply
+     empties "Reply due" — and the filter falls back to All when that happens. */
+  function pressFilter() {
+    wrap.querySelectorAll('.seg button').forEach(x => {
+      const on = x.dataset.f === filter;
+      x.classList.toggle('on', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  /* `chat_id` is in here as well as `thread_key`. They are different strings
+     since the view was rebuilt — the identity and the address — and the address
+     is the one printed under the composer and in the send confirmation, so it is
+     the one an operator is most likely to paste back in to find the thread. */
+  const haystack = t => `${t.name} ${t.key} ${t.chat_id || ''} ${t.phone || ''} ${addressPhone(t.phone)} ${t.lead_email || ''} ${t.push_name || ''} ${t.last_message}`.toLowerCase();
 
   /* Searching for a number has to work however the operator types it. The stored
      form is bare digits, the rendered form has spaces and a plus, and the person
@@ -737,24 +915,47 @@ SCREENS.conversations = async host => {
   /* The filter counts are painted from the current threads on every draw, not
      baked into the shell once. A reply changes the "Reply due" number the moment
      it is confirmed, and a tab reading 3 above a list showing 2 is the kind of
-     small lie that makes an operator stop trusting the whole strip. */
+     small lie that makes an operator stop trusting the whole strip.
+
+     A tab whose count reaches zero is removed rather than left reading 0: it can
+     no longer do anything except answer "no conversation matches", and if it was
+     the active filter it would be answering that right now — so the filter falls
+     back to All. When nothing but All is left the whole bar goes, because a
+     single filter that filters nothing is a control with no purpose. */
   function paintFilterCounts() {
-    const set = (f, label, n) => {
-      const b = wrap.querySelector(`.seg button[data-f="${f}"]`);
-      if (b) b.textContent = `${label} ${num(n)}`;
-    };
-    set('all', 'All', threads.length);
-    set('await', 'Reply due', threads.filter(t => t.awaiting).length);
-    set('notlead', 'Not in leads', threads.filter(t => !t.lead_email).length);
-    set('unknown', 'Unidentified', threads.filter(t => t.identified === 'unidentified').length);
+    const seg = wrap.querySelector('.seg');
+    if (!seg) return;
+    let changed = false;
+    TABS.forEach(t => {
+      const b = seg.querySelector(`button[data-f="${t.f}"]`);
+      if (!b) return;
+      const n = t.count();
+      if (t.optional && !n) {
+        b.remove();
+        if (filter === t.f) { filter = 'all'; changed = true; }
+        return;
+      }
+      b.textContent = `${t.label} ${num(n)}`;
+    });
+    if (seg.querySelectorAll('button').length < 2) {
+      $('cvTabs')?.remove();
+      if (filter !== 'all') { filter = 'all'; changed = true; }
+    } else if (changed) {
+      pressFilter();
+    }
   }
 
   function drawList() {
+    /* Below SPLIT_MIN threads the shell draws no list at all, so there is
+       nothing to paint and nothing to reconcile. Callers — the alert strip, a
+       confirmed send — do not have to know which layout is on screen. */
+    const listHost = $('cvList');
+    if (!listHost) return;
     paintFilterCounts();
     const rows = visible();
     const notes = [];
     if (capped) notes.push(`Only the newest ${num(THREAD_LIMIT)} threads were read, so older conversations are missing from this list.`);
-    if (dropped) notes.push(`${num(dropped)} row(s) in v_conversations have no thread_key and cannot be opened.`);
+    if (dropped) notes.push(`${num(dropped)} ${plural(dropped, 'row', 'rows')} in v_conversations ${plural(dropped, 'has', 'have')} no thread_key and cannot be opened.`);
     notes.push('Search covers names, numbers, handles, lead emails and the newest message only — older message text is not '
       + 'loaded until a thread is opened. A number matches however it is typed: spaces, a leading + and a leading 0 are ignored.');
     const footHtml = `<div class="list-item" style="cursor:default;align-items:flex-start">
@@ -762,7 +963,7 @@ SCREENS.conversations = async host => {
         <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div>
       </div>`;
 
-    $('cvList').innerHTML = (rows.length
+    listHost.innerHTML = (rows.length
       ? rows.map(t => {
         const id = identOf(t);
         return `
@@ -796,16 +997,18 @@ SCREENS.conversations = async host => {
           </div>`;
       }).join('')
       : stateEmpty('No conversation matches',
-          filter === 'all' ? 'Try a different search term.' : 'Try a different search term or filter.',
+          filter === 'all'
+            ? `No conversation matches "${q}". Search covers the name, the number, the WhatsApp address, the lead email and the newest message of each of the ${num(threads.length)} threads read — not the older message text, which is only loaded when a thread is opened.`
+            : `No conversation is both in the "${filter === 'await' ? 'Reply due' : (filter === 'notlead' ? 'Not in leads' : 'Unidentified')}" tab and a match for what is typed in the search box.`,
           'search_off')) + footHtml;
 
-    $('cvList').querySelectorAll('[data-k]').forEach(node => {
+    listHost.querySelectorAll('[data-k]').forEach(node => {
       node.addEventListener('click', () => openThread(node.dataset.k));
       node.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openThread(node.dataset.k); return; }
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
         e.preventDefault();
-        const all = [...$('cvList').querySelectorAll('[data-k]')];
+        const all = [...listHost.querySelectorAll('[data-k]')];
         const next = all[all.indexOf(node) + (e.key === 'ArrowDown' ? 1 : -1)];
         if (next) { next.focus(); openThread(next.dataset.k); }
       });
@@ -817,7 +1020,9 @@ SCREENS.conversations = async host => {
     const t = threads.find(x => x.key === key);
     if (!t) return;
     selected = key;
-    $('cvList').querySelectorAll('[data-k]').forEach(n => {
+    /* No list to highlight when the inbox is a single conversation. */
+    const listHost = $('cvList');
+    if (listHost) listHost.querySelectorAll('[data-k]').forEach(n => {
       const on = n.dataset.k === key;
       n.classList.toggle('on', on);
       n.setAttribute('aria-current', on ? 'true' : 'false');
@@ -879,6 +1084,10 @@ SCREENS.conversations = async host => {
 
   function renderPane(t, note) {
     const id = identOf(t);
+    /* A thread that is matched, answered and inside the window has nothing to
+       warn about, and an empty padded strip above the messages reads as a banner
+       that failed to render. Nothing is nothing. */
+    const bannerHtml = banners(t);
     const canSend = Boolean(t.chat_id) && Boolean(N8N_BASE);
     const why = !N8N_BASE ? NO_N8N : (!t.chat_id ? noChatWhy(t) : '');
     const dis = canSend ? '' : ` disabled title="${esc(why)}"`;
@@ -905,7 +1114,7 @@ SCREENS.conversations = async host => {
           : `<button class="btn sm" disabled title="${esc('No lead record resolves for this thread — v_conversations returned no lead_email, so there is nothing to open. ' + NOT_A_LEAD)}">Open lead</button>`}
       </div>
       <div class="cell-sub" id="cvNote" style="padding:0 20px" aria-live="polite"></div>
-      <div style="padding:16px 20px 0">${banners(t)}</div>
+      ${bannerHtml ? `<div style="padding:16px 20px 0">${bannerHtml}</div>` : ''}
       <div style="flex:1;overflow-y:auto" id="cvBody">${stateLoading(5)}</div>
       <div style="padding:16px 20px;border-top:1px solid var(--border-subtle)">
         <div class="field">
@@ -913,7 +1122,11 @@ SCREENS.conversations = async host => {
           <textarea id="cvReply" rows="3"${dis}
             placeholder="${canSend ? 'Type a reply. Enter adds a line break — nothing is sent until you confirm.' : 'Replying from the dashboard is unavailable for this thread'}"></textarea>
           <div class="hint">${canSend
-            ? `Enter adds a line break. <strong>Review and send</strong> opens a confirmation showing the exact WhatsApp address; the message only leaves after you confirm it there. Ctrl+Enter opens the same confirmation. This goes out on the dealership's live number and cannot be recalled.`
+            /* The address is printed here, not only in the confirmation. The
+               thread is named and keyed on one string and answered on another,
+               and the operator should be able to see which one their message is
+               going to before they have written it. */
+            ? `Goes to ${chatHtml(t, '')}. Enter adds a line break. <strong>Review and send</strong> opens a confirmation showing that address again; the message only leaves after you confirm it there. Ctrl+Enter opens the same confirmation. This goes out on the dealership's live number and cannot be recalled.`
             : esc(why)}</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
@@ -963,16 +1176,36 @@ SCREENS.conversations = async host => {
   const setNote = html => { const n = $('cvNote'); if (n) n.innerHTML = html; };
   const setSendMsg = html => { const n = $('cvSendMsg'); if (n) n.innerHTML = html; };
 
-  /* Messages are read per thread, keyed on the same column the view groups on.
-     Newest-first with a cap, then reversed, so a long history shows its most
+  /* Every key this person's messages could have been logged under.
+     communication_logs stores one column, `lead_email`, and what goes in it
+     depends on what was known when the row was written: the lead's email if the
+     number had already been matched, the WhatsApp handle if it had not. The
+     rebuilt view resolves all of those onto one person, which is why this
+     customer is now one thread of 66 messages instead of two of 46 and 20 — but
+     the log rows still carry the key they arrived under. Reading on `thread_key`
+     alone would return whichever subset shares that key and render it as the
+     whole conversation, which is the more dangerous kind of wrong: it looks
+     complete. Both the identity and the address are read, de-duplicated, and the
+     pane says underneath which keys it read. */
+  const msgKeys = t => [...new Set([t.key, t.chat_id, t.lead_email].filter(Boolean))];
+  const keyRole = (t, k) => (k === t.chat_id && k !== t.key ? 'WhatsApp address' : (k === t.lead_email ? 'lead email' : keyKind(k)));
+  /* PostgREST wants an in-list of double-quoted values. The quotes are written
+     as %22 and each key is percent-encoded on its own, so the commas and quotes
+     that delimit the list survive as delimiters whatever the key contains; a
+     quote or backslash inside a key is escaped rather than closing the value. */
+  const inList = keys => keys.map(k => '%22' + encodeURIComponent(String(k).replace(/["\\]/g, m => '\\' + m)) + '%22').join(',');
+
+  /* Newest-first with a cap, then reversed, so a long history shows its most
      recent window rather than its oldest one. */
   async function loadMessages(t) {
     const body = $('cvBody');
     if (!body) return;
     body.innerHTML = stateLoading(5);
+    const keys = msgKeys(t);
     let msgs;
     try {
-      msgs = await db(`communication_logs?select=id,direction,message,channel,created_at&lead_email=eq.${encodeURIComponent(t.key)}&order=created_at.desc&limit=${MSG_LIMIT}`);
+      msgs = await db('communication_logs?select=id,direction,message,channel,created_at'
+        + `&lead_email=in.(${inList(keys)})&order=created_at.desc&limit=${MSG_LIMIT}`);
     } catch (e) {
       body.innerHTML = stateError('this conversation', e.message, 'thread');
       body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
@@ -983,8 +1216,10 @@ SCREENS.conversations = async host => {
 
     if (!list.length) {
       body.innerHTML = stateEmpty('No messages in this thread',
-        `v_conversations counted ${num(t.count)} message(s) for this contact, but communication_logs returned none for `
-        + `"${t.key}". Nothing is being shown rather than guessing at the history.`, 'forum');
+        `v_conversations counts ${num(t.count)} ${plural(t.count, 'message', 'messages')} for this contact, but `
+        + `communication_logs returned none under ${plural(keys.length, 'the key', 'any of the keys')} the view `
+        + `resolved onto them (${keys.join(', ')}). Nothing is being shown rather than guessing at the history.`,
+        'forum');
       return;
     }
 
@@ -994,6 +1229,25 @@ SCREENS.conversations = async host => {
       channels.set(c, (channels.get(c) || 0) + 1);
     });
     const chips = [...channels.entries()].map(([c, n]) => `<span class="chip">${esc(c)} · ${num(n)}</span>`).join(' ');
+
+    /* Two numbers counted by two different pieces of software over the same
+       rows. They agree, or the discrepancy is the thing worth reading — it means
+       the view resolved a row onto this person that this query did not fetch,
+       and the history on screen is not the history the summary claims. */
+    const countNote = (!truncated && list.length !== t.count)
+      ? `<div style="margin-top:6px"><span class="t-warm">v_conversations counts ${num(t.count)} for this contact `
+        + `and ${num(list.length)} ${plural(list.length, 'was', 'were')} read from communication_logs, so this thread `
+        + 'is not the whole of it. The view resolves rows onto a person by more than the keys read here.</span></div>'
+      : '';
+    /* Which keys this history was assembled from. It is the honest version of a
+       merge: the customer is one person, the rows are filed under two names, and
+       an operator who opens the thread can see that rather than wondering why
+       the pane holds more messages than the address at the top would suggest. */
+    const keyNote = keys.length > 1
+      ? `<div style="margin-top:6px">Assembled from ${num(keys.length)} keys in communication_logs.lead_email — `
+        + keys.map(k => `<span class="mono">${esc(k)}</span> <span class="t-muted">(${esc(keyRole(t, k))})</span>`).join(', ')
+        + ' — which v_conversations resolves onto the same person.</div>'
+      : '';
 
     body.innerHTML = `
       ${truncated ? `<div style="padding:16px 20px 0"><div class="banner info">
@@ -1017,7 +1271,9 @@ SCREENS.conversations = async host => {
         }).join('')}
       </div>
       <div class="cell-sub" style="padding:0 20px 16px;text-align:center">
-        ${num(list.length)} message(s) shown · ${num(t.inbound)} inbound · ${num(t.outbound)} outbound in this thread
+        ${num(list.length)} ${plural(list.length, 'message', 'messages')} shown · ${num(t.inbound)} inbound · ${num(t.outbound)} outbound in this thread
+        ${countNote}
+        ${keyNote}
         ${chips ? '<div style="margin-top:8px">' + chips + '</div>' : ''}
       </div>`;
     body.scrollTop = body.scrollHeight;
@@ -1046,7 +1302,8 @@ SCREENS.conversations = async host => {
         <dt>In leads</dt><dd>${t.lead_email
           ? esc(t.lead_email)
           : `<span class="t-muted" title="${esc(NOT_A_LEAD)}">No — the bot does not answer this number automatically, so this reply is the first one they get from a person.</span>`}</dd>
-        <dt>WhatsApp address</dt><dd><span class="mono">${esc(t.chat_id)}</span></dd>
+        <dt>WhatsApp address</dt><dd>${chatHtml(t, '')}</dd>
+        <dt>Thread keyed on</dt><dd><span class="mono">${esc(t.key)}</span> <span class="t-muted">— ${esc(keyKind(t.key))}. This is who the thread is, not where it goes; the message is addressed to the line above.</span></dd>
         <dt>Identified as</dt><dd>${pill(id.label, id.tone)}</dd>
       </dl>
       <div class="label-caps" style="margin-top:16px">Message as it will be sent</div>
@@ -1116,6 +1373,7 @@ SCREENS.conversations = async host => {
     try {
       const read = await readThreads();
       threads = read.list; dropped = read.dropped; capped = read.capped;
+      if (shellSolo !== (threads.length < SPLIT_MIN)) renderShell();
       renderStrip();
       drawList();
       /* A reply is exactly the thing that clears an unanswered_chat, so the
@@ -1123,7 +1381,10 @@ SCREENS.conversations = async host => {
          strip must agree with the database, not with what we just did. */
       await refreshAlerts();
       if (threads.some(x => x.key === t.key)) openThread(t.key, sentNote);
-      else { loadMessages(t); setSendMsg(sentNote); }
+      /* The thread is no longer in the list — the view regrouped it, or it fell
+         past the read cap. The pane is redrawn on the row we still hold rather
+         than left as whatever the previous layout had in it. */
+      else { renderPane(t, sentNote); loadMessages(t); }
     } catch (e) {
       /* The send outcome stands on its own; only the refresh failed. The alert
          strip is re-read anyway: it is a different query and it may well have

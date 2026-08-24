@@ -112,6 +112,28 @@ const sevTone = s => tone(s);
 const SEV_RANK = { CRITICAL: 0, HIGH: 0, WARNING: 1, MEDIUM: 1, LOW: 2, INFO: 2 };
 const sevRank = s => SEV_RANK[up(s)] ?? 3;
 
+/* ── Three of the workflows on this instance are web pages ─────────────────
+   `NEXUS Public — Home`, `— Privacy` and `— Terms` are published and active in
+   n8n and automate nothing. Google will not publish an OAuth consent screen to
+   production without a home page, a privacy policy and a terms URL, and it
+   rejects vercel.app as a public suffix — nip.io was the only registrable
+   domain available, so n8n serves the three pages itself at /webhook/nexus,
+   /webhook/privacy and /webhook/terms. Publishing that consent screen is what
+   stopped Gmail's refresh token expiring every seven days, so they are
+   load-bearing, but they will never log a run and a silent one is correct.
+
+   The same rule lives in screens/automation.js. It is stated twice rather than
+   shared because lib/ is not this task's to change; if a third screen needs it,
+   it belongs in lib/format.js beside tone(). */
+const isPublicPage = w =>
+  /nexus\s*public/i.test(String(w?.name || ''))
+  || /^\s*[—-]\s*(?:privacy|terms)\s*$/i.test(String(w?.name || ''))
+  || /\/webhook\/(?:nexus|privacy|terms)\b/i.test(String(w?.trigger_detail || ''));
+/* One reason, worded once, so the chip tooltip and the alert cannot drift. */
+const PAGE_WHY =
+  'n8n serves it so that Google’s OAuth consent screen can be published: a home page, a privacy policy and a terms URL are mandatory for production, and vercel.app is rejected as a public suffix, so the pages are served from n8n over nip.io.';
+const PAGE_NOTE = `This is a web page, not an automation — ${PAGE_WHY} It logs nothing because a page view is not a workflow run, and it never will.`;
+
 /* Icons for the kinds v_needs_attention emits. Only a fallback: the view names
    its own `screen`, and a kind this file has never seen still renders. */
 const KIND_ICON = {
@@ -235,6 +257,42 @@ const credStale = newest => {
   const t = Date.parse(newest || '');
   return !Number.isNaN(t) && Date.now() - t > CRED_STALE_MS;
 };
+/* ── A credential a live run has since proved working ──────────────────────
+   The 24-hour rule below is the general case: silence is weak evidence, so the
+   panel waits before softening its tense. But silence is not the only evidence
+   there is. Where a credential has actually been exercised since its last
+   failure and answered, that is a stronger fact than anything the failure
+   history can offer, and continuing to say "is failing" over the top of it
+   sends someone to reconnect a credential that already works.
+
+   n8n's credential store is not reachable from a browser and audit_log records
+   no successful Gmail fetch of its own, so the confirmation cannot be read — it
+   is recorded here with what confirmed it and when, and it only ever applies to
+   failures OLDER than that confirmation. A failure logged after the check would
+   mean the credential broke again, and this table must never hide that. */
+const CRED_VERIFIED = [
+  {
+    re: /gmail|google\s*oauth|google/i,
+    at: '2026-08-24T19:46:00Z',
+    how: 'a manual Customer 360 - Data Aggregation run at 19:46 returned Gmail - Get Emails \u2192 ok',
+    fix: 'The OAuth consent screen for the nexus-os-backend GCP project was stuck in \u201cTesting\u201d, where Google expires every refresh token after seven days \u2014 so the credential died on a timer no amount of reconnecting could beat. The app is now published to production, which is what stops the expiry; the home, privacy and terms pages Google requires for that are served by n8n itself over nip.io, because vercel.app is rejected as a public suffix.',
+  },
+];
+/* Returns the confirmation only when it post-dates the newest failure naming
+   this credential — an older confirmation says nothing about a newer failure. */
+const credVerified = (name, newestFailure) => {
+  const hit = CRED_VERIFIED.find(v => v.re.test(String(name || '')));
+  if (!hit) return null;
+  const at = Date.parse(hit.at);
+  if (Number.isNaN(at) || at > Date.now()) return null;
+  /* No usable failure timestamp means the ordering cannot be established, and
+     "verified since" is a claim about ordering. Stay critical rather than
+     softening a fault whose age is unknown. */
+  const f = Date.parse(newestFailure || '');
+  if (Number.isNaN(f) || f >= at) return null;
+  return hit;
+};
+
 const CRED_STALE_LINE = 'No logged failure has named it since, so it may already have been reconnected — but this panel reads failure history, not the credential, so a fixed credential and one whose workflows simply have not run again look identical from here. The next run is what settles it.';
 
 const credImpact = (name, workflows) => {
@@ -694,7 +752,13 @@ SCREENS.settings = async host => {
       const rows = s.health;
       const deg = rows.filter(w => stateKey(w) === 'DEGRADED');
       const never = rows.filter(w => stateKey(w) === 'NEVER_RAN');
-      const blind = rows.filter(w => stateKey(w) === 'NOT_INSTRUMENTED');
+      /* Pages are split out of the blind-spot count deliberately. "Nothing it
+         does reaches audit_log" is true of a static page and completely
+         misleading — there is nothing to see inside it, so unmeasured is not a
+         gap. Counting them here would put three URLs in a list of automations
+         nobody can monitor. */
+      const pages = rows.filter(isPublicPage);
+      const blind = rows.filter(w => stateKey(w) === 'NOT_INSTRUMENTED' && !isPublicPage(w));
       const off = rows.filter(w => w.is_active === false);
       const odd = rows.filter(w => stateKey(w) === 'UNKNOWN');
 
@@ -721,8 +785,20 @@ SCREENS.settings = async host => {
         key: 'wf-blind', sev: 'INFO', icon: 'visibility_off',
         title: `${num(blind.length)} ${plural(blind.length, 'workflow reports', 'workflows report')} nothing at all`,
         detail: `${plural(blind.length, 'It has', 'They have')} no Audit Log node, so nothing ${plural(blind.length, 'it does', 'they do')} reaches audit_log and this dashboard cannot see ${plural(blind.length, 'it', 'them')} succeed or fail. Counted as healthy nowhere on this screen: unmeasured is not the same as working.`,
-        foot: 'The Automation screen separates out the few of these that answer their caller directly — those hand their result back in the HTTP reply, so a missing audit row is the design rather than a gap.',
+        foot: `The Automation screen separates out the few of these that answer their caller directly — those hand their result back in the HTTP reply, so a missing audit row is the design rather than a gap.${
+          pages.length ? ` ${num(pages.length)} further registered ${plural(pages.length, 'row is a web page', 'rows are web pages')} and ${plural(pages.length, 'is', 'are')} excluded from this count — see below.` : ''}`,
         target: 'setWfCard', wf: 'NOT_INSTRUMENTED',
+      });
+      /* Its own row rather than a clause on the blind-spot alert, because it is
+         true whether or not there is a blind spot to hang it off — and an
+         operator counting workflows in n8n and here needs the difference
+         explained wherever they look. */
+      if (pages.length) out.push({
+        key: 'wf-pages', sev: 'INFO', icon: 'public',
+        title: `${num(pages.length)} registered ${plural(pages.length, 'row is a web page', 'rows are web pages')}, not ${plural(pages.length, 'an automation', 'automations')}`,
+        detail: `${esc(pages.map(w => str(w.name)).join(', '))}. ${esc(PAGE_WHY)} ${plural(pages.length, 'It logs', 'They log')} nothing because a page view is not a workflow run, and a silent one here is correct rather than suspicious.`,
+        foot: 'Publishing that consent screen is what stopped the Gmail refresh token expiring every seven days, so these are load-bearing. They are excluded from the not-logged count above: a page that logs nothing is not a blind spot.',
+        target: 'setWfCard', wf: 'ALL',
       });
       if (off.length) out.push({
         key: 'wf-off', sev: 'WARNING', icon: 'toggle_off',
@@ -753,18 +829,31 @@ SCREENS.settings = async host => {
        to reconnect a credential that already works. */
     (credGroups() || []).forEach(g => {
       const stale = credStale(g.newest);
+      /* A run that exercised this credential after its last failure and got an
+         answer. Stronger evidence than the silence `stale` reasons about, so it
+         is checked first and it changes the severity, not just the tense: a
+         credential proved working is not a critical fault, and leaving it red
+         is how a strip full of resolved incidents stops being read. */
+      const ok = credVerified(g.name, g.newest);
       out.push({
-        key: `cred-${low(g.name)}`, sev: 'CRITICAL', icon: 'key_off',
-        title: stale
-          ? `The ${g.name} credential was failing, and nothing since proves it is fixed`
-          : `The ${g.name} credential is failing`,
-        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}<div class="cell-sub" style="margin-top:4px">${
+        key: `cred-${low(g.name)}`,
+        sev: ok ? 'INFO' : 'CRITICAL',
+        icon: ok ? 'key' : 'key_off',
+        title: ok
+          ? `The ${g.name} credential was failing and has since been verified working`
+          : stale
+            ? `The ${g.name} credential was failing, and nothing since proves it is fixed`
+            : `The ${g.name} credential is failing`,
+        detail: `${ok || stale ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}<div class="cell-sub" style="margin-top:4px">${
           g.count ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it` : 'No failed audit row in this window names it'}${
           g.viewCount ? `, and v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
-          g.workflows.length ? ` · seen failing in ${esc(g.workflows.join(', '))}` : ''}.</div>`,
-        foot: g.newest
-          ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.${stale ? ` ${esc(CRED_STALE_LINE)}` : ''}`
-          : '',
+          g.workflows.length ? ` · seen failing in ${esc(g.workflows.join(', '))}` : ''}.${
+          ok ? ` Those rows are the incident, not the current state: ${esc(ok.how)}, after the newest of them. They will keep appearing here until they fall out of the ${num(FAIL_LIMIT)}-row window, and v_needs_attention will keep listing them until its own 24-hour window ages them out.` : ''}</div>`,
+        foot: ok
+          ? `${esc(ok.fix)} Most recent failure ${esc(ago(g.newest))}; confirmed working ${esc(ago(ok.at))}.`
+          : g.newest
+            ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.${stale ? ` ${esc(CRED_STALE_LINE)}` : ''}`
+            : '',
         target: 'setCredsCard',
       });
     });
@@ -1029,6 +1118,7 @@ SCREENS.settings = async host => {
           'Active means n8n will run the workflow. It does not mean the workflow succeeds — an active workflow with a revoked credential runs on every trigger and fails on every trigger, and both of those are true at once.',
           'Not logged is not a pass. Those workflows have no Audit Log node, so nothing they do reaches audit_log; they are left uncoloured because this dashboard has no evidence either way, and colouring them green would manufacture some.',
           'No runs yet is the same kind of absence: registered to log, never logged, never observed working.',
+          'This list is the automation register. The n8n instance also carries the three published workflows that serve NEXUS’s public home, privacy and terms pages — Google requires all three before an OAuth consent screen can go to production, and it rejects vercel.app as a public suffix — so a count taken in n8n is larger than the count here. Where one of those pages is registered it is labelled "web page" and left out of the not-logged count: a page that logs nothing is not a blind spot.',
           rows.length >= HEALTH_LIMIT ? `The read is capped at ${num(HEALTH_LIMIT)} workflows and hit the cap, so this is a window rather than the whole register.` : '',
           s.failsErr ? `Failure detail is unavailable (${s.failsErr}), so a workflow's drawer shows its counts but not the text of what went wrong.` : '',
         ].filter(Boolean).map(esc).join('<br>')}</div>
@@ -1049,7 +1139,8 @@ SCREENS.settings = async host => {
       if (!listHost) return;
       listHost.innerHTML = table([
         { label: 'Workflow', strong: true, render: w => `
-          <div>${esc(str(w.name) || 'Unnamed workflow')}</div>
+          <div>${esc(str(w.name) || 'Unnamed workflow')}${
+            isPublicPage(w) ? ` <span class="chip" title="${esc(PAGE_NOTE)}">web page</span>` : ''}</div>
           <div class="cell-sub">${esc([str(w.category), str(w.trigger_type)].filter(Boolean).join(' · ') || 'no category recorded')}${
             w.is_active === false
               ? ' · <span class="t-warm">inactive in n8n — its webhook is not live</span>'
@@ -1180,28 +1271,32 @@ SCREENS.settings = async host => {
         `None of the newest ${FAIL_LIMIT} failed runs mentions a credential. That covers the failures that were logged: a workflow with no Audit Log node could be failing on a credential right now and would not appear here.`,
         'key');
     }
-    return `<div>${groups.map(g => `
+    return `<div>${groups.map(g => {
+      const ok = credVerified(g.name, g.newest);
+      return `
       <div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%">
-          <span class="material-symbols-outlined t-hot" style="font-size:20px">key_off</span>
+          <span class="material-symbols-outlined t-${ok ? 'ok' : 'hot'}" style="font-size:20px">${ok ? 'key' : 'key_off'}</span>
           <span style="font-weight:500">${esc(g.name)}</span>
-          ${pill('CRITICAL', 'hot')}
+          ${ok ? pill('Verified working', 'ok') : pill('CRITICAL', 'hot')}
           <div style="flex:1"></div>
           <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
         </div>
-        <div class="cell-sub" style="white-space:normal">${credStale(g.newest) ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}</div>
+        ${ok ? `<div class="cell-sub" style="white-space:normal"><strong>This is history, not the current state.</strong> ${esc(ok.how)} — after the newest failure below. ${esc(ok.fix)}</div>` : ''}
+        <div class="cell-sub" style="white-space:normal">${ok || credStale(g.newest) ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}</div>
         <div class="cell-sub">${g.count
           ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it`
           : 'No failed audit row in this window names it'}${
           g.viewCount ? ` · v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.newest ? ` · most recent ${esc(ago(g.newest))}` : ''}</div>
-        ${credStale(g.newest) ? `<div class="cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
+        ${!ok && credStale(g.newest) ? `<div class="cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
         ${g.workflows.length
           ? `<div class="cell-sub">Seen failing in: ${g.workflows.map(w =>
               `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
                 title="Show this in the workflow table above">${esc(w)}</button>`).join(' ')}</div>`
           : '<div class="cell-sub t-muted">No failed run in this window records which workflow it belongs to.</div>'}
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
       <div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
         <div class="cell-sub" style="white-space:normal">${esc(NO_CRED_FIX)}</div>

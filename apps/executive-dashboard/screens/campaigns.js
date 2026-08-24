@@ -28,7 +28,52 @@
    Nothing here writes to the database. `communication_logs` and `audit_log` are
    service-role only; this screen reads them and calls exactly one n8n webhook.
    Every count below is a count of rows Postgres returned — there is no
-   estimated, projected or example figure anywhere on this screen. */
+   estimated, projected or example figure anywhere on this screen.
+
+   ── Round 4, 24 Aug 2026. One audience member. ───────────────────────────────
+
+   The database now holds one lead, and `communication_logs` holds 66 messages
+   that are all his. So a campaign audience here is one person, and this screen
+   is mostly empty states — which is the deliverable, not a failure of it. An
+   empty state that names what is empty, why, and what would fill it is the most
+   useful thing this screen can be today; a fabricated funnel would be the least.
+
+   Three things it will not print, at any n, and each one is stated on the screen
+   with the column that is missing:
+
+     · **An open rate or a click rate.** Nothing in this database records an
+       open, a click or an unsubscribe. A Gmail send leaves no event behind, and
+       there is no table for one to land in.
+     · **A send rate or a delivery confirmation.** A row in communication_logs is
+       written by the workflow after it hands the message off. There is no
+       provider message id, no bounce and no delivery status, so a row means "the
+       workflow logged a send" and never "it arrived".
+     · **A comparison between campaigns.** `communication_logs` carries no
+       workflow id and no campaign id, so a day-3 drip mail and a hand-typed
+       reply are the same shape to every query this screen can write. Every drip
+       figure here is therefore "outbound mail on a mail channel at or after the
+       enrolment" — deliberately generous, and impossible to narrow with the
+       columns that exist. And there is one sequence and one audience member to
+       compare anyway.
+
+   Two live facts about the workflow itself, both of which change what this
+   screen should say:
+
+     · **The 7-Day Warm Lead Drip is the one workflow in this system that carries
+       no `executionTimeout`, and that is deliberate.** Every other workflow now
+       has a five-minute ceiling. This one's Wait nodes at day 1, 3, 5 and 7 hold
+       a single execution open for a week, so a five-minute ceiling would kill
+       every enrolment four minutes into the first wait. The absence is correct
+       and must not be tidied away, so it is stated on the enrolment card where
+       somebody about to standardise the workflows will read it.
+     · **The Gmail credential that stopped every send has been fixed.** A
+       Customer 360 run at 19:46 came back `Gmail - Get Emails → ok`. A failure
+       row is a fact about a moment, not a state, and this screen used to read
+       one as "email delivery is broken right now" for as long as the row
+       existed. It now checks the failure against what happened after it: a later
+       run of a workflow that uses the same mailbox, completed successfully, is
+       evidence the mailbox works again. Evidence, not a guarantee — audit_log
+       records only runs that completed — and it is labelled as evidence. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
@@ -47,15 +92,32 @@ const LOG_LIMIT    = 1000;
 const AUDIT_LIMIT  = 1000;
 const ATTN_LIMIT   = 200;
 const HEALTH_LIMIT = 200;
+/* One row per person, so this is a ceiling on customers rather than on
+   messages. It is read for one reason: to say how many people the messages
+   belong to without counting distinct lead_email values, which over-counts. */
+const CONV_LIMIT   = 200;
 
 /* This screen's id in `v_needs_attention.screen`. */
 const SCREEN_ID = 'campaigns';
 
-/* The drip is a fixed three-step sequence over seven days. Used only to say
-   whether a lead's remaining steps are still queued — after seven days the
-   sequence has run out on its own, which changes what an operator should do
-   about a lead who replied halfway through. */
+/* The drip runs over seven days, on Wait nodes at day 1, day 3, day 5 and day 7.
+   Used here only to say whether a lead's remaining steps are still queued —
+   after seven days the sequence has run out on its own, which changes what an
+   operator should do about a lead who replied halfway through. */
 const SEQUENCE_DAYS = 7;
+
+/* Why this workflow is the exception, said where somebody standardising the
+   workflows will read it. The dashboard cannot read a workflow's timeout
+   setting, so this is a stated fact with its provenance attached rather than a
+   reading — and it is stated because "fixing" it would silently kill every
+   enrolment four minutes into the first wait, with the webhook still returning
+   200 and this screen still reporting people as enrolled. */
+const NO_TIMEOUT_NOTE =
+  'This is the one workflow in the system with no executionTimeout, and that is deliberate. Every other workflow '
+  + 'carries a five-minute ceiling; this one\u2019s Wait nodes at day 1, day 3, day 5 and day 7 hold a single execution '
+  + 'open for a week, so a five-minute ceiling would cut every enrolment off four minutes into the first wait — while the '
+  + 'webhook still answered 200 and this screen still called the lead enrolled. Do not add one. Checked in n8n on '
+  + '24 Aug 2026: the dashboard cannot read a workflow\u2019s timeout, so this is a stated fact, not a reading.';
 
 /* Names shown inline on an alert before it collapses into "+N more". The row
    itself scrolls to and highlights the full set, so this is a glance. */
@@ -67,6 +129,14 @@ const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
 const stamp = v => { const t = Date.parse(v); return Number.isNaN(t) ? 'no timestamp recorded' : new Date(t).toLocaleString('en-GB'); };
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+const muted = t => `<span class="t-muted">${esc(t)}</span>`;
+const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
+
+/* A workflow run that proves the mailbox works. Matched on the workflow name and
+   its summary together, because the evidence that mattered on 24 Aug was a
+   Customer 360 run reporting `Gmail - Get Emails → ok` — the mailbox is named in
+   the summary, not in the workflow's own name. */
+const MAILBOX_RE = /gmail|smtp|mailbox|e-?mail/i;
 
 /* Resolve to [value, null] or [null, error] so one failed read cannot abort the
    others through Promise.all, and so every failure arrives as a fact the strip
@@ -138,6 +208,10 @@ const FILTERS = [
 SCREENS.campaigns = async host => {
   const alertCard  = el('div', 'card flush');
   const strip      = el('div', 'grid g5');
+  /* With one lead and one person's messages, the list of questions this screen
+     refuses to answer is more useful than anything it can answer, and each "no"
+     is a specification: the column that is missing, and what would fill it. */
+  const scopeCard  = el('div', 'card flush');
   const enrolCard  = el('div', 'card flush');
   const midRow     = el('div', 'grid g2 top');
   const rosterCard = el('div', 'card flush');
@@ -147,12 +221,13 @@ SCREENS.campaigns = async host => {
   const activityCard = el('div', 'card flush');
 
   strip.style.marginTop     = '16px';
+  scopeCard.style.marginTop = '16px';
   enrolCard.style.marginTop = '16px';
   midRow.style.marginTop    = '16px';
   lowRow.style.marginTop    = '16px';
   midRow.appendChild(rosterCard); midRow.appendChild(mailCard);
   lowRow.appendChild(silenceCard); lowRow.appendChild(activityCard);
-  [alertCard, strip, enrolCard, midRow, lowRow].forEach(n => host.appendChild(n));
+  [alertCard, strip, scopeCard, enrolCard, midRow, lowRow].forEach(n => host.appendChild(n));
 
   await boot();
 
@@ -163,7 +238,7 @@ SCREENS.campaigns = async host => {
       <div class="card-sub">v_needs_attention for this screen, plus the checks this screen runs on the rows it just read</div>
     </div></div><div class="pbody">${stateLoading(3)}</div>`;
     strip.innerHTML = stateLoading(2);
-    [enrolCard, rosterCard, mailCard, silenceCard, activityCard]
+    [scopeCard, enrolCard, rosterCard, mailCard, silenceCard, activityCard]
       .forEach(c => { c.innerHTML = stateLoading(5); });
 
     /* ── Alert-strip reads ───────────────────────────────────────────────────
@@ -185,6 +260,17 @@ SCREENS.campaigns = async host => {
       + 'is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,last_failure,health'
       + `&limit=${HEALTH_LIMIT}`));
 
+    /* How many PEOPLE the messages belong to. Counting distinct
+       communication_logs.lead_email would answer a different question and get it
+       wrong in the direction that flatters the screen: the column holds an email
+       when the lead is known and a WhatsApp handle when it is not, so one
+       customer sits under several keys and would be counted as several
+       customers. v_conversations was rebuilt on 24 Aug to resolve exactly that,
+       one row per person, so it is asked instead of guessed at. */
+    const convRead = settle(db('v_conversations?select=thread_key,chat_id,phone,push_name,lead_email,lead_name,'
+      + 'display_name,identified,message_count,inbound_count,outbound_count,last_message_at,last_direction,awaiting_reply'
+      + `&limit=${CONV_LIMIT}`));
+
     /* ── Core read ───────────────────────────────────────────────────────────
        One read feeds the strip, the roster, the mail log and the enrol table,
        so the four cannot contradict each other. If it fails, every region says
@@ -199,7 +285,7 @@ SCREENS.campaigns = async host => {
     } catch (e) {
       alertCard.querySelector('.pbody').innerHTML = stateError('the alert strip', e.message);
       strip.innerHTML = stateError('the campaign summary', e.message);
-      [['the enrolment list', enrolCard], ['the enrolment roster', rosterCard],
+      [['what this screen can answer', scopeCard], ['the enrolment list', enrolCard], ['the enrolment roster', rosterCard],
        ['the mail log', mailCard], ['the silence detector', silenceCard],
        ['campaign activity', activityCard]].forEach(([what, card]) => {
         card.innerHTML = stateError(what, e.message, 'reload');
@@ -210,6 +296,7 @@ SCREENS.campaigns = async host => {
 
     const [attn, attnErr]     = await attnRead;
     const [health, healthErr] = await healthRead;
+    const [convs, convsErr]   = await convRead;
 
     /* ── Which audit rows belong to the drip ─────────────────────────────────
        workflow_registry exists for exactly this mapping: `audit_name` plus
@@ -305,13 +392,54 @@ SCREENS.campaigns = async host => {
     roster.forEach(r => { if (!r.name) r.name = leadByEmail.get(r.key)?.name || null; });
 
     const eligible = leads.filter(l => ['WARM', 'COLD'].includes(up(l.status)) && low(l.email));
-    const notEnrolled = eligible.filter(l => !roster.has(low(l.email)));
+    /* There was a `notEnrolled` list here that nothing read — the enrolment
+       table derives the same set inside visible() from the live filter. Removed
+       rather than left as a second definition of "not enrolled" for the two to
+       drift apart. */
     /* Warm and cold leads with no email at all. They never appear in the table
        below — the drip is addressed by email — so without this they are simply
        invisible on the screen that is supposed to be nurturing them. */
     const noEmailLeads = leads.filter(l => ['WARM', 'COLD'].includes(up(l.status)) && !low(l.email));
     const nurtureable  = eligible.length + noEmailLeads.length;
     const noEmailWithPhone = noEmailLeads.filter(l => str(l.phone)).length;
+
+    /* ── Who and what these rows actually are ────────────────────────────────
+       Three descriptions of the data itself, each of which turns an empty panel
+       from "no data" into a sentence naming what is missing and why. */
+    const nLeads = leads.length;
+    const statusMix = (() => {
+      const m = new Map();
+      leads.forEach(l => { const k = up(l.status) || 'UNSCORED'; m.set(k, (m.get(k) || 0) + 1); });
+      return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${num(v)} ${k}`).join(', ');
+    })();
+    const channelMix = (() => {
+      const m = new Map();
+      comms.forEach(c => { const k = low(c.channel) || 'no channel recorded'; m.set(k, (m.get(k) || 0) + 1); });
+      return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    })();
+    const channelMixText = channelMix.length ? channelMix.map(([k, v]) => `${num(v)} ${k}`).join(', ') : 'none';
+
+    /* How many PEOPLE, not how many keys. communication_logs.lead_email holds an
+       email when the lead is known and a WhatsApp handle when it is not, so one
+       customer sits under several values and a distinct count of that column
+       reports more contacts than exist. v_conversations resolves it; where it
+       could not be read, that is said rather than substituted for. */
+    const commKeys = new Set(comms.map(c => low(c.lead_email)).filter(Boolean));
+    const personCount = convs ? convs.length : null;
+    const identityNote = convsErr
+      ? `v_conversations could not be read (${convsErr.message}), so how many people these ${num(comms.length)} messages belong to is not known here. `
+        + 'communication_logs keys on lead_email, which holds an email address when the lead is known and a WhatsApp handle when it is not, '
+        + 'so counting distinct values in that column would over-count people rather than answer the question.'
+      : personCount == null
+        ? ''
+        : (commsCapped
+            ? `v_conversations resolves the whole of communication_logs to ${num(personCount)} ${plural(personCount, 'person', 'people')}; this screen read only the newest ${num(LOG_LIMIT)} messages of it`
+            : `v_conversations resolves the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read here to `
+              + `${num(personCount)} ${plural(personCount, 'person', 'people')}`)
+          + (commKeys.size > personCount
+            ? `, filed in communication_logs under ${num(commKeys.size)} different lead_email values. That column holds an email when the lead is known `
+              + `and a WhatsApp handle when it is not, so the raw column looks like ${num(commKeys.size)} contacts and is ${num(personCount)}.`
+            : '.');
 
     /* ── Per-enrolment evidence ──────────────────────────────────────────────
        Mail read is newest-first and capped. If it was capped, a lead enrolled
@@ -413,20 +541,48 @@ SCREENS.campaigns = async host => {
     const dripRun30  = dripHealth.reduce((s, w) => s + (n0(w.runs_30d) || 0), 0);
     const dripLastFailure = dripHealth.map(w => w.last_failure).filter(Boolean)
       .sort((a, b) => ts(b) - ts(a))[0] || null;
+    /* last_run is the newest run of ANY status, which is exactly what makes it
+       usable as evidence against a failure timestamp. */
+    const dripLastRun = dripHealth.map(w => w.last_run).filter(Boolean)
+      .sort((a, b) => ts(b) - ts(a))[0] || null;
     const dripOff = dripHealth.length
       ? dripHealth.every(w => w.is_active === false)
       : (dripFlows.length ? dripFlows.every(w => w.is_active === false) : false);
 
-    const delivery = credFailures.length ? 'broken' : (dripFail30 > 0 ? 'degraded' : 'unknown');
+    /* A credential failure is a fact about a moment. Reading one as "broken
+       right now" for as long as the row exists is how a fault fixed at 19:00
+       still looks like an emergency at midnight — and this screen did exactly
+       that until the Gmail credential was reconnected on 24 Aug and the banner
+       stayed red. So the newest failure is checked against what happened after
+       it: a later run of a workflow that touches the same mailbox, completed
+       successfully, is evidence the mailbox works again.
+
+       Evidence, not a clean bill of health. audit_log records only runs that
+       COMPLETED, so a workflow hung on the mailbox right now leaves no row at
+       all — which is why the wording below says what was observed rather than
+       "email is working". */
+    const newestCredFailure = credFailures.length ? Math.max(...credFailures.map(i => ts(i.at))) : 0;
+    const mailProof = newestCredFailure
+      ? (audit.filter(a => up(a.status) === 'SUCCESS'
+            && ts(a.logged_at) > newestCredFailure
+            && MAILBOX_RE.test(`${str(a.workflow)} ${str(a.summary)}`))
+          .sort((a, b) => ts(b.logged_at) - ts(a.logged_at))[0] || null)
+      : null;
+    const delivery = credFailures.length
+      ? (mailProof ? 'recovered' : 'broken')
+      : (dripFail30 > 0 ? 'degraded' : 'unknown');
 
     /* One sentence, used in the button titles and the confirm dialog. The
        dialog is where the irreversible click is taken, so it has to carry the
        same fact the strip carries — not a softer version of it. */
     const deliveryTitle = delivery === 'broken'
       ? 'Email delivery is broken right now: a workflow recorded a mail credential failure. Enrolling queues the sequence, but no email leaves until the credential is reconnected.'
-      : delivery === 'degraded'
-        ? `The drip workflow logged ${dripFail30} ${plural(dripFail30, 'failure', 'failures')} in the last 30 days, so a queued sequence may not actually send.`
-        : 'Enrolling queues the sequence inside n8n. Whether the mail then leaves cannot be confirmed from this dashboard — no credential failure is recorded, but the credential itself is not readable from the browser.';
+      : delivery === 'recovered'
+        ? `The mail credential that stopped this drip has been reconnected: ${str(mailProof.workflow) || 'a later run'} completed successfully on the same mailbox at ${stamp(mailProof.logged_at)}, after the failure. `
+          + 'Enrolling queues the sequence inside n8n. That is evidence rather than a guarantee — audit_log only records runs that completed.'
+        : delivery === 'degraded'
+          ? `The drip workflow logged ${dripFail30} ${plural(dripFail30, 'failure', 'failures')} in the last 30 days, so a queued sequence may not actually send.`
+          : 'Enrolling queues the sequence inside n8n. Whether the mail then leaves cannot be confirmed from this dashboard — no credential failure is recorded, but the credential itself is not readable from the browser.';
 
     const deliveryEvidence = lastMail
       ? `The most recent outbound mail row in communication_logs was logged ${esc(ago(lastMail.created_at))} (${esc(stamp(lastMail.created_at))}).`
@@ -439,6 +595,15 @@ SCREENS.campaigns = async host => {
           + `(${dripHealth.map(w => `<span class="mono">${esc(str(w.name) || 'unnamed')}</span> — ${esc(str(w.health) || 'no health state')}`).join(', ')}), `
           + `${num(dripRun30)} ${plural(dripRun30, 'run', 'runs')} and ${num(dripFail30)} ${plural(dripFail30, 'failure', 'failures')} in the last 30 days`
           + `${dripLastFailure ? `, most recent failure ${esc(ago(dripLastFailure))}` : ''}.`
+          /* The same distinction overview.js draws: last_run is the newest run
+             of any status, so when it is later than last_failure the workflow
+             has completed a run since that failure and that run did not fail.
+             Without this a fault fixed at 19:00 still reads as an emergency at
+             midnight. It is evidence, not a clean bill — audit_log cannot record
+             a run that hung, so an idle workflow and a stuck one look alike. */
+          + (dripLastRun && dripLastFailure && ts(dripLastRun) > ts(dripLastFailure)
+            ? ` It has completed a run since that failure, ${esc(ago(dripLastRun))}, and that run did not fail — evidence the fault is behind it rather than a clean bill of health.`
+            : '')
         : 'No row in v_workflow_health triggers on the lead-trigger webhook or is named as a drip, so the workflow behind this screen is not registered and its health cannot be reported.';
 
     /* ── Alerts ──────────────────────────────────────────────────────────────
@@ -528,7 +693,9 @@ SCREENS.campaigns = async host => {
           + 'communication_logs records no workflow id, so <em>any</em> outbound mail row on or after the enrolment counts as a send here — the test is as generous as it can be made, and it still comes back zero. '
           + (delivery === 'broken'
             ? 'That is consistent with the credential failure above: the sequence is queueing and the mailbox is dead.'
-            : 'Nothing above explains it, which makes it worth opening n8n on.')
+            : delivery === 'recovered'
+              ? 'The mail credential that would have explained this has since been verified working, so a dead mailbox no longer accounts for it. That makes it worth opening n8n on.'
+              : 'Nothing above explains it, which makes it worth opening n8n on.')
           + (unjudgeable
             ? ` ${num(unjudgeable)} further ${plural(unjudgeable, 'enrolment is', 'enrolments are')} not judged by this check at all: ${plural(unjudgeable, 'it predates', 'they predate')} the oldest message this screen read, so mail sent to ${plural(unjudgeable, 'it', 'them')} could sit outside the ${num(LOG_LIMIT)}-row window.`
             : ''),
@@ -621,6 +788,14 @@ SCREENS.campaigns = async host => {
         ? `v_workflow_health could not be read (${healthErr.message}), so the drip workflow's own health is missing from the email-delivery alert.`
         : '',
       delivery === 'unknown' ? `${NOT_PROBED} No mail-credential failure is recorded and the drip workflow logged no failure in the last 30 days.` : '',
+      /* The good news, said once and with its evidence, so nobody has to
+         remember whether last night's red banner was ever resolved. */
+      delivery === 'recovered'
+        ? `A mail credential failure is still recorded in v_needs_attention from ${ago(credFailures[0].at)}, but it has been superseded: `
+          + `${str(mailProof.workflow) || 'a later workflow run'} completed successfully on the same mailbox at ${stamp(mailProof.logged_at)}. `
+          + `This screen therefore does not report email delivery as broken. ${NOT_PROBED}`
+        : '',
+      identityNote,
       /* Said whether or not the zero-send alert fired. Otherwise an enrolment
          the screen refused to judge would vanish from every count on the page
          without anybody being told it had been set aside. */
@@ -672,19 +847,35 @@ SCREENS.campaigns = async host => {
 
     /* The honest empty case. Not a box with nothing in it: a sentence naming
        what was checked and what came back, so "no alerts" reads as a result
-       rather than as a panel that failed to load. */
+       rather than as a panel that failed to load.
+
+       And with nobody enrolled it must not read as four checks passing. Four
+       checks with nothing to judge is a different statement, and claiming
+       "every enrolment has a logged send" of an empty roster is how a panel
+       starts lying without anybody writing a false sentence. */
+    const checksLine = roster.size
+      ? `Across the ${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} and ${num(comms.length)} `
+        + `${plural(comms.length, 'message', 'messages')} read here: every judged enrolment has a logged send, nobody who replied is still being `
+        + 'sequenced, every drip run carries a usable email address, and no run is logged as failed.'
+      : `No drip run appears in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read, so nobody is enrolled and this screen's `
+        + 'checks have nothing to judge — which is not the same as everything being fine. '
+        + (eligible.length
+          ? `${num(eligible.length)} ${plural(eligible.length, 'lead is', 'leads are')} eligible to enrol in the table below.`
+          : 'No lead is eligible to enrol either, so there is nothing on this screen to start.');
+
     const nothingHtml = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-${attnErr ? 'warm' : 'ok'}" style="font-size:20px" aria-hidden="true">${attnErr ? 'help' : 'task_alt'}</span>
+      <span class="material-symbols-outlined t-${attnErr ? 'warm' : roster.size ? 'ok' : 'muted'}" style="font-size:20px" aria-hidden="true">${attnErr ? 'help' : roster.size ? 'task_alt' : 'inbox'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${attnErr
           ? 'Nothing this screen can check is wrong — but the shared alert view did not load'
-          : 'Nothing on this screen needs attention right now'}</div>
+          : roster.size
+            ? 'Nothing on this screen needs attention right now'
+            : 'There is no campaign running for this screen to have anything wrong with'}</div>
         <div class="cell-sub" style="white-space:normal">${attnErr
           ? 'v_needs_attention could not be read, so anything the database itself would have raised — including the mail-credential failure that decides whether this screen can send at all — is unknown right now. '
-          : 'v_needs_attention returned no row filed against Campaigns, no mail-credential failure is recorded anywhere in it, and '}Across the
-          ${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} and ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read here:
-          every judged enrolment has a logged send, nobody who replied is still being sequenced, every drip run carries a usable email address,
-          and no run is logged as failed.</div>
+          : delivery === 'recovered'
+            ? 'v_needs_attention returned no row filed against Campaigns. The mail-credential failure it still carries has been superseded by a later successful run on the same mailbox, so it is not raised here as a live fault. '
+            : 'v_needs_attention returned no row filed against Campaigns, and no mail-credential failure is recorded anywhere in it. '}${esc(checksLine)}</div>
       </div>
     </div>`;
 
@@ -693,43 +884,130 @@ SCREENS.campaigns = async host => {
       <div class="cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
     </div>` : '';
 
-    /* ── Summary strip ───────────────────────────────────────────────────── */
+    /* ── Summary strip ───────────────────────────────────────────────────────
+       Five counts and not one rate. The tile that used to sit here for failed
+       runs has moved into the enrolment tile's subtitle to make room for the
+       audience, because the audience is the number that decides what every
+       other figure on this screen is allowed to claim: with one person in it,
+       a percentage is a description of that person. */
     const failedRuns = failedIdx.length;
 
     strip.innerHTML = [
+      kpi('Campaign audience', num(eligible.length),
+        [
+          muted(eligible.length
+            ? `${num(eligible.length)} of ${num(nLeads)} ${plural(nLeads, 'lead', 'leads')} in the database ${plural(eligible.length, 'is', 'are')} warm or cold with an email address`
+            : nLeads
+              ? `No lead in the database is warm or cold with an email address. By status the database holds ${statusMix}`
+              : 'There is no lead in the database at all'),
+          noEmailLeads.length
+            ? warn(`${num(noEmailLeads.length)} further warm or cold ${plural(noEmailLeads.length, 'lead has', 'leads have')} no email address, so the drip cannot reach ${plural(noEmailLeads.length, 'them', 'any of them')}`)
+            : '',
+          nLeads === 1
+            ? warn('One lead in the database. A campaign audience of one person carries no rate, no segment and no comparison — see the panel below for what that rules out.')
+            : '',
+        ].filter(Boolean).join('<br>'),
+        nLeads === 1 ? 't-warm' : ''),
       kpi('Leads enrolled', num(roster.size),
         roster.size
           ? `${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} in the audit log`
+            + (failedRuns
+              ? `<br><span class="t-hot">${num(failedRuns)} ${plural(failedRuns, 'run', 'runs')} logged FAILED or REJECTED</span>`
+              : `<br>${muted('Every logged drip run succeeded')}`)
             + (zeroSend.length ? `<br><span class="t-hot">${num(zeroSend.length)} with nothing sent since enrolment</span>` : '')
           : instrumented === false
-            ? '<span class="t-warm">The drip workflow does not write to the audit log, so enrolments cannot be counted</span>'
-            : '<span class="t-muted">No drip run has ever been logged</span>'),
+            ? warn('The drip workflow does not write to the audit log, so enrolments cannot be counted')
+            : muted(eligible.length
+              ? `No drip run has ever been logged. ${num(eligible.length)} ${plural(eligible.length, 'lead is', 'leads are')} eligible to start one on`
+              : 'No drip run has ever been logged, and no lead is currently eligible to start one on')),
       kpi('Replied while enrolled', num(replied.length),
         replied.length
           ? `<span class="t-hot">${num(repliedMid.length)} still inside the ${SEQUENCE_DAYS}-day sequence</span>`
           : roster.size
-            ? '<span class="t-muted">No enrolled lead has written back since being enrolled</span>'
-            : '<span class="t-muted">Nobody is enrolled, so there is nothing to answer</span>',
+            ? muted('No enrolled lead has written back since being enrolled')
+            : muted('Nobody is enrolled, so there is nothing to answer'),
         replied.length ? 't-hot' : ''),
-      kpi('Runs failed', num(failedRuns),
-        failedRuns
-          ? '<span class="t-hot">Logged FAILED or REJECTED by the workflow</span>'
-          : dripRuns.length
-            ? '<span class="t-ok">Every logged drip run succeeded</span>'
-            : '<span class="t-muted">Nothing logged to judge</span>',
-        failedRuns ? 't-hot' : ''),
       kpi('Outbound mail logged', num(mail.length),
         lastMail
-          ? `Last one ${ago(lastMail.created_at)}`
-          : delivery === 'broken'
-            ? '<span class="t-hot">Nothing recorded — consistent with the mail credential failure above</span>'
-            : '<span class="t-hot">Nothing recorded in the messages read</span>',
+          ? muted(`Last one ${ago(lastMail.created_at)}`)
+          : [
+              muted(`Nothing on a mail channel in the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read`),
+              muted(`Channels on those messages: ${channelMixText}`),
+              delivery === 'broken' ? warn('Consistent with the mail credential failure above') : '',
+            ].filter(Boolean).join('<br>'),
         lastMail ? '' : 't-hot'),
       kpi('Silence escalations', num(silenced.length),
         silenced.length
-          ? '<span class="t-warm">Twelve hours with no reply</span>'
-          : '<span class="t-muted">Nobody has gone quiet</span>'),
+          ? warn('Twelve hours with no reply')
+          : muted('No lead has been escalated for going quiet')),
     ].join('');
+
+    /* ── What this screen can and cannot answer ──────────────────────────────
+       Written as questions because that is how they arrive: somebody asks how
+       the campaign is performing. Every "no" carries the column that is missing
+       and what would fill it, so the panel reads as a specification rather than
+       an apology — and so that nobody spends a week looking for an open rate
+       that no part of this system has ever recorded.
+
+       Every number in it is a count of rows read on this paint. */
+    const scopeRow = (icon, cls, q, a) => `<div class="list-item" style="cursor:default;align-items:flex-start">
+      <span class="material-symbols-outlined t-${cls}" style="font-size:20px" aria-hidden="true">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500">${esc(q)}</div>
+        <div class="cell-sub" style="white-space:normal">${esc(a)}</div>
+      </div></div>`;
+
+    const canAnswer = [
+      ['Who has been enrolled, and when?',
+        `From drip runs in audit_log: ${num(dripRuns.length)} ${plural(dripRuns.length, 'run', 'runs')} across ${num(roster.size)} ${plural(roster.size, 'person', 'people')}, `
+        + `matched ${matchedByRegistry ? 'through workflow_registry\u2019s audit aliases' : 'on the workflow name'}. Each carries the status the workflow logged.`],
+      ['What has actually been sent, and when?',
+        `Every outbound row in communication_logs: ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read, `
+        + `${num(mail.length)} of them outbound on a mail channel. Channels present: ${channelMixText}.`],
+      ['Did the person answer after being enrolled?',
+        'Inbound rows in communication_logs dated at or after their first drip run. This is the one question on this screen that changes what an operator should do in the next five minutes.'],
+      ['Is the workflow itself failing?',
+        healthErr
+          ? 'Normally from v_workflow_health over a 30-day window — but the view could not be read on this paint, so it is unknown right now rather than fine.'
+          : dripHealth.length
+            ? `From v_workflow_health over a 30-day window: ${num(dripRun30)} ${plural(dripRun30, 'run', 'runs')}, ${num(dripFail30)} ${plural(dripFail30, 'failure', 'failures')}.`
+            : 'Only if the workflow is registered. No row in v_workflow_health triggers on the lead-trigger webhook or is named as a drip, so its health cannot be reported.'],
+      ['Can mail leave at all?',
+        delivery === 'broken'
+          ? 'Not right now — a workflow recorded a mail credential failure and nothing has succeeded on that mailbox since.'
+          : delivery === 'recovered'
+            ? 'A credential failure is recorded, and a later run completed successfully on the same mailbox — evidence that it works again, read from what the workflows logged rather than from the credential itself.'
+            : 'Only as far as the wreckage shows. n8n does not expose credential state to the browser, so the absence of a recorded failure is not proof that mail is going out.'],
+    ];
+
+    const cannotAnswer = [
+      ['What is the open rate? The click rate?',
+        'Nothing in this database records an open, a click or an unsubscribe. A Gmail send leaves no event behind and there is no table for one to land in, so this is not a figure that is missing — it is a figure that has never existed here. It would take a sending provider that posts delivery events back into a table this dashboard can read.'],
+      ['How many of the sends actually arrived?',
+        'A row in communication_logs is written by the workflow after it hands the message off. There is no provider message id, no bounce and no delivery status on the row, so a row means "the workflow logged a send" and never "it arrived". A delivery status column, written from the provider\u2019s webhook, is what would answer it.'],
+      ['Which campaign did this message belong to?',
+        'communication_logs carries no workflow id and no campaign id, so a day-3 drip mail and a hand-typed reply are the same shape to every query this screen can write. Every drip figure here is therefore "outbound mail on a mail channel at or after the enrolment" — deliberately generous, and impossible to narrow with the columns that exist. A workflow_id on communication_logs, written by the sending workflow, would fix it.'],
+      ['How does this campaign compare with the others?',
+        `${dripFlows.length || dripHealth.length ? `There is ${num(Math.max(dripFlows.length, dripHealth.length))} drip ${plural(Math.max(dripFlows.length, dripHealth.length), 'sequence', 'sequences')} registered` : 'No drip sequence is registered'}, and no per-campaign attribution to compare with even if there were more. A comparison would need both: a second campaign, and a column that says which one a message came from.`],
+      ['What is the send rate, the reply rate, the conversion rate?',
+        (identityNote ? identityNote + ' ' : '')
+        + `The audience is ${num(eligible.length)} ${plural(eligible.length, 'person', 'people')}. A percentage over one audience member is that audience member, so no rate is printed anywhere on this screen — the counts above are counts.`],
+    ];
+
+    scopeCard.innerHTML = `<div class="card-head"><div>
+        <div class="card-title">What this screen can answer</div>
+        <div class="card-sub">And what it cannot, with the column that is missing and what would fill it</div>
+      </div></div>
+      <div class="grid g2 top" style="gap:0">
+        <div>
+          <div class="label-caps" style="padding:14px 16px 6px">Answered from the data</div>
+          ${canAnswer.map(([q, a]) => scopeRow('check_circle', 'ok', q, a)).join('')}
+        </div>
+        <div>
+          <div class="label-caps" style="padding:14px 16px 6px">Not answerable here</div>
+          ${cannotAnswer.map(([q, a]) => scopeRow('do_not_disturb_on', 'muted', q, a)).join('')}
+        </div>
+      </div>`;
 
     /* ── Enrol a lead ─────────────────────────────────────────────────────── */
     const blockedGlobal = !N8N_BASE
@@ -740,9 +1018,13 @@ SCREENS.campaigns = async host => {
       <div class="card-head">
         <div>
           <div class="card-title">Enrol a lead in the 7-day drip</div>
-          <div class="card-sub">Day 1 welcome, day 3 follow-up, day 7 final offer — queued by n8n over the following week, never sent by this browser.
+          <div class="card-sub">Four waits — day 1, day 3, day 5 and day 7 — held open inside one n8n execution across the following week, never sent by this browser.
             Warm and cold leads that have an email address. Any other lead can be enrolled from the Leads screen.</div>
         </div>
+      </div>
+      <div class="banner info" style="margin:14px 20px 0">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">timer_off</span>
+        <div>${esc(NO_TIMEOUT_NOTE)}</div>
       </div>
       <div class="toolbar">
         <div class="seg" id="cpSeg" role="group" aria-label="Filter leads by enrolment">
@@ -818,8 +1100,14 @@ SCREENS.campaigns = async host => {
                 : 'No warm or cold lead has a drip run recorded against it.',
               q ? 'search_off' : 'campaign'),
           })
-        : stateEmpty('No warm or cold leads with an email address',
-            'The drip is addressed by email, so a lead needs one to qualify. Every other lead is either HOT, unscored, or has no email on record.',
+        /* Not "no data". Which leads exist, what they are, and the exact
+           condition a lead has to meet before it appears here. */
+        : stateEmpty('No lead can be enrolled in the drip right now',
+            nLeads
+              ? `The drip is addressed by email and nurtures warm and cold leads only. By status the database holds `
+                + `${statusMix}${noEmailLeads.length ? `, and ${num(noEmailLeads.length)} of the warm or cold ones ${plural(noEmailLeads.length, 'has', 'have')} no email address` : ''}. `
+                + 'A lead appears in this table when the router scores it WARM or COLD and it has an email address on file.'
+              : 'There is no lead in the database at all. Leads arrive from the WhatsApp router and the web form; this table fills as soon as one is scored warm or cold with an email address on it.',
             'campaign');
       wireRows(tableHost, rows, leadDrawer);
       tableHost.querySelectorAll('button[data-enrol]').forEach(b => b.addEventListener('click', ev => {
@@ -852,7 +1140,7 @@ SCREENS.campaigns = async host => {
     function confirmEnrol(lead) {
       const existing = roster.get(low(lead.email));
       const m = openModal('Enrol in the 7-day drip', `
-        <div class="banner ${delivery === 'broken' ? 'hot' : 'warm'}">
+        <div class="banner ${delivery === 'broken' ? 'hot' : delivery === 'recovered' ? 'info' : 'warm'}">
           <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">unsubscribe</span>
           <div>${esc(deliveryTitle)}</div>
         </div>
@@ -862,8 +1150,8 @@ SCREENS.campaigns = async host => {
             Enrolling again starts a second sequence; the workflow does not de-duplicate.
             ${existing.replies.length ? `They replied ${esc(ago(existing.replies[0].created_at))} — enrolling them again means answering that reply with an automated welcome message.` : ''}</div>
         </div>` : ''}
-        <p class="t-2" style="margin:0 0 16px">Day 1 welcome, day 3 follow-up, day 7 final offer. The sequence is queued inside n8n over the
-          following week — this browser sends nothing and writes nothing to the database.</p>
+        <p class="t-2" style="margin:0 0 16px">The sequence waits at day 1, day 3, day 5 and day 7, held open inside one n8n execution across
+          the following week — this browser sends nothing and writes nothing to the database.</p>
         <dl class="kv">
           <dt>Lead</dt><dd>${nameHtml(lead.name)}</dd>
           <dt>Phone</dt><dd>${phoneHtml(lead.phone, lead)}</dd>
@@ -952,7 +1240,10 @@ SCREENS.campaigns = async host => {
         : stateEmpty('Nobody is enrolled',
             instrumented === false
               ? 'The registered drip workflow does not write to the audit log, so enrolments cannot be listed here even if leads are mid-sequence. Instrument the workflow to see this roster.'
-              : 'No drip run has been logged. Enrol a warm or cold lead above and the workflow writes its first row here.',
+              : `No drip run has been logged${auditCapped ? ` in the newest ${num(AUDIT_LIMIT)} audit rows read` : ` in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read`}. `
+                + (eligible.length
+                  ? `Enrol one of the ${num(eligible.length)} eligible ${plural(eligible.length, 'lead', 'leads')} above and the workflow writes its first row here.`
+                  : 'No lead is currently eligible to enrol either, so there is nothing to start. This roster fills the first time the drip workflow logs a run against a lead\u2019s email.'),
             'group_off')}</div>`;
 
     /* ── What has actually been sent ─────────────────────────────────────── */
@@ -979,10 +1270,13 @@ SCREENS.campaigns = async host => {
           </div>`;
           }).join('')
         : stateEmpty('No mail has been logged',
-            `Nothing outbound on a mail channel exists in the ${num(comms.length)} messages read. `
+            `Nothing outbound on a mail channel exists in the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read. `
+            + `Those messages carry these channels: ${channelMixText}. `
             + (delivery === 'broken'
               ? 'With a mail credential failure recorded this is the expected state — enrolments queue, mail does not go out.'
-              : 'No mail credential failure is recorded either, so nothing here explains it.'),
+              : delivery === 'recovered'
+                ? 'The mail credential failure that would have explained it has since been superseded by a successful run on the same mailbox, so this is not the mailbox being dead. A row appears here the first time a workflow logs an outbound message on a mail channel.'
+                : 'No mail credential failure is recorded either, so nothing here explains it. A row appears here the first time a workflow logs an outbound message on a mail channel.'),
             'unsubscribe')}</div>`;
 
     /* ── Silence detector ─────────────────────────────────────────────────── */
@@ -1005,7 +1299,9 @@ SCREENS.campaigns = async host => {
           </div>`;
           }).join('')
         : stateEmpty('Nobody has gone silent',
-            'The detector only fires for leads that received an outbound message and did not reply within twelve hours.',
+            'The detector fires once for a lead that received an outbound message and did not reply within twelve hours, and writes a [SILENCE-ESCALATED] row into communication_logs. '
+            + `None of the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read carries that marker`
+            + (mail.length ? '.' : ', which is consistent with no outbound mail having been logged at all — nothing has been sent for anybody to go quiet after.'),
             'notifications_off')}</div>`;
 
     /* ── Campaign activity ────────────────────────────────────────────────── */
@@ -1035,8 +1331,9 @@ SCREENS.campaigns = async host => {
           }).join('')
         : stateEmpty('No campaign runs logged',
             instrumented === false
-              ? 'The registered drip workflow does not write to the audit log, so its runs cannot appear here.'
-              : 'The drip workflow writes a row here every time it starts a sequence.',
+              ? 'The registered drip workflow does not write to the audit log, so its runs cannot appear here even if leads are mid-sequence.'
+              : `The drip workflow writes a row here every time it starts a sequence. No row among the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read `
+                + `comes from ${matchedByRegistry ? 'a workflow the registry names as a drip' : 'a workflow whose name reads as a drip'}.`,
             'receipt_long')}</div>`;
 
     /* ── The strip, and the wiring that makes it actionable ─────────────────

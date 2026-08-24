@@ -289,3 +289,82 @@ dashboard lies without anyone writing a false sentence.
 `tone()` in `lib/format.js` is the single source of truth for all of these and
 maps anything it does not recognise to `cold`. A screen must not keep its own
 severity→tone map; five had grown one and they disagreed with each other.
+
+---
+
+# ADDENDUM — 24 Aug 2026, evening. The database now holds ONE customer.
+
+Everything that was not this dealership's real data was deleted tonight, after a
+full export. Three statements earlier in this file are now stale; they are
+corrected here, and this section wins.
+
+## The customer
+
+    name    ALI ASGHER UJJAIN WALA  /  Shabbir Ujjainwala
+    email   shabbir53ujjainwala@gmail.com
+    phone   +918517942172
+    chat    158510264357112@lid        <- the WhatsApp address to reply on
+
+He is to be treated as a real customer, not a test fixture.
+
+## Row counts, live
+
+    leads                 1     inventory            12     audit_log      289
+    communication_logs   66     rag_documents        15     daily_metrics    6
+    kyc_documents         9     finance_quotes        3     competitors      0
+    whatsapp_contacts     1     purchase_history      1
+    users                 1     deals_embeddings      1     customer_360_profiles 1
+
+## Corrections to earlier sections
+
+**ADDENDUM §1 said "Nine of the eighteen rows are voided".** No longer true —
+the nine rows that were never submissions have been deleted. `kyc_documents`
+holds nine rows, all genuine, all one customer's, and the `void_reason`
+partition is **empty**. Keep every branch that handles it: the gate that
+produced those rows is fixed, but the branch must stay correct, and an empty
+voided section must render as nothing rather than as a titled empty card.
+
+**`competitors` is empty.** All fifteen rows were deleted — twelve were seed
+data whose `our_price_aed` contradicted the real inventory (a Land Cruiser
+quoted at AED 290,000 against an actual list price of 385,000; the GLE, X5,
+Cayenne and Macan were never in stock), which means every "undercut" alert this
+system raised was fabricated. The other three were scrape failures the scraper
+had stored as rival dealerships. The scraper runs daily at 05:00 UTC and will
+refill it from the real lot.
+
+## `v_conversations`: `thread_key` is NOT `chat_id`
+
+The view was rebuilt tonight and this is the change most likely to bite.
+
+    thread_key   the canonical identity of a PERSON.  Their lead email where the
+                 rows can be traced to a lead, otherwise the handle.
+    chat_id      the WhatsApp address to REPLY on. Always send here.
+
+They used to be the same value. They are not any more, because
+`communication_logs.lead_email` holds an email when a lead is known and a
+WhatsApp handle when it is not — so one customer's messages sit under **several
+different `lead_email` values**, and the old view grouped on the raw column and
+showed him as two conversations (46 messages under his email, 20 under his LID).
+
+Two consequences:
+
+* **Never send to `thread_key`.** Sends go to `chat_id`.
+* **Reading one person's history needs every key their rows are filed under**,
+  not just the thread key. `lead_email=eq.<thread_key>` returns a partial
+  conversation. Use an `in.()` over the keys the view resolved
+  (`thread_key`, `chat_id`, `lead_email`), and compare what you got against
+  `message_count` — if they disagree, say so rather than showing a short thread.
+
+## `v_needs_attention.ref` — what it holds per kind
+
+`ref` is one opaque text column carrying a different identifier per branch:
+
+    lead_unassigned / sla_breach   leads.id
+    inventory_aging                inventory.id, the stock number ("NX-1010")
+    undercut                       competitors.id
+    kyc_archive_gap                kyc_documents.id
+    unanswered_chat                v_conversations.chat_id
+    workflow_failure               the workflow NAME, not an id
+
+A screen resolving a `workflow_failure` therefore has to match on the name, and
+should fall back to `title` rather than assuming `ref` is a key.

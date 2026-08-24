@@ -142,4 +142,9 @@ function startBadges(intervalMs = 60000) {
   return timer;
 }
 
-export { refreshBadges, startBadges, LAST };
+/* COUNTS is exported because screens/overview.js has to apply the same
+   severity rule to compute its refinement floor. It was mirrored there as a
+   literal with a comment pointing here, which is a coupling nothing can check —
+   the day one side gains COLD the badge silently disagrees with the panel
+   under it. Importing it makes the two provably the same set. */
+export { refreshBadges, startBadges, LAST, COUNTS };

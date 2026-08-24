@@ -96,7 +96,12 @@ function pathsIn(code) {
 }
 
 function hooksIn(code) {
-  return new Set([...code.matchAll(/HOOK\.(\w+)/g)].map(m => m[1]));
+  /* The lookbehind matters: a screen-local constant like `NO_SCRAPE_HOOK.why`
+     ends in HOOK, so a bare /HOOK\.(\w+)/ matched its tail and reported
+     `HOOK.why` as an undefined webhook. That is the same cry-wolf failure the
+     concatenated-select bug caused — a checker that reports two phantom hooks
+     gets skimmed, and then the real one goes unnoticed. */
+  return new Set([...code.matchAll(/(?<![A-Za-z0-9_$])HOOK\.(\w+)/g)].map(m => m[1]));
 }
 
 function cheap(path) {

@@ -4,48 +4,71 @@
    product: every field the auditor extracted is shown, and the retention story
    is stated explicitly rather than implied by an empty cell.
 
-   Two corrections landed on 24 Aug 2026 and this file exists to honour them.
+   After the 24 Aug 2026 cleanup this register holds ONE customer's documents and
+   nothing else, and that changes what the screen has to be careful about.
 
-   1. HALF THIS TABLE WAS NEVER A KYC SUBMISSION. Any uncaptioned WhatsApp image
-      was auto-routed to the auditor, so the table holds a "Religious Banner"
-      APPROVED at 100% confidence and a "Good Morning Have a Great Day" REJECTED
-      — and the people who sent them, who were never customers, were messaged
-      back with [KYC-APPROVED]. Those rows now carry `void_reason` and
-      `voided_at`. A voided row is NOT a compliance decision, so every count,
-      rate, verdict breakdown, attempt chain, banner and retention claim on this
-      screen is computed over `live` (void_reason null) and never over the raw
-      read. The voided rows are still shown — deleting evidence of an incident is
-      not an option — but in their own section, explained, and with no
-      Approve / Reject / Re-ask control anywhere near them, because there is
-      nobody to approve.
+   1. NINE ROWS, ONE PERSON, ONE TRAIL. Every count here counts one customer's
+      attempts. Three approvals against four rejections is that man's history,
+      not an approval rate, and this file computes no rate, share, average or
+      trend over it anywhere. A percentage drawn across nine rows filed by one
+      person would read as a fact about the dealership's compliance and it is not
+      one — there is nobody here to compare him with. Where a proportion is drawn
+      at all (the retention bar) the caption says how few rows it rests on and
+      that the shapes are not shares.
 
-   2. "Abdul" AND "~S" ARE NOT CUSTOMERS. They are WhatsApp profile names, and
-      the old Customer column printed them next to "No email on the record" as
-      though a customer record had simply lost its email. Identity is now
-      resolved through `whatsapp_contacts` and confirmed against `leads`, and
-      every row states which of the four it got — a lead on file, an email with
-      no lead row, a WhatsApp profile name, or nothing at all.
+   2. THE FINDING IS THE ARCHIVE GAP. Exactly one of the nine rows carries a
+      storage_path. The other eight were audited, never written to Storage and
+      never purged, which is the hole `v_needs_attention` files as
+      `kyc_archive_gap`: retention cannot be proven for a document whose file was
+      never stored. That count is taken over `storage_path IS NULL AND purged_at
+      IS NULL`, exactly as the view and the Overview panel take it, so the two
+      screens can never print different numbers for the same rows. And because
+      every one of them belongs to the same submission trail, the screen says so
+      — this is one trail failing repeatedly, not a problem spread across a book
+      of customers.
+
+   3. THE VOID PARTITION IS EMPTY, AND THE BRANCH STAYS. Nine rows that were
+      never submissions — greeting cards, a religious banner, a Sikh prayer text
+      — were deleted, and the gate that auto-routed every uncaptioned WhatsApp
+      image to the auditor is fixed. Every `void_reason` path below is kept and
+      still correct, because the partition can refill: the register is computed
+      over `live` and never over the raw read. What must not happen is a heading
+      with nothing under it, so when nothing is voided the section is not
+      rendered at all rather than rendered as an empty box.
+
+   Identity is resolved through `whatsapp_contacts` and confirmed against
+   `leads`, never taken from whatever string the workflow wrote on the row, and a
+   chat id is never printed where a name goes. One person also reaches this
+   screen under two different keys — `communication_logs.lead_email` holds an
+   email when the lead is known and a WhatsApp handle when it is not — so keys
+   are joined through the contact directory before anything is matched, exactly
+   as the rebuilt `v_conversations` now joins them.
 
    Retention has four distinct meanings and they must never be conflated:
      · purged_at set                  → the file was deleted on schedule. Correct.
      · storage_path set, no purge     → the file is archived and retrievable.
      · both null, created ON or AFTER the archive feature shipped
-                                      → ARCHIVE FAILURE. A hole in the audit
-                                        trail, surfaced as a banner with a count.
-     · both null, created BEFORE it   → predates archiving. Explained, not flagged.
+                                      → ARCHIVE FAILURE, and the common case here.
+     · both null, created BEFORE it   → predates archiving. Explained history
+                                        rather than a step that failed, but still
+                                        an unprovable document, so still counted
+                                        in the gap and labelled for what it is.
    Nothing on this screen is estimated and no row is fabricated: if a table
    cannot be read, the panel that depends on it says so. */
 import { db, signedUrl } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { ago, clock, esc, n0, num, pill } from '../lib/format.js';
+import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
 
 /* The moment the archive step went live. A row older than this was written by a
-   build that never stored a file at all, so a null storage_path there is
-   expected history, not a compliance failure. Flagging those would drown the
-   real gaps in noise the dealership can never clear. */
+   build that never stored a file at all, so its missing file is explained
+   history rather than a step that failed, and it is labelled Pre-archive so a
+   reviewer can tell the two apart. It is NOT excluded from the archive gap: the
+   document is unprovable either way, `v_needs_attention` counts it, and a screen
+   that quietly dropped it would print a smaller number than Overview for the
+   very same rows. The label is a nuance inside the count, never a filter on it. */
 const ARCHIVE_EPOCH = '2026-08-17T16:01:48Z';
 const ARCHIVE_EPOCH_MS = Date.parse(ARCHIVE_EPOCH);
 const ARCHIVE_EPOCH_LABEL = '17 Aug 2026 16:01 UTC';
@@ -63,8 +86,11 @@ const NO_DECISION_HOOK =
   'No KYC decision endpoint exists yet. kyc_documents is service-role only, and the audit-kyc webhook audits a document — it does not accept a human verdict — so the browser cannot record an approval or a rejection.';
 const NO_REASK_HOOK =
   'No re-request endpoint exists yet. Asking the customer for another upload needs a KYC re-request webhook, and none is deployed.';
+/* The message on eight of the nine rows in the register as it stands, so it says
+   the whole thing rather than "nothing to open": what is missing, why that is a
+   compliance problem, and why no button here can fix it. */
 const NO_FILE_LINK =
-  'This record has no storage_path, so no file was ever archived for it. There is nothing to open.';
+  'This record has no storage_path and no purged_at, so nothing was deleted on schedule — the file was simply never archived, and there is nothing to open. This is the row v_needs_attention files as kyc_archive_gap. Re-running the archive step needs a service-role job and no webhook exists for it, so the browser cannot repair it either.';
 const PURGED_FILE =
   'This file was deleted on schedule under the retention policy. There is nothing left to open.';
 /* Signing is deliberately short-lived: long enough to click through, short
@@ -107,6 +133,15 @@ const key = v => String(v == null ? '' : v).trim().toLowerCase();
    the single predicate the whole screen partitions on. */
 const isVoid = d => !!(d && d.void_reason);
 
+const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+
+/* The archive gap, defined exactly as `v_needs_attention.kyc_archive_gap` and
+   the Overview panel define it: audited, no file in Storage, and not purged
+   either. Deliberately not `retentionOf(d).key === 'failed'`, which would drop
+   the pre-archive rows and leave this screen reporting fewer unprovable
+   documents than the view does about the same table. */
+const neverArchived = d => !d.purged_at && !d.storage_path;
+
 /* ── The retention verdict for one row ───────────────────────────────────── */
 const RETENTION = {
   archived: { label: 'Archived',        tone: 'ok',   icon: 'inventory_2' },
@@ -124,7 +159,7 @@ function retentionOf(d) {
     return { key: 'unknown', detail: 'This row has no readable created_at timestamp, so it cannot be placed either side of the archive cut-over. It is deliberately not counted as a failure.' };
   }
   if (t < ARCHIVE_EPOCH_MS) {
-    return { key: 'legacy', detail: `Audited before archiving shipped (${ARCHIVE_EPOCH_LABEL}), so no file was ever stored for it. Expected history, not a gap.` };
+    return { key: 'legacy', detail: `Audited before archiving shipped (${ARCHIVE_EPOCH_LABEL}), so no file was ever stored for it. That is explained history rather than a step that failed — but the document is still unprovable, so it is counted in the archive gap alongside the failures.` };
   }
   return { key: 'failed', detail: 'The document was audited but never written to storage, and it was not purged either. The evidence behind this verdict no longer exists.' };
 }
@@ -148,6 +183,10 @@ const finalAttempt = d => {
   return a != null && m != null && a >= m;
 };
 const FLAGS = {
+  /* First, because it is the finding this register is currently about, and
+     because it is the set every archive-gap banner hands the reviewer. Its count
+     and the banner's count come from the same predicate, so they cannot drift. */
+  gap:       { label: 'No archived file',      match: neverArchived },
   expired:   { label: 'Expired when audited',  match: expiredAtAudit },
   tampering: { label: 'Tampering detected',    match: d => !!d.tampering },
   invalid:   { label: 'Marked not valid',      match: d => d.is_valid === false },
@@ -289,6 +328,37 @@ SCREENS.compliance = async host => {
 
   body.innerHTML = '';
 
+  /* One person reaches this screen under two different keys and they have to be
+     treated as one. `communication_logs.lead_email` holds an email when the lead
+     is known and a WhatsApp handle when it is not, and `kyc_documents` carries
+     both columns with either one possibly null. `whatsapp_contacts` is the
+     bridge — chat_id on one side, lead_email on the other — so every key that
+     belongs to the same contact is joined here before anything is matched
+     against anything else. Without it a document filed under an email and a
+     message logged under that same customer's @lid look like two different
+     people, which is precisely the split the rebuilt `v_conversations` was
+     written to end, and it would produce a false "approvals messaged to a
+     contact with no row in this register" line on the KPI strip. */
+  const ALIAS = new Map();
+  const link = (a, b) => {
+    if (!a || !b || a === b) return;
+    const merged = new Set([...(ALIAS.get(a) || [a]), ...(ALIAS.get(b) || [b])]);
+    merged.forEach(k => ALIAS.set(k, merged));
+  };
+  (contacts || []).forEach(c => link(key(c.chat_id), key(c.lead_email)));
+  (docs || []).forEach(d => link(key(d.chat_id), key(d.lead_email)));
+  /* Every key that identifies the same contact as `raw`, `raw` included. */
+  const alike = raw => {
+    const k = key(raw);
+    if (!k) return [];
+    const set = ALIAS.get(k);
+    return set ? [...set] : [k];
+  };
+  const keysOf = d => [...new Set([...alike(d.chat_id), ...alike(d.lead_email)])];
+  /* One stable id per contact, so rows can be grouped without picking a column
+     that happens to be null on half of them. */
+  const canonKey = d => { const ks = keysOf(d).slice().sort(); return ks.length ? ks[0] : ''; };
+
   const who = makeResolver({ contacts, contactsErr, leads, leadsErr });
   /* Resolved once per row so the register, the banners, the voided section and
      the drawer cannot disagree about who somebody is. */
@@ -307,9 +377,20 @@ SCREENS.compliance = async host => {
      a live row is deliberately left out of this set — that contact is a real
      submitter and their messages are real. */
   const liveKeys = new Set();
-  live.forEach(d => { [key(d.chat_id), key(d.lead_email)].forEach(k => { if (k) liveKeys.add(k); }); });
+  live.forEach(d => { keysOf(d).forEach(k => liveKeys.add(k)); });
   const voidKeys = new Set();
-  voided.forEach(d => { [key(d.chat_id), key(d.lead_email)].forEach(k => { if (k && !liveKeys.has(k)) voidKeys.add(k); }); });
+  voided.forEach(d => { keysOf(d).forEach(k => { if (!liveKeys.has(k)) voidKeys.add(k); }); });
+
+  /* How many distinct people the live register is actually about, and whether it
+     is exactly one. This is the number that decides whether any proportion on
+     this screen means anything: a bar drawn across nine rows filed by one man is
+     a shape, not a share, and a verdict split across them is a history, not a
+     rate. A row that carries neither a chat id nor an email cannot be attributed
+     to anybody, so its presence disqualifies the single-trail claim rather than
+     being quietly folded into it. */
+  const liveContacts = new Set(live.map(canonKey).filter(Boolean));
+  const liveUnkeyed = live.filter(d => !canonKey(d)).length;
+  const oneTrail = live.length > 0 && liveContacts.size === 1 && liveUnkeyed === 0;
 
   const kycComms = (comms || []).filter(c => String(c.message || '').startsWith('[KYC-'));
   const kycCommsVoid = kycComms.filter(c => voidKeys.has(key(c.lead_email)));
@@ -323,7 +404,7 @@ SCREENS.compliance = async host => {
      under the Approved tile. Restricting the count to keys with no row at all
      is the only version of the claim the data supports. */
   const docKeys = new Set();
-  (docs || []).forEach(d => { [key(d.chat_id), key(d.lead_email)].forEach(k => { if (k) docKeys.add(k); }); });
+  (docs || []).forEach(d => { keysOf(d).forEach(k => docKeys.add(k)); });
   const kycCommsUnlinked = kycComms.filter(c => !docKeys.has(key(c.lead_email)));
   /* Voided rows are identified from the register. If the register could not be
      read there is no void list, so anything below that filters on one has to
@@ -344,7 +425,7 @@ SCREENS.compliance = async host => {
      never be printed as the first. */
   const commsFor = d => {
     if (!comms) return null;
-    const ks = [key(d.chat_id), key(d.lead_email)].filter(Boolean);
+    const ks = keysOf(d);
     if (!ks.length) return [];
     return kycComms.filter(c => ks.includes(key(c.lead_email)));
   };
@@ -385,7 +466,9 @@ SCREENS.compliance = async host => {
     strip.innerHTML = stateError('the KYC register', docsErr);
   } else {
     const verdict = v => live.filter(d => String(d.verdict || '').toUpperCase() === v).length;
-    const failures = live.filter(d => retentionOf(d).key === 'failed').length;
+    /* Counted the way the view counts it — no file and no purge — so this tile
+       and the Overview panel can never report the same rows as two numbers. */
+    const gaps = live.filter(neverArchived).length;
     const legacyApproved = kycCommsUnlinked.filter(c => c.message.startsWith('[KYC-APPROVED]')).length;
     const legacyRejected = kycCommsUnlinked.filter(c => c.message.startsWith('[KYC-REJECT]')).length;
     const noVerdict = live.filter(d => !d.verdict).length;
@@ -395,29 +478,40 @@ SCREENS.compliance = async host => {
         voided.length
           ? `<span class="t-warm">${num(voided.length)} further row${voided.length === 1 ? ' was' : 's were'} voided and ${voided.length === 1 ? 'is' : 'are'} excluded from every figure here</span>`
           : (live.length
-              ? (noVerdict
-                  ? `<span class="t-warm">${num(noVerdict)} carr${noVerdict === 1 ? 'ies' : 'y'} no verdict yet</span>`
-                  : '<span class="t-muted">Every row carries an auditor verdict</span>')
-              : 'The KYC workflow has not written a record yet')),
+              ? (oneTrail
+                  /* The single most load-bearing sentence on this strip. Without
+                     it "9" reads as nine customers, and every tile beside it
+                     reads as a picture of the dealership's compliance rather
+                     than of one man's repeated attempts to send an ID. */
+                  ? `<span class="t-warm">All ${num(live.length)} filed by one customer — this is a single document trail, not a book of them${
+                      noVerdict ? `, and ${num(noVerdict)} of them carr${noVerdict === 1 ? 'ies' : 'y'} no verdict yet` : ''}</span>`
+                  : noVerdict
+                    ? `<span class="t-warm">${num(noVerdict)} carr${noVerdict === 1 ? 'ies' : 'y'} no verdict yet</span>`
+                    : '<span class="t-muted">Every row carries an auditor verdict</span>')
+              : 'The audit-kyc workflow has not written a record yet')),
+      /* Counts, never a share of the tile beside them. With one customer on
+         file an "approval rate" would be a statistic about a single person's
+         paperwork dressed up as a statistic about the business, so no tile here
+         divides by any other and the subtitle says why. */
       kpi('Approved', num(verdict('APPROVED')),
         legacyApproved
           ? `<span class="t-muted">${num(legacyApproved)} older approval${legacyApproved === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all</span>`
-          : ''),
+          : (oneTrail ? `<span class="t-muted">Attempts by one customer — counted, not rated</span>` : '')),
       kpi('Rejected', num(verdict('REJECTED')),
         legacyRejected
           ? `<span class="t-muted">${num(legacyRejected)} older rejection${legacyRejected === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all</span>`
-          : ''),
+          : (oneTrail ? `<span class="t-muted">Re-uploads from the same person, not ${num(verdict('REJECTED'))} rejected customers</span>` : '')),
       kpi('Escalated to a human', num(verdict('ESCALATED')),
         escalations.length
           ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor workflow</span>`
           : (auditErr ? '<span class="t-muted">Audit log could not be read</span>' : '')),
-      kpi('Archive failures', num(failures),
-        failures
-          ? '<span class="t-hot">Audited, never stored, never purged</span>'
+      kpi('No archived file', num(gaps),
+        gaps
+          ? `<span class="t-hot">${num(gaps)} of ${num(live.length)} audited and never stored — retention cannot be proven for ${plural(gaps, 'it', 'them')}</span>`
           : (live.length
-              ? '<span class="t-ok">Every genuine document after the cut-over is accounted for</span>'
+              ? '<span class="t-ok">Every genuine document is either archived or purged on schedule</span>'
               : '<span class="t-muted">Nothing genuine to archive yet</span>'),
-        failures ? 't-hot' : ''),
+        gaps ? 't-hot' : ''),
     ].join('');
   }
 
@@ -455,26 +549,39 @@ SCREENS.compliance = async host => {
   }
 
   if (docs) {
-    const failed = live.filter(d => retentionOf(d).key === 'failed');
+    /* The whole story of this screen as it stands. Taken over `neverArchived`
+       rather than over the 'failed' retention key, so the number matches what
+       `v_needs_attention` and the Overview panel count over the same rows; the
+       pre-archive nuance is stated inside the banner instead of shaving rows off
+       the front of it. */
+    const gaps = live.filter(neverArchived);
+    const legacyGaps = gaps.filter(d => retentionOf(d).key === 'legacy').length;
     const overdue = live.filter(overdueRetention);
 
-    if (failed.length) {
-      /* docs arrive newest-first, so the last failure in the list is the oldest
-         one — the row that has been unprovable the longest. */
-      const oldest = failed[failed.length - 1];
+    if (gaps.length) {
+      /* docs arrive newest-first, so the last gap in the list is the oldest one
+         — the row that has been unprovable the longest. */
+      const oldest = gaps[gaps.length - 1];
       const b = el('div', 'banner hot');
       b.style.marginBottom = '12px';
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">folder_off</span>
         <div style="flex:1">
-          <strong>${num(failed.length)} genuine document${failed.length === 1 ? ' has' : 's have'} no archived file.</strong>
-          Audited after ${esc(ARCHIVE_EPOCH_LABEL)} with <span class="mono">storage_path</span> null and no
-          <span class="mono">purged_at</span>, so the evidence behind ${failed.length === 1 ? 'that verdict' : 'those verdicts'} cannot be produced on request.
-          Oldest audited ${esc(ago(oldest.created_at))}. Voided rows are not counted here.
-          This is the same gap <span class="mono">v_needs_attention</span> files as <span class="mono">kyc_archive_gap</span>.
+          <strong>${num(gaps.length)} of ${num(live.length)} genuine document${live.length === 1 ? '' : 's'} ${plural(gaps.length, 'has', 'have')} no archived file.</strong>
+          <span class="mono">storage_path</span> is null and there is no <span class="mono">purged_at</span>, so nothing was deleted on schedule —
+          the file simply was never stored, and retention cannot be proven for a document whose file does not exist.
+          This is the gap <span class="mono">v_needs_attention</span> files as <span class="mono">kyc_archive_gap</span>.
+          Oldest audited ${esc(ago(oldest.created_at))}.
+          ${legacyGaps
+            ? `${num(legacyGaps)} of them predate the archive step (${esc(ARCHIVE_EPOCH_LABEL)}) and are labelled Pre-archive rather than Archive failure — explained history, but still unprovable, so still counted here.`
+            : ''}
+          ${oneTrail
+            ? `Every one of them belongs to the same customer: this is one submission trail failing repeatedly, not a gap spread across a book of customers.`
+            : ''}
+          ${voided.length ? 'Voided rows are not counted here.' : ''}
         </div>
-        <button class="btn sm" id="cShowFailed">Show ${failed.length === 1 ? 'it' : 'them'}</button>`;
+        <button class="btn sm" id="cShowFailed">Show ${plural(gaps.length, 'it', 'them')}</button>`;
       banners.appendChild(b);
-      b.querySelector('#cShowFailed').addEventListener('click', () => focusRegister({ retention: 'failed' }));
+      b.querySelector('#cShowFailed').addEventListener('click', () => focusRegister({ flag: 'gap' }));
     }
 
     if (overdue.length) {
@@ -516,9 +623,13 @@ SCREENS.compliance = async host => {
        counts something and then leaves the reviewer to find it by hand is how
        these end up ignored. */
     const first = escalations[0];
-    const fk = key(first.lead_email);
-    const inRegister = fk
-      ? live.find(d => key(d.lead_email) === fk || key(d.chat_id) === fk) || null
+    /* Matched through the contact alias graph: audit_log records whichever key
+       the workflow had, and the register may hold the other one for the same
+       person. A bare string compare here would send the reviewer to the trail
+       for an escalation whose document is sitting in the table above. */
+    const fks = new Set(alike(first.lead_email));
+    const inRegister = fks.size
+      ? live.find(d => keysOf(d).some(k => fks.has(k))) || null
       : null;
     const n = nameFor(first.lead_email || first.lead_name);
     const b = el('div', 'banner warm');
@@ -541,12 +652,23 @@ SCREENS.compliance = async host => {
       <button class="btn sm" id="cShowEsc">${inRegister ? 'Show the document' : 'Show in the trail'}</button>`;
     banners.appendChild(b);
     b.querySelector('#cShowEsc').addEventListener('click', () => {
-      if (inRegister) focusRegister({ q: String(first.lead_email || '') });
+      /* Searched on the register row's own address, not on whatever key
+         audit_log happened to log — the two can be the email and the @lid handle
+         for the same person, and searching the wrong one lands on an empty
+         table under a banner that just said there was something to see. */
+      if (inRegister) focusRegister({ q: String(inRegister.lead_email || inRegister.chat_id || '') });
       else focusTrail();
     });
   }
 
-  /* ── Retention position ────────────────────────────────────────────────── */
+  /* ── Retention position, and — while there is one customer — the whole trail ──
+     With a single submitter the register stops being a population and becomes a
+     biography, so the card above it is written as one: who he is, what he sent,
+     what came back and what survives in Storage, in the order he lived it. The
+     numbers are the same numbers; what changes is that they are labelled as one
+     person's history rather than left to read as the dealership's compliance
+     record. The moment a second contact appears the card falls back to the plain
+     retention breakdown, because then the proportions mean something again. */
   const retCard = el('div', 'card'); body.appendChild(retCard);
   if (!docs) {
     retCard.innerHTML = stateError('the retention breakdown', docsErr);
@@ -554,8 +676,9 @@ SCREENS.compliance = async host => {
     retCard.innerHTML = `<div class="label-caps">Retention position</div>${stateEmpty(
       'Nothing to retain yet',
       voided.length
-        ? 'No genuine KYC document has been audited. The rows on file were voided as non-submissions, so there is no compliance retention position to report.'
-        : 'No KYC document has been audited, so there is no retention position to report.', 'shield')}`;
+        ? 'No genuine KYC document has been audited. The rows on file were voided as non-submissions, so there is no compliance retention position to report. A row appears here the first time the audit-kyc workflow reads an identity document from a matched lead.'
+        : 'No KYC document has been audited yet, so there is no retention position to report. The audit-kyc workflow writes a row the first time a customer sends an identity document on WhatsApp; retention state appears with it.',
+      'shield')}`;
   } else {
     const order = ['archived', 'purged', 'legacy', 'unknown', 'failed'];
     const colour = { archived: 'var(--ok)', purged: 'var(--cold)', legacy: 'var(--neutral)', unknown: 'var(--warm)', failed: 'var(--hot)' };
@@ -564,19 +687,115 @@ SCREENS.compliance = async host => {
     const present = order.filter(k => counts[k]);
     const total = live.length;
     const withRetain = live.filter(d => d.retain_until).length;
-    retCard.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Retention position · ${num(total)} genuine document${total === 1 ? '' : 's'}</div>
-      <div class="stackbar">${present.map(k => `<i style="width:${(counts[k] / total * 100).toFixed(1)}%;background:${colour[k]}"></i>`).join('')}</div>
+    const gaps = live.filter(neverArchived).length;
+
+    const bar = `<div class="stackbar">${present.map(k => `<i style="width:${(counts[k] / total * 100).toFixed(1)}%;background:${colour[k]}"></i>`).join('')}</div>
       <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
         ${present.map(k => `<div style="display:flex;align-items:center;gap:8px">
           <span style="width:8px;height:8px;border-radius:50%;background:${colour[k]}"></span>
           <span style="font-weight:500">${esc(RETENTION[k].label)}</span>
           <span class="t-muted num">${num(counts[k])}</span></div>`).join('')}
-      </div>
-      <div class="cell-sub" style="margin-top:12px;white-space:normal">
-        ${num(withRetain)} of ${num(total)} row${total === 1 ? '' : 's'} carry a retain_until date.
-        Rows audited before ${esc(ARCHIVE_EPOCH_LABEL)} predate the archive step and are labelled Pre-archive rather than counted as failures.
-        ${voided.length ? `${num(voided.length)} voided row${voided.length === 1 ? ' is' : 's are'} not part of this breakdown; their files are accounted for in the voided section below.` : ''}
       </div>`;
+
+    /* The caption carries the honesty, not the bar. A stacked bar is read as a
+       distribution whatever is under it, so under one customer it is named for
+       what it is before a reviewer can take a share off it. */
+    const barNote = `<div class="cell-sub" style="margin-top:12px;white-space:normal">
+        ${gaps
+          ? `${num(total - gaps)} of ${num(total)} ${plural(total, 'document', 'documents')} ${plural(total - gaps, 'has', 'have')} a file that can still be produced${
+              counts.purged ? ` (${num(counts.purged)} of those by having been purged on schedule, which is the policy working)` : ''}; ${num(gaps)} ${plural(gaps, 'has', 'have')} none.`
+          : `Every one of the ${num(total)} ${plural(total, 'document', 'documents')} is either archived or purged on schedule.`}
+        ${num(withRetain)} of ${num(total)} ${plural(total, 'row', 'rows')} ${plural(withRetain, 'carries', 'carry')} a retain_until date.
+        ${counts.legacy ? `Rows audited before ${esc(ARCHIVE_EPOCH_LABEL)} predate the archive step and are labelled Pre-archive; they are still counted in the archive gap.` : ''}
+        ${oneTrail ? `<span class="t-warm">This bar is ${num(total)} ${plural(total, 'row', 'rows')} from one customer. The proportions are shapes, not shares.</span>` : ''}
+        ${voided.length ? `${num(voided.length)} voided ${plural(voided.length, 'row is', 'rows are')} not part of this breakdown; their files are accounted for in the voided section below.` : ''}
+      </div>`;
+
+    if (!oneTrail) {
+      retCard.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Retention position · ${num(total)} genuine ${plural(total, 'document', 'documents')}${
+        liveContacts.size ? ` from ${num(liveContacts.size)} ${plural(liveContacts.size, 'contact', 'contacts')}` : ''}</div>
+        ${bar}${barNote}`;
+    } else {
+      const w0 = whoOf(live[0]);
+      const vCounts = ['APPROVED', 'REJECTED', 'ESCALATED']
+        .map(v => [v, live.filter(d => String(d.verdict || '').toUpperCase() === v).length])
+        .filter(([, c]) => c);
+      const noVerdictN = live.filter(d => !d.verdict).length;
+      const types = [...new Set(live.map(d => String(d.document_type || '').trim()).filter(Boolean))];
+      const untyped = live.filter(d => !String(d.document_type || '').trim()).length;
+      const attemptNos = live.map(d => n0(d.attempt_number)).filter(v => v != null);
+      const maxAttempt = attemptNos.length ? Math.max(...attemptNos) : null;
+      /* Ordered the way he lived it: by the attempt counter, falling back to the
+         audit timestamp where the counter is missing so an uncounted row still
+         lands in the right place instead of at the front. */
+      const trail = live.slice().sort((x, y) =>
+        ((n0(x.attempt_number) || 0) - (n0(y.attempt_number) || 0)) ||
+        (new Date(x.created_at) - new Date(y.created_at)));
+
+      retCard.innerHTML = `
+        <div class="label-caps">This register is one customer's document trail</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+          <span style="font-size:18px;font-weight:600">${w0.name ? esc(w0.name) : 'Unidentified contact'}</span>
+          ${w0.phone
+            ? `<span class="mono">${esc(w0.phone)}</span>`
+            : '<span class="t-warm">No phone stored for this contact</span>'}
+          ${w0.chip ? `<span class="chip">${esc(w0.chip)}</span>` : `<span class="chip">${esc(w0.label)}</span>`}
+        </div>
+        <div class="cell-sub" style="white-space:normal;margin-top:4px">${esc(w0.line)}</div>
+
+        <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:18px;align-items:center">
+          <div><span class="num" style="font-size:22px;font-weight:600">${num(total)}</span>
+            <span class="t-muted"> ${esc(plural(total, 'document on file', 'documents on file'))}</span></div>
+          ${vCounts.map(([v, c]) => `<div style="display:flex;gap:8px;align-items:center">
+            ${pill(v)}<span class="num" style="font-weight:600">${num(c)}</span></div>`).join('')}
+          ${noVerdictN ? `<div class="t-muted">${num(noVerdictN)} with no verdict</div>` : ''}
+        </div>
+        <div class="cell-sub" style="white-space:normal;margin-top:10px">
+          Those are counts of one person's attempts, and they are deliberately not divided by one another.
+          ${num(total)} ${plural(total, 'upload', 'uploads')} by one customer cannot produce an approval rate,
+          an average confidence or a trend: a percentage taken across them would read as a fact about this
+          dealership's compliance, and there is nobody else in the register to compare him with.
+          Every figure on this screen is a count for that reason.
+        </div>
+        <div class="cell-sub" style="white-space:normal;margin-top:6px">
+          ${types.length
+            ? `${num(types.length)} distinct document ${plural(types.length, 'type', 'types')} across ${num(total)} ${plural(total, 'attempt', 'attempts')}${
+                untyped ? `, plus ${num(untyped)} ${plural(untyped, 'row that records', 'rows that record')} no type at all` : ''} — ${types.map(esc).join(', ')}.`
+            : `No row records a document type.`}
+          ${maxAttempt != null ? ` The attempt counter on these rows reaches ${num(maxAttempt)}.` : ''}
+        </div>
+
+        <div style="margin-top:20px">${bar}</div>
+        ${barNote}
+
+        <div class="label-caps" style="margin-top:24px">Every attempt, in order</div>
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">One line per row in the register, ordered by attempt number. Open any of them for the full record.</div>
+        <div class="timeline" style="margin-top:12px">${trail.map((x, i) => {
+          const xa = n0(x.attempt_number);
+          const conf = n0(x.confidence_score);
+          return `<div class="tl-item" role="button" tabindex="0" data-trail="${i}" style="cursor:pointer">
+            <span class="tl-dot" style="background:var(--${tone(x.verdict) || 'neutral'})"></span>
+            <div class="tl-body">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <span style="font-weight:500">Attempt ${xa == null ? '—' : num(xa)}</span>
+                ${x.verdict ? pill(x.verdict) : '<span class="t-muted">No verdict</span>'}
+                ${neverArchived(x) ? pill('No archived file', 'hot') : retentionPill(retentionOf(x))}
+              </div>
+              <div class="tl-meta">${x.document_type ? esc(x.document_type) : 'No document type recorded'}
+                · audited ${esc(ago(x.created_at))}${conf == null ? '' : ` · ${num(conf)}% confidence`}</div>
+            </div></div>`;
+        }).join('')}</div>`;
+
+      /* The rows are the same objects the table below opens, so the drawer that
+         appears is byte-for-byte the same record either way. */
+      retCard.querySelectorAll('[data-trail]').forEach(node => {
+        const open = () => openDoc(trail[Number(node.dataset.trail)]);
+        node.addEventListener('click', open);
+        node.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+        });
+      });
+    }
   }
 
   /* ── The register ──────────────────────────────────────────────────────── */
@@ -606,6 +825,7 @@ SCREENS.compliance = async host => {
     queue.innerHTML = `<div class="card-head"><div>
         <div class="card-title">KYC register · genuine submissions</div>
         <div class="card-sub">Every audited document that is a real submission, with its extracted identity fields, attempt counter and retention state. Click a row for the full record.${
+          oneTrail ? ' Every row in it belongs to the same customer, so the columns read as one person\u2019s attempts rather than as a comparison between people.' : ''}${
           voided.length ? ` <span class="t-warm">${num(voided.length)} voided row${voided.length === 1 ? ' is' : 's are'} excluded from this table and every count on it — they are listed separately below.</span>` : ''}${
           capped ? ` <span class="t-warm">The underlying read is capped at the ${num(ROW_LIMIT)} most recent rows, so older documents are not on this page.</span>` : ''}</div>
       </div></div>
@@ -713,7 +933,7 @@ SCREENS.compliance = async host => {
           voided.length ? 'No genuine submission in the register' : 'No documents in the register',
           voided.length
             ? `Every one of the ${num(docs.length)} rows loaded here was voided as a non-submission. Nothing in this register is a compliance decision.`
-            : 'The KYC workflow writes here once it audits a document. Historic activity is shown below.',
+            : 'The audit-kyc workflow writes a row here each time a customer sends an identity document on WhatsApp and the lead behind it is matched. Nothing has reached it yet. Any historic auditor activity is shown in the trail below.',
           'verified_user');
         return;
       }
@@ -761,18 +981,24 @@ SCREENS.compliance = async host => {
      What a reviewer needs from this section is the opposite: who these people
      actually were, what the machine said about them, and what the dealership
      told them. */
-  const voidCard = el('div', 'card flush'); voidCard.style.marginTop = '16px'; body.appendChild(voidCard);
-  const voidHead = `<div class="card-head"><div>
-      <div class="card-title">Voided — not KYC submissions</div>
-      <div class="card-sub">Rows the backend marked with <span class="mono">void_reason</span>. They are evidence of a routing fault, not compliance decisions, and nothing above counts them.</div>
-    </div></div>`;
+  /* Built only when there is something in it. The void partition is empty as of
+     the 24 Aug cleanup — the nine non-submissions were deleted and the gate that
+     produced them is fixed — and a card headed "Voided — not KYC submissions"
+     with an empty state under it would leave a standing accusation on the screen
+     an auditor reads, about rows that no longer exist. Nothing to show means
+     nothing on the page, not a heading with a shrug under it.
 
-  if (!docs) {
-    voidCard.innerHTML = `${voidHead}${stateError('the voided rows', docsErr)}`;
-  } else if (!voided.length) {
-    voidCard.innerHTML = `${voidHead}${stateEmpty('Nothing voided',
-      'No row in the rows loaded here carries a void_reason, so every entry in the register above is a real submission.', 'task_alt')}`;
-  } else {
+     A failed read is not reported here either. The register card above already
+     says the whole table could not be read; repeating it under this heading
+     would imply there are voided rows behind the error, which is the one thing
+     the failure means we do not know. */
+  if (docs && voided.length) {
+    const voidCard = el('div', 'card flush'); voidCard.style.marginTop = '16px'; body.appendChild(voidCard);
+    const voidHead = `<div class="card-head"><div>
+        <div class="card-title">Voided — not KYC submissions</div>
+        <div class="card-sub">Rows the backend marked with <span class="mono">void_reason</span>. They are evidence of a routing fault, not compliance decisions, and nothing above counts them.</div>
+      </div></div>`;
+
     const reasons = [...new Set(voided.map(v => String(v.void_reason || '').trim()).filter(Boolean))];
     const stillStored = voided.filter(v => v.storage_path && !v.purged_at).length;
     const chats = new Set(voided.map(v => key(v.chat_id)).filter(Boolean)).size;
@@ -850,10 +1076,8 @@ SCREENS.compliance = async host => {
       <div id="cVoidTable"></div>`;
 
     const vth = voidCard.querySelector('#cVoidTable');
-    vth.innerHTML = table(vcols, voided, {
-      onRow: true,
-      empty: stateEmpty('Nothing voided', 'No row carries a void_reason.', 'task_alt'),
-    });
+    /* No `empty` needed: this card only exists when `voided` has rows in it. */
+    vth.innerHTML = table(vcols, voided, { onRow: true });
     wireRows(vth, voided, openDoc);
 
     focusVoided = () => voidCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -990,11 +1214,13 @@ SCREENS.compliance = async host => {
        lawyer asked for. Rows are matched on the exact lead_email or chat_id the
        workflow wrote — never on a name, which two customers can share — and
        voided rows are excluded, so a greeting card can never appear in a
-       customer's attempt history. */
-    const chain = live.filter(x =>
-      (key(d.lead_email) && key(x.lead_email) === key(d.lead_email)) ||
-      (key(d.chat_id) && key(x.chat_id) === key(d.chat_id))
-    ).slice().sort((x, y) =>
+       customer's attempt history. The match runs through the contact alias graph
+       so a row filed under an email and a row filed under that same customer's
+       @lid land in one chain instead of two — otherwise a re-upload looks like a
+       first attempt purely because the workflow had a different key to hand. */
+    const ks = new Set(keysOf(d));
+    const chain = live.filter(x => keysOf(x).some(k => ks.has(k)))
+    .slice().sort((x, y) =>
       ((n0(x.attempt_number) || 0) - (n0(y.attempt_number) || 0)) ||
       (new Date(x.created_at) - new Date(y.created_at)));
     const chainHtml = chain.length > 1
@@ -1073,7 +1299,7 @@ SCREENS.compliance = async host => {
         <div class="section">
           <div class="label-caps">Retention</div>
           <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
-            <span class="material-symbols-outlined ${r.key === 'failed' ? 't-hot' : r.key === 'archived' ? 't-ok' : 't-muted'}">${esc(m.icon)}</span>
+            <span class="material-symbols-outlined ${neverArchived(d) ? 't-hot' : r.key === 'archived' ? 't-ok' : 't-muted'}">${esc(m.icon)}</span>
             ${retentionPill(r)}
           </div>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(r.detail)}</div>
@@ -1130,7 +1356,12 @@ SCREENS.compliance = async host => {
   /* Unlike everything above, this is a log of things that actually happened, so
      the messages sent to voided contacts belong here — they were sent. What must
      not happen is presenting them as decisions, or printing a chat id in the
-     place a person's name goes. Both are handled per row. */
+     place a person's name goes. Both are handled per row.
+
+     With the void partition empty the void-marking branch is currently inert and
+     no row carries the chip. It is kept because the branch has to stay correct
+     for the day a row is voided again, and the card's own subtitle no longer
+     promises marking that nothing on the page shows. */
   const hist = el('div', 'card flush'); hist.style.marginTop = '16px'; body.appendChild(hist);
   const down = [auditErr ? 'the audit log' : '', commsErr ? 'the message log' : ''].filter(Boolean);
 
@@ -1162,10 +1393,13 @@ SCREENS.compliance = async host => {
           <div class="cell-sub">${esc(ago(e.at))}</div>
         </div>`;
         }).join('')
-      : stateEmpty('No KYC activity recorded', 'Nothing has passed through the auditor yet.', 'history');
+      : stateEmpty('No KYC activity recorded',
+          'No run by the KYC auditor appears in audit_log and no [KYC-…] message appears in the message log. Both fill the moment a customer sends an identity document on WhatsApp and the audit-kyc workflow runs.',
+          'history');
 
   hist.innerHTML = `<div class="card-head"><div><div class="card-title">KYC activity</div>
-      <div class="card-sub">Auditor runs from audit_log and customer-facing KYC messages from communication_logs. Messages sent about voided rows are shown — they were really sent — but marked as void so they are never read as decisions.${
+      <div class="card-sub">Auditor runs from audit_log and customer-facing KYC messages from communication_logs.${
+        voided.length ? ' Messages sent about voided rows are shown — they were really sent — but marked as void so they are never read as decisions.' : ''}${
         voidFilterKnown ? '' : ' <span class="t-warm">The register could not be read on this page load, so nothing here could be checked against void_reason and no row is marked.</span>'}</div></div></div>
     ${down.length && !(auditErr && commsErr) ? `<div style="padding:14px 20px 0"><div class="banner warm">
       <span class="material-symbols-outlined">warning</span>

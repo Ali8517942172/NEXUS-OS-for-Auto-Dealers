@@ -38,8 +38,13 @@ async function leadDrawer(lead) {
                `assigned_to` column is what every caller gets. */
             esc(lead.users?.name || lead.assigned_to || '') || 'Unassigned'
           }${lead.assigned_to_id ? '' : '<span class="cell-sub"> · no rep id on the row</span>'}</dd>
-          <dt>Response time</dt><dd>${n0(lead.response_time_minutes) == null ? '—' :
-            `${mins(lead.response_time_minutes)} ${Number(lead.response_time_minutes) > 5 ? '<span class="t-hot">· breaches the 5-minute rule</span>' : '<span class="t-ok">· within SLA</span>'}`}</dd>
+          <dt>Response time</dt><dd>${n0(lead.response_time_minutes) == null
+            /* Not a blank. `response_time_minutes` is the only record of how
+               long this customer waited for a first answer, and the 5-minute
+               rule is the founding promise of this product — so a null here is
+               not "fast", it is nobody measuring. A dash reads as instant. */
+            ? '<span class="t-warm">Not measured</span><span class="cell-sub"> · no first-reply time was recorded on this lead, so it is neither fast nor slow, and v_needs_attention cannot raise an SLA breach for it</span>'
+            : `${mins(lead.response_time_minutes)} ${Number(lead.response_time_minutes) > 5 ? '<span class="t-hot">· breaches the 5-minute rule</span>' : '<span class="t-ok">· within SLA</span>'}`}</dd>
           <dt>Created</dt><dd>${ago(lead.created_at)}</dd>
         </dl>
       </div>

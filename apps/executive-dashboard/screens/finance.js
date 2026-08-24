@@ -45,7 +45,50 @@
    `lead_email` is required and format-checked, and `finance_quotes.credit_score`
    carries a 300–900 CHECK constraint in Postgres. The field names the workflow
    accepts are exactly vehicleValue / loanPayoffAmount / creditScore — it logs a
-   REJECTED audit row for anything else, so they are not renamed here. */
+   REJECTED audit row for anything else, so they are not renamed here.
+
+   ── Round 4, 24 Aug 2026. Three quotes, one customer. ────────────────────────
+
+   `finance_quotes` holds three rows and all three carry the same lead_email.
+   The vehicle value on them is 152,000, then 280,000, then 100,000. That is one
+   negotiation being re-priced, not a book of business, and the difference
+   decides what this screen is allowed to say out loud.
+
+   So the two averages this strip used to print — mean indicative APR and mean
+   loan to value — are withdrawn, and the negative-equity percentage with them.
+   A mean across one customer's three attempts is that customer's middle offer
+   wearing the clothes of a market figure. What replaces them is a count of
+   people, the range of values quoted, and a panel that names every question
+   this screen cannot answer and says what would make it answerable. Counts and
+   ranges are true at any n; a rate is not.
+
+   The same email carries two different names — "Shabbir Ujjainwala" on one row
+   and "ALI ASGHER UJJAIN WALA" on the other two. That is not cosmetic.
+   `finance_quotes` stores whatever the rep typed and identifies the customer by
+   email alone, so one man is filed twice: anything that groups by name splits
+   him, his KYC and Customer 360 records match one spelling and not the other,
+   and the next rep who searches for him by name finds two thirds of his
+   history. A screen that silently picks one name hides a fault the dealership
+   will hit again the next time two people type a customer differently, so it is
+   raised as a check and every row says which of his names it carries.
+
+   Three absences on `finance_quotes`, restated because each is a sentence
+   somebody will otherwise invent: no term, no monthly payment, no validity
+   date. The Monthly column is therefore modelled in this browser and says so on
+   every row, and **no quote here can be marked expired** — nothing on the row
+   records when one expires. "More than 7 days old" in the alerts is this desk's
+   own prompt to re-quote, labelled as such and never as a status.
+
+   And a rejection from the workflow is an outcome, not a fault. finance-calc is
+   live and JWT-guarded and it validates hard: `audit_log` carries real REJECTED
+   rows reading "vehicleValue must be a realistic vehicle valuation of at least
+   AED 5000" and "lead_email is required". Every one of those is a bad quote that
+   never reached a customer. So a refusal renders as the workflow declining the
+   input with its reason attached — amber, not red, never the word error, and
+   never a "Couldn't load" that sends a rep hunting for a bug in a dashboard
+   that is working exactly as designed. The same rendering is reached whether the
+   workflow refuses with a 200 or a guard in front of it refuses with a 4xx, and
+   the refusals it has actually recorded are listed on the screen. */
 import { HOOK, ME, SESSION, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
@@ -66,11 +109,14 @@ const HISTORY_LIMIT = 200;
 const LEAD_LIMIT = 500;
 const ATTN_LIMIT = 100;
 
-/* How long a quote is good for. There is no company policy in the database that
-   says this, so it is this screen's assumption and the alert says so in full
-   ("older than 7 days") rather than using the word "expired" as if the row
-   carried a flag. If a row turns out to carry its own validity date (see
-   VALID_COLS) that date wins and the alert says which it used. */
+/* How old a quote gets before this desk prompts a re-quote. `finance_quotes`
+   carries no validity column and the database holds no policy that says one, so
+   this is the desk's own prompt and is never called an expiry: a quote here
+   cannot be marked expired, because nothing anywhere records when it expires.
+   The alert says "more than 7 days old", which is a fact about the row, instead
+   of "expired", which would be a status the data does not have. If a row ever
+   turns up carrying its own validity date (see VALID_COLS) that date wins and
+   the check says which of the two it used. */
 const QUOTE_VALID_DAYS = 7;
 
 /* The instalment model, in one place. The term is a desk default because no
@@ -91,6 +137,25 @@ const DRIFT_PCT = 2;
 /* Names shown per alert before it collapses into "+N more". Clicking the row
    filters the history to the full set, so this is a glance, not the list. */
 const PREVIEW = 3;
+
+/* Rows read for the refusal panel. A refusal is not an error, so the workflow's
+   own REJECTED rows are shown as the outcomes they are rather than being left
+   to be discovered in n8n. */
+const REJECT_LIMIT = 100;
+
+/* Which audit_log rows this screen claims as its own. workflow_registry is not
+   read here — that is one more request for a panel that can say how it matched
+   — so the match is on the workflow name and the panel states that, along with
+   the fact that a refusal logged under a name mentioning none of these words
+   would not be listed. */
+const FINANCE_FLOW = /financ|quote|trade-?in|calc/i;
+
+/* Below this many distinct customers, a mean over this table is a mean over one
+   negotiation, so the strip prints the range instead and says why. It is a
+   stated floor, not a computed one: there is no sample size at which three
+   quotes to one man become a market figure, and this number only decides when
+   the screen stops pretending otherwise. */
+const STAT_MIN_CUSTOMERS = 5;
 
 /* A lead in one of these states should not be sitting behind a live quote. WON,
    CONVERTED and DELIVERED are deliberately absent: a quote for a customer who
@@ -116,13 +181,11 @@ const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 const NO_N8N = 'VITE_N8N_BASE_URL is not set in this build, so the Finance Calc '
   + 'workflow cannot be reached from the browser. Set it and redeploy.';
 
-/* Averages over rows Postgres returned, reporting how many rows actually
-   carried the column so a mean over three quotes never reads like a mean over
-   two hundred. */
-function mean(rows, key) {
-  const xs = rows.map(r => n0(r[key])).filter(v => v != null);
-  return { avg: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null, n: xs.length };
-}
+/* There was a mean() here, used for the average indicative APR and the average
+   loan to value on the strip. Both figures are gone and so is it: with every
+   quote in the table belonging to one customer, reporting how many rows carried
+   the column does not rescue the average — the sample is one negotiation
+   however many rows it has. The range is shown instead. */
 const lower = v => String(v == null ? '' : v).toLowerCase();
 const str = v => String(v == null ? '' : v).trim();
 const up = v => str(v).toUpperCase();
@@ -131,6 +194,11 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const eqTone = s => (lower(s) === 'negative' ? 'hot' : lower(s) === 'positive' ? 'ok' : '');
 const eqClass = s => (lower(s) === 'negative' ? 't-hot' : lower(s) === 'positive' ? 't-ok' : '');
 const stamp = ts2 => (ts2 ? new Date(ts2).toLocaleString('en-GB', { hour12: false }) : '—');
+const muted = t => `<span class="t-muted">${esc(t)}</span>`;
+const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
+/* Two dirham figures side by side overflow a KPI tile, and "AED" twice in one
+   value reads as two prices rather than as the ends of one span. */
+const aedRange = (lo, hi) => (lo === hi ? aed(lo) : `${aed(lo)} – ${num(hi)}`);
 
 /* SCHEMA.md documents `finance_quotes` as "lead_email, lead_name, and the quote
    fields" and stops there, so which optional columns exist is not knowable from
@@ -159,12 +227,60 @@ function instalment(principal, aprPct, months) {
   return principal * r / (1 - Math.pow(1 + r, -months));
 }
 
+/* ── Refusals ───────────────────────────────────────────────────────────────
+   The workflow refuses bad input, and it is supposed to: audit_log carries
+   REJECTED rows reading "vehicleValue must be a realistic vehicle valuation of
+   at least AED 5000" and "lead_email is required". Those are the workflow
+   protecting a customer from a quote that should never have been priced, and
+   the rep needs to read the reason, not a stack of JSON.
+
+   Every shape a refusal can arrive in, collected in one place. The workflow
+   answers HTTP 200 for its own rejections, but the JWT guard in front of it and
+   n8n itself both answer 4xx with a body in the same family, and all of those
+   are the same event to the person at the desk. */
+function reasonsFrom(res) {
+  const out = [];
+  const push = v => { const t = str(v); if (t) out.push(t); };
+  if (Array.isArray(res?.errors)) res.errors.forEach(push); else push(res?.errors);
+  push(res?.error);
+  push(res?.message);
+  push(res?.reason);
+  return [...new Set(out)];
+}
+
+/* Wording a refusal uses and a transport failure does not. Used only to decide
+   whether an Error carries a refusal; anything this does not recognise stays an
+   error, which is what an unrecognised failure actually is. */
+const VALIDATION_RE = /\b(is required|must be|realistic|at least|not a valid|invalid|missing)\b/i;
+
+/* n8n() throws `"<status> — <body>"` on a non-2xx, so a refusal answered with a
+   400 reaches the catch block carrying the same body a 200 refusal would have
+   carried in the response. Recovering it is what stops one deployment choice
+   inside n8n deciding whether the rep sees "the workflow declined this value" or
+   a red dashboard error about a bug that does not exist. */
+function declineFromError(msg) {
+  const m = String(msg || '');
+  const status = Number((m.match(/^(\d{3})\b/) || [])[1]);
+  /* A 5xx is the workflow falling over, not declining, and must not be dressed
+     up as a considered refusal. */
+  if (status && (status < 400 || status >= 500)) return [];
+  const brace = m.indexOf('{');
+  if (brace >= 0) {
+    try {
+      const found = reasonsFrom(JSON.parse(m.slice(brace)));
+      if (found.length) return found;
+    } catch { /* n8n() truncates the body at 200 chars, so fall through to text */ }
+  }
+  const tail = m.replace(/^\d{3}\s+—\s+/, '').trim();
+  return VALIDATION_RE.test(tail) ? [tail] : [];
+}
+
 SCREENS.finance = async host => {
   /* ── Layout ────────────────────────────────────────────────────────────── */
   const alertCard = el('div', 'card flush');
   alertCard.innerHTML = `<div class="card-head"><div>
       <div class="card-title">Needs attention</div>
-      <div class="card-sub">v_needs_attention for this screen, plus five checks this screen runs on the quotes and leads it just read</div>
+      <div class="card-sub">v_needs_attention for this screen, plus six checks this screen runs on the quotes and leads it just read</div>
     </div><div style="flex:1"></div>
     <button class="btn sm" id="fqRecheck"><span class="material-symbols-outlined">refresh</span> Re-check</button></div>
     <div class="pbody">${stateLoading(2)}</div>`;
@@ -174,6 +290,19 @@ SCREENS.finance = async host => {
   strip.style.marginTop = '16px';
   strip.innerHTML = stateLoading(2);
   host.appendChild(strip);
+
+  /* The panel that keeps the strip above it honest. With three quotes belonging
+     to one man, the interesting half of this screen is the list of questions it
+     refuses to answer — and an unanswerable question stated with its reason and
+     with what would fill it is worth more to the dealership than a percentage
+     computed over one negotiation. */
+  const scopeCard = el('div', 'card flush');
+  scopeCard.style.marginTop = '16px';
+  scopeCard.innerHTML = `<div class="card-head"><div>
+      <div class="card-title">What this screen can answer</div>
+      <div class="card-sub">And what it cannot, with the column that is missing and what would fill it</div>
+    </div></div><div class="pbody" id="fScope">${stateLoading(3)}</div>`;
+  host.appendChild(scopeCard);
 
   const cols = el('div', 'grid g2 top');
   cols.style.marginTop = '16px';
@@ -260,6 +389,20 @@ SCREENS.finance = async host => {
     <div class="pbody" id="cBody">${stateLoading(3)}</div>`;
   rightCol.appendChild(commCard);
 
+  /* ── What the workflow has refused ─────────────────────────────────────────
+     Sits under the form because the form is what produces these. A rep who has
+     just been declined can see that the refusal is a normal, recorded outcome
+     of a working validator rather than something that went wrong on this page,
+     and can read what the workflow said to somebody else in the same position. */
+  const refuseCard = el('div', 'card flush');
+  refuseCard.style.marginTop = '16px';
+  refuseCard.innerHTML = `<div class="card-head"><div>
+      <div class="card-title">Inputs the workflow refused</div>
+      <div class="card-sub">REJECTED rows the Finance Calc workflow wrote to <span class="mono">audit_log</span>.
+        A refusal is the workflow declining a figure before it can be quoted to anybody — not a failure of this dashboard</div>
+    </div></div><div class="pbody" id="fxBody">${stateLoading(3)}</div>`;
+  leftCol.appendChild(refuseCard);
+
   /* ── Form plumbing ─────────────────────────────────────────────────────── */
   const FIELDS = ['fVal', 'fPay', 'fScore', 'fName', 'fEmail'];
   let touched = false;   // no red text before the rep has tried to submit once
@@ -309,10 +452,13 @@ SCREENS.finance = async host => {
        real and common situation and produces a negative-equity quote. */
     const v = read();
     const val = n0(v.vehicleValue), pay = n0(v.loanPayoffAmount);
-    const warn = $('err-fPay');
+    /* Named warnBox, not warn: `warn` is the module-level amber-text helper this
+       file uses everywhere else, and a DOM node shadowing it inside one function
+       is a trap for the next person to edit this block. */
+    const warnBox = $('err-fPay');
     const showWarn = !e.fPay && val != null && pay != null && pay > val;
-    warn.classList.toggle('t-hot', !showWarn);
-    if (showWarn) warn.textContent = 'Payoff is above the vehicle value, so expect a negative-equity result.';
+    warnBox.classList.toggle('t-hot', !showWarn);
+    if (showWarn) warnBox.textContent = 'Payoff is above the vehicle value, so expect a negative-equity result.';
   }
 
   FIELDS.forEach(id => $(id).addEventListener('input', () => { if (touched) paintErrors(validate(read())); }));
@@ -337,10 +483,43 @@ SCREENS.finance = async host => {
   let focusKey = null;                  // an alert the history is filtered to
   let checks = [];
   const checkByKey = new Map();
+  let people = new Map();               // lead_email -> the quotes filed under it
+  let refusals = null, refusalsErr = null, refusalOther = 0;
 
   const keyOf = r => (r && r.id != null ? String(r.id) : 'row-' + rows.indexOf(r));
   const leadByEmail = new Map();
   const leadFor = q => (leads ? leadByEmail.get(lower(str(q.lead_email))) || null : null);
+
+  /* ── Who these quotes belong to ───────────────────────────────────────────
+     Every rate this screen used to print divided by rows.length. The
+     denominator that matters is people, and today the two differ by a factor of
+     three: one email, three quotes. Rows with no email are attributable to
+     nobody and are counted apart rather than being folded into a phantom
+     customer, which would make the people count look healthier than it is.
+
+     The names are kept per email, with how many quotes carry each, because the
+     variance is the finding — not a tie to break. */
+  function indexPeople() {
+    const by = new Map();
+    for (const q of rows) {
+      const k = lower(str(q.lead_email));
+      if (!k) continue;
+      let p = by.get(k);
+      if (!p) { p = { key: k, email: str(q.lead_email), quotes: [], names: new Map() }; by.set(k, p); }
+      p.quotes.push(q);
+      const n = str(q.lead_name);
+      if (n) p.names.set(n, (p.names.get(n) || 0) + 1);
+    }
+    by.forEach(p => p.quotes.sort((a, b) => ts(b.created_at) - ts(a.created_at)));
+    return by;
+  }
+  const personFor = q => people.get(lower(str(q.lead_email))) || null;
+  /* "ALI ASGHER UJJAIN WALA" (2 quotes) and "Shabbir Ujjainwala" (1 quote) —
+     spelled out in full because the whole point is that both spellings exist. */
+  const namesList = p => [...p.names.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([n, c]) => `"${n}" (${c} ${plural(c, 'quote', 'quotes')})`)
+    .join(' and ');
 
   /* ── Identity ───────────────────────────────────────────────────────────
      A name and a number, together, everywhere a person appears. `leads.phone`
@@ -355,6 +534,16 @@ SCREENS.finance = async host => {
     }
     return esc(n);
   };
+  /* Marks a row whose customer is filed under more than one name. Without it
+     the table looks perfectly consistent — each row shows the name it carries,
+     and nothing on screen reveals that the row above it carries a different one
+     for the same person. */
+  function nameVariantChip(q) {
+    const p = personFor(q);
+    if (!p || p.names.size < 2) return '';
+    return ` <span class="chip t-warm" title="${esc(`${p.email} is recorded under ${p.names.size} different names across its ${p.quotes.length} quotes: ${namesList(p)}. finance_quotes stores the name typed at quote time; the email is the identity, and this is one person, not ${p.names.size}.`)}">1 of ${p.names.size} names</span>`;
+  }
+
   function phoneCell(q) {
     if (!leads) {
       return `<span class="t-muted" title="${esc('The leads read failed' + (leadsErr ? ` (${leadsErr.message})` : '')
@@ -468,9 +657,12 @@ SCREENS.finance = async host => {
         + `with the down payment taken from ${cols2.down || cols2.financed ? 'the figures on the row' : 'the quote’s own loan to value, or from this desk’s ' + DOWN_PAYMENT_PCT + '% default where the row has no LTV'}. `
         + 'Hover a Monthly cell for that row’s exact rate, term and down payment.',
       'A quote with no APR shows no monthly figure at all rather than one at a rate this screen made up.',
+      `finance_quotes stores no term, no monthly payment and no validity date. That is why Monthly is modelled here rather than read, and why no row on this table `
+        + `is ever marked expired: nothing records when a quote stops standing. When is what the table shows, and "more than ${num(QUOTE_VALID_DAYS)} days old" above it is this desk's prompt to re-quote.`,
       cols2.monthly
         ? `A ≠ marks a row whose stored ${cols2.monthly} disagrees with that sum by more than ${aed(DRIFT_AED)} or ${DRIFT_PCT}%.`
-        : 'These rows carry no stored monthly payment, so nothing here can be checked against one.',
+        : 'These rows carry no stored monthly payment — the table has no such column — so there is nothing for the modelled figure to disagree with.',
+      'Where one customer appears more than once, these are repeat quotes to the same person and not separate pieces of business. The Customer column marks a row whose customer is filed under more than one name.',
     ];
     return `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
@@ -498,7 +690,7 @@ SCREENS.finance = async host => {
     body.innerHTML = focusNote + table([
       { label: 'When', render: r => `<span title="${esc(stamp(r.created_at))}">${ago(r.created_at)}</span>` },
       { label: 'Customer', strong: true, render: r =>
-        `${personName(r.lead_name, personName(leadFor(r)?.name, '<span class="t-muted">Unnamed</span>'))}
+        `${personName(r.lead_name, personName(leadFor(r)?.name, '<span class="t-muted">Unnamed</span>'))}${nameVariantChip(r)}
          <div class="cell-sub">${phoneCell(r)} · ${r.lead_email
            ? esc(str(r.lead_email))
            : '<span class="t-hot" title="This quote has no lead_email, so it can never be matched back to a person.">no email recorded</span>'}</div>` },
@@ -522,39 +714,168 @@ SCREENS.finance = async host => {
     $('fqFocusClear')?.addEventListener('click', () => { focusKey = null; drawHistory(); });
   }
 
+  /* ── The strip ────────────────────────────────────────────────────────────
+     Four tiles, and not one of them is a rate. Two used to be: the mean
+     indicative APR and the mean loan to value, both computed across every row
+     in the table. With every row belonging to the same customer those were
+     descriptions of one man's negotiation presented as descriptions of the
+     desk, so they are gone and the panel underneath names them as withdrawn
+     rather than letting them disappear quietly. What is left — how many quotes,
+     how many people, what range of values, how many came out negative — is true
+     whether the table holds three rows or three thousand. */
   function drawStrip() {
     if (quotesErr) { strip.innerHTML = stateError('the quote figures', quotesErr.message); return; }
+    const capped = rows.length >= HISTORY_LIMIT;
+    const ppl = [...people.values()];
+    const oneCustomer = ppl.length === 1 && rows.length > 1;
+    const enough = ppl.length >= STAT_MIN_CUSTOMERS;
+    const unattributed = rows.filter(r => !str(r.lead_email)).length;
     const negative = rows.filter(r => r.equity_status === 'Negative').length;
     const priced = rows.filter(r => r.equity_status).length;
-    const apr = mean(rows, 'indicative_apr_pct');
-    const ltv = mean(rows, 'loan_to_value_pct');
-    const capped = rows.length >= HISTORY_LIMIT;
+    const values = rows.map(r => n0(r.vehicle_value_aed)).filter(v => v != null).sort((a, b) => a - b);
+
     strip.innerHTML = [
       kpi('Quotes recorded', num(rows.length),
         rows.length
           ? (capped
-            ? `<span class="t-muted">Newest ${num(HISTORY_LIMIT)} shown · latest ${ago(rows[0].created_at)}</span>`
-            : `<span class="t-muted">Latest ${ago(rows[0].created_at)}</span>`)
-          : '<span class="t-muted">Nothing quoted from this desk yet</span>'),
+              ? muted(`Newest ${num(HISTORY_LIMIT)} shown · latest ${ago(rows[0].created_at)}`)
+              : muted(`Latest ${ago(rows[0].created_at)}`))
+            + (unattributed
+              ? `<br>${warn(`${num(unattributed)} of them ${plural(unattributed, 'carries', 'carry')} no customer email and ${plural(unattributed, 'belongs', 'belong')} to nobody`)}`
+              : '')
+          : muted('Nothing quoted from this desk yet')),
+
+      /* The tile the rest of the screen hangs off. It is not decoration: it is
+         the denominator, and every figure that is missing from this strip is
+         missing because of what it says. */
+      kpi('Customers quoted', num(ppl.length),
+        ppl.length
+          ? (oneCustomer
+              ? `${warn(`All ${num(rows.length)} quotes belong to one email address`)}<br>${muted(ppl[0].email)}`
+                + `<br>${muted('One customer re-priced is a negotiation, not a book of business. Nothing on this screen is divided by it.')}`
+              : muted(`Across ${num(ppl.length)} email addresses`))
+          : muted(rows.length
+              ? 'No quote carries a customer email, so none of them can be attributed to a person'
+              : 'Nothing quoted from this desk yet'),
+        oneCustomer ? 't-warm' : ''),
+
+      /* A range, never a mean. The lowest and highest figures actually typed are
+         two facts; the number between them would be an invention with a
+         customer's name on it. */
+      kpi('Vehicle value quoted',
+        values.length ? aedRange(values[0], values[values.length - 1]) : '—',
+        values.length
+          ? muted(values.length === 1
+              ? 'The only quote that carries a vehicle value'
+              : `Lowest and highest of the ${num(values.length)} ${plural(values.length, 'quote', 'quotes')} that carry a value`)
+            + (oneCustomer && values.length > 1
+              ? `<br>${warn(`One customer's trade-in, valued ${num(values.length)} different ways. No average is shown — the mean of one negotiation is that customer's middle offer.`)}`
+              : '')
+          : muted('No quote records a vehicle value')),
+
       kpi('Negative equity', num(negative),
         priced
-          ? `<span class="${negative ? 't-hot' : 't-ok'}">${pct(negative / priced * 100)} of ${num(priced)} quotes</span>`
-          : '<span class="t-muted">No quote carries an equity status</span>',
+          ? (enough
+              ? `<span class="${negative ? 't-hot' : 't-ok'}">${pct(negative / priced * 100)} of ${num(priced)} quotes</span>`
+              /* A share of three quotes to one person is that person, expressed
+                 as a percentage. The count is real and stays; the rate does not
+                 exist and is not printed. */
+              : muted(`${num(negative)} of the ${num(priced)} ${plural(priced, 'quote', 'quotes')} the workflow priced`)
+                + `<br>${warn(`No rate is shown: ${num(ppl.length)} ${plural(ppl.length, 'customer', 'customers')} ${plural(ppl.length, 'is', 'are')} below the ${num(STAT_MIN_CUSTOMERS)} this screen needs before a percentage says anything about the desk.`)}`)
+          : muted('No quote carries an equity status'),
         negative ? 't-hot' : ''),
-      kpi('Avg indicative APR', pct(apr.avg),
-        apr.n ? `<span class="t-muted">Across ${num(apr.n)} quotes with an APR</span>`
-              : '<span class="t-muted">No quote carries an APR</span>'),
-      kpi('Avg loan to value', pct(ltv.avg),
-        ltv.n ? `<span class="t-muted">Across ${num(ltv.n)} quotes with an LTV</span>`
-              : '<span class="t-muted">No quote carries an LTV</span>'),
     ].join('');
   }
 
-  /* ── The five checks this screen makes ───────────────────────────────────
-     All five run on rows already fetched for the table and the lead picker —
-     no read exists on this screen to feed an alert. Each states the denominator
-     it counted against, and each one whose input is missing or truncated is
-     withheld and named rather than reported as zero. */
+  /* ── What this screen can and cannot answer ───────────────────────────────
+     Written as questions because that is how they arrive: somebody asks the
+     dealership's owner what the average quote is worth, and he asks the
+     dashboard. Every "no" here carries the column that is missing and what
+     would fill it, so it reads as a specification rather than an apology. */
+  function drawScope() {
+    const body = $('fScope');
+    if (!body) return;
+    if (quotesErr) { body.innerHTML = stateError('the quote figures', quotesErr.message); return; }
+
+    const ppl = [...people.values()];
+    const nQ = rows.length, nP = ppl.length;
+    const enough = nP >= STAT_MIN_CUSTOMERS;
+    const basisLine = `${num(nQ)} ${plural(nQ, 'quote', 'quotes')} belonging to ${num(nP)} ${plural(nP, 'customer', 'customers')}`;
+
+    const can = [
+      ['What was quoted, to whom, and by whom',
+        `Every row of finance_quotes, newest first, with the customer's name, their number from the lead record and the rep in quoted_by. ${basisLine} read here.`],
+      ['What the workflow returned on each one',
+        'Equity, equity status, loan to value, finance tier and indicative APR are read off the row exactly as Finance Calc returned them, and are never recomputed on this screen.'],
+      ['What a monthly instalment would be, on stated assumptions',
+        `Modelled here, not stored: the quote's own APR over ${cols2.term ? 'the term on the row' : `a ${num(TERM_MONTHS)}-month term`}, with the deposit taken from the quote's own loan to value. Every figure carries its rate, term and deposit.`],
+      ['Which quotes have a problem worth a phone call',
+        'The checks in the strip above — a quote with no email, a quote whose customer has gone cold, a customer filed under more than one name, a quote old enough to re-run.'],
+      ['What the workflow has refused, and why',
+        'The REJECTED rows finance-calc wrote to audit_log, with the reason it gave, listed on this screen rather than left in n8n.'],
+    ];
+
+    /* The same reason, phrased for the three cases it actually has: nothing on
+       the desk, one customer quoted repeatedly, or a few customers. */
+    const smallN = !nQ
+      ? 'There is no quote on this desk to average.'
+      : `The ${basisLine} on this desk, so a mean here is a mean over ${nP === 1 ? 'one negotiation' : 'a handful of negotiations'}.`;
+
+    const cannot = [
+      ['What is the average quote worth?',
+        enough
+          ? null
+          : `Withdrawn. ${smallN} The range in the strip above is shown instead. This becomes a real figure at ${num(STAT_MIN_CUSTOMERS)} customers, not at ${num(STAT_MIN_CUSTOMERS)} quotes.`],
+      ['What is our average APR, and our average loan to value?',
+        enough
+          ? null
+          : `Withdrawn from the strip on 24 Aug for the same reason. ${nQ ? 'Both are still on every row of the table below, where they are what the workflow returned for that one customer — which is all they have ever been.' : 'Both reappear as soon as there are quotes from enough different customers for a mean to describe the desk rather than a person.'}`],
+      ['What share of quotes turns into a sale?',
+        'Not answerable at any n. finance_quotes records no outcome — there is no accepted, declined, sold or lapsed column — and purchase_history carries no link back to a quote or to an inventory unit. Nothing in the database joins a quote to what happened next. It would take an outcome column on finance_quotes, written when the deal closes.'],
+      ['What is in the finance pipeline?',
+        'There is no pipeline here to show. A quote carries no stage, no expected close date and no outcome, so a row in this table is a number that was said out loud once — not a deal in progress. Treating the sum of these values as a pipeline would count the same trade-in three times.'],
+      ['Which quotes have expired?',
+        'Not answerable. finance_quotes stores no validity date, no term and no monthly payment. Nothing on the row records when a quote stops standing, so no quote on this screen is ever marked expired; the alerts say "more than ' + num(QUOTE_VALID_DAYS) + ' days old", which is a fact about the row and this desk\u2019s own prompt to re-quote.'],
+      ['How has quoting changed over time?',
+        !nQ
+          ? 'There is nothing recorded to plot. finance_quotes keeps created_at, so a series appears here once the desk has quoted enough different customers for the line to mean something.'
+          : nQ > 1
+            ? `There are ${num(nQ)} rows from ${num(nP)} ${plural(nP, 'customer', 'customers')}. A trend drawn through ${nP === 1 ? 'one conversation' : 'them'} is a picture of that conversation, not of the desk, so none is drawn.`
+            : 'One row is not a series. Nothing here is plotted over time.'],
+    ].filter(([, a]) => a);
+
+    const row = (icon, cls, q, a) => `<div class="list-item" style="cursor:default;align-items:flex-start">
+      <span class="material-symbols-outlined t-${cls}" style="font-size:20px" aria-hidden="true">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500">${esc(q)}</div>
+        <div class="cell-sub" style="white-space:normal">${esc(a)}</div>
+      </div></div>`;
+
+    body.innerHTML = `<div class="grid g2 top" style="gap:0">
+      <div>
+        <div class="label-caps" style="padding:14px 16px 6px">Answered from the data</div>
+        ${can.map(([q, a]) => row('check_circle', 'ok', q, a)).join('')}
+      </div>
+      <div>
+        <div class="label-caps" style="padding:14px 16px 6px">Not answerable here</div>
+        ${cannot.length
+          ? cannot.map(([q, a]) => row('do_not_disturb_on', 'muted', q, a)).join('')
+          : `<div class="list-item" style="cursor:default">${muted(`Every question this screen sets aside at small n is back: ${num(nP)} customers is at or above the ${num(STAT_MIN_CUSTOMERS)} it needs.`)}</div>`}
+      </div>
+    </div>`;
+  }
+
+  /* ── The six checks this screen makes ────────────────────────────────────
+     All six run on rows already fetched for the table and the lead picker — no
+     read exists on this screen to feed an alert. Each states the denominator it
+     counted against, and each one whose input is missing or truncated is
+     withheld and named rather than reported as zero.
+
+     The sixth arrived with round 4 and is the one this dataset made visible:
+     the same email under two different names. It is a data-quality fault, not a
+     desk fault, which is exactly why nothing else on the screen would have
+     shown it — the table renders whatever name each row carries and looks
+     perfectly consistent doing so. */
   function buildChecks() {
     const now = Date.now();
     const quotesCapped = rows.length >= HISTORY_LIMIT;
@@ -570,7 +891,7 @@ SCREENS.finance = async host => {
       const made = ts(q.created_at);
       return made ? { at: made + QUOTE_VALID_DAYS * 86400000, source: 'desk' } : null;
     };
-    const expired = rows.filter(q => { const v = validOf(q); return v && v.at < now; })
+    const stale = rows.filter(q => { const v = validOf(q); return v && v.at < now; })
       .sort((a, b) => ts(a.created_at) - ts(b.created_at));
 
     const noEmail = rows.filter(q => !str(q.lead_email));
@@ -580,6 +901,16 @@ SCREENS.finance = async host => {
       ? withEmail.filter(q => { const l = leadFor(q); return l && GONE.has(up(l.status)); })
       : [];
     const drifted = cols2.monthly ? rows.filter(q => basisOf(q).drifted) : [];
+
+    /* One email, more than one spelling of the person behind it. finance_quotes
+       stores the name the rep typed at quote time and identifies the customer by
+       lead_email and nothing else, so this is one person filed twice — and every
+       downstream thing that keys on a name (a search, a KYC match, a Customer
+       360 lookup) sees two people with a fraction of the history each. The
+       check needs no extra read: the variance is sitting in the rows the table
+       is already drawing, which is precisely why nobody notices it. */
+    const splitNames = [...people.values()].filter(p => p.names.size > 1);
+    const splitQuotes = splitNames.flatMap(p => p.quotes);
 
     const out2 = [
       {
@@ -608,17 +939,25 @@ SCREENS.finance = async host => {
         quotes: noEmail,
       },
       {
-        key: 'expired',
+        key: 'stale',
         sev: 'WARNING',
         icon: 'event_busy',
-        title: `${num(expired.length)} ${plural(expired.length, 'quote is', 'quotes are')} past ${plural(expired.length, 'its', 'their')} validity`,
-        detail: `${num(expired.length)} of the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${plural(expired.length, 'is', 'are')} past `
-          + (cols2.valid
-            ? `the validity date on the row (${cols2.valid}).`
-            : `${QUOTE_VALID_DAYS} days old. No column on finance_quotes carries a validity date, so ${QUOTE_VALID_DAYS} days is this screen's assumption and not a company policy the database knows about.`)
-          + ` The oldest was quoted ${ago(expired[0]?.created_at)}. `
-          + 'The equity, tier and APR on an expired quote were priced against that day’s rate sheet and that day’s vehicle value; re-run it before it is repeated to the customer.',
-        quotes: expired,
+        /* Deliberately not "expired". finance_quotes has no term, no monthly
+           payment and no validity column, so nothing in the database knows when
+           a quote stops standing and this screen must not imply that it does.
+           Age is a fact about the row; expiry would be a status invented here
+           and repeated to a customer as if the system had said it. */
+        title: cols2.valid
+          ? `${num(stale.length)} ${plural(stale.length, 'quote is', 'quotes are')} past the validity date on ${plural(stale.length, 'its', 'their')} row`
+          : `${num(stale.length)} ${plural(stale.length, 'quote is', 'quotes are')} more than ${num(QUOTE_VALID_DAYS)} days old`,
+        detail: (cols2.valid
+            ? `${num(stale.length)} of the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${plural(stale.length, 'is', 'are')} past the validity date on the row (${cols2.valid}).`
+            : `${num(stale.length)} of the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${plural(stale.length, 'was', 'were')} quoted more than ${num(QUOTE_VALID_DAYS)} days ago. `
+              + `No quote here is marked expired and none can be: finance_quotes stores no validity date, no term and no monthly payment, so nothing on the row records when it stops standing. `
+              + `${num(QUOTE_VALID_DAYS)} days is this desk's own prompt to re-quote — not a policy, not a status, and not something the database would agree with if asked.`)
+          + ` The oldest was quoted ${ago(stale[0]?.created_at)}. `
+          + 'The equity, tier and APR on it were priced against that day’s rate sheet and that day’s vehicle value; re-run it before it is repeated to the customer.',
+        quotes: stale,
       },
       {
         key: 'orphan',
@@ -642,6 +981,17 @@ SCREENS.finance = async host => {
           + (leadsCapped ? ` The leads read stopped at ${num(LEAD_LIMIT)} rows, so a quote whose lead was not among them is not counted here.` : ''),
         quotes: coldLead,
         skip: !leads,
+      },
+      {
+        key: 'names',
+        sev: 'WARNING',
+        icon: 'badge',
+        title: `${num(splitNames.length)} ${plural(splitNames.length, 'customer is', 'customers are')} recorded under more than one name`,
+        detail: splitNames.map(p => `${p.email} is recorded as ${namesList(p)}`).join('. ')
+          + '. finance_quotes stores the name typed at quote time and identifies the customer by email alone, so this is one person filed two ways, not two customers. '
+          + 'Anything that groups these rows by name splits them; a rep searching the name on one quote finds none of the others; and a screen that silently picks one spelling hides it entirely. '
+          + 'The email is the only identity these rows have. Correct the name on the lead record so the next quote inherits one spelling, and treat the older rows as the same person.',
+        quotes: splitQuotes,
       },
     ].filter(c => !c.skip && c.quotes.length);
 
@@ -672,7 +1022,7 @@ SCREENS.finance = async host => {
         ? 'None of the quotes read here carries a stored monthly payment, so the stored-versus-calculated check could not run at all. The Monthly column is this desk’s own arithmetic and there is nothing to disagree with it.'
         : '',
       rows.length && !cols2.valid
-        ? `finance_quotes carries no validity date in these rows, so "past its validity" means older than ${QUOTE_VALID_DAYS} days — this screen's assumption, stated so nobody reads it as a policy.`
+        ? `finance_quotes carries no validity date, no term and no monthly payment. No quote on this screen can be marked expired, and none is: the age check reads "more than ${num(QUOTE_VALID_DAYS)} days old", which is this desk's prompt to re-quote rather than a status the row carries.`
         : '',
       out2.length > 1
         ? 'A quote can satisfy more than one check, so these counts overlap and do not add up to a total.'
@@ -756,8 +1106,11 @@ SCREENS.finance = async host => {
        what was checked and what came back, so "no alerts" reads as a result
        rather than as a panel that failed to load. */
     const checked = [
-      `no quote is past ${cols2.valid ? 'the validity date on its row' : `${QUOTE_VALID_DAYS} days old`}`,
+      cols2.valid
+        ? 'no quote is past the validity date on its row'
+        : `no quote is more than ${num(QUOTE_VALID_DAYS)} days old`,
       'every quote carries a customer email',
+      'no customer is recorded under more than one name',
       leads && leads.length < LEAD_LIMIT ? 'every quote matches a lead record' : '',
       leads ? 'no quote belongs to a lead that has gone cold' : '',
       cols2.monthly ? 'no stored monthly payment disagrees with its own figures' : '',
@@ -773,13 +1126,13 @@ SCREENS.finance = async host => {
        an operator stops checking. */
     const clear = !attnErr && !quotesErr;
     const cannotSay = attnErr && quotesErr
-      ? 'v_needs_attention could not be read and the quote read failed, so neither the database’s list nor this screen’s own five checks could be produced. Nothing is being claimed here.'
+      ? 'v_needs_attention could not be read and the quote read failed, so neither the database’s list nor this screen’s own checks could be produced. Nothing is being claimed here.'
       : attnErr
         ? `v_needs_attention could not be read, so the database’s own list for this screen is missing. `
           + (rows.length
-            ? `This screen’s five checks did run, and across the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${checkedText} — that is those five checks only, not an all-clear.`
+            ? `This screen’s own checks did run, and across the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${checkedText} — that is those checks only, not an all-clear.`
             : 'There is no quote on the desk for this screen’s own checks to judge either, so nothing here is an all-clear.')
-        : `v_needs_attention returned no row for this screen. The quote read failed, so this screen’s own five checks could not run and nothing here speaks for them.`;
+        : `v_needs_attention returned no row for this screen. The quote read failed, so this screen’s own checks could not run and nothing here speaks for them.`;
     const nothing = `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-${clear ? 'ok' : 'warm'}" style="font-size:20px">${clear ? 'task_alt' : 'help'}</span>
       <div style="flex:1;min-width:0">
@@ -870,6 +1223,68 @@ SCREENS.finance = async host => {
     (leads || []).forEach(l => { const k = lower(str(l.email)); if (k) leadByEmail.set(k, l); });
   }
 
+  /* The refusals the workflow actually recorded. Read with an ilike on status
+     rather than eq, because a vocabulary that is REJECTED in one workflow and
+     rejected in another would otherwise come back empty and be rendered as
+     "nothing has ever been refused" — a reassuring sentence produced by a
+     case-sensitive filter. The workflow is matched by name here, and the panel
+     says so along with how many REJECTED rows belong to other workflows. */
+  async function loadRefusals() {
+    try {
+      const all = await db('audit_log?select=workflow,status,lead_name,lead_email,summary,logged_at'
+        + `&status=ilike.rejected&order=logged_at.desc&limit=${REJECT_LIMIT}`);
+      refusals = all.filter(a => FINANCE_FLOW.test(str(a.workflow)));
+      refusalOther = all.length - refusals.length;
+      refusalsErr = null;
+    } catch (e) { refusals = null; refusalsErr = e; refusalOther = 0; }
+  }
+
+  function drawRefusals() {
+    const body = $('fxBody');
+    if (!body) return;
+    if (refusalsErr) { body.innerHTML = stateError('the refusals the workflow recorded', refusalsErr.message); return; }
+    if (!refusals) { body.innerHTML = stateLoading(3); return; }
+
+    const capped = (refusals.length + refusalOther) >= REJECT_LIMIT;
+    const foot = `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+      <div class="cell-sub" style="white-space:normal">${[
+        'A refusal is the workflow declining a figure before it is priced, and the row above is the record it kept of doing so. It is not an error and nothing was written to finance_quotes.',
+        `Matched on the workflow name, not through workflow_registry, so a refusal logged under a name mentioning none of finance, quote, trade-in or calc would not be listed here.`,
+        refusalOther
+          ? `${num(refusalOther)} further REJECTED ${plural(refusalOther, 'row belongs', 'rows belong')} to other workflows and ${plural(refusalOther, 'is', 'are')} not shown.`
+          : '',
+        capped ? `The read stopped at ${num(REJECT_LIMIT)} rows, so older refusals are not counted.` : '',
+      ].filter(Boolean).map(esc).join('<br>')}</div></div>`;
+
+    if (!refusals.length) {
+      /* Not "no data". The two rules the workflow enforces are named, so an
+         empty panel is a statement about what has happened rather than about
+         what this screen managed to fetch. */
+      body.innerHTML = stateEmpty('The workflow has refused nothing it recorded',
+        `No REJECTED row in audit_log names a workflow this screen recognises as the finance calculator. `
+        + `A row appears here when Finance Calc declines an input — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)}, or a quote sent with no customer email — `
+        + `and it is written whether the request came from this desk or from anywhere else.`,
+        'gpp_good') + foot;
+      return;
+    }
+
+    body.innerHTML = refusals.map(a => {
+      const who = str(a.lead_name) || str(a.lead_email);
+      return `<div class="list-item" style="cursor:default;align-items:flex-start">
+        <span class="material-symbols-outlined t-warm" style="font-size:20px" aria-hidden="true">gpp_maybe</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${pill('REJECTED')}<span class="chip mono">${esc(str(a.workflow) || 'unnamed workflow')}</span>
+            ${who ? `<span class="cell-sub">${personName(who, '')}</span>` : ''}
+          </div>
+          <div class="cell-sub" style="white-space:normal">${esc(str(a.summary) || 'The workflow recorded no reason on this row.')}</div>
+          <div class="cell-sub t-muted">${esc(stamp(a.logged_at))} — ${esc(ago(a.logged_at))}</div>
+        </div>
+      </div>`;
+    }).join('') + foot;
+  }
+
   async function loadAttention() {
     try {
       attn = await db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
@@ -878,7 +1293,17 @@ SCREENS.finance = async host => {
     } catch (e) { attn = null; attnErr = e; }
   }
 
-  function renderAll() { drawStrip(); drawHistory(); drawAlerts(); }
+  /* people is rebuilt here rather than inside drawStrip, because the strip, the
+     table, the checks and the scope panel must all be counting the same
+     customers on the same paint. */
+  function renderAll() {
+    people = indexPeople();
+    drawStrip();
+    drawScope();
+    drawHistory();
+    drawAlerts();
+    drawRefusals();
+  }
 
   $('fqRefresh').addEventListener('click', async () => {
     const body = $('fqBody');
@@ -890,7 +1315,8 @@ SCREENS.finance = async host => {
   });
   $('fqRecheck').addEventListener('click', async () => {
     alertCard.querySelector('.pbody').innerHTML = stateLoading(2);
-    await Promise.all([loadAttention(), loadQuotes(), loadLeads()]);
+    $('fxBody').innerHTML = stateLoading(3);
+    await Promise.all([loadAttention(), loadQuotes(), loadLeads(), loadRefusals()]);
     focusKey = null;
     fillLeadPicker();
     renderAll();
@@ -1035,38 +1461,66 @@ SCREENS.finance = async host => {
       renderQuote(r, v);
     } catch (e) {
       const msg = String(e?.message || e);
-      out().innerHTML = /VITE_N8N_BASE_URL/.test(msg)
-        ? `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
-             <div>${esc(NO_N8N)}</div></div>`
-        : stateError('the quote', msg);
+      /* A refusal answered with a 4xx lands here rather than in renderQuote, and
+         rendering it as "Couldn't load the quote" would blame the dashboard for
+         the workflow correctly saying no. Whether the refusal arrives as a 200
+         body or an HTTP error is a deployment detail inside n8n; the rep should
+         not be able to tell the difference. Anything that is not recognisably a
+         refusal stays an error, because that is what it is. */
+      const declined = declineFromError(msg);
+      if (/VITE_N8N_BASE_URL/.test(msg)) {
+        out().innerHTML = `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
+             <div>${esc(NO_N8N)}</div></div>`;
+      } else if (declined.length) {
+        renderDecline(declined, 'http');
+      } else {
+        out().innerHTML = stateError('the quote', msg);
+      }
     } finally {
       btn.disabled = !N8N_BASE;
       btn.innerHTML = '<span class="material-symbols-outlined">calculate</span> Calculate quote';
     }
   });
 
-  /* The workflow answers 200 for everything, including its own rejections, so
-     the shape of the body is what decides which of the three outcomes this is:
-     a rejection, an answer with no quote in it, or a quote. */
+  /* ── A refusal is an outcome ─────────────────────────────────────────────
+     The workflow validates hard, and it should: audit_log carries real REJECTED
+     rows reading "vehicleValue must be a realistic vehicle valuation of at least
+     AED 5000" and "lead_email is required". Each of those is a quote that never
+     reached a customer because the system stopped it, which is the validator
+     working, not the dashboard breaking.
+
+     So this renders amber and says "declined", never red and never "error". The
+     distinction is not decoration: a red error box sends a rep to find somebody
+     technical, while a decline with the reason on it sends them back to the
+     field named in the message, which is where the fix is. */
+  function renderDecline(reasons, via) {
+    const unauth = reasons.some(m => /unauthor|forbidden|token|jwt/i.test(m));
+    const body = unauth
+      ? 'It did not accept this session, so it never looked at the figures. Sign out and sign back in, then calculate again.'
+      : reasons.length
+        ? `<ul style="margin:0;padding-left:18px">${reasons.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`
+        : 'It declined the request without saying why, which is unusual — the Finance Calc execution in n8n will carry the reason.';
+    out().innerHTML = `<div class="banner warm">
+      <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">gpp_maybe</span>
+      <div><strong>The Finance Calc workflow declined these figures.</strong>
+        <div style="margin-top:6px">${body}</div>
+        <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
+          `This is the workflow checking its inputs before it prices anything — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)} or a quote with no customer email is refused rather than stored. `
+          + 'Nothing was written to finance_quotes, so the history below is unchanged, and the workflow keeps its own REJECTED row in audit_log — it is listed under the form as soon as this screen is re-checked. '
+          + 'Correct the field the message names and calculate again.'
+          + (via === 'http' ? ' (The refusal arrived as an HTTP error rather than in the response body; it is the same refusal either way.)' : ''))}</div>
+      </div></div>`;
+  }
+
+  /* The workflow answers 200 for everything, including its own refusals, so the
+     shape of the body is what decides which of the three outcomes this is: a
+     refusal, an answer with no quote in it, or a quote. */
   function renderQuote(r, sent) {
     const res = r && typeof r === 'object' ? r : {};
-    const listed = Array.isArray(res.errors) ? res.errors.filter(Boolean).map(String) : [];
+    const listed = reasonsFrom(res);
     const rejected = lower(res.status) === 'error' || (listed.length && lower(res.status) !== 'success');
 
-    if (rejected) {
-      const unauth = listed.some(m => /unauthor|forbidden|token|jwt/i.test(m));
-      out().innerHTML = `<div class="banner hot">
-          <span class="material-symbols-outlined" style="font-size:20px">block</span>
-          <div><strong>The finance workflow would not price this.</strong>
-            <div style="margin-top:6px">${
-              unauth
-                ? 'It did not accept this session. Sign out and sign back in, then try again.'
-                : (listed.length ? listed.map(esc).join('<br>') : 'It rejected the request without saying why.')
-            }</div>
-            <div class="cell-sub" style="margin-top:6px;white-space:normal">Nothing was written to the quote history.</div>
-          </div></div>`;
-      return;
-    }
+    if (rejected) { renderDecline(listed, 'body'); return; }
 
     const hasQuote = n0(res.equity_aed) != null || res.finance_tier || n0(res.indicative_apr_pct) != null;
     if (!hasQuote) {
@@ -1170,7 +1624,7 @@ SCREENS.finance = async host => {
     };
   }
 
-  await Promise.all([loadQuotes(), loadLeads(), loadAttention()]);
+  await Promise.all([loadQuotes(), loadLeads(), loadAttention(), loadRefusals()]);
   fillLeadPicker();
   renderAll();
 

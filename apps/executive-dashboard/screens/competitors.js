@@ -76,7 +76,25 @@
        "every 24 hours" interval, which drifts and then stops silently after a
        restart; it is on a cron now, but the prices below were collected six
        weeks ago and that is said wherever a comparison is presented as
-       current. */
+       current.
+
+   24 Aug 2026, third pass — the table was emptied, and the empty state is now
+   the screen. All fifteen rows were deleted: twelve were seed prices whose
+   `our_price_aed` contradicted the stock we hold (a Land Cruiser quoted at AED
+   290,000 against a 385,000 list price; a GLE, an X5, a Cayenne and a Macan
+   that were never on the lot), so the five undercut alerts this screen fed to
+   Overview were fabricated and went with them; the other three were the scrape
+   failures below. `v_needs_attention` now files nothing against this screen,
+   which is said in a sentence rather than left as an empty box.
+
+   None of the guards below became dead code. The scraper is on a cron now and
+   will write rows again, and these branches are what keeps the same garbage out
+   when it does — so every one of them is kept and every one degrades to
+   *nothing*, not to a titled card with blank space under it: the by-competitor
+   summary is not rendered at all with no sources, the filter chips and the
+   staleness clock never get built, and the one panel with a real answer today —
+   our own unsold stock, none of which has ever been checked against a rival
+   price — takes the full width and leads the screen. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, aedSigned, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
@@ -88,6 +106,13 @@ import { deriveUnit, unitForm } from '../lib/unit-form.js';
 /* The scraping workflow is documented as a daily job. One missed cycle is the
    point at which the numbers stop being safe to quote at a customer. */
 const SCRAPE_EVERY_HOURS = 24;
+
+/* The hour the scrape actually fires, UTC. "Daily" on its own does not tell an
+   operator when to come back and look, and this screen spends most of its life
+   telling somebody to come back and look — so the hour is named, and named in
+   both clocks: the schedule is fixed in UTC and the reader is not. */
+const SCRAPE_HOUR_UTC = 5;
+const SCRAPE_SCHEDULE = `daily at ${String(SCRAPE_HOUR_UTC).padStart(2, '0')}:00 UTC`;
 const STALE_AFTER_HOURS = 48;
 const ROW_LIMIT = 500;
 const ATTN_LIMIT = 100;
@@ -104,6 +129,17 @@ const VERY_STALE_DAYS = 7;
    healthy-looking "last scrape" figure, which is why it is counted separately. */
 const REFRESH_LAG_HOURS = 48;
 
+/* Below this many comparisons the counts on this screen describe a handful of
+   individual listings and nothing about a market. The scrape writes whatever it
+   managed to collect, so "we undercut 2 of 3" is a real possibility the day
+   after a partial run, and a count that small has to say what it is. */
+const THIN_ROWS = 3;
+
+/* The blind-spot list is a list of things to go and do, not a stock report;
+   past this many rows it stops being read and Inventory is the better screen
+   for it. The count is stated in full either way. */
+const BLIND_LIMIT = 20;
+
 /* Matches the aging threshold the inventory screen uses when it starts calling a
    unit old. Used only to qualify how bad a blind spot is, never to compute one. */
 const AGING_DAYS = 60;
@@ -119,6 +155,23 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
    like different amounts of wrong to the person about to quote the price. */
 const dayWord = n => `${num(n)} ${Number(n) === 1 ? 'day' : 'days'}`;
 const dt = ts => new Date(ts).toLocaleString('en-GB');
+
+/* The next time the cron is due to fire, as a real Date rather than a phrase.
+   Computed from the UTC clock so it stays right in any timezone the browser
+   happens to be in. */
+function nextScrape(from = Date.now()) {
+  const d = new Date(from);
+  const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), SCRAPE_HOUR_UTC);
+  return new Date(at > from ? at : at + SCRAPE_EVERY_HOURS * 3600000);
+}
+/* How long until then, in the units a person waits in. Under an hour is stated
+   in minutes because "in about 0 hours" is not an answer. */
+const waitWord = ms => {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  if (mins < 60) return `in ${num(mins)} ${plural(mins, 'minute', 'minutes')}`;
+  const h = Math.round(mins / 60);
+  return `in about ${num(h)} ${plural(h, 'hour', 'hours')}`;
+};
 
 /* Reads the first column that actually carries a value. The competitor feed and
    the inventory table were built by different workflows and do not agree on
@@ -557,33 +610,230 @@ SCREENS.competitors = async host => {
     ? 'No row here carries a scrape timestamp, so how old these prices are cannot be established at all.'
     : `Newest price collected ${esc(ago(newest))} (${esc(dt(newest))})`
       + (oldest && oldest !== newest ? `, oldest ${esc(ago(oldest))} (${esc(dt(oldest))})` : '')
-      + `. The scrape is expected every ${SCRAPE_EVERY_HOURS} h`
+      + `. The scrape is expected ${SCRAPE_SCHEDULE}`
       + (stale ? `, so it has missed about ${num(missed)} ${plural(missed, 'cycle', 'cycles')}.` : '.');
 
+  /* ── Nothing to compare ──────────────────────────────────────────────────
+     On 24 Aug 2026 this table was emptied, and an empty competitors table is
+     now the screen's ordinary state rather than an edge case: twelve of the
+     fifteen rows were seed prices whose `our_price_aed` contradicted the stock
+     we actually hold, and the other three were the scrape failures described
+     above. So this branch is not a placeholder — it is the screen — and it has
+     to answer four questions in order: what is empty, why it is empty, when it
+     fills again, and what the rows will and will not be able to prove when
+     they arrive.
+
+     Every guard above still runs on whatever the scrape writes next; with no
+     rows each of them simply has nothing to report, and reports nothing at all
+     rather than a card with a heading and blank space under it. The one panel
+     that still has something real to say is the blind spot — our own unsold
+     stock, none of which has a market price against it — so that is what the
+     screen leads with instead of five zeroes. */
   if (!all.length || !live.length) {
-    strip.remove(); below.remove();
-    /* An undercut alert that survives an empty competitors table is a real
-       contradiction — the view read rows this screen cannot see — and saying
-       nothing about it would leave the operator with an unexplained nav badge. */
-    const orphan = (attn || []).length;
-    alertHost.innerHTML = [
-      orphan
-        ? `<div class="banner warm"><span class="material-symbols-outlined">rule</span>
-            <div>${num(orphan)} ${plural(orphan, 'alert', 'alerts')} in v_needs_attention ${plural(orphan, 'is', 'are')} filed against this screen, but the competitors table returned no usable rows, so none of them can be shown against the price it was raised on.</div></div>`
-        : '',
-      junk.length
-        ? `<div class="banner hot"><span class="material-symbols-outlined">bug_report</span>
-            <div>${num(junk.length)} ${plural(junk.length, 'row', 'rows')} came back and every one of them is a scrape failure rather than a dealership: ${esc(junk.map(c => c.name).join(', '))}. ${esc(junk.map(c => c.fault.why).join(' '))} There is no competitor price here at all.</div></div>`
-        : '',
-    ].filter(Boolean).join('');
+    /* "By competitor" is a summary of sources; with no sources it would be a
+       titled card containing an empty state, which is the thing this round is
+       meant to remove. It is not rendered at all, and the panel that is left
+       takes the full width rather than sitting in half a two-column grid. */
+    byCompHost.remove();
+    below.className = 'grid top';
+
+    const allJunk = all.length > 0;      // rows came back, none of them usable
+    const next = nextScrape();
+    const nextLine = `The scrape is a scheduled job, expected ${SCRAPE_SCHEDULE}. The next run is due ${esc(dt(next.toISOString()))} local time, ${esc(waitWord(next - Date.now()))}.`;
+    /* The reason for six weeks of silence, stated in the empty state rather
+       than in a commit message: the trigger was an n8n "every 24 hours"
+       interval, which drifts on every restart and eventually stops firing
+       without ever failing, so nothing errored and nothing ran. */
+    const cronLine = `Its trigger used to be an n8n "every ${SCRAPE_EVERY_HOURS} hours" interval, which drifts on restart and then stops firing without failing — which is why nothing refreshed for weeks and no run was ever recorded as broken. It is on a cron now.`;
+
+    /* Unsold stock, and the honest reason none of it has a market reference.
+       This is not "we checked and found no cheaper rival": nothing has been
+       checked at all, and the panel says so in those words. */
+    const unsold = invErr ? [] : inv.filter(u => !isSold(u));
+    const uncovered = [...unsold].sort((a, b) => (n0(b.days_in_stock) || 0) - (n0(a.days_in_stock) || 0));
+    const agedUnits = uncovered.filter(u => (n0(u.days_in_stock) || 0) >= AGING_DAYS);
+    const criticalUnits = uncovered.filter(u => String(u.aging_alert || '').toUpperCase() === 'CRITICAL');
+    const listValue = uncovered.reduce((a, u) => a + (uPrice(u) || 0), 0);
+    const soldHeld = invErr ? 0 : inv.length - unsold.length;
+
+    strip.className = 'grid g3';
+    strip.innerHTML = [
+      kpi('Competitor prices on file', num(live.length),
+        allJunk
+          ? `<span class="t-hot">${num(all.length)} ${plural(all.length, 'row was', 'rows were')} returned and every one is a scrape failure, not a listing</span>`
+          : '<span class="t-muted">The table holds no rows at all — nothing has been scraped since it was cleared</span>'),
+      kpi('Next scrape due', `${String(SCRAPE_HOUR_UTC).padStart(2, '0')}:00 UTC`,
+        `<span class="t-muted">${esc(dt(next.toISOString()))} local · ${esc(waitWord(next - Date.now()))}</span>`),
+      /* A count, not a proportion. Twelve units is a small enough number to
+         state outright, and "100% of stock uncovered" would dress a plain fact
+         up as a metric. */
+      kpi('Our stock with no market price', invErr ? '—' : num(uncovered.length),
+        invErr
+          ? '<span class="t-hot">Inventory did not load, so our own stock could not be listed</span>'
+          : uncovered.length
+            ? `<span class="t-warm">Every unsold unit we hold${soldHeld ? `, and ${num(soldHeld)} sold ${plural(soldHeld, 'unit is', 'units are')} not counted` : ''}</span>`
+            : '<span class="t-muted">No unsold unit is on the lot</span>'),
+    ].join('');
+
+    /* ── The alert strip, with nothing filed ──────────────────────────────
+       v_needs_attention returns no row for this screen today. That is a
+       result, and it is said in a sentence — an empty box under a "Needs
+       attention" heading would read as a panel that failed to load, and it
+       would leave the operator wondering where five undercut alerts went. */
+    const emptyAlerts = [];
+    if (attnErr) {
+      emptyAlerts.push({
+        tone: 'hot', icon: 'error',
+        title: 'The shared alert view did not load',
+        detailHtml: `${esc(attnErr.message)} — so whether anything is filed centrally against this screen is unknown, not zero. The line above is what this screen can see for itself.`,
+      });
+    } else if ((attn || []).length) {
+      /* A row filed against a table with nothing in it is a real contradiction
+         and is worth more than a shrug: the view saw prices this screen
+         cannot. */
+      emptyAlerts.push({
+        source: 'view', tone: 'warm', icon: 'rule',
+        title: `${num(attn.length)} ${plural(attn.length, 'alert is', 'alerts are')} filed against this screen, with no price behind ${plural(attn.length, 'it', 'them')}`,
+        detailHtml: `v_needs_attention still returns ${plural(attn.length, 'this row', 'these rows')} for screen = competitors, but the competitors table returned ${allJunk ? 'nothing usable' : 'nothing at all'}, so ${plural(attn.length, 'it cannot', 'none of them can')} be shown against the price ${plural(attn.length, 'it was', 'they were')} raised on: ${esc((attn || []).map(it => it.title || 'untitled').join('; '))}.`,
+      });
+    } else {
+      emptyAlerts.push({
+        tone: 'ok', icon: 'task_alt',
+        title: 'Nothing is filed against this screen',
+        detailHtml: 'v_needs_attention returns no row where screen = competitors. The undercut alerts it carried until tonight were each computed from a seed price that has now been deleted, so they were withdrawn with the data rather than worked through — nothing was fixed and nothing is outstanding.',
+      });
+    }
+
+    if (allJunk) {
+      const blocked = junk.filter(c => c.fault.kind === 'interstitial');
+      emptyAlerts.push({
+        tone: 'hot', icon: 'bug_report',
+        title: `${num(junk.length)} scraped ${plural(junk.length, 'row is', 'rows are')} not a competitor`,
+        detailHtml: `${esc(junk.map(c => c.name).join(', '))} — ${esc(junk.map(c => c.fault.why).join(' '))} ${blocked.length ? 'The scrape was blocked and stored the block page instead of the listing, so this feed is quietly missing whatever that run was sent to collect. ' : ''}${junkPriced ? '' : 'None of them carries a price. '}They are held out of every count here, which is why "Competitor prices on file" reads ${num(live.length)} rather than ${num(all.length)}.`,
+      });
+    }
+
+    if (invErr) {
+      emptyAlerts.push({
+        tone: 'hot', icon: 'error',
+        title: 'Our own stock did not load either',
+        detailHtml: `${esc(invErr.message)} — so the one question this screen can still answer today, which of our cars has no market price against it, could not be answered.`,
+      });
+    } else if (uncovered.length) {
+      emptyAlerts.push({
+        tone: criticalUnits.length ? 'hot' : 'warm', icon: 'price_check',
+        title: `All ${num(uncovered.length)} unsold ${plural(uncovered.length, 'unit is', 'units are')} priced with no market reference`,
+        detailHtml: `Not one of them has ever been checked against a rival price, and with the table empty none can be. If a competitor undercut any of them today nothing on this screen would show it.${agedUnits.length ? ` ${num(agedUnits.length)} ${plural(agedUnits.length, 'has', 'have')} been in stock ${AGING_DAYS} days or more${criticalUnits.length ? `, ${num(criticalUnits.length)} flagged CRITICAL` : ''}.` : ''}${listValue ? ` Together they list at ${esc(aed(listValue))}.` : ''}`,
+        act: 'blind', actLabel: 'See the list',
+      });
+    }
+
+    const emptyItem = (a, i) => `<div class="list-item"${a.act ? ` role="button" tabindex="0" data-empty="${i}"` : ' style="cursor:default"'}>
+      <span class="material-symbols-outlined t-${esc(a.tone)}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500">${esc(a.title)}</div>
+        <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
+      </div>
+      ${a.act ? `<div class="cell-sub t-muted" style="flex-shrink:0">${esc(a.actLabel || 'Open')}</div>
+      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>` : ''}
+    </div>`;
+
+    /* An item whose tone is 'ok' is a statement, not a task — "nothing is filed
+       against this screen" is worth a line but must not inflate a count of
+       things needing a human. */
+    const actionable = emptyAlerts.filter(a => a.tone !== 'ok').length;
+    const fromView = emptyAlerts.filter(a => a.source === 'view').length;
+    alertHost.innerHTML = `<div class="card flush" style="margin-bottom:16px">
+      <div class="card-head"><div style="min-width:0">
+        <div class="card-title">${actionable ? `Needs attention · ${num(actionable)}` : 'Nothing on this screen needs a human right now'}</div>
+        <div class="card-sub t-warm" style="white-space:normal">${allJunk
+          ? `Not one row the scrape wrote is a listing${junkPriced ? '' : ', and not one carries a price'}, so there is no comparison on this screen to be old or new.`
+          : `No price has been collected since the competitors table was cleared, so there is no comparison on this screen to be old or new.`} ${nextLine}</div>
+      </div></div>
+      <div>${emptyAlerts.map(emptyItem).join('')}</div>
+      <div class="list-item" style="cursor:default">
+        <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+        <div class="cell-sub" style="white-space:normal">${attnErr
+          ? 'Nothing could be read from v_needs_attention.'
+          : `${num((attn || []).length)} ${plural((attn || []).length, 'row', 'rows')} from v_needs_attention where screen = competitors${(attn || []).length ? '' : ' (it returned none for this screen)'}, and ${num(emptyAlerts.length - fromView)} ${plural(emptyAlerts.length - fromView, 'line', 'lines')} written here off ${num(all.length)} scraped ${plural(all.length, 'row', 'rows')} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`}.`}
+          The checks that run on scraped rows — what each match is matched on, rows the last scrape did not refresh, rows that are not a dealership at all, sources that sent no price — have no rows to run against and are absent from this list rather than sitting in it at zero.</div>
+      </div></div>`;
+
+    /* ── The empty state proper ───────────────────────────────────────────── */
     body.innerHTML = `<div class="card flush">
-      <div class="card-head"><div><div class="card-title">Price comparison</div>
-        <div class="card-sub">${junk.length ? 'Every row the scrape wrote is a failure, not a price' : 'Nothing has been scraped yet'}</div></div></div>
-      ${stateEmpty(junk.length ? 'No usable competitor prices' : 'No competitor prices yet',
-        junk.length
-          ? `The scraping workflow wrote ${num(junk.length)} ${plural(junk.length, 'row', 'rows')}, none of which names a dealership or carries a price, so there is no market price to compare our stock against. Until the scrape gets past whatever is blocking it, this screen has nothing to say.`
-          : `The scraping workflow writes this table and is expected to run every ${SCRAPE_EVERY_HOURS} hours. Until it has run once there is no market price to compare our stock against.`,
-        'trending_up')}</div>`;
+      <div class="card-head"><div style="min-width:0"><div class="card-title">Price comparison</div>
+        <div class="card-sub" style="white-space:normal">When the scrape has run, every collected price appears here against the cheapest unit we hold whose model name matches, with the date it was collected on the row.</div></div></div>
+      ${stateEmpty(
+        allJunk ? 'No usable competitor prices' : 'No competitor prices on file',
+        allJunk
+          ? `The scrape wrote ${all.length} ${plural(all.length, 'row', 'rows')} and not one of them names a dealership or carries a price, so there is no market price to compare our stock against. Until the scraper gets past whatever is blocking it, this screen has nothing to compare.`
+          : 'The competitors table is empty, so there is nothing to compare our prices against. It is not that our stock came out level — no rival price has been collected at all.',
+        'price_change')}
+      <div style="padding:0 20px 8px;max-width:760px;margin:0 auto">
+        <div class="label-caps">${allJunk ? 'What was in this table before' : 'Why it is empty'}</div>
+        <div class="cell-sub" style="white-space:normal;margin-top:8px">The fifteen rows this table held until 24 August were deleted. Twelve were seed prices that contradicted the stock we actually hold — one quoted a Land Cruiser at AED 290,000 against a list price of AED 385,000, and four of them named models that have never been on the lot at all — and the remaining three were scrape failures stored as dealerships. Every undercut this screen reported, including the five it fed to Overview, was computed from those rows, so all of them went when the rows did.</div>
+
+        <div class="label-caps" style="margin-top:18px">When it fills</div>
+        <div class="cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market.</div>
+
+        <div class="label-caps" style="margin-top:18px">What the rows will be able to prove</div>
+        <div class="cell-sub" style="white-space:normal;margin-top:8px">Less than it looks. ${esc(NO_MAKE)} A gap on this screen therefore says "a car called this costs that much elsewhere", not "the same car costs that much elsewhere", and each row will carry a chip saying which of those it is. The scrape also has no listing contact and no model year to offer, and when it is blocked it stores the block page as a dealership — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 24px">
+          <button class="btn sm" disabled title="${esc(NO_SCRAPE_HOOK.why)}">${esc(NO_SCRAPE_HOOK.label)}</button>
+          <button class="btn sm" id="cInvEmpty">Open Inventory</button>
+        </div>
+      </div></div>`;
+    $('cInvEmpty').addEventListener('click', () => go('inventory'));
+
+    /* The blind-spot panel is the only one with a real answer today, so it is
+       rendered even here — and with its own wording, because "no scraped row
+       matches this unit" would imply a comparison that never happened. */
+    const blind = await panel(blindHost, {
+      title: 'Stock with no market reference',
+      sub: 'Unsold units with no competitor price against them. With the competitors table empty this is every one of them: they are priced on instinct, not on evidence.',
+      actions: '<button class="btn sm" data-act="inv">Open Inventory</button>',
+      load: async () => { if (invErr) throw invErr; return uncovered; },
+      render: units => (units.length ? `<div>${units.slice(0, BLIND_LIMIT).map((u, i) => `
+        <div class="list-item" role="button" tabindex="0" data-unit="${i}" style="align-items:flex-start">
+          <span class="material-symbols-outlined t-muted" style="font-size:20px" aria-hidden="true">price_check</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}</div>
+            <div class="cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
+            <div class="cell-sub">${esc(String(u.status || 'status unknown'))}${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? ' · <span class="t-hot">CRITICAL</span>' : ''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div class="num">${uPrice(u) == null ? '<span class="t-muted">no list price</span>' : aed(uPrice(u))}</div>
+            <div class="cell-sub">${n0(u.days_in_stock) == null ? 'no acquisition date' : `${num(u.days_in_stock)} days in stock`}</div>
+          </div></div>`).join('')}
+        <div class="list-item" style="cursor:default">
+          <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+          <div class="cell-sub" style="white-space:normal">${units.length > BLIND_LIMIT ? `Showing the ${num(BLIND_LIMIT)} longest in stock of ${num(units.length)}. ` : ''}Ordered by how long each unit has been on the lot. Clicking one opens its price form — the only price on this screen that is ours to change. ${listValue ? `${units.length > BLIND_LIMIT ? 'All' : 'The'} ${num(units.length)} together list at ${esc(aed(listValue))}.` : ''}</div>
+        </div></div>`
+        : stateEmpty('No unsold stock on the lot',
+          'Every unit in inventory is marked sold, so there is nothing whose price a competitor could undercut.', 'price_check')),
+    });
+    blind.querySelector('[data-act="inv"]')?.addEventListener('click', () => go('inventory'));
+    const openUnit = i => { const u = uncovered[Number(i)]; if (u) unitForm(u, inv, reload); };
+    blind.querySelectorAll('[data-unit]').forEach(node => {
+      node.addEventListener('click', () => openUnit(node.dataset.unit));
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnit(node.dataset.unit); }
+      });
+    });
+
+    /* The one alert that can be followed here scrolls to that panel. */
+    alertHost.querySelectorAll('[data-empty]').forEach(node => {
+      const jump = () => {
+        blind.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        blind.style.background = 'var(--primary-subtle)';
+        setTimeout(() => { blind.style.background = ''; }, 2200);
+      };
+      node.addEventListener('click', jump);
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(); }
+      });
+    });
     return;
   }
 
@@ -717,7 +967,7 @@ SCREENS.competitors = async host => {
     push({
       sev: veryStale ? 'HOT' : 'WARM', icon: 'update_disabled',
       titleHtml: `The newest price here is ${dayWord(daysOld)} old`,
-      detailHtml: `${freshLine} The scrape's own schedule is the reason: it was an n8n "every 24 hours" interval, which drifts on restart and then stops firing without failing, so nothing refreshed. It has been moved onto a cron, but until a run lands, every gap on this screen is measured against prices that old and none of them is safe to quote at a customer without being re-checked first.`,
+      detailHtml: `${freshLine} The scrape's own schedule is the reason: it was an n8n "every ${SCRAPE_EVERY_HOURS} hours" interval, which drifts on restart and then stops firing without failing, so nothing refreshed and nothing was ever recorded as broken. It is a cron now, firing ${SCRAPE_SCHEDULE}, but until a run lands, every gap on this screen is measured against prices that old and none of them is safe to quote at a customer without being re-checked first.`,
       agoHtml: `<span title="${esc(dt(newest))}">price ${esc(dayWord(daysOld))} old</span>`,
       noHook: NO_SCRAPE_HOOK,
       actLabel: 'Oldest first',
@@ -758,6 +1008,23 @@ SCREENS.competitors = async host => {
       agoHtml: '<span class="t-muted">match quality</span>',
       actLabel: 'Show them',
       act: () => focusFilter(counts.UNNAMED ? 'UNNAMED' : 'ALL', ''),
+    });
+  }
+
+  /* Counts this small are not a picture of the market. They are named as what
+     they are rather than left to be read as a share — the screen shows "we
+     undercut 1", and one comparison out of a two-row scrape is a listing, not a
+     position. No percentage is drawn from them anywhere. */
+  if (!invErr && comparable.length && comparable.length <= THIN_ROWS) {
+    push({
+      sev: 'COLD', icon: 'help',
+      titleHtml: `Everything above rests on ${num(comparable.length)} ${plural(comparable.length, 'comparison', 'comparisons')}`,
+      detailHtml: `${comparable.length === live.length
+        ? (comparable.length === 1 ? 'The one scraped row on file' : `All ${num(live.length)} scraped rows`)
+        : `${num(comparable.length)} of the ${num(live.length)} scraped ${plural(live.length, 'row', 'rows')}`} could be matched to stock we hold and priced against it${groups.length === 1 ? `, ${plural(comparable.length, 'from', 'all of them from')} ${esc(groups[0].name || 'a single source')}` : ''}. The counts above are ${plural(comparable.length, 'that one row', 'those rows')} and nothing more — ${plural(comparable.length, 'it says', 'they say')} what ${plural(comparable.length, 'this listing does', 'these listings do')}, not where our prices sit in the market.`,
+      agoHtml: '<span class="t-muted">sample size</span>',
+      actLabel: 'Show them',
+      act: () => focusFilter('ALL', '', 'below_first'),
     });
   }
 
@@ -929,7 +1196,7 @@ SCREENS.competitors = async host => {
   const notes = [
     attnErr
       ? `v_needs_attention did not load (${esc(attnErr.message)}), so alerts raised centrally for this screen — the nightly undercut check among them — are missing from this list entirely. The ${num(localCount)} above ${plural(localCount, 'was', 'were')} derived here from the ${num(live.length)} usable scraped ${plural(live.length, 'row', 'rows')} this screen loaded.`
-      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(live.length)} usable scraped ${plural(live.length, 'row', 'rows')}${junk.length ? ` (of ${num(all.length)} returned; ${num(junk.length)} set aside as scrape failures)` : ''} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(live.length)} usable scraped ${plural(live.length, 'row', 'rows')}${junk.length ? ` (of ${num(all.length)} returned; ${num(junk.length)} set aside as ${plural(junk.length, 'a scrape failure', 'scrape failures')})` : ''} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
     unresolved
       ? `${num(unresolved)} of the view's ${plural(unresolved, 'alert', 'alerts')} could not be matched to a row loaded here, so ${plural(unresolved, 'it opens', 'they open')} nothing.`
       : '',

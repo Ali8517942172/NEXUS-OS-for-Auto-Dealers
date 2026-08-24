@@ -57,6 +57,12 @@ async function panel(host, { title, sub, actions, load, render, cols = '' }) {
     body.innerHTML = stateError(title || 'data', e.message, 'x');
     body.querySelector('[data-retry]')?.addEventListener('click', () => {
       card.remove();
+      /* Retry calls `load` again — which only retries anything if `load`
+         actually re-issues the request. A caller that shares one promise
+         between panels (`const p = db(...); panel({load: () => p})`) hands back
+         the SAME settled rejection every time, so the button looks like it is
+         doing something and can never succeed. If you share a read, drop the
+         cached promise on rejection; screens/overview.js has the pattern. */
       panel(host, { title, sub, actions, load, render, cols });
     });
   }

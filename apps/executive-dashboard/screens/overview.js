@@ -18,7 +18,32 @@
        that looks like a lookup failure. Customer numbers do exist and are shown:
        `leads.phone` and `v_conversations.phone`.
 
-   Rewritten 24 Aug 2026 against three production faults:
+   Re-read again the same night, after the database was cleaned of everything
+   that was not this dealership's real data. The cleanup took most of this
+   screen's numbers with it, and which alerts went matters more than the new
+   totals do:
+
+     · Five `undercut` items are gone because all fifteen `competitors` rows
+       were deleted. Twelve of them held an `our_price_aed` that contradicted
+       the inventory table — a Land Cruiser quoted at AED 290,000 against a
+       list price of 385,000, and three models that were never in stock — so
+       those five alerts were fabricated, not resolved. The kind is still
+       handled below, because the scraper refills that table; while it is empty
+       the panel says so, rather than letting a whole category go quietly
+       missing and look like good news.
+     · Two `unanswered_chat` items are gone with the 136 messages from thirteen
+       WhatsApp handles belonging to the owner's personal phone book. They were
+       never customers.
+     · The database now holds one customer and one lead, so nearly every figure
+       on the strip is n=1. Each of them says so in its own words instead of
+       standing there looking like a rate.
+
+   Nothing below is written against the rows that happen to be there tonight.
+   There is no list of expected items in this file: a screen that hardcodes
+   today's data is wrong by tomorrow morning, and would go on claiming three
+   things need attention long after they stopped.
+
+   Rewritten 24 Aug 2026 against four production faults:
 
    1. `v_needs_attention` gained an `unanswered_chat` branch — a WhatsApp thread
       whose newest message is inbound, inside a 7-day window. That is the item
@@ -43,7 +68,25 @@
       only. Overview may refine its own badge upward, because it can see KYC
       archive gaps the view does not list, and only upward: the shared count is
       a floor this file cannot go below. Where there is nothing to add, this
-      file does not write the badge at all.
+      file does not write the badge at all. The floor counts every HOT or WARM
+      row in the view, screen-less ones included, because badges.js adds those
+      to the Overview total too — see the note on `sharedFloor` for why getting
+      that wrong would let the refinement shrink the badge.
+
+   4. A `workflow_failure` item says a run failed inside the window. It does not
+      say the workflow is failing now, and on this screen those read identically
+      — which is how a fault that was fixed at 19:00 still looks like an
+      emergency at midnight. `v_workflow_health` carries `last_failure` and
+      `last_run`, and `last_run` is the newest run of any status: when it is
+      later than `last_failure`, the workflow has completed a run since that
+      failure and that run did not fail. So the distinction is read off two
+      columns, for every workflow, rather than from a list of which causes
+      somebody believes are fixed — the list would be a hardcoded opinion and
+      would rot within a day.
+
+      It is evidence, not a clean bill of health, and the screen says so: the
+      audit log records only runs that COMPLETED, so a workflow hung right now
+      leaves no row at all and cannot be distinguished from an idle one here.
 
    Everything below is a number Postgres produced. Nothing is estimated, and
    where a figure rests on a handful of rows the screen says how few — a single
@@ -70,6 +113,11 @@ const INV_LIMIT = 2000;
 const ATTN_LIMIT = 200;
 const AWAITING_LIMIT = 200;
 const KYC_LIMIT = 200;
+/* How many gaps the triage card lists before it starts counting instead. The
+   read is not narrowed — every gap is counted, and the badge and the notes are
+   computed from all of them; this bounds the height of one card in a
+   three-across row, nothing else. */
+const KYC_SHOWN = 5;
 
 /* Mirrors the 7-day cut-off inside `v_needs_attention.unanswered_chat`. It is
    used only to explain why a thread that is awaiting a reply is absent from the
@@ -114,6 +162,37 @@ const IDENT = {
   unidentified: { short: 'Unidentified', note: 'We do not know who this is. The only handle stored is the WhatsApp chat id, which for a LID contains no phone digits, and no lead or contact row matches it.' },
 };
 
+/* Failing now, or failed earlier in the window and quiet since? The two look
+   identical on an alert list, and they are not the same call for an owner at
+   midnight — one is a workflow to go and fix, the other is a workflow to check
+   in the morning. `v_workflow_health.last_run` is the newest run of any status
+   and `last_failure` the newest failed one, so a `last_run` strictly later than
+   `last_failure` is arithmetic proof that a run completed after that failure
+   and did not itself fail. Equal timestamps mean the failure IS the last run.
+
+   Anything less than that — no last_failure, an unparseable date, a last_run at
+   or before it — returns "not known to have recovered". This function never
+   guesses upward: an alert wrongly softened is worse than one left loud. */
+const failureState = w => {
+  const failedAt = Date.parse(w && w.last_failure);
+  const ranAt = Date.parse(w && w.last_run);
+  if (Number.isNaN(failedAt)) {
+    return { key: 'unknown',
+      text: '<span class="t-muted">the view records no time for the last failure, so whether anything has run since cannot be told from here</span>' };
+  }
+  if (!Number.isNaN(ranAt) && ranAt > failedAt) {
+    return { key: 'recovered',
+      text: `<span class="t-ok">has completed a run since, ${esc(ago(w.last_run))}, and that run did not fail</span>` };
+  }
+  return { key: 'failing',
+    text: '<span class="t-hot">its most recent completed run is the failure</span>' };
+};
+/* Said wherever a row above claims to have recovered. The audit log holds one
+   row per run that COMPLETED, so "it has run since" is evidence about the last
+   run that finished — not proof of health, and a workflow hung right now writes
+   no row at all and is indistinguishable from an idle one from here. */
+const RECOVERY_CAVEAT = 'A workflow marked as having run since its failure is read from v_workflow_health: last_run later than last_failure. That is evidence the most recent completed run did not fail, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen.';
+
 SCREENS.overview = async host => {
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
 
@@ -128,15 +207,35 @@ SCREENS.overview = async host => {
   const pipeCard = el('div', 'card'); pipeCard.style.marginTop = '16px'; host.appendChild(pipeCard);
   pipeCard.innerHTML = stateLoading(2);
 
-  /* ── The attention read, done once ──────────────────────────────────────
-     Both the Needs-attention panel and the KYC panel depend on it — the second
-     one so it can say which of its gaps the view already lists — and the badge
-     depends on both. Reading it twice would let the two disagree on screen.
+  /* ── Reads more than one panel depends on ───────────────────────────────
+     Shared so that two panels describing the same rows cannot describe two
+     different moments — and memoised in a way a Retry can actually retry.
+
+     panel() rebuilds itself with the same `load` when its Retry is pressed. A
+     load that hands back one already-settled promise therefore gives the
+     operator a button whose only possible outcome is the same failure again,
+     which is worse than no button: it looks like the database is down when the
+     truth might be one dropped request. So the promise is kept while it is
+     pending or fulfilled, and dropped on rejection — the next caller issues a
+     fresh query. The internal catch is what keeps a rejection from surfacing as
+     an unhandled promise in the console rather than in the panel that is meant
+     to report it; every consumer still handles its own. */
+  const shared = make => {
+    let p = null;
+    return () => {
+      if (!p) { p = make(); p.catch(() => { p = null; }); }
+      return p;
+    };
+  };
+
+  /* Both the Needs-attention panel and the KYC panel depend on this one — the
+     second so it can say which of its gaps the view already lists — and the
+     badge depends on both.
 
      `v_conversations` is an enrichment, not the source of truth, so its failure
      degrades identity resolution rather than killing the panel. That
      degradation is rendered, not swallowed. */
-  const attentionRead = (async () => {
+  const readAttention = shared(async () => {
     const [items, threads] = await Promise.all([
       db(`v_needs_attention?select=kind,severity,ref,title,detail,at,screen&limit=${ATTN_LIMIT}`),
       /* `push_name` is not selected: `display_name` already falls back through
@@ -146,18 +245,39 @@ SCREENS.overview = async host => {
         + `&awaiting_reply=is.true&order=last_message_at.desc&limit=${AWAITING_LIMIT}`).catch(() => null),
     ]);
     return { items, threads };
-  })();
+  });
   /* Read once here too. The KYC panel renders it and the Needs-attention panel
      needs the same rows to state what the badge adds up to; two reads could
      disagree, and a badge that disagrees with the panel under it is worse than
      no badge. */
-  const kycGapRead = db('kyc_documents?select=id,lead_name,full_name,lead_email,document_type,verdict,created_at,retain_until,void_reason'
-    + `&storage_path=is.null&purged_at=is.null&order=created_at.desc&limit=${KYC_LIMIT}`);
-  /* Both are created well before anything awaits them. Marking them handled now
-     keeps a failed read from surfacing as an unhandled rejection in the console
-     instead of in the panel that is supposed to report it. */
-  attentionRead.catch(() => {});
-  kycGapRead.catch(() => {});
+  /* `attempt_number` / `max_attempts` are selected because a list of gaps that
+     all belong to one person is a resubmission trail, and the attempt number is
+     what makes that legible: eight names in a column look like eight problems.
+     Both columns are on the table (CORRECTION section, 24 Aug). */
+  const readKycGaps = shared(() => db('kyc_documents?select=id,lead_name,full_name,lead_email,document_type,verdict,created_at,retain_until,void_reason,attempt_number,max_attempts'
+    + `&storage_path=is.null&purged_at=is.null&order=created_at.desc&limit=${KYC_LIMIT}`));
+  /* Workflow health, read once and shared. The Workflows-degraded panel renders
+     it, and the Needs-attention panel needs the same rows to tell a workflow
+     that is failing now from one that failed earlier in the window and has run
+     clean since. Two reads could put a row in one state on one panel and the
+     other state three lines below it, which is worse than not distinguishing
+     them at all. `failures_30d=gt.0` is the panel's own filter and it is also
+     exactly the set a workflow_failure item can come from, so one read serves
+     both; a workflow_failure item with no match here is reported as unmatched
+     rather than assumed healthy. */
+  const readHealth = shared(() => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,last_run,last_failure,is_active'
+    + '&failures_30d=gt.0&order=failures_30d.desc,name.asc&limit=50'));
+  /* Read for one reason only: to explain an absence. `undercut` is one of the
+     kinds the Needs-attention list enumerates, and when `competitors` is empty
+     that branch cannot fire at all — so an operator reading "no undercuts"
+     would be reading a silence as an all-clear. One row is enough to tell the
+     two apart, which is all this asks for. */
+  const readRivals = shared(() => db('competitors?select=id&limit=1'));
+  /* Started here, not at first use. The core read below is awaited before any
+     panel exists, so a read that waits for its panel would queue behind it
+     instead of running alongside it — four round trips in series on the screen
+     an owner opens first. */
+  readAttention(); readKycGaps(); readHealth(); readRivals();
 
   /* A row is an audit gap only if it was a real submission. `void_reason` marks
      the rows that were never KYC at all, and they are excluded here exactly as
@@ -182,6 +302,8 @@ SCREENS.overview = async host => {
      own badge, and it exists for exactly one reason: a KYC archive gap that the
      view's `kyc_archive_gap` branch does not list (its branch carries a recency
      cut-off of its own) is a compliance hole no badge would otherwise mention.
+     Tonight that is the larger half of the number: the view returns three items
+     and there are eight unarchived submissions it says nothing about.
 
      Two rules make that refinement safe rather than a second opinion:
 
@@ -200,17 +322,28 @@ SCREENS.overview = async host => {
      bug — the KYC panel below still shows the gap either way. */
   const need = { attention: null, items: null, kycExtra: null, floor: null, floorFrom: null, badge: null };
 
-  /* Counted the way badges.js counts, from the snapshot badges.js last read:
-     HOT or WARM, and attributable to a screen. Null when it has not read yet. */
+  /* Counted the way badges.js counts the OVERVIEW badge specifically, from the
+     snapshot badges.js last read: every HOT or WARM row, whether or not the
+     view files it against a screen. Null when it has not read yet.
+
+     The `&& str(r.screen)` this line used to carry was a real defect, not a
+     stylistic one. badges.js paints the per-screen badges from rows that name a
+     screen and then adds its `homeless` count — the HOT/WARM rows that name
+     none — into the Overview grand total, precisely so an item with nowhere to
+     live is still visible somewhere. Filtering them out here made this file's
+     floor smaller than the number badges.js had just painted, so the one thing
+     the refinement is forbidden to do — move the badge DOWN — became possible
+     the moment the view emitted a row with a null screen. It never has in the
+     data we have seen, which is exactly why it would have shipped. */
   const sharedFloor = () => {
     const rows = BADGE_SNAPSHOT && BADGE_SNAPSHOT.rows;
     if (!rows) return null;
-    return rows.filter(r => BADGE_SEVERITIES.has(str(r.severity).toUpperCase()) && str(r.screen)).length;
+    return rows.filter(r => BADGE_SEVERITIES.has(str(r.severity).toUpperCase())).length;
   };
   /* The same rule applied to the rows this screen read, so the first render has
      a floor before badges.js has polled once. */
   const ownFloor = items => (items || [])
-    .filter(i => BADGE_SEVERITIES.has(str(i.severity).toUpperCase()) && str(i.screen)).length;
+    .filter(i => BADGE_SEVERITIES.has(str(i.severity).toUpperCase())).length;
 
   const setBadge = () => {
     const extra = need.kycExtra || 0;
@@ -229,8 +362,13 @@ SCREENS.overview = async host => {
     if (!extra) return;
     badge.textContent = need.badge > 99 ? '99+' : String(need.badge);
     badge.classList.toggle('hide', need.badge === 0);
+    /* The homeless count is badges.js's own — it is the reason the floor above
+       is not filtered by screen, so the title has to be able to explain it. */
+    const homeless = BADGE_SNAPSHOT && BADGE_SNAPSHOT.rows ? (BADGE_SNAPSHOT.homeless || 0) : 0;
     badge.title = `${need.floor} item${need.floor === 1 ? '' : 's'} need attention across all screens`
-      + ` (HOT and WARM only), plus ${extra} KYC archive gap${extra === 1 ? '' : 's'}`
+      + ` (HOT and WARM only)`
+      + (homeless ? `, ${homeless} of which belong to no screen and can only be seen here` : '')
+      + `, plus ${extra} KYC archive gap${extra === 1 ? '' : 's'}`
       + ` that v_needs_attention does not list`;
   };
 
@@ -291,6 +429,13 @@ SCREENS.overview = async host => {
 
     const sinceMs = Date.parse(since);
     const answered = new Set(outbound.map(c => norm(c.lead_email)).filter(Boolean));
+    /* communication_logs.lead_email holds an email when the lead is known and a
+       raw WhatsApp handle when it is not, so some outbound messages in this
+       window are filed against a handle and can never match a lead row. They
+       are counted, not silently dropped: a lead answered on WhatsApp before it
+       was identified would still be listed below as unanswered, and an operator
+       has to be told that rather than left to discover it. */
+    const outboundHandles = outbound.filter(c => isHandle(c.lead_email)).length;
     const recent = leads.filter(l => Date.parse(l.created_at) >= sinceMs);
     /* A lead with no email cannot be matched against communication_logs, which
        keys on lead_email. Counting those as "unanswered" would invent a queue;
@@ -302,6 +447,7 @@ SCREENS.overview = async host => {
 
     core = { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
              risk, warning, riskHolding, riskList, holding, metrics, waiting, unmatchable,
+             outboundHandles, outboundCount: outbound.length,
              recentCount: recent.length,
              leadsCapped: leads.length >= LEAD_LIMIT,
              invCapped: inv.length >= INV_LIMIT,
@@ -343,13 +489,30 @@ SCREENS.overview = async host => {
 
     const oldestRisk = risk.length ? Math.max(...risk.map(r => n0(r.days_in_stock) || 0)) : null;
 
+    /* A snapshot that counted more open leads than the table now holds in total
+       is, by arithmetic, counting rows that are no longer there — open leads are
+       a subset of all leads, so there is no reading of the two figures under
+       which that gap is ordinary movement. Every delta on this strip is drawn
+       against that same snapshot, so it is said once, here, at the top: those
+       comparisons are measuring rows leaving the database as much as anything
+       the dealership did. Derived from the two counts, not from knowing that a
+       cleanup happened tonight — next month the same sentence still holds. */
+    const prevOpen = prev ? n0(prev.open_leads) : null;
+    const snapshotShrank = prevOpen != null && prevOpen > leads.length;
+    /* Raw, not escaped: every use below goes through warn()/muted(), which
+       escape. Escaping twice would print the entities. */
+    const snapshotWhen = prev && prev.snapshot_date ? `The ${prev.snapshot_date} snapshot` : 'The previous snapshot';
+
     /* ── Open leads ─────────────────────────────────────────────────────── */
     const leadsSub = `${pill(`${hot} HOT`, 'hot')} ${pill(`${warm} WARM`, 'warm')} ${pill(`${cold} COLD`, 'cold')}`
       + (leadsCapped
           ? `<br>${warn(`Capped at ${num(LEAD_LIMIT)} rows — the leads table holds more than this.`)}`
           : leads.length <= THIN
             ? `<br>${warn(`That is the whole leads table — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it.`)}`
-            : '');
+            : '')
+      + (snapshotShrank
+          ? `<br>${warn(`${snapshotWhen} counted ${num(prevOpen)} open leads and the table now holds ${num(leads.length)} in total, so it was counting rows that have since gone. Every comparison against it on this strip inherits that.`)}`
+          : '');
 
     /* ── Awaiting first reply ───────────────────────────────────────────── */
     const waitSub = waiting.length
@@ -360,7 +523,14 @@ SCREENS.overview = async host => {
           + (recentCount <= THIN ? `<br>${warn(`On ${num(recentCount)} ${plural(recentCount, 'lead', 'leads')} this says almost nothing about the reply habit.`)}` : '')
         : muted(`No lead was created in the last ${WINDOW_DAYS} days, so there is nothing here to be waiting on`);
 
-    /* ── Average response time ──────────────────────────────────────────── */
+    /* ── Response time ──────────────────────────────────────────────────────
+       The mean of one number is that number, and calling it an average is the
+       single easiest way for this screen to lie now that the database holds one
+       lead. So the tile renames itself: with one measurement the label reads
+       "Response time" and the subtitle says whose it is. The value is unchanged
+       and correct either way — what changes is the claim made about it. */
+    const oneMeasure = withResp.length === 1;
+    const respLabel = oneMeasure ? 'Response time' : 'Avg response time';
     const respBasis = muted(`From ${num(withResp.length)} of ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} with a recorded response time`);
     const respSub = avgResp == null
       ? muted(!leads.length
@@ -371,8 +541,16 @@ SCREENS.overview = async host => {
       : (avgResp > 5
           ? `<span class="t-hot">Breaches the 5-minute rule</span><br>${respBasis}`
           : `<span class="t-ok">Inside the 5-minute rule</span><br>${respBasis}`)
-        + (withResp.length <= THIN ? `<br>${warn(`An average of ${num(withResp.length)} ${plural(withResp.length, 'measurement', 'measurements')} is not a performance figure.`)}` : '')
-        + ((() => { const d = delta(avgResp, prev?.avg_response_minutes, v => mins(v), true); return d ? `<br>${d}` : ''; })());
+        + (oneMeasure
+            ? `<br>${warn('This is one lead’s recorded response time, not an average of anything. It says how fast that enquiry was answered and nothing about how the dealership performs.')}`
+            : withResp.length <= THIN
+              ? `<br>${warn(`An average of ${num(withResp.length)} ${plural(withResp.length, 'measurement', 'measurements')} is not a performance figure.`)}`
+              : '')
+        /* A delta on a single measurement compares one lead against a snapshot
+           mean. It is arithmetic without a meaning, so it is not drawn. */
+        + (oneMeasure
+            ? `<br>${muted('No comparison against the previous snapshot is shown: one measurement against a daily mean is not a change in response time.')}`
+            : (() => { const d = delta(avgResp, prev?.avg_response_minutes, v => mins(v), true); return d ? `<br>${d}` : ''; })());
 
     /* ── Pipeline value ─────────────────────────────────────────────────── */
     const noBudget = leads.length - withBudget.length;
@@ -402,14 +580,30 @@ SCREENS.overview = async host => {
       kpi('Open leads', num(leads.length), leadsSub),
       /* The one number on this screen that maps to a person waiting. */
       kpi('Awaiting first reply', num(waiting.length), waitSub, waiting.length ? 't-hot' : ''),
-      kpi('Avg response time', mins(avgResp), respSub),
+      kpi(respLabel, mins(avgResp), respSub),
       kpi('Pipeline value', aed(pipeline), pipeSub),
       kpi('Units at risk', num(risk.length), riskSub, risk.length ? 't-hot' : ''),
     ].join('');
 
     const seg = [['HOT', hot, 'var(--hot)'], ['WARM', warm, 'var(--warm)'], ['COLD', cold, 'var(--cold)']];
     const graded = hot + warm + cold;
-    pipeCard.innerHTML = graded
+    const unscored = leads.length - graded;
+    /* One scored lead paints a full-width bar in one colour, and a full-width
+       bar is read as a share before any caption under it is. A caption cannot
+       undo that — the shape has already made the claim — so at n=1 the chart is
+       not drawn at all and the same fact is stated in a sentence instead. This
+       is the one place on the screen where the honest rendering is no chart. */
+    const single = graded === 1;
+    const onlyStage = single ? (seg.find(([, v]) => v === 1) || [null])[0] : null;
+    pipeCard.innerHTML = single
+      ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${onlyStage ? pill(onlyStage) : ''}
+          <span>Exactly one lead has been scored${onlyStage ? `, and it is ${esc(onlyStage)}` : ''}.</span>
+        </div>
+        <div class="cell-sub" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
+        ${unscored > 0 ? `<div class="cell-sub" style="margin-top:6px">${muted(`${num(unscored)} further ${plural(unscored, 'lead has', 'leads have')} not been scored by the router.`)}</div>` : ''}`
+      : graded
       ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
         <div class="stackbar">${seg.map(([, v, c]) => `<i style="width:${(v / graded * 100).toFixed(1)}%;background:${c}"></i>`).join('')}</div>
         <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
@@ -423,7 +617,11 @@ SCREENS.overview = async host => {
              is one row, and the caption says so directly under it. */
           ? `<div class="cell-sub" style="margin-top:10px">${warn(`This bar is ${num(graded)} scored ${plural(graded, 'lead', 'leads')} in total. The proportions are shapes, not shares.`)}</div>`
           : ''}`
-      : stateEmpty('Nothing to chart yet', 'No lead has been scored HOT, WARM or COLD.', 'donut_small');
+      : stateEmpty('Nothing to chart yet',
+          leads.length
+            ? `${leads.length === 1 ? 'The one lead on file has not been scored' : `None of the ${leads.length} leads on file has been scored`} HOT, WARM or COLD yet. The router writes that status when it processes an enquiry, and the stage mix appears here once it has.`
+            : 'The leads table is empty, so there are no stages to chart. The first row arrives when the router webhook receives an enquiry.',
+          'donut_small');
   }
 
   /* ── Opening the row an item is about ───────────────────────────────────
@@ -503,6 +701,14 @@ SCREENS.overview = async host => {
       const noPhone = d.waiting.filter(l => !str(l.phone)).length;
       const notes = [
         d.unmatchable ? `${num(d.unmatchable)} of the ${num(d.recentCount)} leads in this window have no email address, so communication_logs cannot be matched to them.` : '',
+        /* The join this panel rests on is lead.email = communication_logs.lead_email,
+           and that column holds a WhatsApp handle whenever the message was sent
+           to a thread with no identified lead behind it. Those messages cannot
+           match any lead row, so the join is provably incomplete and says by how
+           much rather than presenting itself as exact. */
+        d.outboundHandles
+          ? `${num(d.outboundHandles)} of the ${num(d.outboundCount)} outbound messages read in this window are filed under a WhatsApp handle rather than an email address, because communication_logs.lead_email holds whichever the thread had at the time. They cannot be matched to any lead, so a lead answered on WhatsApp before it was identified would still be listed above as unanswered.`
+          : '',
         d.outboundCapped ? `Outbound history was capped at ${num(OUTBOUND_LIMIT)} messages for this window, so this list may be incomplete.` : '',
         d.recentCount && d.recentCount <= THIN ? `Only ${num(d.recentCount)} ${plural(d.recentCount, 'lead was', 'leads were')} created in this window, so an empty list here is a very small sample.` : '',
         noPhone ? `${num(noPhone)} of these ${plural(noPhone, 'lead has', 'leads have')} no phone number on the lead record, so ${plural(noPhone, 'it', 'they')} can only be answered by email.` : '',
@@ -554,23 +760,46 @@ SCREENS.overview = async host => {
      all-time `failures` would keep a long-fixed workflow red forever. */
   panels.push(panel(flowHost, {
     title: 'Workflows degraded',
-    sub: 'Any workflow with at least one failure in the last 30 days',
+    sub: 'Any workflow with at least one failure in the last 30 days, and whether it has run cleanly since',
     actions: `<button class="btn sm" data-act="automation">Open Automation</button>`,
-    load: () => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,last_failure,is_active&failures_30d=gt.0&order=failures_30d.desc,name.asc&limit=50'),
+    load: () => readHealth(),
     render: rows => {
       if (!rows.length) {
         return stateEmpty('No workflow has failed in 30 days',
           'Workflows that do not write to the audit log cannot report health — Automation lists those separately.', 'task_alt');
       }
-      return `<div>${rows.map(w => {
+      /* Ordered so the ones still broken sit above the ones that recovered.
+         The read is already sorted by failure count, which put a workflow that
+         failed five times this morning and has run clean all afternoon above a
+         workflow that is failing right now — the wrong way round for a triage
+         card. Recovery first, failure count second, so the sort inside each
+         group is unchanged. */
+      const state = new Map(rows.map(w => [w, failureState(w)]));
+      const ORDER = { failing: 0, unknown: 1, recovered: 2 };
+      const sorted = [...rows].sort((a, b) => ORDER[state.get(a).key] - ORDER[state.get(b).key]);
+      const recovered = rows.filter(w => state.get(w).key === 'recovered').length;
+      const notes = [
+        recovered ? RECOVERY_CAVEAT : '',
+        `A row here means a run failed inside the 30-day window that v_workflow_health.health is computed over. All-time failures are not used: they would keep a workflow that was fixed in June red forever.`,
+      ].filter(Boolean);
+      return `<div>${sorted.map(w => {
         const runs = n0(w.runs_30d), fails = n0(w.failures_30d);
         /* "3 of 3 runs failed" and "124 of 202 runs failed" are different
            claims. A workflow that has barely run in the window is marked as
            such rather than being ranked on a rate nobody can trust. */
         const scarce = runs != null && runs <= THIN;
+        const st = state.get(w);
+        /* A workflow that has run clean since its last failure is not an
+           emergency at midnight, and the icon has to agree with the sentence
+           three words to its right or the row is shouting and whispering at
+           once. The health pill is left exactly as the view computed it — that
+           is the view's judgement and this panel does not overrule it. */
+        const icon = st.key === 'recovered'
+          ? { name: 'history', cls: 't-muted' }
+          : { name: 'error', cls: 't-hot' };
         return `<div class="list-item" role="button" tabindex="0" data-goto="automation"
              title="Open Automation, where this workflow's runs and failures are" style="align-items:flex-start">
-          <span class="material-symbols-outlined t-hot" style="font-size:20px">error</span>
+          <span class="material-symbols-outlined ${icon.cls}" style="font-size:20px">${icon.name}</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(w.name)}</span>
@@ -579,13 +808,16 @@ SCREENS.overview = async host => {
             </div>
             <div class="cell-sub">${esc(w.category || 'Uncategorised')}${w.last_failure ? ' · last failed ' + esc(ago(w.last_failure)) : ''}${
               scarce ? ' · <span class="t-warm">too few runs in 30 days to rate</span>' : ''}</div>
+            <div class="cell-sub">${st.text}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="num t-hot" style="font-weight:500">${num(fails)}</div>
+            <div class="num ${st.key === 'recovered' ? 't-muted' : 't-hot'}" style="font-weight:500">${num(fails)}</div>
             <div class="cell-sub">${runs == null ? 'failed' : `of ${num(runs)} runs`}</div>
           </div>
         </div>`;
-      }).join('')}</div>`;
+      }).join('')}<div class="list-item" style="cursor:default">
+        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div></div>`;
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('automation'));
@@ -610,8 +842,8 @@ SCREENS.overview = async host => {
     load: async () => {
       /* One read, partitioned in the browser, so the voided count and the live
          count cannot come from two different moments in time. */
-      const rows = await kycGapRead;
-      const att = await attentionRead.catch(() => null);
+      const rows = await readKycGaps();
+      const att = await readAttention().catch(() => null);
       return { rows, att };
     },
     render: ({ rows, att }) => {
@@ -624,7 +856,15 @@ SCREENS.overview = async host => {
          both halves of it. */
       const extra = att ? extraGaps(rows, att.items) : [];
 
-      const contacts = new Set(live.map(r => str(r.lead_email).toLowerCase() || str(r.lead_name).toLowerCase()).filter(Boolean)).size;
+      const keyOf = r => str(r.lead_email).toLowerCase() || str(r.lead_name).toLowerCase();
+      const contactKeys = [...new Set(live.map(keyOf).filter(Boolean))];
+      const contacts = contactKeys.length;
+      /* Where every gap belongs to one person, name them. "All 8 belong to 1
+         contact" leaves an owner to go and find out who; the address is already
+         in the rows being counted. */
+      const soleContact = contacts === 1
+        ? (str(live[0].lead_name) || str(live[0].full_name) || contactKeys[0])
+        : '';
 
       const notes = [
         voided.length
@@ -637,11 +877,13 @@ SCREENS.overview = async host => {
             : extra.length
               ? `${num(live.length - extra.length)} of these also appear in Needs attention; ${num(extra.length)} ${plural(extra.length, 'does', 'do')} not.`
               : '',
-        live.length > 1 && contacts && contacts <= 2
-          ? `All ${num(live.length)} belong to ${num(contacts)} ${plural(contacts, 'contact', 'contacts')} — this is one submission trail failing repeatedly, not a problem spread across the book.`
-          : live.length === 1
-            ? 'This is a single row. It is a real gap, but it is one.'
-            : '',
+        live.length > 1 && soleContact
+          ? `All ${num(live.length)} were filed under one contact, ${soleContact} — this is one submission trail failing over and over, not a compliance problem spread across the book. It is still ${num(live.length)} missing files, and each one is its own audit gap.`
+          : live.length > 1 && contacts && contacts <= 2
+            ? `All ${num(live.length)} belong to ${num(contacts)} ${plural(contacts, 'contact', 'contacts')} — this is one submission trail failing repeatedly, not a problem spread across the book.`
+            : live.length === 1
+              ? 'This is a single row. It is a real gap, but it is one.'
+              : '',
         capped ? `Read was capped at ${num(KYC_LIMIT)} rows, so there may be more.` : '',
         /* Rule: where a person is shown, show their phone. This table does not
            hold one — it holds lead_email and chat_id — so the address is shown
@@ -663,7 +905,16 @@ SCREENS.overview = async host => {
           'inventory_2') + foot;
       }
 
-      return `<div>${live.map(d => `
+      /* This card sits in a three-across triage row, and every row in it is
+         three lines tall. Listing every gap makes the tallest card on the
+         screen a column of the same name repeated — so the newest few are
+         shown and the remainder is counted, in the same words the leads panel
+         uses. The count above is always the full one; only the list is cut. */
+      const shown = live.slice(0, KYC_SHOWN);
+      const rest = live.length - shown.length;
+      return `<div>${shown.map(d => {
+        const attempt = n0(d.attempt_number), maxAttempt = n0(d.max_attempts);
+        return `
         <div class="list-item" role="button" tabindex="0" data-goto="compliance"
              title="Open Compliance, where this document's audit trail is" style="align-items:flex-start">
           <span class="material-symbols-outlined t-warm" style="font-size:20px">folder_off</span>
@@ -672,14 +923,19 @@ SCREENS.overview = async host => {
               <span style="font-weight:500">${esc(str(d.lead_name) || str(d.full_name) || str(d.lead_email) || 'Unknown contact')}</span>
               ${d.verdict ? pill(d.verdict) : ''}
             </div>
-            <div class="cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${d.retain_until ? ' · retain until ' + esc(d.retain_until) : ''}</div>
+            <div class="cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
+              attempt != null ? ' · attempt ' + esc(num(attempt)) + (maxAttempt != null ? ' of ' + esc(num(maxAttempt)) : '') : ''}${
+              d.retain_until ? ' · retain until ' + esc(d.retain_until) : ''}</div>
             <div class="cell-sub">${str(d.lead_email)
               ? `<span class="mono">${esc(str(d.lead_email))}</span>`
               : '<span class="t-warm">No address on the submission</span>'}</div>
           </div>
           <button class="btn sm" disabled
             title="No re-archive endpoint exists. kyc_documents and the private kyc-documents bucket are service-role only, and there is no n8n webhook for re-running the archive step, so the browser cannot repair this row.">Re-archive</button>
-        </div>`).join('')}${foot}</div>`;
+        </div>`;
+      }).join('')}${rest > 0
+        ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${esc(`${num(rest)} older ${plural(rest, 'gap is', 'gaps are')} not listed here — all ${num(live.length)} are counted above and every one of them is in Compliance.`)}</div></div>`
+        : ''}${foot}</div>`;
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('compliance'));
@@ -711,15 +967,20 @@ SCREENS.overview = async host => {
     title: 'Needs attention',
     sub: `Live union from v_needs_attention — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock. The view bounds two of these itself: unanswered threads to ${CHAT_WINDOW_DAYS} days and SLA breaches to ${SLA_WINDOW_DAYS}, so this is what is still live, not everything that ever slipped`,
     load: async () => {
-      const { items, threads } = await attentionRead;
+      const { items, threads } = await readAttention();
       const sorted = [...items].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9)
         || new Date(b.at) - new Date(a.at));
       /* Soft: a failed KYC read must not take this panel down with it, but it
          does change what the badge can honestly claim, so it is reported. */
-      const gapRows = await kycGapRead.catch(() => null);
-      return { items: sorted, threads, gapRows };
+      const gapRows = await readKycGaps().catch(() => null);
+      /* Both soft for the same reason: they add a sentence to a row or explain
+         an absence. Neither is allowed to blank the list of things that need a
+         human, which is the one thing this panel exists to show. */
+      const health = await readHealth().catch(() => null);
+      const rivals = await readRivals().catch(() => null);
+      return { items: sorted, threads, gapRows, health, rivals };
     },
-    render: ({ items, threads, gapRows }) => {
+    render: ({ items, threads, gapRows, health, rivals }) => {
       need.attention = items.length;
       need.items = items;
       need.kycExtra = gapRows ? extraGaps(gapRows, items).length : null;
@@ -742,6 +1003,22 @@ SCREENS.overview = async host => {
 
       const byChat = new Map();
       (threads || []).forEach(t => { const k = str(t.chat_id); if (k) byChat.set(k, t); });
+
+      /* Workflow health, indexed by both of the things the view's `ref` could
+         be. `v_needs_attention` documents `ref` only as an opaque reference, so
+         the id is tried first and the name second — the title the view prints
+         for a workflow_failure is the workflow's name, and matching on it is
+         the fallback. An item that matches neither is reported as unmatched
+         rather than quietly treated as still-failing or as recovered. */
+      const healthById = new Map(), healthByName = new Map();
+      (health || []).forEach(w => {
+        if (str(w.id)) healthById.set(str(w.id), w);
+        if (str(w.name)) healthByName.set(str(w.name).toLowerCase(), w);
+      });
+      const healthFor = it => (it.kind === 'workflow_failure'
+        ? healthById.get(str(it.ref)) || healthByName.get(str(it.title).toLowerCase()) || null
+        : null);
+      let recoveredFlows = 0, unmatchedFlows = 0;
 
       /* An unanswered_chat row arrives with `title = display_name`, and the view
          falls back to the raw chat handle when it has nothing better — so the
@@ -773,7 +1050,19 @@ SCREENS.overview = async host => {
 
       const body = items.map(it => {
         const target = SCREENS[it.screen] ? it.screen : (KIND_SCREEN[it.kind] || 'overview');
-        const icon = KIND_ICON[it.kind] || 'warning';
+        const flow = healthFor(it);
+        const flowState = flow ? failureState(flow) : null;
+        if (it.kind === 'workflow_failure') {
+          if (!flow) unmatchedFlows += 1;
+          else if (flowState.key === 'recovered') recoveredFlows += 1;
+        }
+        /* A workflow that has run clean since the failure that raised this item
+           is still on the list — the view raised it and this screen does not
+           overrule the view — but it is not screaming. The clock icon says the
+           row is about something that happened, not something happening. */
+        const icon = flowState && flowState.key === 'recovered'
+          ? 'history'
+          : (KIND_ICON[it.kind] || 'warning');
         /* `at` is a real column on the view. How long a thing has been waiting
            is most of what ranks it, so it is shown — and where the view left it
            null that is said, not rendered as an em dash. */
@@ -795,6 +1084,19 @@ SCREENS.overview = async host => {
             str(lead.phone) ? `<span class="mono">${esc(str(lead.phone))}</span>`
               : '<span class="t-warm">No phone number on this lead record</span>'
           }${str(lead.email) ? ` · <span class="mono">${esc(str(lead.email))}</span>` : ''}</div>`;
+        } else if (it.kind === 'workflow_failure') {
+          head = esc(it.title);
+          /* The second line is the whole point of the enrichment: "failed 6
+             hours ago" and "failing right now" are the same row until something
+             says which. Where v_workflow_health had no row to match, that is
+             said too — an unmatched item is not evidence of anything. */
+          sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
+            flowState ? flowState.text
+              : '<span class="t-muted">no row in v_workflow_health matched this item, so whether it has run since cannot be told from here</span>'
+          }${flow && n0(flow.failures_30d) != null
+            ? ` <span class="t-muted">· ${esc(num(flow.failures_30d))} ${plural(n0(flow.failures_30d), 'failure', 'failures')} in 30 days${
+                n0(flow.runs_30d) != null ? ` of ${esc(num(flow.runs_30d))} ${plural(n0(flow.runs_30d), 'run', 'runs')}` : ''}</span>`
+            : ''}</div>`;
         } else {
           head = esc(it.title);
           sub = `${esc(it.detail)} · ${waited}`;
@@ -805,8 +1107,14 @@ SCREENS.overview = async host => {
         const jump = lead
           ? `data-lead="${esc(lead.id)}" title="Open this lead"`
           : `data-goto="${esc(target)}" title="Open ${esc(target)}"`;
+        /* Severity colours the icon, except where the row has just said the
+           thing has already run clean since — a red glyph beside "has completed
+           a run since, and that run did not fail" is the screen arguing with
+           itself, and the operator believes the colour. The severity pill is
+           untouched: that is the view's rating and it stays visible. */
+        const iconTone = flowState && flowState.key === 'recovered' ? 'muted' : tone(it.severity);
         return `<div class="list-item" role="button" tabindex="0" ${jump}>
-          <span class="material-symbols-outlined t-${tone(it.severity)}" style="font-size:20px">${icon}</span>
+          <span class="material-symbols-outlined t-${iconTone}" style="font-size:20px">${icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${
               pill(str(it.severity) || 'Unrated')}</div>
@@ -847,18 +1155,38 @@ SCREENS.overview = async host => {
         matchedLeads
           ? `${num(matchedLeads)} of these ${plural(matchedLeads, 'item opens', 'items open')} the lead record itself, with the customer's number on it; the rest open the screen that can act on them.`
           : '',
+        /* The workflow enrichment, explained where its effect is visible. Both
+           halves matter: what "has run since" is read from, and what it is not
+           proof of. */
+        recoveredFlows ? RECOVERY_CAVEAT : '',
+        health == null && items.some(i => i.kind === 'workflow_failure')
+          ? 'v_workflow_health did not load, so the workflow items above are shown as the view worded them — this screen cannot say which of them have run cleanly since they failed.'
+          : unmatchedFlows
+            ? `${num(unmatchedFlows)} workflow ${plural(unmatchedFlows, 'item', 'items')} above could not be matched to a row in v_workflow_health, so nothing is claimed about whether ${plural(unmatchedFlows, 'it has', 'they have')} run since.`
+            : '',
+        /* An absence an operator would otherwise read as an all-clear. The
+           undercut branch of the view compares competitors.our_price_aed
+           against our own; with no rows to compare it cannot fire at all, which
+           is a different thing from our prices being competitive. */
+        rivals && rivals.length === 0
+          ? 'No undercut item can appear on this list at present: the competitors table is empty, so the view has nothing to compare our prices against. That is a silent scraper, not a clean sheet — the rows return when the price scrape next runs.'
+          : '',
         /* Badge arithmetic, in words, every time — a badge nobody can reproduce
            from the screen under it is a number people learn to ignore. */
         `This panel lists all ${num(items.length)} ${plural(items.length, 'item', 'items')} the view returned${
           coldItems ? `, including ${num(coldItems)} not marked HOT or WARM` : ''}${
           unscreened ? ` and ${num(unscreened)} the view attributes to no screen` : ''}.`,
-        `Nav badges are painted by lib/badges.js from one read of v_needs_attention every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading.`,
+        `Nav badges are painted by lib/badges.js from one read of v_needs_attention every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading. Items the view files against no screen have no nav item to sit on, so they are counted into the Overview badge and nowhere else.`,
         gapRows == null
           ? `The KYC archive-gap read failed, so the badge is the shared count alone${need.floor == null ? '' : ` (${num(need.floor)})`} and any gap it would have added is missing from it.`
           : need.kycExtra
-            ? `The Overview badge reads ${num(need.badge)}: the shared count of ${num(need.floor)}${
-                need.floorFrom === 'own' ? ' (computed from this panel, as the shared badge read has not returned yet)' : ''
-              } plus ${num(need.kycExtra)} KYC archive ${plural(need.kycExtra, 'gap', 'gaps')} the view does not list at all.`
+            /* Written as the sum, both terms named, because a badge an owner
+               cannot reconstruct from the screen under it is a number they
+               learn to ignore — and this one is now mostly made of rows that
+               are not on this list at all. */
+            ? `The Overview badge reads ${num(need.badge)} = ${num(need.floor)} + ${num(need.kycExtra)}: ${num(need.floor)} HOT or WARM ${plural(need.floor, 'item', 'items')} in v_needs_attention across every screen${
+                need.floorFrom === 'own' ? ', counted from this panel because the shared badge read has not returned yet' : ''
+              }, plus ${num(need.kycExtra)} KYC archive ${plural(need.kycExtra, 'gap', 'gaps')} from the KYC archive-gaps panel above, which the view does not list at all. badges.js repaints the ${num(need.floor)} on its own next poll; the gaps are added back the next time this screen renders, and the KYC panel above lists them either way.`
             : `Nothing here is missing from that count, so the Overview badge is left exactly as badges.js painted it${need.floor == null ? '' : ` — ${num(need.floor)}`}.`,
       ].filter(Boolean);
       const foot = `<div class="list-item" style="cursor:default">

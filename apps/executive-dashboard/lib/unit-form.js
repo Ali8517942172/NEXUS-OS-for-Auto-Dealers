@@ -29,6 +29,14 @@ function deriveUnit(u) {
     days = n0(u.days_in_stock) || 0;   // pre-migration rows, if any survive
   }
   const sold = String(u.status || '').toLowerCase() === 'sold';
+  /* Holding cost was already frozen on a sale. The day count was not, so every
+     time anyone saved a sold unit its stored `days_in_stock` climbed again —
+     the column quietly became "days since we bought it" rather than "days it
+     sat on the lot", and the two only agree until the car sells. `inventory`
+     records no sale date, so the freeze has to happen the moment the status
+     says sold: the last figure written while it was still on the lot is the
+     closest thing to a true days-to-sale this schema can hold. */
+  if (sold && n0(u.days_in_stock) != null) days = n0(u.days_in_stock);
   const holding = sold ? (n0(u.holding_cost_accrued) || 0) : days * INV.HOLDING_PER_DAY;
   const gross = price - cost;
   const net = gross - holding;
@@ -169,6 +177,15 @@ function unitForm(existing, inv, onDone) {
     if (!v.acquired_at) return m.msg('<span class="t-hot">An acquisition date is required.</span>');
     if (v.price_aed === '' || v.cost_aed === '')
       return m.msg('<span class="t-hot">List price and cost are both required — every margin on this screen is derived from them.</span>');
+    /* `min="0"` on a number input is a spinner hint, not a constraint: typing
+       -5000 submits happily. Gross margin, net margin, VAT and the recommended
+       commission are all derived from these two, so one negative number here
+       propagates into five stored columns and into whatever the workflows and
+       the Finance Desk read out of them afterwards. */
+    if (Number(v.price_aed) < 0 || Number(v.cost_aed) < 0)
+      return m.msg('<span class="t-hot">List price and cost cannot be negative — every margin, the VAT figure and the commission are derived from them.</span>');
+    if (!Number.isFinite(Number(v.price_aed)) || !Number.isFinite(Number(v.cost_aed)))
+      return m.msg('<span class="t-hot">List price and cost must both be numbers.</span>');
     if (isNew && inv.some(x => String(x.id) === v.id))
       return m.msg(`<span class="t-hot">Stock number ${esc(v.id)} already exists.</span>`);
 
@@ -191,8 +208,20 @@ function unitForm(existing, inv, onDone) {
         <button class="btn" id="uDelNo">Keep it</button></div>`);
     $('uDelNo').addEventListener('click', () => m.msg(''));
     $('uDelYes').addEventListener('click', async () => {
-      try { await dbWrite('DELETE', `inventory?id=eq.${encodeURIComponent(u.id)}`, undefined); m.close(); onDone(); }
-      catch (e) { modalError(m, e); }
+      try {
+        /* dbWrite sends `Prefer: return=representation`, so a DELETE that matched
+           nothing comes back 200 with []. Closing the modal on that reported a
+           deletion that never happened — the row is still there when the screen
+           reloads, and the operator has been told otherwise. Check what came
+           back before claiming anything. */
+        const gone = await dbWrite('DELETE', `inventory?id=eq.${encodeURIComponent(u.id)}`, undefined);
+        if (Array.isArray(gone) && gone.length === 0) {
+          m.msg(`<span class="t-hot">Nothing was deleted — no row in inventory has stock number ${esc(u.id)} any more.
+            It may already be gone, or your account may not be allowed to delete it. The list is unchanged.</span>`);
+          return;
+        }
+        m.close(); onDone();
+      } catch (e) { modalError(m, e); }
     });
   });
 }

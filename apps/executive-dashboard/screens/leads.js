@@ -26,11 +26,30 @@
    number the cell says so with an em dash. A `…@lid` WhatsApp handle is never
    printed as if it were a person's name (see the 24 Aug addendum); leads are not
    supposed to carry one, but the router has written stranger things into `name`
-   and a handle rendered as a name is exactly the fault that addendum is about. */
+   and a handle rendered as a name is exactly the fault that addendum is about.
+
+   24 Aug 2026, after the clean-out — one lead, and he is a real customer.
+
+   Two consequences, both of which are the reason this file changed today.
+
+   First: n=1 is not a population. Nothing on this screen divides one row by
+   another, and the counts that could be mistaken for a distribution — the
+   status segments across the top of the table — now carry a sentence saying
+   they are the whole table rather than a sample of it. There is no funnel here,
+   no conversion rate and no trend, because one row cannot support one.
+
+   Second, and more useful to an owner than any of the above: the only lead on
+   file has `response_time_minutes` null. That column is the sole record in this
+   database of how long a lead waited for its first answer, so the 5-minute rule
+   — the founding promise of this product — currently has nothing measuring it.
+   It is also what `v_needs_attention` files `sla_breach` on, which means the
+   view's silence about this screen is an unmeasured promise and not a kept one.
+   That is stated in the strip and per row, because a blank cell in a response
+   column reads as "fast" to everyone who has ever looked at one. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, esc, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, esc, mins, n0, num, pill, tone } from '../lib/format.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -43,6 +62,10 @@ const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? 0 : t; };
 const when = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? '' : new Date(t).toLocaleString('en-GB'); };
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
+/* null and 0 are different answers here — 0 would be an instant reply, null is
+   no measurement at all — so this must not collapse them. n0() returns null for
+   null, '' and NaN and keeps a real 0. */
+const respOf = l => n0(l.response_time_minutes);
 
 /* Read ceilings. Each one is stated on screen when it is hit, because a count
    drawn from a truncated read is a smaller number, not a wrong-looking one, and
@@ -75,6 +98,20 @@ const HIGH_SCORE = 70;
    in a month is not a neglected lead, and listing it as one trains people to
    ignore the strip. */
 const TERMINAL = new Set(['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED']);
+
+/* The 5-minute rule. It is a promise the dealership made, not a column
+   constraint, and `leads.response_time_minutes` is the only place in the
+   database where it is ever measured. `v_needs_attention` files `sla_breach`
+   off that same column, so a lead whose response time was never recorded is
+   invisible to the view and to this screen alike — which is a fact worth
+   printing, not a silence worth trusting. */
+const SLA_MINUTES = 5;
+
+/* At or below this, a set of rows is the whole book rather than a sample of it,
+   and the captions say so. The arithmetic does not change — this screen counts
+   rows and never divides one by another — but "1 HOT" beside "0 WARM" reads as
+   a distribution unless something tells the reader it is one row. */
+const THIN = 5;
 
 /* Names shown per alert before it collapses into "+N more". The row itself
    filters the table to the full set, so this is a glance, not the list. */
@@ -273,6 +310,14 @@ SCREENS.leads = async host => {
     ? windowWithEmail.filter(l => loggedAny.has(low(l.email)) && !loggedOut.has(low(l.email)))
     : [];
 
+  /* What is measuring the 5-minute rule, counted rather than averaged.
+     `measured` is the denominator of every sentence this screen writes about
+     reply speed, and it is printed in all of them. No mean is taken here at any
+     size: an average over a handful of measurements is not a performance figure,
+     and over none of them it is not a figure at all. */
+  const measured = all.filter(l => respOf(l) != null);
+  const breached = measured.filter(l => Number(respOf(l)) > SLA_MINUTES);
+
   const scored = all.filter(l => n0(l.ai_score) != null);
   const hotButNew = scored.filter(l => Number(l.ai_score) >= HIGH_SCORE
     && (up(l.status) === 'NEW' || !str(l.status)))
@@ -425,6 +470,24 @@ SCREENS.leads = async host => {
     checks.length > 1
       ? 'A lead can satisfy more than one check, so these counts overlap and do not add up to a total.'
       : '',
+    /* The absence an owner should be told about rather than shown as a blank
+       cell. It is stated here and nowhere else on this screen at the table
+       level, so there is one sentence about it and not two that can drift. */
+    !leadsErr && all.length && !measured.length
+      ? `response_time_minutes is null on ${plural(all.length, 'the only lead on file', `all ${num(all.length)} leads on file`)}. `
+        + `That column is the only record this database keeps of how long a lead waited for its first answer, so the ${SLA_MINUTES}-minute rule is currently being measured by nothing: `
+        + `v_needs_attention can raise an sla_breach only against a lead that carries one, no average response time anywhere in this dashboard has an input, and the quiet from both is an unmeasured promise rather than a kept one. `
+        + 'It is the router that would have to write the figure; nothing in this browser can supply it.'
+      : '',
+    !leadsErr && measured.length && measured.length < all.length
+      ? `${num(all.length - measured.length)} of the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here ${plural(all.length - measured.length, 'carries', 'carry')} no response_time_minutes, so the ${SLA_MINUTES}-minute rule cannot be applied to ${plural(all.length - measured.length, 'it', 'them')} at all — ${plural(all.length - measured.length, 'it is', 'they are')} unmeasured, not fast.`
+      : '',
+    !leadsErr && measured.length
+      ? `${num(breached.length)} of the ${num(measured.length)} ${plural(measured.length, 'lead', 'leads')} that do carry a first-reply time ${plural(breached.length, 'is', 'are')} over ${SLA_MINUTES} minutes.`
+        + (measured.length <= THIN
+          ? ` ${num(measured.length)} ${plural(measured.length, 'measurement is', 'measurements are')} not a performance figure, so no average is taken from ${plural(measured.length, 'it', 'them')} on this screen.`
+          : '')
+      : '',
   ].filter(Boolean);
 
   const previewOf = ls => {
@@ -477,18 +540,41 @@ SCREENS.leads = async host => {
     </div>`).join('');
 
   /* The honest empty case, which today is the only case. Not a box with nothing
-     in it: a sentence naming what was checked and what came back, so "no alerts"
-     reads as a result rather than as a panel that failed to load. */
+     in it, and not one run-on sentence either: one line per check, each naming
+     the denominator it counted against, so "no alerts" reads as a result an
+     operator can audit rather than as a panel that failed to load.
+
+     The last line is the one that stops this reading as an all-clear. Six of
+     these checks passing says nothing about reply speed, because the column
+     reply speed lives in is empty — and a strip that looked identical either
+     way is exactly how an unmeasured promise gets mistaken for a kept one. */
+  const nLeads = `${num(all.length)} ${plural(all.length, 'lead', 'leads')}`;
+  const nothingLines = [
+    `v_needs_attention returned no row with screen = 'leads'. Its two branches here are lead_unassigned, which fires on a lead with no owner, and sla_breach, which fires on a first reply outside the ${SLA_MINUTES}-minute rule — neither is filed against anything in the leads table right now.`,
+    leadsErr
+      ? ''
+      : !all.length
+      ? 'The leads table is empty, so the four checks this screen runs of its own had nothing to weigh — none of them passed, they simply did not apply.'
+      : `Checked here, against the ${nLeads} read from the table: `
+        + (hot.length
+            ? `${plural(hot.length, 'the one HOT lead has', `all ${num(hot.length)} HOT leads have`)} a rep on the row; `
+            : 'no lead is HOT, so that check had nothing to weigh; ')
+        + (scored.length
+            ? `no lead scored ${HIGH_SCORE} or higher by the router is still sitting at NEW (${num(scored.length)} of ${nLeads} ${plural(scored.length, 'carries', 'carry')} a score); `
+            : 'no lead carries a router score at all, so nothing could be untriaged by that check; ')
+        + (contactUsable
+            ? `${plural(windowWithEmail.length, 'the one lead', `each of the ${num(windowWithEmail.length)} leads`)} created in the last ${CONTACT_WINDOW_DAYS} days with an email address has at least one line in communication_logs; and no open lead with an email address has gone ${STALE_DAYS} days without a logged message or an escalation (${num(openWithEmail.length)} checked).`
+            : `the contact and staleness checks could not run this time, so nothing was checked about who has been spoken to — see the note below.`),
+    !leadsErr && all.length && !measured.length
+      ? `None of that is a statement about how fast anyone was answered: response_time_minutes is null on ${plural(all.length, 'the only lead here', 'every lead here')}, so the sla_breach branch above has nothing to fire on and neither does this screen. The note below says what that leaves unmeasured.`
+      : '',
+  ].filter(Boolean);
+
   const nothing = `<div class="list-item" style="cursor:default">
     <span class="material-symbols-outlined t-ok" style="font-size:20px">task_alt</span>
     <div style="flex:1;min-width:0">
       <div style="font-weight:500">Nothing on this screen needs attention right now</div>
-      <div class="cell-sub">v_needs_attention returned no row for this screen${
-        leadsErr ? '' : `, and across the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here no HOT lead is unassigned and `
-          + `no lead scored ${HIGH_SCORE} or higher is still sitting at NEW`
-          + (contactUsable
-            ? `, every lead created in the last ${CONTACT_WINDOW_DAYS} days has a logged message, and no open lead with an email address has gone ${STALE_DAYS} days without one`
-            : ' — the contact and staleness checks could not run this time, see below')}.</div>
+      <div class="cell-sub" style="white-space:normal">${nothingLines.map(esc).join('<br>')}</div>
     </div>
   </div>`;
 
@@ -590,6 +676,9 @@ SCREENS.leads = async host => {
         .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
       <div class="t-muted num" id="resultCount"></div>
     </div>
+    ${all.length && all.length <= THIN ? `<div class="cell-sub" style="padding:12px 20px 0;white-space:normal">${esc(
+      `Those counts are the whole leads table — ${num(all.length)} ${plural(all.length, 'row', 'rows')}, not a sample of it. `
+      + `${plural(all.length, 'One row', `${num(all.length)} rows`)} cannot carry a share, a conversion rate or a trend, so this screen prints none: every figure on it is a count of the rows above, and the segments are a tally rather than a distribution.`)}</div>` : ''}
     <div id="focusNote" style="padding:0 20px"></div>
     ${notes.length ? `<div style="padding:14px 20px 0">${notes.map(n => `<div class="banner warm">
       <span class="material-symbols-outlined">warning</span><div>${esc(n)}</div></div>`).join('')}</div>` : ''}
@@ -641,6 +730,16 @@ SCREENS.leads = async host => {
         ? esc(r.users.name)
         : `<span class="pill warm"><span class="dot"></span>Unassigned</span>` },
     { label:'Age', render: r => `<span class="t-muted" title="${esc(when(r.created_at))}">${ago(r.created_at)}</span>` },
+    /* An empty response-time cell reads as "answered instantly" to anyone who
+       glances at it. It means nobody measured, which is a different fact and a
+       worse one, so the cell says which of the two it is in words. */
+    { label:'First reply', align:'r', render: r => {
+        const m = respOf(r);
+        if (m == null) return `<span class="t-warm" title="${esc(
+          `response_time_minutes is null on this row, so how long this customer waited for a first answer was never recorded. This is not a fast reply and not a slow one — the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and v_needs_attention cannot raise an sla_breach for it either.`)}">Not measured</span>`;
+        return `<span class="${m > SLA_MINUTES ? 't-hot' : 't-ok'}" title="${esc(
+          `response_time_minutes on this row. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
+      }},
     { label:'Actions', align:'r', render: actionCell },
   ];
 
@@ -688,7 +787,7 @@ SCREENS.leads = async host => {
       b.classList.toggle('on', b.dataset.v === f.status));
     const focus = f.alert ? checkByKey.get(f.alert) : null;
     const rows = sorted(filtered());
-    $('resultCount').textContent = `${rows.length} of ${all.length} leads`;
+    $('resultCount').textContent = `${rows.length} of ${all.length} ${plural(all.length, 'lead', 'leads')}`;
 
     const note = $('focusNote');
     note.innerHTML = focus

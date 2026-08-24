@@ -149,15 +149,55 @@ const respondsToCaller = w =>
   w.writes_audit_log === false && !!RESPONDS_TO_CALLER[hookFor(w)];
 const callerInfo = w => RESPONDS_TO_CALLER[hookFor(w)] || null;
 
+/* ── Three of the workflows on this instance are web pages ─────────────────
+   `NEXUS Public — Home`, `— Privacy` and `— Terms` are published and active in
+   n8n and are not dealership automation at all. Google's OAuth consent screen
+   will not publish an app to production without a home page, a privacy policy
+   and a terms URL, and it rejects `vercel.app` because that is a public suffix;
+   `nip.io` was the only registrable domain available, so n8n itself serves the
+   three pages at /webhook/nexus, /webhook/privacy and /webhook/terms. Getting
+   that consent screen published is what stopped Gmail's refresh tokens expiring
+   every seven days.
+
+   They will never log a run and they never should — a page that nobody opened
+   has nothing to report. Counting them as un-instrumented blind spots would put
+   three static pages inside a list of automations "nobody can see inside", which
+   is the sentence this screen exists to make trustworthy. So they are labelled
+   rather than hidden: hiding a live workflow because it is inconvenient is the
+   other way to make this list lie. */
+const PUBLIC_PAGE_RE = /nexus\s*public/i;
+const PUBLIC_PAGE_HOOK_RE = /\/webhook\/(?:nexus|privacy|terms)\b/i;
+const isPublicPage = w =>
+  PUBLIC_PAGE_RE.test(String(w.name || ''))
+  || /^\s*[—-]\s*(?:privacy|terms)\s*$/i.test(String(w.name || ''))
+  || PUBLIC_PAGE_HOOK_RE.test(String(w.trigger_detail || ''));
+
+const PUBLIC_PAGE = {
+  label: 'Public web page', tone: '', icon: 'public', rank: 3.6,
+  detail: 'This is not an automation. It is one of the three pages n8n serves so that Google\u2019s OAuth consent screen can be published — a home page, a privacy policy and a terms URL are mandatory for production, and vercel.app is rejected as a public suffix, so the pages are served from n8n over nip.io. It logs nothing because a page view is not a workflow run, and that silence is correct rather than a blind spot.',
+};
+
 const RETURNS_RESULT = {
   label: 'Answers the caller', tone: '', icon: 'sync_alt', rank: 3.5,
   detail: 'This endpoint is called by the dashboard and answers in the reply, so the screen that called it shows the outcome immediately. It is registered as writing no audit row, and for a request/response endpoint that is the right design rather than a gap. The trade-off is real and worth knowing: no run history is kept, so nothing here can tell you how it behaved yesterday.',
 };
 
-/* The state a workflow is presented under. Everything except RETURNS_RESULT is
-   the view's own `health` value, unchanged. */
-const STATES = { ...HEALTH, RETURNS_RESULT };
-const stateKey = w => (respondsToCaller(w) ? 'RETURNS_RESULT' : up(w.health));
+/* The state a workflow is presented under. Everything except the two
+   classifications below is the view's own `health` value, unchanged.
+
+   DEGRADED is checked first and can never be masked by a classification. A
+   request/response endpoint or a public page that is actually failing is still
+   failing, and the previous version of this line would have quietly relabelled a
+   degraded whatsapp-send as "answers the caller" and dropped it out of the
+   degraded banner it belongs in. */
+const STATES = { ...HEALTH, RETURNS_RESULT, PUBLIC_PAGE };
+const stateKey = w => {
+  const h = up(w.health);
+  if (h === 'DEGRADED') return 'DEGRADED';
+  if (isPublicPage(w)) return 'PUBLIC_PAGE';
+  if (respondsToCaller(w)) return 'RETURNS_RESULT';
+  return h;
+};
 const healthOf = w => STATES[stateKey(w)] || UNKNOWN_HEALTH;
 const healthLabel = w => (STATES[stateKey(w)] ? STATES[stateKey(w)].label : (w.health || 'Unrecognised'));
 
@@ -234,6 +274,13 @@ const NO_N8N_BASE =
   'VITE_N8N_BASE_URL is not set in this deployment, so the browser has no n8n host to call. Every manual trigger is unavailable until it is configured.';
 
 function triggerState(w) {
+  /* A page has no run to trigger. Saying so is shorter and truer than the
+     generic "no webhook in HOOK maps to it", which invites someone to go looking
+     for a webhook that would be meaningless if it existed. */
+  if (isPublicPage(w)) {
+    return { hook: null, can: false, label: 'Run now',
+      why: 'This is a web page served by n8n, not an automation. Opening its URL is the only thing that "runs" it, and there is nothing here to fire — the dashboard has no reason to request a page it does not display.' };
+  }
   const hook = hookFor(w);
   if (!hook) {
     const how = w.trigger_type
@@ -285,6 +332,25 @@ const CEILING_EXEMPT = [
   },
 ];
 const exemptFrom = w => CEILING_EXEMPT.find(e => e.test(w)) || null;
+
+/* ── The scraper's own guard ───────────────────────────────────────────────
+   Since 24 Aug an IF node — `Is This Real Intel?` — sits between the scraper's
+   `Parse AI Price` node and the `competitors` insert, because the scrape had
+   been storing bot-detection pages ("Pardon Our Interruption") and the literal
+   string "null" as rival dealerships, and every "undercut" alert built on those
+   rows was fabricated. A scrape that fails that gate is written to audit_log as
+   REJECTED instead of being inserted.
+
+   So a REJECTED row from that workflow is the guard doing its job — the run
+   completed and refused to write rubbish — and reading it as a fault is the same
+   mistake as reading a ceiling stop as a broken workflow. It is matched on the
+   workflow name and the status, because audit_log has no reason column, and it
+   is worded as a reading of those two fields rather than as something the
+   database asserted. */
+const SCRAPE_GUARD_RE = /competitor|scrap/i;
+const looksGuardRejected = a =>
+  up(a.status) === 'REJECTED' && SCRAPE_GUARD_RE.test(String(a.workflow || ''));
+const GUARD_NOTE = 'Read as the Is This Real Intel? gate refusing a scrape rather than the workflow breaking: since 24 Aug the scraper checks what Parse AI Price produced before inserting it, and writes a REJECTED audit row instead of storing a bot-detection page or the string \u201cnull\u201d as a rival dealership. The run completed. audit_log has no reason column, so this is read off the workflow name and status \u2014 the summary above is the thing that says what was refused.';
 
 /* A failure whose summary reads like the ceiling stopping a run. Matched on the
    summary text because audit_log has no separate reason column — so this is
@@ -409,9 +475,35 @@ function cadenceOf(w) {
   return null;
 }
 
+/* ── A changed schedule has restarted its clock ────────────────────────────
+   A workflow edited more recently than its last run has not "missed" a run: the
+   next fire is measured from the change, not from the last thing it logged.
+   `scripts/nexus_healthcheck.py` section 7 makes exactly this allowance and says
+   why — a watchdog that cries about a schedule somebody just fixed is a watchdog
+   people learn to ignore, and then it cannot tell them about the real thing.
+
+   That script reads n8n's `updatedAt`. Nothing this dashboard can read carries
+   it: `v_workflow_health` has no such column and neither does
+   `workflow_registry`, and the n8n Admin API is not callable from the browser
+   bundle. So the allowance is made from a table of the changes this build was
+   told about, each with its timestamp, and every cadence verdict carries
+   EDIT_BLIND saying that the general case cannot be seen from here.
+
+   An entry costs nothing once the job has run under its new setting: the branch
+   only fires while `last_run` is still older than the change. */
+const SCHEDULE_CHANGED = [
+  {
+    test: w => /competitor\s*price\s*scraping/.test(low(w.name)),
+    at: '2026-08-24T17:05:00Z',
+    what: 'moved off an n8n \u201cevery 24 hours\u201d interval onto cron 0 5 * * * \u2014 05:00 UTC daily',
+  },
+];
+const scheduleChange = w => SCHEDULE_CHANGED.find(c => c.test(w)) || null;
+
 const SCHED = {
   OVERDUE:     { tone: 'hot',  icon: 'alarm', label: 'Overdue' },
   NO_RUN:      { tone: 'warm', icon: 'alarm', label: 'Never logged a run' },
+  CLOCK_RESET: { tone: '',     icon: 'restart_alt', label: 'Clock restarted' },
   ON_TIME:     { tone: 'ok',   icon: 'schedule', label: 'On cadence' },
   UNCHECKABLE: { tone: '',     icon: 'visibility_off', label: 'Cannot be checked' },
 };
@@ -432,6 +524,18 @@ function scheduleOf(w) {
   }
   const ageH = (Date.now() - t) / HOUR_MS;
   if (ageH > c.allowance) {
+    /* Before calling it overdue: was the schedule itself changed since that last
+       run? If so the clock restarted and the job is waiting, not stopped. */
+    const chg = scheduleChange(w);
+    const chgH = chg ? (Date.now() - Date.parse(chg.at)) / HOUR_MS : null;
+    if (chgH != null && Number.isFinite(chgH) && chgH >= 0 && chgH < ageH) {
+      if (chgH <= c.allowance) {
+        return { c, ageH, changedH: chgH, state: 'CLOCK_RESET',
+          why: `Last logged run ${fmtHours(ageH)} ago, which is past the ${fmtHours(c.allowance)} a ${fmtHours(c.hours)} cadence allows — but its schedule was changed ${fmtHours(chgH)} ago (${chg.what}), and a changed schedule restarts the clock. Nothing has been missed: the first run under the new setting is due within ${fmtHours(c.allowance)} of that change, and the gap before it is the old schedule's, not evidence about the new one.` };
+      }
+      return { c, ageH, changedH: chgH, state: 'OVERDUE',
+        why: `Last logged run ${fmtHours(ageH)} ago. Its schedule was changed ${fmtHours(chgH)} ago (${chg.what}), which restarted the clock — but measured from the change it should still have logged a run within ${fmtHours(c.allowance)}, so it has missed one under the new setting too. That is the case worth opening n8n for.` };
+    }
     return { c, ageH, state: 'OVERDUE',
       why: `Last logged run ${fmtHours(ageH)} ago. On a ${fmtHours(c.hours)} cadence it should have logged one within ${fmtHours(c.allowance)}, so it has missed at least one. A stopped schedule produces no failures and no degraded health — this gap is the only signal it gives.` };
   }
@@ -441,6 +545,8 @@ function scheduleOf(w) {
 const OVERDUE_STATES = ['OVERDUE', 'NO_RUN'];
 
 /* Said wherever a cadence verdict is shown, because the evidence is indirect. */
+const EDIT_BLIND = 'One thing this check cannot see: when a workflow was last edited. A schedule changed in n8n since its last run has had its clock restarted and has missed nothing, but neither v_workflow_health nor workflow_registry carries an updated_at and n8n\u2019s own updatedAt is not reachable from the browser. The only change this build knows about is the Competitor Price Scraping cron on 24 Aug, which it allows for by name. So before treating an \u201cOverdue\u201d as a stopped job, check whether somebody changed that schedule today \u2014 scripts/nexus_healthcheck.py section 7 can read updatedAt and makes that allowance for every workflow.';
+
 const CADENCE_CAVEAT = 'last_run comes from audit_log, which records runs that completed and wrote a row — not every fire of the trigger. A job that only writes a row when it finds something (the Silence Detector writes when somebody is actually silent) looks overdue on a quiet week. Treat this as "confirm it in n8n", not as proof. scripts/nexus_healthcheck.py section 7 makes the same judgement against n8n executions, which is the stronger source.';
 
 SCREENS.automation = async host => {
@@ -520,19 +626,36 @@ SCREENS.automation = async host => {
      blind-spot count and must not inflate it. */
   const blind = rows.filter(w => stateKey(w) === 'NOT_INSTRUMENTED');
   const byDesign = rows.filter(w => stateKey(w) === 'RETURNS_RESULT');
+  /* Web pages n8n happens to serve. Split out of `blind` for the same reason
+     `byDesign` is: they are not automations and they are not unmonitored — there
+     is nothing about them to monitor. */
+  const pages = rows.filter(w => stateKey(w) === 'PUBLIC_PAGE');
   const auditCapped = (audit || []).length >= AUDIT_LIMIT;
 
   /* Cadence verdicts, computed once. `sched` is null for anything without a
      recognisable schedule, and the scheduled set is ordered worst-first. */
   const schedOf = new Map(rows.map(w => [w, scheduleOf(w)]));
   const scheduled = rows.filter(w => schedOf.get(w));
-  const schedRank = { OVERDUE: 0, NO_RUN: 1, UNCHECKABLE: 2, ON_TIME: 3 };
+  const schedRank = { OVERDUE: 0, NO_RUN: 1, CLOCK_RESET: 2, UNCHECKABLE: 3, ON_TIME: 4 };
   scheduled.sort((a, b) =>
     (schedRank[schedOf.get(a).state] - schedRank[schedOf.get(b).state])
     || ((schedOf.get(b).ageH || 0) - (schedOf.get(a).ageH || 0))
     || String(a.name || '').localeCompare(String(b.name || '')));
   const overdue = scheduled.filter(w => OVERDUE_STATES.includes(schedOf.get(w).state));
   const drifting = scheduled.filter(w => schedOf.get(w).c.drifts);
+  /* Schedules whose clock was restarted by a change more recent than their last
+     run: waiting for their first fire under a new setting, not stopped. Named
+     separately so the distinction stays visible instead of being folded into a
+     pass — the operator who made the change is the one person who can confirm
+     it, and the screen is telling them what it assumed. */
+  const restarted = scheduled.filter(w => schedOf.get(w).state === 'CLOCK_RESET');
+  /* An interval this build has been told was migrated to a cron. The cadence
+     here is read from workflow_registry, and the registry is a description of
+     n8n rather than n8n itself — so the two can disagree, and when they do it is
+     the registry row that is stale, not a job at risk of drifting. Naming a
+     fixed workflow in a drift warning is how the warning stops being read. */
+  const staleInterval = drifting.filter(w => scheduleChange(w));
+  const trulyDrifting = drifting.filter(w => !scheduleChange(w));
   const isOverdue = w => OVERDUE_STATES.includes(schedOf.get(w)?.state);
 
   /* The ceiling is the same policy for every row, so the chip is short and the
@@ -568,7 +691,8 @@ SCREENS.automation = async host => {
     strip.innerHTML = [
       kpi('Workflows registered', num(rows.length),
         `${active} active · ${logged} of ${rows.length} write to audit_log${
-          byDesign.length ? ` · ${num(byDesign.length)} answer${byDesign.length === 1 ? 's' : ''} the caller instead` : ''}`),
+          byDesign.length ? ` · ${num(byDesign.length)} answer${byDesign.length === 1 ? 's' : ''} the caller instead` : ''}${
+          pages.length ? ` · ${num(pages.length)} are web pages, not automations` : ''}`),
       kpi('Degraded now', num(degraded.length),
         degraded.length
           ? `<span class="t-hot">${esc(degraded.map(w => w.name).slice(0, 2).join(', '))}${degraded.length > 2 ? ` +${degraded.length - 2} more` : ''}</span>`
@@ -651,10 +775,28 @@ SCREENS.automation = async host => {
           ? 'has never logged a run at all'
           : `last logged one ${esc(fmtHours(s.ageH))} ago, past the ${esc(fmtHours(s.c.allowance))} that cadence allows`}.
       A schedule that stops firing produces no failures and no degraded health, so this is the only place it shows up.
-      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(CADENCE_CAVEAT)}</div></div>
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(EDIT_BLIND)}</div></div>
       <button class="btn sm" id="aShowOverdue">Show ${overdue.length === 1 ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowOverdue').addEventListener('click', () => focusSched('LATE'));
+  }
+
+  /* The half of that judgement that is easy to get wrong in the other direction.
+     A job whose schedule was changed after its last run looks exactly like a
+     stopped one from audit_log alone, and calling it overdue is how a watchdog
+     trains people to ignore it. Said out loud, with the assumption on show. */
+  if (restarted.length) {
+    const one = restarted.length === 1;
+    const b = el('div', 'banner info');
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">restart_alt</span>
+      <div style="flex:1"><strong>${num(restarted.length)} scheduled job${one ? ' has' : 's have'} not logged a run inside ${one ? 'its' : 'their'} cadence, and ${one ? 'is' : 'are'} not overdue.</strong>
+      ${esc(restarted.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} had ${one ? 'its' : 'their'} schedule changed more recently than
+      ${one ? 'that' : 'those'} last run, which restarts the clock — the gap belongs to the old schedule and says nothing about the new one.
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(EDIT_BLIND)}</div></div>
+      <button class="btn sm" id="aShowRestarted">Show ${one ? 'it' : 'them'}</button>`;
+    banners.appendChild(b);
+    b.querySelector('#aShowRestarted').addEventListener('click', () => focusSched('ALL'));
   }
 
   /* Not a fault — a policy, and one that changes how a failure below should be
@@ -703,6 +845,23 @@ SCREENS.automation = async host => {
       <button class="btn sm" id="aShowByDesign">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowByDesign').addEventListener('click', () => focusHealth('RETURNS_RESULT'));
+  }
+
+  /* Not automation at all, and unlabelled it reads as three dead workflows. */
+  if (pages.length) {
+    const one = pages.length === 1;
+    const b = el('div', 'banner info');
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">public</span>
+      <div style="flex:1"><strong>${num(pages.length)} of these ${one ? 'is a web page, not an automation' : 'are web pages, not automations'}.</strong>
+      ${esc(pages.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} ${one ? 'is' : 'are'} served by n8n itself at
+      <span class="mono">/webhook/nexus</span>, <span class="mono">/webhook/privacy</span> and <span class="mono">/webhook/terms</span>.
+      Google will not publish an OAuth consent screen to production without a home page, a privacy policy and a terms URL, and it rejects
+      <span class="mono">vercel.app</span> as a public suffix — <span class="mono">nip.io</span> was the only registrable domain available, so n8n serves them.
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">Publishing that consent screen is what stopped Gmail's refresh token expiring every seven days, so ${one ? 'this page is' : 'these pages are'} load-bearing.
+      ${one ? 'It' : 'They'} will never log a run — a page view is not a workflow run — so ${one ? 'it is' : 'they are'} not counted as a blind spot above, and a silent one here is correct rather than suspicious.</div></div>
+      <button class="btn sm" id="aShowPages">Show ${one ? 'it' : 'them'}</button>`;
+    banners.appendChild(b);
+    b.querySelector('#aShowPages').addEventListener('click', () => focusHealth('PUBLIC_PAGE'));
   }
 
   /* Names that show up in audit_log but match no registered workflow. Those runs
@@ -774,14 +933,18 @@ SCREENS.automation = async host => {
       <div class="toolbar" style="background:var(--surface-sunken)">
         <div class="cell-sub" style="white-space:normal;flex:1">
           <strong>How this is judged, and how far it can be trusted.</strong> ${esc(CADENCE_CAVEAT)}
+          <div style="margin-top:6px">${esc(EDIT_BLIND)}</div>
         </div>
       </div>
       <div class="toolbar" style="background:var(--surface-sunken)">
         <div class="cell-sub" style="white-space:normal;flex:1">
-          <strong>Interval or cron is not a detail.</strong> An n8n “every N hours” interval counts from the workflow's last activation, not from the clock, so every VM restart moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, with a perfectly green health record the whole time. It is on a cron now. ${
-            drifting.length
-              ? `<span class="t-warm">${num(drifting.length)} job${drifting.length === 1 ? ' still records its trigger as an interval' : 's still record their triggers as intervals'}: ${esc(drifting.map(w => w.name).join(', '))}. Worth checking in n8n whether ${drifting.length === 1 ? 'it is' : 'they are'} a real interval rather than a cron.</span>`
-              : 'No job in this list records its trigger as an interval.'}
+          <strong>Interval or cron is not a detail.</strong> An n8n “every N hours” interval counts from the workflow's last activation, not from the clock, so every VM restart moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, with a perfectly green health record the whole time. It is on <span class="mono">0 5 * * *</span> now — 05:00 UTC, on the clock, unmoved by a restart. ${
+            trulyDrifting.length
+              ? `<span class="t-warm">${num(trulyDrifting.length)} job${trulyDrifting.length === 1 ? ' still records its trigger as an interval' : 's still record their triggers as intervals'}: ${esc(trulyDrifting.map(w => w.name).join(', '))}. Worth checking in n8n whether ${trulyDrifting.length === 1 ? 'it is' : 'they are'} a real interval rather than a cron.</span>`
+              : 'No job in this list records an interval this screen has reason to warn about.'}${
+            staleInterval.length
+              ? ` <span class="t-muted">${esc(staleInterval.map(w => w.name).join(', '))} still reads as an interval in <span class="mono">workflow_registry.trigger_detail</span>, but ${staleInterval.length === 1 ? 'that trigger was' : 'those triggers were'} moved to a cron in n8n — the registry row is the stale half, and updating it is what makes this panel judge ${staleInterval.length === 1 ? 'it' : 'them'} on the right cadence.</span>`
+              : ''}
         </div>
       </div>`;
 
@@ -800,12 +963,22 @@ SCREENS.automation = async host => {
             <span style="font-weight:500">${esc(w.name || 'Unnamed workflow')}</span>
             ${pill(v.label, v.tone || undefined)}
             ${w.is_active === false ? pill('Inactive', 'warm') : ''}
-            <span class="chip" title="${esc(s.c.kind === 'cron'
-              ? `Cron expression read from workflow_registry.trigger_detail: ${s.c.expr}`
-              : s.c.kind === 'interval'
-                ? `Recorded as an interval (${s.c.expr}). An n8n interval counts from the last activation, so a restart moves the fire time.`
-                : `Recorded as “${s.c.expr}”. Whether that is a cron or an n8n interval is not written down, so the mechanism — and whether a restart moves it — is unknown here.`)}"
-              >${esc(s.c.kind === 'cron' ? `cron ${s.c.expr}` : s.c.expr)}${s.c.drifts ? ' · interval, drifts' : ''}</span>
+            ${(() => {
+              const chg = scheduleChange(w);
+              /* Three different things the chip can be saying, and the stale one
+                 must not be dressed as a risk: a registry row that still
+                 describes an interval after the trigger was moved to a cron is
+                 out of date, not drifting. */
+              const title = s.c.kind === 'cron'
+                ? `Cron expression read from workflow_registry.trigger_detail: ${s.c.expr}`
+                : s.c.kind === 'interval'
+                  ? (chg
+                      ? `workflow_registry still records this as an interval (${s.c.expr}), but the trigger was ${chg.what}. The registry row is the stale half; the cadence below is judged from what it says, so updating it is what makes this panel exact.`
+                      : `Recorded as an interval (${s.c.expr}). An n8n interval counts from the last activation, so a restart moves the fire time.`)
+                  : `Recorded as “${s.c.expr}”. Whether that is a cron or an n8n interval is not written down, so the mechanism — and whether a restart moves it — is unknown here.`;
+              const suffix = !s.c.drifts ? '' : chg ? ' · registry says interval, n8n says cron' : ' · interval, drifts';
+              return `<span class="chip" title="${esc(title)}">${esc(s.c.kind === 'cron' ? `cron ${s.c.expr}` : s.c.expr)}${suffix}</span>`;
+            })()}
             <span class="chip">expects a run every ${esc(fmtHours(s.c.hours))}</span>
           </div>
           <div class="cell-sub ${s.state === 'OVERDUE' ? 't-hot' : ''}" style="margin-top:6px;white-space:normal">${esc(s.why)}</div>
@@ -825,7 +998,12 @@ SCREENS.automation = async host => {
       schedCount.textContent = `${vis.length} of ${scheduled.length}`;
       schedList.innerHTML = vis.length
         ? vis.map(w => schedRow(w, scheduled.indexOf(w))).join('')
-        : stateEmpty('Nothing overdue', 'Every scheduled job has logged a run inside its own cadence.', 'schedule');
+        /* Names go in unescaped on purpose: stateEmpty() escapes its own body,
+           and escaping here would render an ampersand as &amp; on screen. */
+        : stateEmpty('Nothing overdue',
+            restarted.length
+              ? `Every scheduled job has logged a run inside its own cadence, except ${restarted.length === 1 ? 'one whose' : `${restarted.length} whose`} schedule was changed more recently than its last run — ${restarted.map(w => w.name).filter(Boolean).join(', ')} — which restarts the clock rather than missing a run.`
+              : 'Every scheduled job has logged a run inside its own cadence.', 'schedule');
       schedList.querySelectorAll('[data-sched]').forEach(node => {
         const open = () => openWorkflow(scheduled[Number(node.dataset.sched)]);
         node.addEventListener('click', open);
@@ -866,7 +1044,7 @@ SCREENS.automation = async host => {
     const segs = [['ALL', rows.length], ['DEGRADED', hCount('DEGRADED')], ['SCHED_LATE', overdue.length],
                   ['HEALTHY', hCount('HEALTHY')],
                   ['NEVER_RAN', hCount('NEVER_RAN')], ['NOT_INSTRUMENTED', hCount('NOT_INSTRUMENTED')],
-                  ['RETURNS_RESULT', hCount('RETURNS_RESULT')]]
+                  ['RETURNS_RESULT', hCount('RETURNS_RESULT')], ['PUBLIC_PAGE', hCount('PUBLIC_PAGE')]]
       .filter(([k, c]) => k === 'ALL' || c > 0);
     const segLabel = k => k === 'ALL' ? 'All'
       : k === 'SCHED_LATE' ? 'Schedule overdue'
@@ -874,7 +1052,7 @@ SCREENS.automation = async host => {
 
     healthCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Workflow health by category</div>
-        <div class="card-sub">Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>; the all-time <span class="mono">runs</span>/<span class="mono">failures</span> totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
+        <div class="card-sub">This list is <span class="mono">workflow_registry</span>, which records the dealership's automations; the n8n instance also carries the three published workflows that only serve NEXUS's public home, privacy and terms pages, so a count taken in n8n is larger than the count here and is labelled where those pages are registered. Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>; the all-time <span class="mono">runs</span>/<span class="mono">failures</span> totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
@@ -941,7 +1119,8 @@ SCREENS.automation = async host => {
             return `<div class="cell-sub ${late ? 't-hot' : ''}" style="margin-top:2px;white-space:normal">
               <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px">alarm</span>
               ${esc(SCHED[s.state].label)} · every ${esc(fmtHours(s.c.hours))}, late after ${esc(fmtHours(s.c.allowance))}${
-                late ? ` — ${esc(s.state === 'NO_RUN' ? 'no run has ever been logged' : `nothing logged for ${fmtHours(s.ageH)}`)}` : ''}
+                late ? ` — ${esc(s.state === 'NO_RUN' ? 'no run has ever been logged' : `nothing logged for ${fmtHours(s.ageH)}`)}` : ''}${
+                s.state === 'CLOCK_RESET' ? ` — ${esc(`its schedule changed ${fmtHours(s.changedH)} ago, so the clock restarted and nothing has been missed`)}` : ''}
             </div>`;
           })()}
         </div>
@@ -1107,11 +1286,15 @@ SCREENS.automation = async host => {
             <span class="chip">late after ${esc(fmtHours(sched.c.allowance))}</span>
           </div>
           <div class="cell-sub ${sched.state === 'OVERDUE' ? 't-hot' : ''}" style="margin-top:8px;white-space:normal">${esc(sched.why)}</div>
-          ${sched.c.drifts ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">restart_alt</span>
+          ${sched.c.drifts ? `<div class="banner ${scheduleChange(w) ? 'info' : 'warm'}" style="margin-top:12px"><span class="material-symbols-outlined">restart_alt</span>
             <div>This trigger is recorded as an interval rather than a cron. An n8n interval counts from the workflow's last activation, not from the clock,
             so every restart of the VM quietly moves when it fires — which is how Competitor Price Scraping went from daily to one run in 36 hours after the
-            19 Aug outage without anything turning red. A cron expression fires on the clock and survives a restart.</div></div>` : ''}
+            19 Aug outage without anything turning red. A cron expression fires on the clock and survives a restart.${
+              scheduleChange(w)
+                ? ` <strong>This one has already been fixed:</strong> the trigger was ${esc(scheduleChange(w).what)}. It is <span class="mono">workflow_registry.trigger_detail</span> that still says interval, and that is the row to update — every cadence figure in this drawer is read from it.`
+                : ''}</div></div>` : ''}
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(CADENCE_CAVEAT)}</div>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(EDIT_BLIND)}</div>
         </div>` : ''}
 
         <div class="section">
@@ -1301,7 +1484,9 @@ SCREENS.automation = async host => {
           ? `${pill(a.status)}${
               looksTimedOut(a)
                 ? `<div class="cell-sub" title="${esc(CEILING.onTimeout)}">Reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run, not the workflow breaking</div>`
-                : isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
+                : looksGuardRejected(a)
+                  ? `<div class="cell-sub" title="${esc(GUARD_NOTE)}">Reads as the scrape guard refusing bad intel, not the workflow breaking</div>`
+                  : isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
           : '<span class="t-muted">No status written</span>' },
       { label: 'Workflow', strong: true, render: a => `${esc(a.workflow || 'Unnamed')}
           ${a.intent ? `<div class="cell-sub">${esc(a.intent)}</div>` : ''}` },
@@ -1316,7 +1501,7 @@ SCREENS.automation = async host => {
           : '<span class="t-muted">Not a per-customer run</span>' },
       { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score) },
       { label: 'Summary', render: a => a.summary
-          ? `<span class="${isBad(a) ? 't-hot' : ''}" style="white-space:normal">${esc(String(a.summary).slice(0, 200))}</span>`
+          ? `<span class="${isBad(a) && !looksGuardRejected(a) ? 't-hot' : ''}" style="white-space:normal">${esc(String(a.summary).slice(0, 200))}</span>`
           : '<span class="t-muted">No summary written</span>' },
     ];
 
@@ -1400,7 +1585,10 @@ SCREENS.automation = async host => {
   /* ── One logged run, in full ───────────────────────────────────────────── */
   function openRun(a) {
     if (!a) return;
-    const bad = ['FAILED', 'REJECTED'].includes(up(a.status));
+    const guarded = looksGuardRejected(a);
+    /* A rejection the scrape guard made is not a run that went wrong, so it does
+       not get the red "did not complete" banner. */
+    const bad = ['FAILED', 'REJECTED'].includes(up(a.status)) && !guarded;
     const ceilingHit = looksTimedOut(a);
     const trace = execUrl(a);
     const wf = (health || []).find(w => namesFor(w).has(low(a.workflow))) || null;
@@ -1420,6 +1608,8 @@ SCREENS.automation = async host => {
             ${a.intent ? `<span class="chip">${esc(a.intent)}</span>` : ''}
           </div>
           <div class="quote" style="margin-top:12px;white-space:pre-wrap">${esc(a.summary || 'The workflow wrote no summary for this run.')}</div>
+          ${guarded ? `<div class="banner info" style="margin-top:12px"><span class="material-symbols-outlined">shield</span>
+            <div><strong>This run rejected a scrape rather than failing.</strong> ${esc(GUARD_NOTE)}</div></div>` : ''}
           ${ceilingHit ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">timer_off</span>
             <div><strong>This reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run.</strong> ${esc(CEILING.onTimeout)}
             <div class="cell-sub" style="margin-top:6px;white-space:normal">audit_log records a status and a summary but no reason code, so this is read off the summary text above.

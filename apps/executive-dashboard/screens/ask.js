@@ -5,7 +5,10 @@
    file is the history of that: the webhook has been dead behind CORS, dead
    behind a missing Authorization allow-list, and dead behind three OpenRouter
    models that no longer existed. A single retrieval + model round trip on this
-   box has been measured at 8.8 s and the workflow has no upper bound of its own.
+   box has been measured at 8.8 s. Since 24 Aug the workflow does have an upper
+   bound — every workflow on the instance carries `executionTimeout: 300` — but
+   five minutes is far longer than an operator will sit in front of a question,
+   so this screen still keeps its own, much shorter, deadline.
    So this screen is built around waiting and failing rather than around the
    happy path:
 
@@ -79,6 +82,19 @@ import { panel, table } from '../lib/ui.js';
    owns the connection and exposes no abort, so this deadline reports, it does
    not kill. Anything that arrives later is still shown. */
 const DEADLINE_MS = 45000;
+
+/* The server-side bound, set in n8n on 24 Aug 2026: every workflow on the
+   instance carries `executionTimeout: 300`, a hard five-minute wall-clock
+   ceiling, added after two runaway executions took the instance's API latency
+   from 0.34 s to 7.8 s. It matters here for one reason only — it is what
+   finally ends a run this screen has already given up waiting for. The two
+   numbers are not in competition: the browser stops WAITING at 45 s, n8n stops
+   RUNNING at 300 s, and an answer that arrives in between is still rendered and
+   marked late. This screen cannot read the setting back — v_workflow_health has
+   no timeout column — so it is stated as the policy this build was written
+   against rather than as something checked. */
+const CEILING_SECONDS = 300;
+const CEILING_LINE = `n8n stops the execution itself after ${CEILING_SECONDS / 60} minutes — every workflow on the instance carries executionTimeout: ${CEILING_SECONDS} — and saves it, with its input, as a failed execution. So a question that never comes back is bounded there rather than running forever, and what made it slow is still in n8n to look at.`;
 
 /* Past this the operator has started to wonder whether the tab is dead, so the
    wait is promoted from a counter inside the turn to an alert at the top of the
@@ -267,7 +283,7 @@ function entryBody(e) {
             ? `No reply after ${Math.round(DEADLINE_MS / 1000)} seconds`
             : 'The Ask-AI workflow did not answer'}</div>
           <div style="margin-top:4px">${isTimeout
-            ? 'The request was not cancelled — this dashboard cannot cancel it. If it lands, the answer will appear here and be marked late.'
+            ? `This screen stopped waiting; the request was not cancelled and this dashboard cannot cancel it. If it lands, the answer will appear here and be marked late. ${esc(CEILING_LINE)}`
             : esc(e.err || 'Unknown error')}</div>
           ${hint ? `<div style="margin-top:6px">${esc(hint)}</div>` : ''}</div>
       </div>
@@ -634,7 +650,7 @@ SCREENS.ask = async host => {
       out.push({
         id: 'turn-slow', tone: 'warm', icon: 'hourglass_top', durable: false,
         title: 'A question has been running a long time',
-        detail: `Waiting <span id="askAlertAge" class="num">${esc(secs(Date.now() - slow.at))}</span> for the workflow to answer, against about 9 s on a good run. The tab is not hung — the request is genuinely still open — and this screen stops waiting on it at ${Math.round(DEADLINE_MS / 1000)} s.`,
+        detail: `Waiting <span id="askAlertAge" class="num">${esc(secs(Date.now() - slow.at))}</span> for the workflow to answer, against about 9 s on a good run. The tab is not hung — the request is genuinely still open — and this screen stops waiting on it at ${Math.round(DEADLINE_MS / 1000)} s. ${esc(CEILING_LINE)}`,
         target: `askE${slow.id}`,
       });
     }
@@ -645,7 +661,7 @@ SCREENS.ask = async host => {
         id: 'turn-failed', tone: 'hot', icon: 'error', durable: false,
         title: `${num(failed.length)} question${plural(failed.length, '', 's')} in this session got no answer`,
         detail: newest.status === 'timeout'
-          ? `The most recent stopped being waited on after ${Math.round(DEADLINE_MS / 1000)} s, with the request still open.`
+          ? `The most recent stopped being waited on after ${Math.round(DEADLINE_MS / 1000)} s, with the request still open. ${esc(CEILING_LINE)}`
           : `${esc(str(newest.err) || 'Unknown error')}${diagnose(newest.err) ? `<br>${esc(diagnose(newest.err))}` : ''}`,
         target: `askE${newest.id}`,
       });
