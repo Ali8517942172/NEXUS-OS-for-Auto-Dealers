@@ -231,12 +231,13 @@ SCHEDULED = (
     ('Phase 6 - 12-Hour Silence Detector',  2),  # hourly
 )
 try:
-    wf_ids = {w['name']: w['id'] for w in api('/workflows?limit=250')['data']}
+    wfs = {w['name']: w for w in api('/workflows?limit=250')['data']}
     for name, max_h in SCHEDULED:
-        wid = next((i for n, i in wf_ids.items() if n.startswith(name[:22])), None)
-        if not wid:
+        wf = next((w for n, w in wfs.items() if n.startswith(name[:22])), None)
+        if not wf:
             bad(f'{name}: no such workflow in n8n')
             continue
+        wid = wf['id']
         try:
             runs = api(f'/executions?workflowId={wid}&status=success&limit=1')['data']
         except Exception as e:
@@ -249,8 +250,20 @@ try:
         if age is None:
             bad(f'{name}: unreadable timestamp on its last run')
         elif age / 60 > max_h:
-            bad(f'{name}: last success {age/60:.1f}h ago — it should run at least '
-                f'every {max_h}h, so it has missed a run')
+            # A schedule that was edited after its last run has not "missed" one —
+            # its clock restarted. Reporting that as a failure is how a watchdog
+            # teaches you to ignore it, and then it cannot tell you about the real
+            # thing. This is not hypothetical: the Competitor Price Scraping cron
+            # was changed today at 17:0x and the next fire is 05:00 UTC, so the
+            # bare FAIL would have stood for twelve hours saying nothing true.
+            edited = age_minutes(wf.get('updatedAt'))
+            if edited is not None and edited < age:
+                ok(f'{name}: last success {age/60:.1f}h ago, but its schedule was '
+                   f'changed {edited/60:.1f}h ago — the clock restarted, so nothing '
+                   f'has been missed yet. Due within {max_h}h of the change.')
+            else:
+                bad(f'{name}: last success {age/60:.1f}h ago — it should run at least '
+                    f'every {max_h}h, so it has missed a run')
         else:
             ok(f'{name}: {age/60:.1f}h ago')
 except Exception as e:
