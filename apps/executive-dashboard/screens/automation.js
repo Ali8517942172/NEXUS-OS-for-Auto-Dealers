@@ -17,9 +17,16 @@
        in the detail drawer, and if the two disagree the screen says so instead
        of silently picking one.
      · "No failures" and "nothing is being measured" are opposite findings and
-       never share a colour. Only 4 of the registered workflows write to
-       audit_log; the rest are NOT_INSTRUMENTED, and a blank health record for
-       those is reported as a blind spot, not as good news.
+       never share a colour. Most of the registered workflows do not write to
+       audit_log; they are NOT_INSTRUMENTED, and a blank health record for those
+       is reported as a blind spot, not as good news.
+     · One exception to that, added 24 Aug 2026: a request/response endpoint the
+       dashboard itself calls — whatsapp-send, ask-ai, finance-calc — returns its
+       outcome in the HTTP reply and is read by the operator at the moment of the
+       call. When such a workflow is registered with writes_audit_log false, the
+       missing audit row is the design, not a gap, and this screen says so in a
+       neutral voice instead of filing it under "blind spot". It still refuses to
+       claim those runs succeeded: no history is kept here, and that is stated.
      · A manual trigger only exists where an n8n webhook in HOOK really exists
        AND can be fired without inventing a subject record. Everything else is a
        disabled button whose title names exactly what is missing. No webhook
@@ -82,8 +89,56 @@ const UNKNOWN_HEALTH = {
   label: 'Unrecognised', tone: 'warm', icon: 'help', rank: 1,
   detail: 'v_workflow_health returned a health state this screen does not know how to describe. It is shown verbatim rather than folded into one of the states it might mean.',
 };
-const healthOf = w => HEALTH[up(w.health)] || UNKNOWN_HEALTH;
-const healthLabel = w => (HEALTH[up(w.health)] ? HEALTH[up(w.health)].label : (w.health || 'Unrecognised'));
+
+/* ── Endpoints that answer their caller ────────────────────────────────────
+   A workflow with no Audit Log node is normally a blind spot: it may be running
+   perfectly or failing every time and nothing here can tell. That reading is
+   wrong for the handful of webhooks the dashboard itself calls and waits on. A
+   request/response endpoint hands its outcome straight back to the caller, and
+   the screen that made the call shows it to the operator there and then. For
+   those, no audit row is the correct design, not a missing one.
+
+   The entries below are facts about this bundle, not about the database: each
+   one is a HOOK path some screen in this build posts to and reads a reply from.
+   The classification only ever applies when the registry itself says the
+   workflow writes no audit log — this screen never overrides what the database
+   reported, it only refuses to call a deliberate choice a fault.
+
+   What it does NOT claim: that those runs succeeded. There is no history for
+   them here, and every surface below says so plainly. */
+const RESPONDS_TO_CALLER = {
+  [HOOK.whatsappSend]: {
+    answer: "{ status: 'sent' | 'error' }",
+    where: 'Conversations',
+    line: 'Replies sent from Conversations post here and wait for the answer, so the operator is told at that moment whether the message actually left WAHA.',
+  },
+  [HOOK.askAi]: {
+    answer: 'the answer and the documents it consulted',
+    where: 'Ask AI',
+    line: 'Ask AI posts the question and renders whatever comes back, so a failure is visible in the reply rather than after the fact.',
+  },
+  [HOOK.finance]: {
+    answer: 'the calculated quote',
+    where: 'Finance Desk',
+    line: 'The Finance Desk posts the figures and renders the quote it gets back, so a failure is visible in the reply rather than after the fact.',
+  },
+};
+/* hookFor is declared further down; this is only ever called at render time. */
+const respondsToCaller = w =>
+  w.writes_audit_log === false && !!RESPONDS_TO_CALLER[hookFor(w)];
+const callerInfo = w => RESPONDS_TO_CALLER[hookFor(w)] || null;
+
+const RETURNS_RESULT = {
+  label: 'Answers the caller', tone: '', icon: 'sync_alt', rank: 3.5,
+  detail: 'This endpoint is called by the dashboard and answers in the reply, so the screen that called it shows the outcome immediately. It is registered as writing no audit row, and for a request/response endpoint that is the right design rather than a gap. The trade-off is real and worth knowing: no run history is kept, so nothing here can tell you how it behaved yesterday.',
+};
+
+/* The state a workflow is presented under. Everything except RETURNS_RESULT is
+   the view's own `health` value, unchanged. */
+const STATES = { ...HEALTH, RETURNS_RESULT };
+const stateKey = w => (respondsToCaller(w) ? 'RETURNS_RESULT' : up(w.health));
+const healthOf = w => STATES[stateKey(w)] || UNKNOWN_HEALTH;
+const healthLabel = w => (STATES[stateKey(w)] ? STATES[stateKey(w)].label : (w.health || 'Unrecognised'));
 
 /* Rates are computed from the two count columns rather than read from
    success_rate, because runs_30d / failures_30d are the pair whose window is
@@ -126,6 +181,16 @@ const hookFor = w => {
    a batch job over whatever Odoo and Supabase currently hold. */
 const NO_SUBJECT_HOOKS = { [HOOK.erpSync]: 'Sync now' };
 
+/* Hooks that exist, are reachable, and still must never be fired from here.
+   whatsapp-send puts a message on the owner's real WhatsApp number: it needs a
+   chat_id and the text, and with neither attached it would either send nothing
+   or send something nobody wrote. The composer that owns both lives on
+   Conversations, so that is where the button belongs. */
+const NO_MANUAL_RUN = {
+  [HOOK.whatsappSend]:
+    'This screen deliberately offers no manual run for whatsapp-send. It sends a WhatsApp message to a real person and needs a chat_id and the message text; firing it with an empty body would accomplish nothing. It is driven from the Conversations screen, which holds the thread, supplies both fields and shows whether the message left.',
+};
+
 const NEEDS_SUBJECT = {
   [HOOK.askAi]:      'a question to answer, and every call spends OpenRouter tokens. Ask AI is the screen that supplies one.',
   [HOOK.finance]:    'a vehicle value, a payoff amount and a credit score. The Finance Desk screen supplies them.',
@@ -141,6 +206,7 @@ const SUBJECT_SCREEN = {
   [HOOK.closedWon]:  { id: 'deals',      title: 'Deals' },
   [HOOK.kyc]:        { id: 'compliance', title: 'Compliance' },
   [HOOK.escalation]: { id: 'leads',      title: 'Leads' },
+  [HOOK.whatsappSend]: { id: 'conversations', title: 'Conversations' },
 };
 
 const NO_N8N_BASE =
@@ -156,6 +222,7 @@ function triggerState(w) {
       why: `No manual trigger exists for this workflow. ${how}, and no webhook in the dashboard's HOOK list maps to it, so there is no endpoint to call. Inventing one would post into the void.` };
   }
   if (!N8N_BASE) return { hook, can: false, label: 'Run now', why: NO_N8N_BASE };
+  if (NO_MANUAL_RUN[hook]) return { hook, can: false, label: 'Run now', why: NO_MANUAL_RUN[hook] };
   if (NO_SUBJECT_HOOKS[hook]) return { hook, can: true, label: NO_SUBJECT_HOOKS[hook], why: '' };
   return { hook, can: false, label: 'Run now',
     why: `The ${hook} webhook exists, but it needs ${NEEDS_SUBJECT[hook] || 'a subject record this screen does not have'} Firing it from here with nothing attached would either fail or act on the wrong record.` };
@@ -209,8 +276,11 @@ SCREENS.automation = async host => {
     || ((n0(b.failures_30d) || 0) - (n0(a.failures_30d) || 0))
     || String(a.name || '').localeCompare(String(b.name || '')));
 
-  const degraded = rows.filter(w => up(w.health) === 'DEGRADED');
-  const blind = rows.filter(w => up(w.health) === 'NOT_INSTRUMENTED');
+  const degraded = rows.filter(w => stateKey(w) === 'DEGRADED');
+  /* Split deliberately: a workflow that answers its caller is not part of the
+     blind-spot count and must not inflate it. */
+  const blind = rows.filter(w => stateKey(w) === 'NOT_INSTRUMENTED');
+  const byDesign = rows.filter(w => stateKey(w) === 'RETURNS_RESULT');
   const auditCapped = (audit || []).length >= AUDIT_LIMIT;
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
@@ -235,7 +305,8 @@ SCREENS.automation = async host => {
 
     strip.innerHTML = [
       kpi('Workflows registered', num(rows.length),
-        `${active} active · ${logged} of ${rows.length} write to audit_log`),
+        `${active} active · ${logged} of ${rows.length} write to audit_log${
+          byDesign.length ? ` · ${num(byDesign.length)} answer${byDesign.length === 1 ? 's' : ''} the caller instead` : ''}`),
       kpi('Degraded now', num(degraded.length),
         degraded.length
           ? `<span class="t-hot">${esc(degraded.map(w => w.name).slice(0, 2).join(', '))}${degraded.length > 2 ? ` +${degraded.length - 2} more` : ''}</span>`
@@ -303,6 +374,25 @@ SCREENS.automation = async host => {
     b.querySelector('#aShowBlind').addEventListener('click', () => focusHealth('NOT_INSTRUMENTED'));
   }
 
+  /* Not a warning. These are request/response endpoints: the caller is told the
+     outcome in the reply, so the absence of an audit row is the design. The
+     banner still names the one thing it costs — no history — rather than
+     presenting it as free. */
+  if (byDesign.length) {
+    const one = byDesign.length === 1;
+    const names = byDesign.map(w => w.name).filter(Boolean);
+    const b = el('div', 'banner info');
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">sync_alt</span>
+      <div style="flex:1"><strong>${num(byDesign.length)} workflow${one ? '' : 's'} answer${one ? 's' : ''} the caller instead of writing to audit_log.</strong>
+      ${names.length ? `${esc(names.join(', '))} ${names.length === 1 ? 'is' : 'are'}` : `${one ? 'It is' : 'They are'}`} called by the dashboard and read on the spot,
+      so ${one ? 'the' : 'each'} outcome is shown by the screen that made the call. For a request/response endpoint that is the right design,
+      so ${one ? 'it is' : 'they are'} not counted as a blind spot above. It does mean no run history is kept here — this screen cannot tell you
+      how ${one ? 'it' : 'they'} behaved yesterday, only the calling screen can, as it happens.</div>
+      <button class="btn sm" id="aShowByDesign">Show ${one ? 'it' : 'them'}</button>`;
+    banners.appendChild(b);
+    b.querySelector('#aShowByDesign').addEventListener('click', () => focusHealth('RETURNS_RESULT'));
+  }
+
   /* Names that show up in audit_log but match no registered workflow. Those runs
      are real work nobody is holding a health record for, and the count above
      silently excludes them. */
@@ -338,9 +428,10 @@ SCREENS.automation = async host => {
       ${stateEmpty('No workflows registered', 'workflow_registry is empty, so v_workflow_health has nothing to report.', 'account_tree')}`;
   } else {
     const f = { health: 'ALL', q: '' };
-    const hCount = k => rows.filter(w => up(w.health) === k).length;
+    const hCount = k => rows.filter(w => stateKey(w) === k).length;
     const segs = [['ALL', rows.length], ['DEGRADED', hCount('DEGRADED')], ['HEALTHY', hCount('HEALTHY')],
-                  ['NEVER_RAN', hCount('NEVER_RAN')], ['NOT_INSTRUMENTED', hCount('NOT_INSTRUMENTED')]]
+                  ['NEVER_RAN', hCount('NEVER_RAN')], ['NOT_INSTRUMENTED', hCount('NOT_INSTRUMENTED')],
+                  ['RETURNS_RESULT', hCount('RETURNS_RESULT')]]
       .filter(([k, c]) => k === 'ALL' || c > 0);
 
     healthCard.innerHTML = `<div class="card-head"><div>
@@ -350,7 +441,7 @@ SCREENS.automation = async host => {
       <div class="toolbar">
         <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
           ${segs.map(([k, c], i) => `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}">${
-            k === 'ALL' ? 'All' : esc(HEALTH[k] ? HEALTH[k].label : k)} · ${num(c)}</button>`).join('')}
+            k === 'ALL' ? 'All' : esc(STATES[k] ? STATES[k].label : k)} · ${num(c)}</button>`).join('')}
         </div>
         <div class="grow"><input type="search" id="aWfQ" aria-label="Search workflows"
           placeholder="Search workflow, category, trigger or description" /></div>
@@ -364,7 +455,7 @@ SCREENS.automation = async host => {
     const visible = () => {
       const q = f.q.trim().toLowerCase();
       return rows.filter(w => {
-        if (f.health !== 'ALL' && up(w.health) !== f.health) return false;
+        if (f.health !== 'ALL' && stateKey(w) !== f.health) return false;
         if (!q) return true;
         return [w.name, w.category, w.trigger_type, w.trigger_detail, w.description, healthLabel(w)]
           .some(v => low(v).includes(q));
@@ -376,6 +467,7 @@ SCREENS.automation = async host => {
       const r30 = rate30(w), rAll = rateAll(w);
       const runs30 = n0(w.runs_30d), fails30 = n0(w.failures_30d);
       const t = triggerState(w);
+      const answers = respondsToCaller(w) ? callerInfo(w) : null;
       return `<div class="list-item" data-wf="${i}" role="button" tabindex="0"
         aria-label="Open ${esc(w.name || 'workflow')} — ${esc(healthLabel(w))}" style="align-items:flex-start">
         <span class="material-symbols-outlined ${h.tone === 'hot' ? 't-hot' : h.tone === 'ok' ? 't-ok' : 't-muted'}"
@@ -393,7 +485,9 @@ SCREENS.automation = async host => {
             ${runs30 == null || runs30 === 0
               ? (w.writes_audit_log
                   ? 'No runs logged in the last 30 days.'
-                  : 'Not instrumented — nothing reaches audit_log, so no run can be counted.')
+                  : answers
+                    ? `Answers its caller in the reply instead of logging, so there is no run count here by design — ${esc(answers.where)} reports each call as it happens.`
+                    : 'Not instrumented — nothing reaches audit_log, so no run can be counted.')
               : `${num(runs30)} run${runs30 === 1 ? '' : 's'} in the window · ${
                   fails30 ? `<span class="t-hot">${num(fails30)} failed</span>` : 'none failed'}`}
             ${w.runs ? ` · <span class="t-muted">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${rAll == null ? '' : ` (${pct(rAll)})`}</span>` : ''}
@@ -403,8 +497,10 @@ SCREENS.automation = async host => {
         <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <div class="num" style="font-weight:500;font-size:16px"
             ><span class="${r30 == null ? 't-muted' : fails30 ? 't-hot' : 't-ok'}">${r30 == null ? '—' : esc(pct(r30))}</span></div>
-          <div class="cell-sub">${r30 == null ? 'no 30-day rate' : '30-day success'}</div>
-          <div class="cell-sub">${w.last_run ? 'ran ' + esc(ago(w.last_run)) : 'never logged a run'}</div>
+          <div class="cell-sub">${r30 == null ? (answers ? 'no rate kept here' : 'no 30-day rate') : '30-day success'}</div>
+          <div class="cell-sub">${w.last_run
+            ? 'ran ' + esc(ago(w.last_run))
+            : (answers ? 'no run log kept' : 'never logged a run')}</div>
           <button class="btn sm" data-run="${i}" ${t.can ? '' : 'disabled'}
             aria-label="${esc(t.label)} — ${esc(w.name || 'workflow')}"
             title="${esc(t.can ? `POSTs to the ${t.hook} webhook with your session token.` : t.why)}">${esc(t.label)}</button>
@@ -504,6 +600,7 @@ SCREENS.automation = async host => {
     const t = triggerState(w);
     const history = auditFor(w);
     const known = registry ? 'workflow_registry aliases' : 'the display name only';
+    const answers = respondsToCaller(w) ? callerInfo(w) : null;
 
     openDrawer(`
       <div class="drawer-head">
@@ -521,15 +618,19 @@ SCREENS.automation = async host => {
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${pill(healthLabel(w), h.tone || undefined)}
             ${w.is_active === false ? pill('Inactive', 'warm') : pill('Active', 'ok')}
-            ${w.writes_audit_log ? '' : pill('No audit node', 'warm')}
+            ${w.writes_audit_log ? '' : (answers ? pill('Answers the caller', 'cold') : pill('No audit node', 'warm'))}
           </div>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(h.detail)}</div>
+          ${answers ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">It replies with <span class="mono">${esc(answers.answer)}</span>. ${esc(answers.line)}</div>` : ''}
           ${w.description ? `<div class="quote" style="margin-top:12px">${esc(w.description)}</div>` : ''}
         </div>
 
         <div class="section">
           <div class="label-caps">Last 30 days</div>
-          ${runBar(w) || '<div class="cell-sub" style="margin-top:8px">Nothing logged in the window, so there is no bar to draw.</div>'}
+          ${runBar(w) || `<div class="cell-sub" style="margin-top:8px;white-space:normal">${
+            answers
+              ? 'Nothing is logged for this endpoint at all, so there is no bar to draw and the figures below stay empty. That is expected here — it is not evidence that it did or did not run.'
+              : 'Nothing logged in the window, so there is no bar to draw.'}</div>`}
           <dl class="kv" style="margin-top:12px">
             <dt>Runs</dt><dd class="num">${w.runs_30d == null ? '<span class="t-muted">—</span>' : num(w.runs_30d)}</dd>
             <dt>Failures</dt><dd class="num ${n0(w.failures_30d) ? 't-hot' : ''}">${w.failures_30d == null ? '<span class="t-muted">—</span>' : num(w.failures_30d)}</dd>
@@ -576,8 +677,11 @@ SCREENS.automation = async host => {
               : (w.writes_audit_log
                   ? stateEmpty('No runs in the loaded window',
                       `This workflow writes to audit_log but none of the ${AUDIT_LIMIT} most recent rows belong to it.`, 'history')
-                  : stateEmpty('Not instrumented',
-                      'This workflow has no Audit Log node, so it will never appear in the activity log no matter how often it runs.', 'visibility_off'))}
+                  : answers
+                    ? stateEmpty('No history, by design',
+                        `This endpoint returns its result to whoever called it rather than logging, so it will never appear in the activity log. ${answers.where} shows the outcome of each call at the moment it is made; nothing is retained for it here, and this screen cannot say how it has been behaving.`, 'sync_alt')
+                    : stateEmpty('Not instrumented',
+                        'This workflow has no Audit Log node, so it will never appear in the activity log no matter how often it runs.', 'visibility_off'))}
         </div>
       </div>
       <div class="drawer-foot">

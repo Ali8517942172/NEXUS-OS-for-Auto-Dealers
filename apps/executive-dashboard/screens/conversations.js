@@ -1,46 +1,125 @@
 /* NEXUS OS — screens/conversations.js
-   Rebuilt on 19 Aug 2026 from the read-only message dump into an inbox.
+   Rebuilt on 24 Aug 2026 against v_conversations.
 
-   communication_logs is a flat message table: one row per message, keyed to a
-   contact only by `lead_email`. Everything on this screen is derived from those
-   rows plus the matching `leads` row — there is no thread table, no read
-   receipt and no delivery state in the database, so nothing here claims one.
+   The thread list used to be built in the browser by grouping communication_logs
+   on `lead_email`, and it printed that key as the contact's name. For a WhatsApp
+   thread the key is an opaque LID handle, so the inbox listed people as
+   "163188003877036@lid". v_conversations now does the resolution in the database
+   — lead name → WhatsApp profile name → phone → the raw key — and reports which
+   of those it managed with `identified`. This screen reads that view and refuses
+   to flatten the four cases into one confident-looking name:
 
-   Two consequences worth stating plainly, because they shape the whole screen:
+     · lead              a row in `leads` matches. We know who this is.
+     · whatsapp_profile  the name is what the contact typed into their own
+                         WhatsApp profile. Unverified, and no lead record.
+     · phone_only        a number and nothing else.
+     · unidentified      nothing but the chat handle, which for a LID contains
+                         no phone digits at all. This is NOT a name and is never
+                         rendered as one, even though `display_name` falls back
+                         to it — the guard is `display_name === thread_key`.
 
-     · "Reply due" is not an unread flag. Postgres cannot tell us what a human
-       has looked at. It means the newest message in the thread is inbound and
-       no outbound message has been logged after it — which is the thing a sales
-       manager actually needs to see, and it is provable from the data.
-     · Sending is impossible. n8n exposes no WAHA send webhook, and
-       communication_logs is service-role only, so the browser can neither send
-       a message nor record one. The composer is rendered and disabled rather
-       than hidden, so the gap is visible instead of merely absent. */
-import { db } from '../lib/data.js';
+   `phone` is null on every historic contact because it was never captured; the
+   absence is rendered as an absence and never filled in.
+
+   Sending is live now (HOOK.whatsappSend) and it goes out on the dealership's
+   real WhatsApp number, so:
+     · the composer never sends on Enter — Enter is a line break, and the send
+       button opens a confirmation naming the exact address the message goes to;
+     · the message is shown in flight, and the workflow's own answer decides the
+       outcome. {status:'sent'} is success, {status:'error'} is a failure stated
+       verbatim, and anything else is reported as "unknown" rather than assumed;
+     · nothing is optimistically appended to the thread. The workflow writes the
+       outbound to communication_logs, so a successful send re-reads the thread
+       and shows only what the database actually holds.
+     · a thread with no chat_id (the older email-keyed rows) cannot be sent to at
+       all, and the composer says which field is missing.
+
+   communication_logs has no read state and no delivery state, so "Reply due" is
+   `awaiting_reply` from the view — newest message inbound, nothing sent after —
+   and never claims to be an unread flag. */
+import { db, n8n, HOOK } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
+import { N8N_BASE } from '../lib/env.js';
 import { ago, esc, initials, num, pill } from '../lib/format.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
+import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi } from '../lib/ui.js';
 
-/* The newest N messages, not all of them. A dealership that has been running
-   for a year has more history than an inbox needs to render, and an unbounded
-   select is how a screen starts timing out in production. Where the cap is hit
-   it is said out loud, because a truncated inbox that looks complete is a lie
-   about how many people are waiting. */
-const LIMIT = 1000;
+/* Caps. An inbox that has been running a year has more history than a screen
+   needs to paint, and an unbounded select is how a screen starts timing out in
+   production. Where a cap is hit it is said out loud — a truncated inbox that
+   looks complete is a lie about how many people are waiting. */
+const THREAD_LIMIT = 500;
+const MSG_LIMIT = 400;
 
-const low = s => String(s || '').trim().toLowerCase();
+const VIEW_COLS = 'thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_status,'
+  + 'display_name,identified,message_count,inbound_count,outbound_count,'
+  + 'last_message_at,last_message,last_direction,awaiting_reply';
+
+const low = s => String(s == null ? '' : s).trim().toLowerCase();
+const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
 const stamp = v => { const t = Date.parse(v); return Number.isNaN(t) ? 'no timestamp recorded' : new Date(t).toLocaleString('en-GB'); };
+const clockOf = v => { const t = Date.parse(v); return Number.isNaN(t) ? null : new Date(t).toLocaleString('en-GB'); };
 
-/* Why every send control on this screen is dead. Written once and attached to
-   each disabled control so the reason travels with the button. */
-const NO_SEND = 'Sending is not wired up. n8n exposes ask-ai, finance-calc, lead-trigger, '
-  + 'deals/closed-won, audit-kyc, erp-sync and lead-escalation — none of them sends a WhatsApp '
-  + 'or email message — and communication_logs is service-role only, so the browser can neither '
-  + 'deliver a reply nor record one. This needs a WAHA send webhook in n8n first.';
+/* How well we know the person on the other end. The wording is deliberately
+   flat: an operator must be able to tell a matched customer from a stranger at
+   a glance, because the same composer sends to both. */
+const IDENT = {
+  lead: {
+    label: 'Lead',
+    short: 'Lead',
+    tone: 'ok',
+    named: true,
+    note: 'This thread is matched to a row in the leads table by email address.',
+  },
+  whatsapp_profile: {
+    label: 'WhatsApp profile name',
+    short: 'Profile name',
+    tone: 'cold',
+    named: true,
+    note: 'The name below is whatever this contact typed into their own WhatsApp profile. '
+        + 'Nobody has verified it and there is no lead record for them.',
+  },
+  phone_only: {
+    label: 'Phone number only',
+    short: 'Phone only',
+    tone: 'warm',
+    named: true,
+    note: 'We hold a phone number for this contact and nothing else — no lead record and no profile name.',
+  },
+  unidentified: {
+    label: 'Unidentified',
+    short: 'Unidentified',
+    tone: 'warm',
+    named: false,
+    note: 'We do not know who this is. The only handle stored is the WhatsApp chat id, '
+        + 'which for a LID contact contains no phone digits, and no lead or contact row matches it.',
+  },
+};
+const identOf = t => IDENT[t.identified] || IDENT.unidentified;
+
+/* What the thread key actually is, said plainly, so nobody mistakes a machine
+   handle for something a human chose. */
+function keyKind(key) {
+  const k = low(key);
+  if (!k) return 'no thread key recorded';
+  if (k.endsWith('@lid')) return 'WhatsApp LID handle — it contains no phone number';
+  if (k.endsWith('@c.us')) return 'WhatsApp chat id';
+  if (k.endsWith('@g.us')) return 'WhatsApp group id';
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(k)) return 'email address';
+  return 'thread key';
+}
+
+const NO_N8N =
+  'VITE_N8N_BASE_URL is not set in this build, so the browser has no n8n host to call and the '
+  + 'whatsapp-send webhook cannot be reached. Replies have to go out from WhatsApp itself.';
+const noChatWhy = t =>
+  `This thread is keyed on "${t.key}" (${keyKind(t.key)}) and no chat_id is stored for it in `
+  + 'v_conversations, so WAHA has no WhatsApp address to send to. Replying needs a chat_id, which '
+  + 'only arrives when the contact messages the business number.';
 
 const dayLabel = v => {
   const t = Date.parse(v);
@@ -52,11 +131,59 @@ const dayLabel = v => {
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-const preview = m => {
-  const text = String(m.message == null ? '' : m.message).replace(/\s+/g, ' ').trim();
+const preview = v => {
+  const text = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
   if (!text) return '<span class="t-muted">No message text recorded</span>';
-  return esc(text.length > 72 ? text.slice(0, 72) + '…' : text);
+  return esc(text.length > 68 ? text.slice(0, 68) + '…' : text);
 };
+
+/* One view row → one thread. A row with no thread_key cannot be opened, replied
+   to, or attributed to anybody, so it is dropped and counted rather than shown
+   as a nameless conversation. */
+function normalise(r) {
+  const key = str(r.thread_key);
+  if (!key) return null;
+  const ident = IDENT[r.identified] ? r.identified : 'unidentified';
+  const shown = str(r.display_name);
+  /* The view falls back to the raw key when it has nothing better. That
+     fallback is a machine handle, never a name — so it is not used as one, and
+     the guard holds even if `identified` is ever wrong. */
+  const isKey = !shown || shown === key;
+  const named = IDENT[ident].named && !isKey;
+  return {
+    key,
+    chat_id: str(r.chat_id) || null,
+    phone: str(r.phone) || null,
+    push_name: str(r.push_name) || null,
+    lead_email: str(r.lead_email) || null,
+    lead_name: str(r.lead_name) || null,
+    lead_status: str(r.lead_status) || null,
+    identified: ident,
+    name: named ? shown : '',
+    count: Number(r.message_count) || 0,
+    inbound: Number(r.inbound_count) || 0,
+    outbound: Number(r.outbound_count) || 0,
+    last_at: r.last_message_at || null,
+    last_message: r.last_message == null ? '' : String(r.last_message),
+    last_direction: low(r.last_direction),
+    awaiting: r.awaiting_reply === true,
+  };
+}
+
+const titleOf = t => t.name || 'Unidentified contact';
+const avatarOf = t => t.name ? esc(initials(t.name)) : '?';
+
+/* The second line of every thread row and of the pane header. It says what we
+   hold, including when that is nothing. */
+function contactLine(t) {
+  const bits = [];
+  if (t.phone) bits.push(`<span class="mono">${esc(t.phone)}</span>`);
+  else bits.push('<span class="t-muted">No phone number stored</span>');
+  if (!t.name || t.identified === 'unidentified') {
+    bits.push(`<span class="mono" title="${esc(keyKind(t.key))}">${esc(t.key)}</span>`);
+  }
+  return bits.join(' · ');
+}
 
 SCREENS.conversations = async host => {
   const strip = el('div', 'grid g4');
@@ -65,7 +192,25 @@ SCREENS.conversations = async host => {
   host.appendChild(strip);
   host.appendChild(wrap);
 
-  await boot();
+  let threads = [], dropped = 0, capped = false;
+  let q = '', filter = 'all', selected = null;
+
+  /* ── Read the view ───────────────────────────────────────────────────── */
+  async function readThreads() {
+    const rows = await db(`v_conversations?select=${VIEW_COLS}&order=last_message_at.desc&limit=${THREAD_LIMIT}`);
+    const list = [];
+    let bad = 0;
+    for (const r of rows) {
+      const t = normalise(r);
+      if (t) list.push(t); else bad++;
+    }
+    /* The view is keyed one row per thread, but a defensive de-dupe keeps a
+       repeated key from opening two rows onto the same conversation. */
+    const seen = new Set();
+    const uniq = list.filter(t => (seen.has(t.key) ? false : (seen.add(t.key), true)));
+    uniq.sort((a, b) => ts(b.last_at) - ts(a.last_at));
+    return { list: uniq, dropped: bad, capped: rows.length >= THREAD_LIMIT };
+  }
 
   async function boot() {
     strip.innerHTML = stateLoading(2);
@@ -73,291 +218,103 @@ SCREENS.conversations = async host => {
     wrap.style.minHeight = '';
     wrap.innerHTML = stateLoading(8);
 
-    /* ── Read ────────────────────────────────────────────────────────────
-       The messages are the screen; if they fail, the screen fails and says
-       so with a Retry. The leads table is enrichment — a name, a status, a
-       vehicle — so its failure degrades the labels to raw email addresses
-       and is reported, never silently swallowed and never filled in. */
-    let logs;
+    let read;
     try {
-      logs = await db(`communication_logs?select=id,lead_email,direction,message,channel,created_at&order=created_at.desc&limit=${LIMIT}`);
+      read = await readThreads();
     } catch (e) {
       strip.innerHTML = stateError('the inbox summary', e.message);
       wrap.innerHTML = stateError('conversations', e.message, 'reload');
       wrap.querySelector('[data-retry]')?.addEventListener('click', boot);
       return;
     }
+    threads = read.list; dropped = read.dropped; capped = read.capped;
 
-    let leadNote = '';
-    let leads = [];
-    try {
-      leads = await db('leads?select=*,users(id,name)&order=created_at.desc&limit=1000');
-    } catch (e) {
-      leadNote = `The leads table could not be read (${e.message}), so threads are labelled by email address and no lead status is shown.`;
-    }
-    const leadByEmail = new Map();
-    leads.forEach(l => { const k = low(l.email); if (k && !leadByEmail.has(k)) leadByEmail.set(k, l); });
-
-    /* ── Group into threads ──────────────────────────────────────────────
-       lead_email is the only key that links two messages to one person.
-       Rows without it are NOT swept into a shared "unknown" thread: that
-       would stitch strangers into one conversation and put words in a
-       customer's mouth. They are counted and reported instead. */
-    const byKey = new Map();
-    const threads = [];
-    const channels = new Map();
-    let orphans = 0;
-
-    for (const m of logs) {
-      const ch = String(m.channel || '').trim() || 'unrecorded channel';
-      channels.set(ch, (channels.get(ch) || 0) + 1);
-      const k = low(m.lead_email);
-      if (!k) { orphans++; continue; }
-      let t = byKey.get(k);
-      if (!t) {
-        t = { key: k, email: m.lead_email, msgs: [], inbound: 0, outbound: 0, channels: new Map() };
-        byKey.set(k, t);
-        threads.push(t);
-      }
-      t.msgs.push(m);
-      const dir = low(m.direction);
-      if (dir === 'inbound') t.inbound++;
-      else if (dir === 'outbound') t.outbound++;
-      t.channels.set(ch, (t.channels.get(ch) || 0) + 1);
-    }
-
-    threads.forEach(t => {
-      t.msgs.sort((a, b) => ts(a.created_at) - ts(b.created_at));   // newest last, as a thread reads
-      t.last  = t.msgs[t.msgs.length - 1];
-      t.first = t.msgs[0];
-      t.lead  = leadByEmail.get(t.key) || null;
-      t.name  = t.lead?.name || t.email;
-      t.awaiting = low(t.last.direction) === 'inbound';
-      t.oneSided = t.inbound === 0 || t.outbound === 0;
-      t.haystack = `${t.name} ${t.email} ${t.msgs.map(m => m.message == null ? '' : m.message).join(' ')}`.toLowerCase();
-    });
-    threads.sort((a, b) => ts(b.last.created_at) - ts(a.last.created_at));
-
-    const awaiting  = threads.filter(t => t.awaiting);
-    const unanswered = threads.filter(t => t.outbound === 0);
-    const oldestWait = awaiting.length
-      ? awaiting.reduce((a, t) => (ts(t.last.created_at) < ts(a.last.created_at) ? t : a))
-      : null;
-    const capped = logs.length >= LIMIT;
-
-    const capNote = capped
-      ? `Only the newest ${num(LIMIT)} messages were read, so older threads are missing from this list.`
-      : '';
-    const orphanNote = orphans
-      ? `${num(orphans)} ${orphans === 1 ? 'message has' : 'messages have'} no lead_email and cannot be attached to a thread.`
-      : '';
-
-    /* ── Summary strip ───────────────────────────────────────────────────
-       Four counts, each a count of rows that exist. No rates, no targets. */
-    const chanChips = [...channels.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([c, n]) => `<span class="chip">${esc(c)} · ${num(n)}</span>`)
-      .join(' ');
-
-    strip.innerHTML = [
-      kpi('Conversations', num(threads.length),
-        `${num(logs.length)} ${logs.length === 1 ? 'message' : 'messages'} in history${capped ? ' <span class="t-warm">(capped)</span>' : ''}`),
-      kpi('Reply due', num(awaiting.length),
-        awaiting.length
-          ? `<span class="t-hot">Oldest waiting since ${ago(oldestWait.last.created_at)}</span>`
-          : threads.length
-            ? '<span class="t-ok">Every thread ends with a message we sent</span>'
-            : '<span class="t-muted">No threads yet</span>',
-        awaiting.length ? 't-hot' : ''),
-      kpi('Never answered', num(unanswered.length),
-        unanswered.length
-          ? '<span class="t-warm">No outbound message exists in this history</span>'
-          : '<span class="t-muted">Every thread has at least one outbound message</span>'),
-      kpi('Last message', threads.length ? ago(threads[0].last.created_at) : '—',
-        chanChips || '<span class="t-muted">No channel recorded on any message</span>'),
-    ].join('');
+    renderStrip();
 
     if (!threads.length) {
       wrap.innerHTML = stateEmpty(
-        logs.length ? 'No message can be grouped into a thread' : 'No messages yet',
-        logs.length
-          ? `All ${num(logs.length)} logged messages are missing lead_email, which is the only field that links a message to a contact.`
-          : 'Conversations appear here once the WhatsApp BDC agent writes its first row to communication_logs.',
+        dropped ? 'No conversation can be addressed' : 'No conversations yet',
+        dropped
+          ? `${num(dropped)} ${dropped === 1 ? 'row has' : 'rows have'} no thread_key in v_conversations, `
+            + 'so there is no contact to attach those messages to.'
+          : 'Threads appear here once the WhatsApp agent writes its first row to communication_logs.',
         'forum');
       return;
     }
 
-    /* ── Shell ───────────────────────────────────────────────────────────── */
+    renderShell();
+    drawList();
+    const oldest = oldestWaiting();
+    openThread((oldest || threads[0]).key);
+  }
+
+  const oldestWaiting = () => {
+    const w = threads.filter(t => t.awaiting);
+    return w.length ? w.reduce((a, t) => (ts(t.last_at) < ts(a.last_at) ? t : a)) : null;
+  };
+
+  /* ── Summary strip. Every number here is a count of rows the view returned. */
+  function renderStrip() {
+    const awaiting = threads.filter(t => t.awaiting);
+    const oldest = oldestWaiting();
+    const msgs = threads.reduce((s, t) => s + t.count, 0);
+    const by = { lead: 0, whatsapp_profile: 0, phone_only: 0, unidentified: 0 };
+    threads.forEach(t => { by[t.identified] = (by[t.identified] || 0) + 1; });
+    const withChat = threads.filter(t => t.chat_id).length;
+    const noChat = threads.length - withChat;
+
+    strip.innerHTML = [
+      kpi('Conversations', num(threads.length),
+        `${num(msgs)} ${msgs === 1 ? 'message' : 'messages'} logged`
+        + (capped ? ` · <span class="t-warm">only the newest ${num(THREAD_LIMIT)} threads were read</span>` : '')
+        + (dropped ? ` · <span class="t-warm">${num(dropped)} row(s) had no thread key</span>` : '')),
+
+      kpi('Reply due', num(awaiting.length),
+        awaiting.length
+          ? `<span class="t-hot">Oldest waiting since ${esc(ago(oldest.last_at))}</span>`
+          : '<span class="t-ok">Every thread ends with a message we sent</span>',
+        awaiting.length ? 't-hot' : ''),
+
+      kpi('Unidentified', num(by.unidentified),
+        `${num(by.lead)} matched to a lead · ${num(by.whatsapp_profile)} WhatsApp name · ${num(by.phone_only)} phone only`,
+        by.unidentified ? 't-warm' : ''),
+
+      kpi('Repliable from here', num(withChat),
+        !N8N_BASE
+          ? '<span class="t-hot">n8n host not configured — sending is off</span>'
+          : noChat
+            ? `<span class="t-warm">${num(noChat)} thread(s) have no chat_id and cannot be replied to</span>`
+            : '<span class="t-ok">Every thread has a WhatsApp address</span>'),
+    ].join('');
+  }
+
+  /* ── Shell ───────────────────────────────────────────────────────────── */
+  function renderShell() {
+    const awaiting = threads.filter(t => t.awaiting).length;
+    const unknown = threads.filter(t => t.identified === 'unidentified').length;
     wrap.style.display = 'grid';
-    wrap.style.gridTemplateColumns = '340px minmax(0,1fr)';
+    wrap.style.gridTemplateColumns = '360px minmax(0,1fr)';
     wrap.style.minHeight = '640px';
     wrap.innerHTML = `
       <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;min-width:0">
         <div class="toolbar" style="border-bottom:1px solid var(--border-subtle)">
           <div class="grow">
             <label class="sr-only" for="cvQ">Search conversations</label>
-            <input type="search" id="cvQ" placeholder="Search names, emails, message text" />
+            <input type="search" id="cvQ" placeholder="Search name, number, handle, last message" />
           </div>
         </div>
         <div class="toolbar" style="padding-top:0;border-bottom:1px solid var(--border-subtle)">
           <div class="seg" role="group" aria-label="Filter conversations">
             <button type="button" data-f="all" class="on" aria-pressed="true">All ${num(threads.length)}</button>
             <button type="button" data-f="await" aria-pressed="false"
-              title="Threads whose newest message is inbound and has no outbound message after it. communication_logs has no read state, so this is derived from direction, not from what anyone has opened.">Reply due ${num(awaiting.length)}</button>
-            <button type="button" data-f="one" aria-pressed="false"
-              title="Threads with messages in one direction only — either we have never replied, or nothing inbound was ever captured.">One-sided ${num(threads.filter(t => t.oneSided).length)}</button>
+              title="Threads whose newest message is inbound with nothing sent after it (awaiting_reply in v_conversations). communication_logs has no read state, so this is derived from direction — it is not an unread flag.">Reply due ${num(awaiting)}</button>
+            <button type="button" data-f="unknown" aria-pressed="false"
+              title="Threads where no lead, profile name or phone number resolves — all we hold is the chat handle.">Unidentified ${num(unknown)}</button>
           </div>
         </div>
         <div id="cvList" style="overflow-y:auto;flex:1"></div>
       </div>
       <div style="display:flex;flex-direction:column;min-width:0" id="cvPane"></div>`;
-
-    let q = '', filter = 'all', selected = null;
-
-    const visible = () => threads.filter(t => {
-      if (filter === 'await' && !t.awaiting) return false;
-      if (filter === 'one' && !t.oneSided) return false;
-      return !q || t.haystack.includes(q);
-    });
-
-    function drawList() {
-      const rows = visible();
-      const foot = [leadNote, capNote, orphanNote].filter(Boolean);
-      const footHtml = foot.length
-        ? `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-             <div class="cell-sub" style="white-space:normal">${foot.map(esc).join('<br>')}</div>
-           </div>`
-        : '';
-
-      $('cvList').innerHTML = (rows.length
-        ? rows.map(t => `
-          <div class="list-item${t.key === selected ? ' on' : ''}" role="button" tabindex="0"
-               data-k="${esc(t.key)}" aria-current="${t.key === selected ? 'true' : 'false'}">
-            <div class="avatar">${esc(initials(t.name))}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</div>
-              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px"
-                      aria-hidden="true">${low(t.last.direction) === 'inbound' ? 'south_west' : 'north_east'}</span>
-                ${preview(t.last)}
-              </div>
-            </div>
-            <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-              <span class="cell-sub" title="${esc(stamp(t.last.created_at))}">${ago(t.last.created_at)}</span>
-              ${t.awaiting ? pill('Reply due', 'hot') : `<span class="cell-sub">${num(t.msgs.length)} msg</span>`}
-            </div>
-          </div>`).join('')
-        : stateEmpty('No conversation matches',
-            filter === 'all' ? 'Try a different search term.' : 'Try a different search term or filter.',
-            'search_off')) + footHtml;
-
-      $('cvList').querySelectorAll('[data-k]').forEach(node => {
-        node.addEventListener('click', () => openThread(node.dataset.k));
-        /* The row is the only route into a thread, so it has to work from the
-           keyboard as well as the mouse. Arrow keys walk the list the way an
-           inbox is expected to behave. */
-        node.addEventListener('keydown', e => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openThread(node.dataset.k); return; }
-          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-          e.preventDefault();
-          const all = [...$('cvList').querySelectorAll('[data-k]')];
-          const next = all[all.indexOf(node) + (e.key === 'ArrowDown' ? 1 : -1)];
-          if (next) { next.focus(); openThread(next.dataset.k); }
-        });
-      });
-    }
-
-    function openThread(key) {
-      const t = threads.find(x => x.key === key);
-      if (!t) return;
-      selected = key;
-      $('cvList').querySelectorAll('[data-k]').forEach(n => {
-        const on = n.dataset.k === key;
-        n.classList.toggle('on', on);
-        n.setAttribute('aria-current', on ? 'true' : 'false');
-      });
-
-      const lead = t.lead;
-      const chips = [...t.channels.entries()].map(([c, n]) => `<span class="chip">${esc(c)} · ${num(n)}</span>`).join(' ');
-
-      /* Banners describe the shape of the record, not the state of the
-         customer. "Only outbound messages exist" is a statement about
-         communication_logs; it does not mean the customer never replied. */
-      const banners = [];
-      if (t.awaiting) {
-        banners.push(`<div class="banner warm">
-          <span class="material-symbols-outlined" style="font-size:20px">schedule</span>
-          <div>The newest message is inbound, logged ${esc(ago(t.last.created_at))}, and no outbound message has been recorded after it.</div>
-        </div>`);
-      }
-      if (t.inbound === 0) {
-        banners.push(`<div class="banner info">
-          <span class="material-symbols-outlined" style="font-size:20px">info</span>
-          <div>Only outbound messages exist for this contact. Inbound capture is not writing to <span class="mono">communication_logs</span>, so this thread shows one side of the conversation.</div>
-        </div>`);
-      } else if (t.outbound === 0) {
-        banners.push(`<div class="banner hot">
-          <span class="material-symbols-outlined" style="font-size:20px">mark_email_unread</span>
-          <div>No outbound message has ever been logged for this contact — every message in this thread came from them.</div>
-        </div>`);
-      }
-
-      $('cvPane').innerHTML = `
-        <div class="card-head">
-          <div class="avatar">${esc(initials(t.name))}</div>
-          <div style="min-width:0">
-            <div class="card-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</div>
-            <div class="card-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.email)}${lead?.vehicle_interest ? ' · ' + esc(lead.vehicle_interest) : ''}</div>
-          </div>
-          <div style="flex:1"></div>
-          ${lead ? pill(lead.status || 'NEW') : `<span class="chip" title="No row in the leads table has this email address.">No lead record</span>`}
-          ${lead
-            ? `<button class="btn sm" id="cvLead">Open lead</button>`
-            : `<button class="btn sm" disabled title="No row in the leads table matches ${esc(t.email)}, so there is no lead record to open.">Open lead</button>`}
-        </div>
-        <div style="flex:1;overflow-y:auto" id="cvScroll">
-          ${banners.length ? `<div style="padding:16px 20px 0">${banners.join('')}</div>` : ''}
-          <div class="thread">
-            ${t.msgs.map((m, i) => {
-              const inbound = low(m.direction) === 'inbound';
-              const day = dayLabel(m.created_at);
-              const sep = (i === 0 || day !== dayLabel(t.msgs[i - 1].created_at))
-                ? `<div class="label-caps" style="text-align:center;margin-top:6px">${esc(day)}</div>` : '';
-              const text = String(m.message == null ? '' : m.message).trim();
-              return `${sep}<div class="bubble ${inbound ? 'in' : 'out'}">${text ? esc(text) : '<span class="t-muted">No message text recorded</span>'}
-                <div class="bubble-meta">
-                  <span class="chip">${esc(String(m.channel || '').trim() || 'unrecorded channel')}</span>
-                  <span>${esc(low(m.direction) || 'direction not recorded')}</span>
-                  <span title="${esc(stamp(m.created_at))}">${ago(m.created_at)}</span>
-                </div>
-              </div>`;
-            }).join('')}
-          </div>
-          <div class="cell-sub" style="padding:0 20px 16px;text-align:center">
-            ${num(t.msgs.length)} ${t.msgs.length === 1 ? 'message' : 'messages'} · ${num(t.inbound)} inbound · ${num(t.outbound)} outbound · first logged ${esc(ago(t.first.created_at))}
-            ${chips ? '<div style="margin-top:8px">' + chips + '</div>' : ''}
-          </div>
-        </div>
-        <div style="padding:16px 20px;border-top:1px solid var(--border-subtle)">
-          <div style="display:flex;gap:10px;align-items:flex-start">
-            <label class="sr-only" for="cvMsg">Reply to ${esc(t.name)}</label>
-            <textarea id="cvMsg" rows="2" disabled title="${esc(NO_SEND)}"
-              placeholder="Replying from the dashboard is not available yet"></textarea>
-            <button class="btn primary" disabled title="${esc(NO_SEND)}" style="flex-shrink:0">
-              <span class="material-symbols-outlined">send</span>Send</button>
-          </div>
-          <div class="cell-sub" style="margin-top:8px">
-            Replies still go out from WhatsApp itself. This composer stays disabled until an n8n send webhook exists — until then the dashboard cannot deliver a message or write it to <span class="mono">communication_logs</span>.
-          </div>
-        </div>`;
-
-      $('cvLead')?.addEventListener('click', () => leadDrawer(lead));
-      /* A thread reads newest-last, so it opens where the conversation
-         currently is rather than at a message from three weeks ago. */
-      const scroller = $('cvScroll');
-      if (scroller) scroller.scrollTop = scroller.scrollHeight;
-    }
 
     $('cvQ').addEventListener('input', e => { q = low(e.target.value); drawList(); });
     wrap.querySelectorAll('.seg button').forEach(b => {
@@ -371,14 +328,360 @@ SCREENS.conversations = async host => {
         drawList();
       });
     });
-
-    drawList();
-    /* Open the thread that is waiting longest if anything is waiting, else the
-       most recent one. Landing on an empty pane wastes the first click. */
-    openThread((oldestWait || threads[0]).key);
   }
-};
 
-/* ── Modal ───────────────────────────────────────────────────────────────────
-   The drawer is the read view; a modal is the write view. Keeping them separate
-   means a form can never be half-covered by a detail panel. */
+  const haystack = t => `${t.name} ${t.key} ${t.phone || ''} ${t.lead_email || ''} ${t.push_name || ''} ${t.last_message}`.toLowerCase();
+
+  const visible = () => threads.filter(t => {
+    if (filter === 'await' && !t.awaiting) return false;
+    if (filter === 'unknown' && t.identified !== 'unidentified') return false;
+    return !q || haystack(t).includes(q);
+  });
+
+  function drawList() {
+    const rows = visible();
+    const notes = [];
+    if (capped) notes.push(`Only the newest ${num(THREAD_LIMIT)} threads were read, so older conversations are missing from this list.`);
+    if (dropped) notes.push(`${num(dropped)} row(s) in v_conversations have no thread_key and cannot be opened.`);
+    notes.push('Search covers names, numbers, handles and the newest message only — older message text is not loaded until a thread is opened.');
+    const footHtml = `<div class="list-item" style="cursor:default;align-items:flex-start">
+        <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
+        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div>
+      </div>`;
+
+    $('cvList').innerHTML = (rows.length
+      ? rows.map(t => {
+        const id = identOf(t);
+        return `
+          <div class="list-item${t.key === selected ? ' on' : ''}" role="button" tabindex="0"
+               data-k="${esc(t.key)}" aria-current="${t.key === selected ? 'true' : 'false'}"
+               style="align-items:flex-start">
+            <div class="avatar" aria-hidden="true">${avatarOf(t)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                <span style="font-weight:500${t.name ? '' : ';font-style:italic'}"
+                      class="${t.name ? '' : 't-muted'}">${esc(titleOf(t))}</span>
+              </div>
+              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                ${contactLine(t)}
+              </div>
+              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                <span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px"
+                      aria-hidden="true">${t.last_direction === 'inbound' ? 'south_west' : 'north_east'}</span>
+                ${preview(t.last_message)}
+              </div>
+            </div>
+            <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+              <span class="cell-sub" title="${esc(stamp(t.last_at))}">${esc(ago(t.last_at))}</span>
+              ${t.awaiting ? pill('Reply due', 'hot') : `<span class="cell-sub">${num(t.count)} msg</span>`}
+              ${t.identified === 'lead' ? '' : `<span class="chip" title="${esc(id.label)} — ${esc(id.note)}">${esc(id.short)}</span>`}
+            </div>
+          </div>`;
+      }).join('')
+      : stateEmpty('No conversation matches',
+          filter === 'all' ? 'Try a different search term.' : 'Try a different search term or filter.',
+          'search_off')) + footHtml;
+
+    $('cvList').querySelectorAll('[data-k]').forEach(node => {
+      node.addEventListener('click', () => openThread(node.dataset.k));
+      node.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openThread(node.dataset.k); return; }
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        e.preventDefault();
+        const all = [...$('cvList').querySelectorAll('[data-k]')];
+        const next = all[all.indexOf(node) + (e.key === 'ArrowDown' ? 1 : -1)];
+        if (next) { next.focus(); openThread(next.dataset.k); }
+      });
+    });
+  }
+
+  /* ── One thread ──────────────────────────────────────────────────────── */
+  function openThread(key, note) {
+    const t = threads.find(x => x.key === key);
+    if (!t) return;
+    selected = key;
+    $('cvList').querySelectorAll('[data-k]').forEach(n => {
+      const on = n.dataset.k === key;
+      n.classList.toggle('on', on);
+      n.setAttribute('aria-current', on ? 'true' : 'false');
+    });
+    renderPane(t, note);
+    loadMessages(t);
+  }
+
+  function banners(t) {
+    const id = identOf(t);
+    const out = [];
+    if (t.identified === 'unidentified') {
+      out.push(`<div class="banner warm">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">person_search</span>
+        <div>${esc(id.note)} Treat nothing in this thread as a known customer, and read the handle below as an address, not a name.</div>
+      </div>`);
+    } else if (t.identified === 'whatsapp_profile' || t.identified === 'phone_only') {
+      out.push(`<div class="banner info">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">info</span>
+        <div>${esc(id.note)}</div>
+      </div>`);
+    }
+    if (t.awaiting) {
+      out.push(`<div class="banner warm">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">schedule</span>
+        <div>The newest message is inbound, logged ${esc(ago(t.last_at))}, and no outbound message has been recorded after it.</div>
+      </div>`);
+    }
+    if (t.inbound === 0) {
+      out.push(`<div class="banner info">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">send</span>
+        <div>Only outbound messages are logged for this contact, so this thread shows one side of the conversation.</div>
+      </div>`);
+    } else if (t.outbound === 0) {
+      out.push(`<div class="banner hot">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">mark_email_unread</span>
+        <div>No outbound message has ever been logged for this contact — every message here came from them.</div>
+      </div>`);
+    }
+    return out.join('');
+  }
+
+  function renderPane(t, note) {
+    const id = identOf(t);
+    const canSend = Boolean(t.chat_id) && Boolean(N8N_BASE);
+    const why = !N8N_BASE ? NO_N8N : (!t.chat_id ? noChatWhy(t) : '');
+    const dis = canSend ? '' : ` disabled title="${esc(why)}"`;
+
+    $('cvPane').innerHTML = `
+      <div class="card-head">
+        <div class="avatar" aria-hidden="true">${avatarOf(t)}</div>
+        <div style="min-width:0">
+          <div class="card-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <span class="${t.name ? '' : 't-muted'}">${esc(titleOf(t))}</span>
+          </div>
+          <div class="card-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${contactLine(t)}${t.lead_email ? ' · ' + esc(t.lead_email) : ''}
+          </div>
+        </div>
+        <div style="flex:1"></div>
+        <span title="${esc(id.note)}">${pill(id.label, id.tone)}</span>
+        ${t.lead_status ? pill(t.lead_status) : ''}
+        <button class="btn sm" id="cvRefresh"><span class="material-symbols-outlined">refresh</span>Refresh</button>
+        ${t.lead_email
+          ? `<button class="btn sm" id="cvLead">Open lead</button>`
+          : `<button class="btn sm" disabled title="No lead record resolves for this thread — v_conversations returned no lead_email, so there is nothing to open.">Open lead</button>`}
+      </div>
+      <div class="cell-sub" id="cvNote" style="padding:0 20px" aria-live="polite"></div>
+      <div style="padding:16px 20px 0">${banners(t)}</div>
+      <div style="flex:1;overflow-y:auto" id="cvBody">${stateLoading(5)}</div>
+      <div style="padding:16px 20px;border-top:1px solid var(--border-subtle)">
+        <div class="field">
+          <label for="cvReply">Reply on WhatsApp${t.name ? ' to ' + esc(t.name) : ''}</label>
+          <textarea id="cvReply" rows="3"${dis}
+            placeholder="${canSend ? 'Type a reply. Enter adds a line break — nothing is sent until you confirm.' : 'Replying from the dashboard is unavailable for this thread'}"></textarea>
+          <div class="hint">${canSend
+            ? `Enter adds a line break. <strong>Review and send</strong> opens a confirmation showing the exact WhatsApp address; the message only leaves after you confirm it there. Ctrl+Enter opens the same confirmation. This goes out on the dealership's live number and cannot be recalled.`
+            : esc(why)}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <button class="btn primary" id="cvSend"${dis}>
+            <span class="material-symbols-outlined">send</span>Review and send</button>
+          <span class="cell-sub" id="cvSendMsg" aria-live="polite">${note || ''}</span>
+        </div>
+      </div>`;
+
+    $('cvRefresh').addEventListener('click', () => { loadMessages(t); });
+
+    $('cvLead')?.addEventListener('click', async () => {
+      const b = $('cvLead');
+      const label = b.innerHTML;
+      b.disabled = true; b.textContent = 'Opening…';
+      try {
+        const rows = await db(`leads?select=*,users(id,name)&email=eq.${encodeURIComponent(t.lead_email)}&limit=1`);
+        if (rows.length) { setNote(''); leadDrawer(rows[0]); }
+        else setNote(`<span class="t-warm">No row in the leads table has the address ${esc(t.lead_email)} any more, so there is no lead record to open.</span>`);
+      } catch (e) {
+        setNote(`<span class="t-hot">The lead record could not be read — ${esc(e.message)}</span>`);
+      } finally {
+        b.disabled = false; b.innerHTML = label;
+      }
+    });
+
+    if (canSend) {
+      const ta = $('cvReply');
+      const send = $('cvSend');
+      send.addEventListener('click', () => {
+        const text = ta.value.trim();
+        if (!text) {
+          setSendMsg('<span class="t-warm">Nothing to send — the reply box is empty.</span>');
+          ta.focus();
+          return;
+        }
+        confirmSend(t, text);
+      });
+      /* Enter is a line break, deliberately. The only keyboard route to the
+         confirmation is a modifier the operator has to mean. */
+      ta.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send.click(); }
+      });
+    }
+  }
+
+  const setNote = html => { const n = $('cvNote'); if (n) n.innerHTML = html; };
+  const setSendMsg = html => { const n = $('cvSendMsg'); if (n) n.innerHTML = html; };
+
+  /* Messages are read per thread, keyed on the same column the view groups on.
+     Newest-first with a cap, then reversed, so a long history shows its most
+     recent window rather than its oldest one. */
+  async function loadMessages(t) {
+    const body = $('cvBody');
+    if (!body) return;
+    body.innerHTML = stateLoading(5);
+    let msgs;
+    try {
+      msgs = await db(`communication_logs?select=id,direction,message,channel,created_at&lead_email=eq.${encodeURIComponent(t.key)}&order=created_at.desc&limit=${MSG_LIMIT}`);
+    } catch (e) {
+      body.innerHTML = stateError('this conversation', e.message, 'thread');
+      body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
+      return;
+    }
+    const truncated = msgs.length >= MSG_LIMIT;
+    const list = [...msgs].reverse();
+
+    if (!list.length) {
+      body.innerHTML = stateEmpty('No messages in this thread',
+        `v_conversations counted ${num(t.count)} message(s) for this contact, but communication_logs returned none for `
+        + `"${t.key}". Nothing is being shown rather than guessing at the history.`, 'forum');
+      return;
+    }
+
+    const channels = new Map();
+    list.forEach(m => {
+      const c = str(m.channel) || 'unrecorded channel';
+      channels.set(c, (channels.get(c) || 0) + 1);
+    });
+    const chips = [...channels.entries()].map(([c, n]) => `<span class="chip">${esc(c)} · ${num(n)}</span>`).join(' ');
+
+    body.innerHTML = `
+      ${truncated ? `<div style="padding:16px 20px 0"><div class="banner info">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">history</span>
+        <div>Only the newest ${num(MSG_LIMIT)} messages of this thread were read. Anything older is not shown.</div>
+      </div></div>` : ''}
+      <div class="thread">
+        ${list.map((m, i) => {
+          const inbound = low(m.direction) === 'inbound';
+          const day = dayLabel(m.created_at);
+          const sep = (i === 0 || day !== dayLabel(list[i - 1].created_at))
+            ? `<div class="label-caps" style="text-align:center;margin-top:6px">${esc(day)}</div>` : '';
+          const text = String(m.message == null ? '' : m.message).trim();
+          return `${sep}<div class="bubble ${inbound ? 'in' : 'out'}">${text ? esc(text) : '<span class="t-muted">No message text recorded</span>'}
+            <div class="bubble-meta">
+              <span class="chip">${esc(str(m.channel) || 'unrecorded channel')}</span>
+              <span>${esc(low(m.direction) || 'direction not recorded')}</span>
+              <span title="${esc(stamp(m.created_at))}">${esc(ago(m.created_at))}</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="cell-sub" style="padding:0 20px 16px;text-align:center">
+        ${num(list.length)} message(s) shown · ${num(t.inbound)} inbound · ${num(t.outbound)} outbound in this thread
+        ${chips ? '<div style="margin-top:8px">' + chips + '</div>' : ''}
+      </div>`;
+    body.scrollTop = body.scrollHeight;
+  }
+
+  /* ── Sending ─────────────────────────────────────────────────────────── */
+  function confirmSend(t, text) {
+    const id = identOf(t);
+    const m = openModal('Send this WhatsApp message?', `
+      <div class="banner ${t.identified === 'lead' ? 'info' : 'warm'}">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">
+          ${t.identified === 'lead' ? 'info' : 'person_search'}</span>
+        <div>${esc(id.note)}</div>
+      </div>
+      <dl class="kv" style="margin-top:16px">
+        <dt>To</dt><dd>${t.name ? esc(t.name) : '<span class="t-muted">Unidentified contact — we do not know whose number this is</span>'}</dd>
+        <dt>Phone</dt><dd>${t.phone ? `<span class="mono">${esc(t.phone)}</span>` : '<span class="t-muted">Not stored for this contact</span>'}</dd>
+        <dt>WhatsApp address</dt><dd><span class="mono">${esc(t.chat_id)}</span></dd>
+        <dt>Identified as</dt><dd>${pill(id.label, id.tone)}</dd>
+      </dl>
+      <div class="label-caps" style="margin-top:16px">Message as it will be sent</div>
+      <div class="bubble out" style="max-width:100%;margin-top:8px">${esc(text)}</div>
+      <p class="cell-sub" style="margin-top:12px">This is sent from the dealership's live WhatsApp number and cannot be recalled or edited afterwards.</p>`,
+      `<button class="btn primary" id="cvGo"><span class="material-symbols-outlined">send</span>Send on WhatsApp</button>
+       <button class="btn" id="cvCancel">Cancel</button>`);
+
+    const go = m.wrap.querySelector('#cvGo');
+    const cancel = m.wrap.querySelector('#cvCancel');
+    go.focus();
+    cancel.addEventListener('click', m.close);
+
+    go.addEventListener('click', async () => {
+      go.disabled = true; cancel.disabled = true;
+      go.innerHTML = '<span class="material-symbols-outlined">hourglass_top</span>Sending…';
+      m.msg('<span class="t-muted">The message is with the send workflow. Nothing has left WhatsApp until it answers.</span>');
+      setSendMsg('<span class="t-muted">Sending…</span>');
+
+      let res;
+      try {
+        res = await n8n(HOOK.whatsappSend, { chat_id: t.chat_id, text });
+      } catch (e) {
+        go.disabled = false; cancel.disabled = false;
+        go.innerHTML = '<span class="material-symbols-outlined">send</span>Send on WhatsApp';
+        const msg = /VITE_N8N_BASE_URL/.test(String(e.message)) ? NO_N8N : e.message;
+        m.msg(`<span class="t-hot">The send workflow could not be reached, so nothing was sent — ${esc(msg)}</span>`);
+        setSendMsg(`<span class="t-hot">Not sent — ${esc(msg)}</span>`);
+        return;
+      }
+
+      /* The workflow answers 200 for its own failures too, so the body decides
+         the outcome — never the status code, and never optimism. */
+      const status = low(res && res.status);
+      if (status === 'sent') {
+        const when = clockOf(res.sent_at);
+        m.msg(`<span class="t-ok">WhatsApp accepted the message${when ? ' at ' + esc(when) : ''}.</span>`);
+        go.innerHTML = 'Sent';
+        cancel.disabled = false; cancel.textContent = 'Close';
+        const ta = $('cvReply');
+        if (ta) ta.value = '';
+        await afterSend(t, when);
+      } else if (status === 'error') {
+        const why = str(res.error) || 'the workflow gave no reason';
+        go.disabled = false; cancel.disabled = false;
+        go.innerHTML = '<span class="material-symbols-outlined">send</span>Send on WhatsApp';
+        m.msg(`<span class="t-hot">WhatsApp did not send it — ${esc(why)}. Nothing left the dealership number.</span>`);
+        setSendMsg(`<span class="t-hot">Not sent — ${esc(why)}</span>`);
+      } else {
+        /* Unknown shape. It may or may not have gone out, and guessing either
+           way is how somebody sends a message twice. */
+        const raw = str(JSON.stringify(res)).slice(0, 200);
+        cancel.disabled = false; cancel.textContent = 'Close';
+        go.innerHTML = 'Outcome unknown';
+        m.msg(`<span class="t-warm">The send workflow answered without a status of "sent" or "error", so whether the message left cannot be told from here. Check WhatsApp before sending again. Reply was: <span class="mono">${esc(raw)}</span></span>`);
+        setSendMsg('<span class="t-warm">Outcome unknown — check WhatsApp before resending.</span>');
+      }
+    });
+  }
+
+  /* A successful send is not a message in the thread. The workflow writes the
+     outbound to communication_logs, so the thread and the list are re-read and
+     whatever the database actually holds is what gets shown. */
+  async function afterSend(t, when) {
+    const sentNote = `<span class="t-ok">Sent${when ? ' at ' + esc(when) : ''}.</span> `
+      + '<span class="t-muted">The workflow logs the outbound itself — if it is not in the thread yet, use Refresh in a moment.</span>';
+    try {
+      const read = await readThreads();
+      threads = read.list; dropped = read.dropped; capped = read.capped;
+      renderStrip();
+      drawList();
+      if (threads.some(x => x.key === t.key)) openThread(t.key, sentNote);
+      else { loadMessages(t); setSendMsg(sentNote); }
+    } catch (e) {
+      /* The send outcome stands on its own; only the refresh failed. */
+      loadMessages(t);
+      setSendMsg(sentNote + ` <span class="t-warm">The conversation list could not be re-read (${esc(e.message)}), so the counts beside it may be stale.</span>`);
+    }
+  }
+
+  /* Last, not first: the helpers above are const arrows, so booting before this
+     line would run them inside their own temporal dead zone and take the whole
+     screen down with a ReferenceError. */
+  await boot();
+};

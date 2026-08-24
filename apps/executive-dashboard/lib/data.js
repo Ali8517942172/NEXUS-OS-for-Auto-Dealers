@@ -136,6 +136,13 @@ const HOOK = {
   kyc:        'audit-kyc',
   erpSync:    'erp-sync',
   escalation: 'lead-escalation',
+  /* Operator replies from the conversations screen. Guarded by the same JWT as
+     the rest, and NOT fire-and-forget: it answers with a status of sent or
+     error, so the UI can tell the operator whether the message actually left.
+     No braces in this comment on purpose — SCHEMA_PROBE.mjs reads the HOOK
+     block with a non-greedy match to the first closing brace, and a brace here
+     truncates the map and makes it report this very hook as undefined. */
+  whatsappSend: 'whatsapp-send',
 };
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
