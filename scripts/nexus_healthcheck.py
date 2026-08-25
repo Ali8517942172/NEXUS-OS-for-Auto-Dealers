@@ -53,6 +53,11 @@ def bad(msg):  print('  FAIL ' + msg); problems.append(msg)
 
 
 def api(path, timeout=60, method='GET'):
+    # After [1] has established the API is not answering, stop making every
+    # later section wait out its own timeout — that turned a slow box into a
+    # five-minute run that still said nothing useful.
+    if not globals().get('API_OK', True):
+        raise RuntimeError('n8n API was unreachable in [1]; not retried')
     """n8n's public API does have POST /executions/{id}/stop, contrary to what
     this file used to advise. The old note said to use the n8n UI because DELETE
     on a running execution returns 400 — true, but DELETE was the wrong verb.
@@ -115,9 +120,34 @@ try:
         bad(f'API answered in {dt:.2f}s on the best of {len(latency)} attempts '
             f'— over {API_SLOW_SECONDS}s and not a passing spike')
 except Exception as e:
-    bad(f'API unreachable: {str(e)[:120]}')
-    print('\nCannot continue without the API.')
-    sys.exit(1)
+    # Do not give up here. At 05:24 on 25 Aug this exited on the first timeout,
+    # so sections [2]-[7] never ran and the one thing it reported was the one
+    # thing it could not explain. A minute of hand-checking established what
+    # this should have: /webhook/privacy answered 200 in 16s while the API timed
+    # out — n8n was alive and executing, the box was merely crawling — and ten
+    # minutes later the same API call took 1.4s with nothing running at all.
+    #
+    # So: prove whether n8n is alive by a route that does not touch the API, say
+    # which of the two is true, and let the remaining sections run and fail on
+    # their own terms rather than being skipped by an early exit.
+    bad(f'API did not answer in time: {str(e)[:100]}')
+    API_OK = False
+    try:
+        t0 = time.time()
+        urllib.request.urlopen(N8N + '/webhook/privacy', timeout=60).read()
+        print(f'         but /webhook/privacy answered in {time.time()-t0:.1f}s — n8n IS '
+              'running and executing workflows. The box is slow, not down.')
+        print('         nexus-vm is an e2-micro: a SHARED-CORE burstable instance. Once '
+              'its CPU credits are spent it is throttled to a fraction of a core until '
+              'they rebuild, which looks exactly like this and recovers on its own.')
+        print('         Check CPU utilisation and CPU credit balance on the instance in '
+              'GCP before concluding anything is wedged.')
+    except Exception:
+        print('         and /webhook/privacy did not answer either — n8n itself is down, '
+              'or the box is unreachable. Check the VM is running in GCP.')
+    print('         Continuing; the sections that need the API will say so.')
+else:
+    API_OK = True
 
 # --stop actually cancels what [2] finds. Off by default: cancelling somebody
 # else's in-flight run is not a thing a health CHECK should do unasked.
@@ -255,7 +285,7 @@ SCHEDULED = (
     ('Inventory Ageing Recompute',        26),   # 00:15 Dubai, daily
     ('NEXUS Retention Purge',             26),   # 03:00 Dubai, daily
     ('Customer 360 - Data Aggregation',   26),   # nightly
-    ('Competitor Price Scraping',         26),   # daily
+    ('Competitor Price Scraping',         26),   # cron 0 5 * * * in Asia/Dubai = 01:00 UTC
     ('Phase 6 - 12-Hour Silence Detector',  2),  # hourly
 )
 try:
