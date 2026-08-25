@@ -178,6 +178,14 @@ try:
         for eid, mins, wf in stuck[:6]:
             print(f'         id {eid}  {mins/60:.1f}h  {wf}')
         print('         FIX: run this script with --stop to cancel them.')
+        # Corrected 25 Aug. I had been asserting the opposite in every handoff.
+        print('         NOTE: executionTimeout does NOT prevent these. Proven today:')
+        print('           4217 and 4219 were duplicate WAHA deliveries one second apart.')
+        print('           4219 ran and errored at 235s — inside the 300s ceiling, so the')
+        print('           ceiling works. 4217 was never adopted by the process that owns')
+        print('           timeouts, and sat "running" for 67 minutes until cancelled.')
+        print('         executionTimeout bounds a SLOW execution. It cannot reap an')
+        print('         ORPHANED one: nothing is counting down for a row nobody owns.')
         if STOP:
             for eid, _m, _w in stuck:
                 try:
