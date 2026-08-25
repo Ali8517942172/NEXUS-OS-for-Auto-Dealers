@@ -133,10 +133,18 @@ except Exception as e:
     bad(f'API did not answer in time: {str(e)[:100]}')
     API_OK = False
     try:
+        # NOTE: this costs one n8n execution. /webhook/privacy is a workflow, not
+        # a static file, so probing it is real work on a box that is short of
+        # exactly that. It runs only here, in the branch where the API has
+        # already failed and the answer is worth the cost.
         t0 = time.time()
         urllib.request.urlopen(N8N + '/webhook/privacy', timeout=60).read()
         print(f'         but /webhook/privacy answered in {time.time()-t0:.1f}s — n8n IS '
               'running and executing workflows. The box is slow, not down.')
+        print('         Measured 25 Aug 09:40 UTC while this was happening: TCP connect '
+              '0.0005s (the network is fine), TLS handshake 1.67s, first byte 3.7s. A TLS '
+              'handshake is pure CPU, so a slow one on an idle box means the CPU is not '
+              'there — not the network, not n8n, not the database.')
         print('         nexus-vm is an e2-micro: a SHARED-CORE burstable instance. Once '
               'its CPU credits are spent it is throttled to a fraction of a core until '
               'they rebuild, which looks exactly like this and recovers on its own.')
