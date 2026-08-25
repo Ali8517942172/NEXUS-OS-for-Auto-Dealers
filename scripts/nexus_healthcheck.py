@@ -88,13 +88,32 @@ try:
 except Exception as e:
     bad(f'healthz unreachable: {str(e)[:120]}')
 
+# One sample is not a measurement on a 1-vCPU box. At 01:18 on 25 Aug this
+# reported 13.11s and blamed stuck executions; there were zero, and the very
+# next samples were 0.33-0.77s. What had actually happened was the Competitor
+# scraper running eighteen minutes earlier — an Apify call and an LLM call,
+# which peg the single core. A checker that cries wolf gets skimmed, and the
+# whole point of this file is to be believed the day it is right.
+#
+# So: sample up to three times, spaced, and report the BEST. A box that is
+# genuinely wedged is slow on all three; a box that is merely busy is not.
+latency = []
 try:
-    t0 = time.time()
-    api('/workflows?limit=1', timeout=90)
-    dt = time.time() - t0
-    (ok if dt < API_SLOW_SECONDS else bad)(
-        f'API answered in {dt:.2f}s' + ('' if dt < API_SLOW_SECONDS
-                                        else f' — over {API_SLOW_SECONDS}s, usually stuck executions'))
+    for i in range(3):
+        t0 = time.time()
+        api('/workflows?limit=1', timeout=90)
+        latency.append(time.time() - t0)
+        if latency[-1] < API_SLOW_SECONDS:
+            break                      # fast once is fast enough; stop poking it
+        time.sleep(3)
+    dt = min(latency)
+    if dt < API_SLOW_SECONDS:
+        ok(f'API answered in {dt:.2f}s'
+           + (f' (best of {len(latency)}; slowest {max(latency):.2f}s — something '
+              f'was running)' if len(latency) > 1 else ''))
+    else:
+        bad(f'API answered in {dt:.2f}s on the best of {len(latency)} attempts '
+            f'— over {API_SLOW_SECONDS}s and not a passing spike')
 except Exception as e:
     bad(f'API unreachable: {str(e)[:120]}')
     print('\nCannot continue without the API.')
@@ -107,7 +126,11 @@ STOP = '--stop' in sys.argv
 # 2. stuck executions — the check the old watchdog did not have ---------------
 print('\n[2] stuck and queued executions')
 try:
-    running = api('/executions?status=running&limit=100')['data']
+    # 90s, not the default. At 01:18 this read timed out on a box that was
+    # merely busy, and reported "could not read running executions" — a failure
+    # caused by the slowness it exists to explain. When the answer matters most
+    # is exactly when the box is slowest, so it has to wait longer than usual.
+    running = api('/executions?status=running&limit=100', timeout=90)['data']
     stuck = [(e['id'], age_minutes(e.get('startedAt')), e.get('workflowId'))
              for e in running]
     stuck = [s for s in stuck if s[1] is not None and s[1] > STUCK_MINUTES]
@@ -127,7 +150,12 @@ try:
             print('         Re-run to confirm latency recovered — the API was '
                   '7.8s with two zombies and 1.2s without them.')
     else:
-        ok(f'{len(running)} running, none over {STUCK_MINUTES} min')
+        note = f'{len(running)} running, none over {STUCK_MINUTES} min'
+        if latency and min(latency) >= API_SLOW_SECONDS:
+            note += (' — so the slow API above is NOT zombies. Look at what else '
+                     'was running: the scraper, the drip and the BDC all call an '
+                     'LLM, and this box has one core.')
+        ok(note)
 except Exception as e:
     bad('could not read running executions: ' + str(e)[:100])
 
