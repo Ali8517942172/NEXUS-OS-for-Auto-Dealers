@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-08-24T16:58:37.376Z",
+  "createdAt": "2026-07-23T19:16:29.497Z",
+  "id": "unMMpeL9uuPO79pp",
   "name": "Finance Calc: Auto Loan Equity & Credit Score",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -308,12 +314,395 @@
     "timezone": "Asia/Dubai",
     "saveDataErrorExecution": "all",
     "binaryMode": "separate",
-    "errorWorkflow": "iYJkh1kztWxZXDbT"
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "executionTimeout": 300
   },
-  "_exported_from": {
-    "id": "unMMpeL9uuPO79pp",
-    "active": true,
-    "updatedAt": "2026-08-14T04:21:45.865Z",
-    "published": true
+  "staticData": null,
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+  "activeVersionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+  "versionCounter": 17,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "shared": [
+    {
+      "updatedAt": "2026-07-23T19:16:29.497Z",
+      "createdAt": "2026-07-23T19:16:29.497Z",
+      "role": "workflow:owner",
+      "workflowId": "unMMpeL9uuPO79pp",
+      "projectId": "uRMuMPNZkIs0l37n",
+      "project": {
+        "updatedAt": "2026-07-23T18:54:00.785Z",
+        "createdAt": "2026-07-23T18:51:58.519Z",
+        "id": "uRMuMPNZkIs0l37n",
+        "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-13T13:30:13.448Z",
+    "createdAt": "2026-08-13T13:30:13.448Z",
+    "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+    "workflowId": "unMMpeL9uuPO79pp",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "finance-calc",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "1",
+        "name": "Webhook Trigger",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [
+          256,
+          304
+        ],
+        "webhookId": "0dc7a888-7e8d-4166-9dfb-024e27f2a3ea"
+      },
+      {
+        "parameters": {
+          "jsCode": "// -- Entry-path resolution ------------------------------------------------\n// Webhook Trigger -> Verify JWT -> here   (public HTTP; auth enforced)\n// Called as Tool  -> here                 (sub-workflow; already trusted)\n//\n// $('Webhook Trigger') THROWS when that node did not run in this execution --\n// it does NOT return undefined, so `?.` and `||` cannot rescue it, and an\n// Expression field cannot hold try/catch. That is why this resolution lives\n// in a Code node. Removing this try/catch breaks the Called-as-Tool path.\nlet webhookJson = null;\ntry {\n  webhookJson = $('Webhook Trigger').first().json;\n} catch (e) {\n  // tool / sub-workflow path -- Webhook Trigger never executed.\n}\n\nlet src;\nif (webhookJson) {\n  // 'Verify JWT' runs with onError = continueRegularOutput, so a rejected\n  // token arrives here as data instead of failing the execution. Supabase\n  // GET /auth/v1/user returns the user object on success; no .id = rejected.\n  const auth = $input.first().json || {};\n  if (!auth.id) {\n    return [{ json: {\n      status: 'error',\n      errors: ['Unauthorized. A valid Supabase session token is required in the Authorization header.'],\n      calculatedAt: new Date().toISOString()\n    } }];\n  }\n  src = webhookJson.body || webhookJson;\n} else {\n  src = $input.first().json;\n}\n\n// -- Inputs ---------------------------------------------------------------\n// Below this figure the input is not a vehicle valuation, it is junk.\nconst MIN_VEHICLE_VALUE_AED = 5000;\n\nconst vehicleValue = parseFloat(src.vehicleValue);\nconst loanPayoffAmount = parseFloat(src.loanPayoffAmount);\n// Credit score is entered manually by the rep from the customer's AECB report --\n// real-time bureau lookups require a licensed financial-institution agreement in\n// the UAE, so this stays a manual field rather than an automated external call.\nconst creditScore = parseInt(src.creditScore, 10);\n\n// Attribution for the quote record. A finance figure with a lender\n// disclaimer must be traceable to a customer and a rep.\nconst leadEmail = (src.lead_email || src.email || '').toString().trim() || null;\nconst leadName  = src.lead_name  || src.name  || null;\nconst quotedBy  = src.quoted_by  || src.rep   || null;\n\nconst errors = [];\nif (!Number.isFinite(vehicleValue) || vehicleValue < MIN_VEHICLE_VALUE_AED) {\n  errors.push('vehicleValue must be a realistic vehicle valuation of at least AED ' + MIN_VEHICLE_VALUE_AED + '.');\n}\nif (!Number.isFinite(loanPayoffAmount) || loanPayoffAmount < 0) {\n  errors.push('loanPayoffAmount must be zero or a positive number (AED).');\n}\nif (!Number.isFinite(creditScore) || creditScore < 300 || creditScore > 900) {\n  errors.push('A valid AECB credit score (300-900) is required. Ask the customer for their latest AECB report.');\n}\n// A quote with no customer attached cannot be followed up or audited, so this\n// is required rather than optional -- an unattached row is as good as no row.\nif (!leadEmail) {\n  errors.push('lead_email is required so the quote can be attached to a customer.');\n} else if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(leadEmail)) {\n  errors.push('lead_email is not a valid email address.');\n}\n\nif (errors.length) {\n  return [{ json: { status: 'error', errors: errors, lead_email: leadEmail,\n    lead_name: leadName, calculatedAt: new Date().toISOString() } }];\n}\n\nconst equity = vehicleValue - loanPayoffAmount;\nconst ltv = vehicleValue > 0 ? Math.round((loanPayoffAmount / vehicleValue) * 1000) / 10 : null;\n\nlet financeTier = 'Subprime';\nlet indicativeApr = 12.5;\nif (creditScore >= 720)      { financeTier = 'Prime Plus'; indicativeApr = 3.99; }\nelse if (creditScore >= 680) { financeTier = 'Prime';      indicativeApr = 5.49; }\nelse if (creditScore >= 620) { financeTier = 'Near Prime'; indicativeApr = 7.99; }\n\nreturn [{\n  json: {\n    status: 'success',\n    equity_aed: Math.round(equity),\n    equity_status: equity >= 0 ? 'Positive' : 'Negative',\n    loan_to_value_pct: ltv,\n    credit_score: creditScore,\n    finance_tier: financeTier,\n    indicative_apr_pct: indicativeApr,\n    vehicle_value_aed: Math.round(vehicleValue),\n    loan_payoff_aed: Math.round(loanPayoffAmount),\n    disclaimer: 'Indicative only. Final APR and approval are set by the lender, not by NEXUS OS.',\n    calculated_at: new Date().toISOString(),\n    lead_email: leadEmail,\n    lead_name: leadName,\n    quoted_by: quotedBy\n  }\n}];"
+        },
+        "id": "3",
+        "name": "Calculate Equity & Tier",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          656,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "a3ebcf0c-a9fe-4d54-a16d-b1c73208fedd",
+        "name": "Called as Tool",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          256,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "fc-ok",
+                "leftValue": "={{ $json.status }}",
+                "rightValue": "success",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "fc-if-0001",
+        "name": "Quote Valid?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          720,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/finance_quotes",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ lead_email: $json.lead_email, lead_name: $json.lead_name, quoted_by: $json.quoted_by, vehicle_value_aed: $json.vehicle_value_aed, loan_payoff_aed: $json.loan_payoff_aed, credit_score: $json.credit_score, equity_aed: $json.equity_aed, equity_status: $json.equity_status, loan_to_value_pct: $json.loan_to_value_pct, finance_tier: $json.finance_tier, indicative_apr_pct: $json.indicative_apr_pct, disclaimer: $json.disclaimer, source: 'finance-calc-webhook' }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "fc-log-quote-0001",
+        "name": "Log Quote",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          912,
+          304
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1500,
+        "alwaysOutputData": true,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Re-emit the calculation. 'Log Quote' returns an empty body\n// (Prefer: return=minimal), so without this the webhook would answer with\n// nothing. Also keeps the sub-workflow caller contract intact.\nreturn $('Calculate Equity & Tier').all();"
+        },
+        "id": "fc-return-0001",
+        "name": "Return Quote",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1424,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ workflow: 'Finance Calc', status: ($('Calculate Equity & Tier').first().json.status === 'success' ? 'SUCCESS' : 'REJECTED'), lead_name: ($('Calculate Equity & Tier').first().json.lead_name || null), lead_email: ($('Calculate Equity & Tier').first().json.lead_email || null), summary: ($('Calculate Equity & Tier').first().json.status === 'success' ? 'Quote issued' : ('Rejected: ' + ($('Calculate Equity & Tier').first().json.errors || []).join(' '))), logged_at: $now.toISO() }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "audit-finance_calc",
+        "name": "Audit Log",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1152,
+          304
+        ],
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 1500,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "fc-verify-jwt-0001",
+        "name": "Verify JWT",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          456,
+          304
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+              },
+              {
+                "name": "Authorization",
+                "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 10000
+          }
+        },
+        "notes": "Guard for the public webhook path only. Returns the Supabase user object on a valid token; anything else (401/missing header) comes through as data because onError = continueRegularOutput, and the next Code node turns it into {status:'error'}.",
+        "onError": "continueRegularOutput",
+        "retryOnFail": false,
+        "alwaysOutputData": true
+      }
+    ],
+    "connections": {
+      "Called as Tool": {
+        "main": [
+          [
+            {
+              "node": "Calculate Equity & Tier",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Calculate Equity & Tier": {
+        "main": [
+          [
+            {
+              "node": "Quote Valid?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Quote Valid?": {
+        "main": [
+          [
+            {
+              "node": "Log Quote",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Audit Log",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook Trigger": {
+        "main": [
+          [
+            {
+              "node": "Verify JWT",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Verify JWT": {
+        "main": [
+          [
+            {
+              "node": "Calculate Equity & Tier",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Quote": {
+        "main": [
+          [
+            {
+              "node": "Audit Log",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audit Log": {
+        "main": [
+          [
+            {
+              "node": "Return Quote",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+    "name": "Make Return Quote the last node so webhook actually answers",
+    "description": "responseMode lastNode aakhri EXECUTED node ka output lautata hai. Chain Return Quote -> Audit Log thi, aur Audit Log Prefer: return=minimal ki wajah se khaali {} deta hai — is liye webhook har success/error par {} lauta raha tha aur frontend ka r.errors / r.equity_aed branch kabhi fire nahi ho sakta tha. Ab chain ... -> Audit Log -> Return Quote hai. Audit Log ab asli status (SUCCESS/REJECTED) aur reject ki wajah bhi likhta hai, hardcoded SUCCESS nahi — warna unauthenticated hits audit log me SUCCESS ban kar baithtin.",
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-13T13:30:22.627Z",
+        "id": 159,
+        "workflowId": "unMMpeL9uuPO79pp",
+        "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+        "event": "activated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      },
+      {
+        "createdAt": "2026-08-14T04:21:46.130Z",
+        "id": 191,
+        "workflowId": "unMMpeL9uuPO79pp",
+        "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+        "event": "deactivated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      },
+      {
+        "createdAt": "2026-08-14T04:21:46.265Z",
+        "id": 192,
+        "workflowId": "unMMpeL9uuPO79pp",
+        "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+        "event": "activated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      },
+      {
+        "createdAt": "2026-08-24T16:58:37.448Z",
+        "id": 466,
+        "workflowId": "unMMpeL9uuPO79pp",
+        "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+        "event": "deactivated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      },
+      {
+        "createdAt": "2026-08-24T16:58:37.477Z",
+        "id": 467,
+        "workflowId": "unMMpeL9uuPO79pp",
+        "versionId": "1a54a3eb-58c5-42e3-8025-8dc027ea207e",
+        "event": "activated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      }
+    ]
   }
 }

@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-08-26T05:09:49.375Z",
+  "createdAt": "2026-07-23T19:16:39.744Z",
+  "id": "BiyHk9ZXxJUVGbf6",
   "name": "WhatsApp BDC AI Agent",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -26,7 +32,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        780,
+        784,
         304
       ]
     },
@@ -41,8 +47,8 @@
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.2,
       "position": [
-        912,
-        576
+        1024,
+        720
       ]
     },
     {
@@ -168,8 +174,8 @@
       "type": "n8n-nodes-base.supabaseTool",
       "typeVersion": 1,
       "position": [
-        1040,
-        656
+        1152,
+        640
       ],
       "credentials": {
         "supabaseApi": {
@@ -211,8 +217,8 @@
       "type": "n8n-nodes-base.supabaseTool",
       "typeVersion": 1,
       "position": [
-        1200,
-        640
+        1312,
+        624
       ],
       "credentials": {
         "supabaseApi": {
@@ -244,8 +250,8 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1360,
-        640
+        1504,
+        656
       ]
     },
     {
@@ -325,7 +331,7 @@
       "typeVersion": 2,
       "position": [
         704,
-        304
+        -80
       ]
     },
     {
@@ -373,7 +379,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'openai/gpt-oss-20b:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n// 'Log Incoming Message' is a Supabase insert that returns an EMPTY body, so\n// $input here carries no message and the Agent failed with \"No prompt specified\"\n// on every tier -- which looked like a model outage but never was. Pull the\n// conversation context straight from 'Resolve Lead Identity' and re-attach it on\n// every retry, so the prompt survives the ladder loop.\nlet ctx = {};\ntry { ctx = $('Resolve Lead Identity').first().json || {}; } catch (e) { ctx = {}; }\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nif (!ctx.message) {\n  throw new Error('No message found on Resolve Lead Identity output - cannot prompt the agent.');\n}\nreturn [{ json: { ...ctx, ...prev, message: ctx.message, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
+        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n// 'Log Incoming Message' is a Supabase insert that returns an EMPTY body, so\n// $input here carries no message and the Agent failed with \"No prompt specified\"\n// on every tier -- which looked like a model outage but never was. Pull the\n// conversation context straight from 'Resolve Lead Identity' and re-attach it on\n// every retry, so the prompt survives the ladder loop.\nlet ctx = {};\ntry { ctx = $('Resolve Lead Identity').first().json || {}; } catch (e) { ctx = {}; }\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nif (!ctx.message) {\n  throw new Error('No message found on Resolve Lead Identity output - cannot prompt the agent.');\n}\nreturn [{ json: { ...ctx, ...prev, message: ctx.message, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
       },
       "id": "ladder-BiyHk9",
       "name": "Model Ladder",
@@ -405,7 +411,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { let sendErr = null; try { const s = $('Send Reply via WAHA HTTP API').first().json; if (s && s.error) sendErr = s.error; } catch (e) {} return JSON.stringify({ workflow: 'WhatsApp BDC Agent', status: sendErr ? 'FAILED' : 'SUCCESS', summary: sendErr ? ('Reply was generated but WAHA did not deliver it: ' + JSON.stringify(sendErr).substring(0, 300)) : 'Completed', logged_at: $now.toISO() }); })() }}",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'WhatsApp BDC Agent', status: $json.delivery.status, summary: ($json.delivery.note + ($json.delivery.dropped.length ? ' | dropped: ' + $json.delivery.dropped.join('; ') : '')).substring(0, 900), logged_at: $now.toISO() }) }}",
         "options": {
           "timeout": 15000
         }
@@ -430,29 +436,19 @@
       "onError": "continueRegularOutput"
     },
     {
+      "parameters": {
+        "jsCode": "// Quality gate before anything reaches a real customer on WhatsApp.\n// Execution 1414 sent the literal text \"The user\" -- a leaked fragment of the\n// model's internal reasoning. Some free OpenRouter models emit reasoning tokens,\n// and the agent passed them straight through to the customer.\nconst prev = $input.first().json;\nlet text = String(prev.output ?? '').trim();\n\n// Drop explicit reasoning blocks some models wrap their thinking in.\ntext = text.replace(/<think>[\\s\\S]*?<\\/think>/gi, '')\n           .replace(/<reasoning>[\\s\\S]*?<\\/reasoning>/gi, '')\n           .trim();\n\n// Reasoning leaks talk *about* the user in the third person, or are stubs.\n\n// WhatsApp renders none of markdown. Convert what the model still slips through.\ntext = text.replace(/^\\s*\\|.*\\|\\s*$/gm, '')        // table rows\n           .replace(/^\\s*[-: |]{6,}\\s*$/gm, '')       // table separators\n           .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')        // **bold** -> *bold*\n           .replace(/^#{1,6}\\s*/gm, '')                // headings\n           .replace(/\\n{3,}/g, '\\n\\n')\n           .trim();\n\nconst LEAK = /^(the user|okay,? (the|so)|we need to|i should|let'?s (see|think)|analysis|reasoning)\\b/i;\nconst looksLikeLeak = LEAK.test(text);\nconst tooShort = text.length < 12;\n\nconst FALLBACK = \"Sorry, I didn't catch that properly. Could you tell me a bit more about what you're looking for?\";\nconst safe = (looksLikeLeak || tooShort) ? FALLBACK : text;\n\nreturn [{ json: { ...prev, output: safe, guard_blocked: safe !== text, raw_output: text } }];"
+      },
       "id": "guardreply-0001-4b2c-9d3e-bdc-agent01",
       "name": "Guard Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1252,
-        232
-      ],
-      "parameters": {
-        "jsCode": "// Quality gate before anything reaches a real customer on WhatsApp.\n// Execution 1414 sent the literal text \"The user\" -- a leaked fragment of the\n// model's internal reasoning. Some free OpenRouter models emit reasoning tokens,\n// and the agent passed them straight through to the customer.\nconst prev = $input.first().json;\nlet text = String(prev.output ?? '').trim();\n\n// Drop explicit reasoning blocks some models wrap their thinking in.\ntext = text.replace(/<think>[\\s\\S]*?<\\/think>/gi, '')\n           .replace(/<reasoning>[\\s\\S]*?<\\/reasoning>/gi, '')\n           .trim();\n\n// Reasoning leaks talk *about* the user in the third person, or are stubs.\n\n// WhatsApp renders none of markdown. Convert what the model still slips through.\ntext = text.replace(/^\\s*\\|.*\\|\\s*$/gm, '')        // table rows\n           .replace(/^\\s*[-: |]{6,}\\s*$/gm, '')       // table separators\n           .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')        // **bold** -> *bold*\n           .replace(/^#{1,6}\\s*/gm, '')                // headings\n           .replace(/\\n{3,}/g, '\\n\\n')\n           .trim();\n\nconst LEAK = /^(the user|okay,? (the|so)|we need to|i should|let'?s (see|think)|analysis|reasoning)\\b/i;\nconst looksLikeLeak = LEAK.test(text);\nconst tooShort = text.length < 12;\n\nconst FALLBACK = \"Sorry, I didn't catch that properly. Could you tell me a bit more about what you're looking for?\";\nconst safe = (looksLikeLeak || tooShort) ? FALLBACK : text;\n\nreturn [{ json: { ...prev, output: safe, guard_blocked: safe !== text, raw_output: text } }];"
-      }
+        1264,
+        240
+      ]
     },
     {
-      "id": "recentoutreach-0001-4c3d-8e5f-bdc01",
-      "name": "Recent Outreach Check",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        854,
-        454
-      ],
-      "alwaysOutputData": true,
-      "onError": "stopWorkflow",
       "parameters": {
         "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
         "authentication": "predefinedCredentialType",
@@ -486,6 +482,18 @@
           "timeout": 15000
         }
       },
+      "id": "recentoutreach-0001-4c3d-8e5f-bdc01",
+      "name": "Recent Outreach Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        816
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "credentials": {
         "supabaseApi": {
           "id": "dv4OeARarErZLHCj",
@@ -494,31 +502,24 @@
       }
     },
     {
+      "parameters": {
+        "jsCode": "// Stop a second INITIAL_OUTREACH to a lead we already messaged in the last 24h.\n// On 16 Aug the router was posted twice and the customer got two near-identical\n// welcome messages 4 minutes apart. Inbound replies are never blocked - only\n// proactive outreach.\nconst ctx = $('Resolve Lead Identity').first().json;\nconst isOutreach = ctx.direction === 'outbound' ||\n                   String(ctx.message || '').startsWith('INITIAL_OUTREACH:');\n\nif (!isOutreach) return [{ json: ctx }];\n\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\nif (rows.length > 0) {\n  // Already contacted recently -> return nothing, which halts this branch.\n  return [];\n}\nreturn [{ json: ctx }];"
+      },
       "id": "skipdupoutreach-0001-4c3d-8e5f-bdc02",
       "name": "Skip Duplicate Outreach",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         1024,
-        454
-      ],
-      "parameters": {
-        "jsCode": "// Stop a second INITIAL_OUTREACH to a lead we already messaged in the last 24h.\n// On 16 Aug the router was posted twice and the customer got two near-identical\n// welcome messages 4 minutes apart. Inbound replies are never blocked - only\n// proactive outreach.\nconst ctx = $('Resolve Lead Identity').first().json;\nconst isOutreach = ctx.direction === 'outbound' ||\n                   String(ctx.message || '').startsWith('INITIAL_OUTREACH:');\n\nif (!isOutreach) return [{ json: ctx }];\n\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\nif (rows.length > 0) {\n  // Already contacted recently -> return nothing, which halts this branch.\n  return [];\n}\nreturn [{ json: ctx }];"
-      }
+        464
+      ]
     },
     {
-      "id": "isdocument-0001-4d5e-9f60-bdc03",
-      "name": "Is Document?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        854,
-        144
-      ],
       "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
+            "leftValue": "",
             "typeValidation": "loose",
             "version": 2
           },
@@ -532,22 +533,32 @@
                 "operation": "true",
                 "singleValue": true
               }
+            },
+            {
+              "id": "c098a143-59ad-4479-99d3-1ee1bf838735",
+              "leftValue": "={{ $json.matched_lead }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
         },
         "options": {}
-      }
+      },
+      "id": "isdocument-0001-4d5e-9f60-bdc03",
+      "name": "Is Document?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        864,
+        144
+      ]
     },
     {
-      "id": "dlkycimage-0001-4d5e-9f60-bdc04",
-      "name": "Download KYC Image",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1024,
-        74
-      ],
       "parameters": {
         "url": "={{ $json.document_url }}",
         "sendHeaders": true,
@@ -560,25 +571,24 @@
           ]
         },
         "options": {
-          "timeout": 30000,
           "response": {
             "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "data"
+              "responseFormat": "file"
             }
-          }
+          },
+          "timeout": 30000
         }
-      }
+      },
+      "id": "dlkycimage-0001-4d5e-9f60-bdc04",
+      "name": "Download KYC Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -64
+      ]
     },
     {
-      "id": "sendtokyc-0001-4d5e-9f60-bdc05",
-      "name": "Send to KYC Auditor",
-      "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1.2,
-      "position": [
-        1194,
-        74
-      ],
       "parameters": {
         "workflowId": {
           "__rl": true,
@@ -598,20 +608,28 @@
         "options": {
           "waitForSubWorkflow": false
         }
-      }
+      },
+      "id": "sendtokyc-0001-4d5e-9f60-bdc05",
+      "name": "Send to KYC Auditor",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1808,
+        -48
+      ]
     },
     {
+      "parameters": {
+        "jsCode": "// This workflow runs with binaryMode \"separate\", so n8n keeps binary payloads\n// on disk and binary.data.data is a REFERENCE, not base64. Reading it directly\n// sent garbage to the vision model (\"Bad request - Provider returned error\").\n// getBinaryDataBuffer() is the only way that works in both binary modes.\nconst ctx = $('Resolve Lead Identity').first().json;\nconst bin = ($input.first().binary || {}).data;\nif (!bin) {\n  throw new Error('KYC image download produced no binary property - check the WAHA file URL and API key.');\n}\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst b64 = buf.toString('base64');\nif (!b64 || b64.length < 100) {\n  throw new Error('KYC image decoded to ' + b64.length + ' base64 chars - too small to be a document.');\n}\nreturn [{ json: {\n  document_base64: b64,\n  mime_type: bin.mimeType || 'image/jpeg',\n  size_bytes: buf.length,\n  chat_id: ctx.sender,\n  lead_email: ctx.lead_email,\n  lead_name: ctx.lead_name\n} }];"
+      },
       "id": "imgtob64-0001-4d5e-9f60-bdc06",
       "name": "Image To Base64",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1194,
-        74
-      ],
-      "parameters": {
-        "jsCode": "// This workflow runs with binaryMode \"separate\", so n8n keeps binary payloads\n// on disk and binary.data.data is a REFERENCE, not base64. Reading it directly\n// sent garbage to the vision model (\"Bad request - Provider returned error\").\n// getBinaryDataBuffer() is the only way that works in both binary modes.\nconst ctx = $('Resolve Lead Identity').first().json;\nconst bin = ($input.first().binary || {}).data;\nif (!bin) {\n  throw new Error('KYC image download produced no binary property - check the WAHA file URL and API key.');\n}\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst b64 = buf.toString('base64');\nif (!b64 || b64.length < 100) {\n  throw new Error('KYC image decoded to ' + b64.length + ' base64 chars - too small to be a document.');\n}\nreturn [{ json: {\n  document_base64: b64,\n  mime_type: bin.mimeType || 'image/jpeg',\n  size_bytes: buf.length,\n  chat_id: ctx.sender,\n  lead_email: ctx.lead_email,\n  lead_name: ctx.lead_name\n} }];"
-      }
+        1312,
+        -48
+      ]
     },
     {
       "parameters": {
@@ -642,33 +660,22 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        460,
+        464,
         304
       ],
       "name": "Claim Message Id",
       "id": "fe363248-c216-4a23-b032-431b571de018",
+      "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
           "id": "dv4OeARarErZLHCj",
           "name": "Supabase account"
         }
       },
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "onError": "continueRegularOutput"
     },
     {
-      "id": "b363bb7c-3a19-4ed3-8776-eeb2568c548d",
-      "name": "Prefilter",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        140,
-        304
-      ],
       "parameters": {
-        "mode": "manual",
-        "includeOtherFields": false,
-        "options": {},
         "assignments": {
           "assignments": [
             {
@@ -696,26 +703,26 @@
               "value": "={{ $json.body?.payload?.fromMe !== true && (!$json.body?.event || $json.body.event === 'message') && !!($json.body?.payload?.from) && !String($json.body.payload.from).endsWith('@g.us') && !String($json.body.payload.from).startsWith('status@') && !String($json.body.payload.from).endsWith('@newsletter') }}"
             }
           ]
-        }
-      }
+        },
+        "options": {}
+      },
+      "id": "b363bb7c-3a19-4ed3-8776-eeb2568c548d",
+      "name": "Prefilter",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        144,
+        304
+      ]
     },
     {
-      "id": "288b2fe7-1bd6-4702-877c-72c4dd8d82f1",
-      "name": "Is Real Inbound?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        300,
-        304
-      ],
       "parameters": {
-        "options": {},
         "conditions": {
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "version": 2,
-            "typeValidation": "loose"
+            "typeValidation": "loose",
+            "version": 2
           },
           "combinator": "and",
           "conditions": [
@@ -730,26 +737,26 @@
               "rightValue": ""
             }
           ]
-        }
-      }
-    },
-    {
-      "id": "9f53c4e5-b7b7-4867-bd58-be7753247be5",
-      "name": "Is New Message?",
+        },
+        "options": {}
+      },
+      "id": "288b2fe7-1bd6-4702-877c-72c4dd8d82f1",
+      "name": "Is Real Inbound?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        620,
+        304,
         304
-      ],
+      ]
+    },
+    {
       "parameters": {
-        "options": {},
         "conditions": {
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "version": 2,
-            "typeValidation": "loose"
+            "typeValidation": "loose",
+            "version": 2
           },
           "combinator": "or",
           "conditions": [
@@ -774,8 +781,239 @@
               "rightValue": ""
             }
           ]
+        },
+        "options": {}
+      },
+      "id": "9f53c4e5-b7b7-4867-bd58-be7753247be5",
+      "name": "Is New Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        624,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/whatsapp_contacts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.fromEntries(Object.entries({ chat_id: $json.sender, phone: $json.sender_phone || null, push_name: $json.push_name || null, lead_email: $json.lead_email || null, last_seen: $now.toUTC().toISO() }).filter(([k, v]) => k === 'chat_id' || k === 'last_seen' || (v !== null && v !== '')))) }}",
+        "options": {
+          "timeout": 10000
         }
-      }
+      },
+      "id": "d0ad4c3e-d2cd-44d8-a225-23c92a73a54c",
+      "name": "Upsert WhatsApp Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        416,
+        784
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d314a09e-abaf-40fd-bf61-1b3a321427b8",
+              "name": "bot_may_reply",
+              "type": "boolean",
+              "value": "={{ (() => { const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return true; if (ctx.direction === 'outbound') return true; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const t = String(ctx.message || '').toLowerCase(); return kw.some(k => t.includes(k)); })() }}"
+            },
+            {
+              "id": "90ce5226-93f8-4e46-af0e-aff1fc1fd4b0",
+              "name": "reply_reason",
+              "type": "string",
+              "value": "={{ (() => { const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return 'known lead'; if (ctx.direction === 'outbound') return 'outreach initiated by the router'; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const t = String(ctx.message || '').toLowerCase(); const hit = kw.find(k => t.includes(k)); return hit ? ('dealership keyword: ' + hit) : 'not a lead and no dealership keyword — staying silent'; })() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a035d4fa-6b45-4af6-bba0-b80b86a49ceb",
+      "name": "Reply Eligibility",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1664,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c6a55923-811f-4d75-a44d-3f39e8474fc0",
+              "leftValue": "={{ $json.bot_may_reply }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "64534e69-99db-42b4-8e40-f8ae22702250",
+      "name": "Should The Bot Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1584,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Send Reply via WAHA HTTP API', what: 'WhatsApp reply to the customer', critical: true },\n  { node: 'Log Conversation',             what: 'communication_logs row for the reply', critical: false },\n  { node: 'Claim Message Id',             what: 'idempotency claim in processed_messages', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' — ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
+      },
+      "id": "dlvrpt-bdc-4f21-9a07-c3b8e1d20a55",
+      "name": "Delivery Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "bdc-newlead-c1",
+              "leftValue": "={{ $('Resolve Lead Identity').first().json.direction }}",
+              "rightValue": "inbound",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "bdc-newlead-c2",
+              "leftValue": "={{ $('Resolve Lead Identity').first().json.matched_lead }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "bdc-newlead-c3",
+              "leftValue": "={{ $('Resolve Lead Identity').first().json.sender_phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "bdc-if-new-lead-001",
+      "name": "New Lead Worth Scoring?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2208,
+        256
+      ],
+      "notes": "Sits downstream of the reply, so it only ever sees people the allowlist already approved -- a stranger the bot stayed silent on never reaches here. TRUE means: a real inbound message, from someone with a resolvable phone number, who is NOT yet a row in `leads`. That is the definition of a new lead now that Make.com and Zapier are gone."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Make.com used to do this: take a raw inbound enquiry and hand the Master\n// Router a lead-shaped object. Make.com is empty now -- every workflow was\n// moved into n8n -- so WhatsApp is the live inbound channel and this is where\n// the shaping happens.\n//\n// `Validate & Enrich Input` on the Router accepts `.body`, `.lead`, or a bare\n// object, and needs an email OR a phone. We have the phone.\nconst ctx = $('Resolve Lead Identity').first().json;\n\nconst digits = String(ctx.sender_phone || '').replace(/[^0-9]/g, '');\nif (!digits) return [];   // nothing the Router could key a lead on\n\nreturn [{ json: {\n  name: ctx.lead_name || ctx.push_name || 'WhatsApp enquiry',\n  phone: '+' + digits,\n  email: ctx.lead_email || null,\n  message: ctx.message || null,\n  vehicle_interest: ctx.message || null,\n  source: 'whatsapp',\n  // Tells the Router the customer is ALREADY in a live thread, so it scores,\n  // alerts and syncs but does NOT fire a canned welcome on top of the reply\n  // the BDC agent has just sent them.\n  origin: 'whatsapp-bdc',\n} }];"
+      },
+      "id": "bdc-shape-for-router-1",
+      "name": "Shape Lead For Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "JnlZFAVmFAuNXVya",
+          "mode": "id",
+          "cachedResultUrl": "/workflow/JnlZFAVmFAuNXVya",
+          "cachedResultName": "NEXUS Master Lead Router - AI Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "bdc-call-master-router",
+      "name": "Score New Lead (Master Router)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2624,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Fire-and-forget on purpose. Scoring runs an LLM agent; this box is a single vCPU and the customer's reply has already gone out, so the conversation must never wait on it. waitForSubWorkflow:false also means a slow Router can never hold this execution open."
     }
   ],
   "connections": {
@@ -925,6 +1163,11 @@
             "node": "Is Document?",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Upsert WhatsApp Contact",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -944,7 +1187,7 @@
       "main": [
         [
           {
-            "node": "Model Ladder",
+            "node": "Reply Eligibility",
             "type": "main",
             "index": 0
           }
@@ -955,7 +1198,7 @@
       "main": [
         [
           {
-            "node": "Audit Log",
+            "node": "Delivery Report",
             "type": "main",
             "index": 0
           }
@@ -1080,6 +1323,74 @@
         ],
         []
       ]
+    },
+    "Reply Eligibility": {
+      "main": [
+        [
+          {
+            "node": "Should The Bot Reply?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should The Bot Reply?": {
+      "main": [
+        [
+          {
+            "node": "Model Ladder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Delivery Report": {
+      "main": [
+        [
+          {
+            "node": "Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Log": {
+      "main": [
+        [
+          {
+            "node": "New Lead Worth Scoring?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Lead Worth Scoring?": {
+      "main": [
+        [
+          {
+            "node": "Shape Lead For Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Shape Lead For Router": {
+      "main": [
+        [
+          {
+            "node": "Score New Lead (Master Router)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1091,12 +1402,1457 @@
     "availableInMCP": true,
     "timezone": "Asia/Dubai",
     "callerPolicy": "workflowsFromSameOwner",
-    "errorWorkflow": "iYJkh1kztWxZXDbT"
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "executionTimeout": 300
   },
-  "_exported_from": {
-    "id": "BiyHk9ZXxJUVGbf6",
-    "active": true,
-    "updatedAt": "2026-08-23T06:23:25.649Z",
-    "published": true
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "79fd04f3-ddb4-4301-941f-d0e0cbac590d",
+  "activeVersionId": "79fd04f3-ddb4-4301-941f-d0e0cbac590d",
+  "versionCounter": 131,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "shared": [
+    {
+      "updatedAt": "2026-07-23T19:16:39.744Z",
+      "createdAt": "2026-07-23T19:16:39.744Z",
+      "role": "workflow:owner",
+      "workflowId": "BiyHk9ZXxJUVGbf6",
+      "projectId": "uRMuMPNZkIs0l37n",
+      "project": {
+        "updatedAt": "2026-07-23T18:54:00.785Z",
+        "createdAt": "2026-07-23T18:51:58.519Z",
+        "id": "uRMuMPNZkIs0l37n",
+        "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-26T05:09:49.414Z",
+    "createdAt": "2026-08-26T05:09:49.414Z",
+    "versionId": "79fd04f3-ddb4-4301-941f-d0e0cbac590d",
+    "workflowId": "BiyHk9ZXxJUVGbf6",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "whatsapp-inbound",
+          "options": {}
+        },
+        "id": "1",
+        "name": "WAHA Webhook (POST)",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1.1,
+        "position": [
+          0,
+          304
+        ],
+        "webhookId": "ef194afb-c690-4d61-b423-f42500379a49"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Reached either straight from `Called by Master Router` (outreach) or from\n// `Is New Message?`. In the second case the item we are handed is the dedupe\n// guard's HTTP response, not the webhook body -- an HTTP node's output REPLACES\n// the item -- so reach back to the webhook node for the real payload.\nlet item = $input.first().json;\nif (!item.lead && !item.body && !item.payload) {\n  try { item = $('WAHA Webhook (POST)').first().json; } catch (e) { /* outreach path */ }\n}\n\nif (item.lead) {\n  const lead = item.lead;\n  const interest = lead.vehicle_interest || lead.vehicleInterest || lead.message || 'a vehicle';\n  let chatId = String(lead.phone || lead.whatsapp || '').trim();\n  if (!chatId) return [];\n  if (!chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n  return [{ json: {\n    message: 'INITIAL_OUTREACH: Lead name: ' + (lead.name || 'there') + ', interested in: ' + interest + '. Send them a warm, personalised WhatsApp welcome message introducing the NEXUS OS dealership and asking how you can help.',\n    sender: chatId,\n    lead_email: lead.email || null,\n    direction: 'outbound',\n    // Outreach is not a WAHA delivery. Give it a unique id so the idempotency\n    // guard downstream always lets it through.\n    message_id: 'outreach:' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)\n  } }];\n}\n\nconst body = item.body || item;\nconst payload = body.payload || {};\n\nconst event = String(body.event || '');\nif (event && event !== 'message') return [];\n\n// Never reply to our own messages -> this is what caused the infinite loop\nif (payload.fromMe === true) return [];\n\n// Drop groups, status broadcasts and newsletters.\n// NOTE: '@lid' is NOT filtered - WhatsApp now uses LID addressing for real\n// 1:1 customer chats, so blocking it silently drops genuine messages.\nconst from = String(payload.from || '');\nif (!from || from.endsWith('@g.us') || from.startsWith('status@') || from.endsWith('@newsletter')) return [];\n\n// A customer sending their Emirates ID sends an IMAGE with no caption. The old\n// code did `if (!text) return []` and silently dropped it - the KYC workflow was\n// never reachable from WhatsApp at all. Detect media and carry it forward.\nconst text = typeof payload.body === 'string' ? payload.body.trim() : '';\nconst media = payload.media || {};\nconst isImage = payload.hasMedia === true && String(media.mimetype || '').startsWith('image/');\n\n// WAHA hands back its own file URL as localhost:3000 - that is localhost *inside\n// the WAHA container*. n8n must fetch it over the docker network instead.\nconst documentUrl = isImage\n  ? String(media.url || '').replace('http://localhost:3000', 'http://waha:3000')\n  : null;\n\nif (!text && !isImage) return [];\n\n// WhatsApp now addresses many 1:1 chats by LID (e.g. 158510264357112@lid), which\n// carries NO phone number -- matching a lead on its digits is impossible. The real\n// number is in _data.Info.SenderAlt. Keep `sender` as the chat id (replies must go\n// back to it) and expose the true number separately for lead matching.\nconst info = (payload._data && payload._data.Info) || {};\nconst alt = String(info.SenderAlt || '');\nconst senderPhone = (alt.includes('@') ? alt.split('@')[0] : alt) ||\n                    (from.endsWith('@lid') ? '' : from.split('@')[0]);\n\n// WAHA has delivered the same message three times in one second, repeatedly.\n// `payload.id` is the WhatsApp message id and is stable across those duplicates,\n// so it is what the idempotency guard downstream claims. Fall back to\n// sender+timestamp when WAHA omits it; empty means the guard cannot key on\n// anything and will let the message through.\nconst messageId = String(payload.id || (payload.timestamp ? from + ':' + payload.timestamp : ''));\n\nreturn [{ json: {\n  message_id: messageId,\n  message: text || '[Customer sent a document image]',\n  is_document: isImage,\n  document_url: documentUrl,\n  sender: from,\n  sender_phone: senderPhone,\n  push_name: info.PushName || null,\n  lead_email: null,\n  direction: 'inbound'\n} }];\n"
+        },
+        "id": "2",
+        "name": "Extract Message & Sender",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          784,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $('Extract Message & Sender').first().json.sender }}",
+          "contextWindowLength": 10
+        },
+        "id": "5",
+        "name": "Window Buffer Memory",
+        "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+        "typeVersion": 1.2,
+        "position": [
+          1024,
+          720
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://waha:3000/api/sendText",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Api-Key",
+                "value": "={{ $env.WAHA_API_KEY }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chatId: $('Extract Message & Sender').first().json.sender, text: $json.output, session: 'default' }) }}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "7",
+        "name": "Send Reply via WAHA HTTP API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1408,
+          256
+        ],
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 2000,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ lead_email: $('Resolve Lead Identity').first().json.lead_email || $('Resolve Lead Identity').first().json.sender, channel: 'whatsapp', direction: 'outbound', message: $('Guard Reply').first().json.output || '(no AI output)' }) }}",
+          "options": {}
+        },
+        "id": "8",
+        "name": "Log Conversation",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1632,
+          256
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1500,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "model": "={{ $json.orModel }}",
+          "options": {
+            "maxTokens": 1024,
+            "temperature": 0.4
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+        "typeVersion": 1,
+        "position": [
+          592,
+          576
+        ],
+        "id": "b598fb23-9b75-4cc5-bd2d-6852b0846e3f",
+        "name": "OpenRouter Chat Model",
+        "credentials": {
+          "openRouterApi": {
+            "id": "UUtKrBzkQOztAOzZ",
+            "name": "OpenRouter account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "inventory",
+          "limit": 20,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "model",
+                "condition": "ilike",
+                "keyValue": "=%{{ $fromAI('vehicle_model', 'The vehicle make/model the customer is asking about, e.g. Camry, Corolla, Land Cruiser', 'string') }}%"
+              }
+            ]
+          }
+        },
+        "id": "84fb75d5-4f2a-4532-b4ac-49b45eae9797",
+        "name": "search_inventory",
+        "type": "n8n-nodes-base.supabaseTool",
+        "typeVersion": 1,
+        "position": [
+          1152,
+          640
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "11254797-0746-4e9a-a4e5-c9c1dc3d90a1",
+        "name": "Called by Master Router",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          0,
+          512
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "rag_documents",
+          "limit": 5,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "content",
+                "condition": "ilike",
+                "keyValue": "=%{{ $fromAI('policy_topic', 'The policy topic or keyword the customer is asking about, e.g. warranty, flood, refund, trade-in, extended coverage', 'string') }}%"
+              }
+            ]
+          }
+        },
+        "id": "747609d0-99d5-496c-bba0-97faec7e882d",
+        "name": "search_policy",
+        "type": "n8n-nodes-base.supabaseTool",
+        "typeVersion": 1,
+        "position": [
+          1312,
+          624
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "description": "Calculate trade-in equity and finance tier / indicative APR for a customer. Provide vehicleValue (current market value of their trade-in vehicle in AED), loanPayoffAmount (outstanding loan on it in AED, 0 if none) and creditScore (AECB score 300-900).",
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "unMMpeL9uuPO79pp",
+            "cachedResultName": "Finance Calc"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "vehicleValue": "={{ $fromAI('vehicleValue', 'Current market value of the customer trade-in vehicle in AED', 'number') }}",
+              "loanPayoffAmount": "={{ $fromAI('loanPayoffAmount', 'Outstanding loan payoff amount on the trade-in in AED, 0 if none', 'number') }}",
+              "creditScore": "={{ $fromAI('creditScore', 'Customer AECB credit score between 300 and 900', 'number') }}"
+            }
+          }
+        },
+        "id": "6ca49a83-fe54-4af1-8eef-44b60f930b7d",
+        "name": "finance_calculator",
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          1504,
+          656
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.message }}",
+          "needsFallback": true,
+          "options": {
+            "systemMessage": "You are the NEXUS OS WhatsApp BDC (Business Development Center) agent for a premium car dealership in the UAE. You chat with customers on WhatsApp to help them find vehicles, answer policy questions, work out finance/trade-in numbers, and negotiate a fair deal. Be warm, concise and human — WhatsApp style, never output JSON or code to the customer.\n\nTOOLS:\n- search_inventory: look up vehicles we have in stock (model, price_aed, cost_aed, days_in_stock). Use it whenever the customer asks about a specific car or price.\n- search_policy: look up official dealership policy (warranty, flood/water cover, refund, trade-in, extended coverage). Use it for ANY policy question and answer ONLY from what it returns — if the policy text does not mention something (e.g. flood cover), say it is not included, do not invent it.\n- finance_calculator: compute trade-in equity, finance tier and indicative APR. Use it when the customer asks about EMI, trade-in value or financing. If you don't know their credit score, ask for it (or their latest AECB score).\n\nNEGOTIATION GUARDRAILS (Phase 4):\n- Always call search_inventory first to see the vehicle's price_aed and cost_aed before discussing any discount.\n- Maximum discount you may offer yourself is 8%. NEVER offer more than 8%, and NEVER take the final price below cost_aed.\n- If a vehicle has high demand or low days_in_stock, lean toward a smaller discount and add value instead (e.g. free 2-year maintenance package, free first service, accessories) rather than more cash off.\n- If the customer demands more than 8% (e.g. 15%), politely decline that exact number, explain it isn't possible, and counter within your guardrails — e.g. 'I can't do 15%, but as a valued customer I can offer 8% plus a 2-year free maintenance package.'\n- For a returning/VIP customer, you may go to the full 8% and add the value bundle.\n\nIf the incoming message starts with 'INITIAL_OUTREACH:', that is a system instruction telling you to proactively send a warm, personalised WhatsApp welcome to a new lead using the details provided.\n\nWHEN WE DON'T HAVE THE CAR (added 16 Aug 2026 - a customer asked for a Ferrari and got silence):\n- NEVER ignore a question about a vehicle we don't stock. Silence loses the customer.\n- Call search_inventory first. If it returns nothing for what they asked, say so plainly and warmly:\n  we don't have that model in stock right now.\n- Then do two things in the same reply: (1) offer to source it / take their details for when one arrives,\n  and (2) suggest the closest thing we DO have, using real results from search_inventory.\n- If they ask the price of something we don't stock, do not invent a number. Say we'd need to quote it\n  based on spec and availability, and offer to have a senior rep come back with a firm price.\n- The same applies to any question outside cars, finance and policy: acknowledge it, answer what you can,\n  and never leave the message unanswered.\n\nWHATSAPP FORMATTING (added 16 Aug 2026 - the agent was sending markdown tables):\n- WhatsApp does NOT render markdown. Never use tables, pipes, headings (#) or **double asterisks**.\n- For emphasis use WhatsApp's own syntax: *single asterisks* for bold, _underscores_ for italic.\n- To list vehicles, use short lines, one per vehicle, e.g.\n  \"1. Toyota Fortuner 2.7 VXR 2024 - AED 152,000\"\n- Keep replies short enough to read on a phone. Two or three options is plenty, not the whole catalogue.\n- Mirror the customer's language. If they write in Roman Urdu or Hindi, reply the same way.",
+            "maxIterations": 8,
+            "enableStreaming": false
+          }
+        },
+        "id": "39470efd-bbbd-4c06-8fc4-d1a39235ce87",
+        "name": "AI BDC Sales Agent",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          1072,
+          272
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "model": "={{ $json.groqModel }}",
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+        "typeVersion": 1,
+        "position": [
+          768,
+          576
+        ],
+        "id": "86c1f056-4033-4179-82a0-f503c5e54bca",
+        "name": "Groq Chat Model",
+        "credentials": {
+          "groqApi": {
+            "id": "JgOg4w1ZMJc37lmL",
+            "name": "Groq account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "leads",
+          "returnAll": true
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          608,
+          144
+        ],
+        "id": "bdc-fetch-leads-01",
+        "name": "Fetch All Leads",
+        "alwaysOutputData": true,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1500,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Resolve the WhatsApp chat id back to a real lead so every log row is keyed\n// on the lead's EMAIL, not on a raw chat id. Without this the silence detector\n// (Phase 6) can never join communication_logs back to the leads table.\n//\n// Match on sender_phone (the true number pulled from Info.SenderAlt), NOT on the\n// chat id -- a LID chat id has no phone digits in it at all.\nconst ex = $('Extract Message & Sender').first().json;\nconst digits = String(ex.sender_phone || ex.sender || '').replace(/[^0-9]/g, '');\nconst last9 = digits.slice(-9);\n\nconst leads = $input.all().map(i => i.json).filter(l => l && l.phone);\nlet match = null;\nif (last9.length === 9) {\n  match = leads.find(l => String(l.phone).replace(/[^0-9]/g, '').slice(-9) === last9) || null;\n}\n\nreturn [{ json: {\n  message: ex.message,\n  is_document: ex.is_document || false,\n  document_url: ex.document_url || null,\n  sender: ex.sender,\n  sender_phone: ex.sender_phone || null,\n  push_name: ex.push_name || null,\n  direction: ex.direction,\n  lead_email: ex.lead_email || (match ? match.email : null),\n  lead_name: match ? match.name : (ex.push_name || null),\n  matched_lead: !!match\n} }];"
+        },
+        "id": "bdc-resolve-01",
+        "name": "Resolve Lead Identity",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          704,
+          -80
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ lead_email: $json.lead_email || $json.sender, channel: 'whatsapp', direction: ($json.direction === 'outbound' ? 'outbound' : 'inbound'), message: ($json.direction === 'outbound' ? '[system] Initial outreach requested by the Master Router' : $json.message) }) }}",
+          "options": {}
+        },
+        "id": "bdc-log-in-01",
+        "name": "Log Incoming Message",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          896,
+          -32
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 1500,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n// 'Log Incoming Message' is a Supabase insert that returns an EMPTY body, so\n// $input here carries no message and the Agent failed with \"No prompt specified\"\n// on every tier -- which looked like a model outage but never was. Pull the\n// conversation context straight from 'Resolve Lead Identity' and re-attach it on\n// every retry, so the prompt survives the ladder loop.\nlet ctx = {};\ntry { ctx = $('Resolve Lead Identity').first().json || {}; } catch (e) { ctx = {}; }\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nif (!ctx.message) {\n  throw new Error('No message found on Resolve Lead Identity output - cannot prompt the agent.');\n}\nreturn [{ json: { ...ctx, ...prev, message: ctx.message, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
+        },
+        "id": "ladder-BiyHk9",
+        "name": "Model Ladder",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          912,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ workflow: 'WhatsApp BDC Agent', status: $json.delivery.status, summary: ($json.delivery.note + ($json.delivery.dropped.length ? ' | dropped: ' + $json.delivery.dropped.join('; ') : '')).substring(0, 900), logged_at: $now.toISO() }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "audit-whatsapp_bdc",
+        "name": "Audit Log",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2016,
+          256
+        ],
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 1500,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Quality gate before anything reaches a real customer on WhatsApp.\n// Execution 1414 sent the literal text \"The user\" -- a leaked fragment of the\n// model's internal reasoning. Some free OpenRouter models emit reasoning tokens,\n// and the agent passed them straight through to the customer.\nconst prev = $input.first().json;\nlet text = String(prev.output ?? '').trim();\n\n// Drop explicit reasoning blocks some models wrap their thinking in.\ntext = text.replace(/<think>[\\s\\S]*?<\\/think>/gi, '')\n           .replace(/<reasoning>[\\s\\S]*?<\\/reasoning>/gi, '')\n           .trim();\n\n// Reasoning leaks talk *about* the user in the third person, or are stubs.\n\n// WhatsApp renders none of markdown. Convert what the model still slips through.\ntext = text.replace(/^\\s*\\|.*\\|\\s*$/gm, '')        // table rows\n           .replace(/^\\s*[-: |]{6,}\\s*$/gm, '')       // table separators\n           .replace(/\\*\\*(.+?)\\*\\*/g, '*$1*')        // **bold** -> *bold*\n           .replace(/^#{1,6}\\s*/gm, '')                // headings\n           .replace(/\\n{3,}/g, '\\n\\n')\n           .trim();\n\nconst LEAK = /^(the user|okay,? (the|so)|we need to|i should|let'?s (see|think)|analysis|reasoning)\\b/i;\nconst looksLikeLeak = LEAK.test(text);\nconst tooShort = text.length < 12;\n\nconst FALLBACK = \"Sorry, I didn't catch that properly. Could you tell me a bit more about what you're looking for?\";\nconst safe = (looksLikeLeak || tooShort) ? FALLBACK : text;\n\nreturn [{ json: { ...prev, output: safe, guard_blocked: safe !== text, raw_output: text } }];"
+        },
+        "id": "guardreply-0001-4b2c-9d3e-bdc-agent01",
+        "name": "Guard Reply",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1264,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "select",
+                "value": "id,created_at"
+              },
+              {
+                "name": "direction",
+                "value": "eq.outbound"
+              },
+              {
+                "name": "lead_email",
+                "value": "=eq.{{ $json.lead_email || 'none' }}"
+              },
+              {
+                "name": "created_at",
+                "value": "=gte.{{ new Date(Date.now() - 24*60*60*1000).toISOString() }}"
+              },
+              {
+                "name": "limit",
+                "value": "1"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "recentoutreach-0001-4c3d-8e5f-bdc01",
+        "name": "Recent Outreach Check",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          832,
+          816
+        ],
+        "alwaysOutputData": true,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Stop a second INITIAL_OUTREACH to a lead we already messaged in the last 24h.\n// On 16 Aug the router was posted twice and the customer got two near-identical\n// welcome messages 4 minutes apart. Inbound replies are never blocked - only\n// proactive outreach.\nconst ctx = $('Resolve Lead Identity').first().json;\nconst isOutreach = ctx.direction === 'outbound' ||\n                   String(ctx.message || '').startsWith('INITIAL_OUTREACH:');\n\nif (!isOutreach) return [{ json: ctx }];\n\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\nif (rows.length > 0) {\n  // Already contacted recently -> return nothing, which halts this branch.\n  return [];\n}\nreturn [{ json: ctx }];"
+        },
+        "id": "skipdupoutreach-0001-4c3d-8e5f-bdc02",
+        "name": "Skip Duplicate Outreach",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1024,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "d1",
+                "leftValue": "={{ $json.is_document }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "c098a143-59ad-4479-99d3-1ee1bf838735",
+                "leftValue": "={{ $json.matched_lead }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "isdocument-0001-4d5e-9f60-bdc03",
+        "name": "Is Document?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          864,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.document_url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Api-Key",
+                "value": "={{ $env.WAHA_API_KEY }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            },
+            "timeout": 30000
+          }
+        },
+        "id": "dlkycimage-0001-4d5e-9f60-bdc04",
+        "name": "Download KYC Image",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1040,
+          -64
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "qTnh3nwWheFJbFkU",
+            "mode": "id",
+            "cachedResultName": "KYC/AML Document Auditor + Re-upload Loop (Phase 5)"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "document_base64": "={{ $json.document_base64 }}",
+              "chat_id": "={{ $json.chat_id }}",
+              "lead_email": "={{ $json.lead_email }}",
+              "lead_name": "={{ $json.lead_name }}"
+            }
+          },
+          "options": {
+            "waitForSubWorkflow": false
+          }
+        },
+        "id": "sendtokyc-0001-4d5e-9f60-bdc05",
+        "name": "Send to KYC Auditor",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.2,
+        "position": [
+          1808,
+          -48
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// This workflow runs with binaryMode \"separate\", so n8n keeps binary payloads\n// on disk and binary.data.data is a REFERENCE, not base64. Reading it directly\n// sent garbage to the vision model (\"Bad request - Provider returned error\").\n// getBinaryDataBuffer() is the only way that works in both binary modes.\nconst ctx = $('Resolve Lead Identity').first().json;\nconst bin = ($input.first().binary || {}).data;\nif (!bin) {\n  throw new Error('KYC image download produced no binary property - check the WAHA file URL and API key.');\n}\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst b64 = buf.toString('base64');\nif (!b64 || b64.length < 100) {\n  throw new Error('KYC image decoded to ' + b64.length + ' base64 chars - too small to be a document.');\n}\nreturn [{ json: {\n  document_base64: b64,\n  mime_type: bin.mimeType || 'image/jpeg',\n  size_bytes: buf.length,\n  chat_id: ctx.sender,\n  lead_email: ctx.lead_email,\n  lead_name: ctx.lead_name\n} }];"
+        },
+        "id": "imgtob64-0001-4d5e-9f60-bdc06",
+        "name": "Image To Base64",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1312,
+          -48
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/processed_messages",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "resolution=ignore-duplicates,return=representation"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ message_id: ($json.message_id || ('nokey:' + $now.toMillis())), source: ($json.direction === 'outbound' ? 'outreach' : 'waha'), chat_id: $json.sender }) }}",
+          "options": {
+            "timeout": 10000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          464,
+          304
+        ],
+        "name": "Claim Message Id",
+        "id": "fe363248-c216-4a23-b032-431b571de018",
+        "alwaysOutputData": true,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "e473316f-50a0-4c97-ba4d-0d2bfa59db72",
+                "name": "message_id",
+                "type": "string",
+                "value": "={{ String($json.body?.payload?.id ?? ($json.body?.payload?.timestamp ? ($json.body?.payload?.from ?? '') + ':' + $json.body.payload.timestamp : '')) }}"
+              },
+              {
+                "id": "4c1216b7-f009-4fa2-a518-bd44499586ed",
+                "name": "sender",
+                "type": "string",
+                "value": "={{ String($json.body?.payload?.from ?? '') }}"
+              },
+              {
+                "id": "55d309b0-abe7-4350-a789-d1a5a7595993",
+                "name": "direction",
+                "type": "string",
+                "value": "inbound"
+              },
+              {
+                "id": "44091ef2-7cda-4e0c-9265-524672de6c6d",
+                "name": "is_real_inbound",
+                "type": "boolean",
+                "value": "={{ $json.body?.payload?.fromMe !== true && (!$json.body?.event || $json.body.event === 'message') && !!($json.body?.payload?.from) && !String($json.body.payload.from).endsWith('@g.us') && !String($json.body.payload.from).startsWith('status@') && !String($json.body.payload.from).endsWith('@newsletter') }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "b363bb7c-3a19-4ed3-8776-eeb2568c548d",
+        "name": "Prefilter",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          144,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "8d05fbc3-1f5f-4b55-b4a1-33806b48863e",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "leftValue": "={{ $json.is_real_inbound }}",
+                "rightValue": ""
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "288b2fe7-1bd6-4702-877c-72c4dd8d82f1",
+        "name": "Is Real Inbound?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          304,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "or",
+            "conditions": [
+              {
+                "id": "f88ccb86-4bb9-4bcd-9f0a-b425a4889c8c",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "leftValue": "={{ !!$json.message_id }}",
+                "rightValue": ""
+              },
+              {
+                "id": "c28207ab-af91-4694-badb-a3230652c867",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "leftValue": "={{ !!$json.error }}",
+                "rightValue": ""
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "9f53c4e5-b7b7-4867-bd58-be7753247be5",
+        "name": "Is New Message?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          624,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/whatsapp_contacts",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify(Object.fromEntries(Object.entries({ chat_id: $json.sender, phone: $json.sender_phone || null, push_name: $json.push_name || null, lead_email: $json.lead_email || null, last_seen: $now.toUTC().toISO() }).filter(([k, v]) => k === 'chat_id' || k === 'last_seen' || (v !== null && v !== '')))) }}",
+          "options": {
+            "timeout": 10000
+          }
+        },
+        "id": "d0ad4c3e-d2cd-44d8-a225-23c92a73a54c",
+        "name": "Upsert WhatsApp Contact",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          416,
+          784
+        ],
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 1500,
+        "alwaysOutputData": true,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "d314a09e-abaf-40fd-bf61-1b3a321427b8",
+                "name": "bot_may_reply",
+                "type": "boolean",
+                "value": "={{ (() => { const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return true; if (ctx.direction === 'outbound') return true; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const t = String(ctx.message || '').toLowerCase(); return kw.some(k => t.includes(k)); })() }}"
+              },
+              {
+                "id": "90ce5226-93f8-4e46-af0e-aff1fc1fd4b0",
+                "name": "reply_reason",
+                "type": "string",
+                "value": "={{ (() => { const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return 'known lead'; if (ctx.direction === 'outbound') return 'outreach initiated by the router'; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const t = String(ctx.message || '').toLowerCase(); const hit = kw.find(k => t.includes(k)); return hit ? ('dealership keyword: ' + hit) : 'not a lead and no dealership keyword — staying silent'; })() }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "a035d4fa-6b45-4af6-bba0-b80b86a49ceb",
+        "name": "Reply Eligibility",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1664,
+          432
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c6a55923-811f-4d75-a44d-3f39e8474fc0",
+                "leftValue": "={{ $json.bot_may_reply }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "64534e69-99db-42b4-8e40-f8ae22702250",
+        "name": "Should The Bot Reply?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1584,
+          80
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Send Reply via WAHA HTTP API', what: 'WhatsApp reply to the customer', critical: true },\n  { node: 'Log Conversation',             what: 'communication_logs row for the reply', critical: false },\n  { node: 'Claim Message Id',             what: 'idempotency claim in processed_messages', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' — ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
+        },
+        "id": "dlvrpt-bdc-4f21-9a07-c3b8e1d20a55",
+        "name": "Delivery Report",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1824,
+          256
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "bdc-newlead-c1",
+                "leftValue": "={{ $('Resolve Lead Identity').first().json.direction }}",
+                "rightValue": "inbound",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              },
+              {
+                "id": "bdc-newlead-c2",
+                "leftValue": "={{ $('Resolve Lead Identity').first().json.matched_lead }}",
+                "rightValue": false,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "bdc-newlead-c3",
+                "leftValue": "={{ $('Resolve Lead Identity').first().json.sender_phone }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "bdc-if-new-lead-001",
+        "name": "New Lead Worth Scoring?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          2208,
+          256
+        ],
+        "notes": "Sits downstream of the reply, so it only ever sees people the allowlist already approved -- a stranger the bot stayed silent on never reaches here. TRUE means: a real inbound message, from someone with a resolvable phone number, who is NOT yet a row in `leads`. That is the definition of a new lead now that Make.com and Zapier are gone."
+      },
+      {
+        "parameters": {
+          "jsCode": "// Make.com used to do this: take a raw inbound enquiry and hand the Master\n// Router a lead-shaped object. Make.com is empty now -- every workflow was\n// moved into n8n -- so WhatsApp is the live inbound channel and this is where\n// the shaping happens.\n//\n// `Validate & Enrich Input` on the Router accepts `.body`, `.lead`, or a bare\n// object, and needs an email OR a phone. We have the phone.\nconst ctx = $('Resolve Lead Identity').first().json;\n\nconst digits = String(ctx.sender_phone || '').replace(/[^0-9]/g, '');\nif (!digits) return [];   // nothing the Router could key a lead on\n\nreturn [{ json: {\n  name: ctx.lead_name || ctx.push_name || 'WhatsApp enquiry',\n  phone: '+' + digits,\n  email: ctx.lead_email || null,\n  message: ctx.message || null,\n  vehicle_interest: ctx.message || null,\n  source: 'whatsapp',\n  // Tells the Router the customer is ALREADY in a live thread, so it scores,\n  // alerts and syncs but does NOT fire a canned welcome on top of the reply\n  // the BDC agent has just sent them.\n  origin: 'whatsapp-bdc',\n} }];"
+        },
+        "id": "bdc-shape-for-router-1",
+        "name": "Shape Lead For Router",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2416,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "JnlZFAVmFAuNXVya",
+            "mode": "id",
+            "cachedResultUrl": "/workflow/JnlZFAVmFAuNXVya",
+            "cachedResultName": "NEXUS Master Lead Router - AI Agent"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": true
+          },
+          "options": {
+            "waitForSubWorkflow": false
+          }
+        },
+        "id": "bdc-call-master-router",
+        "name": "Score New Lead (Master Router)",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          2624,
+          160
+        ],
+        "onError": "continueRegularOutput",
+        "notes": "Fire-and-forget on purpose. Scoring runs an LLM agent; this box is a single vCPU and the customer's reply has already gone out, so the conversation must never wait on it. waitForSubWorkflow:false also means a slow Router can never hold this execution open."
+      }
+    ],
+    "connections": {
+      "WAHA Webhook (POST)": {
+        "main": [
+          [
+            {
+              "node": "Prefilter",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Reply via WAHA HTTP API": {
+        "main": [
+          [
+            {
+              "node": "Log Conversation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Called by Master Router": {
+        "main": [
+          [
+            {
+              "node": "Extract Message & Sender",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Message & Sender": {
+        "main": [
+          [
+            {
+              "node": "Fetch All Leads",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI BDC Sales Agent": {
+        "main": [
+          [
+            {
+              "node": "Guard Reply",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Model Ladder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenRouter Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Window Buffer Memory": {
+        "ai_memory": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "search_inventory": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "search_policy": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "finance_calculator": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Groq Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "ai_languageModel",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Fetch All Leads": {
+        "main": [
+          [
+            {
+              "node": "Resolve Lead Identity",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolve Lead Identity": {
+        "main": [
+          [
+            {
+              "node": "Is Document?",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Upsert WhatsApp Contact",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Model Ladder": {
+        "main": [
+          [
+            {
+              "node": "AI BDC Sales Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Incoming Message": {
+        "main": [
+          [
+            {
+              "node": "Reply Eligibility",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Log Conversation": {
+        "main": [
+          [
+            {
+              "node": "Delivery Report",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Guard Reply": {
+        "main": [
+          [
+            {
+              "node": "Send Reply via WAHA HTTP API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Recent Outreach Check": {
+        "main": [
+          [
+            {
+              "node": "Skip Duplicate Outreach",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Skip Duplicate Outreach": {
+        "main": [
+          [
+            {
+              "node": "Log Incoming Message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Document?": {
+        "main": [
+          [
+            {
+              "node": "Download KYC Image",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Recent Outreach Check",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download KYC Image": {
+        "main": [
+          [
+            {
+              "node": "Image To Base64",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Image To Base64": {
+        "main": [
+          [
+            {
+              "node": "Send to KYC Auditor",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Claim Message Id": {
+        "main": [
+          [
+            {
+              "node": "Is New Message?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prefilter": {
+        "main": [
+          [
+            {
+              "node": "Is Real Inbound?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Real Inbound?": {
+        "main": [
+          [
+            {
+              "node": "Claim Message Id",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Is New Message?": {
+        "main": [
+          [
+            {
+              "node": "Extract Message & Sender",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Reply Eligibility": {
+        "main": [
+          [
+            {
+              "node": "Should The Bot Reply?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Should The Bot Reply?": {
+        "main": [
+          [
+            {
+              "node": "Model Ladder",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Delivery Report": {
+        "main": [
+          [
+            {
+              "node": "Audit Log",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audit Log": {
+        "main": [
+          [
+            {
+              "node": "New Lead Worth Scoring?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "New Lead Worth Scoring?": {
+        "main": [
+          [
+            {
+              "node": "Shape Lead For Router",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "Shape Lead For Router": {
+        "main": [
+          [
+            {
+              "node": "Score New Lead (Master Router)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "Ali Asgher Ujjain Wala ",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-26T05:09:51.230Z",
+        "id": 573,
+        "workflowId": "BiyHk9ZXxJUVGbf6",
+        "versionId": "79fd04f3-ddb4-4301-941f-d0e0cbac590d",
+        "event": "deactivated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      },
+      {
+        "createdAt": "2026-08-26T05:09:51.384Z",
+        "id": 574,
+        "workflowId": "BiyHk9ZXxJUVGbf6",
+        "versionId": "79fd04f3-ddb4-4301-941f-d0e0cbac590d",
+        "event": "activated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      }
+    ]
   }
 }

@@ -1,5 +1,11 @@
 {
+  "updatedAt": "2026-08-26T05:00:17.509Z",
+  "createdAt": "2026-07-23T19:16:39.689Z",
+  "id": "VmnIXo7tM30zqawp",
   "name": "Slack Command Center - AI Agent",
+  "description": null,
+  "active": true,
+  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -165,7 +171,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'openai/gpt-oss-20b:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nreturn [{ json: { ...prev, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
+        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nreturn [{ json: { ...prev, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
       },
       "id": "ladder-VmnIXo",
       "name": "Model Ladder",
@@ -197,7 +203,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: 'Slack Command Center', status: 'SUCCESS', lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: 'Completed', logged_at: $now.toISO() }) }}",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'Slack Command Center', status: $json.delivery.status, lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: ('Slash command reply to Slack: ' + $json.delivery.note + ($json.delivery.dropped.length ? ': ' + $json.delivery.dropped.join(' | ') : '')).substring(0, 500), logged_at: $now.toUTC().toISO() }) }}",
         "options": {
           "timeout": 15000
         }
@@ -286,6 +292,19 @@
       "id": "38780f38-6238-477b-8417-f9eaecf66fac",
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
+    },
+    {
+      "id": "5d81c0e7-3a24-4f9b-8e63-1b7ad2c94f08",
+      "name": "Delivery Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        380
+      ],
+      "parameters": {
+        "jsCode": "// Every node whose success the Audit Log below is about to claim.\n// Post Answer to Slack is the entire user-visible output of this workflow: if it\n// drops, the person who typed the slash command gets silence.\nconst CLAIMED = [\n  { node: 'Post Answer to Slack', what: 'answer posted back to the Slack caller', critical: true },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' - ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];"
+      }
     }
   ],
   "connections": {
@@ -410,6 +429,17 @@
       "main": [
         [
           {
+            "node": "Delivery Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery Report": {
+      "main": [
+        [
+          {
             "node": "Audit Log",
             "type": "main",
             "index": 0
@@ -428,12 +458,512 @@
     "timezone": "Asia/Dubai",
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all",
-    "errorWorkflow": "iYJkh1kztWxZXDbT"
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "executionTimeout": 300
   },
-  "_exported_from": {
-    "id": "VmnIXo7tM30zqawp",
-    "active": true,
-    "updatedAt": "2026-08-17T16:46:43.399Z",
-    "published": true
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "2dc043e9-8d95-42fb-8e29-eade05725742",
+  "activeVersionId": "2dc043e9-8d95-42fb-8e29-eade05725742",
+  "versionCounter": 71,
+  "triggerCount": 1,
+  "sourceWorkflowId": null,
+  "shared": [
+    {
+      "updatedAt": "2026-07-23T19:16:39.689Z",
+      "createdAt": "2026-07-23T19:16:39.689Z",
+      "role": "workflow:owner",
+      "workflowId": "VmnIXo7tM30zqawp",
+      "projectId": "uRMuMPNZkIs0l37n",
+      "project": {
+        "updatedAt": "2026-07-23T18:54:00.785Z",
+        "createdAt": "2026-07-23T18:51:58.519Z",
+        "id": "uRMuMPNZkIs0l37n",
+        "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-26T05:00:17.740Z",
+    "createdAt": "2026-08-26T05:00:17.740Z",
+    "versionId": "2dc043e9-8d95-42fb-8e29-eade05725742",
+    "workflowId": "VmnIXo7tM30zqawp",
+    "nodes": [
+      {
+        "parameters": {
+          "jsCode": "// Slack slash commands arrive as form-encoded fields under .body\nconst raw = $input.first().json;\nconst b = raw.body || raw;\n\nlet command = String(b.text || raw.text || '').trim();\n\n// A bare `/nexus` used to throw. The user had already been acknowledged by then,\n// so they simply never heard back. Answer with usage instead.\nif (!command) {\n  command = 'The user sent no command text. Reply with a short usage hint: ' +\n            '`/nexus find lead <name>` or `/nexus update lead <name> status <status>`.';\n}\n\nreturn [{ json: {\n  command,\n  user: b.user_name || b.user_id || 'unknown',\n  channel: b.channel_name || b.channel_id || null,\n  // Slack's 3-second slash-command deadline cannot be met by an AI agent with\n  // tool calls, so the webhook acks immediately and the answer is delivered\n  // here afterwards. Valid for 30 minutes / 5 posts.\n  response_url: b.response_url || null\n} }];\n"
+        },
+        "id": "2",
+        "name": "Extract Command",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          96,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.command }}",
+          "needsFallback": true,
+          "options": {
+            "systemMessage": "You are NEXUS OS CRM Agent. Parse the user's natural language Slack command and execute the appropriate CRM operation using the provided tools. Respond with a clear, concise confirmation suitable for a Slack message.",
+            "maxIterations": 8,
+            "enableStreaming": false
+          }
+        },
+        "id": "3",
+        "name": "AI CRM Agent",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          464,
+          304
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const answer = $input.all()[0].json.output;\nconst ctx = $('Extract Command').first().json;\n\nreturn [{ json: {\n  response_url: ctx.response_url,\n  payload: {\n    response_type: 'in_channel',\n    replace_original: false,\n    blocks: [\n      { type: 'section', text: { type: 'mrkdwn', text: '*NEXUS:*\\n' + answer } },\n      { type: 'context', elements: [\n        { type: 'mrkdwn', text: 'requested by ' + ctx.user + ' · `' + ctx.command + '`' } ] }\n    ]\n  }\n} }];\n"
+        },
+        "id": "7",
+        "name": "Format Slack Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          784,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "model": "={{ $json.orModel }}",
+          "options": {
+            "maxTokens": 1024,
+            "temperature": 0.2
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+        "typeVersion": 1,
+        "position": [
+          336,
+          512
+        ],
+        "id": "2f03e8b0-0c37-4aab-9dff-d5bd88726a83",
+        "name": "OpenRouter Chat Model",
+        "credentials": {
+          "openRouterApi": {
+            "id": "UUtKrBzkQOztAOzZ",
+            "name": "OpenRouter account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "leads",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "email",
+                "condition": "eq",
+                "keyValue": "={{ $fromAI('email', 'The exact email address of the lead whose status should be updated', 'string') }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "={{ $fromAI('status', 'New status for the lead: HOT, WARM, COLD, CONTACTED, QUALIFIED, WON or LOST', 'string') }}"
+              }
+            ]
+          }
+        },
+        "id": "8b96935a-144b-45aa-890d-a4c91816b47b",
+        "name": "Update Lead Status",
+        "type": "n8n-nodes-base.supabaseTool",
+        "typeVersion": 1,
+        "position": [
+          608,
+          512
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "leads",
+          "limit": 20,
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "name",
+                "condition": "ilike",
+                "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `Partial or full lead NAME to search for, wrapped in % wildcards, e.g. %Ahmed%. Pass %% to ignore this filter.`, 'string') }}"
+              },
+              {
+                "keyName": "email",
+                "condition": "ilike",
+                "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions1_Field_Value', `Partial or full lead EMAIL to search for, wrapped in % wildcards, e.g. %@gmail.com%. Pass %% to ignore this filter.`, 'string') }}"
+              }
+            ]
+          }
+        },
+        "id": "25aaa5fe-3b20-4e96-bd0d-ee1fcc4cc829",
+        "name": "Search Leads",
+        "type": "n8n-nodes-base.supabaseTool",
+        "typeVersion": 1,
+        "position": [
+          752,
+          512
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "model": "={{ $json.groqModel }}",
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+        "typeVersion": 1,
+        "position": [
+          480,
+          512
+        ],
+        "id": "sc-groq-01",
+        "name": "Groq Fallback",
+        "credentials": {
+          "groqApi": {
+            "id": "JgOg4w1ZMJc37lmL",
+            "name": "Groq account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nreturn [{ json: { ...prev, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
+        },
+        "id": "ladder-VmnIXo",
+        "name": "Model Ladder",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          304,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ workflow: 'Slack Command Center', status: $json.delivery.status, lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: ('Slash command reply to Slack: ' + $json.delivery.note + ($json.delivery.dropped.length ? ': ' + $json.delivery.dropped.join(' | ') : '')).substring(0, 500), logged_at: $now.toUTC().toISO() }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "audit-slack_router",
+        "name": "Audit Log",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1008,
+          304
+        ],
+        "retryOnFail": true,
+        "maxTries": 2,
+        "waitBetweenTries": 1500,
+        "credentials": {
+          "supabaseApi": {
+            "id": "dv4OeARarErZLHCj",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $json.user_id || $json.user || $json.channel_id || $json.channel || 'slack-' + $execution.id }}",
+          "contextWindowLength": "={{ 10 }}"
+        },
+        "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+        "typeVersion": 1.4,
+        "position": [
+          560,
+          672
+        ],
+        "id": "ad43c6f3-5c5a-43d7-bcae-56d5a285bf3c",
+        "name": "Simple Memory"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "slack-command",
+          "responseMode": "onReceived",
+          "responseData": "NEXUS is on it — the answer will land in this channel shortly.",
+          "options": {
+            "responseData": "NEXUS is on it — the answer will land in this channel shortly."
+          }
+        },
+        "id": "1",
+        "name": "SlackWebhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1.1,
+        "position": [
+          -160,
+          304
+        ],
+        "webhookId": "ce225f73-7470-4bc1-abe1-2bf543a25fea"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.response_url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.payload) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          828,
+          454
+        ],
+        "name": "Post Answer to Slack",
+        "id": "38780f38-6238-477b-8417-f9eaecf66fac",
+        "onError": "continueRegularOutput",
+        "alwaysOutputData": true
+      },
+      {
+        "id": "5d81c0e7-3a24-4f9b-8e63-1b7ad2c94f08",
+        "name": "Delivery Report",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          920,
+          380
+        ],
+        "parameters": {
+          "jsCode": "// Every node whose success the Audit Log below is about to claim.\n// Post Answer to Slack is the entire user-visible output of this workflow: if it\n// drops, the person who typed the slash command gets silence.\nconst CLAIMED = [\n  { node: 'Post Answer to Slack', what: 'answer posted back to the Slack caller', critical: true },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' - ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];"
+        }
+      }
+    ],
+    "connections": {
+      "Extract Command": {
+        "main": [
+          [
+            {
+              "node": "Model Ladder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI CRM Agent": {
+        "main": [
+          [
+            {
+              "node": "Format Slack Response",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Model Ladder",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenRouter Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI CRM Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Lead Status": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI CRM Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Search Leads": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI CRM Agent",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Groq Fallback": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI CRM Agent",
+              "type": "ai_languageModel",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Model Ladder": {
+        "main": [
+          [
+            {
+              "node": "AI CRM Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Slack Response": {
+        "main": [
+          [
+            {
+              "node": "Post Answer to Slack",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Simple Memory": {
+        "ai_memory": [
+          [
+            {
+              "node": "AI CRM Agent",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SlackWebhook": {
+        "main": [
+          [
+            {
+              "node": "Extract Command",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Post Answer to Slack": {
+        "main": [
+          [
+            {
+              "node": "Delivery Report",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Delivery Report": {
+        "main": [
+          [
+            {
+              "node": "Audit Log",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "Ali Asgher Ujjain Wala ",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-26T05:00:21.316Z",
+        "id": 561,
+        "workflowId": "VmnIXo7tM30zqawp",
+        "versionId": "2dc043e9-8d95-42fb-8e29-eade05725742",
+        "event": "deactivated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      },
+      {
+        "createdAt": "2026-08-26T05:00:21.469Z",
+        "id": 562,
+        "workflowId": "VmnIXo7tM30zqawp",
+        "versionId": "2dc043e9-8d95-42fb-8e29-eade05725742",
+        "event": "activated",
+        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+      }
+    ]
   }
 }
