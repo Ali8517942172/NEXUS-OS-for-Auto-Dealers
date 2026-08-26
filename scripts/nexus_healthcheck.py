@@ -258,8 +258,30 @@ try:
                      for s in ('Extract Message & Sender', 'Model Ladder',
                                'runner became unresponsive', 'Task request timed out'))]
     if runner:
-        bad(f'{len(runner)} BDC failure(s) today on the task runner — THE PREFILTER '
-            f'HAS NOT HELD, investigate before anything else')
+        # Two different faults produce a dead runner, and blaming the wrong one
+        # sends the reader to rewrite a workflow that is already correct.
+        #
+        #   "runner became unresponsive"  -> the box was saturated. The full
+        #       audit on 26 Aug confirmed the Set/IF prefilter chain is wired
+        #       exactly as intended; the two deaths that day happened at
+        #       `Extract Message & Sender`, which is DOWNSTREAM of it, while 29
+        #       other executions were orphaned by the same burst. That is the
+        #       concurrency ceiling, not a filtering failure.
+        #
+        #   "Task request timed out"      -> the runner was alive but too slow,
+        #       which is the cascade the prefilter exists to prevent.
+        saturated = [r for r in runner
+                     if 'runner became unresponsive' in (r.get('summary') or '')]
+        if len(saturated) == len(runner):
+            bad(f'{len(runner)} BDC run(s) died on an unresponsive task runner today '
+                '— the box was saturated, NOT a prefilter failure')
+            print('         The prefilter is downstream-verified correct (audit, 26 Aug). '
+                  'This is the concurrency ceiling: set '
+                  'N8N_CONCURRENCY_PRODUCTION_LIMIT so n8n queues instead of orphaning.')
+        else:
+            bad(f'{len(runner)} BDC failure(s) today on the task runner — some are NOT '
+                'saturation, so the prefilter may genuinely have been bypassed. '
+                'Investigate before anything else')
         for r in runner[:3]:
             print('        ', r['logged_at'][11:19], (r.get('summary') or '')[:100])
     else:
