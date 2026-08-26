@@ -343,6 +343,49 @@ try:
 except Exception as e:
     bad('could not check scheduled jobs: ' + str(e)[:100])
 
+# 8. the models the workflows name — do they still exist? --------------------
+#
+# A free model being retired without warning has now broken this system four
+# times: two ladder tiers in August, the KYC vision model (404 on every document
+# submitted, silently, until someone opened a run), and the last tier of the
+# escalation ladder. Nothing in n8n notices — the workflow is valid, active and
+# published, and answers 404 only when it is actually needed.
+#
+# This costs one request to OpenRouter and none to the starved box.
+print('\n[8] OpenRouter model ids referenced by workflows')
+try:
+    import re
+    with urllib.request.urlopen('https://openrouter.ai/api/v1/models', timeout=45) as x:
+        live = {m['id'] for m in json.loads(x.read().decode())['data']}
+    wfs = api('/workflows?limit=250')['data'] if API_OK else []
+    pat = re.compile(r"[\"']([a-z0-9\-]+/[a-zA-Z0-9._\-]+(?::free)?)[\"']")
+    dead = {}
+    seen = set()
+    for w in wfs:
+        for mid in set(pat.findall(json.dumps(w))):
+            if '/' not in mid or mid.startswith('http'):
+                continue
+            # Only judge ids that look like model ids AND that OpenRouter would
+            # know about; a stray "image/jpeg" is not a model.
+            if mid.endswith(':free') or mid in live:
+                seen.add(mid)
+                if mid not in live:
+                    dead.setdefault(mid, []).append(w['name'])
+    if not seen:
+        ok('no model ids found to check')
+    elif dead:
+        for mid, names in dead.items():
+            bad(f'{mid} no longer exists on OpenRouter — used by: '
+                + ', '.join(n[:34] for n in names))
+        print('         Pick a replacement from https://openrouter.ai/api/v1/models and')
+        print('         TEST it before committing: some are 429 rate-limited, some are')
+        print('         403 agentic-harness-only, and an agent node needs one that')
+        print('         actually returns a tool_call.')
+    else:
+        ok(f'all {len(seen)} referenced model ids exist')
+except Exception as e:
+    bad('could not check model ids: ' + str(e)[:100])
+
 print('\n' + ('HEALTHY — nothing needs attention' if not problems
               else f'{len(problems)} PROBLEM(S):\n  - ' + '\n  - '.join(problems)))
 sys.exit(0 if not problems else 1)
