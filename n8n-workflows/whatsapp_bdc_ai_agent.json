@@ -1519,7 +1519,7 @@
   },
   "settings": {
     "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all",
+    "saveDataSuccessExecution": "none",
     "saveExecutionProgress": false,
     "executionOrder": "v1",
     "binaryMode": "separate",
@@ -1532,7 +1532,7 @@
   "_exported_from": {
     "id": "BiyHk9ZXxJUVGbf6",
     "active": true,
-    "updatedAt": "2026-08-30T03:52:15.571Z",
+    "updatedAt": "2026-08-30T04:10:02.353Z",
     "published": true
   }
 }
