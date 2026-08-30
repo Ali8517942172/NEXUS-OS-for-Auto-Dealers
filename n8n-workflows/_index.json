@@ -1,6 +1,6 @@
 {
-  "exported_at": "2026-08-23T06:45:25.481795Z",
-  "source": "https://35.224.126.225.nip.io (GCP nexus-vm)",
+  "exported_at": "2026-08-30T04:05:22.497196+00:00",
+  "source": "https://35.224.126.225.nip.io/api/v1",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
     {
@@ -8,119 +8,168 @@
       "id": "G7FhvMY2ucW5Fg7X",
       "name": "7-Day Warm Lead Drip Campaign",
       "active": true,
-      "nodes": 21
+      "nodes": 22,
+      "published": true
     },
     {
       "file": "ask_ai_rag_query_agent.json",
       "id": "qHAtd3RckAKRBUkE",
       "name": "Ask-AI \u2014 RAG Query Agent",
       "active": true,
-      "nodes": 13
+      "nodes": 16,
+      "published": true
     },
     {
       "file": "competitor_price_scraping_supabase_update.json",
       "id": "LphiGg4iqF1bn6El",
       "name": "Competitor Price Scraping & Supabase Update",
       "active": true,
-      "nodes": 11
+      "nodes": 13,
+      "published": true
     },
     {
       "file": "customer_360_data_aggregation_bitrix24.json",
       "id": "AZkGM5M4c1uzSH7S",
       "name": "Customer 360 - Data Aggregation (Bitrix24)",
       "active": true,
-      "nodes": 10
+      "nodes": 11,
+      "published": true
     },
     {
       "file": "finance_calc_auto_loan_equity_credit_score.json",
       "id": "unMMpeL9uuPO79pp",
       "name": "Finance Calc: Auto Loan Equity & Credit Score",
       "active": true,
-      "nodes": 8
+      "nodes": 9,
+      "published": true
     },
     {
       "file": "inventory_ageing_recompute.json",
       "id": "ZUc42jcwwHoBeEr8",
       "name": "Inventory Ageing Recompute",
       "active": true,
-      "nodes": 3
+      "nodes": 3,
+      "published": true
     },
     {
       "file": "kyc_aml_document_auditor_re_upload_loop_phase_5.json",
       "id": "qTnh3nwWheFJbFkU",
       "name": "KYC/AML Document Auditor + Re-upload Loop (Phase 5)",
       "active": true,
-      "nodes": 24
+      "nodes": 31,
+      "published": true
     },
     {
       "file": "lead_escalation_ai_agent.json",
       "id": "KI6P1Qcf3MIZakNa",
       "name": "Lead Escalation - AI Agent",
       "active": true,
-      "nodes": 17
+      "nodes": 23,
+      "published": false
     },
     {
       "file": "nexus_error_handler.json",
       "id": "iYJkh1kztWxZXDbT",
       "name": "NEXUS Error Handler",
       "active": true,
-      "nodes": 3
+      "nodes": 3,
+      "published": true
     },
     {
       "file": "nexus_infra_health_probe.json",
       "id": "57QpbNQGwlFKb0q3",
       "name": "NEXUS Infra Health Probe",
       "active": true,
-      "nodes": 4
+      "nodes": 5,
+      "published": true
     },
     {
       "file": "nexus_master_lead_router_ai_agent.json",
       "id": "JnlZFAVmFAuNXVya",
       "name": "NEXUS Master Lead Router - AI Agent",
       "active": true,
-      "nodes": 19
+      "nodes": 26,
+      "published": true
+    },
+    {
+      "file": "nexus_public_home.json",
+      "id": "bhzCbnro0MlSCwwo",
+      "name": "NEXUS Public \u2014 Home",
+      "active": true,
+      "nodes": 2,
+      "published": true
+    },
+    {
+      "file": "nexus_public_privacy.json",
+      "id": "vKTmNepP4fGaTAe8",
+      "name": "NEXUS Public \u2014 Privacy",
+      "active": true,
+      "nodes": 2,
+      "published": true
+    },
+    {
+      "file": "nexus_public_terms.json",
+      "id": "Z0zFB6IKvARAzjpQ",
+      "name": "NEXUS Public \u2014 Terms",
+      "active": true,
+      "nodes": 2,
+      "published": true
     },
     {
       "file": "nexus_retention_purge.json",
       "id": "aIYwwoYStDAi9kHy",
       "name": "NEXUS Retention Purge",
       "active": true,
-      "nodes": 11
+      "nodes": 14,
+      "published": true
     },
     {
       "file": "phase_6_12_hour_silence_detector.json",
       "id": "B3TcpfzOMWj8oWgF",
       "name": "Phase 6 - 12-Hour Silence Detector",
       "active": true,
-      "nodes": 9
+      "nodes": 10,
+      "published": true
     },
     {
       "file": "slack_command_center_ai_agent.json",
       "id": "VmnIXo7tM30zqawp",
       "name": "Slack Command Center - AI Agent",
       "active": true,
-      "nodes": 12
+      "nodes": 15,
+      "published": true
     },
     {
       "file": "sync_closed_won_deals_to_supabase_pgvector.json",
       "id": "dhy2DDjWUqwuzHLW",
       "name": "Sync Closed-Won Deals to Supabase pgvector",
       "active": true,
-      "nodes": 8
+      "nodes": 9,
+      "published": true
     },
     {
       "file": "whatsapp_bdc_ai_agent.json",
       "id": "BiyHk9ZXxJUVGbf6",
       "name": "WhatsApp BDC AI Agent",
       "active": true,
-      "nodes": 28
+      "nodes": 36,
+      "published": true
+    },
+    {
+      "file": "whatsapp_send_dashboard_reply.json",
+      "id": "yx6m55p1Kj8V7koR",
+      "name": "WhatsApp Send (Dashboard Reply)",
+      "active": true,
+      "nodes": 12,
+      "published": true
     },
     {
       "file": "wf_108_erp_sync_bitrix24_crm.json",
       "id": "bxNBzBrcOtcFpMPn",
       "name": "wf_108 ERP Sync - Bitrix24 CRM",
       "active": true,
-      "nodes": 13
+      "nodes": 14,
+      "published": true
     }
   ]
 }

@@ -1,11 +1,5 @@
 {
-  "updatedAt": "2026-08-26T02:58:24.169Z",
-  "createdAt": "2026-08-24T18:13:28.394Z",
-  "id": "Z0zFB6IKvARAzjpQ",
   "name": "NEXUS Public — Terms",
-  "description": null,
-  "active": true,
-  "isArchived": false,
   "nodes": [
     {
       "id": "00000000-1111-4111-8111-111111111111",
@@ -68,127 +62,10 @@
     "saveDataSuccessExecution": "none",
     "errorWorkflow": "iYJkh1kztWxZXDbT"
   },
-  "staticData": null,
-  "meta": null,
-  "nodeGroups": [],
-  "pinData": null,
-  "versionId": "1df7ecee-0206-4f6c-b2af-f319a1f3a308",
-  "activeVersionId": "1df7ecee-0206-4f6c-b2af-f319a1f3a308",
-  "versionCounter": 2,
-  "triggerCount": 1,
-  "sourceWorkflowId": null,
-  "shared": [
-    {
-      "updatedAt": "2026-08-24T18:13:28.394Z",
-      "createdAt": "2026-08-24T18:13:28.394Z",
-      "role": "workflow:owner",
-      "workflowId": "Z0zFB6IKvARAzjpQ",
-      "projectId": "uRMuMPNZkIs0l37n",
-      "project": {
-        "updatedAt": "2026-07-23T18:54:00.785Z",
-        "createdAt": "2026-07-23T18:51:58.519Z",
-        "id": "uRMuMPNZkIs0l37n",
-        "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
-        "type": "personal",
-        "icon": null,
-        "description": null,
-        "customTelemetryTags": [],
-        "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      }
-    }
-  ],
-  "tags": [],
-  "activeVersion": {
-    "updatedAt": "2026-08-24T18:13:28.394Z",
-    "createdAt": "2026-08-24T18:13:28.394Z",
-    "versionId": "1df7ecee-0206-4f6c-b2af-f319a1f3a308",
-    "workflowId": "Z0zFB6IKvARAzjpQ",
-    "nodes": [
-      {
-        "id": "00000000-1111-4111-8111-111111111111",
-        "name": "In",
-        "type": "n8n-nodes-base.webhook",
-        "typeVersion": 2,
-        "position": [
-          0,
-          0
-        ],
-        "parameters": {
-          "httpMethod": "GET",
-          "path": "terms",
-          "responseMode": "responseNode",
-          "options": {}
-        },
-        "webhookId": "a5ff8cce-e198-4660-8c6e-9dbef442f19b"
-      },
-      {
-        "id": "00000000-2222-4222-8222-222222222222",
-        "name": "Out",
-        "type": "n8n-nodes-base.respondToWebhook",
-        "typeVersion": 1.1,
-        "position": [
-          240,
-          0
-        ],
-        "parameters": {
-          "respondWith": "text",
-          "responseBody": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Terms of service — NEXUS OS</title><style>*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#c9d1d9;\nfont:16px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif}\n.w{max-width:720px;margin:0 auto;padding:56px 24px 96px}\nh1{font-size:26px;margin:0 0 6px;color:#f0f6fc}\nh2{font-size:17px;margin:32px 0 8px;color:#f0f6fc}\n.sub{color:#8b949e;font-size:14px;margin:0 0 32px}\na{color:#58a6ff}ul{padding-left:20px}li{margin:6px 0}\n.box{border:1px solid #30363d;border-radius:8px;padding:16px;margin:24px 0;background:#161b22}\nfooter{margin-top:48px;padding-top:20px;border-top:1px solid #21262d;color:#8b949e;font-size:13px}</style></head><body><div class=\"w\">\n<h1>Terms of service</h1>\n<p class=\"sub\">NEXUS OS · last updated 24 August 2026</p>\n\n<div class=\"box\"><b>In one sentence:</b> this is internal dealership software with\nno public sign-up; the only person who can use it is the dealership owner and the\nstaff they authorise.</div>\n\n<h2>1. What this is</h2>\n<p>NEXUS OS is private operational software for a single automotive dealership.\nIt is not a public service. There is no registration, no subscription and no\ngeneral availability.</p>\n\n<h2>2. Who may use it</h2>\n<p>Only the dealership owner and staff accounts they create. Access is granted\nand removed by the owner.</p>\n\n<h2>3. Connected Google account</h2>\n<p>Connecting a Google account authorises NEXUS OS to send email as that account\nfor dealership business. Consent may be withdrawn at any time at\n<a href=\"https://myaccount.google.com/permissions\">myaccount.google.com/permissions</a>;\nsending stops immediately.</p>\n\n<h2>4. Acceptable use</h2>\n<p>The application must not be used to send unsolicited bulk email, to\nmisrepresent the sender, or for any purpose that breaches the Gmail Program\nPolicies or applicable law. Automated messages are limited to replies and\nfollow-ups to people who contacted the dealership.</p>\n\n<h2>5. Availability</h2>\n<p>The application is provided as-is for internal use. There is no uptime\ncommitment and no warranty. It may be changed or switched off at any time.</p>\n\n<h2>6. Liability</h2>\n<p>To the extent permitted by law, the operator is not liable for indirect or\nconsequential loss arising from use of this internal tool.</p>\n\n<h2>7. Contact</h2>\n<p><a href=\"mailto:aliasgher892@gmail.com\">aliasgher892@gmail.com</a></p><footer>NEXUS OS — automotive dealership operations. Contact: aliasgher892@gmail.com</footer></div></body></html>",
-          "options": {
-            "responseHeaders": {
-              "entries": [
-                {
-                  "name": "Content-Type",
-                  "value": "text/html; charset=utf-8"
-                }
-              ]
-            }
-          }
-        }
-      }
-    ],
-    "connections": {
-      "In": {
-        "main": [
-          [
-            {
-              "node": "Out",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      }
-    },
-    "nodeGroups": [],
-    "authors": "Ali Asgher Ujjain Wala ",
-    "name": null,
-    "description": null,
-    "autosaved": false,
-    "workflowPublishHistory": [
-      {
-        "createdAt": "2026-08-26T02:58:24.253Z",
-        "id": 515,
-        "workflowId": "Z0zFB6IKvARAzjpQ",
-        "versionId": "1df7ecee-0206-4f6c-b2af-f319a1f3a308",
-        "event": "deactivated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      },
-      {
-        "createdAt": "2026-08-26T02:58:24.292Z",
-        "id": 516,
-        "workflowId": "Z0zFB6IKvARAzjpQ",
-        "versionId": "1df7ecee-0206-4f6c-b2af-f319a1f3a308",
-        "event": "activated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      },
-      {
-        "createdAt": "2026-08-24T18:13:29.314Z",
-        "id": 498,
-        "workflowId": "Z0zFB6IKvARAzjpQ",
-        "versionId": "1df7ecee-0206-4f6c-b2af-f319a1f3a308",
-        "event": "activated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      }
-    ]
+  "_exported_from": {
+    "id": "Z0zFB6IKvARAzjpQ",
+    "active": true,
+    "updatedAt": "2026-08-26T02:58:24.169Z",
+    "published": true
   }
 }

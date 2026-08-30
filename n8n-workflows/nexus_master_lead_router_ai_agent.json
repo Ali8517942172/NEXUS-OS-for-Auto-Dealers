@@ -1,11 +1,5 @@
 {
-  "updatedAt": "2026-08-26T05:09:55.879Z",
-  "createdAt": "2026-07-23T19:16:39.602Z",
-  "id": "JnlZFAVmFAuNXVya",
   "name": "NEXUS Master Lead Router - AI Agent",
-  "description": null,
-  "active": true,
-  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -38,7 +32,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// The agent usually returns JSON, but often wrapped in ```json fences or with\n// a sentence around it. The old version silently fell back to COLD/0 on any\n// parse failure, which made every single lead look cold.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  // 1. straight parse\n  try { return JSON.parse(s); } catch (e) {}\n  // 2. strip markdown code fences\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  // 3. grab the outermost {...} block\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nlet parseFailed = false;\n\nif (!parsed || typeof parsed !== 'object') {\n  parseFailed = true;\n  // Last resort: pull an intent word and a number out of the prose so a\n  // genuinely hot lead is not silently downgraded to COLD.\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n}\n\nconst intent = String(parsed.intent || '').toUpperCase();\nconst ai_decision = {\n  intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n  score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n  reason: parsed.reason || null,\n  parse_failed: parseFailed\n};\n\nreturn [{ json: { lead, ai_decision } }];"
+        "jsCode": "// The agent usually returns JSON, but often wrapped in ```json fences or with\n// a sentence around it. The old version silently fell back to COLD/0 on any\n// parse failure, which made every single lead look cold.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  // 1. straight parse\n  try { return JSON.parse(s); } catch (e) {}\n  // 2. strip markdown code fences\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  // 3. grab the outermost {...} block\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nlet parseFailed = false;\n\nif (!parsed || typeof parsed !== 'object') {\n  parseFailed = true;\n  // Last resort: pull an intent word and a number out of the prose so a\n  // genuinely hot lead is not silently downgraded to COLD.\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n  // Deliberately no budget here: the prose fallback cannot tell a budget from\n  // a price, a year or a phone number, and a wrong budget is worse than none.\n}\n\n// 30 Aug 2026: budget_aed added. A live HOT lead said 'budget around AED 600,000',\n// the agent's own reason quoted it back, and the column was still written NULL --\n// nothing upstream extracts a budget from message text. This object is built\n// field by field, not spread, so a key the agent returns is dropped unless it is\n// named here. Anything not a positive finite number becomes null.\nconst rawBudget = Number(parsed.budget_aed);\nconst budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n\nconst intent = String(parsed.intent || '').toUpperCase();\nconst ai_decision = {\n  intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n  score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n  reason: parsed.reason || null,\n  budget_aed: budget_aed,\n  parse_failed: parseFailed\n};\n\nreturn [{ json: { lead, ai_decision } }];"
       },
       "id": "6",
       "name": "Parse AI Decision",
@@ -278,7 +272,7 @@
             {
               "keyName": "email",
               "condition": "eq",
-              "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `The lead's email address, used to check if this lead already exists in the database before deciding whether to insert or update`, 'string') }}"
+              "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.email || ('+' + String($('Validate & Enrich Input').first().json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
             }
           ]
         }
@@ -384,7 +378,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Lead data: {{ JSON.stringify($json.lead) }}\n\nStep 1: Use the Supabase Lead Lookup tool to check whether this lead already exists in the CRM.\nStep 2: Use the check_purchase_history tool to see whether this person has bought a vehicle from us before (a returning/VIP customer).\nStep 3: Score the lead from 1-100 and classify intent as HOT, WARM or COLD.\n  - If check_purchase_history returns ANY prior purchase, this is a RETURNING VIP CUSTOMER: score 90-100 and intent HOT, regardless of how casual the new enquiry sounds.\n  - Otherwise: HOT = ready to buy now, specific vehicle, clear budget or urgent language; WARM = genuine interest but no urgency/budget; COLD = just browsing, no budget, no timeline.\nStep 4: Use the upsert_lead tool to save the lead with the score and status you decided.\nStep 5: Return your decision.\n\nReturn ONLY a raw JSON object and nothing else. No markdown, no code fences, no commentary.\nSchema: {\"score\": 95, \"intent\": \"HOT\", \"reason\": \"one short sentence\", \"vip\": true}",
+        "text": "=Lead data: {{ JSON.stringify($json.lead) }}\n\nStep 1: Use the Supabase Lead Lookup tool to check whether this lead already exists in the CRM.\nStep 2: Use the check_purchase_history tool to see whether this person has bought a vehicle from us before (a returning/VIP customer).\nStep 3: Score the lead from 1-100 and classify intent as HOT, WARM or COLD.\n  - If check_purchase_history returns ANY prior purchase, this is a RETURNING VIP CUSTOMER: score 90-100 and intent HOT, regardless of how casual the new enquiry sounds.\n  - Otherwise: HOT = ready to buy now, specific vehicle, clear budget or urgent language; WARM = genuine interest but no urgency/budget; COLD = just browsing, no budget, no timeline.\nStep 4: If the customer states a budget anywhere in their message, report it as budget_aed: a plain number in AED, so 600000 - not \"600k\", not \"AED 600,000\", no commas, no currency. If they state no budget at all, use null. Do not guess or infer a budget from the vehicle they asked about.\nStep 5: Return your decision.\n\nDo NOT try to save the lead. Persisting it to the CRM is handled downstream by the workflow itself, deterministically, from the decision you return -- so the accuracy of your score, intent and budget_aed is what actually gets written.\n\nBoth lookup tools are pre-filtered to this exact lead; call them with no arguments and read the result.\n\nReturn ONLY a raw JSON object and nothing else. No markdown, no code fences, no commentary.\nSchema: {\"score\": 95, \"intent\": \"HOT\", \"reason\": \"one short sentence\", \"vip\": true, \"budget_aed\": 600000}",
         "needsFallback": true,
         "options": {
           "systemMessage": "You are NEXUS AI, an expert lead scoring agent for a premium car dealership in the UAE. You evaluate inbound leads, check whether they are returning customers, persist them to the CRM, and classify them so the router can dispatch them correctly. Returning customers are extremely valuable and must always be routed as HOT.",
@@ -412,7 +406,7 @@
             {
               "keyName": "email",
               "condition": "eq",
-              "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `The lead's email address, used to check whether this person is a returning customer who has bought a vehicle from us before`, 'string') }}"
+              "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.email || ('+' + String($('Validate & Enrich Input').first().json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
             }
           ]
         }
@@ -482,7 +476,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((prev.lead && prev.lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: prev.lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
+        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((prev.lead && prev.lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: prev.lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
       },
       "id": "mr-ladder-01",
       "name": "Model Ladder",
@@ -631,7 +625,7 @@
       "typeVersion": 2.2,
       "position": [
         1216,
-        -64
+        260
       ],
       "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
     },
@@ -671,7 +665,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Delivery Report - verify every claim the audit row is about to make.\n//\n// Only ONE intent branch runs per lead, and `$('Node')` THROWS for a node that\n// did not run -- `?.` cannot rescue it -- so the claim list is built from the\n// intent that actually fired, and every lookup is still wrapped.\nconst decision = $('Parse AI Decision').first().json;\nconst intent = String((decision.ai_decision || {}).intent || 'UNKNOWN').toUpperCase();\nconst origin = String(((decision.lead) || {}).origin || 'external');\n\nconst CLAIMED = [];\nif (intent === 'HOT') {\n  CLAIMED.push({ node: 'Slack Router (HOT)', what: 'lead escalated to a closer (Slack + email)', critical: true });\n  CLAIMED.push({ node: 'ERP Sync (HOT)',     what: 'lead written into the Bitrix24 CRM',        critical: true });\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp Outreach (HOT)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'WARM') {\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp BDC (WARM)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'COLD') {\n  // Started, not finished: the drip spans seven days and this node is called\n  // with waitForSubWorkflow = false, so the only honest claim is that it began.\n  CLAIMED.push({ node: 'Marketing Drip (COLD)', what: 'lead handed to the 7-day drip (start only)', critical: true });\n} else {\n  CLAIMED.push({ node: 'Slack: Unclassified Lead', what: 'unclassified lead posted to Slack for a human', critical: true });\n}\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  // A sub-workflow can finish green and still have failed to deliver. Lead\n  // Escalation now answers with its own verdict; believe it over the exit code.\n  if (typeof j.status === 'string' && /fail|unverified|error/i.test(j.status)) {\n    return { ...c, ok: false, why: 'sub-workflow reported ' + j.status };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst suppressed = (origin === 'whatsapp-bdc' && (intent === 'HOT' || intent === 'WARM'))\n  ? ' Outreach deliberately skipped: the customer is already in a live WhatsApp thread.'\n  : '';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    intent,\n    origin,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: (dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified') + suppressed,\n  },\n} }];"
+        "jsCode": "// Delivery Report - verify every claim the audit row is about to make.\n//\n// Only ONE intent branch runs per lead, and `$('Node')` THROWS for a node that\n// did not run -- `?.` cannot rescue it -- so the claim list is built from the\n// intent that actually fired, and every lookup is still wrapped.\nconst decision = $('Parse AI Decision').first().json;\nconst intent = String((decision.ai_decision || {}).intent || 'UNKNOWN').toUpperCase();\nconst origin = String(((decision.lead) || {}).origin || 'external');\n\nconst CLAIMED = [];\n\n// 29 Aug 2026: the lead write is claimed on EVERY branch, unconditionally, and\n// it is pushed FIRST so CLAIMED can never be empty.\n// Before this, a WARM lead with origin 'whatsapp-bdc' pushed nothing at all --\n// the WARM arm has no else -- so results.length was 0 and the report said\n// 'all 0 claimed steps verified' with status SUCCESS. Execution 6253 did exactly\n// that on a run which created no leads row whatsoever. The report only ever\n// verified dispatch; it never verified persistence, which is the one thing every\n// downstream journey depends on.\nCLAIMED.push({ node: 'Persist Lead (deterministic)', what: 'lead row written to the leads table', critical: true });\n\nif (intent === 'HOT') {\n  CLAIMED.push({ node: 'Slack Router (HOT)', what: 'lead escalated to a closer (Slack + email)', critical: true });\n  CLAIMED.push({ node: 'ERP Sync (HOT)',     what: 'lead written into the Bitrix24 CRM',        critical: true });\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp Outreach (HOT)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'WARM') {\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp BDC (WARM)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'COLD') {\n  // Started, not finished: the drip spans seven days and this node is called\n  // with waitForSubWorkflow = false, so the only honest claim is that it began.\n  CLAIMED.push({ node: 'Marketing Drip (COLD)', what: 'lead handed to the 7-day drip (start only)', critical: true });\n} else {\n  CLAIMED.push({ node: 'Slack: Unclassified Lead', what: 'unclassified lead posted to Slack for a human', critical: true });\n}\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  // A sub-workflow can finish green and still have failed to deliver. Lead\n  // Escalation now answers with its own verdict; believe it over the exit code.\n  if (typeof j.status === 'string' && /fail|unverified|error/i.test(j.status)) {\n    return { ...c, ok: false, why: 'sub-workflow reported ' + j.status };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst suppressed = (origin === 'whatsapp-bdc' && (intent === 'HOT' || intent === 'WARM'))\n  ? ' Outreach deliberately skipped: the customer is already in a live WhatsApp thread.'\n  : '';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    intent,\n    origin,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' — ' + r.why),\n    note: (dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified') + suppressed,\n  },\n} }];"
       },
       "id": "mr-delivery-report-01",
       "name": "Delivery Report",
@@ -681,6 +675,48 @@
         1312,
         304
       ]
+    },
+    {
+      "id": "8e7f01b0-7092-4945-a38b-d9e74f948863",
+      "name": "Persist Lead (deterministic)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        880,
+        32
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?on_conflict=email",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ name: $json.lead.name || 'Unknown', email: $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead'), phone: $json.lead.phone, vehicle_interest: $json.lead.vehicle_interest, ai_score: $json.ai_decision.score, status: $json.ai_decision.intent, source: 'nexus-master-router' }, (Number($json.ai_decision.budget_aed) > 0 || Number($json.lead.budget_aed) > 0) ? { budget_aed: Number($json.ai_decision.budget_aed) > 0 ? Number($json.ai_decision.budget_aed) : Number($json.lead.budget_aed) } : {})) }}",
+        "options": {}
+      },
+      "notes": "Added 29 Aug 2026. The lead row must not depend on the model choosing to call a tool - on exec 6253 it simply did not, and the run still audited SUCCESS. Values are bound from Parse AI Decision's item, not from $fromAI.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -700,6 +736,11 @@
         [
           {
             "node": "Intent Switch",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Persist Lead (deterministic)",
             "type": "main",
             "index": 0
           }
@@ -815,17 +856,6 @@
           {
             "node": "AI Lead Scoring Agent",
             "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "upsert_lead": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Lead Scoring Agent",
-            "type": "ai_tool",
             "index": 0
           }
         ]
@@ -999,1050 +1029,10 @@
     "errorWorkflow": "iYJkh1kztWxZXDbT",
     "executionTimeout": 300
   },
-  "staticData": null,
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "aiBuilderAssisted": true,
-    "builderVariant": "mcp"
-  },
-  "nodeGroups": [],
-  "pinData": {},
-  "versionId": "0ff462f6-2fca-40f5-b949-17a39547d63e",
-  "activeVersionId": "0ff462f6-2fca-40f5-b949-17a39547d63e",
-  "versionCounter": 125,
-  "triggerCount": 1,
-  "sourceWorkflowId": null,
-  "shared": [
-    {
-      "updatedAt": "2026-07-23T19:16:39.602Z",
-      "createdAt": "2026-07-23T19:16:39.602Z",
-      "role": "workflow:owner",
-      "workflowId": "JnlZFAVmFAuNXVya",
-      "projectId": "uRMuMPNZkIs0l37n",
-      "project": {
-        "updatedAt": "2026-07-23T18:54:00.785Z",
-        "createdAt": "2026-07-23T18:51:58.519Z",
-        "id": "uRMuMPNZkIs0l37n",
-        "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
-        "type": "personal",
-        "icon": null,
-        "description": null,
-        "customTelemetryTags": [],
-        "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      }
-    }
-  ],
-  "tags": [],
-  "activeVersion": {
-    "updatedAt": "2026-08-26T05:09:55.882Z",
-    "createdAt": "2026-08-26T05:09:55.882Z",
-    "versionId": "0ff462f6-2fca-40f5-b949-17a39547d63e",
-    "workflowId": "JnlZFAVmFAuNXVya",
-    "nodes": [
-      {
-        "parameters": {
-          "httpMethod": "POST",
-          "path": "nexus-inbound-lead",
-          "options": {}
-        },
-        "id": "1",
-        "name": "Webhook Catch-All",
-        "type": "n8n-nodes-base.webhook",
-        "typeVersion": 1.1,
-        "position": [
-          0,
-          304
-        ],
-        "webhookId": "d0ba4bc1-47b4-4ad0-8ae9-83df19614c9a"
-      },
-      {
-        "parameters": {
-          "jsCode": "// Accept a raw webhook POST (data under .body) or a direct/sub-workflow call.\nconst raw = $input.first().json;\nconst src = raw.body || raw.lead || raw;\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v).trim();\n\nconst email = clean(src.email);\nconst phone = clean(src.phone) || clean(src.whatsapp);\n\nif (!email && !phone) {\n  throw new Error('Rejected: inbound lead has neither an email nor a phone number. Keys received: ' + Object.keys(src).join(', '));\n}\n\nreturn [{\n  json: {\n    lead: {\n      name: clean(src.name) || clean(src.full_name) || 'Unknown',\n      email: email,\n      phone: phone,\n      vehicle_interest: clean(src.vehicle_interest) || clean(src.vehicleInterest) || clean(src.message) || null,\n      budget_aed: src.budget_aed ? Number(src.budget_aed) : null,\n      source: clean(src.source) || 'webhook',\n      // Who handed us this lead. 'whatsapp-bdc' means the person is ALREADY in\n      // a live WhatsApp thread that the BDC agent has just answered, so the\n      // outreach branches below must not fire a canned welcome at them on top\n      // of the reply they are reading right now. Everything else -- scoring,\n      // the Slack alert, the ERP write, the drip -- still applies.\n      origin: clean(src.origin) || 'external',\n      received_at: new Date().toISOString()\n    }\n  }\n}];"
-        },
-        "id": "2",
-        "name": "Validate & Enrich Input",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          176,
-          304
-        ]
-      },
-      {
-        "parameters": {
-          "jsCode": "// The agent usually returns JSON, but often wrapped in ```json fences or with\n// a sentence around it. The old version silently fell back to COLD/0 on any\n// parse failure, which made every single lead look cold.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  // 1. straight parse\n  try { return JSON.parse(s); } catch (e) {}\n  // 2. strip markdown code fences\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  // 3. grab the outermost {...} block\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nlet parseFailed = false;\n\nif (!parsed || typeof parsed !== 'object') {\n  parseFailed = true;\n  // Last resort: pull an intent word and a number out of the prose so a\n  // genuinely hot lead is not silently downgraded to COLD.\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n}\n\nconst intent = String(parsed.intent || '').toUpperCase();\nconst ai_decision = {\n  intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n  score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n  reason: parsed.reason || null,\n  parse_failed: parseFailed\n};\n\nreturn [{ json: { lead, ai_decision } }];"
-        },
-        "id": "6",
-        "name": "Parse AI Decision",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          752,
-          288
-        ]
-      },
-      {
-        "parameters": {
-          "rules": {
-            "values": [
-              {
-                "conditions": {
-                  "options": {
-                    "caseSensitive": true,
-                    "leftValue": "",
-                    "typeValidation": "strict",
-                    "version": 1
-                  },
-                  "conditions": [
-                    {
-                      "id": "1f148bc7-4925-4a66-97cb-0c92b32bcf74",
-                      "leftValue": "={{ $json.ai_decision.intent }}",
-                      "rightValue": "HOT",
-                      "operator": {
-                        "type": "string",
-                        "operation": "equals"
-                      }
-                    }
-                  ],
-                  "combinator": "and"
-                }
-              },
-              {
-                "conditions": {
-                  "options": {
-                    "caseSensitive": true,
-                    "leftValue": "",
-                    "typeValidation": "strict",
-                    "version": 1
-                  },
-                  "conditions": [
-                    {
-                      "id": "164b5a5f-dead-4549-a81b-e725ed8dd6eb",
-                      "leftValue": "={{ $json.ai_decision.intent }}",
-                      "rightValue": "WARM",
-                      "operator": {
-                        "type": "string",
-                        "operation": "equals"
-                      }
-                    }
-                  ],
-                  "combinator": "and"
-                }
-              },
-              {
-                "conditions": {
-                  "options": {
-                    "caseSensitive": true,
-                    "leftValue": "",
-                    "typeValidation": "strict",
-                    "version": 1
-                  },
-                  "conditions": [
-                    {
-                      "id": "3ac91d22-7b41-4f6e-9a02-5f0c2b8ad901",
-                      "leftValue": "={{ $json.ai_decision.intent }}",
-                      "rightValue": "COLD",
-                      "operator": {
-                        "type": "string",
-                        "operation": "equals"
-                      }
-                    }
-                  ],
-                  "combinator": "and"
-                }
-              }
-            ]
-          },
-          "options": {
-            "fallbackOutput": "extra",
-            "renameFallbackOutput": "UNKNOWN"
-          }
-        },
-        "id": "7",
-        "name": "Intent Switch",
-        "type": "n8n-nodes-base.switch",
-        "typeVersion": 3,
-        "position": [
-          880,
-          176
-        ]
-      },
-      {
-        "parameters": {
-          "method": "POST",
-          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
-          "authentication": "predefinedCredentialType",
-          "nodeCredentialType": "supabaseApi",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Prefer",
-                "value": "return=minimal"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={{ JSON.stringify({ workflow: 'Master Router', status: $json.delivery ? $json.delivery.status : ($('Parse AI Decision').first().json.ai_decision.parse_failed ? 'FAILED' : 'SUCCESS'), lead_name: $('Parse AI Decision').first().json.lead.name, lead_email: $('Parse AI Decision').first().json.lead.email, lead_score: $('Parse AI Decision').first().json.ai_decision.score, intent: $('Parse AI Decision').first().json.ai_decision.intent, summary: ($('Parse AI Decision').first().json.ai_decision.parse_failed ? ('Scored by the regex fallback, not by the agent. ' + ($('Parse AI Decision').first().json.ai_decision.reason || '')) : ($('Parse AI Decision').first().json.ai_decision.reason || 'Completed')) + ($json.delivery ? ' | ' + $json.delivery.note + ($json.delivery.dropped.length ? ' [' + $json.delivery.dropped.join('; ') + ']' : '') : ''), logged_at: $now.toISO() }) }}",
-          "options": {}
-        },
-        "id": "11",
-        "name": "Audit Log",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          1456,
-          304
-        ],
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        },
-        "onError": "continueRegularOutput"
-      },
-      {
-        "parameters": {
-          "model": "={{ $json.orModel }}",
-          "options": {
-            "maxTokens": 1024,
-            "temperature": 0.2
-          }
-        },
-        "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-        "typeVersion": 1,
-        "position": [
-          288,
-          512
-        ],
-        "id": "bff6b3f4-2118-4f5b-b55c-daae3051339d",
-        "name": "OpenRouter Chat Model",
-        "credentials": {
-          "openRouterApi": {
-            "id": "UUtKrBzkQOztAOzZ",
-            "name": "OpenRouter account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "workflowId": {
-            "__rl": true,
-            "value": "bxNBzBrcOtcFpMPn",
-            "mode": "id",
-            "cachedResultUrl": "/workflow/bxNBzBrcOtcFpMPn"
-          },
-          "workflowInputs": {
-            "mappingMode": "defineBelow",
-            "value": {},
-            "matchingColumns": [],
-            "schema": [],
-            "attemptToConvertTypes": false,
-            "convertFieldsToString": true
-          },
-          "options": {}
-        },
-        "type": "n8n-nodes-base.executeWorkflow",
-        "typeVersion": 1.3,
-        "position": [
-          1408,
-          112
-        ],
-        "id": "6653e464-3099-46a9-8e6c-bad42b96e011",
-        "name": "ERP Sync (HOT)"
-      },
-      {
-        "parameters": {
-          "toolDescription": "Creates or updates a lead in the Supabase 'leads' table, merging on the email address. Call this once you have scored and classified the lead. Provide name, email, phone, vehicle_interest, budget_aed (the stated budget in AED as a plain number, 0 if the lead did not mention one), ai_score (1-100 integer) and status (HOT, WARM or COLD).",
-          "method": "POST",
-          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?on_conflict=email",
-          "authentication": "predefinedCredentialType",
-          "nodeCredentialType": "supabaseApi",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Prefer",
-                "value": "resolution=merge-duplicates,return=minimal"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={{ JSON.stringify(Object.assign({ name: $fromAI('name', 'Full name of the lead', 'string'), email: $fromAI('email', 'Email address of the lead', 'string'), phone: $fromAI('phone', 'Phone number of the lead, empty string if unknown', 'string'), vehicle_interest: $fromAI('vehicle_interest', 'Which vehicle or vehicle type the lead is interested in', 'string'), ai_score: $fromAI('ai_score', 'Lead quality score from 1 to 100', 'number'), status: $fromAI('status', 'Lead classification: HOT, WARM or COLD', 'string'), source: 'nexus-master-router' }, Number($fromAI('budget_aed', 'The budget the lead stated, in AED, as a plain number. Use 0 if they did not mention a budget.', 'number')) > 0 ? { budget_aed: Number($fromAI('budget_aed', 'The budget the lead stated, in AED, as a plain number. Use 0 if they did not mention a budget.', 'number')) } : {})) }}",
-          "options": {}
-        },
-        "type": "n8n-nodes-base.httpRequestTool",
-        "typeVersion": 4.4,
-        "position": [
-          880,
-          560
-        ],
-        "id": "1598f41b-1c70-4c34-b06c-e7c3054a0c94",
-        "name": "upsert_lead",
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "operation": "getAll",
-          "tableId": "leads",
-          "limit": 20,
-          "filters": {
-            "conditions": [
-              {
-                "keyName": "email",
-                "condition": "eq",
-                "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `The lead's email address, used to check if this lead already exists in the database before deciding whether to insert or update`, 'string') }}"
-              }
-            ]
-          }
-        },
-        "id": "fc00a901-4e3d-4198-bcc8-efb1301cfaff",
-        "name": "Supabase Lead Lookup",
-        "type": "n8n-nodes-base.supabaseTool",
-        "typeVersion": 1,
-        "position": [
-          672,
-          544
-        ],
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "workflowId": {
-            "__rl": true,
-            "value": "KI6P1Qcf3MIZakNa",
-            "mode": "id",
-            "cachedResultUrl": "/workflow/KI6P1Qcf3MIZakNa"
-          },
-          "workflowInputs": {
-            "mappingMode": "defineBelow",
-            "value": {},
-            "matchingColumns": [],
-            "schema": [],
-            "attemptToConvertTypes": false,
-            "convertFieldsToString": true
-          },
-          "options": {}
-        },
-        "type": "n8n-nodes-base.executeWorkflow",
-        "typeVersion": 1.3,
-        "position": [
-          1200,
-          112
-        ],
-        "id": "cbfd0609-ac58-4b85-9aaa-52b2403c886b",
-        "name": "Slack Router (HOT)"
-      },
-      {
-        "parameters": {
-          "workflowId": {
-            "__rl": true,
-            "value": "BiyHk9ZXxJUVGbf6",
-            "mode": "id",
-            "cachedResultUrl": "/workflow/BiyHk9ZXxJUVGbf6"
-          },
-          "workflowInputs": {
-            "mappingMode": "defineBelow",
-            "value": {},
-            "matchingColumns": [],
-            "schema": [],
-            "attemptToConvertTypes": false,
-            "convertFieldsToString": true
-          },
-          "options": {}
-        },
-        "type": "n8n-nodes-base.executeWorkflow",
-        "typeVersion": 1.3,
-        "position": [
-          1200,
-          304
-        ],
-        "id": "5dcafa2c-756b-4a9f-a644-c1108e1f1689",
-        "name": "WhatsApp BDC (WARM)"
-      },
-      {
-        "parameters": {
-          "workflowId": {
-            "__rl": true,
-            "value": "G7FhvMY2ucW5Fg7X",
-            "mode": "id",
-            "cachedResultUrl": "/workflow/G7FhvMY2ucW5Fg7X"
-          },
-          "workflowInputs": {
-            "mappingMode": "defineBelow",
-            "value": {},
-            "matchingColumns": [],
-            "schema": [],
-            "attemptToConvertTypes": false,
-            "convertFieldsToString": true
-          },
-          "options": {
-            "waitForSubWorkflow": false
-          }
-        },
-        "type": "n8n-nodes-base.executeWorkflow",
-        "typeVersion": 1.3,
-        "position": [
-          1232,
-          528
-        ],
-        "id": "9f0912bc-d895-4281-aa26-de32622db821",
-        "name": "Marketing Drip (COLD)"
-      },
-      {
-        "parameters": {
-          "promptType": "define",
-          "text": "=Lead data: {{ JSON.stringify($json.lead) }}\n\nStep 1: Use the Supabase Lead Lookup tool to check whether this lead already exists in the CRM.\nStep 2: Use the check_purchase_history tool to see whether this person has bought a vehicle from us before (a returning/VIP customer).\nStep 3: Score the lead from 1-100 and classify intent as HOT, WARM or COLD.\n  - If check_purchase_history returns ANY prior purchase, this is a RETURNING VIP CUSTOMER: score 90-100 and intent HOT, regardless of how casual the new enquiry sounds.\n  - Otherwise: HOT = ready to buy now, specific vehicle, clear budget or urgent language; WARM = genuine interest but no urgency/budget; COLD = just browsing, no budget, no timeline.\nStep 4: Use the upsert_lead tool to save the lead with the score and status you decided.\nStep 5: Return your decision.\n\nReturn ONLY a raw JSON object and nothing else. No markdown, no code fences, no commentary.\nSchema: {\"score\": 95, \"intent\": \"HOT\", \"reason\": \"one short sentence\", \"vip\": true}",
-          "needsFallback": true,
-          "options": {
-            "systemMessage": "You are NEXUS AI, an expert lead scoring agent for a premium car dealership in the UAE. You evaluate inbound leads, check whether they are returning customers, persist them to the CRM, and classify them so the router can dispatch them correctly. Returning customers are extremely valuable and must always be routed as HOT.",
-            "maxIterations": 8,
-            "enableStreaming": false
-          }
-        },
-        "id": "e2f0eb5f-65ab-4a0c-88ff-33463a77662f",
-        "name": "AI Lead Scoring Agent",
-        "type": "@n8n/n8n-nodes-langchain.agent",
-        "typeVersion": 3.1,
-        "position": [
-          464,
-          304
-        ],
-        "onError": "continueErrorOutput"
-      },
-      {
-        "parameters": {
-          "operation": "getAll",
-          "tableId": "purchase_history",
-          "limit": 5,
-          "filters": {
-            "conditions": [
-              {
-                "keyName": "email",
-                "condition": "eq",
-                "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `The lead's email address, used to check whether this person is a returning customer who has bought a vehicle from us before`, 'string') }}"
-              }
-            ]
-          }
-        },
-        "id": "6c739b13-27ba-4d04-aa8b-2086cf1f9c43",
-        "name": "check_purchase_history",
-        "type": "n8n-nodes-base.supabaseTool",
-        "typeVersion": 1,
-        "position": [
-          528,
-          672
-        ],
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "model": "={{ $json.groqModel }}",
-          "options": {}
-        },
-        "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
-        "typeVersion": 1,
-        "position": [
-          448,
-          544
-        ],
-        "id": "mr-groq-01",
-        "name": "Groq Fallback",
-        "credentials": {
-          "groqApi": {
-            "id": "JgOg4w1ZMJc37lmL",
-            "name": "Groq account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "workflowId": {
-            "__rl": true,
-            "value": "BiyHk9ZXxJUVGbf6",
-            "mode": "id",
-            "cachedResultUrl": "/workflow/BiyHk9ZXxJUVGbf6"
-          },
-          "workflowInputs": {
-            "mappingMode": "defineBelow",
-            "value": {},
-            "matchingColumns": [],
-            "schema": [],
-            "attemptToConvertTypes": false,
-            "convertFieldsToString": true
-          },
-          "options": {}
-        },
-        "type": "n8n-nodes-base.executeWorkflow",
-        "typeVersion": 1.3,
-        "position": [
-          1408,
-          -64
-        ],
-        "id": "mr-wa-hot-01",
-        "name": "WhatsApp Outreach (HOT)",
-        "onError": "continueRegularOutput"
-      },
-      {
-        "parameters": {
-          "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((prev.lead && prev.lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: prev.lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
-        },
-        "id": "mr-ladder-01",
-        "name": "Model Ladder",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          352,
-          304
-        ]
-      },
-      {
-        "parameters": {
-          "select": "channel",
-          "channelId": {
-            "__rl": true,
-            "value": "C0BKTLL1X54",
-            "mode": "id"
-          },
-          "text": "=:warning: *Lead could not be classified*\n\n*Name:* {{ $json.lead.name }}\n*Email:* {{ $json.lead.email || 'n/a' }}\n*Phone:* {{ $json.lead.phone || 'n/a' }}\n*Enquiry:* {{ $json.lead.vehicle_interest || 'n/a' }}\n\n*Raw AI output:* {{ $json.ai_decision.reason }}\n*Parse failed:* {{ $json.ai_decision.parse_failed }}\n\nThis lead was NOT routed automatically. Please review and assign it manually.",
-          "otherOptions": {},
-          "resource": "message",
-          "operation": "post"
-        },
-        "type": "n8n-nodes-base.slack",
-        "typeVersion": 2.5,
-        "position": [
-          1200,
-          704
-        ],
-        "id": "mr-unknown-01",
-        "name": "Slack: Unclassified Lead",
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "webhookId": "eea02491-c358-45ac-a6b6-7d0bba8bafb7",
-        "credentials": {
-          "slackApi": {
-            "id": "oOf93CGdFiAxHkHF",
-            "name": "Slack account"
-          }
-        },
-        "onError": "continueRegularOutput"
-      },
-      {
-        "parameters": {
-          "sessionIdType": "customKey",
-          "sessionKey": "={{ ($json.lead && ($json.lead.email || $json.lead.phone)) || 'lead-' + $execution.id }}",
-          "contextWindowLength": "={{ 10 }}"
-        },
-        "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-        "typeVersion": 1.4,
-        "position": [
-          560,
-          560
-        ],
-        "id": "f83d708b-3116-4af1-a510-187aa359eef4",
-        "name": "Simple Memory"
-      },
-      {
-        "parameters": {
-          "inputSource": "passthrough"
-        },
-        "id": "mr-called-internally-01",
-        "name": "Called Internally",
-        "type": "n8n-nodes-base.executeWorkflowTrigger",
-        "typeVersion": 1.1,
-        "position": [
-          -240,
-          128
-        ],
-        "notes": "Make.com and Zapier are empty -- every workflow was migrated into n8n -- so nothing external POSTs the webhook any more. This is how the rest of the system reaches the Router now: in-process, no HTTP, no token."
-      },
-      {
-        "parameters": {
-          "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "apikey",
-                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
-              },
-              {
-                "name": "Authorization",
-                "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
-              }
-            ]
-          },
-          "options": {
-            "timeout": 10000
-          }
-        },
-        "id": "mr-verify-jwt-0001",
-        "name": "Verify JWT",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          -240,
-          480
-        ],
-        "retryOnFail": false,
-        "alwaysOutputData": true,
-        "onError": "continueRegularOutput",
-        "notes": "Public webhook branch only. A rejected token arrives as data, not as a failed node."
-      },
-      {
-        "parameters": {
-          "jsCode": "// This node sits ONLY on the public webhook branch.\n//\n// Until now `POST /webhook/nexus-inbound-lead` was wide open. Anyone who found\n// the URL could invent a lead, have an LLM score it, get a row written into\n// `leads`, and -- on a HOT verdict -- make the dealership send a WhatsApp\n// message to any number they chose. Every other public webhook in this system\n// already checks the caller's Supabase session token; this one never did,\n// because its only intended caller was Make.com, which no longer exists.\n//\n// `Called Internally` (the Execute Workflow trigger) connects straight to\n// `Validate & Enrich Input` and never reaches here, so n8n-to-n8n calls are\n// untouched -- they are already inside the trust boundary.\n//\n// `Verify JWT` runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\nconst auth = $input.first().json || {};\nif (!auth.id) {\n  throw new Error('Inbound lead rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so `Validate & Enrich Input` sees\n// exactly the shape it saw before this guard was inserted.\nreturn $('Webhook Catch-All').all();"
-        },
-        "id": "mr-auth-gate-0001",
-        "name": "Auth Gate",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          -80,
-          592
-        ]
-      },
-      {
-        "parameters": {
-          "conditions": {
-            "options": {
-              "caseSensitive": true,
-              "leftValue": "",
-              "typeValidation": "loose",
-              "version": 2
-            },
-            "conditions": [
-              {
-                "id": "mr-if-hot-outreach-1-c1",
-                "leftValue": "={{ $json.lead.origin }}",
-                "rightValue": "whatsapp-bdc",
-                "operator": {
-                  "type": "string",
-                  "operation": "equals"
-                }
-              }
-            ],
-            "combinator": "and"
-          },
-          "looseTypeValidation": true
-        },
-        "id": "mr-if-hot-outreach-1",
-        "name": "HOT: Already In A Live Chat?",
-        "type": "n8n-nodes-base.if",
-        "typeVersion": 2.2,
-        "position": [
-          1216,
-          -64
-        ],
-        "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
-      },
-      {
-        "parameters": {
-          "conditions": {
-            "options": {
-              "caseSensitive": true,
-              "leftValue": "",
-              "typeValidation": "loose",
-              "version": 2
-            },
-            "conditions": [
-              {
-                "id": "mr-if-warm-outreach-c1",
-                "leftValue": "={{ $json.lead.origin }}",
-                "rightValue": "whatsapp-bdc",
-                "operator": {
-                  "type": "string",
-                  "operation": "equals"
-                }
-              }
-            ],
-            "combinator": "and"
-          },
-          "looseTypeValidation": true
-        },
-        "id": "mr-if-warm-outreach",
-        "name": "WARM: Already In A Live Chat?",
-        "type": "n8n-nodes-base.if",
-        "typeVersion": 2.2,
-        "position": [
-          1040,
-          304
-        ],
-        "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
-      },
-      {
-        "parameters": {
-          "jsCode": "// Delivery Report - verify every claim the audit row is about to make.\n//\n// Only ONE intent branch runs per lead, and `$('Node')` THROWS for a node that\n// did not run -- `?.` cannot rescue it -- so the claim list is built from the\n// intent that actually fired, and every lookup is still wrapped.\nconst decision = $('Parse AI Decision').first().json;\nconst intent = String((decision.ai_decision || {}).intent || 'UNKNOWN').toUpperCase();\nconst origin = String(((decision.lead) || {}).origin || 'external');\n\nconst CLAIMED = [];\nif (intent === 'HOT') {\n  CLAIMED.push({ node: 'Slack Router (HOT)', what: 'lead escalated to a closer (Slack + email)', critical: true });\n  CLAIMED.push({ node: 'ERP Sync (HOT)',     what: 'lead written into the Bitrix24 CRM',        critical: true });\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp Outreach (HOT)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'WARM') {\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp BDC (WARM)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'COLD') {\n  // Started, not finished: the drip spans seven days and this node is called\n  // with waitForSubWorkflow = false, so the only honest claim is that it began.\n  CLAIMED.push({ node: 'Marketing Drip (COLD)', what: 'lead handed to the 7-day drip (start only)', critical: true });\n} else {\n  CLAIMED.push({ node: 'Slack: Unclassified Lead', what: 'unclassified lead posted to Slack for a human', critical: true });\n}\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  // A sub-workflow can finish green and still have failed to deliver. Lead\n  // Escalation now answers with its own verdict; believe it over the exit code.\n  if (typeof j.status === 'string' && /fail|unverified|error/i.test(j.status)) {\n    return { ...c, ok: false, why: 'sub-workflow reported ' + j.status };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst suppressed = (origin === 'whatsapp-bdc' && (intent === 'HOT' || intent === 'WARM'))\n  ? ' Outreach deliberately skipped: the customer is already in a live WhatsApp thread.'\n  : '';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    intent,\n    origin,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: (dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified') + suppressed,\n  },\n} }];"
-        },
-        "id": "mr-delivery-report-01",
-        "name": "Delivery Report",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          1312,
-          304
-        ]
-      }
-    ],
-    "connections": {
-      "Webhook Catch-All": {
-        "main": [
-          [
-            {
-              "node": "Verify JWT",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Parse AI Decision": {
-        "main": [
-          [
-            {
-              "node": "Intent Switch",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Intent Switch": {
-        "main": [
-          [
-            {
-              "node": "Slack Router (HOT)",
-              "type": "main",
-              "index": 0
-            },
-            {
-              "node": "ERP Sync (HOT)",
-              "type": "main",
-              "index": 0
-            },
-            {
-              "node": "HOT: Already In A Live Chat?",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "WARM: Already In A Live Chat?",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "Marketing Drip (COLD)",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "Slack: Unclassified Lead",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "ERP Sync (HOT)": {
-        "main": [
-          []
-        ]
-      },
-      "Slack Router (HOT)": {
-        "main": [
-          []
-        ]
-      },
-      "WhatsApp BDC (WARM)": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Marketing Drip (COLD)": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Validate & Enrich Input": {
-        "main": [
-          [
-            {
-              "node": "Model Ladder",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "AI Lead Scoring Agent": {
-        "main": [
-          [
-            {
-              "node": "Parse AI Decision",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "Model Ladder",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "OpenRouter Chat Model": {
-        "ai_languageModel": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "ai_languageModel",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "upsert_lead": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Supabase Lead Lookup": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "check_purchase_history": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Groq Fallback": {
-        "ai_languageModel": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "ai_languageModel",
-              "index": 1
-            }
-          ]
-        ]
-      },
-      "WhatsApp Outreach (HOT)": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Model Ladder": {
-        "main": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Slack: Unclassified Lead": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Simple Memory": {
-        "ai_memory": [
-          [
-            {
-              "node": "AI Lead Scoring Agent",
-              "type": "ai_memory",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Verify JWT": {
-        "main": [
-          [
-            {
-              "node": "Auth Gate",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Auth Gate": {
-        "main": [
-          [
-            {
-              "node": "Validate & Enrich Input",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Called Internally": {
-        "main": [
-          [
-            {
-              "node": "Validate & Enrich Input",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "HOT: Already In A Live Chat?": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "WhatsApp Outreach (HOT)",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "WARM: Already In A Live Chat?": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "WhatsApp BDC (WARM)",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Delivery Report": {
-        "main": [
-          [
-            {
-              "node": "Audit Log",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      }
-    },
-    "nodeGroups": [],
-    "authors": "Ali Asgher Ujjain Wala ",
-    "name": null,
-    "description": null,
-    "autosaved": false,
-    "workflowPublishHistory": [
-      {
-        "createdAt": "2026-08-26T05:09:56.171Z",
-        "id": 575,
-        "workflowId": "JnlZFAVmFAuNXVya",
-        "versionId": "0ff462f6-2fca-40f5-b949-17a39547d63e",
-        "event": "deactivated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      },
-      {
-        "createdAt": "2026-08-26T05:09:56.217Z",
-        "id": 576,
-        "workflowId": "JnlZFAVmFAuNXVya",
-        "versionId": "0ff462f6-2fca-40f5-b949-17a39547d63e",
-        "event": "activated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      }
-    ]
+  "_exported_from": {
+    "id": "JnlZFAVmFAuNXVya",
+    "active": true,
+    "updatedAt": "2026-08-30T02:12:09.962Z",
+    "published": true
   }
 }

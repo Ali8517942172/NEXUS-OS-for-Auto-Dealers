@@ -1,11 +1,5 @@
 {
-  "updatedAt": "2026-08-26T05:00:05.153Z",
-  "createdAt": "2026-07-23T19:16:19.214Z",
-  "id": "KI6P1Qcf3MIZakNa",
   "name": "Lead Escalation - AI Agent",
-  "description": null,
-  "active": true,
-  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -13,7 +7,7 @@
         "text": "=Escalated lead: {{ JSON.stringify($json) }}\n\nEscalation reason: {{ $('Fetch Escalated Lead').first().json.escalation_reason || $json.reason || 'not specified' }}\n\nBrief the senior rep on this lead.",
         "needsFallback": true,
         "options": {
-          "systemMessage": "You are an AI Escalation Analyst for NEXUS OS, a premium UAE car dealership. You review leads that are stuck, silent or escalated and brief a human senior rep.\n\nUse get_lead_timeline to pull the customer's full communication history before judging, and find_available_rep to see which senior rep is online.\n\nProduce a short, professional briefing containing:\n1. What the customer wants (vehicle, budget, finance need).\n2. Where the conversation stalled and the likely reason.\n3. A concrete recommended next action for the rep, including a suggested opening line.\n\nIf the escalation reason mentions the customer has gone silent for N hours, treat re-engagement as the priority and suggest the best channel and timing. Never invent facts that are not in the timeline.",
+          "systemMessage": "You are an AI Escalation Analyst for NEXUS OS, a premium UAE car dealership. You review leads that are stuck, silent or escalated and brief a human senior rep.\n\nUse get_lead_timeline to pull the customer's full communication history before judging, and find_available_rep to see which senior rep is online.\n\nProduce a short, professional briefing containing:\n1. What the customer wants (vehicle, budget, finance need).\n2. Where the conversation stalled and the likely reason.\n3. A concrete recommended next action for the rep, including a suggested opening line.\n\nOUTPUT FORMATTING (added 30 Aug 2026 - the briefing was being posted into Slack as raw markdown):\n- Your output is posted straight into a Slack message, an HTML email and an audit log. Slack does NOT render markdown.\n- Never use ### headings, **double asterisks**, markdown tables, pipes, or --- rules. They arrive as literal characters and make the alert hard to read on a phone.\n- Use Slack's own syntax instead: *single asterisks* for bold, _underscores_ for italic, and plain dashes for bullets.\n- Write the three sections as short labelled lines, e.g. *1. What they want* followed by two or three dash bullets.\n- Keep the whole briefing under about 200 words. A senior rep reads this on a phone between customers, not at a desk.\n\nIf the escalation reason mentions the customer has gone silent for N hours, treat re-engagement as the priority and suggest the best channel and timing. Never invent facts that are not in the timeline.",
           "maxIterations": 8,
           "enableStreaming": false
         }
@@ -30,11 +24,8 @@
     },
     {
       "parameters": {
-        "resource": "message",
-        "operation": "send",
         "sendTo": "aliasgher892@gmail.com",
         "subject": "=URGENT: Lead Escalation — {{ $('Fetch Escalated Lead').first().json.name || 'Unknown lead' }}",
-        "emailType": "html",
         "message": "=<h2>Escalated Lead: {{ $('Fetch Escalated Lead').first().json.name || 'Unknown' }}</h2><p><strong>Email:</strong> {{ $('Fetch Escalated Lead').first().json.email || 'n/a' }}<br><strong>Phone:</strong> {{ $('Fetch Escalated Lead').first().json.phone || 'n/a' }}<br><strong>Score:</strong> {{ $('Fetch Escalated Lead').first().json.ai_score ?? 'n/a' }}</p><hr><p><strong>AI Analysis:</strong></p><p>{{ $json.output }}</p>",
         "options": {
           "appendAttribution": false,
@@ -49,18 +40,18 @@
       ],
       "name": "Email: Escalation Alert (Gmail)",
       "id": "7",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
+      "webhookId": "6ef63f98-5fe7-45f5-b30b-c1e07b507ca7",
       "credentials": {
         "gmailOAuth2": {
           "id": "1Cgivoyjt7psAirH",
           "name": "Gmail OAuth2 API"
         }
       },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1500,
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true,
-      "webhookId": "6ef63f98-5fe7-45f5-b30b-c1e07b507ca7"
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -203,10 +194,8 @@
           "value": "={{ (() => { try { const j = $('Called by Master Router').first().json; return (j && j.reason) ? 'C0BKTLL1X54' : 'C0BJ5PLTPDJ'; } catch (e) { return 'C0BKTLL1X54'; } })() }}",
           "mode": "id"
         },
-        "text": "={{ (() => { try { const j = $('Called by Master Router').first().json; return (j && j.reason) ? ':rotating_light: *Escalated Lead Alert*' : ':fire: *Hot Lead*'; } catch (e) { return ':rotating_light: *Escalated Lead Alert*'; } })() }}\n\n*Lead:* {{ $('Fetch Escalated Lead').first().json.name || 'Unknown' }}\n*Email:* {{ $('Fetch Escalated Lead').first().json.email || 'n/a' }}\n*Score:* {{ $('Fetch Escalated Lead').first().json.ai_score ?? 'n/a' }}\n\n*AI Summary:*\n{{ $json.output }}",
-        "otherOptions": {},
-        "resource": "message",
-        "operation": "post"
+        "text": "={{ (() => { try { const j = $('Called by Master Router').first().json; return (j && j.reason) ? ':rotating_light: *Escalated Lead Alert*' : ':fire: *Hot Lead*'; } catch (e) { return ':rotating_light: *Escalated Lead Alert*'; } })() }}{{ (() => { try { const r = $('Fetch Rep Slack Id').first().json; const row = Array.isArray(r) ? (r[0] || {}) : (r || {}); return row.slack_user_id ? ' — <@' + row.slack_user_id + '>' : ''; } catch (e) { return ''; } })() }}\n\n*Lead:* {{ $('Fetch Escalated Lead').first().json.name || 'Unknown' }}\n*Email:* {{ $('Fetch Escalated Lead').first().json.email || 'n/a' }}\n*Score:* {{ $('Fetch Escalated Lead').first().json.ai_score ?? 'n/a' }}\n\n*AI Summary:*\n{{ $json.output }}",
+        "otherOptions": {}
       },
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.5,
@@ -251,13 +240,13 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
           "id": "dv4OeARarErZLHCj",
           "name": "Supabase account"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -397,14 +386,6 @@
       ]
     },
     {
-      "id": "46ca253e-441c-4c3b-98dd-ecd13fa963d9",
-      "name": "Mark Lead Escalated",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1264,
-        444
-      ],
       "parameters": {
         "method": "PATCH",
         "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?email=eq.{{ encodeURIComponent($('Fetch Escalated Lead').first().json.email) }}",
@@ -430,59 +411,60 @@
           "timeout": 10000
         }
       },
+      "id": "46ca253e-441c-4c3b-98dd-ecd13fa963d9",
+      "name": "Mark Lead Escalated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1264,
+        448
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
           "id": "dv4OeARarErZLHCj",
           "name": "Supabase account"
         }
       },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1500,
-      "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "onError": "continueRegularOutput"
     },
     {
+      "parameters": {},
       "id": "ffffffff-6666-4666-8666-666666666666",
       "name": "Run Manually",
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
         -240,
-        860
-      ],
-      "parameters": {}
+        864
+      ]
     },
     {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({ email: \"shabbir53ujjainwala@gmail.com\", reason: \"Manual run from the n8n editor — this sends a REAL escalation email and a REAL Slack message.\", __manual: true }) }}",
+        "options": {}
+      },
       "id": "99999999-7777-4777-8777-777777777777",
       "name": "Test Lead",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -40,
-        860
-      ],
-      "parameters": {
-        "mode": "raw",
-        "jsonOutput": "={{ JSON.stringify({ email: \"shabbir53ujjainwala@gmail.com\", reason: \"Manual run from the n8n editor — this sends a REAL escalation email and a REAL Slack message.\", __manual: true }) }}",
-        "options": {}
-      }
+        -48,
+        864
+      ]
     },
     {
-      "id": "11112222-8888-4888-8888-888888888888",
-      "name": "Found The Lead?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        380,
-        352
-      ],
       "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
-            "version": 2,
-            "typeValidation": "loose"
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
           },
           "combinator": "and",
           "conditions": [
@@ -499,20 +481,28 @@
           ]
         },
         "options": {}
-      }
+      },
+      "id": "11112222-8888-4888-8888-888888888888",
+      "name": "Found The Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        144
+      ]
     },
     {
+      "parameters": {
+        "errorMessage": "Escalation stopped: the lead lookup returned no row, so there is nobody to escalate and no email was sent. Fetch Escalated Lead filters leads.email on the address supplied by whichever entry point started this run — the webhook body, the Master Router payload, or the Test Lead node. A manual run started from \"Called by Master Router\" supplies nothing, which is the usual cause: press the play button on the \"Run Manually\" trigger instead, not the toolbar Execute button, so the run starts at Test Lead."
+      },
       "id": "33334444-9999-4999-8999-999999999999",
       "name": "No Lead To Escalate",
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        600,
-        560
-      ],
-      "parameters": {
-        "errorMessage": "Escalation stopped: the lead lookup returned no row, so there is nobody to escalate and no email was sent. Fetch Escalated Lead filters leads.email on the address supplied by whichever entry point started this run — the webhook body, the Master Router payload, or the Test Lead node. A manual run started from \"Called by Master Router\" supplies nothing, which is the usual cause: press the play button on the \"Run Manually\" trigger instead, not the toolbar Execute button, so the run starts at Test Lead."
-      }
+        608,
+        720
+      ]
     },
     {
       "parameters": {
@@ -521,11 +511,38 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1288,
-        374
+        1456,
+        432
       ],
       "name": "Delivery Report",
       "id": "d0f7648e-5dd0-4e81-8eeb-ec8724b2cfd2"
+    },
+    {
+      "parameters": {
+        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/users?id=eq.{{ $json.assigned_to_id }}&select=slack_user_id,name",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "4149da98-9461-4484-87c5-cdbc97ea63be",
+      "name": "Fetch Rep Slack Id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        704
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Added 30 Aug 2026. The Slack alert could not @-mention the rep because slack_user_id was not reachable on the main path. Parallel branch off Fetch Escalated Lead so it has always run by the time the Slack node builds its text."
     }
   ],
   "connections": {
@@ -612,6 +629,11 @@
         [
           {
             "node": "Found The Lead?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Rep Slack Id",
             "type": "main",
             "index": 0
           }
@@ -780,830 +802,10 @@
     "errorWorkflow": "iYJkh1kztWxZXDbT",
     "executionTimeout": 300
   },
-  "staticData": null,
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "aiBuilderAssisted": true,
-    "builderVariant": "mcp"
-  },
-  "nodeGroups": [],
-  "pinData": {},
-  "versionId": "55653efd-4bc0-4878-aa67-42f2ebfbae2c",
-  "activeVersionId": "55653efd-4bc0-4878-aa67-42f2ebfbae2c",
-  "versionCounter": 121,
-  "triggerCount": 1,
-  "sourceWorkflowId": null,
-  "shared": [
-    {
-      "updatedAt": "2026-07-23T19:16:19.214Z",
-      "createdAt": "2026-07-23T19:16:19.214Z",
-      "role": "workflow:owner",
-      "workflowId": "KI6P1Qcf3MIZakNa",
-      "projectId": "uRMuMPNZkIs0l37n",
-      "project": {
-        "updatedAt": "2026-07-23T18:54:00.785Z",
-        "createdAt": "2026-07-23T18:51:58.519Z",
-        "id": "uRMuMPNZkIs0l37n",
-        "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
-        "type": "personal",
-        "icon": null,
-        "description": null,
-        "customTelemetryTags": [],
-        "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      }
-    }
-  ],
-  "tags": [],
-  "activeVersion": {
-    "updatedAt": "2026-08-26T05:00:05.180Z",
-    "createdAt": "2026-08-26T05:00:05.180Z",
-    "versionId": "55653efd-4bc0-4878-aa67-42f2ebfbae2c",
-    "workflowId": "KI6P1Qcf3MIZakNa",
-    "nodes": [
-      {
-        "parameters": {
-          "promptType": "define",
-          "text": "=Escalated lead: {{ JSON.stringify($json) }}\n\nEscalation reason: {{ $('Fetch Escalated Lead').first().json.escalation_reason || $json.reason || 'not specified' }}\n\nBrief the senior rep on this lead.",
-          "needsFallback": true,
-          "options": {
-            "systemMessage": "You are an AI Escalation Analyst for NEXUS OS, a premium UAE car dealership. You review leads that are stuck, silent or escalated and brief a human senior rep.\n\nUse get_lead_timeline to pull the customer's full communication history before judging, and find_available_rep to see which senior rep is online.\n\nProduce a short, professional briefing containing:\n1. What the customer wants (vehicle, budget, finance need).\n2. Where the conversation stalled and the likely reason.\n3. A concrete recommended next action for the rep, including a suggested opening line.\n\nIf the escalation reason mentions the customer has gone silent for N hours, treat re-engagement as the priority and suggest the best channel and timing. Never invent facts that are not in the timeline.",
-            "maxIterations": 8,
-            "enableStreaming": false
-          }
-        },
-        "id": "3",
-        "name": "AI Escalation Analyst",
-        "type": "@n8n/n8n-nodes-langchain.agent",
-        "typeVersion": 3.1,
-        "position": [
-          560,
-          352
-        ],
-        "onError": "continueErrorOutput"
-      },
-      {
-        "parameters": {
-          "resource": "message",
-          "operation": "send",
-          "sendTo": "aliasgher892@gmail.com",
-          "subject": "=URGENT: Lead Escalation — {{ $('Fetch Escalated Lead').first().json.name || 'Unknown lead' }}",
-          "emailType": "html",
-          "message": "=<h2>Escalated Lead: {{ $('Fetch Escalated Lead').first().json.name || 'Unknown' }}</h2><p><strong>Email:</strong> {{ $('Fetch Escalated Lead').first().json.email || 'n/a' }}<br><strong>Phone:</strong> {{ $('Fetch Escalated Lead').first().json.phone || 'n/a' }}<br><strong>Score:</strong> {{ $('Fetch Escalated Lead').first().json.ai_score ?? 'n/a' }}</p><hr><p><strong>AI Analysis:</strong></p><p>{{ $json.output }}</p>",
-          "options": {
-            "appendAttribution": false,
-            "senderName": "NEXUS OS Escalations"
-          }
-        },
-        "type": "n8n-nodes-base.gmail",
-        "typeVersion": 2.1,
-        "position": [
-          880,
-          128
-        ],
-        "name": "Email: Escalation Alert (Gmail)",
-        "id": "7",
-        "credentials": {
-          "gmailOAuth2": {
-            "id": "1Cgivoyjt7psAirH",
-            "name": "Gmail OAuth2 API"
-          }
-        },
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "onError": "continueRegularOutput",
-        "alwaysOutputData": true,
-        "webhookId": "6ef63f98-5fe7-45f5-b30b-c1e07b507ca7"
-      },
-      {
-        "parameters": {
-          "method": "POST",
-          "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
-          "authentication": "predefinedCredentialType",
-          "nodeCredentialType": "supabaseApi",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Prefer",
-                "value": "return=minimal"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={{ JSON.stringify({ workflow: 'Lead Escalation', status: ($json && $json.error) ? 'FAILED' : 'SUCCESS', lead_name: $('Fetch Escalated Lead').first().json.name, lead_email: $('Fetch Escalated Lead').first().json.email, summary: (($json && $json.error) ? 'Escalation email failed: ' + JSON.stringify($json.error).substring(0, 200) + ' | ' : '') + $('AI Escalation Analyst').first().json.output, logged_at: $now.toISO() }) }}",
-          "options": {}
-        },
-        "id": "9",
-        "name": "Audit Log",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          1104,
-          304
-        ],
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        },
-        "onError": "continueRegularOutput"
-      },
-      {
-        "parameters": {
-          "model": "={{ $json.orModel }}",
-          "options": {
-            "maxTokens": 1024,
-            "temperature": 0.2
-          }
-        },
-        "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-        "typeVersion": 1,
-        "position": [
-          400,
-          528
-        ],
-        "id": "9bec1d52-b6b2-42ba-a63f-1fbd81615588",
-        "name": "OpenRouter Chat Model",
-        "credentials": {
-          "openRouterApi": {
-            "id": "UUtKrBzkQOztAOzZ",
-            "name": "OpenRouter account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "operation": "getAll",
-          "tableId": "communication_logs",
-          "limit": 20,
-          "orderBy": "created_at.desc",
-          "filters": {
-            "conditions": [
-              {
-                "keyName": "lead_email",
-                "condition": "eq",
-                "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `The escalated lead's email address, used to fetch their past communication history from the communication_logs table`, 'string') }}"
-              }
-            ]
-          }
-        },
-        "id": "895c5be0-a3cf-49ea-a31b-3c11e7a477d7",
-        "name": "get_lead_timeline",
-        "type": "n8n-nodes-base.supabaseTool",
-        "typeVersion": 1,
-        "position": [
-          592,
-          544
-        ],
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "operation": "getAll",
-          "tableId": "users",
-          "limit": 10,
-          "matchType": "allFilters",
-          "filters": {
-            "conditions": [
-              {
-                "keyName": "role",
-                "condition": "eq",
-                "keyValue": "senior_rep"
-              },
-              {
-                "keyName": "status",
-                "condition": "eq",
-                "keyValue": "online"
-              }
-            ]
-          }
-        },
-        "id": "7095e07d-8007-442e-b5f4-3d48d22c7573",
-        "name": "find_available_rep",
-        "type": "n8n-nodes-base.supabaseTool",
-        "typeVersion": 1,
-        "position": [
-          752,
-          592
-        ],
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "select": "channel",
-          "channelId": {
-            "__rl": true,
-            "value": "={{ (() => { try { const j = $('Called by Master Router').first().json; return (j && j.reason) ? 'C0BKTLL1X54' : 'C0BJ5PLTPDJ'; } catch (e) { return 'C0BKTLL1X54'; } })() }}",
-            "mode": "id"
-          },
-          "text": "={{ (() => { try { const j = $('Called by Master Router').first().json; return (j && j.reason) ? ':rotating_light: *Escalated Lead Alert*' : ':fire: *Hot Lead*'; } catch (e) { return ':rotating_light: *Escalated Lead Alert*'; } })() }}\n\n*Lead:* {{ $('Fetch Escalated Lead').first().json.name || 'Unknown' }}\n*Email:* {{ $('Fetch Escalated Lead').first().json.email || 'n/a' }}\n*Score:* {{ $('Fetch Escalated Lead').first().json.ai_score ?? 'n/a' }}\n\n*AI Summary:*\n{{ $json.output }}",
-          "otherOptions": {},
-          "resource": "message",
-          "operation": "post"
-        },
-        "type": "n8n-nodes-base.slack",
-        "typeVersion": 2.5,
-        "position": [
-          944,
-          448
-        ],
-        "id": "a4e41700-3802-464e-ab3f-8a79133c1f9a",
-        "name": "Send a message",
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "webhookId": "14292685-654d-41a8-b5e1-6fff8001f695",
-        "credentials": {
-          "slackApi": {
-            "id": "oOf93CGdFiAxHkHF",
-            "name": "Slack account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "operation": "get",
-          "tableId": "leads",
-          "filters": {
-            "conditions": [
-              {
-                "keyName": "email",
-                "keyValue": "={{ $json.lead?.email || $json.body?.email || $json.email }}"
-              }
-            ]
-          }
-        },
-        "type": "n8n-nodes-base.supabase",
-        "typeVersion": 1,
-        "position": [
-          208,
-          352
-        ],
-        "id": "4302907e-2e72-4c3e-addb-88ebfebdcf35",
-        "name": "Fetch Escalated Lead",
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        },
-        "alwaysOutputData": true
-      },
-      {
-        "parameters": {
-          "inputSource": "passthrough"
-        },
-        "id": "6fb61383-fa81-499f-ba42-078d3033b9d6",
-        "name": "Called by Master Router",
-        "type": "n8n-nodes-base.executeWorkflowTrigger",
-        "typeVersion": 1.1,
-        "position": [
-          -32,
-          448
-        ]
-      },
-      {
-        "parameters": {
-          "model": "={{ $json.groqModel }}",
-          "options": {}
-        },
-        "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
-        "typeVersion": 1,
-        "position": [
-          480,
-          656
-        ],
-        "id": "esc-groq-0001",
-        "name": "Groq Chat Model",
-        "credentials": {
-          "groqApi": {
-            "id": "JgOg4w1ZMJc37lmL",
-            "name": "Groq account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\nconst prev = $input.first().json;\nconst attempt = Number(prev.__attempt ?? -1) + 1;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nreturn [{ json: { ...prev, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
-        },
-        "id": "ladder-KI6P1Q",
-        "name": "Model Ladder",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          368,
-          352
-        ]
-      },
-      {
-        "parameters": {
-          "sessionIdType": "customKey",
-          "sessionKey": "={{ $json.email || $json.lead_email || $json.name || 'escalation-' + $execution.id }}",
-          "contextWindowLength": "={{ 10 }}"
-        },
-        "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-        "typeVersion": 1.4,
-        "position": [
-          752,
-          704
-        ],
-        "id": "427e78fc-bf39-42b3-9628-ea94a374771e",
-        "name": "Simple Memory"
-      },
-      {
-        "parameters": {
-          "httpMethod": "POST",
-          "path": "lead-escalation",
-          "responseMode": "lastNode",
-          "options": {}
-        },
-        "id": "1",
-        "name": "EscalationWebhook",
-        "type": "n8n-nodes-base.webhook",
-        "typeVersion": 1.1,
-        "position": [
-          -16,
-          240
-        ],
-        "webhookId": "4aec6532-2047-4661-b261-807d72c72d02"
-      },
-      {
-        "parameters": {
-          "jsCode": "const l = $('Fetch Escalated Lead').all();\n\n// 'Return Result' is what the Silence Detector reads back through\n// waitForSubWorkflow. It used to answer status:'escalated', escalated:true\n// purely because a lead row had been fetched - it never looked at whether the\n// escalation email, the audit row or the CRM write actually landed.\n// The report reaches here two ways: on the main input from 'Delivery Report'\n// (email -> Audit Log -> Mark Lead Escalated chain) and, when this node is\n// re-entered from the Slack branch, by name. $('Delivery Report') THROWS when\n// that node has not run, so the lookup is wrapped, and an unverified run says\n// so instead of claiming success.\nlet d = ($input.first().json || {}).delivery || null;\nif (!d) {\n  try { d = $('Delivery Report').first().json.delivery || null; } catch (e) { d = null; }\n}\n\nconst landed = !!d && d.status !== 'FAILED';\nconst base = {\n  status: l.length ? (d ? (landed ? 'escalated' : 'escalation_failed') : 'escalation_unverified')\n                   : 'no_match',\n  escalated: l.length > 0 && landed,\n  delivery: d || { status: 'UNVERIFIED', verified: [], dropped: [],\n                   note: 'no Delivery Report was reachable from this branch' },\n  completed_at: new Date().toISOString(),\n};\nreturn [{ json: l.length ? Object.assign({}, l[0].json, base) : base }];"
-        },
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          1312,
-          304
-        ],
-        "id": "17ea3616-f095-43e8-a9f5-4f5c9c01ac97",
-        "name": "Return Result"
-      },
-      {
-        "parameters": {
-          "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "apikey",
-                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
-              },
-              {
-                "name": "Authorization",
-                "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
-              }
-            ]
-          },
-          "options": {
-            "timeout": 10000
-          }
-        },
-        "id": "esc-verify-jwt-0001",
-        "name": "Verify JWT",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          -176,
-          480
-        ],
-        "retryOnFail": false,
-        "alwaysOutputData": true,
-        "onError": "continueRegularOutput",
-        "notes": "Public webhook branch only. 401 arrives as data (onError = continueRegularOutput)."
-      },
-      {
-        "parameters": {
-          "jsCode": "// This node sits ONLY on the public webhook branch.\n// 'Called by Master Router' connects straight to the next node and never\n// reaches here, so the trusted sub-workflow path is untouched by this guard.\n// That path is live -- execution history shows both webhook and integrated\n// modes in use -- so it must not be rewired.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\nconst auth = $input.first().json || {};\nif (!auth.id) {\n  throw new Error('Escalation rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted.\nreturn $('EscalationWebhook').all();"
-        },
-        "id": "esc-auth-gate-0001",
-        "name": "Auth Gate",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          -32,
-          640
-        ]
-      },
-      {
-        "id": "46ca253e-441c-4c3b-98dd-ecd13fa963d9",
-        "name": "Mark Lead Escalated",
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": [
-          1264,
-          444
-        ],
-        "parameters": {
-          "method": "PATCH",
-          "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?email=eq.{{ encodeURIComponent($('Fetch Escalated Lead').first().json.email) }}",
-          "authentication": "predefinedCredentialType",
-          "nodeCredentialType": "supabaseApi",
-          "sendHeaders": true,
-          "headerParameters": {
-            "parameters": [
-              {
-                "name": "Prefer",
-                "value": "return=minimal"
-              },
-              {
-                "name": "Content-Type",
-                "value": "application/json"
-              }
-            ]
-          },
-          "sendBody": true,
-          "specifyBody": "json",
-          "jsonBody": "={{ JSON.stringify({ escalated_at: $now.toUTC().toISO() }) }}",
-          "options": {
-            "timeout": 10000
-          }
-        },
-        "credentials": {
-          "supabaseApi": {
-            "id": "dv4OeARarErZLHCj",
-            "name": "Supabase account"
-          }
-        },
-        "retryOnFail": true,
-        "maxTries": 3,
-        "waitBetweenTries": 1500,
-        "onError": "continueRegularOutput",
-        "alwaysOutputData": true
-      },
-      {
-        "id": "ffffffff-6666-4666-8666-666666666666",
-        "name": "Run Manually",
-        "type": "n8n-nodes-base.manualTrigger",
-        "typeVersion": 1,
-        "position": [
-          -240,
-          860
-        ],
-        "parameters": {}
-      },
-      {
-        "id": "99999999-7777-4777-8777-777777777777",
-        "name": "Test Lead",
-        "type": "n8n-nodes-base.set",
-        "typeVersion": 3.4,
-        "position": [
-          -40,
-          860
-        ],
-        "parameters": {
-          "mode": "raw",
-          "jsonOutput": "={{ JSON.stringify({ email: \"shabbir53ujjainwala@gmail.com\", reason: \"Manual run from the n8n editor — this sends a REAL escalation email and a REAL Slack message.\", __manual: true }) }}",
-          "options": {}
-        }
-      },
-      {
-        "id": "11112222-8888-4888-8888-888888888888",
-        "name": "Found The Lead?",
-        "type": "n8n-nodes-base.if",
-        "typeVersion": 2.2,
-        "position": [
-          380,
-          352
-        ],
-        "parameters": {
-          "conditions": {
-            "options": {
-              "caseSensitive": true,
-              "version": 2,
-              "typeValidation": "loose"
-            },
-            "combinator": "and",
-            "conditions": [
-              {
-                "id": "c1",
-                "operator": {
-                  "type": "string",
-                  "operation": "notEmpty",
-                  "singleValue": true
-                },
-                "leftValue": "={{ $json.email }}",
-                "rightValue": ""
-              }
-            ]
-          },
-          "options": {}
-        }
-      },
-      {
-        "id": "33334444-9999-4999-8999-999999999999",
-        "name": "No Lead To Escalate",
-        "type": "n8n-nodes-base.stopAndError",
-        "typeVersion": 1,
-        "position": [
-          600,
-          560
-        ],
-        "parameters": {
-          "errorMessage": "Escalation stopped: the lead lookup returned no row, so there is nobody to escalate and no email was sent. Fetch Escalated Lead filters leads.email on the address supplied by whichever entry point started this run — the webhook body, the Master Router payload, or the Test Lead node. A manual run started from \"Called by Master Router\" supplies nothing, which is the usual cause: press the play button on the \"Run Manually\" trigger instead, not the toolbar Execute button, so the run starts at Test Lead."
-        }
-      },
-      {
-        "parameters": {
-          "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'Email: Escalation Alert (Gmail)', what: 'escalation email to the senior rep', critical: true },\n  { node: 'Audit Log', what: 'audit_log row for this escalation', critical: false },\n  { node: 'Mark Lead Escalated', what: 'leads.escalated_at stamped on the CRM row', critical: true },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
-        },
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          1288,
-          374
-        ],
-        "name": "Delivery Report",
-        "id": "d0f7648e-5dd0-4e81-8eeb-ec8724b2cfd2"
-      }
-    ],
-    "connections": {
-      "AI Escalation Analyst": {
-        "main": [
-          [
-            {
-              "node": "Email: Escalation Alert (Gmail)",
-              "type": "main",
-              "index": 0
-            },
-            {
-              "node": "Send a message",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "Model Ladder",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "OpenRouter Chat Model": {
-        "ai_languageModel": [
-          [
-            {
-              "node": "AI Escalation Analyst",
-              "type": "ai_languageModel",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "get_lead_timeline": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Escalation Analyst",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "find_available_rep": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Escalation Analyst",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Send a message": {
-        "main": [
-          [
-            {
-              "node": "Return Result",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Called by Master Router": {
-        "main": [
-          [
-            {
-              "node": "Fetch Escalated Lead",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Fetch Escalated Lead": {
-        "main": [
-          [
-            {
-              "node": "Found The Lead?",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Groq Chat Model": {
-        "ai_languageModel": [
-          [
-            {
-              "node": "AI Escalation Analyst",
-              "type": "ai_languageModel",
-              "index": 1
-            }
-          ]
-        ]
-      },
-      "Model Ladder": {
-        "main": [
-          [
-            {
-              "node": "AI Escalation Analyst",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Simple Memory": {
-        "ai_memory": [
-          [
-            {
-              "node": "AI Escalation Analyst",
-              "type": "ai_memory",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Audit Log": {
-        "main": [
-          [
-            {
-              "node": "Mark Lead Escalated",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "EscalationWebhook": {
-        "main": [
-          [
-            {
-              "node": "Verify JWT",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Verify JWT": {
-        "main": [
-          [
-            {
-              "node": "Auth Gate",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Auth Gate": {
-        "main": [
-          [
-            {
-              "node": "Fetch Escalated Lead",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Email: Escalation Alert (Gmail)": {
-        "main": [
-          [
-            {
-              "node": "Audit Log",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Mark Lead Escalated": {
-        "main": [
-          [
-            {
-              "node": "Delivery Report",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Run Manually": {
-        "main": [
-          [
-            {
-              "node": "Test Lead",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Test Lead": {
-        "main": [
-          [
-            {
-              "node": "Fetch Escalated Lead",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Found The Lead?": {
-        "main": [
-          [
-            {
-              "node": "Model Ladder",
-              "type": "main",
-              "index": 0
-            }
-          ],
-          [
-            {
-              "node": "No Lead To Escalate",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Delivery Report": {
-        "main": [
-          [
-            {
-              "node": "Return Result",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      }
-    },
-    "nodeGroups": [],
-    "authors": "Ali Asgher Ujjain Wala ",
-    "name": null,
-    "description": null,
-    "autosaved": false,
-    "workflowPublishHistory": [
-      {
-        "createdAt": "2026-08-26T05:00:06.026Z",
-        "id": 557,
-        "workflowId": "KI6P1Qcf3MIZakNa",
-        "versionId": "55653efd-4bc0-4878-aa67-42f2ebfbae2c",
-        "event": "deactivated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      },
-      {
-        "createdAt": "2026-08-26T05:00:06.154Z",
-        "id": 558,
-        "workflowId": "KI6P1Qcf3MIZakNa",
-        "versionId": "55653efd-4bc0-4878-aa67-42f2ebfbae2c",
-        "event": "activated",
-        "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
-      }
-    ]
+  "_exported_from": {
+    "id": "KI6P1Qcf3MIZakNa",
+    "active": true,
+    "updatedAt": "2026-08-30T02:30:42.858Z",
+    "published": false
   }
 }

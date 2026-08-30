@@ -48,3 +48,9 @@ _to_delete_git_locks/
 
 # Local backup archives — not source
 backups/
+
+# Round patches — a redundant record once the change itself is committed,
+# and 0.5-1.5 MB each.
+*.patch
+COMMIT_MSG.txt
+_to_delete_build/
