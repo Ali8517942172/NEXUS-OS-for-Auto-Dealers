@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-08-30T05:18:39.773015+00:00",
+  "exported_at": "2026-08-30T17:16:07.605865+00:00",
   "source": "https://35.224.126.225.nip.io/api/v1",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
@@ -8,7 +8,7 @@
       "id": "G7FhvMY2ucW5Fg7X",
       "name": "7-Day Warm Lead Drip Campaign",
       "active": true,
-      "nodes": 22,
+      "nodes": 36,
       "published": true
     },
     {
@@ -24,7 +24,7 @@
       "id": "LphiGg4iqF1bn6El",
       "name": "Competitor Price Scraping & Supabase Update",
       "active": true,
-      "nodes": 13,
+      "nodes": 10,
       "published": true
     },
     {
@@ -65,7 +65,7 @@
       "name": "Lead Escalation - AI Agent",
       "active": true,
       "nodes": 23,
-      "published": false
+      "published": true
     },
     {
       "file": "nexus_error_handler.json",
@@ -120,7 +120,7 @@
       "id": "aIYwwoYStDAi9kHy",
       "name": "NEXUS Retention Purge",
       "active": true,
-      "nodes": 14,
+      "nodes": 16,
       "published": true
     },
     {
@@ -128,7 +128,7 @@
       "id": "B3TcpfzOMWj8oWgF",
       "name": "Phase 6 - 12-Hour Silence Detector",
       "active": true,
-      "nodes": 10,
+      "nodes": 12,
       "published": true
     },
     {
@@ -152,7 +152,7 @@
       "id": "BiyHk9ZXxJUVGbf6",
       "name": "WhatsApp BDC AI Agent",
       "active": true,
-      "nodes": 36,
+      "nodes": 44,
       "published": true
     },
     {

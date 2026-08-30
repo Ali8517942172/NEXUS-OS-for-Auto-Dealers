@@ -4,7 +4,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Escalated lead: {{ JSON.stringify($json) }}\n\nEscalation reason: {{ $('Fetch Escalated Lead').first().json.escalation_reason || $json.reason || 'not specified' }}\n\nBrief the senior rep on this lead.",
+        "text": "=Escalated lead: {{ JSON.stringify($json) }}\n\nEscalation reason: {{ (() => { const pick = (o) => { if (!o) return null; const b = o.body || o; return b.reason || b.escalation_reason || null; }; try { const v = pick($('Called by Master Router').first().json); if (v) return v; } catch (e) {} try { const v = pick($('EscalationWebhook').first().json); if (v) return v; } catch (e) {} try { const v = pick($('Test Lead').first().json); if (v) return v; } catch (e) {} try { const l = $('Fetch Escalated Lead').first().json || {}; if (l.escalation_reason) return l.escalation_reason; } catch (e) {} return $json.reason || 'not specified'; })() }}\n\nBrief the senior rep on this lead.",
         "needsFallback": true,
         "options": {
           "systemMessage": "You are an AI Escalation Analyst for NEXUS OS, a premium UAE car dealership. You review leads that are stuck, silent or escalated and brief a human senior rep.\n\nUse get_lead_timeline to pull the customer's full communication history before judging, and find_available_rep to see which senior rep is online.\n\nProduce a short, professional briefing containing:\n1. What the customer wants (vehicle, budget, finance need).\n2. Where the conversation stalled and the likely reason.\n3. A concrete recommended next action for the rep, including a suggested opening line.\n\nOUTPUT FORMATTING (added 30 Aug 2026 - the briefing was being posted into Slack as raw markdown):\n- Your output is posted straight into a Slack message, an HTML email and an audit log. Slack does NOT render markdown.\n- Never use ### headings, **double asterisks**, markdown tables, pipes, or --- rules. They arrive as literal characters and make the alert hard to read on a phone.\n- Use Slack's own syntax instead: *single asterisks* for bold, _underscores_ for italic, and plain dashes for bullets.\n- Write the three sections as short labelled lines, e.g. *1. What they want* followed by two or three dash bullets.\n- Keep the whole briefing under about 200 words. A senior rep reads this on a phone between customers, not at a desk.\n\nIf the escalation reason mentions the customer has gone silent for N hours, treat re-engagement as the priority and suggest the best channel and timing. Never invent facts that are not in the timeline.",
@@ -214,7 +214,9 @@
           "id": "oOf93CGdFiAxHkHF",
           "name": "Slack account"
         }
-      }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -333,8 +335,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1312,
-        304
+        1660,
+        720
       ],
       "id": "17ea3616-f095-43e8-a9f5-4f5c9c01ac97",
       "name": "Return Result"
@@ -805,7 +807,7 @@
   "_exported_from": {
     "id": "KI6P1Qcf3MIZakNa",
     "active": true,
-    "updatedAt": "2026-08-30T02:30:42.858Z",
-    "published": false
+    "updatedAt": "2026-08-30T06:07:41.350Z",
+    "published": true
   }
 }

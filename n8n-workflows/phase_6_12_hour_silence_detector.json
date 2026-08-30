@@ -36,6 +36,7 @@
         "operation": "getAll",
         "tableId": "leads",
         "returnAll": true,
+        "matchType": "allFilters",
         "filters": {
           "conditions": [
             {
@@ -47,6 +48,11 @@
               "keyName": "status",
               "condition": "neq",
               "keyValue": "DISQUALIFIED"
+            },
+            {
+              "keyName": "status",
+              "condition": "neq",
+              "keyValue": "WON"
             }
           ]
         }
@@ -69,14 +75,25 @@
           "name": "Supabase account"
         }
       },
-      "notes": "Excludes DISQUALIFIED as well as LOST. A lead row is what makes the WhatsApp bot answer someone unconditionally, so a wrong number written into `leads` by mistake is quarantined with status DISQUALIFIED rather than deleted -- and a quarantined lead must not be chased for silence either. Two were quarantined on 28 Aug: a solar-clamp supplier and a web-design contact, both auto-created when an uncaptioned image tripped the 'document' keyword."
+      "notes": "Excludes DISQUALIFIED as well as LOST. A lead row is what makes the WhatsApp bot answer someone unconditionally, so a wrong number written into `leads` by mistake is quarantined with status DISQUALIFIED rather than deleted -- and a quarantined lead must not be chased for silence either. Two were quarantined on 28 Aug: a solar-clamp supplier and a web-design contact, both auto-created when an uncaptioned image tripped the 'document' keyword.",
+      "onError": "stopWorkflow"
     },
     {
       "parameters": {
         "operation": "getAll",
         "tableId": "communication_logs",
         "returnAll": true,
-        "orderBy": "created_at.desc"
+        "matchType": "allFilters",
+        "orderBy": "created_at.desc",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "created_at",
+              "condition": "gte",
+              "keyValue": "={{ $now.minus({ days: 40 }).toUTC().toISO() }}"
+            }
+          ]
+        }
       },
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
@@ -96,11 +113,12 @@
           "id": "dv4OeARarErZLHCj",
           "name": "Supabase account"
         }
-      }
+      },
+      "onError": "stopWorkflow"
     },
     {
       "parameters": {
-        "jsCode": "// Phase 6: find leads that have gone quiet.\n// A lead is \"silent\" when:\n//   - it is still open (not WON/LOST/ESCALATED)\n//   - we sent them something at least SILENCE_HOURS ago\n//   - they have not replied since (no inbound message newer than our last outbound)\n//   - we have not already escalated them for silence\nconst SILENCE_HOURS = 12;\nconst cutoff = Date.now() - SILENCE_HOURS * 60 * 60 * 1000;\n\nconst leads = $('Fetch Open Leads').all().map(i => i.json).filter(l => l && l.email);\nconst logs  = $('Fetch Recent Comms').all().map(i => i.json).filter(l => l && l.lead_email);\n\nconst byLead = {};\nfor (const row of logs) {\n  const key = String(row.lead_email);\n  (byLead[key] = byLead[key] || []).push(row);\n}\n\nconst out = [];\nfor (const lead of leads) {\n  const rows = byLead[String(lead.email)] || [];\n  if (!rows.length) continue;\n\n  const ts = (r) => new Date(r.created_at || 0).getTime();\n  const outbound = rows.filter(r => r.direction === 'outbound').sort((a,b) => ts(b) - ts(a));\n  const inbound  = rows.filter(r => r.direction === 'inbound').sort((a,b) => ts(b) - ts(a));\n  if (!outbound.length) continue;\n\n  const lastOut = ts(outbound[0]);\n  const lastIn  = inbound.length ? ts(inbound[0]) : 0;\n\n  // Customer already replied after our last message -> not silent.\n  if (lastIn >= lastOut) continue;\n  // Not silent long enough yet.\n  if (lastOut > cutoff) continue;\n  // Already chased for silence -> don't spam the team every hour.\n  if (rows.some(r => String(r.message || '').startsWith('[SILENCE-ESCALATED]'))) continue;\n\n  out.push({ json: {\n    email: lead.email,\n    name: lead.name || null,\n    phone: lead.phone || null,\n    ai_score: lead.ai_score ?? null,\n    status: lead.status || null,\n    vehicle_interest: lead.vehicle_interest || null,\n    hours_silent: Math.floor((Date.now() - lastOut) / 3600000),\n    last_outbound_at: outbound[0].created_at,\n    last_outbound_message: String(outbound[0].message || '').substring(0, 300)\n  } });\n}\n\n// Highest-value silent leads first.\nout.sort((a, b) => (b.json.ai_score || 0) - (a.json.ai_score || 0));\nreturn out;"
+        "jsCode": "// Phase 6: find leads that have gone quiet.\n//\n// A lead is \"silent\" when:\n//   - it is still open (not WON / LOST / DISQUALIFIED)\n//   - we sent them something at least SILENCE_HOURS ago\n//   - they have not replied since our last outbound\n//   - we have not already escalated them for THIS silence episode\n//\n// 30 Aug 2026 - three confirmed defects fixed here.\n//\n// D1 IDENTITY. communication_logs.lead_email holds whatever the workflow that\n//    wrote the row happened to have: a real email, a raw WhatsApp chat id\n//    (`<digits>@c.us`, `<lid>@lid`) or the synthetic `+<digits>@whatsapp.lead`.\n//    The old code indexed the logs by lead_email and looked up ONLY\n//    String(lead.email), then did `if (!rows.length) continue`. Every\n//    WhatsApp-only lead therefore fell out silently and the hourly job ran\n//    green with zero output - in a Dubai used-car dealership that is most of\n//    the book. We now build the full set of plausible identity keys per lead\n//    and match any of them. Same shape as `Fetch Thread History` in the\n//    WhatsApp BDC workflow, which queries `or=(lead_email.eq.<k>,...)`.\n//    A LID chat id contains no phone digits at all, so it cannot be derived\n//    from the lead - those are bridged through whatsapp_contacts\n//    (chat_id -> phone / lead_email), the same table the BDC workflow upserts.\n//\n// D3 MARKER EXPIRY. The old check was `rows.some(r => startsWith(MARKER))`\n//    against ALL history, so one escalation retired a lead from the safety net\n//    forever: escalated in March, silent again in August, never surfaced.\n//    A marker now only suppresses when it belongs to the CURRENT episode, i.e.\n//    it was written at or after our last real outbound message. Marker rows are\n//    also excluded from the outbound set - written as they were with\n//    direction 'outbound', they reset lastOut and reset hours_silent to zero.\n//\n// BOUNDED WORK. The escalation sub-workflow runs an AI agent per lead and is\n//    called with waitForSubWorkflow, so the run length is linear in the number\n//    of silent leads. workflow executionTimeout is 300s: an unbounded backlog\n//    (first run after this fix will surface every WhatsApp lead ever) would be\n//    killed mid-loop, leaving leads escalated but unmarked. Highest ai_score\n//    first, MAX_PER_RUN per run, the rest picked up on the next hourly run.\n\nconst SILENCE_HOURS = 12;\nconst MAX_SILENCE_HOURS = 24 * 40;   // must stay <= the Fetch Recent Comms window\nconst MAX_PER_RUN = 8;\nconst TERMINAL = ['WON', 'LOST', 'DISQUALIFIED'];\nconst MARKER = '[SILENCE-ESCALATED]';\n\nconst now = Date.now();\nconst cutoff = now - SILENCE_HOURS * 3600000;\nconst staleBefore = now - MAX_SILENCE_HOURS * 3600000;\n\nconst digitsOf = (v) => String(v == null ? '' : v).replace(/[^0-9]/g, '');\nconst norm = (v) => String(v == null ? '' : v).trim().toLowerCase();\n// Last 9 digits is the same country-code-safe comparison Resolve Lead Identity\n// uses in the WhatsApp workflow (+9715..., 009715..., 05... all collapse).\nconst tail = (d) => (d.length >= 9 ? d.slice(-9) : '');\n\nfunction safeAll(nodeName) {\n  try { return $(nodeName).all().map(i => i.json).filter(Boolean); }\n  catch (e) { return []; }\n}\n\n// A lead with no email but a phone is a WhatsApp-only lead: it is exactly the\n// population D1 is about, so it is kept, not dropped.\nconst leads = safeAll('Fetch Open Leads')\n  .filter(l => l.email || l.phone)\n  .filter(l => !TERMINAL.includes(String(l.status || '').trim().toUpperCase()));\n\nconst logs = safeAll('Fetch Recent Comms').filter(r => r.lead_email);\nconst contacts = safeAll('Fetch WhatsApp Contacts').filter(c => c && c.chat_id);\n\n// ---- index every log row under every key it could be filed under ------------\nconst byKey = {};    // exact lower-cased lead_email -> rows\nconst byTail = {};   // last 9 phone digits         -> rows\nfor (const row of logs) {\n  const key = norm(row.lead_email);\n  if (!key) continue;\n  (byKey[key] = byKey[key] || []).push(row);\n  // '971501234567@c.us', '+971501234567@whatsapp.lead' and '+971501234567' all\n  // carry the number. '<lid>@lid' does NOT - its digits are an opaque WhatsApp\n  // id and would collide with a real number, so it is deliberately excluded.\n  if (!key.endsWith('@lid')) {\n    const t = tail(digitsOf(key.split('@')[0]));\n    if (t) (byTail[t] = byTail[t] || []).push(row);\n  }\n}\n\n// ---- whatsapp_contacts bridges a LID chat id back to a lead -----------------\nconst chatIdsByTail = {};\nconst chatIdsByEmail = {};\nfor (const c of contacts) {\n  const id = norm(c.chat_id);\n  if (!id) continue;\n  const t = tail(digitsOf(c.phone));\n  if (t) (chatIdsByTail[t] = chatIdsByTail[t] || []).push(id);\n  const em = norm(c.lead_email);\n  if (em) (chatIdsByEmail[em] = chatIdsByEmail[em] || []).push(id);\n}\n\nfunction identityKeys(lead) {\n  const em = norm(lead.email);\n  const d = digitsOf(lead.phone) || digitsOf(String(em).split('@')[0]);\n  const t = tail(d);\n  const keys = new Set();\n  if (em) keys.add(em);\n  if (d) {\n    keys.add('+' + d + '@whatsapp.lead');\n    keys.add(d + '@whatsapp.lead');\n    keys.add(d + '@c.us');\n    keys.add(d + '@s.whatsapp.net');\n    keys.add(d);\n    keys.add('+' + d);\n  }\n  for (const id of (t ? (chatIdsByTail[t] || []) : [])) keys.add(id);\n  for (const id of (em ? (chatIdsByEmail[em] || []) : [])) keys.add(id);\n  return { keys, tail: t, digits: d, email: em };\n}\n\nfunction rowsForLead(ident) {\n  const seen = new Set();\n  const rows = [];\n  const add = (r) => {\n    const k = r.id || (norm(r.lead_email) + '|' + r.created_at + '|' + String(r.message || '').slice(0, 60));\n    if (seen.has(k)) return;\n    seen.add(k);\n    rows.push(r);\n  };\n  for (const k of ident.keys) for (const r of (byKey[k] || [])) add(r);\n  if (ident.tail) for (const r of (byTail[ident.tail] || [])) add(r);\n  return rows;\n}\n\nconst ts = (r) => new Date(r.created_at || 0).getTime();\nconst isMarker = (r) => String(r.message || '').startsWith(MARKER);\n\nconst out = [];\nfor (const lead of leads) {\n  const ident = identityKeys(lead);\n  const rows = rowsForLead(ident);\n  if (!rows.length) continue;\n\n  // Markers are our own bookkeeping, not a message to the customer.\n  const real = rows.filter(r => !isMarker(r));\n  const outbound = real.filter(r => r.direction === 'outbound').sort((a, b) => ts(b) - ts(a));\n  const inbound = real.filter(r => r.direction === 'inbound').sort((a, b) => ts(b) - ts(a));\n  if (!outbound.length) continue;\n\n  const lastOut = ts(outbound[0]);\n  const lastIn = inbound.length ? ts(inbound[0]) : 0;\n\n  if (lastIn >= lastOut) continue;       // they already replied\n  if (lastOut > cutoff) continue;        // not silent long enough yet\n  if (lastOut < staleBefore) continue;   // older than the window we can see\n\n  // D3: a marker only counts for the episode it was written in.\n  const lastMarker = rows.filter(isMarker).map(ts).sort((a, b) => b - a)[0] || 0;\n  if (lastMarker >= lastOut) continue;\n\n  const hours_silent = Math.floor((now - lastOut) / 3600000);\n  // D2: the callee's trigger is inputSource:'passthrough' - it forwards THIS\n  // item verbatim and ignores the Execute Workflow node's field mapping. The\n  // Slack node routes on a top-level `reason`, so `reason` has to be on the item\n  // itself or the alert lands in the hot-lead channel headed ':fire: Hot Lead'.\n  const reason = 'Customer has gone silent for ' + hours_silent +\n                 ' hours since our last message on ' + outbound[0].created_at;\n\n  out.push({ json: {\n    email: lead.email || (ident.digits ? '+' + ident.digits + '@whatsapp.lead' : null),\n    name: lead.name || null,\n    phone: lead.phone || null,\n    ai_score: lead.ai_score ?? null,\n    status: lead.status || null,\n    vehicle_interest: lead.vehicle_interest || null,\n    reason: reason,\n    escalation_reason: reason,\n    escalation_source: 'phase6_silence_detector',\n    hours_silent: hours_silent,\n    last_outbound_at: outbound[0].created_at,\n    last_outbound_message: String(outbound[0].message || '').substring(0, 300),\n    matched_on: Array.from(ident.keys).slice(0, 8).join(',')\n  } });\n}\n\n// Highest-value silent leads first, then bound the run.\nout.sort((a, b) => (b.json.ai_score || 0) - (a.json.ai_score || 0));\nreturn out.slice(0, MAX_PER_RUN);"
       },
       "id": "p6-detect-0001",
       "name": "Find Silent Leads",
@@ -110,7 +128,8 @@
         720,
         304
       ],
-      "alwaysOutputData": false
+      "alwaysOutputData": false,
+      "onError": "stopWorkflow"
     },
     {
       "parameters": {
@@ -135,11 +154,7 @@
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
-          "value": {
-            "email": "={{ $json.email }}",
-            "name": "={{ $json.name }}",
-            "reason": "={{ 'No reply for ' + $json.hours_silent + ' hours since our last message' }}"
-          }
+          "value": {}
         },
         "options": {
           "waitForSubWorkflow": true
@@ -153,7 +168,9 @@
         1200,
         400
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -176,15 +193,17 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_email: $('Loop Over Silent Leads').item.json.email, channel: 'system', direction: 'outbound', message: '[SILENCE-ESCALATED] Silent for ' + $('Loop Over Silent Leads').item.json.hours_silent + 'h since ' + $('Loop Over Silent Leads').item.json.last_outbound_at }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ lead_email: $('Loop Over Silent Leads').item.json.email, channel: 'system', direction: 'internal', message: '[SILENCE-ESCALATED] Silent for ' + $('Loop Over Silent Leads').item.json.hours_silent + 'h since ' + $('Loop Over Silent Leads').item.json.last_outbound_at }) }}",
+        "options": {
+          "timeout": 15000
+        }
       },
       "id": "p6-mark-0001",
       "name": "Mark as Escalated",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1440,
+        1600,
         400
       ],
       "retryOnFail": true,
@@ -196,7 +215,8 @@
           "name": "Supabase account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -229,8 +249,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1680,
-        400
+        1840,
+        160
       ],
       "retryOnFail": true,
       "maxTries": 2,
@@ -241,20 +261,88 @@
           "name": "Supabase account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Trigger Lead Escalation', what: 'lead escalation handed to the sales team', critical: true },\n  { node: 'Mark as Escalated',       what: '[SILENCE-ESCALATED] marker row that stops hourly re-escalation', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' — ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
+        "jsCode": "// Delivery Report - verify every claim this run is about to make.\n//\n// 30 Aug 2026: the old version only asked `j.error !== undefined`. The\n// escalation sub-workflow does not throw when it fails - it returns\n//   { status:'escalation_failed', escalated:false, delivery:{ status:'FAILED' } }\n// with no top-level `error` at all. So a failed escalation passed the check,\n// 'Mark as Escalated' wrote the permanent [SILENCE-ESCALATED] marker anyway,\n// and (with the old all-history marker check) the lead was retired from the\n// safety net having been escalated to nobody. That was the silent-drop path.\n// The escalation claim is now judged on what the sub-workflow actually said.\n\nfunction checkEscalation() {\n  let items;\n  try { items = $('Trigger Lead Escalation').all(); }\n  catch (e) { return { ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ok: false, why: 'Execute Workflow produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = (j.error && (j.error.message || j.error.description)) || j.error;\n    return { ok: false, why: String(m).slice(0, 300) };\n  }\n  if (j.escalated === true) return { ok: true, why: '' };\n  const d = j.delivery || {};\n  const drop = (Array.isArray(d.dropped) && d.dropped.length) ? ' | ' + d.dropped.join('; ') : '';\n  return { ok: false, why: ('sub-workflow returned status=' + (j.status || 'unknown') +\n                            ', delivery=' + (d.status || 'none') +\n                            (d.note ? ' (' + d.note + ')' : '') + drop).slice(0, 300) };\n}\n\nfunction checkMarker() {\n  let items;\n  try { items = $('Mark as Escalated').all(); }\n  catch (e) { return { ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = (j.error && (j.error.message || j.error.description)) || j.error;\n    return { ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ok: true, why: '' };\n}\n\nconst esc = checkEscalation();\nconst results = [{\n  what: 'lead escalation actually delivered to a human',\n  critical: true,\n  ok: esc.ok,\n  why: esc.why\n}];\n\n// The marker is now gated on the escalation landing ('Escalation Landed?').\n// When it did not land the marker is skipped ON PURPOSE so the lead stays in\n// the safety net - that is a correct outcome, not a dropped step. Asking\n// $('Mark as Escalated') on the failed branch would read a PREVIOUS loop\n// iteration's data, so it is not asked at all.\nif (esc.ok) {\n  const m = checkMarker();\n  results.push({\n    what: '[SILENCE-ESCALATED] marker closing this silence episode',\n    critical: false, ok: m.ok, why: m.why\n  });\n} else {\n  results.push({\n    what: '[SILENCE-ESCALATED] marker deliberately NOT written - lead stays in the safety net',\n    critical: false, ok: true, why: ''\n  });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal = dropped.filter(r => r.critical);\nconst status = fatal.length ? 'FAILED' : dropped.length ? 'PARTIAL' : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped: dropped.map(r => r.what + ' — ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
       },
       "id": "dlvrpt-silence-2b98-a4f6-51ce7d0b93aa",
       "name": "Delivery Report",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1560,
+        1600,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": false
+    },
+    {
+      "id": "73f9c1e4-8c5d-4e39-a69f-dedb4cddc55e",
+      "name": "Fetch WhatsApp Contacts",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        600,
+        144
+      ],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "whatsapp_contacts",
+        "returnAll": true
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Added 30 Aug 2026 for the WhatsApp identity fix. A LID chat id (e.g. 158510264357112@lid) carries no phone digits, so it cannot be derived from a lead row. whatsapp_contacts is the chat_id -> phone / lead_email map the WhatsApp BDC workflow already upserts, and is what lets Find Silent Leads reach comms filed under a LID. Non-fatal: if the table is unreachable the detector still matches every non-LID key.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "014488d0-5521-4864-a487-304fdc3e84a2",
+      "name": "Escalation Landed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
         400
-      ]
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "esc-landed",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.escalated === true }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "The sub-workflow reports failure in its payload, not as an error: {status:'escalation_failed', escalated:false}. Only the true branch may write the [SILENCE-ESCALATED] marker; the false branch still reports and audits, and the lead stays in the safety net for the next run.",
+      "onError": "stopWorkflow",
+      "alwaysOutputData": false
     }
   ],
   "connections": {
@@ -291,17 +379,6 @@
         ]
       ]
     },
-    "Fetch Recent Comms": {
-      "main": [
-        [
-          {
-            "node": "Find Silent Leads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Find Silent Leads": {
       "main": [
         [
@@ -319,17 +396,6 @@
         [
           {
             "node": "Trigger Lead Escalation",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Trigger Lead Escalation": {
-      "main": [
-        [
-          {
-            "node": "Mark as Escalated",
             "type": "main",
             "index": 0
           }
@@ -362,6 +428,62 @@
           }
         ]
       ]
+    },
+    "Fetch Recent Comms": {
+      "main": [
+        [
+          {
+            "node": "Fetch WhatsApp Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch WhatsApp Contacts": {
+      "main": [
+        [
+          {
+            "node": "Find Silent Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Lead Escalation": {
+      "main": [
+        [
+          {
+            "node": "Escalation Landed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalation Landed?": {
+      "main": [
+        [
+          {
+            "node": "Mark as Escalated",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delivery Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Loop Over Silent Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -378,7 +500,7 @@
   "_exported_from": {
     "id": "B3TcpfzOMWj8oWgF",
     "active": true,
-    "updatedAt": "2026-08-28T16:27:30.864Z",
+    "updatedAt": "2026-08-30T16:31:36.847Z",
     "published": true
   }
 }

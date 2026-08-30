@@ -241,7 +241,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_email: $('Prepare Send').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: $('Prepare Send').first().json.text }) }}",
+        "jsonBody": "={{ JSON.stringify({ lead_email: $('Prepare Send').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: $('Prepare Send').first().json.text, sent_by: String($('Prepare Send').first().json.sent_by || 'dashboard').trim().toLowerCase() }) }}",
         "options": {
           "timeout": 10000
         }
@@ -500,7 +500,7 @@
   "_exported_from": {
     "id": "yx6m55p1Kj8V7koR",
     "active": true,
-    "updatedAt": "2026-08-29T08:51:44.896Z",
+    "updatedAt": "2026-08-30T06:07:24.225Z",
     "published": true
   }
 }

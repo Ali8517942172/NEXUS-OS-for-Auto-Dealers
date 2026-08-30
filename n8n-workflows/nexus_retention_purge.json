@@ -24,7 +24,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?select=id,storage_path,retain_until&storage_path=not.is.null&purged_at=is.null&retain_until=lt.' + $now.toFormat('yyyy-MM-dd') + '&limit=500' }}",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?select=id,storage_path,retain_until&storage_path=not.is.null&purged_at=is.null&retain_until=lt.' + $now.startOf('day').toUTC().toISO() + '&limit=500' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "options": {
@@ -53,7 +53,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Aggregate the expired rows into a single bulk delete.\n// `Find Expired Documents` runs with alwaysOutputData, so an empty result\n// arrives as one empty item rather than as no items at all.\nconst rows = $input.all()\n  .map(i => i.json)\n  .filter(r => r && r.id && r.storage_path);\n\nif (rows.length === 0) return [];   // nothing due — stop this branch quietly\n\nreturn [{ json: {\n  count: rows.length,\n  ids: rows.map(r => r.id),\n  paths: rows.map(r => r.storage_path),\n  oldest_due: rows.map(r => r.retain_until).sort()[0],\n} }];\n"
+        "jsCode": "// Aggregate the expired rows into a single bulk delete.\n// `Find Expired Documents` runs with alwaysOutputData, so an empty result\n// arrives as one empty item rather than as no items at all.\nconst rows = $input.all()\n  .map(i => i.json)\n  .filter(r => r && r.id && r.storage_path);\n\nif (rows.length === 0) return [];   // nothing due -- stop this branch quietly\n\n// `pairs` is the reconciliation ledger read by `Reconcile Storage Deletions`:\n// each id sits beside the path whose deletion must be CONFIRMED before that id\n// may be marked purged. `ids` is kept only for reference in the audit trail --\n// nothing PATCHes by it any more. PATCHing that unconditional list is precisely\n// what stamped purged_at on 500 rows for a delete that removed 250.\nreturn [{ json: {\n  count: rows.length,\n  ids: rows.map(r => r.id),\n  paths: rows.map(r => r.storage_path),\n  pairs: rows.map(r => ({ id: r.id, path: r.storage_path })),\n  oldest_due: rows.map(r => r.retain_until).sort()[0],\n} }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -109,7 +109,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?id=in.(' + $('Collect Expired Paths').first().json.ids.join(',') + ')' }}",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?id=in.(' + $('Reconcile Storage Deletions').first().json.confirmed_ids.map(v => '\"' + String(v).replace(/\"/g, '') + '\"').join(',') + ')' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendHeaders": true,
@@ -135,8 +135,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        880,
-        -120
+        1320,
+        -260
       ],
       "name": "Mark Rows Purged",
       "id": "02e79109-0223-4e7a-aa8a-d1e8e939f8c1",
@@ -154,12 +154,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// One audit row per purge run. A retention policy you cannot evidence is not\n// a retention policy, so record what was destroyed and when.\nconst plan = $('Collect Expired Paths').first().json;\n// Supabase's bulk delete returns a JSON ARRAY, and n8n splits an array\n// response into one item per element. `.first().json` therefore handed back\n// the first OBJECT, never the array, so `Array.isArray(del)` was always\n// false, `errors` was always empty, and this node reported SUCCESS for\n// every partial failure. Read all the items instead.\nconst del = $('Delete Storage Objects').all().map(i => i.json);\n\nconst errors = del.filter(d => d && d.error);\n\nreturn [{ json: {\n  workflow: 'NEXUS Retention Purge',\n  status: errors.length ? 'PARTIAL' : 'SUCCESS',\n  summary: 'Retention purge: deleted ' + plan.count + ' KYC document(s) past retain_until'\n           + ' (oldest due ' + plan.oldest_due + ').'\n           + (errors.length ? ' ' + errors.length + ' object(s) failed to delete.' : ''),\n}}];\n"
+        "jsCode": "// One audit row per purge run. A retention policy you cannot evidence is not a\n// retention policy -- and a row that says 500 when 3 were deleted is worse than\n// no row at all, because it is the document a regulator would be handed.\n//\n// Reach back to `Reconcile Storage Deletions` explicitly. $json is NOT safe\n// here: this node is fed by two edges -- `Mark Rows Purged` (whose output is the\n// PATCH response, empty under Prefer: return=minimal) when something was\n// confirmed deleted, and `Anything Confirmed Deleted?` output 1 when nothing was.\nconst r = $('Reconcile Storage Deletions').first().json || {};\n\nconst N = Number(r.requested) || 0;   // requested\nconst M = Number(r.deleted)   || 0;   // deleted and CONFIRMED gone\nconst U = N - M;                      // unaccounted -- i.e. still in the bucket\n\nlet status;\nif (r.transport_error || r.shape_unknown) status = 'FAILED';   // could not verify\nelse if (N === 0)                         status = 'SUCCESS';  // nothing was due\nelse if (M === 0)                         status = 'FAILED';\nelse if (M === N)                         status = 'SUCCESS';\nelse                                      status = 'PARTIAL';\n\nconst parts = [];\nparts.push('Retention purge: requested ' + N + ', deleted ' + M + ', unaccounted ' + U\n           + (r.oldest_due ? ' (oldest due ' + r.oldest_due + ')' : '') + '.');\n\nif (M > 0) {\n  parts.push('purged_at written on ' + M + ' row(s) -- only the objects Supabase confirmed it deleted.');\n}\n\nif (U > 0) {\n  // Absence from the delete response means NOT DELETED, never \"fine\". Name the\n  // paths: this list is the whole point of the audit row.\n  const paths = (r.unaccounted_paths || []).map(String);\n  const shown = paths.slice(0, 20);\n  parts.push('NOT deleted and deliberately NOT marked (still in the kyc-documents bucket, retried on the '\n    + 'next run): ' + shown.join(', ')\n    + (paths.length > shown.length ? ' ...and ' + (paths.length - shown.length) + ' more' : '') + '.');\n}\n\nif (M === 0 && N > 0) {\n  parts.push('Storage confirmed ZERO deletions. Either the bulk delete failed, or these objects were '\n    + 'already gone from an earlier half-completed run -- in which case these rows will be re-selected '\n    + 'every night until a human verifies the files are absent and sets purged_at by hand. '\n    + 'Check audit_log history for these paths before doing that.');\n}\n\nif (r.transport_error) {\n  parts.push('Storage delete call errored: ' + r.transport_error);\n}\nif (r.shape_unknown) {\n  parts.push('Storage answered with ' + r.returned_count + ' object name(s) in an unrecognised shape, so '\n    + 'nothing could be reconciled and nothing was marked. Unverifiable is treated as FAILED, not as success.');\n}\n// An over-delete is not a success even when every requested path came back.\nif ((r.extra_returned || []).length && status === 'SUCCESS') status = 'PARTIAL';\n\nif ((r.extra_returned || []).length) {\n  parts.push('WARNING: Storage deleted ' + r.extra_returned.length + ' object(s) that were NOT requested: '\n    + r.extra_returned.slice(0, 10).join(', ') + '. The delete was broader than intended -- investigate now.');\n}\n\nreturn [{ json: {\n  workflow:    'NEXUS Retention Purge',\n  status:      status,\n  requested:   N,\n  deleted:     M,\n  unaccounted: U,\n  summary:     parts.join(' '),\n} }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
+        1540,
         -120
       ],
       "name": "Summarise Purge",
@@ -194,7 +194,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1320,
+        1980,
         -120
       ],
       "name": "Log Purge to Audit",
@@ -205,7 +205,8 @@
           "name": "Supabase account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -317,49 +318,16 @@
       "webhookId": "b203793f-fd40-48d7-998a-1897429a3b17"
     },
     {
-      "id": "aaaa1111-1234-4123-8123-aaaa11112222",
-      "name": "Storage Delete Succeeded?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        900,
-        200
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "version": 2,
-            "typeValidation": "loose"
-          },
-          "combinator": "and",
-          "conditions": [
-            {
-              "id": "noerr",
-              "operator": {
-                "type": "object",
-                "operation": "notExists",
-                "singleValue": true
-              },
-              "leftValue": "={{ $json.error }}",
-              "rightValue": ""
-            }
-          ]
-        },
-        "options": {}
-      }
-    },
-    {
       "id": "bbbb2222-1234-4123-8123-bbbb22223333",
       "name": "Purge Failed — Rows NOT Marked",
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        1120,
-        380
+        2420,
+        0
       ],
       "parameters": {
-        "errorMessage": "Retention purge aborted: the Storage delete did not succeed, so purged_at was deliberately NOT written. Leaving the rows unmarked is the safe failure: they stay selectable and tonight's batch will be retried on the next run. Marking them would have told the compliance record those documents were destroyed while the files were still in the bucket, and Find Expired Documents would never look at them again."
+        "errorMessage": "Retention purge did not fully verify. The audit_log row for this run was written FIRST, so the shortfall is already on the compliance record before this stop: it carries requested / deleted / unaccounted and names every storage_path still sitting in the kyc-documents bucket. purged_at was written ONLY for the objects Supabase confirmed it deleted; every unaccounted row is deliberately left unmarked so Find Expired Documents selects it again on the next run. Absence from Supabase Storage's bulk-delete response means NOT DELETED - it never means fine. This stop exists so the execution shows red and reaches the error workflow; it does not undo anything and it does not suppress the audit row."
       }
     },
     {
@@ -368,12 +336,99 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1210,
+        1760,
         -120
       ],
       "parameters": {
-        "jsCode": "// Verify every node whose success this compliance row is about to claim.\n// 'Storage Delete Succeeded?' + 'Purge Failed - Rows NOT Marked' already cover\n// the case where the Storage delete errors and purged_at must NOT be written,\n// so this node does not duplicate that gate: it re-states the delete verdict on\n// the row itself and adds the one node nothing looks at - 'Mark Rows Purged',\n// which swallows with onError: continueRegularOutput.\nconst CLAIMED = [\n  { node: 'Delete Storage Objects', what: 'KYC objects destroyed in Storage', critical: true },\n  // Non-critical: the delete already happened and is irreversible, and an\n  // unwritten purged_at self-heals - tomorrow's 'Find Expired Documents' picks\n  // the same rows up again. It must still be NAMED, never hidden.\n  { node: 'Mark Rows Purged', what: 'purged_at written on kyc_documents', critical: false },\n];\n\n// Supabase's bulk delete answers with an ARRAY and n8n splits it into one item\n// per object, so a partial failure can be item 7. Scan EVERY item, not item[0].\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const bad = items.map(i => i.json || {}).filter(j => j.error !== undefined);\n  if (bad.length) {\n    const e = bad[0].error;\n    const m = e && (e.message || e.description) || e;\n    return { ...c, ok: false, why: bad.length + ' of ' + items.length + ' item(s) failed: ' + String(m).slice(0, 250) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' - ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+        "jsCode": "// Verify every node whose success this compliance row is about to claim.\n//\n// The old version asked only \"does any item carry an .error key?\". Supabase\n// Storage's bulk delete never sets one for an object it failed to touch -- it\n// simply LEAVES IT OUT. So the honest question is not \"did the call error\" but\n// \"did every requested path come back\". ABSENCE FROM THE RESPONSE IS NOT\n// SUCCESS. That comparison lives in `Reconcile Storage Deletions`; this node\n// states its verdict on the row, in the repo's standard delivery shape.\nconst r = $('Reconcile Storage Deletions').first().json || {};\nconst N = Number(r.requested) || 0;\nconst M = Number(r.deleted)   || 0;\n\nconst unverifiable = !!r.transport_error || !!r.shape_unknown;\n\nconst CLAIMED = [\n  // The count claim itself, carried as an explicit verdict rather than a node\n  // lookup -- no single node's output can answer it.\n  // Critical (=> FAILED) when nothing at all was confirmed gone, or when the\n  // response could not be reconciled. A partial shortfall is PARTIAL, and every\n  // missing path is named in `summary`.\n  { what: 'every requested KYC object confirmed gone from Storage (' + M + ' of ' + N + ')',\n    critical: unverifiable || (M === 0 && N > 0),\n    verdict: (!unverifiable && M === N)\n      ? { ok: true }\n      : { ok: false, why: unverifiable\n            ? (r.transport_error\n                ? 'delete call errored: ' + r.transport_error\n                : 'response shape unrecognised, reconciliation impossible')\n            : (N - M) + ' of ' + N + ' requested path(s) absent from the delete response - NOT deleted' } },\n\n  { node: 'Delete Storage Objects', what: 'Storage bulk delete call completed', critical: true },\n\n  // `prefixes` is the API's own parameter name. If Storage ever deleted by real\n  // prefix it would destroy objects belonging to customers whose retention\n  // period has not expired, and every requested path would still come back --\n  // so a clean N-of-N is not on its own proof the delete was in scope.\n  { what: 'delete stayed scoped to the requested paths',\n    critical: false,\n    verdict: ((r.extra_returned || []).length)\n      ? { ok: false, why: r.extra_returned.length + ' object(s) deleted that were NOT requested: '\n                          + r.extra_returned.slice(0, 10).join(', ') }\n      : { ok: true } },\n];\n\n// Only claim the PATCH when the gate actually let it run -- claiming a node\n// that was skipped by design would report a phantom drop.\n// Non-critical: the delete already happened and is irreversible, and an\n// unwritten purged_at self-heals - tomorrow's `Find Expired Documents` picks\n// the row up again. It must still be NAMED, never hidden.\nif (M > 0) {\n  CLAIMED.push({ node: 'Mark Rows Purged',\n                 what: 'purged_at written on ' + M + ' kyc_documents row(s)',\n                 critical: false });\n}\n\n// Supabase's bulk delete answers with an ARRAY and n8n splits it into one item\n// per object, so a transport failure can be item 7. Scan EVERY item, not item[0].\nfunction check(c) {\n  if (c.verdict) return { ...c, ok: c.verdict.ok, why: c.verdict.why };\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const bad = items.map(i => i.json || {}).filter(j => j.error !== undefined);\n  if (bad.length) {\n    const e = bad[0].error;\n    const m = e && (e.message || e.description) || e;\n    return { ...c, ok: false, why: bad.length + ' of ' + items.length + ' item(s) failed: ' + String(m).slice(0, 250) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(x => !x.ok);\nconst fatal   = dropped.filter(x => x.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(x => x.ok).map(x => x.what),\n    dropped:  dropped.map(x => x.what + ' - ' + x.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
       }
+    },
+    {
+      "id": "purge-reconcile-0001",
+      "name": "Reconcile Storage Deletions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -120
+      ],
+      "parameters": {
+        "jsCode": "// -- Reconcile what Storage ACTUALLY deleted against what we asked it to -----\n//\n// THE ASSUMPTION THAT CAUSED THE BUG, WRITTEN DOWN SO NOBODY REPEATS IT:\n//   Supabase Storage's bulk delete returns ONLY the objects it removed.\n//   An object it could not touch is simply ABSENT from the response -- no\n//   error key, no null, no placeholder. ABSENCE IS NOT SUCCESS. A path that\n//   does not come back means \"still sitting in the kyc-documents bucket\", and\n//   its kyc_documents row must stay UNMARKED so tomorrow's `Find Expired\n//   Documents` selects it again. Unmarked self-heals. Wrongly-marked does not:\n//   nothing ever looks at that row again while the customer's Emirates ID or\n//   passport scan is still in the bucket.\n//\n// This node ALSO exists to collapse the response to exactly ONE item. n8n\n// splits the returned array into one item per deleted object, and under\n// executionOrder v1 that per-item fan-out is what let the old graph run\n// `Mark Rows Purged` (which PATCHed all 500 REQUESTED ids, not the survivors)\n// and `Log Purge to Audit` (SUCCESS) on output 0 before the failure branch on\n// output 1 ever reached stopAndError. Nothing downstream of here can fan out\n// per item, so that ordering hazard is structurally gone, not just counted\n// differently.\n\nconst plan = $('Collect Expired Paths').first().json || {};\n\n// `pairs` is the reconciliation ledger: the id that may be marked sits beside\n// the path that must be confirmed gone first.\nconst pairs = Array.isArray(plan.pairs)\n  ? plan.pairs\n  // Defensive: if an older `Collect Expired Paths` is still deployed it emits\n  // ids[] and paths[] but no pairs[]. Zip them rather than reconcile against\n  // nothing, which would report every single row unaccounted.\n  : (Array.isArray(plan.ids) && Array.isArray(plan.paths)\n      ? plan.ids.map((id, i) => ({ id: id, path: plan.paths[i] }))\n      : []);\n\nconst requested = pairs.length;\nconst items = $input.all().map(i => i.json || {});\n\n// `Delete Storage Objects` runs onError:continueRegularOutput, so an HTTP or\n// network failure arrives as an item carrying `error` rather than throwing.\nconst errItems = items.filter(j => j && j.error !== undefined);\nlet transport_error = null;\nif (errItems.length) {\n  const e = errItems[0].error;\n  transport_error = String((e && (e.message || e.description)) || e).slice(0, 300);\n}\n\n// Normalise for COMPARISON ONLY. What we SEND to Storage is never rewritten --\n// changing that would change which objects get destroyed.\nconst norm = p => String(p == null ? '' : p).replace(/^\\/+/, '').replace(/^kyc-documents\\//, '');\n\n// Every object name Storage reported back as deleted.\nconst returned = [];\nfor (const j of items) {\n  if (!j || j.error !== undefined) continue;\n  if (typeof j.name === 'string' && j.name.length) returned.push(j.name);\n}\nconst returnedSet = new Set();\nfor (const n of returned) { returnedSet.add(n); returnedSet.add(norm(n)); }\n\nconst confirmed = [];\nconst unaccounted = [];\nfor (const p of pairs) {\n  const raw = String((p && p.path) || '');\n  // Present in the response => confirmed gone => its id may be marked.\n  // Missing from the response => NOT deleted => leave the row alone.\n  if (raw && (returnedSet.has(raw) || returnedSet.has(norm(raw)))) confirmed.push(p);\n  else unaccounted.push(p);\n}\n\n// Shape guard. If the response is non-empty, carries no error, and yet contains\n// no `name` anywhere, the API contract changed under us and we CANNOT\n// reconcile. Being unable to verify is not success either: mark nothing, fail\n// loudly, let a human look. An empty `[]` body surfaces as `{}` here because\n// the node runs with alwaysOutputData, so only keyed objects count as payload.\nconst payload = items.filter(j => j && j.error === undefined && Object.keys(j).length > 0);\nconst shape_unknown = !transport_error && payload.length > 0 && returned.length === 0;\n\n// Paranoia. `prefixes` is the API's own parameter name. If Supabase ever\n// applied real prefix semantics it would destroy MORE than we asked for.\n// Nothing should ever come back that we did not request; if it does, the audit\n// row has to say so.\nconst requestedSet = new Set();\nfor (const p of pairs) {\n  const r = String((p && p.path) || '');\n  requestedSet.add(r); requestedSet.add(norm(r));\n}\nconst extra_returned = returned.filter(n => !requestedSet.has(n) && !requestedSet.has(norm(n)));\n\nreturn [{ json: {\n  requested:         requested,\n  deleted:           confirmed.length,\n  unaccounted:       unaccounted.length,\n  confirmed_ids:     confirmed.map(p => p.id),\n  confirmed_paths:   confirmed.map(p => p.path),\n  unaccounted_paths: unaccounted.map(p => p.path),\n  returned_count:    returned.length,\n  extra_returned:    extra_returned,\n  transport_error:   transport_error,\n  shape_unknown:     shape_unknown,\n  oldest_due:        plan.oldest_due || null,\n} }];\n"
+      },
+      "notes": "Matches the Storage bulk-delete response against the requested paths and emits ONE item: requested / deleted / unaccounted / confirmed_ids. Absence from the response means NOT DELETED. Also collapses the array-split fan-out that let the old graph mark all 500 ids before the failure branch ran.",
+      "onError": "stopWorkflow",
+      "retryOnFail": false,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "purge-gate-mark-0002",
+      "name": "Anything Confirmed Deleted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "purge-has-confirmed",
+              "leftValue": "={{ $json.deleted }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "TRUE = at least one object was confirmed gone, so Mark Rows Purged may write purged_at for exactly those ids. FALSE = nothing confirmed, so the PATCH is skipped entirely (id=in.() would be a malformed PostgREST filter) and the run goes straight to the audit row. Both outputs converge on Summarise Purge -- the audit row is written either way."
+    },
+    {
+      "id": "purge-gate-verdict-0003",
+      "name": "Purge Verdict Clean?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2200,
+        -120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "purge-verdict-success",
+              "leftValue": "={{ $('Delivery Report').first().json.delivery.status }}",
+              "rightValue": "SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "Runs AFTER Log Purge to Audit on purpose: the compliance row is on the record before the run is allowed to go red. TRUE = delivery.status SUCCESS, nothing more to do. FALSE = PARTIAL or FAILED, so escalate through the stopAndError into errorWorkflow iYJkh1kztWxZXDbT."
     }
   ],
   "connections": {
@@ -414,17 +469,6 @@
         [
           {
             "node": "Delete Storage Objects",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Delete Storage Objects": {
-      "main": [
-        [
-          {
-            "node": "Storage Delete Succeeded?",
             "type": "main",
             "index": 0
           }
@@ -475,7 +519,40 @@
         ]
       ]
     },
-    "Storage Delete Succeeded?": {
+    "Delivery Report": {
+      "main": [
+        [
+          {
+            "node": "Log Purge to Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Storage Objects": {
+      "main": [
+        [
+          {
+            "node": "Reconcile Storage Deletions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconcile Storage Deletions": {
+      "main": [
+        [
+          {
+            "node": "Anything Confirmed Deleted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything Confirmed Deleted?": {
       "main": [
         [
           {
@@ -486,18 +563,30 @@
         ],
         [
           {
-            "node": "Purge Failed — Rows NOT Marked",
+            "node": "Summarise Purge",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Delivery Report": {
+    "Log Purge to Audit": {
       "main": [
         [
           {
-            "node": "Log Purge to Audit",
+            "node": "Purge Verdict Clean?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Purge Verdict Clean?": {
+      "main": [
+        null,
+        [
+          {
+            "node": "Purge Failed — Rows NOT Marked",
             "type": "main",
             "index": 0
           }
@@ -521,7 +610,7 @@
   "_exported_from": {
     "id": "aIYwwoYStDAi9kHy",
     "active": true,
-    "updatedAt": "2026-08-29T08:48:15.841Z",
+    "updatedAt": "2026-08-30T05:51:47.641Z",
     "published": true
   }
 }

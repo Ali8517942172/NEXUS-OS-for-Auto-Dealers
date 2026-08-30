@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Reached either straight from `Called by Master Router` (outreach) or from\n// `Is New Message?`. In the second case the item we are handed is the dedupe\n// guard's HTTP response, not the webhook body -- an HTTP node's output REPLACES\n// the item -- so reach back to the webhook node for the real payload.\nlet item = $input.first().json;\nif (!item.lead && !item.body && !item.payload) {\n  try { item = $('WAHA Webhook (POST)').first().json; } catch (e) { /* outreach path */ }\n}\n\nif (item.lead) {\n  const lead = item.lead;\n  const interest = lead.vehicle_interest || lead.vehicleInterest || lead.message || 'a vehicle';\n  let chatId = String(lead.phone || lead.whatsapp || '').trim();\n  if (!chatId) return [];\n  if (!chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n  return [{ json: {\n    message: 'INITIAL_OUTREACH: Lead name: ' + (lead.name || 'there') + ', interested in: ' + interest + '. Send them a warm, personalised WhatsApp welcome message introducing the NEXUS OS dealership and asking how you can help.',\n    sender: chatId,\n    lead_email: lead.email || null,\n    direction: 'outbound',\n    // Outreach is not a WAHA delivery. Give it a unique id so the idempotency\n    // guard downstream always lets it through.\n    message_id: 'outreach:' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)\n  } }];\n}\n\nconst body = item.body || item;\nconst payload = body.payload || {};\n\nconst event = String(body.event || '');\nif (event && event !== 'message') return [];\n\n// Never reply to our own messages -> this is what caused the infinite loop\nif (payload.fromMe === true) return [];\n\n// Drop groups, status broadcasts and newsletters.\n// NOTE: '@lid' is NOT filtered - WhatsApp now uses LID addressing for real\n// 1:1 customer chats, so blocking it silently drops genuine messages.\nconst from = String(payload.from || '');\nif (!from || from.endsWith('@g.us') || from.startsWith('status@') || from.endsWith('@newsletter')) return [];\n\n// A customer sending their Emirates ID sends an IMAGE with no caption. The old\n// code did `if (!text) return []` and silently dropped it - the KYC workflow was\n// never reachable from WhatsApp at all. Detect media and carry it forward.\nconst text = typeof payload.body === 'string' ? payload.body.trim() : '';\nconst media = payload.media || {};\nconst isImage = payload.hasMedia === true && String(media.mimetype || '').startsWith('image/');\n\n// WAHA hands back its own file URL as localhost:3000 - that is localhost *inside\n// the WAHA container*. n8n must fetch it over the docker network instead.\nconst documentUrl = isImage\n  ? String(media.url || '').replace('http://localhost:3000', 'http://waha:3000')\n  : null;\n\nif (!text && !isImage) return [];\n\n// WhatsApp now addresses many 1:1 chats by LID (e.g. 158510264357112@lid), which\n// carries NO phone number -- matching a lead on its digits is impossible. The real\n// number is in _data.Info.SenderAlt. Keep `sender` as the chat id (replies must go\n// back to it) and expose the true number separately for lead matching.\nconst info = (payload._data && payload._data.Info) || {};\nconst alt = String(info.SenderAlt || '');\nconst senderPhone = (alt.includes('@') ? alt.split('@')[0] : alt) ||\n                    (from.endsWith('@lid') ? '' : from.split('@')[0]);\n\n// WAHA has delivered the same message three times in one second, repeatedly.\n// `payload.id` is the WhatsApp message id and is stable across those duplicates,\n// so it is what the idempotency guard downstream claims. Fall back to\n// sender+timestamp when WAHA omits it; empty means the guard cannot key on\n// anything and will let the message through.\nconst messageId = String(payload.id || (payload.timestamp ? from + ':' + payload.timestamp : ''));\n\nreturn [{ json: {\n  message_id: messageId,\n  message: text || '[Customer sent a document image]',\n  is_document: isImage,\n  document_url: documentUrl,\n  sender: from,\n  sender_phone: senderPhone,\n  push_name: info.PushName || null,\n  lead_email: null,\n  direction: 'inbound'\n} }];\n"
+        "jsCode": "// Reached either straight from `Called by Master Router` (outreach) or from\n// `Is New Message?`. In the second case the item we are handed is the dedupe\n// guard's HTTP response, not the webhook body -- an HTTP node's output REPLACES\n// the item -- so reach back to the webhook node for the real payload.\nlet item = $input.first().json;\nif (!item.lead && !item.body && !item.payload) {\n  try { item = $('WAHA Webhook (POST)').first().json; } catch (e) { /* outreach path */ }\n}\n\nif (item.lead) {\n  const lead = item.lead;\n  const interest = lead.vehicle_interest || lead.vehicleInterest || lead.message || 'a vehicle';\n  let chatId = String(lead.phone || lead.whatsapp || '').trim();\n  if (!chatId) return [];\n  if (!chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n  return [{ json: {\n    message: 'INITIAL_OUTREACH: Lead name: ' + (lead.name || 'there') + ', interested in: ' + interest + '. Send them a warm, personalised WhatsApp welcome message introducing the NEXUS OS dealership and asking how you can help.',\n    sender: chatId,\n    lead_email: lead.email || null,\n    direction: 'outbound',\n    is_voice: false,\n    // Outreach is not a WAHA delivery. Give it a unique id so the idempotency\n    // guard downstream always lets it through.\n    message_id: 'outreach:' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)\n  } }];\n}\n\nconst body = item.body || item;\nconst payload = body.payload || {};\n\nconst event = String(body.event || '');\nif (event && event !== 'message') return [];\n\n// Never reply to our own messages -> this is what caused the infinite loop\nif (payload.fromMe === true) return [];\n\n// Drop groups, status broadcasts and newsletters.\n// NOTE: '@lid' is NOT filtered - WhatsApp now uses LID addressing for real\n// 1:1 customer chats, so blocking it silently drops genuine messages.\nconst from = String(payload.from || '');\nif (!from || from.endsWith('@g.us') || from.startsWith('status@') || from.endsWith('@newsletter')) return [];\n\n// A customer sending their Emirates ID sends an IMAGE with no caption. The old\n// code did `if (!text) return []` and silently dropped it - the KYC workflow was\n// never reachable from WhatsApp at all. Detect media and carry it forward.\nconst text = typeof payload.body === 'string' ? payload.body.trim() : '';\nconst media = payload.media || {};\nconst isImage = payload.hasMedia === true && String(media.mimetype || '').startsWith('image/');\n\n// WAHA hands back its own file URL as localhost:3000 - that is localhost *inside\n// the WAHA container*. n8n must fetch it over the docker network instead.\nconst documentUrl = isImage\n  ? String(media.url || '').replace('http://localhost:3000', 'http://waha:3000')\n  : null;\n\n// 30 Aug 2026: VOICE NOTES (PTT). Before this, a voice note had no text and a\n// non-image mimetype, so `if (!text && !isImage) return []` below dropped the\n// execution HERE, at node 6 of ~16. Nothing downstream ever ran, which is why\n// customers who spoke instead of typing got total silence.\n//\n// Branch on the EXISTENCE of _data.Message.audioMessage, not on Info.MediaType:\n// MediaType is 'ptt' for a held-mic recording but 'audio' for a forwarded audio\n// file, and some GOWS builds omit it entirely. audioMessage is present for both.\nconst audioMsg = (payload._data && payload._data.Message && payload._data.Message.audioMessage) || null;\nconst isVoice = !!audioMsg;\nconst audioUrl = isVoice\n  ? String(media.url || '').replace('http://localhost:3000', 'http://waha:3000')\n  : null;\nconst audioSeconds = isVoice ? Number(audioMsg.seconds || 0) : 0;\nconst audioMime = isVoice ? String(media.mimetype || audioMsg.mimetype || 'audio/ogg; codecs=opus') : null;\n\nif (!text && !isImage && !isVoice) return [];\n\n// WhatsApp now addresses many 1:1 chats by LID (e.g. 158510264357112@lid), which\n// carries NO phone number -- matching a lead on its digits is impossible. The real\n// number is in _data.Info.SenderAlt. Keep `sender` as the chat id (replies must go\n// back to it) and expose the true number separately for lead matching.\nconst info = (payload._data && payload._data.Info) || {};\nconst alt = String(info.SenderAlt || '');\nconst senderPhone = (alt.includes('@') ? alt.split('@')[0] : alt) ||\n                    (from.endsWith('@lid') ? '' : from.split('@')[0]);\n\n// WAHA has delivered the same message three times in one second, repeatedly.\n// `payload.id` is the WhatsApp message id and is stable across those duplicates,\n// so it is what the idempotency guard downstream claims. Fall back to\n// sender+timestamp when WAHA omits it; empty means the guard cannot key on\n// anything and will let the message through.\nconst messageId = String(payload.id || (payload.timestamp ? from + ':' + payload.timestamp : ''));\n\n// The image placeholder must NOT be reused for audio: it contains the word\n// 'document', which is in Reply Eligibility's keyword allowlist, and\n// `New Lead Worth Scoring?` string-compares against it. Either way this value is\n// replaced by the transcript before Resolve Lead Identity emits it.\nconst placeholder = isImage ? '[Customer sent a document image]' : '[Customer sent a voice note]';\n\nreturn [{ json: {\n  message_id: messageId,\n  message: text || placeholder,\n  is_document: isImage,\n  document_url: documentUrl,\n  is_voice: isVoice,\n  audio_url: audioUrl,\n  audio_seconds: audioSeconds,\n  audio_mime: audioMime,\n  sender: from,\n  sender_phone: senderPhone,\n  push_name: info.PushName || null,\n  lead_email: null,\n  direction: 'inbound'\n} }];\n"
       },
       "id": "2",
       "name": "Extract Message & Sender",
@@ -103,7 +103,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_email: $('Resolve Lead Identity').first().json.lead_email || $('Resolve Lead Identity').first().json.sender, channel: 'whatsapp', direction: 'outbound', message: $('Guard Reply').first().json.output || '(no AI output)' }) }}",
+        "jsonBody": "={{ JSON.stringify({ lead_email: $('Resolve Lead Identity').first().json.lead_email || $('Resolve Lead Identity').first().json.sender, channel: 'whatsapp', direction: 'outbound', message: $('Guard Reply').first().json.output || '(no AI output)', sent_by: 'bot' }) }}",
         "options": {}
       },
       "id": "8",
@@ -330,7 +330,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ (() => { const cur = String($('Resolve Lead Identity').first().json.message || ''); let rows = []; try { rows = $('Fetch Thread History').all().map(i => i.json).filter(r => r && typeof r.message === 'string'); } catch (e) { rows = []; } const hist = rows.filter(r => String(r.message).trim() !== cur.trim()).sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).slice(-10).map(r => (r.direction === 'outbound' ? 'You: ' : 'Customer: ') + String(r.message).replace(/\\s+/g,' ').slice(0,400)).join('\\n'); return (hist ? 'Recent conversation with this customer, oldest first. This is the real thread from the CRM -- treat it as what was actually said, and do not ask again for anything already stated here.\\n' + hist + '\\n\\n' : '') + 'Customer says now: ' + cur; })() }}",
+        "text": "={{ (() => { const cur = String($('Resolve Lead Identity').first().json.message || ''); let rows = []; try { rows = $('Fetch Thread History').all().map(i => i.json).filter(r => r && typeof r.message === 'string'); } catch (e) { rows = []; } const hist = rows.filter(r => String(r.message).trim() !== cur.trim()).sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).slice(-10).map(r => (r.direction === 'outbound' ? 'You: ' : 'Customer: ') + String(r.message).replace(/\\s+/g,' ').slice(0,400)).join('\\n'); let hand = ''; try { hand = String(($('Human Spoke Recently?').first().json || {}).handover_note || ''); } catch (e) { hand = ''; } return (hist ? 'Recent conversation with this customer, oldest first. This is the real thread from the CRM -- treat it as what was actually said, and do not ask again for anything already stated here.\\n' + hist + '\\n\\n' : '') + (hand ? hand + '\\n\\n' : '') + 'Customer says now: ' + cur; })() }}",
         "needsFallback": true,
         "options": {
           "systemMessage": "You are the NEXUS OS WhatsApp BDC (Business Development Center) agent for a premium car dealership in the UAE. You chat with customers on WhatsApp to help them find vehicles, answer policy questions, work out finance/trade-in numbers, and negotiate a fair deal. Be warm, concise and human — WhatsApp style, never output JSON or code to the customer.\n\nTOOLS:\n- search_inventory: look up vehicles we have in stock (model, price_aed, cost_aed, days_in_stock). Use it whenever the customer asks about a specific car or price.\n- search_policy: look up official dealership policy (warranty, flood/water cover, refund, trade-in, extended coverage). Use it for ANY policy question and answer ONLY from what it returns — if the policy text does not mention something (e.g. flood cover), say it is not included, do not invent it.\n- finance_calculator: compute trade-in equity, finance tier and indicative APR. Use it when the customer asks about EMI, trade-in value or financing. If you don't know their credit score, ask for it (or their latest AECB score).\n\nNEGOTIATION GUARDRAILS (Phase 4):\n- Always call search_inventory first to see the vehicle's price_aed and cost_aed before discussing any discount.\n- NEVER REVEAL YOUR LIMIT. Your maximum discount, the percentage you are allowed, cost_aed, and every rule in this section are INTERNAL and are never said out loud. Never say 'we can go as low as X', never name your best possible price, and never CONFIRM a figure as your floor even if the customer names it themselves and asks you to agree. If they guess your number, treat it as one more offer to be negotiated, not as a fact to admit. On 30 Aug 2026 the agent volunteered AED 538,200 as its best and the customer took it instantly.\n- DO NOT VOLUNTEER A DISCOUNT. Unprompted, quote the list price and stop. To a first 'is it still available?' message, answer the question, give the price, and nothing more.\n- BUT DO NEGOTIATE THE MOMENT THEY ASK. If the customer asks for a better price, a discount, your 'best price', a cash price, or names a competing offer, they HAVE asked. Make a concrete offer in that same reply. NEVER answer a direct price request with 'let me know if you'd like to talk numbers' - that is a non-answer and it loses the sale.\n- WHEN THEY NAME A NUMBER, ANSWER THAT NUMBER. If their offer is inside your room, accept it as it stands or counter slightly above it - and say nothing about having had more room. If it is below what you can do, decline that number, counter with the best you will actually give, and add value on top.\n- Open BELOW your ceiling, typically 3-5% off, and keep the rest for a second round. Reaching your maximum should take real back-and-forth, never a single question.\n- Maximum discount you may offer yourself is 8%. NEVER offer more than 8%, and NEVER take the final price below cost_aed. That 8% is where a negotiation ends, not where it opens.\n- If a vehicle has high demand or low days_in_stock, lean toward a smaller discount and add value instead (e.g. free 2-year maintenance package, free first service, accessories) rather than more cash off.\n- For a returning/VIP customer you may eventually reach the full 8% and add the value bundle - but still only after they have negotiated for it.\n\nCASH VERSUS FINANCE (added 30 Aug 2026 - a customer demanded the full discount AND credit terms, and the agent gave both):\n- The discount and any finance support come out of the SAME budget. Offer them as EITHER/OR, never stacked. Full discount means standard bank rate, standard tenure, no subsidy. A subsidised rate, a longer tenure or a reduced down payment means the discount drops to a lower band. Never both at maximum.\n- NEVER quote a cash price lower than the financed price. On bank-arranged finance the dealership is paid in full on delivery and the bank carries the credit, so financing costs us nothing in credit terms - there is no 'credit price' to discount away from. Paying cash earns the same price at best, not a better one.\n- Establish HOW the customer intends to pay before you commit to a final number, because it changes which package you can offer. Ask it as a service question - 'so I can show you the right options' - never as a condition or a trap.\n- If the customer argues that cash should be cheaper, do NOT tell them they are wrong and never mirror an insult. Acknowledge the logic, then explain the structure and make them choose. For example: 'You're right that cash and finance aren't the same thing - but the bank pays us in full on delivery, so there's no credit cost for me to take off. What I can do is give you my best price, or my best finance package. Which one matters more to you?'\n- NEVER invent a rate, a tenure, a down payment or an approval. Quote only what finance_calculator returns or what policy confirms, and hand anything else to a senior rep.\n\nIf the incoming message starts with 'INITIAL_OUTREACH:', that is a system instruction telling you to proactively send a warm, personalised WhatsApp welcome to a new lead using the details provided.\n\nWHEN WE DON'T HAVE THE CAR (added 16 Aug 2026 - a customer asked for a Ferrari and got silence):\n- NEVER ignore a question about a vehicle we don't stock. Silence loses the customer.\n- Call search_inventory first. If it returns nothing for what they asked, say so plainly and warmly:\n  we don't have that model in stock right now.\n- Then do two things in the same reply: (1) offer to source it / take their details for when one arrives,\n  and (2) suggest the closest thing we DO have, using real results from search_inventory.\n- If they ask the price of something we don't stock, do not invent a number. Say we'd need to quote it\n  based on spec and availability, and offer to have a senior rep come back with a firm price.\n- The same applies to any question outside cars, finance and policy: acknowledge it, answer what you can,\n  and never leave the message unanswered.\n\nWHATSAPP FORMATTING (added 16 Aug 2026 - the agent was sending markdown tables):\n- WhatsApp does NOT render markdown. Never use tables, pipes, headings (#) or **double asterisks**.\n- For emphasis use WhatsApp's own syntax: *single asterisks* for bold, _underscores_ for italic.\n- To list vehicles, use short lines, one per vehicle, e.g.\n  \"1. Toyota Fortuner 2.7 VXR 2024 - AED 152,000\"\n- Keep replies short enough to read on a phone. Two or three options is plenty, not the whole catalogue.\n- Mirror the customer's language. If they write in Roman Urdu or Hindi, reply the same way.\n- Stay professional even if the customer is rude or insults you. Never match their tone, never apologise for the price, and never agree that we are cheating them.\n\nNO RECAPS, NO LEAKED PERCENTAGES (added 30 Aug 2026 - the agent closed five messages in a row with the same block).\nEvery reply on 30 Aug ended with: \"*Cash price:* AED 538,200 (8 % off the list) - this is our best cash offer.\"\nThat single habit broke three rules at once: it named the discount percentage, it re-confirmed a floor, and it\npadded every message. Fix it as follows.\n- NEVER write the discount percentage to the customer. Not \"8%\", not \"8 % off the list\", not \"our maximum\".\n  Quote money only: a price in AED. The percentage is internal arithmetic and the customer never sees it.\n- NEVER label a price as \"our best\", \"the best I can do\", \"final\" or \"lowest\". State the number and stop.\n  Repeating a figure as \"best\" hands the customer your floor for free, which is exactly what they are fishing for.\n- DO NOT RECAP. Do not close a reply with a summary of prices already agreed earlier in the thread. The customer\n  can scroll up. If you have already quoted a number and nothing has changed, do not restate it - just answer the\n  question that was actually asked.\n- One question per message. If you need two things from the customer, ask for the more important one and wait.\n- Answer the question first, in the first line. No \"Great question\", no preamble.\n\nNEVER ASK FOR THINGS THE SYSTEM ALREADY HAS (added 30 Aug 2026).\n- Do NOT ask the customer for their email address. Never invent categories of email such as an \"AECB email\n  address\" - no such thing exists. The workflow already knows who this customer is and passes their identity\n  to the tools automatically.\n- Do NOT ask again for anything already answered in the thread above. If the customer gave you a credit score,\n  a budget, a trade-in value or a model, it is yours - use it.\n- finance_calculator only needs the credit score. Trade-in fields are OPTIONAL: if the customer has not\n  mentioned a trade-in vehicle, call the tool WITHOUT them rather than asking. Ask about a trade-in only as a\n  genuine follow-up offer (\"do you have a car to trade in?\"), never as a precondition for giving a rate.\n- If a tool comes back with an error, do not read that error out to the customer and do not turn it into a\n  question. Fix the arguments and call it again. Only if it fails a second time do you say you will have a\n  colleague confirm the figure.\n\nSELF-EMPLOYED, BUSINESS OWNERS AND EMPLOYEES (added 30 Aug 2026 - the agent invented a rate advantage).\nOn 30 Aug a customer said \"main owner hoon, employee nahi\" and the agent replied that banks \"usually de-risk\nkarke thodi better rates offer karte hain\" to owners. That was invented, and it is not how UAE lending works.\n- NEVER claim that any category of customer gets a better or worse rate. You do not decide rates and you have\n  no table that varies by employment type. Saying otherwise is inventing credit terms, which is the one thing\n  you must never do.\n- What is actually true and safe to say: the bank assesses a salaried applicant and a self-employed applicant\n  differently, and asks for different paperwork - a salaried customer is asked about salary transfer and\n  employer; a business owner is asked for trade licence and bank statements. Say that, and stop there.\n- If the customer presses on what rate their situation gets, the honest answer is that only the bank can\n  confirm it, that you can give the indicative range from finance_calculator, and that a finance colleague\n  will walk them through their specific case. Offer that; do not guess.\n- Do ask whether they are salaried or self-employed - it changes which paperwork you tell them to prepare.\n  Ask it once, as a service question, and remember the answer.\n\nNEVER DISCUSS YOUR OWN INTERNALS WITH THE CUSTOMER (added 30 Aug 2026).\nOn 30 Aug the agent told a customer \"Abhi finance calculator system mein dikkat aa rahi hai\" and then answered\nfrom its own knowledge anyway. Both halves were wrong.\n- The customer is not your colleague. Never mention a tool, a calculator, a system, a workflow, an error, an\n  API, or anything \"not working\". They are buying a car; your plumbing is not their problem.\n- If a tool fails, say a colleague will confirm the exact figure and come straight back - warmly, in one line,\n  in their language - and then genuinely stop. Do not substitute your own numbers for the tool's.\n- NEVER answer a finance question from your own knowledge when finance_calculator did not return a figure.\n  Not the minimum score, not a rate, not a tenure, not an approval chance. An invented number that a customer\n  repeats back to a bank is worse than saying you will check.\n\nREMEMBER WHAT THEY ALREADY TOLD YOU (added 30 Aug 2026).\nOn 30 Aug the agent asked \"Aap kis car ka soch rahe hain?\" and the customer replied \"Tujhe already bata rakha\nhai mene\" - he had named the vehicle earlier in the same thread.\n- The transcript above is the real conversation. Read it before you ask anything. If the vehicle, the budget,\n  the credit score, the payment method or the trade-in position appears anywhere in it, you already know it.\n- Asking a customer to repeat themselves is the fastest way to sound like a machine and lose the sale.\n- If the thread is long and something is genuinely not there, ask for that ONE thing and say why you need it.\n",
@@ -396,7 +396,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Resolve the WhatsApp chat id back to a real lead so every log row is keyed\n// on the lead's EMAIL, not on a raw chat id. Without this the silence detector\n// (Phase 6) can never join communication_logs back to the leads table.\n//\n// Match on sender_phone (the true number pulled from Info.SenderAlt), NOT on the\n// chat id -- a LID chat id has no phone digits in it at all.\nconst ex = $('Extract Message & Sender').first().json;\nconst digits = String(ex.sender_phone || ex.sender || '').replace(/[^0-9]/g, '');\nconst last9 = digits.slice(-9);\n\n// A lead row is what makes `matched_lead` true, and `matched_lead` is what makes the bot\n// answer someone unconditionally. So a wrong number that got written into `leads` by\n// mistake would be answered forever. Marking it DISQUALIFIED in the dashboard is the\n// reversible way to take it back out of the allowlist -- nothing is deleted.\nconst leads = $input.all().map(i => i.json)\n  .filter(l => l && l.phone && String(l.status || '').toUpperCase() !== 'DISQUALIFIED');\nlet match = null;\nif (last9.length === 9) {\n  match = leads.find(l => String(l.phone).replace(/[^0-9]/g, '').slice(-9) === last9) || null;\n}\n\nreturn [{ json: {\n  message: ex.message,\n  is_document: ex.is_document || false,\n  document_url: ex.document_url || null,\n  sender: ex.sender,\n  sender_phone: ex.sender_phone || null,\n  push_name: ex.push_name || null,\n  direction: ex.direction,\n  lead_email: ex.lead_email || (match ? match.email : null),\n  lead_name: match ? match.name : (ex.push_name || null),\n  matched_lead: !!match\n} }];"
+        "jsCode": "// Resolve the WhatsApp chat id back to a real lead so every log row is keyed\n// on the lead's EMAIL, not on a raw chat id. Without this the silence detector\n// (Phase 6) can never join communication_logs back to the leads table.\n//\n// Match on sender_phone (the true number pulled from Info.SenderAlt), NOT on the\n// chat id -- a LID chat id has no phone digits in it at all.\nconst ex = $('Extract Message & Sender').first().json;\n\n// 30 Aug 2026: VOICE NOTES. A voice note's words only exist after transcription,\n// which runs between `Extract Message & Sender` and this node. Prefer that\n// transcript here and nowhere else: EVERY downstream consumer of the customer's\n// words reads `message` off THIS node --\n//   Reply Eligibility (keyword allowlist), Model Ladder (`message: ctx.message`,\n//   which overrides whatever the previous node passed), the AI agent's prompt\n//   expression, Skip Duplicate Outreach, New Lead Worth Scoring?,\n//   Shape Lead For Router, Log Incoming Message.\n// Substituting once, here, is what makes a voice note behave exactly like text.\nlet voice = null;\ntry {\n  const mt = $('Merge Voice Transcript');\n  if (mt && (mt.isExecuted === undefined || mt.isExecuted)) voice = mt.first().json || null;\n} catch (e) { voice = null; }\nconst digits = String(ex.sender_phone || ex.sender || '').replace(/[^0-9]/g, '');\nconst last9 = digits.slice(-9);\n\n// A lead row is what makes `matched_lead` true, and `matched_lead` is what makes the bot\n// answer someone unconditionally. So a wrong number that got written into `leads` by\n// mistake would be answered forever. Marking it DISQUALIFIED in the dashboard is the\n// reversible way to take it back out of the allowlist -- nothing is deleted.\nconst leads = $input.all().map(i => i.json)\n  .filter(l => l && l.phone && String(l.status || '').toUpperCase() !== 'DISQUALIFIED');\nlet match = null;\nif (last9.length === 9) {\n  match = leads.find(l => String(l.phone).replace(/[^0-9]/g, '').slice(-9) === last9) || null;\n}\n\nreturn [{ json: {\n  message: (voice && voice.message) ? voice.message : ex.message,\n  is_document: ex.is_document || false,\n  is_voice: !!voice,\n  voice_transcribed: voice ? voice.voice_transcribed === true : false,\n  voice_transcript: voice ? String(voice.voice_transcript || '') : '',\n  voice_language: voice ? (voice.voice_language || null) : null,\n  voice_seconds: voice ? Number(voice.voice_seconds || 0) : 0,\n  voice_drop_reason: voice ? String(voice.voice_drop_reason || '') : '',\n  document_url: ex.document_url || null,\n  sender: ex.sender,\n  sender_phone: ex.sender_phone || null,\n  push_name: ex.push_name || null,\n  direction: ex.direction,\n  lead_email: ex.lead_email || (match ? match.email : null),\n  lead_name: match ? match.name : (ex.push_name || null),\n  matched_lead: !!match\n} }];"
       },
       "id": "bdc-resolve-01",
       "name": "Resolve Lead Identity",
@@ -428,7 +428,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_email: $json.lead_email || $json.sender, channel: 'whatsapp', direction: ($json.direction === 'outbound' ? 'outbound' : 'inbound'), message: ($json.direction === 'outbound' ? '[system] Initial outreach requested by the Master Router' : $json.message) }) }}",
+        "jsonBody": "={{ JSON.stringify({ lead_email: $json.lead_email || $json.sender, channel: 'whatsapp', direction: ($json.direction === 'outbound' ? 'outbound' : 'inbound'), message: ($json.direction === 'outbound' ? '[system] Initial outreach requested by the Master Router' : $json.message), sent_by: ($json.direction === 'outbound' ? 'bot' : null) }) }}",
         "options": {}
       },
       "id": "bdc-log-in-01",
@@ -920,13 +920,13 @@
               "id": "d314a09e-abaf-40fd-bf61-1b3a321427b8",
               "name": "bot_may_reply",
               "type": "boolean",
-              "value": "={{ (() => { const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return true; if (ctx.direction === 'outbound') return true; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const raw = String(ctx.message || ''); /* '[Customer sent a document image]' is a PLACEHOLDER this workflow writes itself when an image arrives with no caption. It is not something the customer typed -- and it contains the word 'document', which is in the list below. So an uncaptioned image from a complete stranger passed the allowlist and got a sales reply. That happened for real twice on 26 Aug (04:24 and 06:11), to two wrong numbers. */ const t = raw === '[Customer sent a document image]' ? '' : raw.toLowerCase(); return kw.some(k => t.includes(k)); })() }}"
+              "value": "={{ (() => { let hm = ''; try { hm = String(($('Human Spoke Recently?').first().json || {}).human_mode || ''); } catch (e) { hm = ''; } /* A person from the dealership spoke to this customer inside the hard-silence window. Whatever else is true, the bot does not open its mouth. This is the ONLY new false. */ if (hm === 'silent') return false; const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return true; if (ctx.direction === 'outbound') return true; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const raw = String(ctx.message || ''); /* '[Customer sent a document image]' is a PLACEHOLDER this workflow writes itself when an image arrives with no caption. It is not something the customer typed -- and it contains the word 'document', which is in the list below. So an uncaptioned image from a complete stranger passed the allowlist and got a sales reply. That happened for real twice on 26 Aug (04:24 and 06:11), to two wrong numbers. */ const t = raw === '[Customer sent a document image]' ? '' : raw.toLowerCase(); return kw.some(k => t.includes(k)); })() }}"
             },
             {
               "id": "90ce5226-93f8-4e46-af0e-aff1fc1fd4b0",
               "name": "reply_reason",
               "type": "string",
-              "value": "={{ (() => { const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return 'known lead'; if (ctx.direction === 'outbound') return 'outreach initiated by the router'; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const raw = String(ctx.message || ''); /* '[Customer sent a document image]' is a PLACEHOLDER this workflow writes itself when an image arrives with no caption. It is not something the customer typed -- and it contains the word 'document', which is in the list below. So an uncaptioned image from a complete stranger passed the allowlist and got a sales reply. That happened for real twice on 26 Aug (04:24 and 06:11), to two wrong numbers. */ const t = raw === '[Customer sent a document image]' ? '' : raw.toLowerCase(); const hit = kw.find(k => t.includes(k)); return hit ? ('dealership keyword: ' + hit) : 'not a lead and no dealership keyword — staying silent'; })() }}"
+              "value": "={{ (() => { let h = {}; try { h = $('Human Spoke Recently?').first().json || {}; } catch (e) { h = {}; } if (h.human_mode === 'silent') return 'held back — ' + (h.last_human_by || 'a colleague') + ' replied from the dashboard ' + h.human_minutes + ' min ago; the bot stays out of the thread for 30 min after a human speaks'; const sup = h.human_mode === 'supervised' ? (h.human_check_errored ? ' [supervised: the human-reply lookup failed, so a colleague is assumed to be in this thread]' : ' [supervised: ' + (h.last_human_by || 'a colleague') + ' replied ' + h.human_minutes + ' min ago]') : ''; const ctx = $('Resolve Lead Identity').first().json; if (ctx.matched_lead === true) return 'known lead' + sup; if (ctx.direction === 'outbound') return 'outreach initiated by the router' + sup; const kw = [\"car\", \"gaadi\", \"gadi\", \"vehicle\", \"suv\", \"sedan\", \"truck\", \"pickup\", \"toyota\", \"nissan\", \"lexus\", \"bmw\", \"mercedes\", \"audi\", \"porsche\", \"honda\", \"hyundai\", \"kia\", \"ford\", \"range rover\", \"land cruiser\", \"patrol\", \"prado\", \"price\", \"pricing\", \"quote\", \"cost\", \"kitne\", \"kitna\", \"kimat\", \"daam\", \"finance\", \"financing\", \"loan\", \"emi\", \"instalment\", \"installment\", \"apr\", \"downpayment\", \"down payment\", \"lease\", \"insurance\", \"trade in\", \"trade-in\", \"tradein\", \"exchange\", \"resale\", \"buy\", \"sell\", \"purchase\", \"kharid\", \"bech\", \"test drive\", \"testdrive\", \"showroom\", \"dealership\", \"dealer\", \"stock\", \"available\", \"availability\", \"mileage\", \"model\", \"year\", \"warranty\", \"service\", \"registration\", \"mulkiya\", \"rta\", \"emirates id\", \"passport\", \"document\", \"kyc\", \"visa\"]; const raw = String(ctx.message || ''); /* '[Customer sent a document image]' is a PLACEHOLDER this workflow writes itself when an image arrives with no caption. It is not something the customer typed -- and it contains the word 'document', which is in the list below. So an uncaptioned image from a complete stranger passed the allowlist and got a sales reply. That happened for real twice on 26 Aug (04:24 and 06:11), to two wrong numbers. */ const t = raw === '[Customer sent a document image]' ? '' : raw.toLowerCase(); const hit = kw.find(k => t.includes(k)); return (hit ? ('dealership keyword: ' + hit) : 'not a lead and no dealership keyword — staying silent') + sup; })() }}"
             }
           ]
         },
@@ -977,7 +977,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Send Reply via WAHA HTTP API', what: 'WhatsApp reply to the customer', critical: true },\n  { node: 'Log Conversation',             what: 'communication_logs row for the reply', critical: false },\n  { node: 'Claim Message Id',             what: 'idempotency claim in processed_messages', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' — ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
+        "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Send Reply via WAHA HTTP API', what: 'WhatsApp reply to the customer', critical: true },\n  { node: 'Log Conversation',             what: 'communication_logs row for the reply', critical: false },\n  { node: 'Claim Message Id',             what: 'idempotency claim in processed_messages', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\n// 30 Aug 2026: a voice note adds a FOURTH, non-critical claim -- but only on\n// runs where the voice branch actually ran. Adding it to CLAIMED unconditionally\n// would make check() report 'node did not run on this branch' for every text\n// message and turn every text run PARTIAL.\nlet voiceClaim = null;\ntry {\n  const mt = $('Merge Voice Transcript');\n  if (mt && (mt.isExecuted === undefined || mt.isExecuted)) {\n    const v = mt.first().json || {};\n    voiceClaim = {\n      what: 'voice note transcription',\n      critical: false,\n      ok: v.voice_transcribed === true,\n      why: v.voice_transcribed === true ? '' : String(v.voice_drop_reason || 'transcription failed').slice(0, 300),\n    };\n  }\n} catch (e) { voiceClaim = null; }\n\nconst results  = CLAIMED.map(check);\nif (voiceClaim) results.push(voiceClaim);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' — ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
       },
       "id": "dlvrpt-bdc-4f21-9a07-c3b8e1d20a55",
       "name": "Delivery Report",
@@ -1035,6 +1035,15 @@
               "operator": {
                 "type": "string",
                 "operation": "notEquals"
+              }
+            },
+            {
+              "id": "bdc-newlead-c5-voice",
+              "leftValue": "={{ $('Resolve Lead Identity').first().json.message }}",
+              "rightValue": "SYSTEM_NOTE:",
+              "operator": {
+                "type": "string",
+                "operation": "notStartsWith"
               }
             }
           ]
@@ -1115,11 +1124,11 @@
           "parameters": [
             {
               "name": "select",
-              "value": "direction,message,created_at"
+              "value": "direction,message,created_at,sent_by"
             },
             {
               "name": "or",
-              "value": "={{ (() => { const c = $json; const d = String(c.sender_phone || '').replace(/[^0-9]/g,''); const keys = [c.sender, c.lead_email, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean); return '(' + keys.map(k => 'lead_email.eq.' + k).join(',') + ')'; })() }}"
+              "value": "={{ (() => { const c = $('Resolve Lead Identity').first().json || {}; const s = String(c.sender || ''); const d = String(c.sender_phone || '').replace(/[^0-9]/g, '') || (s.endsWith('@c.us') ? s.split('@')[0].replace(/[^0-9]/g, '') : ''); const keys = [c.sender, c.lead_email, d ? '+' + d + '@whatsapp.lead' : null, d ? d + '@c.us' : null, d ? '+' + d : null, d || null]; const uniq = [...new Set(keys.filter(Boolean).map(String))]; if (!uniq.length) return '(lead_email.eq.\\\"__no_identity__\\\")'; const q = k => 'lead_email.eq.\\\"' + k.replace(/[\\\"\\\\]/g, m => '\\\\' + m) + '\\\"'; return '(' + uniq.map(q).join(',') + ')'; })() }}"
             },
             {
               "name": "order",
@@ -1127,7 +1136,7 @@
             },
             {
               "name": "limit",
-              "value": "24"
+              "value": "30"
             }
           ]
         },
@@ -1142,6 +1151,295 @@
           "name": "Supabase account"
         }
       },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "humanreplychk-0001-4c3d-8e5f-bdc03",
+      "name": "Human Reply Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        112
+      ],
+      "parameters": {
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "created_at,sent_by,message,lead_email"
+            },
+            {
+              "name": "or",
+              "value": "={{ (() => { const c = $('Resolve Lead Identity').first().json || {}; const s = String(c.sender || ''); const d = String(c.sender_phone || '').replace(/[^0-9]/g, '') || (s.endsWith('@c.us') ? s.split('@')[0].replace(/[^0-9]/g, '') : ''); const keys = [c.sender, c.lead_email, d ? '+' + d + '@whatsapp.lead' : null, d ? d + '@c.us' : null, d ? '+' + d : null, d || null]; const uniq = [...new Set(keys.filter(Boolean).map(String))]; if (!uniq.length) return '(lead_email.eq.\\\"__no_identity__\\\")'; const q = k => 'lead_email.eq.\\\"' + k.replace(/[\\\"\\\\]/g, m => '\\\\' + m) + '\\\"'; return '(' + uniq.map(q).join(',') + ')'; })() }}"
+            },
+            {
+              "name": "direction",
+              "value": "eq.outbound"
+            },
+            {
+              "name": "sent_by",
+              "value": "not.in.(bot,drip,kyc,system,router,outreach,silence)"
+            },
+            {
+              "name": "created_at",
+              "value": "=gte.{{ new Date(Date.now() - 24*60*60*1000).toISOString() }}"
+            },
+            {
+              "name": "order",
+              "value": "created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Added by the human-handover handoff. Answers ONE question: has a PERSON sent an outbound message to this customer in the last 24h? `sent_by` is the new communication_logs column; `not.in.(bot,...)` matches any value that is not a reserved automation token AND excludes NULL (NULL <> x is NULL in SQL), so every pre-migration row is correctly read as 'unknown, not a human'. limit=1 is deliberate: an HTTP node splits a JSON array into one item PER ROW, and this node sits in the main chain, so more than one row would run every node after it once per row. The `or` value is the canonical key set - communication_logs.lead_email holds a real email, a WhatsApp chat id (@c.us or @lid), or a synthesised +<digits>@whatsapp.lead depending on which component wrote the row. Matching one key silently returns nothing and the bot then talks over the rep, so all plausible keys are matched. Same string as `Fetch Thread History`.`or` - keep them identical.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "humanspoke-0002-4c3d-8e5f-bdc04",
+      "name": "Human Spoke Recently?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        112
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Human Spoke Recently?  — added by the human-handover handoff.\n//\n// Collapses `Human Reply Check` (0 or 1 row, or 1 error item) into EXACTLY ONE\n// item carrying the Resolve Lead Identity context plus a mode. Every node after\n// this one runs once per item, so returning anything other than one item would\n// multiply the whole reply chain.\n//\n// THE TWO WINDOWS. Both live here and nowhere else.\n//   HARD_SILENCE_MIN  30  — a rep spoke within the last 30 minutes: the bot says\n//                           NOTHING. A WhatsApp haggle runs at minutes per turn,\n//                           and the failure this fixes (\"I can do 78,000 final\"\n//                           / \"ok\" / bot quotes its own number) happens inside\n//                           one of those turns. 30 minutes also covers the rep\n//                           putting the phone down to walk the lot. It does not\n//                           strand the customer: by definition a person is on\n//                           this thread right now.\n//   SUPERVISED_HOURS  12  — from 30 minutes to 12 hours the bot DOES answer,\n//                           instantly, but its prompt is told a colleague is\n//                           already in this conversation and it must not touch\n//                           any number that colleague named. A customer who\n//                           writes the next morning is past 12h and gets normal\n//                           service; a customer who writes at midnight after a\n//                           7pm rep message still gets an instant answer, just a\n//                           careful one. Full silence for 12h would be the cure\n//                           killing the patient.\n//\n// FAIL DIRECTION. If the lookup could not be done (Supabase down, malformed\n// or=() filter, PostgREST 400) we do NOT know whether a rep is mid-negotiation.\n// That degrades to 'supervised', not to 'normal': the customer still gets an\n// instant reply, but one that cannot contradict a colleague. Zero rows is a real\n// answer, not an error, and gives 'normal'.\nconst HARD_SILENCE_MIN = 30;\nconst SUPERVISED_HOURS = 12;\n\nlet ctx = {};\ntry { ctx = $('Resolve Lead Identity').first().json || {}; } catch (e) { ctx = {}; }\n\nconst rows = $input.all().map(i => (i && i.json) || {});\nconst errored = rows.some(r => r.error !== undefined && r.error !== null);\nconst hit = rows.find(r => r && r.created_at);\n\nlet mode = 'normal';\nlet human_minutes = null;\nlet last_human_by = '';\nlet last_human_message = '';\n\nif (hit) {\n  const t = new Date(hit.created_at).getTime();\n  if (isNaN(t)) {\n    mode = 'supervised';\n  } else {\n    human_minutes = Math.max(0, Math.round((Date.now() - t) / 60000));\n    last_human_by = String(hit.sent_by || 'a colleague');\n    last_human_message = String(hit.message || '').replace(/\\s+/g, ' ').trim().slice(0, 400);\n    mode = human_minutes < HARD_SILENCE_MIN ? 'silent'\n         : human_minutes < SUPERVISED_HOURS * 60 ? 'supervised'\n         : 'normal';\n  }\n} else if (errored) {\n  mode = 'supervised';\n}\n\n// The block the agent prompt prepends. Empty unless we are supervising.\nlet handover_note = '';\nif (mode === 'supervised') {\n  handover_note =\n    'HANDOVER NOTE — READ THIS BEFORE ANSWERING. A human colleague from the dealership is already '\n    + 'handling this conversation on this same WhatsApp number'\n    + (human_minutes === null\n        ? '.'\n        : '; their last message to this customer was ' + human_minutes + ' minutes ago'\n          + (last_human_message ? ' and it said: \"' + last_human_message + '\"' : '.'))\n    + '\\n'\n    + 'Do NOT contradict your colleague. Do NOT restate, improve, reduce, re-confirm or withdraw any '\n    + 'price, discount, figure, deadline or commitment they have made, and do NOT make a commercial '\n    + 'offer of your own in this thread. Answer only the factual part of what the customer just asked '\n    + '— stock, specification, availability, timing, policy. If they are asking about price, payment, '\n    + 'discount, part-exchange value or anything already being negotiated, say your colleague is '\n    + 'looking after that and will come straight back to them, and stop there. Keep it to one or two '\n    + 'short lines and do not open a new topic.';\n}\n\nreturn [{ json: {\n  ...ctx,\n  human_mode: mode,\n  human_minutes,\n  last_human_by,\n  last_human_message,\n  handover: mode === 'supervised',\n  handover_note,\n  human_check_errored: errored\n}, pairedItem: { item: 0 } }];\n"
+      },
+      "notes": "Owns both time windows (30 min hard silence, 12 h supervised) and the handover text. Reads the conversation context from $('Resolve Lead Identity') rather than $input, because its input is `Human Reply Check` - an HTTP node, whose output REPLACES the item. This is the same trap that already bit `Model Ladder` (Log Incoming Message is an insert with Prefer: return=minimal and returns an empty body). Never throws, always emits exactly one item.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "voice-if-isvoice-0001",
+      "name": "Is Voice Note?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        1040
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "voice-audiomessage-exists",
+              "leftValue": "={{ $json.is_voice }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "TRUE = Extract Message & Sender found payload._data.Message.audioMessage (a PTT / voice note). FALSE = every other message, wired straight to Fetch All Leads, so all existing behaviour is byte-identical. typeVersion 2.2 matches the six IF nodes already in this workflow."
+    },
+    {
+      "id": "voice-dl-audio-0002",
+      "name": "Download Voice Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        976,
+        976
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.audio_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.WAHA_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "notes": "FIRST node on the voice branch and the 7th node of the run. WHATSAPP_FILES_LIFETIME is 180s and the clock starts when WAHA writes the file, so this deliberately runs BEFORE Fetch All Leads (a returnAll full-table Supabase scan, the slowest pre-agent step). onError is continueRegularOutput -- NOT the throwing pattern used by Download KYC Image -- because a throw here would leave the customer with silence. No retry: a 404 after expiry will 404 again and only burns the remaining lifetime.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": false,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "voice-prep-upload-0003",
+      "name": "Prepare Voice Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        976
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Prepare Voice Upload\n// Validates the WAHA download, applies the duration cap, and normalises the\n// binary metadata so Groq accepts the multipart upload.\n//\n// Deliberately does NOT call this.helpers.getBinaryDataBuffer(): the workflow\n// runs with binaryMode \"separate\", so the audio bytes live outside the item.\n// Pulling them into the heap of a 958 MB box buys nothing -- only the binary\n// METADATA is needed, and n8n streams the file itself at upload time.\nconst MAX_SECONDS = 180;\n\n// Duration comes from `Extract Message & Sender`, which read it off\n// payload._data.Message.audioMessage.seconds. No webhook reach-back is needed:\n// the outreach entry path (`Called by Master Router`) never sets is_voice, so\n// this node is unreachable from it.\nlet ex = {};\ntry { ex = $('Extract Message & Sender').first().json || {}; } catch (e) { ex = {}; }\nconst seconds = Number(ex.audio_seconds || 0);\n\nconst out = [];\nfor (const item of $input.all()) {\n  const json = item.json || {};\n  const binary = item.binary || {};\n\n  let ok = true;\n  let reason = '';\n\n  if (json.error !== undefined && json.error !== null) {\n    // `Download Voice Note` runs with onError: continueRegularOutput, so a 404\n    // after WHATSAPP_FILES_LIFETIME (180s) expiry lands here as data, not a throw.\n    ok = false;\n    reason = 'waha download failed: ' + String((json.error && (json.error.message || json.error.description)) || json.error).slice(0, 200);\n  } else if (!binary.data) {\n    ok = false;\n    reason = 'waha returned no audio body (file expired, 404, or media was never stored)';\n  } else if (seconds > MAX_SECONDS) {\n    ok = false;\n    reason = 'voice note is ' + seconds + 's, over the ' + MAX_SECONDS + 's cap';\n  } else if (!String(binary.data.mimeType || ex.audio_mime || '').toLowerCase().startsWith('audio/')) {\n    ok = false;\n    reason = 'unsupported mimetype: ' + String(binary.data.mimeType || ex.audio_mime || 'unknown');\n  }\n\n  if (ok) {\n    // Groq rejects an upload whose filename carries no recognised audio\n    // extension. WAHA sets media.filename to null for audio, and n8n then falls\n    // back to the URL basename or the literal \"data\". Force it.\n    item.binary.data.fileName = 'voice.ogg';\n    item.binary.data.fileExtension = 'ogg';\n    item.binary.data.mimeType = 'audio/ogg';\n  }\n\n  out.push({\n    json: {\n      voice_ok: ok,\n      voice_drop_reason: reason,\n      voice_seconds: seconds,\n      voice_mime: String(ex.audio_mime || 'audio/ogg; codecs=opus'),\n    },\n    binary: ok ? item.binary : undefined,\n    pairedItem: { item: 0 },\n  });\n}\nreturn out;\n"
+      },
+      "notes": "Validates the download, applies the 180s duration cap and a mimetype check, and forces binary.data.fileName/fileExtension/mimeType so Groq accepts the upload (WAHA sets media.filename to null for audio). Never reads the audio buffer into the heap.",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "voice-if-usable-0004",
+      "name": "Voice Is Usable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1328,
+        976
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "voice-ok-true",
+              "leftValue": "={{ $json.voice_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "TRUE -> spend a Groq call. FALSE -> skip Groq entirely and go straight to the fallback, so an expired URL or an over-long note burns no free-tier quota."
+    },
+    {
+      "id": "voice-groq-stt-0005",
+      "name": "Transcribe Voice (Groq)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1504,
+        896
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "parameterType": "formData",
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "parameterType": "formData",
+              "name": "temperature",
+              "value": "0"
+            },
+            {
+              "parameterType": "formData",
+              "name": "prompt",
+              "value": "WhatsApp voice note to a Dubai car dealership. The speaker mixes Roman Urdu, Hindi, Arabic and English. Write it exactly as spoken, in Latin script, and do not translate."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.GROQ_API_KEY }}"
+            }
+          ]
+        }
+      },
+      "notes": "POST /openai/v1/audio/transcriptions -- NEVER /audio/translations, which always emits English and would break the mirror-the-customer's-language rule. `language` is deliberately NOT sent: autodetect keeps code-switched Roman Urdu / Hindi / Arabic / English as spoken. Auth: Authorization: Bearer {{ $env.GROQ_API_KEY }} -- the same $env pattern every other outbound node here uses (WAHA_API_KEY, BITRIX24_*). GROQ_API_KEY is already passed into the n8n container by docker-compose.single.yml:65 and N8N_BLOCK_ENV_ACCESS_IN_NODE=false, so no new credential is needed. Retry capped at 2 because the box allows only 2 concurrent production executions.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "voice-merge-transcript-0006",
+      "name": "Merge Voice Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        976
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Merge Voice Transcript\n// Single join point for both legs: Groq success/failure, and the give-up leg\n// from `Voice Is Usable?` false. It NEVER throws and it always emits exactly\n// one item, so the customer is never met with silence because of this branch.\nconst j = ($input.first() || {}).json || {};\n\n// The Groq HTTP node REPLACES the item, so the pre-flight verdict has to be\n// read back from `Prepare Voice Upload` explicitly.\nlet prep = {};\ntry { prep = $('Prepare Voice Upload').first().json || {}; } catch (e) { prep = {}; }\n\nlet transcript = '';\nlet language = null;\nlet reason = String(prep.voice_drop_reason || '');\n\nif (!reason) {\n  // We came through Groq.\n  if (j.error !== undefined && j.error !== null) {\n    reason = 'groq: ' + String((j.error && (j.error.message || j.error.description)) || j.error).slice(0, 200);\n  } else {\n    transcript = String(j.text ?? '').trim();\n    language = j.language ? String(j.language) : null;\n    if (!transcript) reason = 'groq returned an empty transcript';\n  }\n}\n\nconst ok = !reason && !!transcript;\n\n// The fallback is an INSTRUCTION to the agent, not a canned string sent to the\n// customer -- that is the only way the apology comes back in the customer's own\n// language. Same convention as the INITIAL_OUTREACH: prefix that\n// `Extract Message & Sender` already injects for router-initiated outreach.\n//\n// The drop reason is deliberately NOT interpolated into this text. It flows\n// downstream into `Reply Eligibility`, whose 73-keyword allowlist is a substring\n// match -- an arbitrary Groq error string could contain \"model\" or \"service\" and\n// silently widen the allowlist for an unknown number.\nconst NOTE = 'SYSTEM_NOTE: This person sent a WhatsApp voice message and we were not able to turn it into text. Do not guess what they said. Reply briefly, in whatever language they have been writing in, say sorry you missed it, and ask them to write it out or send a shorter recording.';\n\nreturn [{ json: {\n  message: ok ? transcript : NOTE,\n  is_voice: true,\n  voice_transcribed: ok,\n  voice_transcript: ok ? transcript : '',\n  voice_language: language,\n  voice_seconds: Number(prep.voice_seconds || 0),\n  voice_drop_reason: ok ? '' : reason,\n}, pairedItem: { item: 0 } }];\n"
+      },
+      "notes": "Join point for the Groq success leg and the give-up leg. Always emits exactly one item and never throws. On failure it writes a SYSTEM_NOTE instruction into `message` so the existing agent apologises in the customer's own language, instead of sending a canned English string.",
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
     }
@@ -1174,17 +1472,6 @@
         [
           {
             "node": "Extract Message & Sender",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Message & Sender": {
-      "main": [
-        [
-          {
-            "node": "Fetch All Leads",
             "type": "main",
             "index": 0
           }
@@ -1301,17 +1588,6 @@
         [
           {
             "node": "AI BDC Sales Agent",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log Incoming Message": {
-      "main": [
-        [
-          {
-            "node": "Reply Eligibility",
             "type": "main",
             "index": 0
           }
@@ -1515,6 +1791,130 @@
           }
         ]
       ]
+    },
+    "Log Incoming Message": {
+      "main": [
+        [
+          {
+            "node": "Human Reply Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Reply Check": {
+      "main": [
+        [
+          {
+            "node": "Human Spoke Recently?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Spoke Recently?": {
+      "main": [
+        [
+          {
+            "node": "Reply Eligibility",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message & Sender": {
+      "main": [
+        [
+          {
+            "node": "Is Voice Note?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Voice Note?": {
+      "main": [
+        [
+          {
+            "node": "Download Voice Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch All Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Voice Note": {
+      "main": [
+        [
+          {
+            "node": "Prepare Voice Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Voice Upload": {
+      "main": [
+        [
+          {
+            "node": "Voice Is Usable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice Is Usable?": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice (Groq)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Voice Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice (Groq)": {
+      "main": [
+        [
+          {
+            "node": "Merge Voice Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Voice Transcript": {
+      "main": [
+        [
+          {
+            "node": "Fetch All Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1532,7 +1932,7 @@
   "_exported_from": {
     "id": "BiyHk9ZXxJUVGbf6",
     "active": true,
-    "updatedAt": "2026-08-30T05:15:36.509Z",
+    "updatedAt": "2026-08-30T16:38:33.287Z",
     "published": true
   }
 }

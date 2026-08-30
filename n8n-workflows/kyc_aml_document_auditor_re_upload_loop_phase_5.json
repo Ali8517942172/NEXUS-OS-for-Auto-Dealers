@@ -146,41 +146,7 @@
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "communication_logs",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "lead_email",
-              "condition": "eq",
-              "keyValue": "={{ $json.lead_email }}"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        1600,
-        176
-      ],
-      "id": "kyc-count-prev-0001",
-      "name": "Count Previous KYC Rejections",
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1500,
-      "credentials": {
-        "supabaseApi": {
-          "id": "dv4OeARarErZLHCj",
-          "name": "Supabase account"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Phase 5: decide whether to ask the customer to re-upload, or give up and\n// escalate to a human. Attempts are counted from communication_logs so the loop\n// survives restarts and cannot run forever.\nconst MAX_ATTEMPTS = 3;\nconst rej = $('Rejected').first().json;\n\nconst rows = $input.all().map(i => i.json).filter(r => r && typeof r.message === 'string');\nconst attempts = rows.filter(r => r.message.startsWith('[KYC-REJECT]')).length;\nconst nextAttempt = attempts + 1;\n\nconst parsed = rej.parsed || {};\nconst problems = [];\nif (parsed.tamperingDetected === true) problems.push('the document looks edited or tampered with');\nif (parsed.isValid === false) problems.push('we could not verify it as a valid document');\nlet reason = parsed.remarks || problems.join(', ') || 'the document could not be verified';\nreason = String(reason).trim().replace(/[.\\s]+$/, '');   // AI remarks usually end in a full stop already\n\nconst text = 'Hi ' + (rej.lead_name || 'there') + ', thanks for sending your document. '\n  + 'Unfortunately we could not accept it: ' + reason + '. '\n  + 'Could you please re-send a clear, well-lit photo showing the whole document with all four corners visible? '\n  + '(Attempt ' + nextAttempt + ' of ' + MAX_ATTEMPTS + ')';\n\nreturn [{ json: {\n  attempts: attempts,\n  nextAttempt: nextAttempt,\n  maxAttempts: MAX_ATTEMPTS,\n  withinLimit: nextAttempt <= MAX_ATTEMPTS,\n  reason: reason,\n  text: text,\n  lead_email: rej.lead_email,\n  lead_name: rej.lead_name,\n  chat_id: rej.chat_id,\n  parsed: parsed\n} }];"
+        "jsCode": "// Phase 5: decide whether to ask the customer to re-upload, or give up and\n// escalate to a human.\n//\n// ── 30 Aug 2026 — the attempt count no longer comes from communication_logs ──\n// `Count Previous KYC Rejections` used to be a Supabase getAll on\n// communication_logs, counting rows whose message started '[KYC-REJECT]'. It\n// failed three independent ways, and all three produced the SAME wrong answer\n// (attempts = 0), which is the answer that loops forever:\n//\n//   (a) it filtered on `lead_email eq {{ $json.lead_email }}`. A WhatsApp-only\n//       customer has lead_email = null, so the filter matched nothing and every\n//       upload was \"Attempt 1 of 3\", for ever.\n//   (b) the node had no limit, no returnAll and no orderBy, so it took the\n//       Supabase default of 50 UNORDERED rows out of a table that carries every\n//       BDC reply and every drip message. Past 50 messages the [KYC-REJECT]\n//       markers fell outside the window and the counter reset.\n//   (c) onError: continueRegularOutput + alwaysOutputData meant a Supabase blip\n//       arrived as an error item, was filtered out by the `typeof r.message ===\n//       'string'` guard, and again gave attempts = 0. It failed OPEN.\n//\n// It now reads kyc_documents, which already stores `attempt_number` on every\n// rejection (written by `Record KYC (Rejected)`, on the branch that fires for\n// EVERY rejection rather than only the ones whose WhatsApp send succeeded), is\n// matched on the full or=() identity set rather than on an email that is often\n// null, is ordered and limited to one row, and — below — FAILS CLOSED.\nconst MAX_ATTEMPTS = 3;\nconst rej = $('Rejected').first().json;\n\n// The count read still runs with onError: continueRegularOutput +\n// alwaysOutputData, so a Supabase outage arrives here as data, never as a throw.\n// But \"no prior rejections\" and \"the read failed\" are NOT the same answer and\n// must never collapse into the same number:\n//   an empty result   -> attempts = 0, and asking again is correct.\n//   an error item     -> the count is UNKNOWN, and looping would be a guess.\nconst items = $input.all().map(i => (i && i.json) ? i.json : {});\nconst errored = items.some(r => r && r.error !== undefined && r.error !== null);\nconst rows = items.filter(r => r && r.error === undefined && Number.isFinite(Number(r.attempt_number)));\n\nlet countOk = true;\nlet countError = '';\nlet attempts = 0;\n\nif (errored) {\n  countOk = false;\n  const e = (items.find(r => r && r.error !== undefined && r.error !== null) || {}).error;\n  countError = String((e && (e.message || e.description)) || e || 'unknown error').slice(0, 200);\n} else {\n  // `order=attempt_number.desc.nullslast&limit=1`, so row 0 is the highest\n  // attempt number this person has already been given. Max, not count: a\n  // duplicated insert cannot inflate it.\n  attempts = rows.reduce((m, r) => Math.max(m, Number(r.attempt_number) || 0), 0);\n}\n\nconst nextAttempt = attempts + 1;\n// FAIL CLOSED. An unknown count escalates to a human instead of re-asking. That\n// is a deliberate trade: the alternative is the loop this patch exists to stop,\n// and a human who has been told about the customer can still reach them. Note\n// that the escalation branch sends the customer nothing — that is pre-existing\n// behaviour of `Within Retry Limit?` false, not something introduced here.\nconst withinLimit = countOk && nextAttempt <= MAX_ATTEMPTS;\n\nconst parsed = rej.parsed || {};\nconst problems = [];\nif (parsed.tamperingDetected === true) problems.push('the document looks edited or tampered with');\nif (parsed.isValid === false) problems.push('we could not verify it as a valid document');\nlet reason = parsed.remarks || problems.join(', ') || 'the document could not be verified';\nreason = String(reason).trim().replace(/[.\\s]+$/, '');   // AI remarks usually end in a full stop already\n\nconst text = 'Hi ' + (rej.lead_name || 'there') + ', thanks for sending your document. '\n  + 'Unfortunately we could not accept it: ' + reason + '. '\n  + 'Could you please re-send a clear, well-lit photo showing the whole document with all four corners visible? '\n  + '(Attempt ' + nextAttempt + ' of ' + MAX_ATTEMPTS + ')';\n\n// What the Slack post and the audit row are allowed to claim. Without this they\n// would both say \"loop exhausted after 0 attempts\" when the truth is that the\n// count could not be read at all.\nconst escalationReason = countOk\n  ? ('the re-upload loop was exhausted after ' + attempts + ' of ' + MAX_ATTEMPTS + ' attempts')\n  : ('the previous-attempt count could not be read from kyc_documents (' + countError + '), so this was escalated rather than looped');\n\nreturn [{ json: {\n  attempts: attempts,\n  nextAttempt: nextAttempt,\n  maxAttempts: MAX_ATTEMPTS,\n  countOk: countOk,\n  countError: countError,\n  countSource: 'kyc_documents.attempt_number',\n  escalationReason: escalationReason,\n  withinLimit: withinLimit,\n  reason: reason,\n  text: text,\n  lead_email: rej.lead_email,\n  lead_name: rej.lead_name,\n  chat_id: rej.chat_id,\n  parsed: parsed\n} }];\n"
       },
       "id": "kyc-decide-0001",
       "name": "Decide: Re-ask or Escalate",
@@ -313,7 +279,7 @@
           "value": "C0BKTLL1X54",
           "mode": "id"
         },
-        "text": "=:no_entry: *KYC blocked - human needed*\n\n*Customer:* {{ $json.lead_name || 'Unknown' }}\n*Email:* {{ $json.lead_email || 'n/a' }}\n*WhatsApp:* {{ $json.chat_id || 'not provided' }}\n*Failed attempts:* {{ $json.attempts }} of {{ $json.maxAttempts }}\n\n*Latest rejection reason:*\n{{ $json.reason }}\n\nThe automated re-upload loop has given up. Please contact this customer directly.",
+        "text": "=:no_entry: *KYC blocked - human needed*\n\n*Customer:* {{ $json.lead_name || 'Unknown' }}\n*Email:* {{ $json.lead_email || 'n/a' }}\n*WhatsApp:* {{ $json.chat_id || 'not provided' }}\n*Why this reached you:* {{ $json.escalationReason }}\n*Failed attempts:* {{ $json.countOk ? ($json.attempts + ' of ' + $json.maxAttempts) : 'not known — the count read failed, so this escalated rather than looping' }}\n\n*Latest rejection reason:*\n{{ $json.reason }}\n\nThe automated re-upload loop has stopped. Please contact this customer directly.",
         "otherOptions": {}
       },
       "type": "n8n-nodes-base.slack",
@@ -357,7 +323,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: 'KYC Auditor - Phase 5', status: ($json.delivery.status === 'SUCCESS' ? 'ESCALATED' : 'ESCALATED_' + $json.delivery.status), lead_name: $('Decide: Re-ask or Escalate').first().json.lead_name, lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email, summary: 'KYC re-upload loop exhausted after ' + $('Decide: Re-ask or Escalate').first().json.attempts + ' attempts. Reason: ' + $('Decide: Re-ask or Escalate').first().json.reason + ' | ' + $json.delivery.note, logged_at: $now.toISO() }) }}",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'KYC Auditor - Phase 5', status: ($json.delivery.status === 'SUCCESS' ? 'ESCALATED' : 'ESCALATED_' + $json.delivery.status), lead_name: $('Decide: Re-ask or Escalate').first().json.lead_name, lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email, summary: 'KYC escalation: ' + $('Decide: Re-ask or Escalate').first().json.escalationReason + '. Document was rejected because ' + $('Decide: Re-ask or Escalate').first().json.reason + ' | attempts counted from ' + $('Decide: Re-ask or Escalate').first().json.countSource + ' | ' + $json.delivery.note, logged_at: $now.toISO() }) }}",
         "options": {}
       },
       "id": "kyc-log-esc-0001",
@@ -833,6 +799,66 @@
       ],
       "name": "Delivery Report (Non-Document)",
       "id": "cd8aca3d-5919-41e5-8e51-a0003ef43267"
+    },
+    {
+      "id": "kyc-count-prev-0002",
+      "name": "Count Previous KYC Rejections",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        176
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "attempt_number,verdict,created_at,lead_email,chat_id"
+            },
+            {
+              "name": "or",
+              "value": "={{ (() => {\n  /* Same or=() identity pattern as `Fetch Thread History` in the WhatsApp BDC\n     agent. The customer is keyed three ways and only one of them is an email. */\n  const r = $json;\n  const keys = [];\n  const push = (v) => {\n    const s = String(v === null || v === undefined ? '' : v).trim();\n    if (!s) return;\n    /* A comma, a bracket, a quote or a space would break out of the or=() list.\n       No real chat id or address contains one; anything that does is dropped\n       rather than sent, because a malformed filter is a 400, and a 400 here now\n       fails CLOSED (see `Decide: Re-ask or Escalate`). */\n    if (/[,()\"\\s]/.test(s)) return;\n    if (keys.indexOf(s) === -1) keys.push(s);\n  };\n  push(r.lead_email);\n  push(r.chat_id);\n  const cid = String(r.chat_id || '');\n  if (cid.slice(-5) === '@c.us') {\n    /* '<digits>@c.us' IS a phone number, so the synthetic address the Master\n       Router mints for phone-only leads is a fourth name for the same person.\n       '@lid' carries no phone digits at all and is deliberately not converted. */\n    const d = cid.replace(/[^0-9]/g, '');\n    if (d) push('+' + d + '@whatsapp.lead');\n  }\n  if (!keys.length) return '(lead_email.eq.__nexus_no_identity__)';\n  const clauses = [];\n  for (const k of keys) { clauses.push('lead_email.eq.' + k); clauses.push('chat_id.eq.' + k); }\n  return '(' + clauses.join(',') + ')';\n})() }}"
+            },
+            {
+              "name": "verdict",
+              "value": "in.(REJECTED,ESCALATED)"
+            },
+            {
+              "name": "created_at",
+              "value": "=gte.{{ $now.minus({ days: 90 }).toISO() }}"
+            },
+            {
+              "name": "order",
+              "value": "attempt_number.desc.nullslast"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Replaced 30 Aug 2026. Was a Supabase getAll on communication_logs with no limit, no returnAll and no orderBy, filtered on lead_email alone. Now a PostgREST read of kyc_documents -- the table that already stores attempt_number on every rejection -- keyed on the full or=() identity set (email OR chat id OR the synthetic +<digits>@whatsapp.lead), ordered by attempt_number desc and limited to ONE row, so it returns a maximum rather than a count and cannot be truncated by unrelated BDC or drip traffic. Written as an HTTP node, not a Supabase node, because the Supabase node's filters are ANDed keyName/condition pairs and cannot express or=().",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -914,28 +940,6 @@
         [
           {
             "node": "Log KYC Approved",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Rejected": {
-      "main": [
-        [
-          {
-            "node": "Count Previous KYC Rejections",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Count Previous KYC Rejections": {
-      "main": [
-        [
-          {
-            "node": "Decide: Re-ask or Escalate",
             "type": "main",
             "index": 0
           }
@@ -1147,6 +1151,28 @@
           }
         ]
       ]
+    },
+    "Rejected": {
+      "main": [
+        [
+          {
+            "node": "Count Previous KYC Rejections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Count Previous KYC Rejections": {
+      "main": [
+        [
+          {
+            "node": "Decide: Re-ask or Escalate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1164,7 +1190,7 @@
   "_exported_from": {
     "id": "qTnh3nwWheFJbFkU",
     "active": true,
-    "updatedAt": "2026-08-28T18:52:28.654Z",
+    "updatedAt": "2026-08-30T16:32:30.600Z",
     "published": true
   }
 }

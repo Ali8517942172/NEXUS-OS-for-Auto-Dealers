@@ -7,7 +7,7 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0 5 * * *"
+              "expression": "0 5,17 * * *"
             }
           ]
         }
@@ -23,7 +23,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// The Supabase 'inventory' table has: id, model, vin, status, days_in_stock,\n// price_aed, cost_aed, gross_margin, ... There is no brand/make/year column,\n// so build the search query from what actually exists.\n// This node runs once for ALL items. It used to read `$json`, which is only the\n// FIRST inventory row -- so of twelve units in stock, exactly one (the Land\n// Cruiser) was ever priced against the market and the other eleven were never\n// scanned at all. The run went green every night regardless, because one item\n// in and one item out looks exactly like success.\nconst out = [];\nfor (const row of $input.all()) {\n  const item = row.json;\n  const model = String(item.model || '').trim();\n  if (!model) continue;   // nothing searchable; do not query 'undefined UAE price'\n  out.push({ json: {\n    id: item.id,\n    model: model,\n    vin: item.vin || null,\n    localPrice: Number(item.price_aed) || null,\n    daysInStock: Number(item.days_in_stock) || 0,\n    searchQuery: `${model} price UAE dealership`\n  } });\n}\nreturn out;"
+        "jsCode": "// The Supabase 'inventory' table has: id, model, vin, status, days_in_stock,\n// price_aed, cost_aed, gross_margin, ... There is no brand/make/year column,\n// so build the search query from what actually exists.\n// This node runs once for ALL items. It used to read `$json`, which is only the\n// FIRST inventory row -- so of twelve units in stock, exactly one (the Land\n// Cruiser) was ever priced against the market and the other eleven were never\n// scanned at all. The run went green every night regardless, because one item\n// in and one item out looks exactly like success.\n//\n// ── 30 Aug 2026 — THE RUN NEVER FINISHED ────────────────────────────────────\n// Fixing the fan-out exposed the next wall. The workflow carries\n// executionTimeout: 300 (five minutes). `Apify - Search Competitor Price` had a\n// 120 000 ms timeout and retryOnFail with maxTries 2, and `Extract Price with\n// AI` a 60 000 ms timeout with maxTries 3 -- and an HTTP node processes its\n// items one after another. Worst case that is 240 s + 180 s = 420 s FOR A\n// SINGLE UNIT, against a 300 s ceiling for the whole run. Sixteen units in,\n// roughly two out, then n8n killed the execution. The filter was never the\n// bottleneck; the ceiling was.\n//\n// Three things now hold the run inside its own ceiling, and they only work\n// together:\n//   1. per-request budgets were cut (Apify 45 s and no retry, AI 25 s x2), so\n//      one unit costs at most ~95 s;\n//   2. this node emits at most BATCH_SIZE units, so the run's worst case is\n//      BATCH_SIZE * 95 s and is a number somebody can check against the ceiling;\n//   3. the workflow ceiling was raised to 1200 s, which is 8 * 95 s plus room.\n// Change any one of the three and re-do the arithmetic. A batch that does not\n// fit is not slower -- it is silently truncated, which is the bug this replaces.\n//\n// Coverage is preserved by rotating, not by scanning everything: the schedule\n// fires twice a day (05:00 and 17:00 Asia/Dubai) and each run takes the next\n// BATCH_SIZE units off a stable ring, so a 16-unit fleet is fully covered every\n// 24 hours -- the same daily Apify spend the once-nightly design intended, just\n// spread across two executions instead of dying inside one.\nconst BATCH_SIZE = 8;\nconst SLOT_HOURS = 12;          // must match the schedule interval\n\nconst units = [];\nfor (const row of $input.all()) {\n  const item = row.json;\n  const model = String(item.model || '').trim();\n  if (!model) continue;   // nothing searchable; do not query 'undefined UAE price'\n  // A sold unit cannot be repriced and cannot be undercut. Scraping one spends a\n  // scrape slot that a unit still on the lot needed.\n  if (String(item.status || '').trim().toLowerCase() === 'sold') continue;\n  units.push({\n    id: item.id,\n    model: model,\n    vin: item.vin || null,\n    localPrice: Number(item.price_aed) || null,\n    daysInStock: Number(item.days_in_stock) || 0,\n    searchQuery: model + ' price UAE dealership'\n  });\n}\n\nif (!units.length) return [];\n\n// Sort by id so the ring is the same on every run regardless of the order\n// PostgREST happened to return rows in. Without a stable order the offset below\n// rotates over a shuffled list and coverage stops being guaranteed.\nunits.sort((a, b) => String(a.id).localeCompare(String(b.id)));\n\nconst take  = Math.min(BATCH_SIZE, units.length);\nconst slot  = Math.floor(Date.now() / (SLOT_HOURS * 3600 * 1000));\nconst start = (slot * BATCH_SIZE) % units.length;\n\nconst out = [];\nfor (let i = 0; i < take; i++) {\n  const u = units[(start + i) % units.length];\n  out.push({ json: Object.assign({}, u, {\n    // Carried so a run can say what it looked at rather than implying it looked\n    // at everything. `Delivery Report` and the audit summary read these.\n    batchSize:   take,\n    batchStart:  start,\n    fleetSize:   units.length,\n    batchOf:     take + ' of ' + units.length + ' units on the lot, offset ' + start,\n  }) });\n}\nreturn out;\n"
       },
       "id": "a7af0b27-7266-4f26-be34-d943fd45566c",
       "name": "Build Apify Query",
@@ -45,7 +45,16 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ query: $json.searchQuery, maxResults: 3, outputFormats: ['markdown'] }) }}",
         "options": {
-          "timeout": 120000
+          "timeout": 45000
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "timeout",
+              "value": "40"
+            }
+          ]
         }
       },
       "id": "cd288bec-24e5-4660-ac8d-2f35bfda0290",
@@ -56,7 +65,7 @@
         1040,
         128
       ],
-      "retryOnFail": true,
+      "retryOnFail": false,
       "maxTries": 2,
       "waitBetweenTries": 3000,
       "credentials": {
@@ -65,7 +74,8 @@
           "name": "Apify account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -77,7 +87,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ model: 'google/gemini-2.5-flash', max_tokens: 300, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You are a pricing data extraction assistant. Given scraped web content about a vehicle, extract the lowest advertised price in AED as a plain number. Respond with ONLY valid JSON: {\"price\": <number or null>, \"currency\": \"AED\", \"source\": \"<domain or site name>\"}. If no clear price is found, return null for price.' }, { role: 'user', content: 'Vehicle: ' + $('Build Apify Query').item.json.model + '\\n\\nScraped content:\\n' + (Array.isArray($json) ? ($json[0] && ($json[0].markdown || $json[0].text) || 'No content found') : ($json.markdown || $json.text || JSON.stringify($json))).substring(0, 6000) } ] }) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 25000
         }
       },
       "id": "774f32ec-c606-4040-ae64-606ef0704556",
@@ -89,14 +99,16 @@
         128
       ],
       "retryOnFail": true,
-      "maxTries": 3,
+      "maxTries": 2,
       "waitBetweenTries": 1500,
       "credentials": {
         "openRouterApi": {
           "id": "UUtKrBzkQOztAOzZ",
           "name": "OpenRouter account"
         }
-      }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -112,102 +124,6 @@
         128
       ],
       "notes": "Runs once per item. In all-items mode it read $json and parsed exactly one of sixteen scraped pages; .first() also mispaired the metadata. Prefers schema.org JSON-LD over the model, and takes the source from the page hostname, which always exists."
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "cond1",
-              "leftValue": "={{$json.competitorPrice}}",
-              "rightValue": "",
-              "operator": {
-                "type": "number",
-                "operation": "exists"
-              }
-            },
-            {
-              "id": "cond2",
-              "leftValue": "={{$json.competitorPrice}}",
-              "rightValue": "={{$json.localPrice}}",
-              "operator": {
-                "type": "number",
-                "operation": "lt"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "looseTypeValidation": true,
-        "options": {}
-      },
-      "id": "c083aa22-d551-478e-a3d7-c38460e30848",
-      "name": "Should Update Price?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        1712,
-        128
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a1",
-              "name": "id",
-              "value": "={{ $json.id }}",
-              "type": "string"
-            },
-            {
-              "id": "a2",
-              "name": "model",
-              "value": "={{ $json.model }}",
-              "type": "string"
-            },
-            {
-              "id": "a3",
-              "name": "oldPrice",
-              "value": "={{ $json.localPrice }}",
-              "type": "number"
-            },
-            {
-              "id": "a4",
-              "name": "price",
-              "value": "={{ Math.max(0, Math.round($json.competitorPrice - 1)) }}",
-              "type": "number"
-            },
-            {
-              "id": "a5",
-              "name": "competitorSource",
-              "value": "={{ $json.competitorSource }}",
-              "type": "string"
-            },
-            {
-              "id": "a6",
-              "name": "competitorPrice",
-              "value": "={{ $json.competitorPrice }}",
-              "type": "number"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "3fd28eb1-a870-459a-9b64-5d9b96b1265a",
-      "name": "Build Update Payload",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        1920,
-        128
-      ]
     },
     {
       "parameters": {
@@ -232,47 +148,6 @@
           "name": "Supabase account"
         }
       }
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "tableId": "inventory",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "id",
-              "condition": "eq",
-              "keyValue": "={{ $json.id }}"
-            }
-          ]
-        },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "price_aed",
-              "fieldValue": "={{ $json.price }}"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        2144,
-        128
-      ],
-      "id": "266f7fd3-e685-44e6-9200-075128bb2a97",
-      "name": "Update Prices in Supabase",
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1500,
-      "credentials": {
-        "supabaseApi": {
-          "id": "dv4OeARarErZLHCj",
-          "name": "Supabase account"
-        }
-      },
-      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -302,6 +177,10 @@
             {
               "fieldId": "ai_recommendation",
               "fieldValue": "={{ $json.competitorPrice === null ? 'No competitor price found' : ($json.priceDiff < 0 ? 'UNDERCUT: competitor is AED ' + Math.abs($json.priceDiff) + ' cheaper. Consider matching, especially at ' + $json.daysInStock + ' days in stock.' : 'HOLD: we are already AED ' + $json.priceDiff + ' cheaper than this competitor.') }}"
+            },
+            {
+              "fieldId": "scraped_at",
+              "fieldValue": "={{ $now.toISO() }}"
             }
           ]
         }
@@ -475,44 +354,11 @@
         ]
       ]
     },
-    "Should Update Price?": {
-      "main": [
-        [
-          {
-            "node": "Build Update Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Update Payload": {
-      "main": [
-        [
-          {
-            "node": "Update Prices in Supabase",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Fetch Local Inventory": {
       "main": [
         [
           {
             "node": "Build Apify Query",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update Prices in Supabase": {
-      "main": [
-        [
-          {
-            "node": "Audit Log",
             "type": "main",
             "index": 0
           }
@@ -567,12 +413,12 @@
     "timezone": "Asia/Dubai",
     "saveDataErrorExecution": "all",
     "errorWorkflow": "iYJkh1kztWxZXDbT",
-    "executionTimeout": 300
+    "executionTimeout": 1200
   },
   "_exported_from": {
     "id": "LphiGg4iqF1bn6El",
     "active": true,
-    "updatedAt": "2026-08-28T19:06:23.193Z",
+    "updatedAt": "2026-08-30T16:33:25.941Z",
     "published": true
   }
 }
