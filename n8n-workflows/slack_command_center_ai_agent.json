@@ -37,7 +37,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const answer = $input.all()[0].json.output;\nconst ctx = $('Extract Command').first().json;\n\nreturn [{ json: {\n  response_url: ctx.response_url,\n  payload: {\n    response_type: 'in_channel',\n    replace_original: false,\n    blocks: [\n      { type: 'section', text: { type: 'mrkdwn', text: '*NEXUS:*\\n' + answer } },\n      { type: 'context', elements: [\n        { type: 'mrkdwn', text: 'requested by ' + ctx.user + ' · `' + ctx.command + '`' } ] }\n    ]\n  }\n} }];\n"
+        "jsCode": "// Format Slack Response\n// -----------------------------------------------------------------------------\n// Added: a destination check on response_url.\n//\n// 'Post Answer to Slack' POSTs to whatever URL arrives in the request body\n// (`b.response_url` in 'Extract Command'). On a webhook that any caller can\n// reach, that turns this box into an exfiltration relay: send a command, point\n// response_url at your own server, and the CRM agent's answer -- lead names,\n// emails, statuses -- is delivered to you. Genuine Slack response_urls are\n// always on https://hooks.slack.com/, so require that.\n//\n// Throwing here (rather than silently dropping) is deliberate: a legitimate\n// Slack call can never hit this branch, so anything that does is either an\n// attack or a misconfiguration, and both deserve to show up as a failed\n// execution in the error workflow.\nconst answer = $input.all()[0].json.output;\nconst ctx = $('Extract Command').first().json;\n\nconst url = String(ctx.response_url || '');\nif (!/^https:\\/\\/hooks\\.slack\\.com\\//.test(url)) {\n  throw new Error(\n    'Refusing to post the answer: response_url is not a Slack endpoint (' +\n    (url ? url.slice(0, 80) : 'empty') + '). Only https://hooks.slack.com/ is allowed.'\n  );\n}\n\nreturn [{ json: {\n  response_url: url,\n  payload: {\n    response_type: 'in_channel',\n    replace_original: false,\n    blocks: [\n      { type: 'section', text: { type: 'mrkdwn', text: '*NEXUS:*\\n' + answer } },\n      { type: 'context', elements: [\n        { type: 'mrkdwn', text: 'requested by ' + ctx.user + ' · `' + ctx.command + '`' } ] }\n    ]\n  }\n} }];\n"
       },
       "id": "7",
       "name": "Format Slack Response",
@@ -88,7 +88,7 @@
           "fieldValues": [
             {
               "fieldId": "status",
-              "fieldValue": "={{ $fromAI('status', 'New status for the lead: HOT, WARM, COLD, CONTACTED, QUALIFIED, WON or LOST', 'string') }}"
+              "fieldValue": "={{ (() => { const ALLOWED = ['HOT','WARM','COLD','CONTACTED','QUALIFIED','WON','LOST']; const raw = $fromAI('status', 'New status for the lead. Must be exactly one of: HOT, WARM, COLD, CONTACTED, QUALIFIED, WON, LOST.', 'string'); const v = String(raw == null ? '' : raw).trim().toUpperCase(); if (ALLOWED.indexOf(v) === -1) { throw new Error('Rejected lead status \\'' + String(raw).slice(0, 40) + '\\': must be exactly one of HOT, WARM, COLD, CONTACTED, QUALIFIED, WON, LOST.'); } return v; })() }}"
             }
           ]
         }
@@ -112,13 +112,13 @@
       "parameters": {
         "operation": "getAll",
         "tableId": "leads",
-        "limit": 20,
+        "limit": 5,
         "filters": {
           "conditions": [
             {
               "keyName": "name",
               "condition": "ilike",
-              "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions0_Field_Value', `Partial or full lead NAME to search for, wrapped in % wildcards, e.g. %Ahmed%. Pass %% to ignore this filter.`, 'string') }}"
+              "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ (() => { const strip = (x) => String(x == null ? '' : x).replace(/%/g, '').trim(); const n = $fromAI('conditions0_Field_Value', `Partial or full lead NAME to search for, wrapped in % wildcards, e.g. %Ahmed%. Pass %% to ignore this filter.`, 'string'); const e = $fromAI('conditions1_Field_Value', `Partial or full lead EMAIL to search for, wrapped in % wildcards, e.g. %@gmail.com%. Pass %% to ignore this filter.`, 'string'); if (strip(n).length < 2 && strip(e).length < 3) { throw new Error('Refusing to list leads: supply at least 2 characters of a name or 3 characters of an email. Wildcard-only searches (bulk listing of the customer database) are disabled.'); } return String(n == null || n === '' ? '%%' : n); })() }}"
             },
             {
               "keyName": "email",
@@ -525,7 +525,7 @@
   "_exported_from": {
     "id": "VmnIXo7tM30zqawp",
     "active": true,
-    "updatedAt": "2026-08-28T18:51:57.192Z",
+    "updatedAt": "2026-08-30T17:57:55.000Z",
     "published": true
   }
 }

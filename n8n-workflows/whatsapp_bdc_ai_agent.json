@@ -32,21 +32,6 @@
     },
     {
       "parameters": {
-        "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Extract Message & Sender').first().json.sender }}",
-        "contextWindowLength": 10
-      },
-      "id": "5",
-      "name": "Window Buffer Memory",
-      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-      "typeVersion": 1.2,
-      "position": [
-        1024,
-        720
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "http://waha:3000/api/sendText",
         "sendHeaders": true,
@@ -1918,7 +1903,7 @@
     }
   },
   "settings": {
-    "saveDataErrorExecution": "all",
+    "saveDataErrorExecution": "none",
     "saveDataSuccessExecution": "none",
     "saveExecutionProgress": false,
     "executionOrder": "v1",
@@ -1932,7 +1917,7 @@
   "_exported_from": {
     "id": "BiyHk9ZXxJUVGbf6",
     "active": true,
-    "updatedAt": "2026-08-30T16:38:33.287Z",
+    "updatedAt": "2026-08-30T17:59:08.838Z",
     "published": true
   }
 }

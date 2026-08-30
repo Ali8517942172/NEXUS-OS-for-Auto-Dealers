@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-08-30T17:16:07.605865+00:00",
+  "exported_at": "2026-08-30T18:01:07.225960+00:00",
   "source": "https://35.224.126.225.nip.io/api/v1",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
@@ -80,7 +80,7 @@
       "id": "57QpbNQGwlFKb0q3",
       "name": "NEXUS Infra Health Probe",
       "active": true,
-      "nodes": 5,
+      "nodes": 12,
       "published": true
     },
     {
@@ -88,7 +88,7 @@
       "id": "JnlZFAVmFAuNXVya",
       "name": "NEXUS Master Lead Router - AI Agent",
       "active": true,
-      "nodes": 26,
+      "nodes": 25,
       "published": true
     },
     {
@@ -152,7 +152,7 @@
       "id": "BiyHk9ZXxJUVGbf6",
       "name": "WhatsApp BDC AI Agent",
       "active": true,
-      "nodes": 44,
+      "nodes": 43,
       "published": true
     },
     {
@@ -168,7 +168,7 @@
       "id": "bxNBzBrcOtcFpMPn",
       "name": "wf_108 ERP Sync - Bitrix24 CRM",
       "active": true,
-      "nodes": 14,
+      "nodes": 20,
       "published": true
     }
   ]

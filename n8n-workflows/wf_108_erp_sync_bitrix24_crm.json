@@ -16,41 +16,8 @@
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "tableId": "leads",
-        "returnAll": true,
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "status",
-              "condition": "eq",
-              "keyValue": "HOT"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        464,
-        304
-      ],
-      "id": "4ebb92c8-bdf4-4941-89f3-ab4dddf31b3b",
-      "name": "Fetch HOT Leads from Supabase",
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1500,
-      "credentials": {
-        "supabaseApi": {
-          "id": "dv4OeARarErZLHCj",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Map a NEXUS lead onto Bitrix24 crm.lead.add field shape.\n// Bitrix expects EMAIL/PHONE as arrays of {VALUE, VALUE_TYPE} objects.\nconst j = $json;\nconst lead = j.lead || j;\nconst score = (j.ai_decision && j.ai_decision.score) ?? lead.ai_score ?? 0;\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v);\nconst name = clean(lead.name) || 'Unknown lead';\nconst interest = clean(lead.vehicle_interest);\nconst email = clean(lead.email);\nconst phone = clean(lead.phone);\n\nconst fields = {\n  TITLE: interest ? name + ' - ' + interest : name + ' - NEXUS OS lead',\n  NAME: name,\n  OPPORTUNITY: Number(lead.budget_aed) || 0,\n  CURRENCY_ID: 'AED',\n  SOURCE_DESCRIPTION: clean(lead.source) || 'NEXUS OS',\n  COMMENTS: [\n    interest ? 'Vehicle interest: ' + interest : null,\n    'AI score: ' + score,\n    lead.source ? 'Source: ' + lead.source : null,\n    email ? 'Email: ' + email : null,\n    phone ? 'Phone: ' + phone : null,\n    'Synced automatically from NEXUS OS'\n  ].filter(Boolean).join('\\n')\n};\n\n// Only send contact arrays when a value exists - Bitrix rejects empty ones.\nif (email) fields.EMAIL = [{ VALUE: email, VALUE_TYPE: 'WORK' }];\nif (phone) fields.PHONE = [{ VALUE: phone, VALUE_TYPE: 'WORK' }];\n\nreturn { json: { fields: fields, params: { REGISTER_SONET_EVENT: 'Y' }, _lead_email: email, _lead_name: name } };"
+        "jsCode": "// Map a NEXUS lead onto Bitrix24's crm.lead.add field shape AND build the\n// identity material the two duplicate lookups downstream need.\n//\n// Two input shapes, both live:\n//   * 'Called by Master Router' -> { lead: {...}, ai_decision: {...} }  (one lead)\n//   * 'Fetch HOT Leads'         -> a flat leads row                     (backlog)\nconst j = $json;\nconst lead = j.lead || j;\nconst score = (j.ai_decision && j.ai_decision.score) ?? lead.ai_score ?? 0;\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v);\nconst name     = clean(lead.name) || 'Unknown lead';\nconst interest = clean(lead.vehicle_interest);\nconst rawEmail = clean(lead.email);\nconst phone    = clean(lead.phone);\n\n// The Master Router synthesises '+<digits>@whatsapp.lead' for customers who\n// arrive on WhatsApp with no email. That string is a ROUTING KEY, never a\n// mailbox. It must not be used to look a lead up by EMAIL in Bitrix (it can\n// never match anything a human typed) and it must not be written into a Bitrix\n// EMAIL field, where a rep would read it as an address they can write to.\nconst SYNTHETIC = /@whatsapp\\.lead$/i;\nconst realEmail = (rawEmail && !SYNTHETIC.test(rawEmail)) ? rawEmail : null;\n\n// ---------------------------------------------------------------------------\n// Phone variants. Bitrix's duplicate index normalises numbers, but not\n// identically across portals and not at all for numbers stored with a local\n// prefix. So we hand crm.duplicate.findbycomm every spelling of the SAME\n// number that a human might have typed into the CRM, and let Bitrix match any\n// of them. We never invent a country code we cannot justify: fabricating a\n// +971 variant for an Indian mobile would be asking Bitrix about somebody\n// else's number.\n// ---------------------------------------------------------------------------\nfunction phoneVariants(raw) {\n  let d = String(raw || '').replace(/[^0-9]/g, '');\n  if (d.slice(0, 2) === '00') d = d.slice(2);      // 00971... -> 971...\n  if (!d || d.length < 7) return [];\n  const out = [];\n  const push = (v) => { if (v && out.indexOf(v) === -1) out.push(v); };\n  // '+<digits>' only for something that can plausibly BE international. A\n  // leading 0 is a national trunk prefix, and '+0...' is not a phone number.\n  if (d[0] !== '0' && d.length >= 10) push('+' + d);\n  push(d);\n  // UAE subscriber part, if this is recognisably a UAE number. 971 + 9 digits\n  // is a mobile, 971 + 8 is a landline; nationally those are 05xxxxxxxx and\n  // 0Xxxxxxxx. A bare 5xxxxxxxx is the mobile subscriber part on its own.\n  let sub = null;\n  if (d.slice(0, 3) === '971' && (d.length === 12 || d.length === 11)) sub = d.slice(3);\n  else if (d.length === 10 && d[0] === '0' && d[1] === '5') sub = d.slice(1);\n  else if (d.length === 9 && d[0] === '0') sub = d.slice(1);\n  else if (d.length === 9 && d[0] === '5') sub = d;\n  if (sub) { push('+971' + sub); push('971' + sub); push('0' + sub); push(sub); }\n  return out;\n}\nconst phoneValues = phoneVariants(phone);\n\n// ---------------------------------------------------------------------------\n// The NEXUS comment block. Delimited so that on an update we can replace OUR\n// paragraph in place and copy everything a rep typed through untouched. The\n// markers are plain text: Bitrix lead COMMENTS may be stored as BB-code or as\n// HTML depending on portal settings, and a plain bracketed token survives both\n// without being eaten by a sanitiser.\n// ---------------------------------------------------------------------------\nconst BEGIN = '[NEXUS-SYNC:BEGIN]';\nconst END   = '[NEXUS-SYNC:END]';\nconst blockBody = [\n  interest ? 'Vehicle interest: ' + interest : null,\n  'AI score: ' + score,\n  lead.source ? 'Source: ' + lead.source : null,\n  realEmail ? 'Email: ' + realEmail : null,\n  phone ? 'Phone: ' + phone : null,\n  'Synced automatically from NEXUS OS - edit above or below this block, not inside it'\n].filter(Boolean).join('\\n');\nconst nexusBlock = BEGIN + '\\n' + blockBody + '\\n' + END;\n\nconst opportunity = Number(lead.budget_aed) || 0;\n\n// CREATE payload only. The update payload is built separately, from what\n// Bitrix currently holds, in 'Build Update Payload'.\nconst fields = {\n  TITLE: interest ? name + ' - ' + interest : name + ' - NEXUS OS lead',\n  NAME: name,\n  OPPORTUNITY: opportunity,\n  CURRENCY_ID: 'AED',\n  SOURCE_DESCRIPTION: clean(lead.source) || 'NEXUS OS',\n  COMMENTS: nexusBlock\n};\nif (realEmail) fields.EMAIL = [{ VALUE: realEmail, VALUE_TYPE: 'WORK' }];\nif (phone)     fields.PHONE = [{ VALUE: phone,     VALUE_TYPE: 'WORK' }];\n\nreturn { json: {\n  fields: fields,\n  params: { REGISTER_SONET_EVENT: 'Y' },\n  _lead_email:      rawEmail,          // real OR synthetic - the leads.email key\n  _lead_real_email: realEmail,         // real only - safe to ask Bitrix about\n  _lead_name:       name,\n  _lead_id:         clean(lead.id),\n  _bitrix_lead_id:  clean(lead.bitrix_lead_id),\n  _crm_synced_at:   clean(lead.crm_synced_at),\n  _phone_values:    phoneValues,\n  _nexus_block:     nexusBlock,\n  _nexus_begin:     BEGIN,\n  _nexus_end:       END,\n  _opportunity:     opportunity\n} };\n"
       },
       "id": "071341a0-6aae-4402-b805-f966043c211d",
       "name": "Map Lead to Bitrix24 Lead",
@@ -69,7 +36,7 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        1808,
+        2464,
         304
       ],
       "id": "d1e2f3a4-5b6c-4d7e-9f80-223344556677",
@@ -88,10 +55,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.BITRIX24_WEBHOOK_URL }}crm.lead.list.json",
+        "url": "={{ $env.BITRIX24_WEBHOOK_URL }}crm.duplicate.findbycomm.json",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ filter: { 'EMAIL': $json._lead_email || '__none__' }, select: ['ID'] }) }}",
+        "jsonBody": "={{ JSON.stringify({ entity_type: 'LEAD', type: 'PHONE', values: ($json._phone_values && $json._phone_values.length) ? $json._phone_values : ['__nexus_no_phone__'] }) }}",
         "options": {
           "timeout": 30000
         }
@@ -101,25 +68,26 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        880,
+        832,
         304
       ],
       "retryOnFail": true,
-      "maxTries": 2,
+      "maxTries": 3,
       "waitBetweenTries": 2000,
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Bitrix has no upsert: crm.lead.add always creates a new record, so syncing\n// twice would duplicate every lead. Look the lead up by email first and decide\n// between update and add.\nconst found = (($json && $json.result) || [])[0] || null;\nconst mapped = $('Map Lead to Bitrix24 Lead').item.json;\nconst existingId = found ? Number(found.ID) : null;\n\n// crm.lead.update APPENDS to multi-value fields rather than replacing them, so\n// re-syncing an existing lead kept stacking duplicate phone/email entries.\n// Contact details are set once at creation; updates only refresh the sales data.\nconst fields = { ...mapped.fields };\nif (existingId) { delete fields.PHONE; delete fields.EMAIL; }\n\nreturn { json: {\n  existing_id: existingId,\n  fields: fields,\n  params: mapped.params,\n  _lead_email: mapped._lead_email,\n  _lead_name: mapped._lead_name\n} };"
+        "jsCode": "// Resolve WHICH Bitrix lead this NEXUS lead is, and whether writing is safe.\n//\n// THE BUG THIS REPLACES, WRITTEN DOWN SO NOBODY REINSTATES IT:\n//   the old lookup filtered crm.lead.list on EMAIL, falling back to the literal\n//   '__none__'. In Dubai a large share of the book arrives on WhatsApp with no\n//   email at all, so every one of those leads missed the lookup, took the\n//   create branch, and minted a brand-new Bitrix lead on EVERY run. The lookup\n//   also swallowed its own errors, so a 403 or a timeout produced the same\n//   \"not found\" as a genuine miss -- and therefore the same duplicate.\n//\n// IDENTITY ORDER (most authoritative first):\n//   1. leads.bitrix_lead_id  - a crosswalk we wrote ourselves after a confirmed\n//                              write. Survives the customer changing number.\n//   2. PHONE via crm.duplicate.findbycomm - the UAE key. Every spelling of the\n//                              number is offered; Bitrix's own duplicate index\n//                              does the normalising, so a lead stored as\n//                              050 123 4567 still matches +971501234567.\n//   3. EMAIL via crm.duplicate.findbycomm - real addresses only.\n// A lookup that FAILED is never read as \"not found\".\nconst m = $('Map Lead to Bitrix24 Lead').item.json;\n\nfunction probe(nodeName) {\n  let it;\n  try { it = $(nodeName).item; }\n  catch (e) { return { failed: true, ids: [] }; }\n  const j = (it && it.json) || {};\n  // onError:'continueRegularOutput' delivers transport failures as data.\n  if (j.error !== undefined) return { failed: true, ids: [] };\n  // A Bitrix REST error can also arrive with HTTP 200 and no `result` key.\n  if (j.result === undefined) return { failed: true, ids: [] };\n  const r = j.result;\n  let ids = (r && r.LEAD) ? r.LEAD : [];\n  if (!Array.isArray(ids)) ids = [ids];\n  ids = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);\n  return { failed: false, ids: ids };\n}\n\nconst byPhone = probe('Find Existing Lead');\nconst byEmail = probe('Find Lead by Email');\nconst lookup_failed = byPhone.failed || byEmail.failed;\n\nconst stored = Number(m._bitrix_lead_id);\nconst storedOk = Number.isFinite(stored) && stored > 0;\n\nlet existing_id = null, id_source = null;\nif (storedOk)                { existing_id = stored;                 id_source = 'stored crosswalk leads.bitrix_lead_id'; }\nelse if (byPhone.ids.length) { existing_id = Math.min.apply(null, byPhone.ids); id_source = 'Bitrix phone duplicate index'; }\nelse if (byEmail.ids.length) { existing_id = Math.min.apply(null, byEmail.ids); id_source = 'Bitrix email duplicate index'; }\n\n// Everything the duplicate index matched, deduplicated. More than one id means\n// duplicates ALREADY exist in Bitrix for this human. We keep the LOWEST id --\n// the oldest record, the one reps have been typing into -- and we name the rest\n// in the audit row so they can be merged. This workflow never deletes in Bitrix.\nconst all = [];\nfor (const n of byPhone.ids.concat(byEmail.ids)) if (all.indexOf(n) === -1) all.push(n);\nall.sort((a, b) => a - b);\n\nconst hasIdentity = !!(m._phone_values && m._phone_values.length) || !!m._lead_real_email;\n\nlet write_mode = 'create', _no_write_reason = null, _no_write_fatal = false;\nif (existing_id) {\n  write_mode = 'update';\n} else if (lookup_failed) {\n  // Creating here is precisely how the duplicates got made. Not writing is\n  // recoverable -- crm_synced_at is not stamped, so the next run retries.\n  write_mode = 'create_blocked';\n  _no_write_reason = 'Bitrix duplicate lookup did not answer ('\n    + [byPhone.failed ? 'phone probe failed' : null, byEmail.failed ? 'email probe failed' : null]\n      .filter(Boolean).join(', ')\n    + ') - creating now could duplicate an existing lead, so nothing was written';\n  _no_write_fatal = true;\n} else if (!hasIdentity) {\n  // A lead with neither a usable phone nor a real email can never be matched\n  // again. Creating it guarantees a duplicate on the next run for the same human.\n  write_mode = 'create_blocked';\n  _no_write_reason = 'lead has neither a usable phone number nor a real email address, '\n    + 'so it can never be de-duplicated in Bitrix - refused rather than create an '\n    + 'unmatchable record';\n  _no_write_fatal = true;\n}\n\nreturn { json: {\n  existing_id:     existing_id,\n  id_source:       id_source,\n  duplicate_ids:   all,\n  lookup_failed:   lookup_failed,\n  write_mode:      write_mode,\n  _no_write_reason: _no_write_reason,\n  _no_write_fatal:  _no_write_fatal,\n  // Create payload, untouched. Contact arrays are set ONCE, at creation.\n  fields:          m.fields,\n  params:          m.params,\n  _lead_email:      m._lead_email,\n  _lead_real_email: m._lead_real_email,\n  _lead_name:       m._lead_name,\n  _lead_id:         m._lead_id,\n  _crm_synced_at:   m._crm_synced_at,\n  _opportunity:     m._opportunity\n} };\n"
       },
       "id": "wf108-decide-01",
       "name": "Decide Update or Create",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1056,
+        1120,
         304
       ]
     },
@@ -135,7 +103,7 @@
           "conditions": [
             {
               "id": "wf108-exists",
-              "leftValue": "={{ !!$json.existing_id }}",
+              "leftValue": "={{ $json.write_mode === 'update' }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -151,7 +119,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1232,
+        1264,
         304
       ],
       "id": "wf108-if-01",
@@ -173,8 +141,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1424,
-        208
+        1872,
+        64
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -197,8 +165,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1424,
-        400
+        1600,
+        448
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -208,14 +176,14 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Normalise the Bitrix24 response into an audit row.\nconst r = $json || {};\nconst d = $('Decide Update or Create').item.json;\nconst wasUpdate = !!d.existing_id;\nconst ok = wasUpdate ? (r.result === true) : !!r.result;\n\nlet reason = null;\nif (!ok) {\n  const raw = r.error ? (r.error.message || JSON.stringify(r.error)) : (r.error_description || r.error || 'unknown error');\n  const m = String(raw).match(/\\{.*\\}/s);\n  if (m) { try { const p = JSON.parse(m[0]); reason = p.error_description || p.error || String(raw); } catch (e) { reason = String(raw); } }\n  else { reason = String(raw); }\n  reason = reason.replace(/\\\\u0022/g, '\"').substring(0, 300);\n}\n\nconst id = wasUpdate ? d.existing_id : r.result;\nreturn { json: {\n  workflow: 'wf_108 ERP Sync - Bitrix24',\n  status: ok ? 'SUCCESS' : 'FAILED',\n  lead_name: d._lead_name || null,\n  lead_email: d._lead_email || null,\n  summary: ok\n    ? ('Bitrix24 lead ' + (wasUpdate ? 'updated' : 'created') + ' (ID ' + id + ')')\n    : ('Bitrix24 lead ' + (wasUpdate ? 'update' : 'creation') + ' failed: ' + reason)\n} };"
+        "jsCode": "// Normalise the Bitrix24 response into an audit row.\nconst r = $json || {};\nlet d = {};\ntry { d = $('Decide Update or Create').item.json || {}; } catch (e) { d = {}; }\n// Only present on the update branch; $('...') THROWS on the create branch, so\n// this needs try/catch rather than ?. or ||.\nlet u = {};\ntry { u = $('Build Update Payload').item.json || {}; } catch (e) { u = {}; }\n\nconst mode = d.write_mode || (d.existing_id ? 'update' : 'create');\nconst isUpdate = mode === 'update';\n\n// Set by 'Build Update Payload' (nothing to change / read-before-write failed)\n// or by 'Decide Update or Create' (unsafe to create). Its presence means NO\n// Bitrix write was attempted for this item.\nconst noWrite = r._no_write_reason || u._no_write_reason || d._no_write_reason || null;\nconst noWriteFatal = !!(r._no_write_fatal || u._no_write_fatal || d._no_write_fatal);\nconst wroteFields = Array.isArray(u._changed) ? u._changed : [];\n\nlet status, summary, bitrixId = null, attempted = !noWrite;\n\nif (noWrite) {\n  status  = noWriteFatal ? 'FAILED' : 'SUCCESS';\n  bitrixId = d.existing_id || null;\n  summary = 'Bitrix24 lead ' + (isUpdate ? 'update' : 'creation') + ' not attempted: '\n          + String(noWrite).substring(0, 260);\n} else {\n  const ok = isUpdate ? (r.result === true) : !!r.result;\n  let reason = null;\n  if (!ok) {\n    const raw = r.error ? (r.error.message || JSON.stringify(r.error))\n                        : (r.error_description || r.error || 'unknown error');\n    const mm = String(raw).match(/\\{.*\\}/s);\n    if (mm) { try { const p = JSON.parse(mm[0]); reason = p.error_description || p.error || String(raw); }\n              catch (e) { reason = String(raw); } }\n    else { reason = String(raw); }\n    reason = reason.replace(/\\\\u0022/g, '\"').substring(0, 300);\n  }\n  bitrixId = isUpdate ? (d.existing_id || null) : (ok ? Number(r.result) : null);\n  status   = ok ? 'SUCCESS' : 'FAILED';\n  summary  = ok\n    ? ('Bitrix24 lead ' + (isUpdate ? 'updated' : 'created') + ' (ID ' + bitrixId + ')'\n       + (d.id_source ? ' via ' + d.id_source : '')\n       + (wroteFields.length ? ' [wrote ' + wroteFields.join(', ') + ']' : ''))\n    : ('Bitrix24 lead ' + (isUpdate ? 'update' : 'creation') + ' failed: ' + reason);\n}\n\n// Duplicates that ALREADY exist in Bitrix. The identity fix stops new ones; it\n// cannot undo old ones, so every run that sees more than one matching lead says\n// so, in the one place a human reads. Grep audit_log for 'DUPLICATES IN BITRIX'.\nconst dupes = Array.isArray(d.duplicate_ids) ? d.duplicate_ids : [];\nconst dupeNote = dupes.length > 1\n  ? ' | DUPLICATES IN BITRIX: lead ids ' + dupes.join(',')\n    + ' all match this customer; kept ' + (bitrixId || dupes[0]) + ', merge the rest'\n  : '';\n\nreturn { json: {\n  workflow:   'wf_108 ERP Sync - Bitrix24',\n  status:     status,\n  lead_name:  d._lead_name || null,\n  lead_email: d._lead_email || null,\n  summary:    summary + dupeNote,\n  // Consumed by 'Delivery Report' and 'Link Back to Supabase'; both strip these\n  // before anything is written to audit_log, which is autoMapInputData and\n  // would reject an unknown column.\n  _mode:            mode,\n  _write_attempted: attempted,\n  _stamp:           status === 'SUCCESS',\n  _lead_email:      d._lead_email || null,\n  bitrix_lead_id:   bitrixId\n} };\n"
       },
       "id": "wf108-audit-01",
       "name": "Build Audit Row",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1616,
+        2048,
         304
       ]
     },
@@ -288,28 +256,257 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1712,
+        2192,
         304
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Verify every node whose success this audit row is about to claim.\n// Only ONE of the two Bitrix writes runs for a given lead, so claim the node on\n// the branch that actually ran -- $('Node') THROWS for a node that did not run\n// and ?. cannot rescue it, so naming the wrong one would report a phantom drop.\n// This node is unconditionally on the path, so the lookup cannot actually\n// fail -- but this node's whole job is to be the one place that never lies,\n// and a Code node that throws takes the audit row down with it.\nlet d = {};\ntry { d = $('Decide Update or Create').item.json || {}; } catch (e) { d = {}; }\nconst wasUpdate = !!d.existing_id;\n\nconst CLAIMED = [\n  wasUpdate\n    ? { node: 'Update Bitrix24 Lead', what: 'Bitrix24 CRM lead update', critical: true }\n    : { node: 'Create Bitrix24 Lead', what: 'Bitrix24 CRM lead creation', critical: true },\n  // Swallows too. When this lookup drops, existing_id is null, the run takes\n  // the create branch and silently duplicates a lead that was already there.\n  { node: 'Find Existing Lead', what: 'Bitrix24 duplicate-check lookup', critical: false },\n];\n\nfunction check(c) {\n  let it;\n  try { it = $(c.node).item; }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!it) return { ...c, ok: false, why: 'node produced no items' };\n  const j = it.json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst base = $json;\n\n// 'Build Audit Row' already judges the Bitrix payload itself (result === true,\n// or a numeric new ID). A 200 carrying result:false has no `error` key, so keep\n// that verdict rather than overriding it upward.\nconst priorFailed = String(base.status || '').toUpperCase() === 'FAILED';\n\nconst status = (fatal.length || priorFailed) ? 'FAILED'\n             : dropped.length               ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst note = dropped.length\n  ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n  : 'all ' + results.length + ' claimed steps verified';\n\n// 'Log to Supabase audit_log' inserts with autoMapInputData, so this node must\n// emit exactly the columns the row already had -- an extra key would be an\n// unknown column and would fail the insert. The delivery verdict therefore\n// lands in `status` and `summary` rather than in a nested object.\nreturn { json: {\n  workflow:   base.workflow,\n  status:     status,\n  lead_name:  base.lead_name,\n  lead_email: base.lead_email,\n  summary:    base.summary + ' | ' + note\n              + (dropped.length ? ' [' + dropped.map(r => r.what + ' - ' + r.why).join('; ') + ']' : ''),\n} };\n"
+        "jsCode": "// Verify every node whose success this audit row is about to claim.\n// $('Node') THROWS for a node that did not run on the taken branch and neither\n// ?. nor || can rescue it - only try/catch - so every lookup below is guarded\n// and the claim list is built from the branch that ACTUALLY ran.\nconst base = $json || {};\nlet d = {};\ntry { d = $('Decide Update or Create').item.json || {}; } catch (e) { d = {}; }\n\nconst mode      = base._mode || d.write_mode || (d.existing_id ? 'update' : 'create');\nconst attempted = base._write_attempted !== false;\n\n// Both probes are now CRITICAL. The old version marked the duplicate check\n// non-critical, which is exactly why a swallowed lookup could silently mint a\n// duplicate while the audit row still said SUCCESS.\nconst CLAIMED = [\n  { node: 'Find Existing Lead', what: 'Bitrix24 duplicate lookup by phone', critical: true },\n  { node: 'Find Lead by Email', what: 'Bitrix24 duplicate lookup by email', critical: true },\n];\nif (mode === 'update') {\n  CLAIMED.push({ node: 'Fetch Existing Bitrix Lead', what: 'read-before-write of the existing Bitrix lead', critical: true });\n  if (attempted) CLAIMED.push({ node: 'Update Bitrix24 Lead', what: 'Bitrix24 CRM lead update', critical: true });\n} else if (mode === 'create' && attempted) {\n  CLAIMED.push({ node: 'Create Bitrix24 Lead', what: 'Bitrix24 CRM lead creation', critical: true });\n}\n\nfunction check(c) {\n  let it;\n  try { it = $(c.node).item; }\n  catch (e) { return Object.assign({}, c, { ok: false, why: 'node did not run on this branch' }); }\n  if (!it) return Object.assign({}, c, { ok: false, why: 'node produced no items' });\n  const j = it.json || {};\n  if (j.error !== undefined) {\n    const m = (j.error && (j.error.message || j.error.description)) || j.error;\n    return Object.assign({}, c, { ok: false, why: String(m).slice(0, 300) });\n  }\n  // A Bitrix REST error can arrive with HTTP 200 and no `result` key at all.\n  if (c.node.indexOf('Find ') === 0 && j.result === undefined) {\n    return Object.assign({}, c, { ok: false, why: 'no result key in the Bitrix response' });\n  }\n  return Object.assign({}, c, { ok: true });\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\n// 'Build Audit Row' already judged the Bitrix payload itself; a 200 carrying\n// result:false has no `error` key, so keep that verdict rather than raising it.\nconst priorFailed = String(base.status || '').toUpperCase() === 'FAILED';\n\nconst status = (fatal.length || priorFailed) ? 'FAILED'\n             : dropped.length               ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst note = dropped.length\n  ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n  : 'all ' + results.length + ' claimed steps verified';\n\n// 'Log to Supabase audit_log' inserts with autoMapInputData, so emit EXACTLY\n// the columns audit_log has - an extra key is an unknown column and fails the\n// insert. The delivery verdict lands in `status` and `summary`, nowhere else.\nreturn { json: {\n  workflow:   base.workflow,\n  status:     status,\n  lead_name:  base.lead_name,\n  lead_email: base.lead_email,\n  summary:    base.summary + ' | ' + note\n              + (dropped.length ? ' [' + dropped.map(r => r.what + ' - ' + r.why).join('; ') + ']' : ''),\n} };\n"
       }
+    },
+    {
+      "id": "wf108-fetch-0002",
+      "name": "Fetch HOT Leads from Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        464,
+        304
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,name,email,phone,source,vehicle_interest,budget_aed,ai_score,status,created_at,bitrix_lead_id,crm_synced_at"
+            },
+            {
+              "name": "status",
+              "value": "eq.HOT"
+            },
+            {
+              "name": "or",
+              "value": "={{ '(crm_synced_at.is.null,crm_synced_at.lt.\"' + $now.minus({ hours: 6 }).toUTC().toISO() + '\")' }}"
+            },
+            {
+              "name": "order",
+              "value": "created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Replaced 30 Aug 2026. Was the Supabase node with returnAll:true and a single status=HOT filter, so EVERY hot lead ever recorded was re-pushed on every invocation -- unbounded memory on a 958 MB box and, before the identity fix, one fresh Bitrix duplicate per lead per run. Now PostgREST: same HOT filter, plus a crm_synced_at watermark (never synced, or last synced more than 6 h ago), newest first, hard limit 100. The limit is a Bitrix rate-limit budget, not a memory one: 100 leads x up to 3 REST calls at Bitrix's ~2 req/s is ~150 s, inside the 300 s executionTimeout. Written as an HTTP node because the Supabase node ANDs its filters and cannot express or=().",
+      "onError": "stopWorkflow",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": false
+    },
+    {
+      "id": "wf108-find-email-0001",
+      "name": "Find Lead by Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        976,
+        304
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BITRIX24_WEBHOOK_URL }}crm.duplicate.findbycomm.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ entity_type: 'LEAD', type: 'EMAIL', values: [ $('Map Lead to Bitrix24 Lead').item.json._lead_real_email || '__nexus_no_email__' ] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Second identity probe, and only ever a fallback. Runs against the REAL email only: the synthetic '+<digits>@whatsapp.lead' address is deliberately replaced with a sentinel that matches nothing, because asking Bitrix about an address no human ever typed is what produced the '__none__' lookup this fix removes. Unconditionally on the path so that $('Find Lead by Email') can never throw in 'Decide Update or Create' or 'Delivery Report'.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "wf108-safecreate-0001",
+      "name": "Safe to Create?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1424,
+        448
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "wf108-safe",
+              "leftValue": "={{ $json.write_mode === 'create' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "TRUE = both duplicate probes answered, they agreed the customer is not in Bitrix, and the lead carries an identity we can match on next time -- so a create cannot duplicate anything. FALSE = we do not know, and a create would be a guess; the run writes an honest FAILED audit row instead and leaves crm_synced_at unstamped so the next invocation retries."
+    },
+    {
+      "id": "wf108-get-0001",
+      "name": "Fetch Existing Bitrix Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1424,
+        144
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BITRIX24_WEBHOOK_URL }}crm.lead.get.json",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.existing_id }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Read-before-write. crm.lead.update overwrites whatever you send it, so the only way to keep a rep's handwritten COMMENTS is to read the field first and merge. Also yields DATE_MODIFY (has a human touched this record since our last push?) and the current OPPORTUNITY (is there already a negotiated figure we must not flatten?). If this read fails, NOTHING is written.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "wf108-buildupd-0001",
+      "name": "Build Update Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        144
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Decide what an AUTOMATED push is allowed to change in a record that humans\n// also edit by hand. The old update sent TITLE, OPPORTUNITY and COMMENTS\n// wholesale from the Supabase row, so a rep who typed notes into Bitrix lost\n// them the next time this workflow ran. NEXUS is no longer the winner by\n// default; it is the winner only for fields no human is expected to author.\n//\n// FIELD OWNERSHIP\n//   COMMENTS ............ APPEND-ONLY. Everything outside the [NEXUS-SYNC]\n//                         block is copied through byte for byte; our own block\n//                         is replaced in place so the field cannot grow forever.\n//   OPPORTUNITY ......... FILL-IF-EMPTY. A rep's negotiated figure outranks a\n//                         budget parsed out of a WhatsApp message.\n//   TITLE, NAME ......... NEVER on update. These are the record's human label;\n//                         reps rename leads to their own conventions and fix\n//                         transliterations that a WhatsApp profile got wrong.\n//   PHONE, EMAIL ........ NEVER on update. Bitrix APPENDS to multi-value\n//                         fields, so re-sending stacks duplicate entries.\n//   SOURCE_DESCRIPTION .. NEVER on update. First-touch provenance is history.\n//   STATUS_ID,\n//   ASSIGNED_BY_ID ...... NEVER, at all. Pipeline stage and ownership are\n//                         human decisions and this workflow has no opinion.\nconst g = $json || {};\nconst d = $('Decide Update or Create').item.json;\nconst m = $('Map Lead to Bitrix24 Lead').item.json;\n\n// crm.lead.get returns { result: {...} }. onError:'continueRegularOutput' means\n// a failure arrives as data, and a Bitrix REST error can arrive with HTTP 200.\nconst existing = (g && g.error === undefined && g.result && !Array.isArray(g.result)) ? g.result : null;\nconst readFailed = !existing;\n\nconst BEGIN = m._nexus_begin, END = m._nexus_end;\nconst fields = {};\nconst changed = [];\nlet _no_write_reason = null, _no_write_fatal = false;\n\nif (readFailed) {\n  // NEVER WRITE A FIELD YOU COULD NOT READ. Writing COMMENTS blind here would\n  // be the original bug wearing a different hat.\n  _no_write_reason = 'could not read the existing Bitrix lead (crm.lead.get returned '\n    + (g && g.error !== undefined ? 'an error' : 'no usable result')\n    + ') - refusing to overwrite fields we have not seen';\n  _no_write_fatal = true;\n} else {\n  const prior = String(existing.COMMENTS == null ? '' : existing.COMMENTS);\n\n  // Strip only OUR block. Whatever a rep typed above or below it is theirs and\n  // is copied through byte for byte; the ONLY whitespace we touch is the seam\n  // left behind where our own block used to sit.\n  let human;\n  const s = prior.indexOf(BEGIN);\n  if (s !== -1) {\n    const e = prior.indexOf(END, s);\n    const head = prior.slice(0, s).replace(/\\s+$/, '');\n    const tail = (e === -1 ? '' : prior.slice(e + END.length)).replace(/^\\s+/, '').replace(/\\s+$/, '');\n    human = (head && tail) ? (head + '\\n\\n' + tail) : (head || tail);\n  } else {\n    human = prior.replace(/\\s+$/, '');\n  }\n\n  const merged = (human ? human + '\\n\\n' : '') + m._nexus_block;\n  if (merged !== prior) { fields.COMMENTS = merged; changed.push('COMMENTS'); }\n\n  // Has a human touched this record since OUR last confirmed push? If so we\n  // stay out of the money field entirely, even to fill a blank.\n  const bMod = Date.parse(existing.DATE_MODIFY || '');\n  const nSync = Date.parse(m._crm_synced_at || '');\n  const touchedSinceUs = isFinite(bMod) && isFinite(nSync) && bMod > nSync;\n\n  const currentOpp = Number(existing.OPPORTUNITY || 0);\n  if (!touchedSinceUs && m._opportunity > 0 && !(currentOpp > 0)) {\n    fields.OPPORTUNITY = m._opportunity;\n    fields.CURRENCY_ID = 'AED';\n    changed.push('OPPORTUNITY');\n  }\n\n  if (!changed.length) {\n    _no_write_reason = 'nothing to change - the NEXUS block is already current and '\n      + 'no human-owned field is ours to write';\n    _no_write_fatal = false;   // this is a healthy no-op, not a failure\n  }\n}\n\nreturn { json: Object.assign({}, d, {\n  fields: fields,\n  // Silent on updates: an automated field refresh must not raise a notification\n  // in every rep's Bitrix activity stream. Creates still register the event.\n  params: { REGISTER_SONET_EVENT: 'N' },\n  _changed: changed,\n  _no_write_reason: _no_write_reason,\n  _no_write_fatal: _no_write_fatal,\n  _bitrix_date_modify: existing ? (existing.DATE_MODIFY || null) : null,\n  _bitrix_comments_len: existing ? String(existing.COMMENTS == null ? '' : existing.COMMENTS).length : null\n}) };\n"
+      },
+      "notes": "The field-ownership rule lives here. COMMENTS is append-only around a delimited NEXUS block; OPPORTUNITY is fill-if-empty and is skipped entirely when Bitrix's DATE_MODIFY is newer than our own crm_synced_at; TITLE, NAME, PHONE, EMAIL and SOURCE_DESCRIPTION are never sent on an update at all."
+    },
+    {
+      "id": "wf108-haspayload-0001",
+      "name": "Update Has Payload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1712,
+        144
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "wf108-haspl",
+              "leftValue": "={{ !$json._no_write_reason && Object.keys($json.fields || {}).length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "TRUE = there is at least one field this sync is entitled to write. FALSE = either nothing changed (healthy no-op) or the read-before-write failed (refuse to write blind). Either way crm.lead.update is never called with an empty fields object, which Bitrix rejects, and DATE_MODIFY is not churned."
+    },
+    {
+      "id": "wf108-linkback-0001",
+      "name": "Link Back to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2192,
+        480
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?email=eq.' + encodeURIComponent(($json._stamp && $json._lead_email) ? $json._lead_email : '__nexus_noop__') }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ crm_synced_at: $now.toUTC().toISO() }, $json.bitrix_lead_id ? { bitrix_lead_id: String($json.bitrix_lead_id) } : {})) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Writes the crosswalk that makes identity resolution cheap and durable: leads.bitrix_lead_id (so the next run needs no probe and still matches after the customer changes number) and leads.crm_synced_at (the watermark 'Fetch HOT Leads' filters on, and the timestamp 'Build Update Payload' compares against Bitrix DATE_MODIFY). Stamped ONLY on a SUCCESS verdict - on a failure the row stays unstamped so the next invocation retries it. When there is nothing to stamp the URL targets a sentinel email that matches zero rows, so the no-op is a 204 rather than a branch.",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
     "Called by Master Router": {
-      "main": [
-        [
-          {
-            "node": "Map Lead to Bitrix24 Lead",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch HOT Leads from Supabase": {
       "main": [
         [
           {
@@ -331,17 +528,6 @@
         ]
       ]
     },
-    "Find Existing Lead": {
-      "main": [
-        [
-          {
-            "node": "Decide Update or Create",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Decide Update or Create": {
       "main": [
         [
@@ -357,14 +543,14 @@
       "main": [
         [
           {
-            "node": "Update Bitrix24 Lead",
+            "node": "Fetch Existing Bitrix Lead",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Create Bitrix24 Lead",
+            "node": "Safe to Create?",
             "type": "main",
             "index": 0
           }
@@ -400,6 +586,11 @@
             "node": "Delivery Report",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Link Back to Supabase",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -426,6 +617,17 @@
         ]
       ]
     },
+    "Delivery Report": {
+      "main": [
+        [
+          {
+            "node": "Log to Supabase audit_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Auth Gate": {
       "main": [
         [
@@ -437,11 +639,91 @@
         ]
       ]
     },
-    "Delivery Report": {
+    "Fetch HOT Leads from Supabase": {
       "main": [
         [
           {
-            "node": "Log to Supabase audit_log",
+            "node": "Map Lead to Bitrix24 Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Existing Lead": {
+      "main": [
+        [
+          {
+            "node": "Find Lead by Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Lead by Email": {
+      "main": [
+        [
+          {
+            "node": "Decide Update or Create",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safe to Create?": {
+      "main": [
+        [
+          {
+            "node": "Create Bitrix24 Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Audit Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Existing Bitrix Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Update Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Update Payload": {
+      "main": [
+        [
+          {
+            "node": "Update Has Payload?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Has Payload?": {
+      "main": [
+        [
+          {
+            "node": "Update Bitrix24 Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Audit Row",
             "type": "main",
             "index": 0
           }
@@ -463,7 +745,7 @@
   "_exported_from": {
     "id": "bxNBzBrcOtcFpMPn",
     "active": true,
-    "updatedAt": "2026-08-26T05:12:54.009Z",
+    "updatedAt": "2026-08-30T17:44:56.240Z",
     "published": true
   }
 }

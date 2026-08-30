@@ -226,46 +226,6 @@
     },
     {
       "parameters": {
-        "toolDescription": "Creates or updates a lead in the Supabase 'leads' table, merging on the email address. Call this once you have scored and classified the lead. Provide name, email, phone, vehicle_interest, budget_aed (the stated budget in AED as a plain number, 0 if the lead did not mention one), ai_score (1-100 integer) and status (HOT, WARM or COLD).",
-        "method": "POST",
-        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?on_conflict=email",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "supabaseApi",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Prefer",
-              "value": "resolution=merge-duplicates,return=minimal"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify(Object.assign({ name: $fromAI('name', 'Full name of the lead', 'string'), email: $fromAI('email', 'Email address of the lead', 'string'), phone: $fromAI('phone', 'Phone number of the lead, empty string if unknown', 'string'), vehicle_interest: $fromAI('vehicle_interest', 'Which vehicle or vehicle type the lead is interested in', 'string'), ai_score: $fromAI('ai_score', 'Lead quality score from 1 to 100', 'number'), status: $fromAI('status', 'Lead classification: HOT, WARM or COLD', 'string'), source: 'nexus-master-router' }, Number($fromAI('budget_aed', 'The budget the lead stated, in AED, as a plain number. Use 0 if they did not mention a budget.', 'number')) > 0 ? { budget_aed: Number($fromAI('budget_aed', 'The budget the lead stated, in AED, as a plain number. Use 0 if they did not mention a budget.', 'number')) } : {})) }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequestTool",
-      "typeVersion": 4.4,
-      "position": [
-        880,
-        560
-      ],
-      "id": "1598f41b-1c70-4c34-b06c-e7c3054a0c94",
-      "name": "upsert_lead",
-      "credentials": {
-        "supabaseApi": {
-          "id": "dv4OeARarErZLHCj",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "operation": "getAll",
         "tableId": "leads",
         "limit": 20,
@@ -797,16 +757,6 @@
         ]
       ]
     },
-    "ERP Sync (HOT)": {
-      "main": [
-        []
-      ]
-    },
-    "Slack Router (HOT)": {
-      "main": [
-        []
-      ]
-    },
     "WhatsApp BDC (WARM)": {
       "main": [
         [
@@ -1040,7 +990,7 @@
   "_exported_from": {
     "id": "JnlZFAVmFAuNXVya",
     "active": true,
-    "updatedAt": "2026-08-30T05:10:29.867Z",
+    "updatedAt": "2026-08-30T17:56:30.894Z",
     "published": true
   }
 }
