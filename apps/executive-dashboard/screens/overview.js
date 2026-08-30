@@ -587,7 +587,30 @@ SCREENS.overview = async host => {
 
     const seg = [['HOT', hot, 'var(--hot)'], ['WARM', warm, 'var(--warm)'], ['COLD', cold, 'var(--cold)']];
     const graded = hot + warm + cold;
-    const unscored = leads.length - graded;
+    /* "Everything that is not HOT, WARM or COLD has not been scored" was a
+       false statement, and it was printed under the bar in plain words. The
+       Slack Command Center writes CONTACTED, QUALIFIED, WON and LOST over the
+       router's grade, and the BDC agent writes DISQUALIFIED, so a deal the
+       dealership actually closed was being reported to the owner as a lead the
+       router had never got round to. The two are counted apart here: a status
+       the router does not write is not an absent one. */
+    const otherStatus = leads.filter(l => {
+      const st = up(l.status);
+      return st && st !== 'HOT' && st !== 'WARM' && st !== 'COLD';
+    });
+    const otherNames = [...new Set(otherStatus.map(l => up(l.status)))].sort();
+    const unscored = leads.length - graded - otherStatus.length;
+    const stageRest = [
+      otherStatus.length
+        ? `${num(otherStatus.length)} ${plural(otherStatus.length, 'lead carries', 'leads carry')} a status the router does not write — ${otherNames.join(', ')} — so ${plural(otherStatus.length, 'it is', 'they are')} past the grading stage rather than missing from it.`
+        : '',
+      unscored > 0
+        ? `${num(unscored)} ${plural(unscored, 'lead has', 'leads have')} no status on the row at all: the router has not scored ${plural(unscored, 'it', 'them')}.`
+        : '',
+    ].filter(Boolean);
+    const stageRestHtml = stageRest.length
+      ? `<div class="cell-sub" style="margin-top:6px">${stageRest.map(muted).join('<br>')}</div>`
+      : '';
     /* One scored lead paints a full-width bar in one colour, and a full-width
        bar is read as a share before any caption under it is. A caption cannot
        undo that — the shape has already made the claim — so at n=1 the chart is
@@ -602,7 +625,7 @@ SCREENS.overview = async host => {
           <span>Exactly one lead has been scored${onlyStage ? `, and it is ${esc(onlyStage)}` : ''}.</span>
         </div>
         <div class="cell-sub" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
-        ${unscored > 0 ? `<div class="cell-sub" style="margin-top:6px">${muted(`${num(unscored)} further ${plural(unscored, 'lead has', 'leads have')} not been scored by the router.`)}</div>` : ''}`
+        ${stageRestHtml}`
       : graded
       ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
         <div class="stackbar">${seg.map(([, v, c]) => `<i style="width:${(v / graded * 100).toFixed(1)}%;background:${c}"></i>`).join('')}</div>
@@ -610,8 +633,8 @@ SCREENS.overview = async host => {
           ${seg.map(([k, v, c]) => `<div style="display:flex;align-items:center;gap:8px">
             <span style="width:8px;height:8px;border-radius:50%;background:${c}"></span>
             <span style="font-weight:500">${esc(k)}</span><span class="t-muted num">${num(v)} ${plural(v, 'lead', 'leads')}</span></div>`).join('')}
-          ${graded < leads.length ? `<div class="cell-sub">${num(leads.length - graded)} not yet scored by the router</div>` : ''}
         </div>
+        ${stageRestHtml}
         ${graded <= THIN
           /* A full-width bar drawn from one row looks like a market share. It
              is one row, and the caption says so directly under it. */
@@ -619,7 +642,10 @@ SCREENS.overview = async host => {
           : ''}`
       : stateEmpty('Nothing to chart yet',
           leads.length
-            ? `${leads.length === 1 ? 'The one lead on file has not been scored' : `None of the ${leads.length} leads on file has been scored`} HOT, WARM or COLD yet. The router writes that status when it processes an enquiry, and the stage mix appears here once it has.`
+            ? `${leads.length === 1 ? 'The one lead on file is not' : `None of the ${leads.length} leads on file is`} HOT, WARM or COLD. The router writes that grade when it processes an enquiry, and the stage mix appears here once it has.`
+              + (otherStatus.length
+                  ? ` That is not the same as unprocessed: ${stageRest[0]}`
+                  : '')
             : 'The leads table is empty, so there are no stages to chart. The first row arrives when the router webhook receives an enquiry.',
           'donut_small');
   }

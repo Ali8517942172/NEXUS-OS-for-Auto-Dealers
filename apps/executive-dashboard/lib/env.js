@@ -20,9 +20,20 @@ function envProblem(name, value, { minLen = 0, prefix = '' } = {}) {
   return null;
 }
 
-const SUPABASE_URL  = envStr(import.meta.env.VITE_SUPABASE_URL);
+/* Trailing slashes come off both base URLs, and for the same reason: every
+   caller appends a path that already starts with one. `https://xxx.supabase.co/`
+   pasted out of the Supabase dashboard — which is exactly how it is displayed
+   there — made every request `…supabase.co//rest/v1/leads`, and PostgREST
+   answers that with a 404. All fourteen screens then reported a data error,
+   the connection pill went red, and nothing anywhere said the URL was the
+   problem, because as far as envProblem() was concerned it was a perfectly
+   well-formed https:// value. N8N_BASE has been stripped since the split; this
+   one was simply missed. */
+const trimUrl = v => (envStr(v) || '').replace(/\/+$/, '');
+
+const SUPABASE_URL  = trimUrl(import.meta.env.VITE_SUPABASE_URL);
 const SUPABASE_ANON = envStr(import.meta.env.VITE_SUPABASE_ANON_KEY);
-const N8N_BASE      = (envStr(import.meta.env.VITE_N8N_BASE_URL) || '').replace(/\/+$/, '');
+const N8N_BASE      = trimUrl(import.meta.env.VITE_N8N_BASE_URL);
 
 const envErrors = [
   envProblem('VITE_SUPABASE_URL', SUPABASE_URL, { prefix: 'https://' }),
@@ -31,4 +42,4 @@ const envErrors = [
 
 /* ── Small helpers ───────────────────────────────────────────────────────── */
 
-export { envStr, envProblem, SUPABASE_URL, SUPABASE_ANON, N8N_BASE, envErrors };
+export { envStr, envProblem, trimUrl, SUPABASE_URL, SUPABASE_ANON, N8N_BASE, envErrors };

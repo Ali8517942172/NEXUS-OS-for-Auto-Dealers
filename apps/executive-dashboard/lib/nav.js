@@ -53,6 +53,34 @@ function buildNav() {
   });
 }
 
+/* ── Render generation ──────────────────────────────────────────────────────
+   Every call to go() is a render, and only the newest one owns #screen.
+
+   A screen module is a long async function: it clears the host, paints
+   skeletons, awaits four reads, then finishes painting. Navigate away in the
+   middle of that and the old render is still running — it has not been
+   cancelled, because nothing here could cancel it. It then does what every
+   screen does after an await, and looks its own elements up again by global id.
+   They are gone (go() emptied the host), so it gets null, and `null.innerHTML`
+   throws. The rejection landed in the catch below, which wrote "Couldn't load
+   this screen" into `host` — and `host` by then held the screen the operator
+   had just navigated TO. Clicking Leads and then Inventory quickly enough
+   blanked Inventory and blamed it for an error Leads had.
+
+   The counter fixes the blast radius without touching a single screen: an error
+   from a render that is no longer the current one is dropped. It is also
+   exported, so a screen with a long tail of work can ask whether it is still
+   the one on screen before it paints — `const gen = generation(); … if (stale(gen)) return;`
+
+   The try/catch matters just as much and is easy to miss: the old line invoked
+   SCREENS[id](host) BEFORE Promise.resolve() wrapped it, so a synchronous throw
+   — a bad destructure at the top of a screen, a missing import — escaped the
+   .catch() entirely and left a permanently blank page with no error state at
+   all. Now both shapes of failure reach the same handler. */
+let generation = 0;
+const currentGeneration = () => generation;
+const staleRender = g => g !== generation;
+
 function go(id) {
   if (!SCREENS[id]) id = 'overview';
   current = id;
@@ -62,9 +90,20 @@ function go(id) {
   closeDrawer();
   const host = $('screen');
   host.innerHTML = '';
-  Promise.resolve(SCREENS[id](host)).catch(e => { host.innerHTML = stateError('this screen', e.message); });
+  const gen = ++generation;
+  /* Dropped rather than reported when it is stale: the screen that failed is no
+     longer on screen, and the one that is has done nothing wrong. */
+  const fail = e => {
+    if (staleRender(gen)) return;
+    host.innerHTML = stateError('this screen', (e && e.message) || String(e));
+  };
+  try {
+    Promise.resolve(SCREENS[id](host)).catch(fail);
+  } catch (e) {
+    fail(e);
+  }
 }
 
 /* ── Drawer ──────────────────────────────────────────────────────────────── */
 
-export { NAV, SCREENS, flatNav, current, buildNav, go };
+export { NAV, SCREENS, flatNav, current, buildNav, go, currentGeneration, staleRender };

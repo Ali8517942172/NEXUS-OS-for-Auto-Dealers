@@ -32,6 +32,26 @@
   --ok:            #157A5B;  --ok-fill:   #E6F4EF;  --ok-text:   #157A5B;
   --neutral:       #64748B;  --neutral-fill:#F1F3F7;--neutral-text:#4A5468;
 
+  /* Lead lifecycle. `leads.status` carries eight values and only three of them
+     were ever graded colours, so WON was painted in the COLD blue — a closed
+     sale and a lead that never replied were the same swatch. Measured against
+     their own fills, not estimated:
+       won      #FFFFFF on #157A5B   5.3:1  — the only solid pill in the system,
+                                             because a sale is the one state
+                                             worth being unmistakable
+       dead     #3F4757 on #E4E6EC   7.5:1  — finished and lost; grey, and a
+                                             darker grey than an unknown value
+       open     #5B2E8C on #F1EAFA   8.1:1  — still being worked. Violet is the
+                                             one hue not already spoken for by
+                                             HOT, WARM, COLD or OK
+       unknown  #4A5468 on #F1F3F7   7.0:1  — a status nobody taught this build
+                                             about, outlined so it reads as
+                                             unclassified rather than as neutral */
+  --won:           #157A5B;  --won-fill:  #157A5B;  --won-text:  #FFFFFF;
+  --dead:          #5A6274;  --dead-fill: #E4E6EC;  --dead-text: #3F4757;
+  --open:          #6B3FA0;  --open-fill: #F1EAFA;  --open-text: #5B2E8C;
+  --unknown:       #64748B;  --unknown-fill:#F1F3F7;--unknown-text:#4A5468;
+
   --radius-control: 6px;
   --radius-card:    10px;
   --sidebar-w:      240px;
@@ -187,10 +207,22 @@ a:hover { text-decoration: underline; }
 .pill.ok   { background: var(--ok-fill);   color: var(--ok-text); }
 .pill.vip  { background: var(--primary-subtle); color: var(--primary); }
 .pill.vip .dot { background: var(--vip); }
+.pill.won  { background: var(--won-fill);  color: var(--won-text); }
+.pill.dead { background: var(--dead-fill); color: var(--dead-text); }
+.pill.open { background: var(--open-fill); color: var(--open-text); }
+/* The outline is the whole point: an unrecognised status must not look like a
+   deliberate neutral state. */
+.pill.unknown { background: var(--unknown-fill); color: var(--unknown-text);
+  box-shadow: inset 0 0 0 1px var(--border); }
+.pill.unknown .dot { background: var(--text-disabled); }
 
 .t-hot{color:var(--hot-text)} .t-warm{color:var(--warm-text)}
 .t-cold{color:var(--cold-text)} .t-ok{color:var(--ok-text)}
 .t-muted{color:var(--text-muted)} .t-2{color:var(--text-2)}
+/* Icons and type coloured by tone(). `t-won` is the solid green rather than the
+   white pill text, which would be invisible on the page background. */
+.t-won{color:var(--won)} .t-dead{color:var(--dead-text)}
+.t-open{color:var(--open-text)} .t-unknown{color:var(--unknown-text)}
 
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; }
@@ -259,7 +291,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--border-subtle); }
 .toolbar .grow { flex: 1; min-width: 160px; }
-.seg { display: inline-flex; background: var(--surface-sunken); border-radius: var(--radius-control); padding: 3px; gap: 2px; }
+/* Wraps because the status tabs are built from the data now: the leads toolbar
+   holds one per status present, not a fixed four. */
+.seg { display: inline-flex; flex-wrap: wrap; background: var(--surface-sunken); border-radius: var(--radius-control); padding: 3px; gap: 2px; }
 .seg button {
   border: 0; background: none; font: inherit; font-size: 13px; font-weight: 500;
   padding: 5px 12px; border-radius: 4px; cursor: pointer; color: var(--text-2);

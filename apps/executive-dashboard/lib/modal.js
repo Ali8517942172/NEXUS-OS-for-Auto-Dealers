@@ -23,12 +23,19 @@ function openModal(title, bodyHtml, footHtml) {
       <div class="cell-sub" id="modalMsg" style="margin-top:12px"></div>
     </div>`;
   document.body.appendChild(wrap);
-  const close = () => wrap.remove();
+  /* The listener is removed by close(), not by the Escape branch that added it.
+     It used to detach itself only when Escape was the thing that closed the
+     dialog — so closing with the X or a click on the backdrop left it attached
+     to `document` forever, holding `wrap` alive with it. A rep confirming
+     twenty escalations across a shift accumulated twenty of them, every one
+     still listening, and pressing Escape once then ran close() on twenty
+     already-removed dialogs. One dialog, one listener, removed on every path
+     out. */
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  const close = () => { document.removeEventListener('keydown', onKey); wrap.remove(); };
+  document.addEventListener('keydown', onKey);
   wrap.querySelector('#mClose').addEventListener('click', close);
   wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
-  document.addEventListener('keydown', function esc_(e) {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc_); }
-  });
   wrap.querySelector('input,select,textarea')?.focus();
   return { wrap, close, msg: t => { wrap.querySelector('#modalMsg').innerHTML = t; } };
 }

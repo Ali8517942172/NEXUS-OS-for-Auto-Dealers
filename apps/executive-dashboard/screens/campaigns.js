@@ -77,7 +77,7 @@
 import { HOOK, db, n8n } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -127,7 +127,10 @@ const low = s => String(s || '').trim().toLowerCase();
 const up  = s => String(s || '').trim().toUpperCase();
 const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
-const stamp = v => { const t = Date.parse(v); return Number.isNaN(t) ? 'no timestamp recorded' : new Date(t).toLocaleString('en-GB'); };
+/* Asia/Dubai, labelled. A drip is scheduled by n8n on the showroom's clock, so
+   the hour a campaign message went out has to be printed on that clock or the
+   Day-1/Day-3/Day-7 cadence reads as if it fired at the wrong time of day. */
+const stamp = v => dubaiStamp(v, 'no timestamp recorded');
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const muted = t => `<span class="t-muted">${esc(t)}</span>`;
 const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
@@ -143,10 +146,6 @@ const MAILBOX_RE = /gmail|smtp|mailbox|e-?mail/i;
    can print rather than as a rejection somebody has to catch again. */
 const settle = p => p.then(v => [v, null], e => [null, e]);
 
-/* `v_needs_attention.severity` uses the view's vocabulary, not TONE's. TONE has
-   no WARNING key, so `tone('WARNING')` returns '' and `t-${tone(sev)}` renders
-   the class `t-` — no colour at all, and no error anywhere to notice it by.
-   Map the view's words here and fall back to TONE for the ones it does hold. */
 /* Was a private severity map; lib/format.js now covers every vocabulary that
    reaches this screen. Kept as a name so the call sites read the same. */
 const sevTone = s => tone(s);

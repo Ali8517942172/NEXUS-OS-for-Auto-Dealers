@@ -41,7 +41,7 @@
        that no longer exists. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, esc, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiDate, esc, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -117,16 +117,16 @@ const SHOWN_REFS = 4;
 const str = v => String(v == null ? '' : v).trim();
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
-/* Dates that are days, not moments. purchase_date is a calendar date; parsing it
-   bare makes it UTC midnight, which in Dubai is still the same day but is one
-   timezone change away from not being. Anchoring it to local midnight the way
-   deriveUnit() anchors acquired_at keeps the two comparable. */
+/* Dates that are days, not moments. purchase_date is a calendar date, so it is
+   anchored to UTC midnight and then read back on the showroom's clock: Dubai is
+   UTC+4 and never moves, so UTC midnight is always the same calendar day there
+   and the printed day cannot drift with the reader's browser. Anchoring to the
+   browser's local midnight, as this did, showed a purchase made on the 7th as
+   the 6th to anyone east of Dubai. */
 const dateLabel = d => {
   const v = str(d);
   if (!v) return 'a date the record does not carry';
-  const t = new Date(/^\d{4}-\d{2}-\d{2}$/.test(v) ? v + 'T00:00:00' : v);
-  return Number.isNaN(t.getTime()) ? v
-    : t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return dubaiDate(/^\d{4}-\d{2}-\d{2}$/.test(v) ? v + 'T00:00:00Z' : v, v);
 };
 
 /* ── Sales that this table does not know about ────────────────────────────
@@ -185,9 +185,10 @@ const columnsOf = rows => {
 };
 
 /* v_needs_attention.severity is HOT | WARM | COLD and the derived alerts below
-   use CRITICAL | WARNING | LOW. lib/format.js now colours all of them and sends
-   anything it does not recognise to 'cold' rather than to an unstyled pill that
-   would read as "fine", so this screen keeps no severity map of its own. */
+   use CRITICAL | WARNING | LOW. lib/format.js now colours all of them and gives
+   anything it does not recognise its own 'unknown' tone rather than an unstyled
+   pill that would read as "fine", so this screen keeps no severity map of its
+   own. An unrankable severity sorts where cold does below. */
 const sevRank = s => ({ hot: 0, warm: 1, cold: 2, ok: 3 }[tone(s)] ?? 2);
 
 /* The stored column says OK where deriveUnit() says HEALTHY: the same band
@@ -839,8 +840,9 @@ SCREENS.inventory = async host => {
   function paintAttention(rows, err, alerts, index, total) {
     const clickable = [];
     const item = a => {
-      /* tone() sends anything it does not recognise to 'cold'; only an empty
-         severity comes back blank, and blank would render as an unstyled pill. */
+      /* tone() answers 'unknown' for anything it does not recognise, which is
+         a visible pill in its own right; only an empty severity comes back
+         blank, and blank would render as an unstyled pill. */
       const t = tone(a.severity) || 'cold';
       const idx = (a.ids && a.ids.length) ? clickable.push({ label: a.title, ids: a.ids }) - 1 : -1;
       const attrs = idx >= 0

@@ -49,7 +49,7 @@
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, esc, mins, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, mins, n0, num, pill, tone } from '../lib/format.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -60,7 +60,11 @@ const up  = s => String(s || '').toUpperCase();
 const low = s => String(s || '').trim().toLowerCase();
 const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? 0 : t; };
-const when = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? '' : new Date(t).toLocaleString('en-GB'); };
+/* Pinned to Asia/Dubai and labelled, like every other absolute time in this
+   build: the workflows that wrote these rows all run on "timezone":
+   "Asia/Dubai", and a manager reading the dashboard from London was being shown
+   the showroom's day shifted four hours with nothing saying so. */
+const when = v => dubaiStamp(v, '');
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 /* null and 0 are different answers here — 0 would be an instant reply, null is
    no measurement at all — so this must not collapse them. n0() returns null for
@@ -97,7 +101,12 @@ const HIGH_SCORE = 70;
 /* Statuses that mean the lead is finished. A won deal that nobody has touched
    in a month is not a neglected lead, and listing it as one trains people to
    ignore the strip. */
-const TERMINAL = new Set(['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED']);
+/* DISQUALIFIED was missing until 30 Aug 2026 and it is the one the bot writes:
+   the WhatsApp BDC agent and the silence detector both set it and both read it
+   back as final. Without it here, a lead the bot had written off stayed "open"
+   for this screen forever — named in the "no contact in 14 days" alert every
+   day for the rest of time, because nobody was ever going to contact it. */
+const TERMINAL = new Set(['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','DISQUALIFIED','ARCHIVED']);
 
 /* The 5-minute rule. It is a promise the dealership made, not a column
    constraint, and `leads.response_time_minutes` is the only place in the
@@ -122,7 +131,8 @@ const PREVIEW = 3;
 const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 
 /* `v_needs_attention.severity` is HOT | WARM | COLD, and TONE covers all three
-   (plus an unknown value, which it colours 'cold' rather than leaving unstyled).
+   (plus an unknown value, which it gives its own 'unknown' tone rather than
+   leaving unstyled or filing under COLD).
    So there is no severity map here: the checks below are labelled in the view's
    own vocabulary so that one strip does not speak two of them. */
 const KIND_ICON = { lead_unassigned:'person_alert', sla_breach:'timer' };
@@ -634,7 +644,8 @@ SCREENS.leads = async host => {
     const focus = f.alert ? checkByKey.get(f.alert) : null;
     return all.filter(l => {
       if (focus && !focus.ids.has(String(l.id))) return false;
-      if (f.status !== 'ALL' && up(l.status) !== f.status) return false;
+      if (f.status === NO_STATUS) { if (str(l.status)) return false; }
+      else if (f.status !== 'ALL' && up(l.status) !== f.status) return false;
       if (f.source !== 'ALL' && l.source !== f.source) return false;
       if (f.rep === '__none' && l.assigned_to_id) return false;
       if (f.rep !== 'ALL' && f.rep !== '__none' && l.users?.name !== f.rep) return false;
@@ -660,13 +671,48 @@ SCREENS.leads = async host => {
     return scoredRows.concat(unscored);
   }
 
-  const count = s => all.filter(l => up(l.status) === s).length;
+  /* The tabs are built from the statuses that are actually in the table, not
+     from the router's three.
+
+     `leads.status` is written by three different things — HOT/WARM/COLD by the
+     Master Router, CONTACTED/QUALIFIED/WON/LOST by the Slack Command Center
+     through an unconstrained $fromAI, DISQUALIFIED by the BDC agent — and this
+     toolbar knew only the first three. A lead the sales manager marked WON in
+     Slack was then reachable from no tab at all: not in HOT, WARM or COLD, and
+     visible only in All, where the four counts underneath silently stopped
+     adding up to it. Nothing on screen explained the gap, so the arithmetic
+     just looked wrong.
+
+     Every status present gets a tab, in lifecycle order, with anything this
+     build has never seen appended after them rather than dropped — $fromAI can
+     invent a word tomorrow and it will appear here the day it does. Rows with
+     no status at all get the last tab. So the tabs sum to All, exactly, by
+     construction. */
+  const SEG_ORDER = ['HOT','WARM','COLD','NEW','CONTACTED','QUALIFIED','WON','LOST','DISQUALIFIED'];
+  const NO_STATUS = '__nostatus';
+  const segCounts = new Map();
+  all.forEach(l => {
+    const k = str(l.status) ? up(l.status) : NO_STATUS;
+    segCounts.set(k, (segCounts.get(k) || 0) + 1);
+  });
+  const segKnown = SEG_ORDER.filter(k => segCounts.has(k));
+  const segNovel = [...segCounts.keys()]
+    .filter(k => k !== NO_STATUS && !SEG_ORDER.includes(k)).sort();
+  const segs = [['ALL', all.length], ...[...segKnown, ...segNovel].map(k => [k, segCounts.get(k)])]
+    .concat(segCounts.has(NO_STATUS) ? [[NO_STATUS, segCounts.get(NO_STATUS)]] : []);
+  const segLabel = k => k === 'ALL' ? 'All' : k === NO_STATUS ? 'No status' : k;
+  /* Said only when there is something to explain. With the router's three
+     statuses and nothing else, the toolbar reads as it always did. */
+  const segNote = segNovel.length
+    ? `${num(segNovel.length)} of the tabs above (${segNovel.join(', ')}) ${plural(segNovel.length, 'is a status', 'are statuses')} this dashboard has no wording for — shown exactly as the database holds ${plural(segNovel.length, 'it', 'them')}, not folded into one of the router's three.`
+    : segs.length > 4
+      ? 'The tabs are the statuses actually in the table, not just the router\'s three, so they add up to All. HOT, WARM and COLD are written by the Master Router; CONTACTED, QUALIFIED, WON and LOST by the Slack Command Center; DISQUALIFIED by the BDC agent.'
+      : '';
 
   card.innerHTML = `
     <div class="toolbar">
       <div class="seg" id="segStatus" role="group" aria-label="Filter by status">
-        ${[['ALL', all.length], ['HOT', count('HOT')], ['WARM', count('WARM')], ['COLD', count('COLD')]]
-          .map(([k, c], i) => `<button data-v="${k}" class="${i === 0 ? 'on' : ''}">${k === 'ALL' ? 'All' : k} · ${c}</button>`).join('')}
+        ${segs.map(([k, c], i) => `<button data-v="${esc(k)}" class="${i === 0 ? 'on' : ''}">${esc(segLabel(k))} · ${num(c)}</button>`).join('')}
       </div>
       <div class="grow"><input type="search" id="q" aria-label="Search leads"
         placeholder="Search name, email, phone or vehicle" /></div>
@@ -679,6 +725,7 @@ SCREENS.leads = async host => {
     ${all.length && all.length <= THIN ? `<div class="cell-sub" style="padding:12px 20px 0;white-space:normal">${esc(
       `Those counts are the whole leads table — ${num(all.length)} ${plural(all.length, 'row', 'rows')}, not a sample of it. `
       + `${plural(all.length, 'One row', `${num(all.length)} rows`)} cannot carry a share, a conversion rate or a trend, so this screen prints none: every figure on it is a count of the rows above, and the segments are a tally rather than a distribution.`)}</div>` : ''}
+    ${segNote ? `<div class="cell-sub" style="padding:10px 20px 0;white-space:normal">${esc(segNote)}</div>` : ''}
     <div id="focusNote" style="padding:0 20px"></div>
     ${notes.length ? `<div style="padding:14px 20px 0">${notes.map(n => `<div class="banner warm">
       <span class="material-symbols-outlined">warning</span><div>${esc(n)}</div></div>`).join('')}</div>` : ''}
@@ -720,7 +767,10 @@ SCREENS.leads = async host => {
     { label:'Budget', align:'r', render: r => n0(r.budget_aed) == null ? '<span class="t-muted">—</span>' : aed(r.budget_aed) },
     { label:'AI score', align:'r', render: r => {
         const s = n0(r.ai_score); if (s == null) return '<span class="t-muted">—</span>';
-        const c = tone(r.status) === 'hot' ? 'hot' : tone(r.status) === 'warm' ? 'warm' : 'cold';
+        /* Straight from tone(), because every tone it can return now has a
+           solid colour token behind it. The old three-way ternary painted a WON
+           lead's score bar in the COLD blue. */
+        const c = tone(r.status) || 'cold';
         return `<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
           <div class="bar" style="width:44px"><i style="width:${s}%;background:var(--${c})"></i></div>
           <span style="font-weight:500;min-width:22px;text-align:right">${s}</span></div>`;

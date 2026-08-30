@@ -49,7 +49,7 @@
 import { HOOK, ME, SESSION, db, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
-import { ago, clock, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { ago, clock, dubaiTime, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { renderIntegrations } from '../lib/integrations.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { applyDensity } from '../lib/prefs.js';
@@ -177,7 +177,7 @@ const HEALTH_WORDS = {
 };
 const UNKNOWN_HEALTH = {
   label: 'Unrecognised', icon: 'help', rank: 1,
-  blurb: 'v_workflow_health returned a health state this screen has no wording for. It is shown verbatim rather than folded into one of the states it might mean, and tone() maps it to cold — a word nobody taught the shared table is not a pass.',
+  blurb: 'v_workflow_health returned a health state this screen has no wording for. It is shown verbatim rather than folded into one of the states it might mean, and tone() gives it the unknown tone — a word nobody taught the shared table is not a pass, and it is not cold either.',
 };
 const stateKey = w => (Object.prototype.hasOwnProperty.call(HEALTH_WORDS, up(w?.health)) ? up(w.health) : 'UNKNOWN');
 const healthOf = w => {
@@ -313,7 +313,7 @@ function expiryText(expiresAt) {
   const ms = Number(expiresAt) * 1000;
   if (!expiresAt || !Number.isFinite(ms)) return null;
   const left = Math.round((ms - Date.now()) / 60000);
-  const at = new Date(ms).toLocaleTimeString('en-GB', { hour12: false });
+  const at = dubaiTime(ms);
   if (left <= 0) return { text: `expired at ${at} — the next request will sign you out`, bad: true };
   return { text: `valid until ${at}, ${left} min from now`, bad: false };
 }

@@ -50,11 +50,21 @@ function isAuthFailure(status, body) {
    module already depends on this one. */
 let onSessionEnded = () => {};
 function setSessionEndedHandler(fn) { onSessionEnded = fn; }
-function setSession(s) { SESSION = s; }
+/* A live session clears the latch below, so signing back in re-arms it. */
+function setSession(s) { SESSION = s; if (s) ENDED = false; }
 function setMe(m) { ME = m; }
 function setMeReadFailed(e) { ME_READ_FAILED = e; }
 function meReadFailed() { return ME_READ_FAILED; }
+
+/* Once, per expiry. A screen fires four or five reads in parallel and the badge
+   poller adds its own, so an expired token produces six simultaneous 401s —
+   and each one used to re-render the login screen, throwing away anything
+   already typed into it five more times in the same tick. The end of a session
+   is one event no matter how many requests discover it. */
+let ENDED = false;
 function sessionEnded() {
+  if (ENDED) return;
+  ENDED = true;
   SESSION = null;
   onSessionEnded('Your session expired. Please sign in again.');
 }

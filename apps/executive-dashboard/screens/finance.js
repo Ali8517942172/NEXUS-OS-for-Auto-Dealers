@@ -88,11 +88,49 @@
    never a "Couldn't load" that sends a rep hunting for a bug in a dashboard
    that is working exactly as designed. The same rendering is reached whether the
    workflow refuses with a 200 or a guard in front of it refuses with a 4xx, and
-   the refusals it has actually recorded are listed on the screen. */
+   the refusals it has actually recorded are listed on the screen.
+
+   ── 30 Aug 2026. The workflow changed and this screen had not. ──────────────
+
+   Finance Calc was rewritten and every one of the five rules above still holds,
+   but three of the names in them are gone. Read them with this:
+
+     `finance_tier` (a string) is now `credit_band`, on ADCB's published AECB
+     cut-offs rather than on US FICO ones.
+
+     `indicative_apr_pct` (one number) is now `indicative_apr_range_pct` with
+     `indicative_apr_low_pct` / `indicative_apr_high_pct` beside it, on the
+     stated basis "reducing-balance APR, inclusive of fees". No point rate is
+     quoted by anybody any more: every UAE lender publishes a range and states
+     the bank sets the final rate on approval, and a percentage that does not
+     say it is reducing-balance is heard as the advertised flat rate — roughly
+     half the true cost over 60 months.
+
+     `{status:'error', errors:[…]}` is now `{status:'input_error', instruction,
+     problems, expected}`. Rule 1 above is unchanged in substance; only the keys
+     it names have moved.
+
+   Two behaviours changed with them. A trade-in is now optional — a cash buyer
+   asking "what rate do I get?" gets an answer, and the trade-in fields come back
+   NULL with `equity_status: 'No trade-in'` rather than zeroed. And a file below
+   541 on the AECB scale returns `quotable: false` with no rate at all: there is
+   no published UAE band that weak, so the honest answer is a referral and this
+   screen shows no APR field for one whatsoever.
+
+   One thing did NOT change and is the reason for half the code below:
+   `finance_quotes` was never migrated. It still has a `finance_tier` column and
+   a single `indicative_apr_pct`, and the workflow now writes the LOW end of the
+   range into that column — the most favourable figure the bank might offer,
+   standing alone, which is precisely what the rewrite existed to stop. The full
+   range survives as a prefix on the `disclaimer` column, so every stored rate on
+   this screen is read back out of there and shown as the span it was quoted at.
+   Where a row has no such prefix its one figure is shown as a lower bound and
+   labelled as one. Both legacy column names are still read, and every place
+   they are read says why. */
 import { HOOK, ME, SESSION, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -162,10 +200,6 @@ const STAT_MIN_CUSTOMERS = 5;
    bought is not a problem. */
 const GONE = new Set(['COLD', 'LOST', 'DEAD', 'JUNK', 'SPAM', 'UNQUALIFIED', 'ARCHIVED']);
 
-/* v_needs_attention's severity vocabulary is the view's, not TONE's. TONE has no
-   WARNING key, so `t-${tone('WARNING')}` renders the class `t-` — no colour at
-   all, and no error anywhere to notice. Map the view's words locally and fall
-   back to TONE for the ones it does share. */
 /* Was a private severity map; lib/format.js now covers every vocabulary that
    reaches this screen. Kept as a name so the call sites read the same. */
 const sevTone = s => tone(s);
@@ -191,14 +225,68 @@ const str = v => String(v == null ? '' : v).trim();
 const up = v => str(v).toUpperCase();
 const ts = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? 0 : t; };
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
-const eqTone = s => (lower(s) === 'negative' ? 'hot' : lower(s) === 'positive' ? 'ok' : '');
-const eqClass = s => (lower(s) === 'negative' ? 't-hot' : lower(s) === 'positive' ? 't-ok' : '');
-const stamp = ts2 => (ts2 ? new Date(ts2).toLocaleString('en-GB', { hour12: false }) : '—');
+/* `equity_status` has three values, not two. The workflow gained NO_TRADE_IN as
+   'No trade-in' on 30 Aug 2026, when it stopped demanding a trade-in before it
+   would price anything, and the two-value version of these helpers returned ''
+   for it — no tone, no colour, and a row that matched neither equity filter tab
+   while still being counted in every total above the table. A cash buyer is not
+   a quote with a missing equity figure; there is simply no equity to have. */
+const NO_TRADE_IN = 'No trade-in';
+const isNoTradeIn = s => lower(s) === 'no trade-in';
+const eqTone = s => (lower(s) === 'negative' ? 'hot' : lower(s) === 'positive' ? 'ok' : isNoTradeIn(s) ? 'cold' : '');
+const eqClass = s => (lower(s) === 'negative' ? 't-hot' : lower(s) === 'positive' ? 't-ok' : isNoTradeIn(s) ? 't-muted' : '');
+/* Was a bare toLocaleString(), which re-read a Dubai timestamp in whichever
+   zone the browser sat in — a quote raised at 16:20 GST printed as 12:20 to a
+   manager in London, with nothing on screen to say which clock it was. Pinned
+   and labelled by dubaiStamp(); the '—' placeholder is its default. */
+const stamp = ts2 => dubaiStamp(ts2);
 const muted = t => `<span class="t-muted">${esc(t)}</span>`;
 const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
 /* Two dirham figures side by side overflow a KPI tile, and "AED" twice in one
    value reads as two prices rather than as the ends of one span. */
 const aedRange = (lo, hi) => (lo === hi ? aed(lo) : `${aed(lo)} – ${num(hi)}`);
+
+/* ── The rate is a range ────────────────────────────────────────────────────
+   Rewritten 30 Aug 2026, the day the workflow stopped returning a single point
+   APR. It now returns `indicative_apr_low_pct` and `indicative_apr_high_pct`
+   with `indicative_apr_range_pct` as the pre-formatted string, on the stated
+   basis "reducing-balance APR, inclusive of fees" — because a UAE lender
+   advertises a FLAT rate, an unlabelled percentage is read as flat, and a flat
+   rate understates the true cost by roughly half over 60 months. No lender
+   publishes a point rate either: the bank sets the final one on approval, so a
+   dealer asserting one exact figure is asserting something it does not control.
+
+   Nothing on this screen may print one end of that range on its own. Where only
+   one end is available it is named as the end it is. */
+const RATE_BASIS = 'reducing-balance APR, inclusive of fees';
+const aprRange = (lo, hi) => {
+  const a = n0(lo), b = n0(hi);
+  if (a == null && b == null) return '—';
+  if (a == null || b == null) return pct(a == null ? b : a);
+  return a === b ? pct(a) : `${pct(a)} – ${pct(b)}`;
+};
+
+/* `finance_quotes` was never migrated. `indicative_apr_pct` still holds ONE
+   number and the workflow now writes the LOW end of the range into it, so the
+   column on its own is the most favourable figure the bank might offer and
+   nothing else — exactly the single flattering number the 30 Aug change set out
+   to stop being quoted. The full range survives in the `disclaimer` column,
+   which the workflow prefixes with "APR 8.2 - 9.65% reducing balance incl.
+   fees." before the standing disclaimer text. Recovering the high end from that
+   prefix is what lets a stored row be shown as the range it was quoted at
+   rather than as its own best case. A row with no such prefix (written before
+   30 Aug, or by something else) yields nothing and is labelled a lower bound. */
+const DISCLAIMER_APR_RE = /^\s*APR\s+([\d.]+)\s*-\s*([\d.]+)\s*%\s*reducing/i;
+/* Both ends of the rate, from whichever of the three places carries them. A
+   live workflow response has the pair as its own fields; a stored row has only
+   the low end in its column and the pair inside its disclaimer prefix; a row
+   written before 30 Aug has neither and yields a low end with no high. */
+function aprOf(q) {
+  const m = DISCLAIMER_APR_RE.exec(str(q?.disclaimer));
+  const low = n0(q?.indicative_apr_low_pct) ?? (m ? n0(m[1]) : null) ?? n0(q?.indicative_apr_pct);
+  const high = n0(q?.indicative_apr_high_pct) ?? (m ? n0(m[2]) : null);
+  return { low, high, ranged: low != null && high != null && low !== high };
+}
 
 /* SCHEMA.md documents `finance_quotes` as "lead_email, lead_name, and the quote
    fields" and stops there, so which optional columns exist is not knowable from
@@ -237,10 +325,25 @@ function instalment(principal, aprPct, months) {
    Every shape a refusal can arrive in, collected in one place. The workflow
    answers HTTP 200 for its own rejections, but the JWT guard in front of it and
    n8n itself both answer 4xx with a body in the same family, and all of those
-   are the same event to the person at the desk. */
+   are the same event to the person at the desk.
+
+   The 30 Aug 2026 rewrite renamed the refusal: it is now
+   `{status:'input_error', instruction, problems:[…], expected:{…}}` and carries
+   no `errors` array at all. Until that shape was read here, a refusal came back
+   with nothing to list, failed the `rejected` test, and fell through to "the
+   workflow replied, but with no quote in it" — the one sentence on this screen
+   that tells a rep to go and find somebody technical about a workflow that had
+   just correctly said no. `instruction` leads because it is the sentence that
+   says what to do next; `problems` are what to do it to.
+
+   `instruction` is on the SUCCESS payloads too — there it is advice on how to
+   read the quote out, not a refusal — so it is only collected when the status
+   is something other than success. */
 function reasonsFrom(res) {
   const out = [];
   const push = v => { const t = str(v); if (t) out.push(t); };
+  if (lower(res?.status) !== 'success') push(res?.instruction);
+  if (Array.isArray(res?.problems)) res.problems.forEach(push);
   if (Array.isArray(res?.errors)) res.errors.forEach(push); else push(res?.errors);
   push(res?.error);
   push(res?.message);
@@ -332,20 +435,22 @@ SCREENS.finance = async host => {
   formCard.innerHTML = `
     <div class="card-title" style="margin-bottom:4px">Quote a trade-in</div>
     <div class="card-sub" style="margin-bottom:16px">
-      Runs the live Finance Calc workflow, which returns the equity, tier and APR
-      and records the quote in <span class="mono">finance_quotes</span>.</div>
+      Runs the live Finance Calc workflow, which returns the equity, the credit band and a
+      range of indicative APRs, and records the quote in <span class="mono">finance_quotes</span>.
+      A trade-in is optional — a customer with nothing to trade still gets a rate off their credit score.</div>
     <div class="grid" style="gap:14px">
       ${field('fLead', 'Lead',
         `<select id="fLead" disabled><option value="">Loading leads…</option></select>`,
         'Picking a lead fills in the customer. You can still type the details by hand.')}
       <div id="fLeadCtx"></div>
       <div class="grid g2" style="gap:14px">
-        ${field('fVal', 'Trade-in vehicle value (AED)',
+        ${field('fVal', 'Trade-in vehicle value (AED) <span class="t-muted">— optional</span>',
           `<input type="number" id="fVal" min="${MIN_VEHICLE_VALUE}" step="1000" inputmode="numeric" placeholder="185000" />`,
-          `Minimum ${aed(MIN_VEHICLE_VALUE)} — the workflow rejects anything lower.`)}
-        ${field('fPay', 'Outstanding loan payoff (AED)',
+          `Leave blank if there is no trade-in — the customer still gets a rate. If there is one it must be at least
+           ${aed(MIN_VEHICLE_VALUE)}; the workflow rejects anything lower as not a real vehicle.`)}
+        ${field('fPay', 'Outstanding loan payoff (AED) <span class="t-muted">— optional</span>',
           `<input type="number" id="fPay" min="0" step="1000" inputmode="numeric" placeholder="60000" />`,
-          'Enter 0 if the customer owns the car outright.')}
+          'Enter 0 if the customer owns the trade-in outright. Leave blank when there is no trade-in — the workflow takes a payoff with no vehicle value as an error, not as a cash buyer.')}
       </div>
       ${field('fScore', 'AECB credit score',
         `<input type="number" id="fScore" min="${SCORE_MIN}" max="${SCORE_MAX}" step="1" inputmode="numeric" placeholder="720" />`,
@@ -417,18 +522,32 @@ SCREENS.finance = async host => {
 
   /* Mirrors the workflow's own validation. Everything caught here is a round
      trip the customer does not wait through, and a REJECTED audit row that
-     never gets written. */
+     never gets written.
+
+     The trade-in became optional on 30 Aug 2026, and this function is the reason
+     that change had no effect from this desk until now: it demanded a vehicle
+     value and a payoff before it would let the form be submitted at all, so a
+     cash buyer asking "what rate do I get?" — the exact customer the workflow
+     change exists for — could not be sent. The only argument the workflow always
+     needs is the credit score. */
   function validate(v) {
     const e = {};
     const val = n0(v.vehicleValue);
-    if (!v.vehicleValue) e.fVal = 'Required — the workflow will not price a trade-in without a value.';
-    else if (val == null) e.fVal = 'Enter a number.';
-    else if (val < MIN_VEHICLE_VALUE) e.fVal = `Must be at least ${aed(MIN_VEHICLE_VALUE)}. The workflow rejects anything lower.`;
-
     const pay = n0(v.loanPayoffAmount);
-    if (v.loanPayoffAmount === '') e.fPay = 'Required — enter 0 if there is no outstanding loan.';
-    else if (pay == null) e.fPay = 'Enter a number.';
-    else if (pay < 0) e.fPay = 'A payoff cannot be negative.';
+    const hasTradeIn = val != null && val >= MIN_VEHICLE_VALUE;
+    if (v.vehicleValue) {
+      if (val == null) e.fVal = 'Enter a number, or leave it blank if there is no trade-in.';
+      else if (val < MIN_VEHICLE_VALUE) e.fVal = `Must be at least ${aed(MIN_VEHICLE_VALUE)} — the workflow rejects anything lower as not a real vehicle. Clear the field if there is no trade-in.`;
+    }
+
+    if (v.loanPayoffAmount !== '') {
+      if (pay == null) e.fPay = 'Enter a number, or leave it blank if there is no trade-in.';
+      else if (pay < 0) e.fPay = 'A payoff cannot be negative. Enter 0 when the trade-in is owned outright.';
+      /* The workflow refuses this pair outright rather than guessing which of
+         the two the rep meant, so the form refuses it here instead of spending
+         a round trip finding out. */
+      else if (pay > 0 && !hasTradeIn) e.fPay = 'A payoff needs the vehicle it is secured against. Enter the trade-in value above, or clear this field.';
+    }
 
     const score = n0(v.creditScore);
     if (!v.creditScore) e.fScore = 'Required.';
@@ -562,10 +681,20 @@ SCREENS.finance = async host => {
   /* ── The money model ────────────────────────────────────────────────────
      Everything the monthly figure rests on, per quote, plus where each input
      came from — the row itself or this desk. Nothing here is ever shown without
-     the sentence that `assumptions()` builds from it. */
+     the sentence that `assumptions()` builds from it.
+
+     Since 30 Aug 2026 the rate is a range, so the instalment is one too. It is
+     amortised at BOTH ends and shown as a span. Amortising only at the low end
+     and calling the answer "the monthly" would put the cheapest payment the
+     bank might ever offer into a rep's mouth as though it were the payment —
+     the same single flattering number, one step further downstream and harder
+     to spot, because a dirham figure does not look like a rate. Where only one
+     end is known, `b.ranged` is false and every caller says which end it is. */
   function basis(q) {
     const value = n0(q.vehicle_value_aed);
-    const apr = n0(q.indicative_apr_pct);
+    const rate = aprOf(q);
+    const apr = rate.low;
+    const aprHigh = rate.high;
     const ltv = n0(q.loan_to_value_pct);
     const rowTerm = cols2.term ? n0(q[cols2.term]) : null;
     const term = rowTerm || TERM_MONTHS;
@@ -583,9 +712,20 @@ SCREENS.finance = async host => {
     const downPct = (value && down != null) ? down / value * 100 : null;
     const stored = cols2.monthly ? n0(q[cols2.monthly]) : null;
     const monthly = instalment(principal, apr, term);
-    const gap = (stored != null && monthly != null) ? Math.abs(stored - monthly) : null;
-    const drifted = gap != null && gap > Math.max(DRIFT_AED, Math.abs(stored) * DRIFT_PCT / 100);
-    return { value, apr, ltv, term, termFrom, principal, down, downPct, downFrom, stored, monthly, gap, drifted };
+    const monthlyHigh = aprHigh == null ? null : instalment(principal, aprHigh, term);
+    const ranged = monthly != null && monthlyHigh != null && monthlyHigh !== monthly;
+    /* A stored payment is compared against the whole band, not against one end
+       of it: an instalment priced anywhere inside the range the bank quoted is
+       not a disagreement, and calling it one would raise a CRITICAL alert on
+       every row the moment the rate became a range. */
+    const tol = stored == null ? 0 : Math.max(DRIFT_AED, Math.abs(stored) * DRIFT_PCT / 100);
+    const lo = monthly, hi = monthlyHigh == null ? monthly : monthlyHigh;
+    const gap = (stored != null && lo != null)
+      ? (stored < lo ? lo - stored : stored > hi ? stored - hi : 0)
+      : null;
+    const drifted = gap != null && gap > tol;
+    return { value, apr, aprHigh, ranged, ltv, term, termFrom, principal, down, downPct, downFrom,
+             stored, monthly, monthlyHigh, gap, drifted };
   }
   /* One quote is drawn in the table, in the drawer and in an alert on the same
      paint; the basis is identical each time and is worked out once. */
@@ -602,19 +742,29 @@ SCREENS.finance = async host => {
         + 'A payment worked out at a rate this screen invented would be worse than no payment at all.';
     }
     if (b.principal == null) {
-      return 'This quote records no vehicle value, so there is no amount to amortise and no monthly figure is shown.';
+      return 'This quote records no vehicle value, so there is no amount to amortise and no monthly figure is shown. '
+        + 'A customer with no trade-in gets a rate, not an instalment: nothing here says what car they are buying.';
     }
-    return `Monthly is this desk's arithmetic, not the workflow's: ${pct(b.apr)} APR taken from this quote, `
+    const rate = b.ranged
+      ? `the ${aprRange(b.apr, b.aprHigh)} ${RATE_BASIS} on this quote`
+      : `${pct(b.apr)} ${RATE_BASIS}, which is the LOW end of the range this quote was given — `
+        + 'the high end is not recorded on this row, so the figure is the best case and not the payment';
+    return `Monthly is this desk's arithmetic, not the workflow's: ${rate}, `
       + `a ${num(b.term)}-month term from ${b.termFrom}, and ${aed(b.down)} down`
       + `${b.downPct == null ? '' : ` (${pct(b.downPct)} of the vehicle value)`} from ${b.downFrom}. `
       + `It amortises ${aed(b.principal)}.`;
   }
+  /* The span, or the one end that is known named as an end. `num` on the far
+     side rather than `aed`, for the same reason aedRange gives: "AED" twice in
+     one cell reads as two separate prices. */
+  const monthlyRange = b => (b.ranged ? `${aed(b.monthly)} – ${num(b.monthlyHigh)}` : aed(b.monthly));
   const monthlyCell = q => {
     const b = basisOf(q);
     const t = esc(assumptions(b));
-    return b.monthly == null
-      ? `<span class="t-muted" title="${t}">—</span>`
-      : `<span title="${t}">${aed(b.monthly)}</span>${b.drifted ? ' <span class="t-hot" title="The monthly payment stored on this row disagrees with the same sum worked out from the row’s own figures.">≠</span>' : ''}`;
+    if (b.monthly == null) return `<span class="t-muted" title="${t}">—</span>`;
+    return `<span title="${t}">${monthlyRange(b)}</span>`
+      + (b.ranged ? '' : ' <span class="t-warm" title="Best case only. The high end of this quote’s rate is not recorded on the row, so this is the cheapest instalment the bank might offer and not the instalment.">↓</span>')
+      + (b.drifted ? ' <span class="t-hot" title="The monthly payment stored on this row falls outside the instalment range worked out from the row’s own figures.">≠</span>' : '');
   };
 
   /* ── Quote history ─────────────────────────────────────────────────────── */
@@ -625,12 +775,16 @@ SCREENS.finance = async host => {
     </div><div style="flex:1"></div>
     <button class="btn sm" id="fqRefresh"><span class="material-symbols-outlined">refresh</span> Refresh</button></div>
     <div class="toolbar">
-      <input class="grow" type="search" id="fqSearch" placeholder="Search customer, phone, tier or rep"
+      <input class="grow" type="search" id="fqSearch" placeholder="Search customer, phone, credit band or rep"
              aria-label="Search quote history" />
       <div class="seg" role="group" aria-label="Filter by equity">
         <button data-f="all" class="on">All</button>
         <button data-f="Positive">Positive equity</button>
         <button data-f="Negative">Negative equity</button>
+        <!-- The third value equity_status actually has. Without this tab a
+             no-trade-in quote matched neither of the two above and vanished
+             from every filtered view while still being counted above them. -->
+        <button data-f="${esc(NO_TRADE_IN)}">No trade-in</button>
       </div>
     </div>
     <div id="fqBody">${stateLoading(4)}</div>`;
@@ -641,6 +795,9 @@ SCREENS.finance = async host => {
     if (filter !== 'all' && r.equity_status !== filter) return false;
     if (!query) return true;
     const lead = leadFor(r);
+    /* `finance_tier` is the legacy column name; the workflow writes the credit
+       band into it and the column was never renamed. It is searched, not shown
+       under that name. */
     return [r.lead_name, r.lead_email, r.finance_tier, r.quoted_by, r.equity_status, lead?.phone, lead?.name]
       .some(v => lower(v).includes(query));
   };
@@ -650,17 +807,22 @@ SCREENS.finance = async host => {
      dirham figures with no stated basis is the thing this round is about. */
   function moneyNote() {
     const bits = [
-      'Value and Payoff are the figures the rep entered. Equity, LTV, tier and APR are what the Finance Calc workflow returned '
+      'Value and Payoff are the figures the rep entered. Equity, LTV, credit band and APR are what the Finance Calc workflow returned '
         + 'and are not recomputed here.',
-      `Monthly is the only modelled figure on this table: it amortises the amount financed at the quote's own indicative APR over `
+      `APR is a range and is quoted as one, on the stated basis of ${RATE_BASIS}. A UAE lender advertises a FLAT rate and the reducing-balance figure is roughly `
+        + 'twice it over 60 months, so an unlabelled percentage read out to a customer understates what they will pay by about half.',
+      `finance_quotes stores a single APR number and the workflow writes the LOW end of the range into it. The full range survives in the row's disclaimer, which is `
+        + 'where the range above is read from. A row whose disclaimer carries no range shows its one figure with a + and in amber: that is a lower bound, not a rate.',
+      `Monthly is the only modelled figure on this table: it amortises the amount financed at BOTH ends of the quote's own APR range over `
         + `${cols2.term ? 'the term on the row' : `a ${TERM_MONTHS}-month term (this desk's default — these rows carry no term column)`}, `
         + `with the down payment taken from ${cols2.down || cols2.financed ? 'the figures on the row' : 'the quote’s own loan to value, or from this desk’s ' + DOWN_PAYMENT_PCT + '% default where the row has no LTV'}. `
+        + 'A ↓ marks a row where only the low end of the rate is recoverable, so the instalment beside it is the best case and not the payment. '
         + 'Hover a Monthly cell for that row’s exact rate, term and down payment.',
-      'A quote with no APR shows no monthly figure at all rather than one at a rate this screen made up.',
+      'A quote with no APR shows no monthly figure at all rather than one at a rate this screen made up, and a quote with no trade-in shows none either — nothing on the row says what car is being bought.',
       `finance_quotes stores no term, no monthly payment and no validity date. That is why Monthly is modelled here rather than read, and why no row on this table `
         + `is ever marked expired: nothing records when a quote stops standing. When is what the table shows, and "more than ${num(QUOTE_VALID_DAYS)} days old" above it is this desk's prompt to re-quote.`,
       cols2.monthly
-        ? `A ≠ marks a row whose stored ${cols2.monthly} disagrees with that sum by more than ${aed(DRIFT_AED)} or ${DRIFT_PCT}%.`
+        ? `A ≠ marks a row whose stored ${cols2.monthly} falls outside that instalment range by more than ${aed(DRIFT_AED)} or ${DRIFT_PCT}%. A figure inside the range is not a disagreement.`
         : 'These rows carry no stored monthly payment — the table has no such column — so there is nothing for the modelled figure to disagree with.',
       'Where one customer appears more than once, these are repeat quotes to the same person and not separate pieces of business. The Customer column marks a row whose customer is filed under more than one name.',
     ];
@@ -697,11 +859,24 @@ SCREENS.finance = async host => {
       { label: 'Score', align: 'r', render: r => num(r.credit_score) },
       { label: 'Value', align: 'r', render: r => `<span title="As entered by the rep at quote time — no rate, term or down payment applied.">${aed(r.vehicle_value_aed)}</span>` },
       { label: 'Payoff', align: 'r', render: r => `<span title="As entered by the rep at quote time — the loan outstanding on the trade-in.">${aed(r.loan_payoff_aed)}</span>` },
-      { label: 'Equity', align: 'r', render: r =>
-        `<span class="${eqClass(r.equity_status)}" title="Vehicle value less the outstanding payoff, as the workflow returned it.">${aed(r.equity_aed)}</span>` },
+      { label: 'Equity', align: 'r', render: r => (isNoTradeIn(r.equity_status)
+        ? '<span class="t-muted" title="This customer had no trade-in, so there is no equity to have. The blank is the answer, not a missing figure.">no trade-in</span>'
+        : `<span class="${eqClass(r.equity_status)}" title="Vehicle value less the outstanding payoff, as the workflow returned it.">${aed(r.equity_aed)}</span>`) },
       { label: 'LTV', align: 'r', render: r => pct(r.loan_to_value_pct) },
-      { label: 'Tier', render: r => (r.finance_tier ? `<span class="chip">${esc(r.finance_tier)}</span>` : '<span class="t-muted">—</span>') },
-      { label: 'APR', align: 'r', render: r => pct(r.indicative_apr_pct) },
+      /* `finance_tier` is the legacy column name — the workflow has written the
+         AECB credit band into it since 30 Aug 2026 and the column was never
+         renamed, so it is read under the old name and shown under the new one. */
+      { label: 'Credit band', render: r => (r.finance_tier ? `<span class="chip">${esc(r.finance_tier)}</span>` : '<span class="t-muted">—</span>') },
+      { label: 'APR reducing', align: 'r', render: r => {
+        const rate = aprOf(r);
+        if (rate.low == null) return '<span class="t-muted">—</span>';
+        /* Ranged, or named as the end it is. `indicative_apr_pct` holds the LOW
+           end of the range and nothing else, so a bare number off that column is
+           the cheapest rate the bank might offer being read out as the rate. */
+        return rate.ranged
+          ? `<span title="${esc(`Reducing-balance APR including fees, as quoted. The bank sets the final rate on approval; ${RATE_BASIS} is the basis this range is on.`)}">${aprRange(rate.low, rate.high)}</span>`
+          : `<span class="t-warm" title="${esc('Lower bound only. finance_quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; this row carries no disclaimer recording the high end, so the range it was quoted at cannot be recovered. Do not read this figure out as the rate.')}">${pct(rate.low)}+</span>`;
+      } },
       { label: 'Monthly', align: 'r', render: monthlyCell },
       { label: 'Quoted by', render: r =>
         `${esc(r.quoted_by || '—')}<div class="cell-sub">${esc(r.source || '')}</div>` },
@@ -731,7 +906,13 @@ SCREENS.finance = async host => {
     const enough = ppl.length >= STAT_MIN_CUSTOMERS;
     const unattributed = rows.filter(r => !str(r.lead_email)).length;
     const negative = rows.filter(r => r.equity_status === 'Negative').length;
-    const priced = rows.filter(r => r.equity_status).length;
+    /* Only a trade-in can come out negative, so only a trade-in belongs in the
+       denominator. A no-trade-in quote carries an equity_status like any other
+       row and would otherwise sit in the bottom of that fraction as a quote that
+       "did not come out negative", quietly making the share look better the more
+       cash buyers the desk quotes. */
+    const priced = rows.filter(r => r.equity_status && !isNoTradeIn(r.equity_status)).length;
+    const noTradeIn = rows.filter(r => isNoTradeIn(r.equity_status)).length;
     const values = rows.map(r => n0(r.vehicle_value_aed)).filter(v => v != null).sort((a, b) => a - b);
 
     strip.innerHTML = [
@@ -774,15 +955,23 @@ SCREENS.finance = async host => {
           : muted('No quote records a vehicle value')),
 
       kpi('Negative equity', num(negative),
-        priced
+        (priced
           ? (enough
-              ? `<span class="${negative ? 't-hot' : 't-ok'}">${pct(negative / priced * 100)} of ${num(priced)} quotes</span>`
+              ? `<span class="${negative ? 't-hot' : 't-ok'}">${pct(negative / priced * 100)} of ${num(priced)} trade-ins</span>`
               /* A share of three quotes to one person is that person, expressed
                  as a percentage. The count is real and stays; the rate does not
                  exist and is not printed. */
-              : muted(`${num(negative)} of the ${num(priced)} ${plural(priced, 'quote', 'quotes')} the workflow priced`)
+              : muted(`${num(negative)} of the ${num(priced)} ${plural(priced, 'trade-in', 'trade-ins')} the workflow priced`)
                 + `<br>${warn(`No rate is shown: ${num(ppl.length)} ${plural(ppl.length, 'customer', 'customers')} ${plural(ppl.length, 'is', 'are')} below the ${num(STAT_MIN_CUSTOMERS)} this screen needs before a percentage says anything about the desk.`)}`)
-          : muted('No quote carries an equity status'),
+          : muted(noTradeIn
+              ? 'No quote here involves a trade-in, so none of them can come out negative'
+              : 'No quote carries an equity status'))
+          /* Named rather than folded into the denominator above: a cash buyer is
+             a quote this desk made, and a count that silently excluded them
+             would not add up against the Quotes recorded tile. */
+          + (noTradeIn
+            ? `<br>${muted(`${num(noTradeIn)} further ${plural(noTradeIn, 'quote has', 'quotes have')} no trade-in and ${plural(noTradeIn, 'is', 'are')} outside this count entirely`)}`
+            : ''),
         negative ? 't-hot' : ''),
     ].join('');
   }
@@ -806,9 +995,10 @@ SCREENS.finance = async host => {
       ['What was quoted, to whom, and by whom',
         `Every row of finance_quotes, newest first, with the customer's name, their number from the lead record and the rep in quoted_by. ${basisLine} read here.`],
       ['What the workflow returned on each one',
-        'Equity, equity status, loan to value, finance tier and indicative APR are read off the row exactly as Finance Calc returned them, and are never recomputed on this screen.'],
+        'Equity, equity status, loan to value, the credit band and the indicative APR range are read off the row exactly as Finance Calc returned them, and are never recomputed on this screen. '
+        + 'The APR is shown as the range it was quoted at, recovered from the row\u2019s disclaimer, because the column beside it stores only the low end.'],
       ['What a monthly instalment would be, on stated assumptions',
-        `Modelled here, not stored: the quote's own APR over ${cols2.term ? 'the term on the row' : `a ${num(TERM_MONTHS)}-month term`}, with the deposit taken from the quote's own loan to value. Every figure carries its rate, term and deposit.`],
+        `Modelled here, not stored: both ends of the quote's own APR range over ${cols2.term ? 'the term on the row' : `a ${num(TERM_MONTHS)}-month term`}, with the deposit taken from the quote's own loan to value. Every figure carries its rate, term and deposit, and the instalment is a span for the same reason the rate is.`],
       ['Which quotes have a problem worth a phone call',
         'The checks in the strip above — a quote with no email, a quote whose customer has gone cold, a customer filed under more than one name, a quote old enough to re-run.'],
       ['What the workflow has refused, and why',
@@ -956,7 +1146,7 @@ SCREENS.finance = async host => {
               + `No quote here is marked expired and none can be: finance_quotes stores no validity date, no term and no monthly payment, so nothing on the row records when it stops standing. `
               + `${num(QUOTE_VALID_DAYS)} days is this desk's own prompt to re-quote — not a policy, not a status, and not something the database would agree with if asked.`)
           + ` The oldest was quoted ${ago(stale[0]?.created_at)}. `
-          + 'The equity, tier and APR on it were priced against that day’s rate sheet and that day’s vehicle value; re-run it before it is repeated to the customer.',
+          + 'The equity, the credit band and the APR range on it were priced against that day\u2019s rate sheet and that day\u2019s vehicle value; re-run it before it is repeated to the customer.',
         quotes: stale,
       },
       {
@@ -1338,6 +1528,7 @@ SCREENS.finance = async host => {
   /* ── One recorded quote, in full ───────────────────────────────────────── */
   function quoteDrawer(q) {
     const b = basisOf(q);
+    const qRate = aprOf(q);
     const lead = leadFor(q);
     openDrawer(`
       <div class="drawer-head">
@@ -1346,6 +1537,7 @@ SCREENS.finance = async host => {
           <div class="cell-sub" style="margin-top:4px">${phoneCell(q)}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
             ${q.equity_status ? pill(q.equity_status, eqTone(q.equity_status)) : ''}
+            <!-- legacy column name; the workflow writes the credit band into it -->
             ${q.finance_tier ? `<span class="chip">${esc(q.finance_tier)}</span>` : ''}
             ${q.source ? `<span class="chip">${esc(q.source)}</span>` : ''}
             ${lead?.status ? pill(lead.status) : ''}
@@ -1358,19 +1550,35 @@ SCREENS.finance = async host => {
         <div class="section">
           <div class="label-caps">Quote</div>
           <dl class="kv">
-            <dt>Equity</dt><dd class="num ${eqClass(q.equity_status)}"><strong>${aed(q.equity_aed)}</strong></dd>
-            <dt>Indicative APR</dt><dd class="num">${pct(q.indicative_apr_pct)}</dd>
-            <dt>Finance tier</dt><dd>${esc(q.finance_tier || '—')}</dd>
+            <dt>Equity</dt><dd class="num ${eqClass(q.equity_status)}">${isNoTradeIn(q.equity_status)
+              ? '<span class="t-muted">No trade-in — there is no equity on this quote</span>'
+              : `<strong>${aed(q.equity_aed)}</strong>`}</dd>
+            <dt>Indicative APR</dt><dd class="num">${qRate.ranged
+              ? `${aprRange(qRate.low, qRate.high)}<div class="cell-sub">${esc(RATE_BASIS)}</div>`
+              : qRate.low == null
+                ? '—'
+                : `<span class="t-warm">${pct(qRate.low)}+</span><div class="cell-sub t-warm">${esc('Lower bound only — this is the low end of the range and the high end is not recorded on the row. Not the rate.')}</div>`}</dd>
+            <!-- finance_tier is the legacy column name. The workflow has
+                 written the AECB credit band into it since 30 Aug 2026 and the
+                 column was never renamed. -->
+            <dt>Credit band</dt><dd>${esc(q.finance_tier || '—')}</dd>
             <dt>Loan to value</dt><dd class="num">${pct(q.loan_to_value_pct)}</dd>
           </dl>
-          <div class="cell-sub" style="margin-top:8px;white-space:normal">
-            These four are what the Finance Calc workflow returned on ${esc(stamp(q.created_at))} and are not recomputed here.</div>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
+            `These four are what the Finance Calc workflow returned on ${stamp(q.created_at)} and are not recomputed here. `
+            + `finance_quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; `
+            + `the range above is read back out of the disclaimer, which carries both ends.`)}</div>
         </div>
         <div class="section">
           <div class="label-caps">Monthly instalment · this desk's arithmetic</div>
           <dl class="kv">
-            <dt>Monthly</dt><dd class="num"><strong>${b.monthly == null ? '—' : aed(b.monthly)}</strong></dd>
-            <dt>Rate</dt><dd class="num">${b.apr == null ? '—' : pct(b.apr) + ' APR, from this quote'}</dd>
+            <dt>Monthly</dt><dd class="num"><strong>${b.monthly == null ? '—' : monthlyRange(b)}</strong>${
+              b.monthly == null || b.ranged ? '' : '<div class="cell-sub t-warm">Best case only — amortised at the low end of the rate.</div>'}</dd>
+            <dt>Rate</dt><dd class="num">${b.apr == null
+              ? '—'
+              : b.ranged
+                ? `${aprRange(b.apr, b.aprHigh)}<div class="cell-sub">${esc(RATE_BASIS + ', from this quote')}</div>`
+                : `${pct(b.apr)}<div class="cell-sub t-warm">${esc('the LOW end of this quote’s range, ' + RATE_BASIS)}</div>`}</dd>
             <dt>Term</dt><dd>${b.monthly == null ? '—' : `${num(b.term)} months, from ${esc(b.termFrom)}`}</dd>
             <dt>Down payment</dt><dd class="num">${b.monthly == null ? '—' : `${aed(b.down)}${b.downPct == null ? '' : ` · ${pct(b.downPct)}`}`}</dd>
             <dt>Amount financed</dt><dd class="num">${b.monthly == null ? '—' : aed(b.principal)}</dd>
@@ -1378,18 +1586,19 @@ SCREENS.finance = async host => {
           </dl>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(assumptions(b))}${
             b.drifted
-              ? `<br><span class="t-hot">The ${esc(cols2.monthly)} stored on this row is ${esc(aed(b.gap))} away from that figure. Do not repeat either number to the customer until the two agree.</span>`
+              ? `<br><span class="t-hot">The ${esc(cols2.monthly)} stored on this row falls ${esc(aed(b.gap))} outside ${b.ranged ? 'that range' : 'that figure'}. Do not repeat either number to the customer until the two agree.</span>`
               : ''}</div>
         </div>
         <div class="section">
           <div class="label-caps">Inputs</div>
           <dl class="kv">
-            <dt>Vehicle value</dt><dd class="num">${aed(q.vehicle_value_aed)}</dd>
-            <dt>Loan payoff</dt><dd class="num">${aed(q.loan_payoff_aed)}</dd>
+            <dt>Vehicle value</dt><dd class="num">${isNoTradeIn(q.equity_status) ? '<span class="t-muted">none</span>' : aed(q.vehicle_value_aed)}</dd>
+            <dt>Loan payoff</dt><dd class="num">${isNoTradeIn(q.equity_status) ? '<span class="t-muted">none</span>' : aed(q.loan_payoff_aed)}</dd>
             <dt>Credit score</dt><dd class="num">${num(q.credit_score)}</dd>
           </dl>
-          <div class="cell-sub" style="margin-top:8px;white-space:normal">
-            As entered by the rep at quote time. No rate, term or down payment is applied to these two figures.</div>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(isNoTradeIn(q.equity_status)
+            ? 'This customer had no trade-in, so the workflow stored nothing in either field and priced the rate off the credit score alone. The blanks are the answer, not missing data.'
+            : 'As entered by the rep at quote time. No rate, term or down payment is applied to these two figures.')}</div>
         </div>
         <div class="section">
           <div class="label-caps">Attribution</div>
@@ -1450,9 +1659,13 @@ SCREENS.finance = async host => {
     out().innerHTML = stateLoading(3);
 
     try {
+      /* No trade-in means the two trade-in fields are omitted, not sent empty.
+         The workflow reads an omitted vehicleValue as "this customer has nothing
+         to trade" and a supplied one as a valuation to price, so sending a blank
+         string is asking it to interpret an empty field on our behalf. */
       const r = await n8n(HOOK.finance, {
-        vehicleValue: v.vehicleValue,
-        loanPayoffAmount: v.loanPayoffAmount,
+        ...(v.vehicleValue ? { vehicleValue: v.vehicleValue } : {}),
+        ...(v.loanPayoffAmount === '' ? {} : { loanPayoffAmount: v.loanPayoffAmount }),
         creditScore: v.creditScore,
         lead_name: v.lead_name,
         lead_email: v.lead_email,
@@ -1507,22 +1720,76 @@ SCREENS.finance = async host => {
         <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
           `This is the workflow checking its inputs before it prices anything — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)} or a quote with no customer email is refused rather than stored. `
           + 'Nothing was written to finance_quotes, so the history below is unchanged, and the workflow keeps its own REJECTED row in audit_log — it is listed under the form as soon as this screen is re-checked. '
-          + 'Correct the field the message names and calculate again.'
+          + 'Correct the field the message names and calculate again. '
+          + 'The wording above is the workflow’s own: it is written for the WhatsApp agent that also calls this calculator, so it names the argument rather than the field on this form. '
+          + 'vehicleValue is the trade-in value, loanPayoffAmount is the payoff, creditScore is the AECB score.'
           + (via === 'http' ? ' (The refusal arrived as an HTTP error rather than in the response body; it is the same refusal either way.)' : ''))}</div>
       </div></div>`;
   }
 
+  /* Not quotable is not a decline and not a failure ─────────────────────────
+     Below an AECB score of 541 the workflow returns `status:'success'` with
+     `quotable:false`, no rate of any kind, and an `instruction` saying what to
+     do instead. There is no published UAE band for a file that weak, so the
+     honest answer is a referral rather than a worse number — and the one thing
+     this screen must not do is render it as a quote with an empty APR beside it,
+     which is what a rep reads as "the figure didn't load" and goes hunting for.
+
+     No APR field appears here at all. A blank labelled "Indicative APR" invites
+     somebody to fill it in from memory. */
+  function renderReferral(res, sent) {
+    const band = str(res.credit_band);
+    const instruction = str(res.instruction);
+    const equity = isNoTradeIn(res.equity_status) || res.has_trade_in === false ? null : n0(res.equity_aed);
+    out().innerHTML = `<div class="banner warm">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">support_agent</span>
+        <div style="flex:1;min-width:0"><strong>No rate is quoted for this customer — refer them to the bank.</strong>
+          <div style="margin-top:6px">${esc(
+            'The workflow priced this file and declined to put a percentage on it. This is a complete answer, not a missing one: '
+            + 'every rate this dealership can honestly offer sits inside a published band, and there is no published UAE band this low.')}</div>
+        </div></div>
+      ${instruction ? `<div style="margin-top:16px">
+        <div class="label-caps" style="margin-bottom:6px">What the workflow says to do</div>
+        <div class="quote">${esc(instruction)}</div></div>` : ''}
+      <dl class="kv" style="margin-top:16px">
+        <dt>Credit band</dt><dd>${band ? esc(band) : '—'}</dd>
+        <dt>Credit score</dt><dd class="num">${num(res.credit_score ?? sent.creditScore)}</dd>
+        ${equity == null ? '' : `<dt>Equity on the trade-in</dt><dd class="num ${eqClass(res.equity_status)}">${aed(equity)}</dd>`}
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(sent.lead_email)}</div></dd>
+      </dl>
+      ${res.disclaimer ? `<div class="quote" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
+      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
+        'Recorded by the workflow in finance_quotes with no APR against it. A row in the history below with an empty rate column is this outcome, not a lost figure.')}</div>`;
+
+    /* Same re-read as a priced quote: the row exists either way. */
+    loadQuotes().then(() => { focusKey = null; renderAll(); });
+  }
+
   /* The workflow answers 200 for everything, including its own refusals, so the
-     shape of the body is what decides which of the three outcomes this is: a
-     refusal, an answer with no quote in it, or a quote. */
+     shape of the body is what decides which of the four outcomes this is: a
+     refusal, a customer no rate may be quoted for, an answer with no quote in
+     it, or a quote. */
   function renderQuote(r, sent) {
     const res = r && typeof r === 'object' ? r : {};
     const listed = reasonsFrom(res);
-    const rejected = lower(res.status) === 'error' || (listed.length && lower(res.status) !== 'success');
+    /* `input_error` is the 30 Aug 2026 name for what used to arrive as
+       `{status:'error', errors:[…]}`. Named explicitly as well as caught by the
+       general test below, because it is the shape this desk now meets most. */
+    const rejected = ['error', 'input_error'].includes(lower(res.status))
+      || (listed.length && lower(res.status) !== 'success');
 
     if (rejected) { renderDecline(listed, 'body'); return; }
 
-    const hasQuote = n0(res.equity_aed) != null || res.finance_tier || n0(res.indicative_apr_pct) != null;
+    if (res.quotable === false) { renderReferral(res, sent); return; }
+
+    /* What counts as a quote, restated for the shape the workflow returns now.
+       This used to test `finance_tier` and `indicative_apr_pct`, neither of
+       which the workflow has emitted since 30 Aug — and `equity_aed`, which is
+       null by design for a customer with no trade-in. A perfectly good rate for
+       a cash buyer therefore satisfied none of the three and was thrown away
+       with "the workflow replied, but with no quote in it". */
+    const rate = aprOf(res);
+    const hasQuote = rate.low != null || str(res.credit_band) || n0(res.equity_aed) != null;
     if (!hasQuote) {
       out().innerHTML = `<div class="banner warm">
           <span class="material-symbols-outlined" style="font-size:20px">help</span>
@@ -1533,21 +1800,37 @@ SCREENS.finance = async host => {
     }
 
     const ltv = n0(res.loan_to_value_pct);
+    const noTradeIn = res.has_trade_in === false || isNoTradeIn(res.equity_status);
     /* Same model as the history table, on the response instead of a stored row,
        so the figure the rep reads out now and the figure in the history a week
-       later are the same arithmetic. */
+       later are the same arithmetic. The live response carries both ends of the
+       rate as their own fields, so the instalment here is always a range. */
     const b = basis({
-      vehicle_value_aed: sent.vehicleValue,
-      indicative_apr_pct: res.indicative_apr_pct,
+      vehicle_value_aed: noTradeIn ? null : sent.vehicleValue,
+      indicative_apr_low_pct: res.indicative_apr_low_pct,
+      indicative_apr_high_pct: res.indicative_apr_high_pct,
       loan_to_value_pct: res.loan_to_value_pct,
     });
+    /* The APR tile is the range and only the range, carrying the band and the
+       basis it is on. It used to read `res.indicative_apr_pct` and
+       `res.finance_tier`, neither of which the workflow has returned since
+       30 Aug: every live quote rendered "Indicative APR —" with no band beside
+       it, which is a rep watching a working workflow look broken. */
     out().innerHTML = `
       <div class="grid g2">
-        ${kpi('Equity', `<span class="${eqClass(res.equity_status)}">${aed(res.equity_aed)}</span>`,
-          res.equity_status ? pill(res.equity_status, eqTone(res.equity_status)) : '')}
-        ${kpi('Indicative APR', pct(res.indicative_apr_pct),
-          res.finance_tier ? `<span class="chip">${esc(res.finance_tier)}</span>` : '')}
+        ${kpi('Equity', noTradeIn
+            ? '<span class="t-muted">No trade-in</span>'
+            : `<span class="${eqClass(res.equity_status)}">${aed(res.equity_aed)}</span>`,
+          noTradeIn
+            ? muted('This customer has nothing to trade in, so there is no equity to have. The rate below is priced off the credit score alone.')
+            : (res.equity_status ? pill(res.equity_status, eqTone(res.equity_status)) : ''))}
+        ${kpi('Indicative APR', aprRange(res.indicative_apr_low_pct, res.indicative_apr_high_pct),
+          `${res.credit_band ? `<span class="chip">${esc(str(res.credit_band))}</span> ` : ''}`
+          + muted(str(res.rate_basis) || RATE_BASIS))}
       </div>
+      ${str(res.equivalent_flat_rate_range_pct) ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
+        `The same rate quoted the way UAE banks advertise it is ${str(res.equivalent_flat_rate_range_pct)}% flat. `
+        + 'Never say the flat figure on its own — it is roughly half the reducing-balance rate over 60 months and the customer will hear it as the cost.')}</div>` : ''}
       ${ltv == null ? '' : `<div style="margin-top:16px">
         <div class="label-caps" style="margin-bottom:6px">Loan to value · ${pct(ltv)}</div>
         <div class="bar"><i style="width:${Math.min(100, Math.max(0, ltv))}%;background:var(--${ltv > 80 ? 'hot' : 'primary'})"></i></div>
@@ -1555,17 +1838,26 @@ SCREENS.finance = async host => {
       </div>`}
       <div style="margin-top:16px">
         <div class="label-caps" style="margin-bottom:6px">Indicative monthly instalment</div>
-        <div class="kpi-value sm">${b.monthly == null ? '—' : aed(b.monthly)}</div>
+        <div class="kpi-value sm">${b.monthly == null ? '—' : monthlyRange(b)}</div>
         <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(assumptions(b))}
-          ${b.monthly == null ? '' : esc(' Say it with the rate, the term and the deposit attached, or do not say it.')}</div>
+          ${b.monthly == null ? '' : esc(' Say it as a span, with the rate, the term and the deposit attached, or do not say it.')}</div>
       </div>
       <dl class="kv" style="margin-top:16px">
         <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(sent.lead_email)}</div></dd>
-        <dt>On a value of</dt><dd class="num">${aed(sent.vehicleValue)}</dd>
-        <dt>Payoff</dt><dd class="num">${aed(sent.loanPayoffAmount)}</dd>
+        <dt>On a value of</dt><dd class="num">${noTradeIn ? '<span class="t-muted">no trade-in</span>' : aed(sent.vehicleValue)}</dd>
+        <dt>Payoff</dt><dd class="num">${noTradeIn ? '<span class="t-muted">none</span>' : aed(sent.loanPayoffAmount)}</dd>
         <dt>Credit score</dt><dd class="num">${num(sent.creditScore)}</dd>
       </dl>
+      ${str(res.assumes) ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
+        `The workflow priced this on ${str(res.assumes)}.`
+        + (str(res.without_salary_transfer_note) ? ` ${str(res.without_salary_transfer_note)}` : ''))}</div>` : ''}
+      ${str(res.instruction) ? `<div style="margin-top:16px">
+        <div class="label-caps" style="margin-bottom:6px">How to say this</div>
+        <div class="quote">${esc(str(res.instruction))}</div></div>` : ''}
       ${res.disclaimer ? `<div class="quote" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
+      ${res.email_from_model ? `<div class="cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
+        'The workflow flagged that the customer email on this quote did not come from the caller — it was recovered from what the model sent. '
+        + 'The identity behind this promise was not established by the workflow; check it before the figure is repeated.')}</div>` : ''}
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
         Recorded by the workflow in finance_quotes. If it is not in the history below, refresh it.</div>`;
 

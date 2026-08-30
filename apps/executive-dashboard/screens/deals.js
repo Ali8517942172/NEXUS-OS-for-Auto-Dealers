@@ -144,10 +144,13 @@ const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 const isHandle = v => HANDLE.test(str(v));
 
 /* Severity colouring is tone()'s job, not this file's. It now knows CRITICAL
-   and WARNING, and it maps a value it was never taught to 'cold' rather than to
-   nothing — so an unfamiliar severity from v_needs_attention renders as a pill
-   somebody can see instead of as unstyled text that reads as "fine". This
-   screen only decides the ORDER, which is the one thing tone() cannot know. */
+   and WARNING, and it maps a value it was never taught to its own 'unknown'
+   tone rather than to nothing — so an unfamiliar severity from
+   v_needs_attention renders as a pill somebody can see, and as one that admits
+   it was not recognised, instead of as unstyled text that reads as "fine".
+   'unknown' sorts where 'cold' does below, which is the correct place for a
+   severity nobody can rank. This screen only decides the ORDER, which is the
+   one thing tone() cannot know. */
 const sevRank = s => ({ hot: 0, warm: 1, cold: 2, ok: 3 }[tone(s)] ?? 2);
 const KIND_ICON = { deal_unembedded: 'psychology_alt', deal_no_unit: 'car_crash', workflow_failure: 'error' };
 

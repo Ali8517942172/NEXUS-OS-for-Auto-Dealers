@@ -58,7 +58,7 @@
    table failed to load says so rather than showing a plausible blank. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -119,7 +119,8 @@ const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const str = v => String(v == null ? '' : v).trim();
 const up = v => str(v).toUpperCase();
-const dt = ts => (ts && !Number.isNaN(Date.parse(ts)) ? new Date(ts).toLocaleString('en-GB', { hour12: false }) : '');
+/* Asia/Dubai, labelled — a rep's last activity is a moment in their shift. */
+const dt = ts => dubaiStamp(ts, '');
 const nameList = (rows, n = 4) => {
   const names = rows.map(r => str(r.name)).filter(Boolean);
   if (!names.length) return '';
@@ -413,8 +414,9 @@ SCREENS.team = async host => {
 
      Severity colour goes through tone() in lib/format.js. That table now covers
      HOT / WARM / COLD, PENDING_INVITE, DEGRADED and the rest, and maps anything
-     it has not been taught to 'cold' rather than to the empty string — which is
-     what used to make an unknown severity render as a neutral note. Five screens
+     it has not been taught to its own 'unknown' tone rather than to the empty
+     string — which is what used to make an unknown severity render as a neutral
+     note, and to COLD, which filed it under a state nobody gave it. Five screens
      had grown a private severity map to work around that; this one does not add
      a sixth. */
   let focusRoster = () => {};

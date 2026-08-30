@@ -134,12 +134,29 @@ async function refreshBadges() {
    tab stops polling entirely and refreshes once when it comes back, so a forgotten
    tab costs nothing and is never wrong the moment someone glances at it. */
 let timer = null;
+let onVisible = null;
 function startBadges(intervalMs = 60000) {
+  stopBadges();
   refreshBadges();
-  if (timer) clearInterval(timer);
   timer = setInterval(() => { if (!document.hidden) refreshBadges(); }, intervalMs);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshBadges(); });
+  onVisible = () => { if (!document.hidden) refreshBadges(); };
+  document.addEventListener('visibilitychange', onVisible);
   return timer;
+}
+
+/* Stopping matters more than starting, and it was the half that was missing.
+
+   The poll outlives the session: once the token is gone every refreshBadges()
+   is a 401, db() calls sessionEnded(), and the login screen is re-rendered from
+   scratch — wiping whatever was in the email and password fields. A minute
+   later it happens again. Anyone who types slowly, or steps away mid-login,
+   loses the password they were halfway through, on a clock, with no visible
+   cause. app.js stops the poller as part of ending the session, and the
+   visibilitychange listener goes with it: a hidden tab that is brought back
+   after the session ended must not fire one more 401 either. */
+function stopBadges() {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (onVisible) { document.removeEventListener('visibilitychange', onVisible); onVisible = null; }
 }
 
 /* COUNTS is exported because screens/overview.js has to apply the same
@@ -147,4 +164,4 @@ function startBadges(intervalMs = 60000) {
    literal with a comment pointing here, which is a coupling nothing can check —
    the day one side gains COLD the badge silently disagrees with the panel
    under it. Importing it makes the two provably the same set. */
-export { refreshBadges, startBadges, LAST, COUNTS };
+export { refreshBadges, startBadges, stopBadges, LAST, COUNTS };

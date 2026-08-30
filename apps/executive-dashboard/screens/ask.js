@@ -488,8 +488,9 @@ SCREENS.ask = async host => {
              'warm' for anything it did not list, which meant an unrecognised
              severity, and an empty one, were painted amber: a claim that
              something needs a human, made out of a word nobody had taught the
-             table. `tone()` maps an unknown value to 'cold' and a blank to no
-             tone at all, which is what not knowing actually looks like. */
+             table. `tone()` maps an unknown value to its own 'unknown' tone —
+             legible, and visibly not one of the graded states — and a blank to
+             no tone at all, which is what not knowing actually looks like. */
           tone: tone(it.severity),
           icon: 'priority_high',
           durable: true,

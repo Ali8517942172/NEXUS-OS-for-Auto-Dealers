@@ -2,9 +2,8 @@
    Split out of the original monolithic app.js on 17 Aug 2026. The body below is
    the original code, moved not rewritten. */
 import { db, n8n } from './data.js';
-import { $ } from './dom.js';
 import { N8N_BASE } from './env.js';
-import { esc } from './format.js';
+import { clock, esc } from './format.js';
 
 async function renderIntegrations(node) {
   const checks = [
@@ -42,28 +41,40 @@ async function renderIntegrations(node) {
       <div class="cell-sub" style="margin-top:8px">These run server-side inside n8n and have no browser-reachable health endpoint. Their real status is visible in the activity log above — a green dot here would be decoration, not a check.</div>
     </div>`;
 
+  /* Every tile is found inside `node` and never by global id, and a tile that
+     is no longer there is simply not painted.
+
+     Both loops here outlive the screen that started them: a probe is a network
+     call, and Settings can be navigated away from while three of them are in
+     flight. `$('ig0')` is a document-wide lookup, so it returned null once the
+     host had been emptied — and the *catch* branch then did `null.innerHTML`,
+     which threw a second time from inside the error handler, uncaught, with the
+     real failure lost. Scoping to `node` also means a late result writes into a
+     detached subtree rather than into whichever screen is on screen now. */
+  const paint = (sel, dot, name, sub, subClass = '') => {
+    const box = node.querySelector(sel);
+    if (!box) return;
+    box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--${dot})"></span>
+        <span style="font-weight:500">${esc(name)}</span></div><div class="cell-sub${subClass}">${sub}</div>`;
+  };
+
   node.querySelectorAll('[data-manual]').forEach(btn => btn.addEventListener('click', async () => {
-    const i = Number(btn.dataset.manual), box = $(`mg${i}`);
+    const i = Number(btn.dataset.manual);
     btn.disabled = true; btn.textContent = 'Testing…';
     try {
       const msg = await manual[i].run();
-      box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--ok)"></span>
-        <span style="font-weight:500">${esc(manual[i].name)}</span></div><div class="cell-sub">${esc(msg)}</div>`;
+      paint(`#mg${i}`, 'ok', manual[i].name, esc(msg));
     } catch (e) {
-      box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--hot)"></span>
-        <span style="font-weight:500">${esc(manual[i].name)}</span></div><div class="cell-sub t-hot">${esc(String(e.message).slice(0,90))}</div>`;
+      paint(`#mg${i}`, 'hot', manual[i].name, esc(String(e.message).slice(0, 90)), ' t-hot');
     }
   }));
 
   checks.forEach(async (c, i) => {
-    const box = $(`ig${i}`);
     try {
       const msg = await c.probe();
-      box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--ok)"></span>
-        <span style="font-weight:500">${esc(c.name)}</span></div><div class="cell-sub">${esc(msg)} · ${new Date().toLocaleTimeString('en-GB',{hour12:false})}</div>`;
+      paint(`#ig${i}`, 'ok', c.name, `${esc(msg)} · ${esc(clock(Date.now()))}`);
     } catch (e) {
-      box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:var(--hot)"></span>
-        <span style="font-weight:500">${esc(c.name)}</span></div><div class="cell-sub t-hot">${esc(String(e.message).slice(0,90))}</div>`;
+      paint(`#ig${i}`, 'hot', c.name, esc(String(e.message).slice(0, 90)), ' t-hot');
     }
   });
 }

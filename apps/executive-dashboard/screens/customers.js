@@ -75,7 +75,7 @@
    Nothing here is estimated. A count the database did not return is an em dash. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, esc, initials, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiDate, esc, initials, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, table, wireRows } from '../lib/ui.js';
@@ -889,7 +889,7 @@ SCREENS.customers = async host => {
                 ? esc(vehicle)
                 : '<span class="t-muted">No vehicle recorded on this purchase</span>'}</strong>${n0(x.amount_aed) == null ? '' : ' · ' + aed(x.amount_aed)}
               <div class="cell-sub">${x.purchase_date
-                ? `${esc(str(x.purchase_date))} · ${esc(ago(x.purchase_date))}`
+                ? `${esc(dubaiDate(x.purchase_date, str(x.purchase_date)))} · ${esc(ago(x.purchase_date))}`
                 : 'No purchase date recorded'}${x.deal_id ? ` · deal ${esc(String(x.deal_id))}` : ''}</div>
               <div class="cell-sub">Recorded as ${esc(str(x.customer_name) || nameOf(c))} ·
                 ${rowPhone

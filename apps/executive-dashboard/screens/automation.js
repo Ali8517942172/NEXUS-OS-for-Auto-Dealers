@@ -359,6 +359,50 @@ const TIMEOUT_RE = /\btimed?\s*-?\s*out\b|\btimeout\b|execution time(?: limit)? 
 const looksTimedOut = a =>
   ['FAILED', 'REJECTED'].includes(up(a.status)) && TIMEOUT_RE.test(String(a.summary || ''));
 
+/* ── PARTIAL is not a success ──────────────────────────────────────────────
+   Every `Delivery Report` node in this system writes one of SUCCESS, PARTIAL or
+   FAILED, and PARTIAL has one meaning throughout: the run finished, but a step
+   it was about to claim did not land — and in these workflows that step is
+   almost always the message to the customer. The BDC agent writes PARTIAL when
+   `Send Reply via WAHA HTTP API` swallowed an error; the KYC auditor writes it
+   when the re-upload request never reached the customer's phone.
+
+   Until 30 Aug 2026 this screen did not know the word. `STATUSES` listed
+   SUCCESS / FAILED / REJECTED / ESCALATED only, so PARTIAL fell through to
+   "Other", was left out of the failure count, and — worst — its timeline dot
+   took the final `: 'ok'` branch and was painted the same green as a clean run.
+   A run in which the customer was never messaged read here as a success.
+
+   `audit_log.status` also carries a compound vocabulary this screen had never
+   seen: `Log KYC Escalation` writes `'ESCALATED_' + delivery.status`, so
+   ESCALATED_PARTIAL and ESCALATED_FAILED both arrive. The first half names the
+   branch that ran; the half after the underscore is the delivery verdict, and
+   that is the half that says whether a person was actually reached.
+
+   This is read here rather than added to `TONE` in lib/format.js on purpose.
+   `tone()` is shared by every screen, and PARTIAL means "the customer was not
+   messaged" only in audit_log — elsewhere the same word may not mean that. */
+const DELIVERY_MISSED = ['PARTIAL', 'FAILED'];
+/* 'ESCALATED_PARTIAL' → 'PARTIAL'. Anything without the prefix is unchanged. */
+const deliveryHalf = s => up(s).replace(/^ESCALATED_/, '');
+/* The run completed but its customer-facing step did not land. A plain FAILED is
+   deliberately excluded: that is the whole run breaking, and it is already
+   counted, filtered and coloured as its own finding. */
+const looksUndelivered = a =>
+  up(a.status) !== 'FAILED' && DELIVERY_MISSED.includes(deliveryHalf(a.status));
+const PARTIAL_NOTE = 'A Delivery Report node writes PARTIAL when the run completed but a step it was about to claim did not land — in these workflows that is normally the WhatsApp message to the customer. It is not a success: somebody was waiting for a reply and did not get one. audit_log has no dropped-steps column, so which step it was is only in the summary text.';
+
+/* The colour of one run's dot in the history timeline. Anything this screen does
+   not recognise is deliberately NOT green — the version this replaced ended in a
+   bare `: 'ok'`, which is how PARTIAL came to be painted as a clean run. */
+const runDot = a => {
+  const k = up(a.status);
+  if (k === 'FAILED' || k === 'REJECTED' || deliveryHalf(k) === 'FAILED') return 'hot';
+  if (looksUndelivered(a) || k === 'ESCALATED') return 'warm';
+  if (k === 'SUCCESS') return 'ok';
+  return 'cold';   /* matches TONE's UNKNOWN — legible, and obviously not a pass */
+};
+
 /* ── Schedule cadence: has a scheduled job silently stopped? ────────────────
    `v_workflow_health.health` cannot answer this. A workflow that stops firing
    logs no runs, and therefore logs no failures, so it stays HEALTHY — or drifts
@@ -1340,7 +1384,7 @@ SCREENS.automation = async host => {
             : history.length
               ? `<div class="timeline" style="margin-top:8px">${history.slice(0, 25).map(a => `
                   <div class="tl-item">
-                    <span class="tl-dot" style="background:var(--${up(a.status) === 'FAILED' || up(a.status) === 'REJECTED' ? 'hot' : up(a.status) === 'ESCALATED' ? 'warm' : 'ok'})"></span>
+                    <span class="tl-dot" style="background:var(--${runDot(a)})"></span>
                     <div class="tl-body">
                       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                         ${pill(a.status || 'LOGGED')}
@@ -1434,7 +1478,12 @@ SCREENS.automation = async host => {
     logCard.innerHTML = `<div class="card-head"><div><div class="card-title">Activity log</div></div></div>
       ${stateError('the activity log', auditErr)}`;
   } else {
-    const STATUSES = ['SUCCESS', 'FAILED', 'REJECTED', 'ESCALATED'];
+    /* Every word audit_log is known to write, including the two compound values
+       `Log KYC Escalation` builds by hand. A status missing from this list is
+       filed under "Other" and counted nowhere, which is exactly how PARTIAL went
+       unnoticed. */
+    const STATUSES = ['SUCCESS', 'PARTIAL', 'FAILED', 'REJECTED', 'ESCALATED',
+                      'ESCALATED_PARTIAL', 'ESCALATED_FAILED'];
     const sCount = s => audit.filter(a => up(a.status) === s).length;
     const other = audit.filter(a => a.status && !STATUSES.includes(up(a.status))).length;
     const unset = audit.filter(a => !a.status).length;
@@ -1443,11 +1492,15 @@ SCREENS.automation = async host => {
        rather than the workflow itself breaking. Since 24 Aug those executions are
        saved rather than discarded, so they arrive here in full. */
     const timedOut = audit.filter(looksTimedOut);
+    /* Runs that completed without reaching the customer: PARTIAL, and the
+       ESCALATED_ compounds whose delivery half is PARTIAL or FAILED. */
+    const undelivered = audit.filter(looksUndelivered);
 
     const wfNames = [...new Set(audit.map(a => a.workflow).filter(Boolean))]
       .sort((a, b) => String(a).localeCompare(String(b)));
 
     const segs = [['ALL', audit.length], ...STATUSES.map(s => [s, sCount(s)]).filter(([, c]) => c > 0)];
+    if (undelivered.length) segs.push(['UNDELIVERED', undelivered.length]);
     if (timedOut.length) segs.push(['TIMEOUT', timedOut.length]);
     if (other) segs.push(['OTHER', other]);
     if (unset) segs.push(['NONE', unset]);
@@ -1462,8 +1515,9 @@ SCREENS.automation = async host => {
       <div class="toolbar">
         <div class="seg" id="aSegStatus" role="group" aria-label="Filter runs by status">
           ${segs.map(([k, c], i) => `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
-            k === 'TIMEOUT' ? ` title="Failures whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run. audit_log has no reason column, so this is a reading of the summary, not something the database asserts."` : ''
-            }>${k === 'ALL' ? 'All' : k === 'OTHER' ? 'Other' : k === 'NONE' ? 'No status' : k === 'TIMEOUT' ? 'Hit the ceiling' : esc(k)} · ${num(c)}</button>`).join('')}
+            k === 'TIMEOUT' ? ` title="Failures whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run. audit_log has no reason column, so this is a reading of the summary, not something the database asserts."`
+            : k === 'UNDELIVERED' ? ` title="${esc(PARTIAL_NOTE)}"` : ''
+            }>${k === 'ALL' ? 'All' : k === 'OTHER' ? 'Other' : k === 'NONE' ? 'No status' : k === 'TIMEOUT' ? 'Hit the ceiling' : k === 'UNDELIVERED' ? 'Never reached the customer' : esc(k)} · ${num(c)}</button>`).join('')}
         </div>
         <div class="grow"><input type="search" id="aLogQ" aria-label="Search the activity log"
           placeholder="Search workflow, customer, intent or summary" /></div>
@@ -1475,7 +1529,10 @@ SCREENS.automation = async host => {
       </div>
       <div id="aLogTable"></div>`;
 
-    const isBad = a => ['FAILED', 'REJECTED'].includes(up(a.status));
+    /* A run that finished without reaching the customer belongs here too. It is
+       not the same finding as a broken workflow, so it is coloured amber rather
+       than red wherever the two are shown side by side. */
+    const isBad = a => ['FAILED', 'REJECTED'].includes(up(a.status)) || looksUndelivered(a);
 
     const cols = [
       { label: 'Logged', render: a => `<span class="mono t-muted">${esc(clock(a.logged_at))}</span>
@@ -1486,7 +1543,9 @@ SCREENS.automation = async host => {
                 ? `<div class="cell-sub" title="${esc(CEILING.onTimeout)}">Reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run, not the workflow breaking</div>`
                 : looksGuardRejected(a)
                   ? `<div class="cell-sub" title="${esc(GUARD_NOTE)}">Reads as the scrape guard refusing bad intel, not the workflow breaking</div>`
-                  : isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
+                  : looksUndelivered(a)
+                    ? `<div class="cell-sub t-warm" title="${esc(PARTIAL_NOTE)}">The run finished; the customer-facing step did not land</div>`
+                    : isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
           : '<span class="t-muted">No status written</span>' },
       { label: 'Workflow', strong: true, render: a => `${esc(a.workflow || 'Unnamed')}
           ${a.intent ? `<div class="cell-sub">${esc(a.intent)}</div>` : ''}` },
@@ -1501,7 +1560,7 @@ SCREENS.automation = async host => {
           : '<span class="t-muted">Not a per-customer run</span>' },
       { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score) },
       { label: 'Summary', render: a => a.summary
-          ? `<span class="${isBad(a) && !looksGuardRejected(a) ? 't-hot' : ''}" style="white-space:normal">${esc(String(a.summary).slice(0, 200))}</span>`
+          ? `<span class="${looksUndelivered(a) ? 't-warm' : isBad(a) && !looksGuardRejected(a) ? 't-hot' : ''}" style="white-space:normal">${esc(String(a.summary).slice(0, 200))}</span>`
           : '<span class="t-muted">No summary written</span>' },
     ];
 
@@ -1513,6 +1572,7 @@ SCREENS.automation = async host => {
       return audit.filter(a => {
         if (lf.status === 'NONE') { if (a.status) return false; }
         else if (lf.status === 'TIMEOUT') { if (!looksTimedOut(a)) return false; }
+        else if (lf.status === 'UNDELIVERED') { if (!looksUndelivered(a)) return false; }
         else if (lf.status === 'OTHER') { if (!a.status || STATUSES.includes(up(a.status))) return false; }
         else if (lf.status !== 'ALL' && up(a.status) !== lf.status) return false;
         if (lf.wf !== 'ALL' && a.workflow !== lf.wf) return false;
@@ -1572,6 +1632,20 @@ SCREENS.automation = async host => {
       b.querySelector('#aShowFailed').addEventListener('click', () => focusLog('FAILED'));
     }
 
+    /* Separate from the failure banner above, and amber rather than red, because
+       it is a different finding: these runs did not break — they completed and
+       told the truth about it in a status this screen used to read as green. */
+    if (undelivered.length) {
+      const b = el('div', 'banner warm');
+      b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">forward_to_inbox</span>
+        <div style="flex:1"><strong>${num(undelivered.length)} logged run${undelivered.length === 1 ? '' : 's'} completed without reaching the customer.</strong>
+        ${esc(PARTIAL_NOTE)}
+        Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.</div>
+        <button class="btn sm" id="aShowPartial">Show them</button>`;
+      banners.appendChild(b);
+      b.querySelector('#aShowPartial').addEventListener('click', () => focusLog('UNDELIVERED'));
+    }
+
     drawLog();
   }
 
@@ -1589,6 +1663,7 @@ SCREENS.automation = async host => {
     /* A rejection the scrape guard made is not a run that went wrong, so it does
        not get the red "did not complete" banner. */
     const bad = ['FAILED', 'REJECTED'].includes(up(a.status)) && !guarded;
+    const missedCustomer = looksUndelivered(a);
     const ceilingHit = looksTimedOut(a);
     const trace = execUrl(a);
     const wf = (health || []).find(w => namesFor(w).has(low(a.workflow))) || null;
@@ -1614,6 +1689,8 @@ SCREENS.automation = async host => {
             <div><strong>This reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run.</strong> ${esc(CEILING.onTimeout)}
             <div class="cell-sub" style="margin-top:6px;white-space:normal">audit_log records a status and a summary but no reason code, so this is read off the summary text above.
             The execution itself is the place that says for certain.</div></div></div>` : ''}
+          ${missedCustomer ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">forward_to_inbox</span>
+            <div><strong>This run completed, but its customer-facing step did not land.</strong> ${esc(PARTIAL_NOTE)}</div></div>` : ''}
           ${bad ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">error</span>
             <div>This run did not complete. ${trace
               ? 'The Error Handler recorded the execution\'s own n8n URL in the summary, so the link at the bottom of this drawer opens that execution in n8n. Inspecting or re-running it happens there — the dashboard has no endpoint that can.'

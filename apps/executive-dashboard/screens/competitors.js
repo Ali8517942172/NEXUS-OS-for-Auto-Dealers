@@ -97,7 +97,7 @@
    price — takes the full width and leads the screen. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, aedSigned, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, aedSigned, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, panel, table, wireRows } from '../lib/ui.js';
@@ -154,7 +154,11 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
    which is the one place this screen must not round: "1 mo" and "43 days" feel
    like different amounts of wrong to the person about to quote the price. */
 const dayWord = n => `${num(n)} ${Number(n) === 1 ? 'day' : 'days'}`;
-const dt = ts => new Date(ts).toLocaleString('en-GB');
+/* Every absolute time on this screen is the showroom's, not the reader's. The
+   scraper runs on "timezone": "Asia/Dubai" like every other workflow, so a
+   collection time re-read in the browser's own zone is a different moment
+   wearing the same digits. dubaiStamp() pins it and labels it GST. */
+const dt = ts => dubaiStamp(ts);
 
 /* The next time the cron is due to fire, as a real Date rather than a phrase.
    Computed from the UTC clock so it stays right in any timezone the browser
@@ -513,14 +517,19 @@ const KIND_ICON = { undercut: 'trending_down', price_stale: 'update_disabled' };
 /* The private severity map this screen used to keep is gone. `tone()` in
    lib/format.js now carries every vocabulary that reaches here — HOT/WARM/COLD,
    CRITICAL/WARNING/HEALTHY, HIGH/MEDIUM/LOW/INFO and the workflow-health words
-   — and maps anything it does not recognise to 'cold' rather than to ''. One
-   preference is still local, and only one: a severity nobody here has seen,
-   arriving from a shared view this screen does not own, is more useful shown as
-   a warning than as a note nobody looks at. */
+   — and gives anything it does not recognise its own 'unknown' tone rather
+   than ''. One preference is still local, and only one: a severity nobody here
+   has seen, arriving from a shared view this screen does not own, is more
+   useful shown as a warning than as a note nobody looks at.
+
+   That test used to be a regex, because tone() answered 'cold' both for a
+   genuinely cold item and for a word it had never heard of, and this screen had
+   to tell those two apart by hand. tone() now makes the distinction itself, so
+   the regex is gone and a real COLD stays cold. */
 const sevTone = s => {
   const t = tone(s);
   if (!t) return '';                 // genuinely blank severity — say nothing
-  return t === 'cold' && !/^(cold|low|info|notice)$/i.test(String(s).trim()) ? 'warm' : t;
+  return t === 'unknown' ? 'warm' : t;
 };
 
 SCREENS.competitors = async host => {
@@ -639,7 +648,7 @@ SCREENS.competitors = async host => {
 
     const allJunk = all.length > 0;      // rows came back, none of them usable
     const next = nextScrape();
-    const nextLine = `The scrape is a scheduled job, expected ${SCRAPE_SCHEDULE}. The next run is due ${esc(dt(next.toISOString()))} local time, ${esc(waitWord(next - Date.now()))}.`;
+    const nextLine = `The scrape is a scheduled job, expected ${SCRAPE_SCHEDULE}. The next run is due ${esc(dt(next.toISOString()))}, ${esc(waitWord(next - Date.now()))}.`;
     /* The reason for six weeks of silence, stated in the empty state rather
        than in a commit message: the trigger was an n8n "every 24 hours"
        interval, which drifts on every restart and eventually stops firing
@@ -663,7 +672,7 @@ SCREENS.competitors = async host => {
           ? `<span class="t-hot">${num(all.length)} ${plural(all.length, 'row was', 'rows were')} returned and every one is a scrape failure, not a listing</span>`
           : '<span class="t-muted">The table holds no rows at all — nothing has been scraped since it was cleared</span>'),
       kpi('Next scrape due', `${String(SCRAPE_HOUR_UTC).padStart(2, '0')}:00 UTC`,
-        `<span class="t-muted">${esc(dt(next.toISOString()))} local · ${esc(waitWord(next - Date.now()))}</span>`),
+        `<span class="t-muted">${esc(dt(next.toISOString()))} · ${esc(waitWord(next - Date.now()))}</span>`),
       /* A count, not a proportion. Twelve units is a small enough number to
          state outright, and "100% of stock uncovered" would dress a plain fact
          up as a metric. */

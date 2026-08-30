@@ -30,7 +30,7 @@ import { ME, SESSION, db, sessionEnded, setMe, setMeReadFailed, setSession, setS
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
-import { refreshBadges, startBadges } from './lib/badges.js';
+import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
 
 /* Screen modules, imported for their registration side effect only. Removing
    one of these lines silently removes that screen from the app. */
@@ -79,8 +79,14 @@ function renderLogin(msg) {
 }
 
 /* lib/data.js drops the session and needs the login screen back, but it must
-   not import this module — that is the cycle. Hand it the function instead. */
-setSessionEndedHandler(renderLogin);
+   not import this module — that is the cycle. Hand it the function instead.
+
+   Stopping the badge poller is part of ending the session and belongs here, at
+   the one place that knows a session has ended: left running, it polls every
+   sixty seconds with a dead token, and each 401 re-rendered this login screen
+   under whoever was typing into it. lib/data.js makes sure this handler runs
+   once per expiry however many requests hit the 401 together. */
+setSessionEndedHandler(msg => { stopBadges(); renderLogin(msg); });
 
 async function boot() {
   if (envErrors.length) {

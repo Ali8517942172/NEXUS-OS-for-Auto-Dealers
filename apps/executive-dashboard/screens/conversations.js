@@ -103,7 +103,7 @@
 import { db, n8n, HOOK } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { ago, esc, initials, num, pill } from '../lib/format.js';
+import { TZ, ago, dubaiDate, dubaiStamp, esc, initials, num, pill } from '../lib/format.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -140,8 +140,12 @@ const VIEW_COLS = 'thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_
 const low = s => String(s == null ? '' : s).trim().toLowerCase();
 const str = v => String(v == null ? '' : v).trim();
 const ts  = v => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
-const stamp = v => { const t = Date.parse(v); return Number.isNaN(t) ? 'no timestamp recorded' : new Date(t).toLocaleString('en-GB'); };
-const clockOf = v => { const t = Date.parse(v); return Number.isNaN(t) ? null : new Date(t).toLocaleString('en-GB'); };
+/* Asia/Dubai, labelled GST. WhatsApp timestamps are the one thing on this
+   screen an operator compares against their own memory of the shift — "she
+   wrote at nine and nobody answered" — and a browser in another zone quietly
+   restated that as five in the morning. */
+const stamp = v => dubaiStamp(v, 'no timestamp recorded');
+const clockOf = v => dubaiStamp(v, null);
 const daysSince = v => { const t = Date.parse(v); return Number.isNaN(t) ? null : (Date.now() - t) / 86400000; };
 
 /* A WhatsApp handle, in any of the shapes WAHA emits. A LID carries no phone
@@ -274,14 +278,23 @@ const noChatWhy = t =>
   + 'only arrives when the contact messages the business number. If they are waiting, the reply has to be '
   + 'typed inside WhatsApp itself — nothing on this screen can send it for you.';
 
+/* "Today" is today in Dubai. Comparing against the browser's own midnight put
+   the separator in the wrong place for anyone outside the UAE — a message sent
+   at 01:00 Dubai was filed under Yesterday for a reader in London — so the day
+   is decided by comparing formatted Dubai dates rather than local midnights. */
+/* The weekday is worth keeping on a separator, and it is the one shape the
+   shared helpers do not emit — so the formatter is built here from the shared
+   TZ constant rather than from a second copy of the zone name. */
+const F_DAY = new Intl.DateTimeFormat('en-GB',
+  { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const dayLabel = v => {
   const t = Date.parse(v);
   if (Number.isNaN(t)) return 'Undated';
-  const d = new Date(t), now = new Date();
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  if (t >= midnight) return 'Today';
-  if (t >= midnight - 86400000) return 'Yesterday';
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  const day = dubaiDate(t, '');
+  if (!day) return 'Undated';
+  if (day === dubaiDate(Date.now(), '')) return 'Today';
+  if (day === dubaiDate(Date.now() - 86400000, '')) return 'Yesterday';
+  return F_DAY.format(new Date(t));
 };
 
 const preview = v => {
