@@ -211,7 +211,9 @@
           "attemptToConvertTypes": false,
           "convertFieldsToString": true
         },
-        "options": {}
+        "options": {
+          "waitForSubWorkflow": false
+        }
       },
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
@@ -308,7 +310,9 @@
           "attemptToConvertTypes": false,
           "convertFieldsToString": true
         },
-        "options": {}
+        "options": {
+          "waitForSubWorkflow": false
+        }
       },
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
@@ -335,7 +339,9 @@
           "attemptToConvertTypes": false,
           "convertFieldsToString": true
         },
-        "options": {}
+        "options": {
+          "waitForSubWorkflow": false
+        }
       },
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
@@ -382,7 +388,7 @@
         "needsFallback": true,
         "options": {
           "systemMessage": "You are NEXUS AI, an expert lead scoring agent for a premium car dealership in the UAE. You evaluate inbound leads, check whether they are returning customers, persist them to the CRM, and classify them so the router can dispatch them correctly. Returning customers are extremely valuable and must always be routed as HOT.",
-          "maxIterations": 8,
+          "maxIterations": 3,
           "enableStreaming": false
         }
       },
@@ -462,7 +468,9 @@
           "attemptToConvertTypes": false,
           "convertFieldsToString": true
         },
-        "options": {}
+        "options": {
+          "waitForSubWorkflow": false
+        }
       },
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
@@ -476,7 +484,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((prev.lead && prev.lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: prev.lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
+        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\n//\n// 30 Aug 2026: groqModel changed from 'llama-3.3-70b-versatile' to\n// 'openai/gpt-oss-120b' on every tier. Groq SHUT DOWN llama-3.3-70b-versatile\n// for free and developer tiers on 16 Aug 2026 -- their deprecations page names\n// openai/gpt-oss-120b as the replacement, their models page marks the old id\n// Enterprise/Contact-Sales, and it has no row at all in the free-tier\n// rate-limit table. Groq is only the FALLBACK slot, so it had never fired in\n// production and nothing surfaced this: it would have failed for the first\n// time on the day OpenRouter was already down. The same fix went into the\n// WhatsApp BDC agent earlier today; this workflow was missed, which meant the\n// two agents disagreed about which model exists.\n// Free-tier ceiling: 30 RPM / 1K RPD / 8K TPM / 200K TPD -- tokens-per-minute\n// binds well before requests-per-minute on an agent this prompt-heavy.\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',                groqModel: GROQ_FALLBACK }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((prev.lead && prev.lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: prev.lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
       },
       "id": "mr-ladder-01",
       "name": "Model Ladder",
@@ -1032,7 +1040,7 @@
   "_exported_from": {
     "id": "JnlZFAVmFAuNXVya",
     "active": true,
-    "updatedAt": "2026-08-30T02:12:09.962Z",
+    "updatedAt": "2026-08-30T05:10:29.867Z",
     "published": true
   }
 }
