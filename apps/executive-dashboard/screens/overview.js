@@ -378,6 +378,14 @@ SCREENS.overview = async host => {
      surface says so rather than rendering a plausible-looking zero. */
   const since = new Date(Date.now() - WINDOW_DAYS * 86400000).toISOString();
   let core = null, coreErr = null;
+
+  /* Hoisted out of the try below on 31 Aug 2026. Both were declared inside
+     that block, but the lead-mix panel further down calls up() outside it —
+     so Overview died with "up is not defined" the moment that panel rendered,
+     and the whole screen showed the error card instead. Block scope, not a
+     data problem: nothing about the try's success or failure changes it. */
+  const up = s => String(s || '').toUpperCase();
+  const norm = v => String(v || '').trim().toLowerCase();
   try {
     const [leads, inv, metrics, outbound] = await Promise.all([
       /* `phone` and `assigned_to` are real columns on leads (probed 24 Aug) and
@@ -404,8 +412,6 @@ SCREENS.overview = async host => {
       db(`communication_logs?select=lead_email,created_at&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
     ]);
 
-    const up = s => String(s || '').toUpperCase();
-    const norm = v => String(v || '').trim().toLowerCase();
     const hot = leads.filter(l => up(l.status) === 'HOT').length;
     const warm = leads.filter(l => up(l.status) === 'WARM').length;
     const cold = leads.filter(l => up(l.status) === 'COLD').length;
