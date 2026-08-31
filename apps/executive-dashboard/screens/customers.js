@@ -75,6 +75,7 @@
    Nothing here is estimated. A count the database did not return is an em dash. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
+import { expandIdentity, personQuery } from '../lib/identity.js';
 import { aed, ago, dubaiDate, esc, initials, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -673,12 +674,23 @@ SCREENS.customers = async host => {
     const qs = email ? encodeURIComponent(email) : null;
 
     /* Every linked read keys on email. A directory row without one is listed but
-       cannot be cross-referenced, and saying so is the only honest option. */
+       cannot be cross-referenced, and saying so is the only honest option.
+
+       Messages are the exception, and they have to be. `communication_logs.lead_email`
+       holds four incompatible key shapes for one person — a real email, a
+       `@c.us` chat id, a `@lid` handle and a synthesised `@whatsapp.lead` key —
+       and reading under the email alone returned a truncated history rendered as
+       if it were the whole of it. lib/identity.js expands the person into every
+       key their rows can be filed under, using the same last-nine-digit rule the
+       n8n `Resolve Lead Identity` node matched on when it wrote them. */
+    const ident = expandIdentity(
+      { email, phone: phoneStr(c), name: c.name },
+      { links: c.contacts || [], leads: c.leads || [] });
     const [leads, purch, comms] = email
       ? await Promise.all([
           grab(db(`leads?select=id,name,phone,status,ai_score,vehicle_interest,budget_aed,source,created_at&email=ilike.${qs}&order=created_at.desc`)),
           grab(db(`purchase_history?select=*&email=ilike.${qs}&order=purchase_date.desc`)),
-          grab(db(`communication_logs?select=channel,direction,message,created_at&lead_email=ilike.${qs}&order=created_at.desc&limit=${MSG_LIMIT}`)),
+          grab(db(personQuery('communication_logs', ident, { select: 'channel,direction,message,created_at', order: 'created_at.desc', limit: MSG_LIMIT }))),
         ])
       : [{ rows: null }, { rows: null }, { rows: null }];
 
