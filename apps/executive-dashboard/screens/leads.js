@@ -7,11 +7,20 @@
 
    `v_needs_attention` is the only source here that speaks for the whole
    database. It emits `lead_unassigned` and `sla_breach` rows with
-   `screen = 'leads'` — and today it emits none of them at all. So "nothing
-   right now" is the normal case and is written as a sentence rather than as an
-   empty box; the day a row does appear it renders on the view's own terms
-   (severity, title, detail, how long it has been waiting) and clicking it opens
-   that lead here.
+   `screen = 'leads'`. Read live on 1 Sep 2026 the view returns 12 rows and none
+   of them is for this screen — but the reason matters and it has changed.
+   `lead_unassigned` is quiet because no lead is HOT. `sla_breach` is quiet
+   because its arm is `response_time_minutes > 5 AND created_at > now() - 30
+   days`, and the two leads that carry a figure were answered in 1 and 4
+   minutes. Until 31 Aug that arm could not fire on anything, because the column
+   held 0 on every row — so its silence meant nothing at all. It now means
+   something, which is why nothing on this screen calls it an unmeasured promise
+   any more.
+
+   So "nothing right now" is the normal case and is written as a sentence rather
+   than as an empty box; the day a row does appear it renders on the view's own
+   terms (severity, title, detail, how long it has been waiting) and clicking it
+   opens that lead here.
 
    Below the view's rows sit four checks the view does not make. Every one is
    computed from rows this screen had already read, except "never contacted",
@@ -20,36 +29,91 @@
    denominator it counted against, and a check whose read failed is withheld and
    named rather than quietly reported as zero — a zero the operator would trust.
 
-   Identity: a lead's phone number now sits under the name in every place a lead
-   is named — the table, the alert strip, the confirm dialog — because "call
-   them" is the action almost every alert here resolves to. Where there is no
+   Identity, and why this file no longer does its own matching. Until 1 Sep the
+   two contact checks joined `communication_logs.lead_email` to `leads.email` by
+   string equality. That column is not one key space: it holds a real email, a
+   `@c.us` chat id, a `@lid` handle and a synthetic `+digits@whatsapp.lead` key,
+   and one person is filed under several of them at once. Live proof on 1 Sep
+   2026: lead 38's 29 log rows are split 15 under his gmail address, 12 under
+   `+918517942172@whatsapp.lead` and 2 under `158510264357112@lid`; lead 35
+   carries an EMPTY email string and every one of his 10 rows is under
+   `111948809162873@lid`, so this screen could not see him at all and said so as
+   though that were a property of the lead rather than of the join. The backend
+   already fixed this class of bug once — see the D1 IDENTITY note in
+   phase_6_12_hour_silence_detector.json, where the same single-key lookup made
+   an hourly job run green with zero output. Matching now goes through
+   `lib/identity.js`, which applies the same last-nine-digit rule the n8n
+   `Resolve Lead Identity` node used when it wrote those keys, and the drawer
+   this table opens uses the same module against the same rule. One
+   implementation, two access modes: this screen matches rows it has already
+   read on `normalizeKey().canonical`, the drawer issues `personQuery()`.
+
+   Naming a lead on screen, which is a separate problem from matching one. A
+   lead's phone number sits under the name in every place a lead is named — the
+   table, the alert strip, the confirm dialog — because "call them" is the action
+   almost every alert here resolves to. Where there is no
    number the cell says so with an em dash. A `…@lid` WhatsApp handle is never
    printed as if it were a person's name (see the 24 Aug addendum); leads are not
    supposed to carry one, but the router has written stranger things into `name`
    and a handle rendered as a name is exactly the fault that addendum is about.
 
-   24 Aug 2026, after the clean-out — one lead, and he is a real customer.
+   1 Sep 2026, read from the database rather than remembered: three leads on
+   file — 34 Siva Thangavelu (DISQUALIFIED), 35 Effco Contracting llc
+   (DISQUALIFIED), 38 Ali (WARM).
 
    Two consequences, both of which are the reason this file changed today.
 
-   First: n=1 is not a population. Nothing on this screen divides one row by
+   First: n=3 is not a population. Nothing on this screen divides one row by
    another, and the counts that could be mistaken for a distribution — the
-   status segments across the top of the table — now carry a sentence saying
-   they are the whole table rather than a sample of it. There is no funnel here,
-   no conversion rate and no trend, because one row cannot support one.
+   status segments across the top of the table — carry a sentence saying they
+   are the whole table rather than a sample of it. There is no funnel here, no
+   conversion rate and no trend, because three rows cannot support one.
 
-   Second, and more useful to an owner than any of the above: the only lead on
-   file has `response_time_minutes` null. That column is the sole record in this
-   database of how long a lead waited for its first answer, so the 5-minute rule
-   — the founding promise of this product — currently has nothing measuring it.
-   It is also what `v_needs_attention` files `sla_breach` on, which means the
-   view's silence about this screen is an unmeasured promise and not a kept one.
-   That is stated in the strip and per row, because a blank cell in a response
+   Second, and this is a correction rather than an addition. Until today this
+   file asserted in three places that `response_time_minutes` was null on every
+   lead and that the 5-minute rule therefore had nothing measuring it. That was
+   never true. The column held 0 on every lead: a BEFORE INSERT trigger on
+   `leads` measured a reply that predated the lead row — the WhatsApp bot answers
+   the conversation and only then does the router mint the lead — and
+   `greatest(0, …)` rendered that negative interval as instant service. Three
+   leads therefore read "answered in 0 minutes" while this screen printed a
+   paragraph about nobody measuring anything, and both were wrong.
+
+   That trigger has been deleted. The sole writer is now
+   `trg_comm_logs_first_response`, AFTER INSERT on `communication_logs`, which
+   resolves the row to a lead through `nexus_lead_for_comm_key` (integer-returning
+   as of 1 Sep 2026 — the `RETURNS uuid` defect the 31 Aug audit filed under L2 is
+   gone) and stamps `round(seconds / 60)` between the lead's `created_at` and the
+   first reply it can attribute to it. The three live rows were repaired and on
+   1 Sep 2026 read: lead 34 → 1, lead 38 → 4, lead 35 → NULL.
+
+   What a NULL means, stated no more strongly than the function supports. Read
+   out of `nexus_mark_first_response` on 1 Sep 2026: it counts only an OUTBOUND
+   whatsapp / email / sms row that is not a `[system]` or `[SILENCE-` message; it
+   writes once, and only while the column is still null; and a reply older than
+   the lead row is admitted as 0 only when it is under 90 seconds older AND no
+   inbound message was already on file — a clock-skew allowance between n8n
+   (Asia/Dubai) and Postgres, not a floor under a real wait.
+
+   So NULL does NOT mean "nobody has answered this customer", and lead 35 is the
+   live proof: its one outbound message was logged at 06:40:38 on 26 Aug, its lead
+   row was minted 74 seconds later at 06:41:52, and eight inbound messages were
+   already on file — the conversation began before the lead did, so the trigger
+   declined to call that a response time. The customer was answered; the wait was
+   not measurable. NULL means no measured wait. It does not mean nobody measured,
+   it is not a zero, and it must never render as a blank — a blank in a response
    column reads as "fast" to everyone who has ever looked at one. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, dubaiStamp, esc, mins, n0, num, pill, tone } from '../lib/format.js';
+/* audit_log.status is not ours to read literally. lib/health.js is the only
+   module allowed to say what one means — it mirrors public.nexus_outcome_class()
+   — and a row whose summary says a step "did not land" is a PARTIAL however it
+   labelled itself. The workflow-history line in the Actions cell used to print
+   the raw status beside the workflow name, which is a verdict, not a quote. */
+import { outcomeOf, outcomeWords } from '../lib/health.js';
+import { AMBIGUITY, describeKey, expandIdentity, KEY_SHAPE, keyShape, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -66,9 +130,13 @@ const ts  = v => { const t = new Date(v).getTime(); return Number.isNaN(t) ? 0 :
    the showroom's day shifted four hours with nothing saying so. */
 const when = v => dubaiStamp(v, '');
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
-/* null and 0 are different answers here — 0 would be an instant reply, null is
-   no measurement at all — so this must not collapse them. n0() returns null for
-   null, '' and NaN and keeps a real 0. */
+/* null and 0 are different answers here and this must not collapse them. Since
+   the trigger rewrite of 31 Aug the database keeps them apart on purpose: 0 is
+   reserved for a genuine sub-30-second reply, and null means no reply the
+   trigger could attribute to the lead has ever been logged. Before that rewrite
+   `greatest(0, …)` wrote 0 for both, which is how three leads read "answered
+   instantly" for a week. n0() returns null for null, '' and NaN and keeps a
+   real 0. */
 const respOf = l => n0(l.response_time_minutes);
 
 /* Read ceilings. Each one is stated on screen when it is hit, because a count
@@ -77,6 +145,22 @@ const respOf = l => n0(l.response_time_minutes);
 const LEAD_LIMIT = 1000;
 const ATTN_LIMIT = 200;
 const COMM_LIMIT = 5000;
+/* whatsapp_contacts is a directory, not a feed: one row per chat, 10 of them on
+   1 Sep 2026. It is read whole because it is the only thing that can attach a
+   `@lid` to a person — a LID contains no phone digits, so it can never be
+   derived, only looked up. compliance.js reads it at the same ceiling. */
+const CONTACT_LIMIT = 2000;
+/* The audit read behind the per-row workflow history. Ceiling disclosed like
+   every other one on this screen; 555 rows on 1 Sep 2026, so it is not near it. */
+const AUDIT_LIMIT = 1000;
+/* purchase_history, behind the VIP badge. Empty on 1 Sep 2026 — nobody in this
+   table can be a returning customer yet — but until today this read carried no
+   `limit` at all, which does not mean unbounded: PostgREST applies its own server
+   ceiling and returns the truncated page with a 200. A repeat buyer whose row
+   fell outside it would have rendered as a first-timer with nothing on screen
+   saying the set was cut, which is the failure mode the rest of this file is
+   written against. Stated when it is hit, like every other ceiling here. */
+const PURCHASE_LIMIT = 5000;
 
 /* The "never contacted" check is windowed so it is provably complete rather
    than merely likely: a message to a lead can only be logged at or after that
@@ -110,11 +194,19 @@ const TERMINAL = new Set(['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','
 
 /* The 5-minute rule. It is a promise the dealership made, not a column
    constraint, and `leads.response_time_minutes` is the only place in the
-   database where it is ever measured. `v_needs_attention` files `sla_breach`
-   off that same column, so a lead whose response time was never recorded is
-   invisible to the view and to this screen alike — which is a fact worth
-   printing, not a silence worth trusting. */
+   database where it is ever measured.
+
+   `v_needs_attention` files `sla_breach` off the same column but NOT off the
+   same predicate. Read from the live view definition on 1 Sep 2026 its arm is
+   `response_time_minutes > 5 AND created_at > now() - 30 days`. So a lead older
+   than thirty days that breached is counted by this screen and is invisible to
+   the view, and every sentence here that prints a breach count says which of the
+   two sets it is counting rather than implying they are one set. A lead carrying
+   no figure at all is invisible to both, and that stays worth printing. */
 const SLA_MINUTES = 5;
+/* The view's own age window on the sla_breach arm, mirrored here only so the
+   divergence above can be stated in words. Nothing on this screen filters by it. */
+const SLA_VIEW_WINDOW_DAYS = 30;
 
 /* At or below this, a set of rows is the whole book rather than a sample of it,
    and the captions say so. The arithmetic does not change — this screen counts
@@ -129,6 +221,20 @@ const PREVIEW = 3;
 /* A WhatsApp handle. A LID carries no phone digits at all, so it identifies
    nobody — it is never printed as a name. */
 const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
+
+/* Whatever is in `leads.email`, is it somewhere a person can be WRITTEN TO?
+   That is a different question from "which rows belong to this person", which is
+   lib/identity.js's job and is answered by matching on every key including the
+   ones nobody can post to. Live on 1 Sep 2026 lead 34's email column holds
+   `+971547484167@whatsapp.lead` and lead 35's holds an empty string; neither is
+   an address, and screens/campaigns.js already refuses to enrol either of them
+   (its `isRealEmail`, which names lead 34 in its own comment). This screen fires
+   the same drip webhook and did not, so one screen guarded the send and the other
+   offered it. KEY_SHAPE.EMAIL is the same test expressed through the shared
+   module rather than through a second private regex. */
+const realEmail = l => keyShape(l && l.email) === KEY_SHAPE.EMAIL
+  ? String(l.email).toLowerCase()
+  : '';
 
 /* `v_needs_attention.severity` is HOT | WARM | COLD, and TONE covers all three
    (plus an unknown value, which it gives its own 'unknown' tone rather than
@@ -185,11 +291,13 @@ const ACTIONS = {
     done: 'Drip started',
     blurb: 'Day 1 welcome, day 3 follow-up, day 7 final offer — sent by n8n over the following week, not by this browser. '
          + 'Starting it twice enrols the lead twice.',
-    blocker: l => !l.email
-      ? 'The drip is addressed by email and this lead has no email address on record.'
-      : null,
+    blocker: l => realEmail(l)
+      ? null
+      : str(l.email)
+        ? `The drip is addressed by email, and this lead's email column holds ${str(l.email)} — the key its messages are filed under, not an address. Enrolling it would point a Gmail node at something nobody can deliver to.`
+        : 'The drip is addressed by email and this lead has no email address on record.',
     payload: l => ({
-      lead_email: l.email,
+      lead_email: realEmail(l),
       lead_name: l.name || '',
       vehicle_interest: l.vehicle_interest || '',
     }),
@@ -217,8 +325,9 @@ function replyNote(res) {
    can print rather than as a rejection somebody has to catch again. */
 const settle = p => p.then(v => [v, null], e => [null, e]);
 
-/* Identity, in one place, so the table, the strip and the dialog cannot drift
-   apart on what a nameless lead looks like. */
+/* How a lead is NAMED on screen, in one place, so the table, the strip and the
+   dialog cannot drift apart on what a nameless lead looks like. Distinct from
+   lib/identity.js, which decides which database rows are the same person. */
 function leadName(l) {
   const n = str(l.name);
   if (!n) return '<span class="t-warm">Unnamed lead</span>';
@@ -246,17 +355,26 @@ SCREENS.leads = async host => {
   const card = el('div', 'card flush'); card.style.marginTop = '16px'; host.appendChild(card);
   card.innerHTML = stateLoading(8);
 
-  /* The strip's two extra reads are started before the leads read is awaited, so
-     the whole screen costs one round of requests rather than one per alert. */
+  /* The strip's three extra reads are started before the leads read is awaited,
+     so the whole screen costs one round of requests rather than one per alert. */
   const since = new Date(Date.now() - CONTACT_WINDOW_DAYS * 86400000).toISOString();
   const attnRead = db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
     + `&screen=eq.leads&limit=${ATTN_LIMIT}`);
   const commRead = db('communication_logs?select=lead_email,direction,created_at'
     + `&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${COMM_LIMIT}`);
-  /* Marked handled now: both are awaited later, and an early rejection would
-     otherwise surface in the console instead of in the strip that reports it. */
+  /* The `@lid` bridge. Without this read a lead's LID-keyed messages cannot be
+     attached to it at all, and the two contact checks below go back to accusing
+     reps of ignoring customers they answered — which is exactly the bug this
+     pass is closing. It is therefore a precondition of those checks, not a
+     nice-to-have, and its failure withholds them. */
+  const contactsRead = db('whatsapp_contacts?select=chat_id,phone,push_name,lead_email'
+    + `&limit=${CONTACT_LIMIT}`);
+  /* Marked handled now: all three are awaited later, and an early rejection
+     would otherwise surface in the console instead of in the strip that
+     reports it. */
   attnRead.catch(() => {});
   commRead.catch(() => {});
+  contactsRead.catch(() => {});
 
   let all = [];
   let leadsErr = null;
@@ -269,25 +387,68 @@ SCREENS.leads = async host => {
 
   const [attn, attnErr] = await settle(attnRead);
   const [comms, commsErr] = await settle(commRead);
+  const [contacts, contactsErr] = await settle(contactsRead);
+
+  /* ── Identity ────────────────────────────────────────────────────────────
+     One expansion per lead, seeded from the row and bridged through
+     whatsapp_contacts, done once here so the strip, the table and the drawer
+     cannot drift apart on who a lead is. `all` goes in as the candidate pool so
+     that two people whose numbers end in the same nine digits are REPORTED as a
+     collision rather than silently merged into one customer.
+
+     `canon` is the comparison form: normalizeKey() collapses `@c.us`,
+     `@s.whatsapp.net`, `@whatsapp.lead` and a bare number onto `phone:<last 9>`
+     while keeping a LID as `lid:<digits>` and an email as `email:<address>`, so
+     a LID whose digits happen to end like somebody's phone number can never
+     compare equal to it. */
+  const identOf = new Map();
+  const canonOf = new Map();
+  for (const l of all) {
+    const idn = expandIdentity(
+      { leadId: l.id, email: l.email, phone: l.phone, name: l.name },
+      { links: contacts || [], leads: all });
+    identOf.set(String(l.id), idn);
+    canonOf.set(String(l.id), new Set(idn.keys.map(k => normalizeKey(k).canonical).filter(Boolean)));
+  }
+  const identKeys = l => canonOf.get(String(l.id)) || new Set();
+  /* A lead nothing can be matched on: no email, no phone, no chat id. It is
+     neither contacted nor uncontacted as far as this screen can prove, and it is
+     counted in the notes rather than folded into an alert. */
+  const matchable = l => identKeys(l).size > 0;
+  const collided = all.filter(l =>
+    (identOf.get(String(l.id))?.ambiguityCodes || []).includes(AMBIGUITY.PHONE_SUFFIX_COLLISION));
+
+  const commCanon = c => normalizeKey(c.lead_email).canonical;
 
   const byId = new Map(all.map(l => [String(l.id), l]));
-  const byEmail = new Map(all.filter(l => low(l.email)).map(l => [low(l.email), l]));
+  /* The view keys `lead_unassigned` and `sla_breach` on `l.id::text`, so byId is
+     the hit in practice; the canonical index is the fallback for a ref that
+     arrives as some address instead, and it uses the same rule as everything
+     else on this screen rather than a second private one. */
+  const byCanon = new Map();
+  for (const l of all) for (const k of identKeys(l)) if (!byCanon.has(k)) byCanon.set(k, l);
 
   /* ── The view's own rows ─────────────────────────────────────────────────
      `ref` is whatever the view chose to key the item on. Match it to a loaded
-     lead by id and then by email; if neither hits, the row is still shown — it
-     is a real item — but it is not made clickable, and it says why, because a
-     click that silently does nothing is worse than a row that admits it cannot
-     be opened from here. */
+     lead by id and then by any key that identifies one — not by email, which is
+     what this did while `leads.email` was assumed to hold an address. If neither
+     hits, the row is still shown — it is a real item — but it is not made
+     clickable, and it says why, because a click that silently does nothing is
+     worse than a row that admits it cannot be opened from here. */
   const viewItems = (attn || []).slice().sort((a, b) => ts(b.at) - ts(a.at));
-  const matchRef = ref => byId.get(str(ref)) || byEmail.get(low(ref)) || null;
+  const matchRef = ref => byId.get(str(ref))
+    || byCanon.get(normalizeKey(ref).canonical)
+    || null;
 
   /* Refs the view already reported, so a check below does not repeat an item
      the operator has just read three lines higher up. Kept per kind: only
      `lead_unassigned` asks the same question as one of our checks. */
-  const unassignedRefs = new Set(viewItems.filter(i => i.kind === 'lead_unassigned')
-    .flatMap(i => [str(i.ref), low(i.ref)]).filter(Boolean));
-  const listedUnassigned = l => unassignedRefs.has(String(l.id)) || (low(l.email) && unassignedRefs.has(low(l.email)));
+  const unassignedIds = new Set(viewItems.filter(i => i.kind === 'lead_unassigned')
+    .map(i => str(i.ref)).filter(Boolean));
+  const unassignedCanon = new Set(viewItems.filter(i => i.kind === 'lead_unassigned')
+    .map(i => normalizeKey(i.ref).canonical).filter(Boolean));
+  const listedUnassigned = l => unassignedIds.has(String(l.id))
+    || [...identKeys(l)].some(k => unassignedCanon.has(k));
 
   /* ── The four checks ────────────────────────────────────────────────────── */
   const nowMs = Date.now();
@@ -295,38 +456,67 @@ SCREENS.leads = async host => {
   const staleCut = nowMs - STALE_DAYS * 86400000;
   const leadsCapped = all.length >= LEAD_LIMIT;
   const commsCapped = !!comms && comms.length >= COMM_LIMIT;
+  const contactsCapped = !!contacts && contacts.length >= CONTACT_LIMIT;
+
+  /* Ownership, in one place. `leads` carries BOTH `assigned_to_id` and a plain
+     `assigned_to` name, and this screen used to read only the first two of the
+     three while the drawer read all three — so a row owned through `assigned_to`
+     alone rendered "Unassigned" in the table and showed the rep's name in the
+     drawer opened from that very row. lib/lead-drawer.js has carried a comment
+     about that since it was split out. One rule now, used by the alert, the
+     dropdown, the filter and the cell alike. */
+  const repOf = l => str(l.users?.name) || str(l.assigned_to);
+  const owned = l => !!(l.assigned_to_id || repOf(l));
 
   const hot = all.filter(l => up(l.status) === 'HOT');
-  const hotNoRepAll = hot.filter(l => !l.assigned_to_id && !str(l.users?.name));
+  const hotNoRepAll = hot.filter(l => !owned(l));
   const hotNoRep = hotNoRepAll.filter(l => !listedUnassigned(l));
   const hotNoRepDup = hotNoRepAll.length - hotNoRep.length;
 
   const inWindow = all.filter(l => ts(l.created_at) >= windowStart);
-  /* communication_logs is keyed on lead_email. A lead with no email cannot be
-     matched to it in either direction, so it is neither contacted nor
-     uncontacted as far as this screen can prove: it is excluded here and
-     counted in the notes, not silently folded into the alert. */
-  const windowWithEmail = inWindow.filter(l => low(l.email));
-  const loggedAny = new Set((comms || []).map(c => low(c.lead_email)).filter(Boolean));
+  /* A lead nothing identifies — no email, no phone, no chat id — cannot be
+     matched to communication_logs in either direction, so it is neither
+     contacted nor uncontacted as far as this screen can prove: it is excluded
+     here and counted in the notes, not silently folded into the alert. This
+     used to read `low(l.email)`, which threw away lead 35, whose email column
+     holds an empty string and whose ten messages are all filed under a LID. */
+  const windowMatchable = inWindow.filter(matchable);
+  const loggedAny = new Set((comms || []).map(commCanon).filter(Boolean));
   const loggedOut = new Set((comms || []).filter(c => low(c.direction) === 'outbound')
-    .map(c => low(c.lead_email)).filter(Boolean));
-  /* Withheld when the log read failed or hit its ceiling: with a partial log,
-     "never contacted" would name leads that were in fact answered. */
-  const contactUsable = !!comms && !commsErr && !commsCapped;
+    .map(commCanon).filter(Boolean));
+  const anyLogged = l => [...identKeys(l)].some(k => loggedAny.has(k));
+  const anyOutbound = l => [...identKeys(l)].some(k => loggedOut.has(k));
+  /* Withheld when any read the match depends on failed or hit its ceiling: with
+     a partial log, or without the whatsapp_contacts bridge that attaches a
+     `@lid` to a person, "never contacted" would name leads that were in fact
+     answered. That is not a smaller number, it is a false accusation about a
+     named customer, so it is not shown at all. */
+  const contactUsable = !!comms && !commsErr && !commsCapped
+    && !!contacts && !contactsErr && !contactsCapped;
   const neverContacted = contactUsable
-    ? windowWithEmail.filter(l => !loggedAny.has(low(l.email))).sort((a, b) => ts(a.created_at) - ts(b.created_at))
+    ? windowMatchable.filter(l => !anyLogged(l)).sort((a, b) => ts(a.created_at) - ts(b.created_at))
     : [];
   const inboundOnly = contactUsable
-    ? windowWithEmail.filter(l => loggedAny.has(low(l.email)) && !loggedOut.has(low(l.email)))
+    ? windowMatchable.filter(l => anyLogged(l) && !anyOutbound(l))
     : [];
 
   /* What is measuring the 5-minute rule, counted rather than averaged.
      `measured` is the denominator of every sentence this screen writes about
      reply speed, and it is printed in all of them. No mean is taken here at any
      size: an average over a handful of measurements is not a performance figure,
-     and over none of them it is not a figure at all. */
+     and over none of them it is not a figure at all.
+
+     Read from the database on 1 Sep 2026: `measured` is 2 of 3 — leads 34 at
+     1 minute and 38 at 4 — and `breached` is empty. Lead 35 carries no figure
+     because nobody has replied to it since its row was created, which is a
+     statement about the customer rather than about the instrument. */
   const measured = all.filter(l => respOf(l) != null);
   const breached = measured.filter(l => Number(respOf(l)) > SLA_MINUTES);
+  /* The subset the view would also file as sla_breach. Counting both is the only
+     way to say "N breached, of which M are recent enough for v_needs_attention
+     to raise them" without implying the two sets are one. */
+  const slaViewCut = nowMs - SLA_VIEW_WINDOW_DAYS * 86400000;
+  const breachedInViewWindow = breached.filter(l => ts(l.created_at) > slaViewCut);
 
   const scored = all.filter(l => n0(l.ai_score) != null);
   const hotButNew = scored.filter(l => Number(l.ai_score) >= HIGH_SCORE
@@ -344,9 +534,12 @@ SCREENS.leads = async host => {
      phoned yesterday is not neglected.
 
      So it is measured from the events themselves: the newest communication_logs
-     row for the lead's email, and `escalated_at` on the row. That is a better
-     signal than a row-modified stamp would have been — it is a last *contact*
-     time, not a last-edited time — at the cost of one honest complication. The
+     row filed under ANY key that identifies the lead, and `escalated_at` on the
+     row. Until 1 Sep this read the lead's email alone, which is how a customer
+     messaged yesterday under a `@lid` could be named in a "no contact in 14
+     days" alert. That is a better signal than a row-modified stamp would have
+     been — it is a last *contact* time, not a last-edited time — at the cost of
+     one honest complication. The
      log read covers a 30-day window, so a lead with nothing logged inside it is
      one of two different things that look identical: never contacted (provable
      when the lead is younger than the window), or last contacted before the
@@ -354,23 +547,25 @@ SCREENS.leads = async host => {
      ago" is known. Those two are counted apart and named, because an unknown
      last contact is not an old one.
 
-     Leads with no email cannot be matched to communication_logs in either
-     direction, so they are excluded here and counted in the notes rather than
-     declared quiet. */
+     Leads that nothing identifies cannot be matched to communication_logs in
+     either direction, so they are excluded here and counted in the notes rather
+     than declared quiet. */
   const lastLogged = new Map();
   for (const c of (comms || [])) {
-    const em = low(c.lead_email); if (!em) continue;
+    const k = commCanon(c); if (!k) continue;
     const t = ts(c.created_at);
-    if (t > (lastLogged.get(em) || 0)) lastLogged.set(em, t);
+    if (t > (lastLogged.get(k) || 0)) lastLogged.set(k, t);
   }
-  const staleTouch = l => Math.max(lastLogged.get(low(l.email)) || 0, ts(l.escalated_at));
+  const staleTouch = l => Math.max(
+    ...[...identKeys(l)].map(k => lastLogged.get(k) || 0),
+    ts(l.escalated_at), 0);
   const openLeads = all.filter(l => !TERMINAL.has(up(l.status)));
-  const openWithEmail = openLeads.filter(l => low(l.email));
-  const openNoEmail = openLeads.length - openWithEmail.length;
+  const openMatchable = openLeads.filter(matchable);
+  const openUnmatchable = openLeads.length - openMatchable.length;
   /* Counted while filtering, so the breakdown is the same pass as the list and
      the two cannot disagree. */
   const staleParts = { measured: 0, never: 0, beforeWindow: 0 };
-  const staleLeads = (!contactUsable ? [] : openWithEmail.filter(l => {
+  const staleLeads = (!contactUsable ? [] : openMatchable.filter(l => {
     const touch = staleTouch(l);
     if (touch) { if (touch >= staleCut) return false; staleParts.measured++; return true; }
     /* Nothing logged and never escalated. A lead cannot have been contacted
@@ -390,7 +585,7 @@ SCREENS.leads = async host => {
       icon: 'person_alert',
       title: `${num(hotNoRep.length)} HOT ${plural(hotNoRep.length, 'lead has', 'leads have')} no assigned rep`,
       detail: `${num(hotNoRep.length)} of the ${num(hot.length)} HOT ${plural(hot.length, 'lead', 'leads')} read here `
-        + `${plural(hotNoRep.length, 'carries', 'carry')} neither an assigned_to_id nor a rep on the joined users row. `
+        + `${plural(hotNoRep.length, 'carries', 'carry')} none of the three things that could name an owner — no assigned_to_id, no assigned_to name, and no rep on the joined users row. `
         + 'Nobody owns the follow-up.'
         + (hotNoRepDup ? ` ${num(hotNoRepDup)} further unassigned HOT ${plural(hotNoRepDup, 'lead is', 'leads are')} already listed above by v_needs_attention and ${plural(hotNoRepDup, 'is', 'are')} not counted twice here.` : ''),
       leads: hotNoRep,
@@ -400,9 +595,9 @@ SCREENS.leads = async host => {
       sev: 'HOT',
       icon: 'phone_missed',
       title: `${num(neverContacted.length)} ${plural(neverContacted.length, 'lead has', 'leads have')} no logged contact attempt`,
-      detail: `Of the ${num(windowWithEmail.length)} ${plural(windowWithEmail.length, 'lead', 'leads')} created in the last `
-        + `${CONTACT_WINDOW_DAYS} days with an email address, ${num(neverContacted.length)} ${plural(neverContacted.length, 'has', 'have')} `
-        + 'no row in communication_logs at all — inbound or outbound. '
+      detail: `Of the ${num(windowMatchable.length)} ${plural(windowMatchable.length, 'lead', 'leads')} created in the last `
+        + `${CONTACT_WINDOW_DAYS} days that anything identifies, ${num(neverContacted.length)} ${plural(neverContacted.length, 'has', 'have')} `
+        + 'no row in communication_logs under any key they are filed under — not their email, not their WhatsApp chat id, not the synthetic address the router mints — inbound or outbound. '
         + `The oldest arrived ${ago(neverContacted[0]?.created_at)}. `
         + `Leads created before that ${CONTACT_WINDOW_DAYS}-day window are not judged by this check, because the log read covers the window only.`,
       leads: neverContacted,
@@ -429,11 +624,11 @@ SCREENS.leads = async host => {
       sev: 'WARM',
       icon: 'hourglass_empty',
       title: `${num(staleLeads.length)} open ${plural(staleLeads.length, 'lead has', 'leads have')} had no contact in ${STALE_DAYS} days`,
-      detail: `${num(staleLeads.length)} of the ${num(openWithEmail.length)} open ${plural(openWithEmail.length, 'lead', 'leads')} with an email address `
+      detail: `${num(staleLeads.length)} of the ${num(openMatchable.length)} open ${plural(openMatchable.length, 'lead', 'leads')} that anything identifies `
         + `${plural(staleLeads.length, 'has', 'have')} had no logged message and no escalation for ${STALE_DAYS} days `
         + `(${[...TERMINAL].slice(0, 4).join(', ')}… count as finished and are not open). `
-        + 'The leads table has no updated_at column at all, so this is measured from real events — the newest communication_logs row for the '
-        + 'lead\'s email, and escalated_at on the row — and never from a row-modified timestamp, which does not exist here. '
+        + 'The leads table has no updated_at column at all, so this is measured from real events — the newest communication_logs row filed under any key '
+        + 'that identifies the lead, and escalated_at on the row — and never from a row-modified timestamp, which does not exist here. '
         + (staleParts.measured
           ? `${num(staleParts.measured)} of them ${plural(staleParts.measured, 'has', 'have')} a real last-contact date; the ${plural(staleParts.measured, 'only one', 'oldest')} was last touched ${ago(oldestMeasured)}. `
           : '')
@@ -471,8 +666,17 @@ SCREENS.leads = async host => {
     commsCapped
       ? `The contact-log read hit its ${num(COMM_LIMIT)}-row ceiling, so a message may be missing from it. The contact and staleness checks are withheld rather than accusing a rep who did in fact reply.`
       : '',
-    contactUsable && openNoEmail
-      ? `${num(openNoEmail)} open ${plural(openNoEmail, 'lead', 'leads')} ${plural(openNoEmail, 'has', 'have')} no email address. communication_logs is keyed on lead_email, so ${plural(openNoEmail, 'it', 'they')} cannot be matched to it in either direction and ${plural(openNoEmail, 'sits', 'sit')} outside both the contact and the staleness check — ${plural(openNoEmail, 'it is', 'they are')} in no count above.`
+    contactsErr
+      ? `whatsapp_contacts could not be read (${contactsErr.message}), so a lead's @lid messages cannot be attached to the lead — a LID carries no phone digits and can only be bridged through that table. The contact and staleness checks are withheld rather than run on a partial identity, because a lead whose whole conversation is LID-keyed would otherwise be named as never contacted.`
+      : '',
+    contactsCapped
+      ? `The whatsapp_contacts read hit its ${num(CONTACT_LIMIT)}-row ceiling, so some chat-to-lead bridges are missing and the contact and staleness checks are withheld for the same reason.`
+      : '',
+    collided.length
+      ? `${num(collided.length)} ${plural(collided.length, 'lead shares', 'leads share')} the last nine digits of a phone number with another lead. That is the rule the workflows matched on when they wrote these log rows, so their messages cannot be told apart here; ${plural(collided.length, 'that lead was', 'those leads were')} matched on exact keys only rather than merged with somebody else.`
+      : '',
+    contactUsable && openUnmatchable
+      ? `${num(openUnmatchable)} open ${plural(openUnmatchable, 'lead', 'leads')} ${plural(openUnmatchable, 'carries', 'carry')} nothing that identifies ${plural(openUnmatchable, 'it', 'them')} — no email, no phone number, no WhatsApp address. There is no key to look ${plural(openUnmatchable, 'it', 'them')} up in communication_logs by, so ${plural(openUnmatchable, 'it sits', 'they sit')} outside both the contact and the staleness check and ${plural(openUnmatchable, 'is', 'are')} in no count above.`
       : '',
     contactUsable && inboundOnly.length
       ? `${num(inboundOnly.length)} further ${plural(inboundOnly.length, 'lead', 'leads')} in that window ${plural(inboundOnly.length, 'has', 'have')} inbound messages logged but no outbound one — the customer wrote and nothing went back. They are not counted above, which counts only leads with no log line at all.`
@@ -482,18 +686,35 @@ SCREENS.leads = async host => {
       : '',
     /* The absence an owner should be told about rather than shown as a blank
        cell. It is stated here and nowhere else on this screen at the table
-       level, so there is one sentence about it and not two that can drift. */
+       level, so there is one sentence about it and not two that can drift.
+
+       Corrected 1 Sep 2026. This sentence used to say the router would have to
+       write the figure. The router has never written it. The sole writer is
+       `trg_comm_logs_first_response`, an AFTER INSERT trigger on
+       communication_logs, and the reason every lead read the same value was a
+       second, BEFORE INSERT trigger on `leads` that has since been deleted. An
+       owner who read the old sentence went and edited a Make.com prompt over a
+       Postgres trigger. */
     !leadsErr && all.length && !measured.length
       ? `response_time_minutes is null on ${plural(all.length, 'the only lead on file', `all ${num(all.length)} leads on file`)}. `
-        + `That column is the only record this database keeps of how long a lead waited for its first answer, so the ${SLA_MINUTES}-minute rule is currently being measured by nothing: `
-        + `v_needs_attention can raise an sla_breach only against a lead that carries one, no average response time anywhere in this dashboard has an input, and the quiet from both is an unmeasured promise rather than a kept one. `
-        + 'It is the router that would have to write the figure; nothing in this browser can supply it.'
+        + `That column is the only record this database keeps of how long a lead waited for its first answer, so the ${SLA_MINUTES}-minute rule is currently being measured by nothing here: `
+        + `v_needs_attention can raise an sla_breach only against a lead that carries a figure, and no average response time anywhere in this dashboard has an input. `
+        + 'A null means the column was never stamped: nothing has gone back since the lead row was created, or the only reply on file predates the lead row, which the trigger declines to measure. Either way there is no measured wait. The column is written by a Postgres trigger on communication_logs and by nothing else — not by the router, and nothing in this browser can supply it.'
       : '',
     !leadsErr && measured.length && measured.length < all.length
-      ? `${num(all.length - measured.length)} of the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here ${plural(all.length - measured.length, 'carries', 'carry')} no response_time_minutes, so the ${SLA_MINUTES}-minute rule cannot be applied to ${plural(all.length - measured.length, 'it', 'them')} at all — ${plural(all.length - measured.length, 'it is', 'they are')} unmeasured, not fast.`
+      ? `${num(all.length - measured.length)} of the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here ${plural(all.length - measured.length, 'carries', 'carry')} no response_time_minutes. `
+        + `Since 31 Aug that is a statement about the record, not about the instrument: the trigger on communication_logs stamps the column for the first reply it can match to the lead, and it has not stamped ${plural(all.length - measured.length, 'this one', 'these')}. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure — that is why lead 35 carries no figure despite having been answered. `
+        + `The ${SLA_MINUTES}-minute rule cannot be applied to ${plural(all.length - measured.length, 'it', 'them')} at all — there is no measured wait, which is not the same as a fast one.`
       : '',
     !leadsErr && measured.length
       ? `${num(breached.length)} of the ${num(measured.length)} ${plural(measured.length, 'lead', 'leads')} that do carry a first-reply time ${plural(breached.length, 'is', 'are')} over ${SLA_MINUTES} minutes.`
+        /* Said only when the two sets differ. v_needs_attention's sla_breach arm
+           also requires created_at inside 30 days, so a count printed here
+           without that caveat would look like a promise the strip above had
+           broken. */
+        + (breached.length !== breachedInViewWindow.length
+          ? ` v_needs_attention will raise ${num(breachedInViewWindow.length)} of ${plural(breached.length, 'it', 'them')}: its sla_breach arm also requires the lead to have been created in the last ${SLA_VIEW_WINDOW_DAYS} days, so ${num(breached.length - breachedInViewWindow.length)} older ${plural(breached.length - breachedInViewWindow.length, 'breach is', 'breaches are')} counted here and will never appear in the strip above.`
+          : '')
         + (measured.length <= THIN
           ? ` ${num(measured.length)} ${plural(measured.length, 'measurement is', 'measurements are')} not a performance figure, so no average is taken from ${plural(measured.length, 'it', 'them')} on this screen.`
           : '')
@@ -554,13 +775,14 @@ SCREENS.leads = async host => {
      the denominator it counted against, so "no alerts" reads as a result an
      operator can audit rather than as a panel that failed to load.
 
-     The last line is the one that stops this reading as an all-clear. Six of
-     these checks passing says nothing about reply speed, because the column
-     reply speed lives in is empty — and a strip that looked identical either
-     way is exactly how an unmeasured promise gets mistaken for a kept one. */
+     The last line is the one that stops this reading as an all-clear. These
+     checks passing says nothing about reply speed unless something is measuring
+     it, and until 31 Aug nothing was — a strip that looked identical either way
+     is exactly how an unmeasured promise gets mistaken for a kept one. It now
+     states which of the two it is, from the rows it just read. */
   const nLeads = `${num(all.length)} ${plural(all.length, 'lead', 'leads')}`;
   const nothingLines = [
-    `v_needs_attention returned no row with screen = 'leads'. Its two branches here are lead_unassigned, which fires on a lead with no owner, and sla_breach, which fires on a first reply outside the ${SLA_MINUTES}-minute rule — neither is filed against anything in the leads table right now.`,
+    `v_needs_attention returned no row with screen = 'leads'. Its two branches here are lead_unassigned, which fires on a HOT lead with no assigned_to_id, and sla_breach, which fires on a first reply over ${SLA_MINUTES} minutes on a lead created in the last ${SLA_VIEW_WINDOW_DAYS} days — neither is filed against anything in the leads table right now.`,
     leadsErr
       ? ''
       : !all.length
@@ -573,11 +795,21 @@ SCREENS.leads = async host => {
             ? `no lead scored ${HIGH_SCORE} or higher by the router is still sitting at NEW (${num(scored.length)} of ${nLeads} ${plural(scored.length, 'carries', 'carry')} a score); `
             : 'no lead carries a router score at all, so nothing could be untriaged by that check; ')
         + (contactUsable
-            ? `${plural(windowWithEmail.length, 'the one lead', `each of the ${num(windowWithEmail.length)} leads`)} created in the last ${CONTACT_WINDOW_DAYS} days with an email address has at least one line in communication_logs; and no open lead with an email address has gone ${STALE_DAYS} days without a logged message or an escalation (${num(openWithEmail.length)} checked).`
+            ? `${plural(windowMatchable.length, 'the one lead', `each of the ${num(windowMatchable.length)} leads`)} created in the last ${CONTACT_WINDOW_DAYS} days that anything identifies has at least one line in communication_logs under one of their keys; and no open lead that anything identifies has gone ${STALE_DAYS} days without a logged message or an escalation (${num(openMatchable.length)} checked).`
             : `the contact and staleness checks could not run this time, so nothing was checked about who has been spoken to — see the note below.`),
-    !leadsErr && all.length && !measured.length
-      ? `None of that is a statement about how fast anyone was answered: response_time_minutes is null on ${plural(all.length, 'the only lead here', 'every lead here')}, so the sla_breach branch above has nothing to fire on and neither does this screen. The note below says what that leaves unmeasured.`
-      : '',
+    /* Reply speed, said as a separate sentence because it is the one thing the
+       four checks above cannot speak for. Which of the three cases is printed
+       depends on what the rows actually carry, not on an assumption about the
+       column: it held 0 on every lead until 31 Aug while this screen asserted it
+       was null, and neither the screen nor the reader could tell. */
+    leadsErr || !all.length
+      ? ''
+      : !measured.length
+      ? `None of that is a statement about how fast anyone was answered: response_time_minutes is null on ${plural(all.length, 'the only lead here', 'every lead here')}, so nothing here has a measured wait — either nothing has gone back since the lead row was created, or the only reply on file predates it, which the trigger will not measure. The sla_breach branch above has nothing to fire on and neither does this screen.`
+      : `On reply speed, which those checks say nothing about: ${num(measured.length)} of ${nLeads} ${plural(measured.length, 'carries', 'carry')} a first-reply time and ${plural(breached.length, `${num(breached.length)} of those is`, `${num(breached.length)} of those are`)} over ${SLA_MINUTES} minutes.`
+        + (measured.length < all.length
+          ? ` The other ${num(all.length - measured.length)} ${plural(all.length - measured.length, 'carries', 'carry')} no measured wait at all, which is not the same as a fast one — see the note below for what a null does and does not say.`
+          : ''),
   ].filter(Boolean);
 
   const nothing = `<div class="list-item" style="cursor:default">
@@ -611,28 +843,60 @@ SCREENS.leads = async host => {
   let vipSet = null, hist = null;
   const notes = [];
   try {
-    const purchases = await db('purchase_history?select=email');
-    vipSet = new Set(purchases.map(p => low(p.email)));
+    const purchases = await db(`purchase_history?select=email&limit=${PURCHASE_LIMIT}`);
+    /* Empty keys dropped. A purchase row with a blank email would otherwise match
+       lead 35, whose email column is an empty string, and badge a disqualified
+       wrong-number lead as a returning customer. */
+    vipSet = new Set(purchases.map(p => low(p.email)).filter(Boolean));
+    if (purchases.length >= PURCHASE_LIMIT) {
+      notes.push(`The purchase-history read stopped at ${num(PURCHASE_LIMIT)} rows, so the VIP badge covers only the buyers in those rows. A lead without one is not being shown as a first-time buyer — it may simply be outside the rows read.`);
+    }
   } catch (e) {
     notes.push(`Purchase history is unavailable (${e.message}), so returning customers are not flagged.`);
   }
   try {
-    const audit = await db('audit_log?select=workflow,status,lead_email,logged_at&order=logged_at.desc&limit=1000');
+    /* `summary` is selected because outcomeOf() needs it: a row whose summary
+       says a step "did not land" is a PARTIAL whatever status it carries, and
+       that correction lives in lib/health.js rather than in this file. */
+    const audit = await db('audit_log?select=workflow,status,summary,lead_email,logged_at'
+      + `&order=logged_at.desc&limit=${AUDIT_LIMIT}`);
+    if (audit.length >= AUDIT_LIMIT) {
+      notes.push(`The workflow-history read stopped at ${num(AUDIT_LIMIT)} audit_log rows, so an older escalation or drip may be missing from the Actions column. A missing line there means "not in the rows read", not "never happened".`);
+    }
+    /* Keyed on the canonical identity, not on lead_email. The audit log carries
+       the same four key shapes communication_logs does — on 1 Sep 2026 its two
+       non-null keys are one gmail address and one `+971547484167@whatsapp.lead`
+       — so an escalation filed under the synthetic address was invisible to a
+       lead the dashboard held under a real one, and vice versa. */
     hist = new Map();
     for (const a of audit) {
-      const em = low(a.lead_email); if (!em) continue;
+      const k = normalizeKey(a.lead_email).canonical; if (!k) continue;
       const slot = /drip/i.test(a.workflow || '') ? 'drip'
                  : /escalat/i.test(a.workflow || '') ? 'escalate' : null;
       if (!slot) continue;
-      const cur = hist.get(em) || {};
-      if (!cur[slot]) { cur[slot] = a; hist.set(em, cur); }   // rows arrive newest first
+      const cur = hist.get(k) || {};
+      if (!cur[slot]) { cur[slot] = a; hist.set(k, cur); }   // rows arrive newest first
     }
   } catch (e) {
-    notes.push(`The audit log is unavailable (${e.message}), so previous escalations and drips are not shown.`);
+    notes.push(`The audit log is unavailable (${e.message}), so previous escalations and drips are not shown. That is a missing record, not an absence of one.`);
   }
+  /* The newest run of one workflow for one lead, across every key that lead is
+     filed under. Ties are broken by logged_at because two keys can both carry a
+     row and only the later one is "the last time this ran". */
+  const lastRun = (lead, slot) => {
+    let best = null;
+    for (const k of identKeys(lead)) {
+      const row = hist?.get(k)?.[slot];
+      if (row && (!best || ts(row.logged_at) > ts(best.logged_at))) best = row;
+    }
+    return best;
+  };
 
   const sources = [...new Set(all.map(l => l.source).filter(Boolean))].sort();
-  const reps = [...new Set(all.map(l => l.users?.name).filter(Boolean))].sort();
+  /* Built from the same repOf() the cell and the filter use, so a lead owned
+     through `assigned_to` alone gets an entry here instead of being reachable
+     from no option in the dropdown at all. */
+  const reps = [...new Set(all.map(repOf).filter(Boolean))].sort();
 
   /* Actions fired in this browser session. Recorded only after a 2xx, and
      labelled as this session's doing — it is our own receipt, not a DB row. */
@@ -647,8 +911,13 @@ SCREENS.leads = async host => {
       if (f.status === NO_STATUS) { if (str(l.status)) return false; }
       else if (f.status !== 'ALL' && up(l.status) !== f.status) return false;
       if (f.source !== 'ALL' && l.source !== f.source) return false;
-      if (f.rep === '__none' && l.assigned_to_id) return false;
-      if (f.rep !== 'ALL' && f.rep !== '__none' && l.users?.name !== f.rep) return false;
+      /* Both arms read the same thing the Assigned cell renders. They did not:
+         the filter tested assigned_to_id while the cell painted users.name, so a
+         lead the table had just labelled "Unassigned" was hidden the moment the
+         operator selected the Unassigned option. A filter that hides the rows it
+         is named after is worse than no filter. */
+      if (f.rep === '__none' && owned(l)) return false;
+      if (f.rep !== 'ALL' && f.rep !== '__none' && repOf(l) !== f.rep) return false;
       if (f.q) {
         const hay = [l.name, l.email, l.phone, l.vehicle_interest].join(' ').toLowerCase();
         if (!hay.includes(f.q.toLowerCase())) return false;
@@ -716,8 +985,13 @@ SCREENS.leads = async host => {
       </div>
       <div class="grow"><input type="search" id="q" aria-label="Search leads"
         placeholder="Search name, email, phone or vehicle" /></div>
-      <select id="fSource" aria-label="Filter by source" style="width:auto"><option value="ALL">All sources</option>${sources.map(s => `<option>${esc(s)}</option>`).join('')}</select>
-      <select id="fRep" aria-label="Filter by assigned rep" style="width:auto"><option value="ALL">All reps</option><option value="__none">Unassigned</option>${reps.map(s => `<option>${esc(s)}</option>`).join('')}</select>
+      <!-- Every option carries an explicit value. Without one, HTMLOptionElement.value
+           falls back to .text, which the HTML spec strips and collapses whitespace in,
+           so a source called "Facebook  Lead Ads" or a rep called "Ali Hassan " selected
+           an option that could never equal the stored string: 0 of N leads, an empty
+           table and nothing on screen saying why. -->
+      <select id="fSource" aria-label="Filter by source" style="width:auto"><option value="ALL">All sources</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
+      <select id="fRep" aria-label="Filter by assigned rep" style="width:auto"><option value="ALL">All reps</option><option value="__none">Unassigned</option>${reps.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
       <select id="fSort" aria-label="Sort leads" style="width:auto">${Object.entries(SORTS)
         .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
       <div class="t-muted num" id="resultCount"></div>
@@ -744,9 +1018,21 @@ SCREENS.leads = async host => {
     const lines = [];
     for (const a of [ACTIONS.escalate, ACTIONS.drip]) {
       const at = sent.get(`${r.id}|${a.key}`);
+      /* This session's own receipt, and it says so: a 2xx from the webhook is
+         the only thing we know, and it is not an audit_log row. */
       if (at) lines.push(`<span class="t-ok">${esc(a.done)} ${ago(at)} · this session</span>`);
-      const past = hist?.get(low(r.email))?.[a.key];
-      if (past) lines.push(`${esc(past.workflow)} · ${esc(past.status || '')} · ${ago(past.logged_at)}`);
+      const past = lastRun(r, a.key);
+      if (past) {
+        /* The raw status used to be printed here. It is a label the writer chose
+           and it is sometimes wrong about its own row — Finance Calc and the
+           Master Router both write FAILED on rows whose summary says a step did
+           not land, which is a partial delivery, not a failure. lib/health.js
+           mirrors nexus_outcome_class() and is the only place allowed to decide
+           that; the raw status stays on hover so the row can still be traced. */
+        const w = outcomeWords(outcomeOf(past));
+        lines.push(`${esc(past.workflow)} · <span class="t-${esc(w.tone)}" title="${esc(
+          `${w.blurb} audit_log.status on that row reads ${str(past.status) || '(empty)'}.`)}">${esc(w.label)}</span> · ${ago(past.logged_at)}`);
+      }
     }
     return `<div style="display:flex;gap:6px;justify-content:flex-end">${buttons}</div>
       ${lines.length ? `<div class="cell-sub" style="text-align:right;margin-top:4px">${lines.join('<br>')}</div>` : ''}`;
@@ -758,9 +1044,27 @@ SCREENS.leads = async host => {
        somebody picking up a phone, and a number two columns away is a number
        nobody reads out. */
     { label:'Lead', strong: true, render: r =>
-        `${leadName(r)}${vipSet?.has(low(r.email)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}
+        /* Matched on a real address only. purchase_history is keyed on one, so a
+           `+digits@whatsapp.lead` or an empty string can never be a buyer there,
+           and asking is how a blank comes to equal a blank. */
+        `${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}
          <div class="cell-sub">${phoneText(r)}</div>` },
-    { label:'Email', render: r => esc(r.email) || '<span class="t-muted">—</span>' },
+    /* `leads.email` is not always an email. Live on 1 Sep 2026 lead 34's holds
+       `+971547484167@whatsapp.lead`, a key the Master Router synthesises for a
+       lead that arrived over WhatsApp with no address, and lead 35's holds an
+       empty string. Printing the first under a column headed "Email" tells a rep
+       to write to an address that does not exist, and it is the same fault as
+       printing a `@lid` where a name goes, which leadName() above already
+       refuses to do. The value is still shown — it is the key the workflows file
+       this person's messages under — but it is labelled for what it is. */
+    { label:'Email', render: r => {
+        const shape = keyShape(r.email);
+        if (shape === KEY_SHAPE.NONE) return '<span class="t-muted" title="The email column on this row is empty.">—</span>';
+        if (shape === KEY_SHAPE.EMAIL) return esc(r.email);
+        return `<span class="mono t-warm" title="${esc(
+          `Not an email address — ${describeKey(r.email)}. The email column on this lead holds a key the workflows file its messages under, not something a person can be written to.`)}">${esc(str(r.email))}</span>
+          <div class="cell-sub">Not an address</div>`;
+      }},
     { label:'Vehicle interest', render: r => `<span class="t-2">${esc(r.vehicle_interest || '—')}</span>` },
     /* budget_aed is NULL for router-created leads because the Master Router does
        not capture it. Rendering 0 would understate the pipeline silently. */
@@ -776,19 +1080,42 @@ SCREENS.leads = async host => {
           <span style="font-weight:500;min-width:22px;text-align:right">${s}</span></div>`;
       }},
     { label:'Source', render: r => `<span class="chip nowrap" title="${esc(r.source || '')}">${esc(r.source || '—')}</span>` },
-    { label:'Assigned', render: r => r.users?.name
-        ? esc(r.users.name)
-        : `<span class="pill warm"><span class="dot"></span>Unassigned</span>` },
+    /* Three columns can name an owner and this cell reads all three, in the same
+       order lib/lead-drawer.js does. Reading only the users embed made a lead
+       owned through the plain `assigned_to` column render "Unassigned" here
+       while the drawer opened from that same row showed the rep by name. */
+    { label:'Assigned', render: r => {
+        const name = repOf(r);
+        if (!name) {
+          return r.assigned_to_id
+            /* An id that the users(id,name) embed did not resolve is not the
+               same fact as no owner at all, and the operator can act on the
+               difference: one needs assigning, the other needs a users row. */
+            ? `<span class="pill unknown"><span class="dot"></span>Owner not resolved</span>
+               <div class="cell-sub">assigned_to_id ${esc(str(r.assigned_to_id))} is set, but no users row came back for it and assigned_to is empty.</div>`
+            : '<span class="pill warm"><span class="dot"></span>Unassigned</span>';
+        }
+        return `${esc(name)}${r.users?.name || r.assigned_to_id ? '' : '<div class="cell-sub">Named on the lead\'s assigned_to column; there is no rep id on the row.</div>'}`;
+      }},
     { label:'Age', render: r => `<span class="t-muted" title="${esc(when(r.created_at))}">${ago(r.created_at)}</span>` },
     /* An empty response-time cell reads as "answered instantly" to anyone who
-       glances at it. It means nobody measured, which is a different fact and a
-       worse one, so the cell says which of the two it is in words. */
+       glances at it. Until 31 Aug the wording here was "Not measured", which was
+       the right shape for the wrong reason — the column then held 0 on every
+       row, so nothing ever reached this branch and every lead rendered as an
+       instant reply. The BEFORE INSERT trigger that produced those zeroes is
+       gone; the AFTER INSERT trigger on communication_logs stamps the column
+       when a reply it can attribute to the lead lands, and nothing else writes
+       it. A null is not a statement about the customer either, though: the
+       trigger declines to measure a reply that predates the lead row, and lead 35
+       was answered 74 seconds before his row existed. So the cell says the wait
+       was never timed, which is the only thing a null actually carries. */
     { label:'First reply', align:'r', render: r => {
         const m = respOf(r);
         if (m == null) return `<span class="t-warm" title="${esc(
-          `response_time_minutes is null on this row, so how long this customer waited for a first answer was never recorded. This is not a fast reply and not a slow one — the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and v_needs_attention cannot raise an sla_breach for it either.`)}">Not measured</span>`;
+          'response_time_minutes is null on this row. The trigger on communication_logs stamps it for the first reply it can match to this lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure. '
+          + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and v_needs_attention cannot raise an sla_breach for it either.`)}">No first reply timed</span>`;
         return `<span class="${m > SLA_MINUTES ? 't-hot' : 't-ok'}" title="${esc(
-          `response_time_minutes on this row. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
+          `response_time_minutes on this row: the minutes between the lead being created and the first outbound whatsapp, email or sms message the communication_logs trigger could attribute to it, rounded to the nearest whole minute. A reply logged up to 90 seconds before the lead row is recorded as 0 when no inbound message was already on file — a clock-skew allowance between n8n and Postgres — and anything earlier is left unmeasured rather than clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
       }},
     { label:'Actions', align:'r', render: actionCell },
   ];
@@ -802,7 +1129,19 @@ SCREENS.leads = async host => {
       <dl class="kv">
         <dt>Lead</dt><dd>${leadName(lead)}</dd>
         <dt>Phone</dt><dd>${phoneText(lead)}</dd>
-        <dt>Email</dt><dd>${esc(lead.email) || '<span class="t-muted">—</span>'}</dd>
+        <dt>Email</dt><dd>${(() => {
+          /* The same three states the Email column and the drawer paint. This row
+             printed the raw value, so the dialog that asks an operator to confirm
+             an email-addressed action showed `+971547484167@whatsapp.lead` under
+             the word "Email" with nothing saying it is not one — the exact fault
+             the column above was rewritten to stop, on the last screen before the
+             send. */
+          const shape = keyShape(lead.email);
+          if (shape === KEY_SHAPE.NONE) return '<span class="t-muted">No email address on this lead</span>';
+          if (shape === KEY_SHAPE.EMAIL) return esc(lead.email);
+          return `<span class="mono t-warm">${esc(str(lead.email))}</span>`
+            + `<div class="cell-sub">Not an address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under.</div>`;
+        })()}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
         <dt>Status</dt><dd>${pill(lead.status || 'NEW')}</dd>
         <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
@@ -833,6 +1172,15 @@ SCREENS.leads = async host => {
   }
 
   function draw() {
+    /* The screen may have been replaced while a webhook was in flight:
+       confirmAction's continuation calls draw() from an async click handler,
+       where lib/nav.js's generation guard cannot catch a throw, and $('resultCount')
+       is then null. Same class of fault as the superseded drawer in
+       lib/lead-drawer.js — a continuation painting into a screen nobody is
+       looking at — and the same answer: if this card is no longer in the
+       document, there is nothing to repaint. Compared against `false` explicitly
+       so that a host without `isConnected` does not silently disable every draw. */
+    if (card.isConnected === false) return;
     card.querySelectorAll('#segStatus button').forEach(b =>
       b.classList.toggle('on', b.dataset.v === f.status));
     const focus = f.alert ? checkByKey.get(f.alert) : null;

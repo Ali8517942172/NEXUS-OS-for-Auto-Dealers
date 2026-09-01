@@ -19,11 +19,69 @@
 
    The four checks this screen adds on top of the view are the four ways a drip
    embarrasses a dealership:
-     · it is running and has sent nothing,
-     · it is still sequencing somebody who already replied — the worst of them,
-       because the customer answered and the machine kept talking over them,
+     · it is running and has sent nothing on either of its two channels,
+     · somebody answered it and nobody here has answered them back,
      · somebody was enrolled into an *email* sequence with no email address,
      · the credential that does the sending is dead, so every "sent" is false.
+
+   ── 31 Aug 2026. The second check was accusing the workflow of a fault it
+   ── does not have. ──────────────────────────────────────────────────────────
+
+   That check used to read "it is still sequencing somebody who already replied
+   — the worst of them, because the customer answered and the machine kept
+   talking over them", rendered CRITICAL, in red, with a disabled *Stop the
+   sequence* button whose tooltip ended "Reply to these people by hand".
+
+   `7_day_warm_lead_drip_campaign.json` carries FOUR reply gates. Before every
+   send, `Replies Since Enrol (Day 1/3/5/7)` reads `communication_logs` on
+   `direction=eq.inbound` since the enrolment across three key shapes, and
+   `Still Enrolled? (Day N)` routes its false branch to `Stopped Report`; the
+   gates also stop on a terminal lead status. Every send node in the workflow
+   sits downstream of one of those gates, so no step can go out after a reply is
+   recorded. `Stopped Report`'s own header comment names this screen as the
+   reason it exists. So the screen was sending an operator to make an emergency
+   phone call to prevent something the machine already prevents, and doing it in
+   red, above a button that said the machine could not be stopped.
+
+   What is left over after removing the false part is real and is what the alert
+   says now: the customer answered and is waiting for a person. That is a
+   WARNING about a human being, not a CRITICAL about a runaway workflow.
+
+   ── 01 Sep 2026. Four more places the screen contradicted itself. ───────────
+
+   · **"No drip run has ever been logged", printed above a list of five.** The
+     roster is keyed on `audit_log.lead_email` and `continue`s on a null key.
+     All five live drip rows were written by `NEXUS Error Handler`, which records
+     the workflow and the error but not the lead, so `roster.size` was 0 while
+     `dripRuns.length` was 5 — and the KPI, the roster empty state and the
+     activity panel each drew their own conclusion from that. "No run has been
+     logged" and "runs were logged but none carries a lead we can attribute" are
+     now different sentences in all four places, and the second is an alert.
+   · **The screen held credential evidence and asserted its absence.** It looked
+     for a mail-credential failure only in `v_needs_attention`, whose
+     `workflow_failure` branch keeps a row for 24 hours. Two of those same five
+     drip rows read `The credential "Gmail OAuth2 API" needs to be reconnected ·
+     Failed at node: Email: Welcome (Gmail)` and were already sitting in the
+     local `audit` variable. From day two after any such failure the screen
+     printed "No mail-credential failure is recorded in v_needs_attention, so
+     this is the workflow failing for some other reason" and downgraded itself
+     from CRITICAL to WARNING. Both sources are read now.
+   · **The drip's WhatsApp legs were being discarded.** `isMail` is `/mail/i`,
+     which does not match `whatsapp`, and the drip sends `WhatsApp: Welcome` on
+     day 1 and `WhatsApp: Check-in` on day 5, each logging `channel: 'whatsapp'`.
+     A lead who received both showed "0 / no mail logged" and a CRITICAL "The
+     drip has sent nothing", beside a sentence claiming the test was "as generous
+     as it can be made". Both channels are counted and named.
+   · **One person, several keys.** `communication_logs.lead_email` holds an
+     address, a `@c.us` chat id, a `@lid` handle and a `+digits@whatsapp.lead`
+     key for the same customer. The workflow's own reply gates expand across
+     those shapes before deciding to send; this screen did not, so half of a
+     conversation was invisible to it. See `keysFor` — it deliberately duplicates
+     `lib/identity.js`, which is not on this branch yet.
+
+   And `['FAILED','REJECTED']`, the screen's private definition of failure, is
+   gone: `lib/health.js` classifies every run, and the else-branch no longer
+   asserts that everything else succeeded.
 
    Nothing here writes to the database. `communication_logs` and `audit_log` are
    service-role only; this screen reads them and calls exactly one n8n webhook.
@@ -60,8 +118,9 @@
    screen should say:
 
      · **The 7-Day Warm Lead Drip is the one workflow in this system that carries
-       no `executionTimeout`, and that is deliberate.** Every other workflow now
-       has a five-minute ceiling. This one's Wait nodes at day 1, 3, 5 and 7 hold
+       no `executionTimeout`, and that is deliberate.** Fifteen of the other
+       twenty carry a five-minute ceiling; five do not, and the banner used to
+       say all twenty did. This one's Wait nodes at day 1, 3, 5 and 7 hold
        a single execution open for a week, so a five-minute ceiling would kill
        every enrolment four minutes into the first wait. The absence is correct
        and must not be tidied away, so it is stated on the enrolment card where
@@ -78,6 +137,11 @@ import { HOOK, db, n8n } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
+/* The only place allowed to decide what an audit_log status means. This screen
+   used to carry its own definition — `['FAILED', 'REJECTED'].includes(status)`
+   — and then printed "Every logged drip run succeeded" of everything else,
+   which is a false sentence over a PARTIAL row. */
+import { OUTCOME, isIncomplete, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -113,11 +177,15 @@ const SEQUENCE_DAYS = 7;
    enrolment four minutes into the first wait, with the webhook still returning
    200 and this screen still reporting people as enrolled. */
 const NO_TIMEOUT_NOTE =
-  'This is the one workflow in the system with no executionTimeout, and that is deliberate. Every other workflow '
-  + 'carries a five-minute ceiling; this one\u2019s Wait nodes at day 1, day 3, day 5 and day 7 hold a single execution '
-  + 'open for a week, so a five-minute ceiling would cut every enrolment off four minutes into the first wait — while the '
-  + 'webhook still answered 200 and this screen still called the lead enrolled. Do not add one. Checked in n8n on '
-  + '24 Aug 2026: the dashboard cannot read a workflow\u2019s timeout, so this is a stated fact, not a reading.';
+  'This is the one workflow in the system with no executionTimeout, and that is deliberate. This one\u2019s Wait nodes at '
+  + 'day 1, day 3, day 5 and day 7 hold a single execution open for a week, so any ceiling would cut every enrolment off '
+  + 'partway into the first wait — while the webhook still answered 200 and this screen still called the lead enrolled. '
+  + 'Do not add one. There is no single house baseline to restore it to: of the other 20 workflows, 15 carry 300 s, '
+  + 'Ask-AI \u2014 RAG Query Agent carries 120 s, Competitor Price Scraping carries 1200 s (raised from 300 on 30 Aug), and the '
+  + 'three NEXUS Public pages carry 60 s. This banner said "every other workflow carries a five-minute ceiling" until '
+  + '31 Aug 2026, when the 21 workflow JSONs were counted; it is addressed to whoever standardises them, which is exactly '
+  + 'the reader who would have standardised on the wrong number. Counted from the JSON in n8n-workflows/, not read from '
+  + 'the live n8n instance — the dashboard cannot read a workflow\u2019s timeout.';
 
 /* Names shown inline on an alert before it collapses into "+N more". The row
    itself scrolls to and highlights the full set, so this is a glance. */
@@ -135,11 +203,21 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const muted = t => `<span class="t-muted">${esc(t)}</span>`;
 const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
 
-/* A workflow run that proves the mailbox works. Matched on the workflow name and
-   its summary together, because the evidence that mattered on 24 Aug was a
-   Customer 360 run reporting `Gmail - Get Emails → ok` — the mailbox is named in
-   the summary, not in the workflow's own name. */
-const MAILBOX_RE = /gmail|smtp|mailbox|e-?mail/i;
+/* A workflow run that proves the mailbox works. The bar is a MACHINE-WRITTEN
+   step result naming the mailbox — the evidence that mattered on 24 Aug was a
+   Customer 360 run reporting `Gmail - Get Emails → ok`, where the mailbox is
+   named in the summary and not in the workflow's own name — or a workflow whose
+   own name is the mailbox.
+
+   Prose in a summary is not proof, and that is not a hypothetical. audit_log
+   holds a Lead Escalation SUCCESS row from 30 Aug 02:39 whose summary is an
+   AI-written recommendation ending "...and an email mirroring the same offer
+   for record". The old test was /gmail|smtp|mailbox|e-?mail/i over workflow and
+   summary together, so that paragraph read as proof the mail credential had
+   recovered — eleven minutes after the same workflow logged `Escalation email
+   failed: "Forbidden - perhaps check your credentials?"`. */
+const MAILBOX_NAME_RE  = /gmail|smtp|mailbox/i;
+const MAILBOX_PROOF_RE = /(gmail|smtp|mailbox|e-?mail)[^|·\n]{0,40}(?:→|->)\s*ok\b/i;
 
 /* Resolve to [value, null] or [null, error] so one failed read cannot abort the
    others through Promise.all, and so every failure arrives as a fact the strip
@@ -167,6 +245,18 @@ const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
    cannot be the destination of an email sequence, which is the only question
    being asked. */
 const EMAILISH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/* And these are not addresses at all, however much they parse like one. The
+   Master Router synthesises `+<digits>@whatsapp.lead` when a WhatsApp lead has
+   no email — live lead 34 "Siva Thangavelu" carries exactly that string in
+   `leads.email` — and `whatsapp.lead` contains a dot, so EMAILISH alone accepted
+   it. That is not pedantry: such a lead was offered in the enrolment table with
+   the Enrol button live, and the workflow's Gmail node would then have tried to
+   send to it. The one question this pair is asked is whether a value can be the
+   destination of an email sequence, and for a WhatsApp handle it is no.
+   (`HANDLE` above answers a different question — whether a string is a chat
+   handle being rendered as somebody's *name* — so the two stay separate.) */
+const SYNTHETIC_ADDR = /@(whatsapp\.lead|lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
+const isRealEmail = v => { const k = low(v); return !!k && EMAILISH.test(k) && !SYNTHETIC_ADDR.test(k); };
 
 /* What makes a `workflow_failure` row evidence about *email delivery* rather
    than about some other workflow: it has to name a credential problem and it
@@ -175,20 +265,162 @@ const EMAILISH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CREDENTIAL_RE = /credential|oauth|reconnect|re-?authenticat|invalid_grant|unauthori[sz]ed|401/i;
 const MAILER_RE     = /gmail|smtp|e-?mail|sendgrid|mailer/i;
 
-/* A drip message is an outbound row whose channel mentions mail, which catches
-   "email" and "gmail" both. communication_logs records no workflow id, so mail
-   the drip sent cannot be told apart from mail anything else sent; the panel
-   below says so rather than labelling all of it as drip output. */
-const isMail = c => /mail/i.test(String(c.channel || ''));
+/* The drip has TWO send channels, not one, and counting only the first is how
+   this screen came to print a red "The drip has sent nothing since it was
+   started" beside a sentence claiming its own test was "as generous as it can be
+   made". Read out of the workflow JSON on 31 Aug 2026:
 
-/* There is no webhook that stops a sequence. HOOK lists `lead-trigger`, which
-   only starts one. Faking a stop by writing to audit_log or communication_logs
-   is not available either — both are service-role only — so the control that an
-   operator actually wants here is rendered and disabled with the reason. */
-const NO_CANCEL_HOOK =
-  'There is no webhook for cancelling a drip enrolment. HOOK in lib/data.js exposes lead-trigger, '
-  + 'which only starts a sequence; n8n exposes nothing that stops one, and this dashboard will not '
-  + 'write to a service-role table to fake it. Reply to these people by hand.';
+     day 1  Email: Welcome (Gmail)      -> Log Welcome Email       channel 'email'
+     day 1  WhatsApp: Welcome           -> Log WhatsApp Welcome    channel 'whatsapp'
+     day 3  Email: Follow Up (Gmail)    -> Log Follow Up Email     channel 'email'
+     day 5  WhatsApp: Check-in          -> Log WhatsApp Check-in   channel 'whatsapp'
+     day 7  Email: Final Offer (Gmail)  -> Log Final Offer Email   channel 'email'
+
+   /mail/i does not match 'whatsapp', so two of the five legs were discarded
+   before the per-lead index was built. Both are counted now, and which channel
+   a send was on is printed rather than averaged away.
+
+   The `system` channel stays excluded on purpose: those rows are
+   [SILENCE-ESCALATED] markers, not messages to a customer.
+
+   communication_logs still records no workflow id, so a row the drip wrote
+   cannot be told apart from one anything else wrote; the panels below say so
+   rather than labelling all of it as drip output. */
+const isMail     = c => /mail/i.test(String(c.channel || ''));
+const isWhatsApp = c => /whats\s*-?app/i.test(String(c.channel || ''));
+/* Which of the two to say out loud. Never averaged into "messages": a customer
+   who got a WhatsApp and no email is a different situation from one who got
+   both, and the operator's next move differs. */
+const channelSummary = rows => {
+  const m = rows.filter(isMail).length;
+  const w = rows.filter(isWhatsApp).length;
+  const bits = [];
+  if (m) bits.push(`${num(m)} ${plural(m, 'email', 'emails')}`);
+  if (w) bits.push(`${num(w)} ${plural(w, 'WhatsApp message', 'WhatsApp messages')}`);
+  return bits.join(' and ');
+};
+
+/* ── One person, several keys. THIS DELIBERATELY DUPLICATES lib/identity.js. ──
+   `communication_logs.lead_email` is not an address, it is whichever key the
+   writer happened to hold: a real address from the drip and the web form,
+   `+<digits>@whatsapp.lead` and `<digits>@c.us` from the Master Router, and a
+   bare `<digits>@lid` handle from WAHA. One person therefore sits under several
+   values, and this screen used to read exactly one of them.
+
+   Live on 01 Sep 2026 02:50 UTC, lead 38 "Ali" (`shabbir53ujjainwala@gmail.com`,
+   `+918517942172`): 7 inbound and 8 outbound rows filed under the gmail address,
+   and 6 inbound and 6 outbound filed under `+918517942172@whatsapp.lead`. The
+   roster read the first pair and reported the second half of his conversation as
+   not having happened.
+
+   The workflow does not have this bug. Every `Replies Since Enrol (Day N)` node
+   builds `or=(lead_email.eq.<email>,lead_email.eq.<digits>@c.us,
+   lead_email.eq.+<digits>@whatsapp.lead)` before it decides whether to send. A
+   screen that now leans on those gates to say the sequence stops itself has to
+   see at least what they see.
+
+   Matched on the LAST NINE DIGITS of the phone, which is what the backend
+   `Resolve Lead Identity` node in whatsapp_bdc_ai_agent.json does and for its
+   reason: the country code and the leading zero are written inconsistently by
+   WAHA, by the router and by hand, and the last nine digits are the part that
+   survives all three.
+
+   `@lid` keys are excluded from the digit match on purpose. A LID is an internal
+   WAHA id, not a phone number — `111948809162873@lid` is fifteen digits of
+   something else — so matching its tail against a phone would attach a stranger's
+   messages to a lead. That is the same blind spot the gate has, and it is stated
+   on screen in GATE_BLIND_SPOT rather than papered over here.
+
+   THIS IS A DUPLICATE AND MUST NOT SURVIVE. `lib/identity.js` exists on branch
+   frontend/identity-resolver and is not on this branch, so it cannot be imported
+   yet. When it lands, delete everything down to `keysFor` and import it — two
+   resolvers will drift, and the one that drifts is the one nobody is testing. */
+const LID_KEY  = /@lid$/i;
+const digitsOf = v => String(v == null ? '' : v).replace(/[^0-9]/g, '');
+const last9    = v => { const d = digitsOf(v); return d.length >= 9 ? d.slice(-9) : ''; };
+function keysFor(email, phone, known) {
+  const out = new Set();
+  const e = low(email);
+  if (e) out.add(e);
+  const d = digitsOf(phone);
+  if (d.length >= 9) {
+    /* The two shapes the router writes, added whether or not a row exists under
+       them yet, so the set means "this person's keys" and not "keys we have
+       already seen traffic on". */
+    out.add(`${d}@c.us`);
+    out.add(`+${d}@whatsapp.lead`);
+    const tail = d.slice(-9);
+    for (const k of known) {
+      if (LID_KEY.test(k)) continue;
+      if (last9(k.split('@')[0]) === tail) out.add(k);
+    }
+  }
+  return out;
+}
+/* Every row filed under any of a person's keys, newest first. */
+const gather = (index, keys) => {
+  const out = [];
+  keys.forEach(k => { const rows = index.get(k); if (rows) out.push(...rows); });
+  return out.sort((a, b) => ts(b.created_at) - ts(a.created_at));
+};
+
+/* The four gates run at the four Wait boundaries and nowhere else, so this is
+   when a reply recorded now will actually end the sequence. Null once day 7 has
+   gone by — by then it has run out on its own. */
+/* ago() is backward-looking: its first branch is `d < 60`, and a future
+   timestamp gives a negative d, so it renders the next gate as "just now" —
+   the opposite of what it means. Forward-looking times get their own words. */
+const inAbout = at => {
+  const d = (at - Date.now()) / 1000;
+  if (!Number.isFinite(d) || d <= 0) return 'now';
+  if (d < 3600)  return `in about ${Math.max(1, Math.round(d / 60))} minutes`;
+  if (d < 86400) return `in about ${Math.round(d / 3600)} hours`;
+  return `in about ${Math.round(d / 86400)} days`;
+};
+
+const GATE_DAYS = [1, 3, 5, 7];
+const nextGateAt = since => {
+  if (!since) return null;
+  const now = Date.now();
+  for (const d of GATE_DAYS) { const at = since + d * 86400000; if (at > now) return at; }
+  return null;
+};
+
+/* A deliberate exit, not a fault. `Stopped Report` is reached only from the
+   false output of a `Still Enrolled? (Day N)` gate — the customer replied, or
+   the lead went terminal — and it writes PARTIAL, because stopping always
+   leaves the remaining steps unsent. The `Audit Log` node prefixes those
+   summaries with "Stopped before <step> - "; a run that went the distance is
+   prefixed "Completed - ". That prefix is the only thing in the row separating
+   "the machine did the right thing" from "the machine dropped a step", and
+   lib/health.js cannot draw it, because at the status level both are PARTIAL.
+   So it is drawn here, once, and named at every call site. */
+const STOPPED_PREFIX   = /^\s*stopped before\b/i;
+const isDeliberateStop = a => outcomeOf(a) === OUTCOME.PARTIAL && STOPPED_PREFIX.test(String(a && a.summary || ''));
+/* What is held against the workflow: FAILURE or PARTIAL, minus the deliberate
+   stops. A customer who replied is not a failed run. */
+const countsAgainst = a => isIncomplete(a) && !isDeliberateStop(a);
+
+/* There is still no webhook that cancels an enrolment, and there no longer
+   needs to be one. This used to be a disabled *Stop the sequence* button ending
+   "Reply to these people by hand", which read as the operator being the last
+   line of defence against a machine about to talk over a customer. The machine
+   stops itself. The reply is the thing that needs a person. */
+const SELF_STOPPING_NOTE =
+  'There is no button here because there is nothing to stop: the workflow\u2019s own day-1/3/5/7 gates end the sequence at its '
+  + 'next step. n8n exposes no cancel webhook either — HOOK in lib/data.js lists only lead-trigger, which starts a sequence — '
+  + 'and this dashboard will not write to a service-role table to fake one. Open the conversation and answer them.';
+
+/* What the gates cannot see, stated because this screen now leans on them.
+   Each `Replies Since Enrol (Day N)` node builds its `or=` from the lead\u2019s
+   email plus `<digits>@c.us` and `+<digits>@whatsapp.lead`, taking the digits
+   from the phone on the leads row via `Lead State (Day N)`. So a reply filed
+   only under a @lid handle, or a lead carrying no phone number, is invisible to
+   the gate — and to the expansion this screen does, for the same reason. */
+const GATE_BLIND_SPOT =
+  'The gate builds its lookup from the lead\u2019s email plus the two WhatsApp key shapes it can derive from the phone number on '
+  + 'the leads row, so a reply filed only under a @lid handle, or a lead with no phone number on it, is invisible to the gate — '
+  + 'and to the key expansion this screen does, for the same reason: a LID carries no phone digits and identifies nobody.';
 
 /* n8n does not expose credential state to the browser directly. What the
    dashboard can see is the wreckage: a failure row in v_needs_attention and the
@@ -349,9 +581,14 @@ SCREENS.campaigns = async host => {
       const k = low(a.lead_email);
       if (!k) continue;
       let r = roster.get(k);
-      if (!r) { r = { key: k, email: a.lead_email, name: a.lead_name || null, runs: 0, failures: 0, last: a, first: a }; roster.set(k, r); }
+      if (!r) { r = { key: k, email: a.lead_email, name: a.lead_name || null, runs: 0, failures: 0, stops: 0, last: a, first: a }; roster.set(k, r); }
       r.runs++;
-      if (['FAILED', 'REJECTED'].includes(up(a.status))) r.failures++;
+      /* lib/health.js decides what the status means, and `countsAgainst` then
+         removes the deliberate stops. A sequence that ended because the customer
+         answered is the workflow working, and counting it as a failure against
+         the lead is what `Stopped Report`'s own header comment warns about. */
+      if (countsAgainst(a)) r.failures++;
+      if (isDeliberateStop(a)) r.stops++;
       if (!r.name && a.lead_name) r.name = a.lead_name;
       r.first = a;                                   // overwritten until the oldest row wins
     }
@@ -361,28 +598,55 @@ SCREENS.campaigns = async host => {
     const unkeyedIdx  = dripRuns.map((a, i) => (low(a.lead_email) ? -1 : i)).filter(i => i >= 0);
     const nonEmailIdx = dripRuns.map((a, i) => {
       const k = low(a.lead_email);
-      return (k && !EMAILISH.test(k)) ? i : -1;
+      return (k && !isRealEmail(k)) ? i : -1;
     }).filter(i => i >= 0);
-    const failedIdx   = dripRuns.map((a, i) => (['FAILED', 'REJECTED'].includes(up(a.status)) ? i : -1)).filter(i => i >= 0);
+    /* Failures, stops and successes are three different things and the screen
+       used to have a word for only the first. `countsAgainst` is FAILURE or
+       PARTIAL minus the deliberate stops; `isDeliberateStop` is the gate doing
+       its job; `isSuccess` is the only thing that licenses the word "succeeded".
+       Everything left over — NO_RESULT, ENROLLED, UNKNOWN — is none of the three
+       and is counted as such rather than being swept into the success branch. */
+    const failedIdx  = dripRuns.map((a, i) => (countsAgainst(a) ? i : -1)).filter(i => i >= 0);
+    const stoppedIdx = dripRuns.map((a, i) => (isDeliberateStop(a) ? i : -1)).filter(i => i >= 0);
+    const successRuns = dripRuns.filter(isSuccess).length;
+    const refusedRuns = dripRuns.filter(isRefusal).length;
+    const otherRuns   = dripRuns.length - failedIdx.length - stoppedIdx.length - successRuns - refusedRuns;
+    /* THE distinction the screen could not previously draw. All five drip rows
+       live today were written by NEXUS Error Handler with lead_email NULL, so
+       the roster loop skips every one of them and roster.size is 0 while
+       dripRuns.length is 5. "No drip run has ever been logged" and "five runs
+       are listed below" were both printed, 300 px apart. They are different
+       facts and now have different names. Checked 01 Sep 2026 02:50 UTC:
+       5 drip rows, 5 with lead_email NULL, 0 attributable. */
+    const attributableRuns = dripRuns.length - unkeyedIdx.length;
+    const runsButNobody    = dripRuns.length > 0 && roster.size === 0;
 
     const outbound = comms.filter(c => low(c.direction) === 'outbound');
     const inbound  = comms.filter(c => low(c.direction) === 'inbound');
     const mail     = outbound.filter(isMail).sort((a, b) => ts(b.created_at) - ts(a.created_at));
-    const mailBy   = new Map();
-    for (const m of mail) {
-      const k = low(m.lead_email);
-      if (!k) continue;
-      if (!mailBy.has(k)) mailBy.set(k, []);
-      mailBy.get(k).push(m);
-    }
-    const inboundBy = new Map();
-    for (const c of inbound) {
-      const k = low(c.lead_email);
-      if (!k) continue;
-      if (!inboundBy.has(k)) inboundBy.set(k, []);
-      inboundBy.get(k).push(c);
-    }
+    /* What the drip actually sends. Five legs, two channels: the day-1/3/7 Gmail
+       sends and the day-1/day-5 WhatsApp sends, each with its own Log node
+       writing channel 'email' or channel 'whatsapp'. Counting only /mail/i threw
+       two of the five away and then called the result maximally generous. */
+    const sends = outbound.filter(c => isMail(c) || isWhatsApp(c))
+      .sort((a, b) => ts(b.created_at) - ts(a.created_at));
+    /* Every distinct key in communication_logs, needed before the per-enrolment
+       indexes so a person's other keys can be found by phone tail. */
+    const commKeys = new Set(comms.map(c => low(c.lead_email)).filter(Boolean));
+    const indexBy = rows => {
+      const m = new Map();
+      for (const c of rows) {
+        const k = low(c.lead_email);
+        if (!k) continue;
+        if (!m.has(k)) m.set(k, []);
+        m.get(k).push(c);
+      }
+      return m;
+    };
+    const sendsBy   = indexBy(sends);
+    const inboundBy = indexBy(inbound);
     const lastMail = mail[0] || null;
+    const lastSend = sends[0] || null;
 
     const silenced = comms.filter(c => String(c.message || '').startsWith('[SILENCE-ESCALATED]'));
 
@@ -390,7 +654,18 @@ SCREENS.campaigns = async host => {
     leads.forEach(l => { const k = low(l.email); if (k && !leadByEmail.has(k)) leadByEmail.set(k, l); });
     roster.forEach(r => { if (!r.name) r.name = leadByEmail.get(r.key)?.name || null; });
 
-    const eligible = leads.filter(l => ['WARM', 'COLD'].includes(up(l.status)) && low(l.email));
+    /* isRealEmail, not `low(l.email)`. The Master Router synthesises
+       `+<digits>@whatsapp.lead` into `leads.email` for a WhatsApp lead with no
+       address — live lead 34 "Siva Thangavelu" carries exactly that, checked
+       01 Sep 2026 — and that string satisfies EMAILISH because `whatsapp.lead`
+       contains a dot. Such a lead used to appear here with a live Enrol button,
+       and the workflow's Gmail node would then have attempted a send to it. */
+    const nurture  = leads.filter(l => ['WARM', 'COLD'].includes(up(l.status)));
+    const eligible = nurture.filter(l => isRealEmail(l.email));
+    /* Not "no email": a synthetic key, which is a third state and the one that
+       used to be mistaken for an address. Kept separate so the alert can name
+       the string rather than reporting these leads as simply unreachable. */
+    const synthEmailLeads = nurture.filter(l => !isRealEmail(l.email) && low(l.email));
     /* There was a `notEnrolled` list here that nothing read — the enrolment
        table derives the same set inside visible() from the live filter. Removed
        rather than left as a second definition of "not enrolled" for the two to
@@ -398,9 +673,10 @@ SCREENS.campaigns = async host => {
     /* Warm and cold leads with no email at all. They never appear in the table
        below — the drip is addressed by email — so without this they are simply
        invisible on the screen that is supposed to be nurturing them. */
-    const noEmailLeads = leads.filter(l => ['WARM', 'COLD'].includes(up(l.status)) && !low(l.email));
-    const nurtureable  = eligible.length + noEmailLeads.length;
-    const noEmailWithPhone = noEmailLeads.filter(l => str(l.phone)).length;
+    const noEmailLeads = nurture.filter(l => !low(l.email));
+    const unreachable  = noEmailLeads.concat(synthEmailLeads);
+    const nurtureable  = nurture.length;
+    const noEmailWithPhone = unreachable.filter(l => str(l.phone)).length;
 
     /* ── Who and what these rows actually are ────────────────────────────────
        Three descriptions of the data itself, each of which turns an empty panel
@@ -423,7 +699,6 @@ SCREENS.campaigns = async host => {
        customer sits under several values and a distinct count of that column
        reports more contacts than exist. v_conversations resolves it; where it
        could not be read, that is said rather than substituted for. */
-    const commKeys = new Set(comms.map(c => low(c.lead_email)).filter(Boolean));
     const personCount = convs ? convs.length : null;
     const identityNote = convsErr
       ? `v_conversations could not be read (${convsErr.message}), so how many people these ${num(comms.length)} messages belong to is not known here. `
@@ -451,22 +726,36 @@ SCREENS.campaigns = async host => {
     roster.forEach(r => {
       const since = ts(r.first.logged_at);
       r.since = since;
-      r.mails   = (mailBy.get(r.key) || []).filter(x => ts(x.created_at) >= since);
-      r.replies = (inboundBy.get(r.key) || []).filter(x => ts(x.created_at) >= since)
-        .sort((a, b) => ts(b.created_at) - ts(a.created_at));
+      r.lead = leadByEmail.get(r.key) || null;
+      /* All of this person's keys, not just the one the drip was enrolled on.
+         Without the lead row there is no phone number, so the set collapses to
+         the single enrolment key — which is stated on the roster row rather
+         than silently producing a smaller count. */
+      r.keys = keysFor(r.key, r.lead && r.lead.phone, commKeys);
+      r.keyExpanded = r.keys.size > 1;
+      r.sends   = gather(sendsBy, r.keys).filter(x => ts(x.created_at) >= since);
+      r.mails   = r.sends.filter(isMail);
+      r.waSends = r.sends.filter(isWhatsApp);
+      r.replies = gather(inboundBy, r.keys).filter(x => ts(x.created_at) >= since);
       r.judgeable = since >= commFloor;
       /* Within the sequence window the remaining steps are still queued inside
          n8n; past it the sequence has run out by itself. The two need different
          actions from the operator, so they are not merged. */
       r.midSequence = since > 0 && (nowMs - since) < SEQUENCE_DAYS * 86400000;
-      r.lead = leadByEmail.get(r.key) || null;
-      r.addressable = EMAILISH.test(r.key);
+      /* When a reply recorded now actually ends the sequence: at the next Wait
+         boundary, because that is where the gate runs. Null past day 7. */
+      r.nextGate = nextGateAt(since);
+      r.addressable = isRealEmail(r.key);
     });
     const rosterAll   = [...roster.values()];
     const judgeable   = rosterAll.filter(r => r.judgeable);
     const unjudgeable = rosterAll.length - judgeable.length;
-    const zeroSend    = judgeable.filter(r => !r.mails.length)
+    /* Zero sends on EITHER channel. A lead who got both WhatsApp legs and no
+       email has not been ignored by the drip, and used to be reported in red as
+       having received nothing. */
+    const zeroSend    = judgeable.filter(r => !r.sends.length)
       .sort((a, b) => a.since - b.since);
+    const mailOnlyGap = judgeable.filter(r => r.sends.length && !r.mails.length);
     const replied     = rosterAll.filter(r => r.replies.length)
       .sort((a, b) => Number(b.midSequence) - Number(a.midSequence) || ts(b.replies[0].created_at) - ts(a.replies[0].created_at));
     const repliedMid  = replied.filter(r => r.midSequence);
@@ -535,6 +824,56 @@ SCREENS.campaigns = async host => {
       && CREDENTIAL_RE.test(`${str(i.title)} ${str(i.detail)}`)
       && MAILER_RE.test(`${str(i.title)} ${str(i.detail)}`));
 
+    /* ── The screen held the evidence and asserted its absence. ───────────────
+       v_needs_attention's workflow_failure branch is
+       `WHERE a.status = 'FAILED' AND a.logged_at > now() - '24:00:00'`, so it
+       ages a credential failure out after a day. This screen read only that view
+       for credential evidence, and then printed "No mail-credential failure is
+       recorded in v_needs_attention, so this is the workflow failing for some
+       other reason" — while `audit`, already in hand two hundred lines above,
+       held rows reading `The credential "Gmail OAuth2 API" needs to be
+       reconnected · Failed at node: Email: Welcome (Gmail)`.
+
+       Checked 01 Sep 2026 02:50 UTC: v_needs_attention carries no
+       mail-credential row at all, and audit_log carries two of them, from
+       17 Aug 14:21 and 23 Aug 04:28, both against the drip. From day two after
+       any such failure the screen permanently blamed "some other reason" and
+       downgraded the alert from CRITICAL to WARNING.
+
+       Both sources are searched now, with the same two-part test — it must name
+       a credential problem AND name the mail transport. The view row is the one
+       that licenses the words "right now"; an audit row older than the view's
+       window is evidence about the mailbox that nothing has since contradicted,
+       which is a different and weaker sentence, and the alert says which it has. */
+    const credLogged = audit
+      .filter(a => outcomeOf(a) === OUTCOME.FAILURE
+        && CREDENTIAL_RE.test(`${str(a.workflow)} ${str(a.summary)}`)
+        && MAILER_RE.test(`${str(a.workflow)} ${str(a.summary)}`))
+      .sort((a, b) => ts(b.logged_at) - ts(a.logged_at));
+    /* One vocabulary over two shapes, so nothing downstream has to know which
+       table a piece of evidence came from. */
+    const credEvidence = [
+      ...credFailures.map(i => ({
+        at: i.at, detail: str(i.detail) || str(i.title), workflow: str(i.title),
+        live: true, where: 'v_needs_attention', screen: str(i.screen),
+      })),
+      /* An audit summary is not a one-line detail the way a view row is: the
+         Lead Escalation rows carry the whole AI-written escalation brief after
+         the error, and printing it verbatim buries the alert under a page of
+         sales advice. The error is at the front of the string, so the front of
+         the string is what is shown, and it is marked as clipped. */
+      ...credLogged.map(a => {
+        const full = str(a.summary).replace(/\s+/g, ' ');
+        return {
+          at: a.logged_at,
+          detail: full.length > 180 ? `${full.slice(0, 180)}…` : full,
+          clipped: full.length > 180,
+          workflow: str(a.workflow), live: false, where: 'audit_log', screen: '',
+        };
+      }),
+    ].sort((a, b) => ts(b.at) - ts(a.at));
+    const credLiveNow = credFailures.length > 0;
+
     const dripHealth = (health || []).filter(looksLikeDrip);
     const dripFail30 = dripHealth.reduce((s, w) => s + (n0(w.failures_30d) || 0), 0);
     const dripRun30  = dripHealth.reduce((s, w) => s + (n0(w.runs_30d) || 0), 0);
@@ -560,14 +899,29 @@ SCREENS.campaigns = async host => {
        COMPLETED, so a workflow hung on the mailbox right now leaves no row at
        all — which is why the wording below says what was observed rather than
        "email is working". */
-    const newestCredFailure = credFailures.length ? Math.max(...credFailures.map(i => ts(i.at))) : 0;
+    const newestCredFailure = credEvidence.length ? Math.max(...credEvidence.map(i => ts(i.at))) : 0;
+    /* Proof has to be MACHINE-WRITTEN. `isSuccess` rather than a status string,
+       and a step result naming the mailbox rather than any mention of mail:
+       audit_log holds a Lead Escalation SUCCESS row from 30 Aug 02:39 whose
+       summary is an AI-written recommendation ending "an email mirroring the
+       same offer", eleven minutes after the same workflow logged
+       `Escalation email failed: "Forbidden - perhaps check your credentials?"`.
+       Verified 01 Sep 2026: that summary matches the old loose regex and does
+       not match MAILBOX_PROOF_RE. A paragraph of advice is not a working
+       mailbox. */
     const mailProof = newestCredFailure
-      ? (audit.filter(a => up(a.status) === 'SUCCESS'
+      ? (audit.filter(a => isSuccess(a)
             && ts(a.logged_at) > newestCredFailure
-            && MAILBOX_RE.test(`${str(a.workflow)} ${str(a.summary)}`))
+            && (MAILBOX_PROOF_RE.test(str(a.summary)) || MAILBOX_NAME_RE.test(str(a.workflow))))
           .sort((a, b) => ts(b.logged_at) - ts(a.logged_at))[0] || null)
       : null;
-    const delivery = credFailures.length
+    /* Four states, and 'broken' now covers evidence from either source. Which
+       source it came from changes the wording, not the severity: a credential
+       failure that nothing has contradicted is the last thing known about the
+       mailbox whether or not a 24-hour view still lists it. `degraded` is now
+       reachable only when NO credential evidence exists anywhere, which is what
+       makes its "failing for some other reason" sentence true. */
+    const delivery = credEvidence.length
       ? (mailProof ? 'recovered' : 'broken')
       : (dripFail30 > 0 ? 'degraded' : 'unknown');
 
@@ -575,7 +929,11 @@ SCREENS.campaigns = async host => {
        dialog is where the irreversible click is taken, so it has to carry the
        same fact the strip carries — not a softer version of it. */
     const deliveryTitle = delivery === 'broken'
-      ? 'Email delivery is broken right now: a workflow recorded a mail credential failure. Enrolling queues the sequence, but no email leaves until the credential is reconnected.'
+      ? (credLiveNow
+          ? 'Email delivery is broken right now: a workflow recorded a mail credential failure in the last 24 hours. Enrolling queues the sequence, but no email leaves until the credential is reconnected.'
+          : `The last thing recorded about this mailbox is a credential failure, ${ago(credEvidence[0].at)}, and nothing has succeeded on it since. `
+            + 'It is out of v_needs_attention\u2019s 24-hour window, so this is read from audit_log — evidence that the mailbox was dead and has not been shown working, not a live alarm. '
+            + 'Enrolling queues the sequence; whether an email leaves is unproven.')
       : delivery === 'recovered'
         ? `The mail credential that stopped this drip has been reconnected: ${str(mailProof.workflow) || 'a later run'} completed successfully on the same mailbox at ${stamp(mailProof.logged_at)}, after the failure. `
           + 'Enrolling queues the sequence inside n8n. That is evidence rather than a guarantee — audit_log only records runs that completed.'
@@ -613,24 +971,39 @@ SCREENS.campaigns = async host => {
     const alerts = [];
 
     if (delivery === 'broken') {
-      const top = credFailures[0];
+      const top = credEvidence[0];
       alerts.push({
         key: 'email',
         sev: 'CRITICAL',
         icon: 'unsubscribe',
         chip: 'email delivery',
-        title: 'Email delivery is broken right now — every “Enrolled” row on this screen means queued, not delivered',
-        detailHtml: `A workflow recorded this verbatim: <span class="mono">${esc(str(top.detail) || str(top.title) || 'no detail on the row')}</span>. `
+        /* Same severity either way. What changes is the tense: a live view row
+           licenses "right now", an aged-out audit row licenses "the last thing
+           recorded". The screen used to have only the first sentence and no
+           second source, so once the view aged the row out it printed the
+           opposite claim instead. */
+        title: credLiveNow
+          ? 'Email delivery is broken right now — every “Enrolled” row on this screen means queued, not delivered'
+          : 'The last thing recorded about the mailbox is a credential failure, and nothing has proved it working since',
+        detailHtml: `A workflow recorded this: <span class="mono">${esc(str(top.detail) || 'no detail on the row')}</span>`
+          + `${top.clipped ? ' <span class="t-muted">(clipped — the full text is on the audit row)</span>' : ''}. `
           /* Where the row is filed matters, and getting it wrong in either
              direction is a lie: claiming an automation row was raised about
              campaigns, or claiming a campaigns row belongs to somebody else. */
-          + `Raised ${esc(ago(top.at))}${!str(top.screen) ? ''
-            : low(top.screen) === SCREEN_ID
-              ? ' and filed by v_needs_attention against this screen — it is listed above as well'
-              : ` and filed by v_needs_attention against the <span class="mono">${esc(str(top.screen))}</span> screen, not this one; it is repeated here because every send step of the drip goes out through that same mailbox`}. `
-          + `${credFailures.length > 1 ? `${num(credFailures.length)} such failures are recorded. ` : ''}`
+          + `Raised ${esc(ago(top.at))} by <span class="mono">${esc(top.workflow || 'an unnamed workflow')}</span>${top.live
+            ? (!str(top.screen)
+                ? ' and carried by v_needs_attention'
+                : low(top.screen) === SCREEN_ID
+                  ? ' and filed by v_needs_attention against this screen — it is listed above as well'
+                  : ` and filed by v_needs_attention against the <span class="mono">${esc(str(top.screen))}</span> screen, not this one; it is repeated here because every send step of the drip goes out through that same mailbox`)
+            : '. v_needs_attention no longer carries it — that view keeps a workflow_failure for 24 hours — so this is read from <span class="mono">audit_log</span>, which this screen had already loaded'}. `
+          + `${credEvidence.length > 1
+            ? `${num(credEvidence.length)} mail-credential ${plural(credEvidence.length, 'failure is', 'failures are')} recorded across the two sources, the oldest ${esc(ago(credEvidence[credEvidence.length - 1].at))}. `
+            : ''}`
           + `${dripHealthLine} ${deliveryEvidence} `
-          + `Enrolling still works: <span class="mono">${esc(HOOK.warmDrip)}</span> queues the sequence inside n8n. Nothing in that sequence can reach a customer until the credential is reconnected.`,
+          + `Enrolling still works: <span class="mono">${esc(HOOK.warmDrip)}</span> queues the sequence inside n8n. `
+          + 'The three email steps — day 1, day 3 and day 7 — cannot reach a customer until the credential is reconnected. '
+          + 'The day-1 and day-5 WhatsApp steps go out over WAHA and are unaffected, so a lead with a phone number still hears something and a lead without one hears nothing at all.',
         target: mailCard,
         keys: null,
         hint: 'Show the outbound mail log',
@@ -642,7 +1015,14 @@ SCREENS.campaigns = async host => {
         icon: 'error',
         chip: 'email delivery',
         title: `The drip workflow logged ${num(dripFail30)} ${plural(dripFail30, 'failure', 'failures')} in the last 30 days`,
-        detailHtml: `${dripHealthLine} No mail-credential failure is recorded in v_needs_attention, so this is the workflow failing for some other reason. `
+        /* This sentence used to be printed while the screen held two rows saying
+           the Gmail credential needed reconnecting, because it looked only in
+           v_needs_attention and that view drops a failure after 24 hours. It is
+           now reached only when BOTH sources come back empty, and it names them
+           both so the next reader can see what was actually searched. */
+        detailHtml: `${dripHealthLine} No mail-credential failure is recorded in v_needs_attention, and none of the `
+          + `${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read names a credential problem on the mail transport either, `
+          + 'so this is the workflow failing for some other reason. '
           + `${deliveryEvidence} ${esc(NOT_PROBED)}`,
         target: mailCard,
         keys: null,
@@ -650,27 +1030,48 @@ SCREENS.campaigns = async host => {
       });
     }
 
-    if (repliedMid.length || replied.length) {
+    if (replied.length) {
       const stale = replied.length - repliedMid.length;
+      /* When the machine will act, so the operator is not left guessing whether
+         they have to. The gates run only at the Wait boundaries. */
+      const nextGate = repliedMid.map(r => r.nextGate).filter(Boolean).sort((a, b) => a - b)[0] || null;
       alerts.push({
         key: 'replied',
-        sev: repliedMid.length ? 'CRITICAL' : 'WARNING',
+        /* WARNING, not CRITICAL, and it is a different alert. This used to be
+           CRITICAL "they answered, and the sequence was still scheduled to talk
+           over them", with a disabled Stop the sequence button whose tooltip
+           ended "Reply to these people by hand" — i.e. the operator was told to
+           make an emergency call to prevent something the workflow prevents by
+           itself. What is actually wrong is that a customer is waiting for a
+           person, which is a WARNING about a human being and not a CRITICAL
+           about a runaway machine. */
+        sev: 'WARNING',
         icon: 'reply',
-        chip: 'answered you',
-        title: `${num(replied.length)} enrolled ${plural(replied.length, 'lead has', 'leads have')} replied since being enrolled`,
-        detailHtml: `Each of these has at least one inbound row in communication_logs dated at or after their first drip run — they answered, and the sequence was still scheduled to talk over them. `
+        chip: 'waiting on a person',
+        title: `${num(replied.length)} enrolled ${plural(replied.length, 'lead has', 'leads have')} replied and ${plural(replied.length, 'is', 'are')} waiting for an answer`,
+        detailHtml: 'Each of these has at least one inbound row in communication_logs dated at or after their first drip run. '
+          + 'The sequence is not going to talk over them: <span class="mono">7_day_warm_lead_drip_campaign.json</span> puts a '
+          + '<span class="mono">Replies Since Enrol (Day N)</span> read and a <span class="mono">Still Enrolled? (Day N)</span> gate in front of '
+          + `every one of its five sends, and the false branch of each gate goes to <span class="mono">Stopped Report</span>. `
           + (repliedMid.length
-            ? `${num(repliedMid.length)} ${plural(repliedMid.length, 'was', 'were')} enrolled within the last ${SEQUENCE_DAYS} days, so the remaining steps of ${plural(repliedMid.length, 'that sequence is', 'those sequences are')} still queued inside n8n; the workflow has no reply-detection step, so nothing stops them. `
+            ? `${num(repliedMid.length)} ${plural(repliedMid.length, 'was', 'were')} enrolled within the last ${SEQUENCE_DAYS} days, so ${plural(repliedMid.length, 'that sequence is', 'those sequences are')} still open inside n8n — `
+              + `${nextGate
+                ? `the next gate runs at ${esc(stamp(new Date(nextGate).toISOString()))}, ${esc(inAbout(nextGate))}, and stops it there. `
+                : 'the next gate stops it at its next step. '}`
+              + 'The gates also stop on a terminal lead status. '
             : '')
           + (stale
-            ? `${num(stale)} ${plural(stale, 'was', 'were')} enrolled more than ${SEQUENCE_DAYS} days ago, so ${plural(stale, 'that sequence has', 'those sequences have')} run out on ${plural(stale, 'its', 'their')} own — the reply is still unanswered by anybody here. `
+            ? `${num(stale)} ${plural(stale, 'was', 'were')} enrolled more than ${SEQUENCE_DAYS} days ago, so ${plural(stale, 'that sequence has', 'those sequences have')} run out on ${plural(stale, 'its', 'their')} own. `
             : '')
+          + 'What is outstanding is the reply itself: nobody here has answered it. '
           + (commsCapped
             ? `The message read was capped at ${num(LOG_LIMIT)} rows, so a reply older than that would not be seen — this count can only be too low, never too high.`
-            : `Counted across the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read.`),
+            : `Counted across the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read, across every key each person is filed under.`),
         peopleHtml: previewOf(replied.map(r => personOf(r.key, r.name))),
-        footHtml: `<button class="btn sm" type="button" disabled title="${esc(NO_CANCEL_HOOK)}">Stop the sequence</button>
-          <span class="cell-sub" style="margin-left:8px">No webhook exists to cancel an enrolment — see the button's tooltip.</span>`,
+        /* No button. A disabled control implies the action is the right one and
+           merely unavailable; here the action is not wanted. */
+        footHtml: `<span class="cell-sub">${esc(SELF_STOPPING_NOTE)}</span>`,
+        why: GATE_BLIND_SPOT,
         target: rosterCard,
         keys: new Set(replied.map(r => r.key)),
         hint: 'Show these people in the enrolment roster',
@@ -685,11 +1086,20 @@ SCREENS.campaigns = async host => {
         icon: 'mark_email_unread',
         chip: 'zero sends',
         title: allSilent
-          ? `The drip has sent nothing since it was started — all ${num(judgeable.length)} ${plural(judgeable.length, 'enrolment', 'enrolments')} have zero logged sends`
-          : `${num(zeroSend.length)} of ${num(judgeable.length)} ${plural(judgeable.length, 'enrolment has', 'enrolments have')} zero logged sends`,
-        detailHtml: `No outbound mail row exists in communication_logs at or after ${plural(zeroSend.length, 'this enrolment', 'these enrolments')}. `
+          ? `The drip has sent nothing on either channel since it was started — ${plural(judgeable.length, 'the single enrolment has', `all ${num(judgeable.length)} enrolments have`)} zero logged sends`
+          : `${num(zeroSend.length)} of ${num(judgeable.length)} ${plural(judgeable.length, 'enrolment has', 'enrolments have')} zero logged sends on either channel`,
+        /* "Either channel" is the whole correction. The drip sends five legs on
+           two channels — Gmail on days 1, 3 and 7, WhatsApp on days 1 and 5,
+           each with its own Log node writing channel 'email' or 'whatsapp' — and
+           the old test was /mail/i, which does not match 'whatsapp'. A lead who
+           received both WhatsApp legs was reported in red as having received
+           nothing, beside a sentence calling the test maximally generous. */
+        detailHtml: 'No outbound row on a mail <em>or</em> a WhatsApp channel exists in communication_logs at or after '
+          + `${plural(zeroSend.length, 'this enrolment', 'these enrolments')}. `
           + `The oldest has been enrolled since ${esc(ago(zeroSend[0].first.logged_at))} (${esc(stamp(zeroSend[0].first.logged_at))}). `
-          + 'communication_logs records no workflow id, so <em>any</em> outbound mail row on or after the enrolment counts as a send here — the test is as generous as it can be made, and it still comes back zero. '
+          + 'The drip sends five steps across two channels — day 1, 3 and 7 by email and day 1 and 5 by WhatsApp — and both are counted. '
+          + 'communication_logs records no workflow id, so <em>any</em> outbound row on either channel, filed under any key this person is known by, counts as a send here. '
+          + 'The [SILENCE-ESCALATED] rows on the <span class="mono">system</span> channel are the one thing excluded, because they are markers and not messages to a customer. '
           + (delivery === 'broken'
             ? 'That is consistent with the credential failure above: the sequence is queueing and the mailbox is dead.'
             : delivery === 'recovered'
@@ -705,25 +1115,26 @@ SCREENS.campaigns = async host => {
       });
     }
 
-    if (unkeyedIdx.length || unaddressable.length) {
-      const bad = unkeyedIdx.length + nonEmailIdx.length;
+    /* Two different faults that used to share one alert, and sharing it produced
+       a false accusation. A run with NO lead_email is the error handler writing
+       an anonymous record — nothing "enrolled a lead without checking it had an
+       address" — and it is reported by the unattributable alert below. A run
+       whose lead_email is a chat key rather than an address is the fault this
+       alert is actually about, and only that one can be blamed on the enrolment. */
+    if (nonEmailIdx.length || unaddressable.length) {
+      const bad = Math.max(nonEmailIdx.length, unaddressable.length);
       alerts.push({
         key: 'unaddressed',
         sev: 'CRITICAL',
         icon: 'alternate_email',
-        chip: 'no address',
-        title: `${num(bad)} drip ${plural(bad, 'run has', 'runs have')} no usable email address on the audit row`,
-        detailHtml: (unkeyedIdx.length
-            ? `${num(unkeyedIdx.length)} ${plural(unkeyedIdx.length, 'run carries', 'runs carry')} no <span class="mono">lead_email</span> at all. `
-            : '')
-          + (nonEmailIdx.length
-            ? `${num(nonEmailIdx.length)} ${plural(nonEmailIdx.length, 'run carries', 'runs carry')} a <span class="mono">lead_email</span> that is not an email address `
-            + `(${unaddressable.slice(0, PREVIEW).map(r => `<span class="mono">${esc(r.email || r.key)}</span>`).join(', ')}${unaddressable.length > PREVIEW ? `, +${num(unaddressable.length - PREVIEW)} more` : ''}). `
-            : '')
-          + 'This is an email sequence with nowhere to send to: those runs cannot have delivered anything, and they cannot be attached to a customer either. '
-          + 'A run reaching this state means something upstream enrolled a lead without checking it had an address.',
+        chip: 'not an address',
+        title: `${num(bad)} drip ${plural(bad, 'run carries', 'runs carry')} a chat key in lead_email rather than an email address`,
+        detailHtml: `${num(nonEmailIdx.length)} ${plural(nonEmailIdx.length, 'run carries', 'runs carry')} a <span class="mono">lead_email</span> that an email sequence cannot send to `
+          + `(${unaddressable.slice(0, PREVIEW).map(r => `<span class="mono">${esc(r.email || r.key)}</span>`).join(', ')}${unaddressable.length > PREVIEW ? `, +${num(unaddressable.length - PREVIEW)} more` : ''}). `
+          + 'A <span class="mono">+digits@whatsapp.lead</span> or <span class="mono">@lid</span> value parses like an address and is not one. '
+          + 'Those runs cannot have delivered an email, and something upstream enrolled a lead without checking it had a real address.',
         target: activityCard,
-        keys: new Set([...unkeyedIdx, ...nonEmailIdx].map(i => `run-${i}`)),
+        keys: new Set(nonEmailIdx.map(i => `run-${i}`)),
         hint: 'Show these runs in campaign activity',
       });
     }
@@ -734,11 +1145,48 @@ SCREENS.campaigns = async host => {
         sev: 'CRITICAL',
         icon: 'error',
         chip: 'failed runs',
-        title: `${num(failedIdx.length)} drip ${plural(failedIdx.length, 'run', 'runs')} logged FAILED or REJECTED`,
-        detailHtml: `Out of ${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} in the audit log. `
-          + 'The workflow itself recorded these as failures, so the enrolment did not even queue cleanly — this is separate from whether the mail later went out.',
+        title: `${num(failedIdx.length)} drip ${plural(failedIdx.length, 'run', 'runs')} failed or went out half-done`,
+        /* Classified by lib/health.js, then with the deliberate stops removed.
+           `['FAILED','REJECTED']` was the whole definition of failure here, which
+           both missed PARTIAL and would have counted a sequence that stopped
+           because the customer replied as a failure against the lead. */
+        detailHtml: `Out of ${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} in the audit log`
+          + `${stoppedIdx.length ? `, ${num(stoppedIdx.length)} of which stopped deliberately and ${plural(stoppedIdx.length, 'is', 'are')} not counted here` : ''}. `
+          + 'Classified by lib/health.js, which mirrors nexus_outcome_class() in Postgres: a run counts against the workflow when it FAILED outright or went out half-done, and a PARTIAL whose summary begins "Stopped before" is the reply gate doing its job and is excluded. '
+          + 'This is separate from whether the mail later went out.',
         target: activityCard,
         keys: new Set(failedIdx.map(i => `run-${i}`)),
+        hint: 'Show these runs in campaign activity',
+      });
+    }
+
+    /* The contradiction this screen used to print without noticing: five drip
+       runs listed at the bottom of the page and "No drip run has ever been
+       logged" in the headline KPI. Both were generated from the same array. The
+       cause is that all five rows were written by NEXUS Error Handler, which
+       records the workflow and the error but not the lead, so the roster loop
+       skipped every one of them. It is now an alert in its own right, because a
+       workflow whose only audit trail is anonymous is a real defect and not a
+       rendering quirk. */
+    if (unkeyedIdx.length) {
+      alerts.push({
+        key: 'unattributable',
+        sev: 'WARNING',
+        icon: 'person_off',
+        chip: runsButNobody ? 'no lead on any run' : 'no lead on some runs',
+        title: runsButNobody
+          ? `${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run is', 'runs are')} logged, and not one carries a lead this screen can attribute it to`
+          : `${num(unkeyedIdx.length)} of ${num(dripRuns.length)} drip runs carry no lead, so ${plural(unkeyedIdx.length, 'it is', 'they are')} in no per-person figure on this screen`,
+        detailHtml: `${runsButNobody
+            ? `Every one of them has <span class="mono">lead_email</span> NULL on the audit row, so the roster below is empty while campaign activity lists ${num(dripRuns.length)}. `
+              + 'That is not "the campaign has never run" — it has run and nobody can be told who for. '
+            : `${num(unkeyedIdx.length)} ${plural(unkeyedIdx.length, 'run has', 'runs have')} <span class="mono">lead_email</span> NULL on the audit row. The roster below lists ${num(roster.size)} ${plural(roster.size, 'person', 'people')} and campaign activity lists ${num(dripRuns.length)} runs; the difference is these. `}`
+          + `${dripRuns.filter(a => /error handler/i.test(str(a.workflow)) || /failed at node/i.test(str(a.summary))).length
+            ? 'These rows were written by the error handler rather than by the drip\u2019s own <span class="mono">Audit: Enrolled</span> and <span class="mono">Audit Log</span> nodes, which do carry the lead — so a run that crashes before those nodes leaves an anonymous record. '
+            : ''}`
+          + 'The roster, the enrolment KPI and the activity panel below all say this the same way rather than three different ways.',
+        target: activityCard,
+        keys: new Set(unkeyedIdx.map(i => `run-${i}`)),
         hint: 'Show these runs in campaign activity',
       });
     }
@@ -758,19 +1206,31 @@ SCREENS.campaigns = async host => {
       });
     }
 
-    if (noEmailLeads.length) {
+    if (unreachable.length) {
       alerts.push({
         key: 'noemail',
         sev: 'WARNING',
         icon: 'contact_page',
         chip: 'unreachable',
-        title: `${num(noEmailLeads.length)} warm or cold ${plural(noEmailLeads.length, 'lead has', 'leads have')} no email address, so the drip cannot reach ${plural(noEmailLeads.length, 'them', 'any of them')}`,
+        title: `${num(unreachable.length)} warm or cold ${plural(unreachable.length, 'lead has', 'leads have')} no email address the drip can send to`,
         detailHtml: `Out of ${num(nurtureable)} warm and cold ${plural(nurtureable, 'lead', 'leads')} read here. `
+          + (noEmailLeads.length
+            ? `${num(noEmailLeads.length)} ${plural(noEmailLeads.length, 'carries', 'carry')} no address at all. `
+            : '')
+          /* The state that used to be invisible: a synthetic key that parses as
+             an address. These leads were offered in the enrolment table with a
+             live Enrol button, and the Gmail node would have attempted a send. */
+          + (synthEmailLeads.length
+            ? `${num(synthEmailLeads.length)} ${plural(synthEmailLeads.length, 'carries', 'carry')} a WhatsApp key in <span class="mono">leads.email</span> rather than an address `
+              + `(${synthEmailLeads.slice(0, PREVIEW).map(l => `<span class="mono">${esc(str(l.email))}</span>`).join(', ')}${synthEmailLeads.length > PREVIEW ? `, +${num(synthEmailLeads.length - PREVIEW)} more` : ''}) — `
+              + 'the Master Router synthesises those when a WhatsApp lead has no email, and they parse as addresses because the domain contains a dot. '
+              + 'Until 31 Aug 2026 such a lead appeared in the table below with the Enrol button live, and the workflow\u2019s Gmail node would have tried to send to it. '
+            : '')
           + 'The 7-day sequence is addressed by email, so these leads are excluded from the enrolment table below entirely — without this line they are simply invisible on the screen that is meant to be nurturing them. '
           + `${num(noEmailWithPhone)} of them ${plural(noEmailWithPhone, 'has', 'have')} a phone number, which is the only way anybody is reaching them today.`,
-        peopleHtml: previewOf(noEmailLeads.map(l => ({ lead: l, name: str(l.name), email: '', phone: str(l.phone) }))),
+        peopleHtml: previewOf(unreachable.map(l => ({ lead: l, name: str(l.name), email: '', phone: str(l.phone) }))),
         target: null,
-        why: 'These leads have no email address, so they do not appear in the enrolment table below and there is no row on this screen to scroll to.',
+        why: 'These leads carry no address the drip can send to, so they do not appear in the enrolment table below and there is no row on this screen to scroll to.',
       });
     }
 
@@ -790,7 +1250,7 @@ SCREENS.campaigns = async host => {
       /* The good news, said once and with its evidence, so nobody has to
          remember whether last night's red banner was ever resolved. */
       delivery === 'recovered'
-        ? `A mail credential failure is still recorded in v_needs_attention from ${ago(credFailures[0].at)}, but it has been superseded: `
+        ? `A mail credential failure is recorded in ${credEvidence[0].where} from ${ago(credEvidence[0].at)}, but it has been superseded: `
           + `${str(mailProof.workflow) || 'a later workflow run'} completed successfully on the same mailbox at ${stamp(mailProof.logged_at)}. `
           + `This screen therefore does not report email delivery as broken. ${NOT_PROBED}`
         : '',
@@ -800,6 +1260,17 @@ SCREENS.campaigns = async host => {
          without anybody being told it had been set aside. */
       unjudgeable
         ? `${num(unjudgeable)} ${plural(unjudgeable, 'enrolment is', 'enrolments are')} older than the oldest message this screen read, so whether anything was ever sent to ${plural(unjudgeable, 'them', 'them')} cannot be decided from the ${num(LOG_LIMIT)} rows read. ${plural(unjudgeable, 'It is', 'They are')} marked "not judged" in the roster and counted in no send figure above.`
+        : '',
+      /* The per-lead shape of a dead mailbox: WhatsApp went out, email did not.
+         Worth saying separately from "nothing was sent", which is a different
+         fault with a different first move. */
+      mailOnlyGap.length
+        ? `${num(mailOnlyGap.length)} ${plural(mailOnlyGap.length, 'enrolment has', 'enrolments have')} a logged WhatsApp send since enrolment and no logged email. That is the per-lead shape of a mail credential failure, and it is not counted as "nothing sent".`
+        : '',
+      /* Said once, because the roster, the reply KPI and the zero-send check all
+         depend on it and none of them can see past it. */
+      rosterAll.some(r => !r.keyExpanded)
+        ? GATE_BLIND_SPOT
         : '',
       alerts.length > 1 ? 'A lead can satisfy more than one alert, so these counts overlap and do not add up to a total.' : '',
       ...notes,
@@ -852,15 +1323,20 @@ SCREENS.campaigns = async host => {
        checks with nothing to judge is a different statement, and claiming
        "every enrolment has a logged send" of an empty roster is how a panel
        starts lying without anybody writing a false sentence. */
+    /* Three different states, and the screen used to have wording for two. The
+       middle one is the live one: runs exist, none can be attached to a person. */
     const checksLine = roster.size
       ? `Across the ${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} and ${num(comms.length)} `
-        + `${plural(comms.length, 'message', 'messages')} read here: every judged enrolment has a logged send, nobody who replied is still being `
-        + 'sequenced, every drip run carries a usable email address, and no run is logged as failed.'
-      : `No drip run appears in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read, so nobody is enrolled and this screen's `
-        + 'checks have nothing to judge — which is not the same as everything being fine. '
-        + (eligible.length
-          ? `${num(eligible.length)} ${plural(eligible.length, 'lead is', 'leads are')} eligible to enrol in the table below.`
-          : 'No lead is eligible to enrol either, so there is nothing on this screen to start.');
+        + `${plural(comms.length, 'message', 'messages')} read here: every judged enrolment has a logged send on one of the two channels, everyone who replied has been answered, `
+        + 'every drip run carries a usable email address, and no run failed or went out half-done.'
+      : runsButNobody
+        ? `${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run is', 'runs are')} logged in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read, and every one carries a NULL lead_email, `
+          + 'so there is nobody for these checks to judge. That is not the campaign being fine and it is not the campaign never having run — it is a campaign with no attributable record.'
+        : `No drip run appears in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read, so nobody is enrolled and this screen's `
+          + 'checks have nothing to judge — which is not the same as everything being fine. '
+          + (eligible.length
+            ? `${num(eligible.length)} ${plural(eligible.length, 'lead is', 'leads are')} eligible to enrol in the table below.`
+            : 'No lead is eligible to enrol either, so there is nothing on this screen to start.');
 
     const nothingHtml = `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-${attnErr ? 'warm' : roster.size ? 'ok' : 'muted'}" style="font-size:20px" aria-hidden="true">${attnErr ? 'help' : roster.size ? 'task_alt' : 'inbox'}</span>
@@ -869,12 +1345,14 @@ SCREENS.campaigns = async host => {
           ? 'Nothing this screen can check is wrong — but the shared alert view did not load'
           : roster.size
             ? 'Nothing on this screen needs attention right now'
-            : 'There is no campaign running for this screen to have anything wrong with'}</div>
+            : runsButNobody
+              ? 'The campaign has run, and none of its runs can be attached to a customer'
+              : 'There is no campaign running for this screen to have anything wrong with'}</div>
         <div class="cell-sub" style="white-space:normal">${attnErr
           ? 'v_needs_attention could not be read, so anything the database itself would have raised — including the mail-credential failure that decides whether this screen can send at all — is unknown right now. '
           : delivery === 'recovered'
             ? 'v_needs_attention returned no row filed against Campaigns. The mail-credential failure it still carries has been superseded by a later successful run on the same mailbox, so it is not raised here as a live fault. '
-            : 'v_needs_attention returned no row filed against Campaigns, and no mail-credential failure is recorded anywhere in it. '}${esc(checksLine)}</div>
+            : 'v_needs_attention returned no row filed against Campaigns, and neither that view nor the audit rows read name a mail-credential failure. '}${esc(checksLine)}</div>
       </div>
     </div>`;
 
@@ -890,6 +1368,22 @@ SCREENS.campaigns = async host => {
        other figure on this screen is allowed to claim: with one person in it,
        a percentage is a description of that person. */
     const failedRuns = failedIdx.length;
+    /* "Every logged drip run succeeded" was the else-branch of a two-value test,
+       so it was printed over PARTIAL, ENROLLED and NOT_EXECUTED rows alike. Only
+       isSuccess licenses the word "succeeded"; a deliberate stop is reported as
+       what it is; anything left is named as neither rather than counted as one. */
+    const runOutcomeLine = [
+      failedRuns ? `<span class="t-hot">${num(failedRuns)} ${plural(failedRuns, 'run', 'runs')} failed or went out half-done</span>` : '',
+      stoppedIdx.length ? muted(`${num(stoppedIdx.length)} ${plural(stoppedIdx.length, 'run', 'runs')} stopped deliberately — the customer replied or the lead went terminal`) : '',
+      !failedRuns && successRuns === dripRuns.length && dripRuns.length
+        ? muted('Every logged drip run succeeded')
+        : successRuns
+          ? muted(`${num(successRuns)} of ${num(dripRuns.length)} ${plural(dripRuns.length, 'run', 'runs')} succeeded outright`)
+          : dripRuns.length ? muted('No run succeeded outright') : '',
+      otherRuns > 0
+        ? muted(`${num(otherRuns)} ${plural(otherRuns, 'run is', 'runs are')} neither a success nor a failure — enrolled, refused or logged with a status this system does not define`)
+        : '',
+    ].filter(Boolean).join('<br>');
 
     strip.innerHTML = [
       kpi('Campaign audience', num(eligible.length),
@@ -899,42 +1393,63 @@ SCREENS.campaigns = async host => {
             : nLeads
               ? `No lead in the database is warm or cold with an email address. By status the database holds ${statusMix}`
               : 'There is no lead in the database at all'),
-          noEmailLeads.length
-            ? warn(`${num(noEmailLeads.length)} further warm or cold ${plural(noEmailLeads.length, 'lead has', 'leads have')} no email address, so the drip cannot reach ${plural(noEmailLeads.length, 'them', 'any of them')}`)
+          unreachable.length
+            ? warn(`${num(unreachable.length)} further warm or cold ${plural(unreachable.length, 'lead has', 'leads have')} no address the drip can send to`
+                + (synthEmailLeads.length ? `, ${num(synthEmailLeads.length)} of ${plural(synthEmailLeads.length, 'which carries', 'which carry')} a WhatsApp key in the email column` : ''))
             : '',
           nLeads === 1
             ? warn('One lead in the database. A campaign audience of one person carries no rate, no segment and no comparison — see the panel below for what that rules out.')
             : '',
         ].filter(Boolean).join('<br>'),
         nLeads === 1 ? 't-warm' : ''),
+      /* The headline that contradicted the rest of the page. It printed "No drip
+         run has ever been logged" whenever roster.size was 0, including when
+         dripRuns.length was 5 — the roster is built by lead_email and every one
+         of those five rows has none. The count is people; the subtitle now says
+         which of the three reasons a zero is a zero. */
       kpi('Leads enrolled', num(roster.size),
         roster.size
           ? `${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')} in the audit log`
-            + (failedRuns
-              ? `<br><span class="t-hot">${num(failedRuns)} ${plural(failedRuns, 'run', 'runs')} logged FAILED or REJECTED</span>`
-              : `<br>${muted('Every logged drip run succeeded')}`)
-            + (zeroSend.length ? `<br><span class="t-hot">${num(zeroSend.length)} with nothing sent since enrolment</span>` : '')
+            + (attributableRuns < dripRuns.length
+              ? `<br>${warn(`Only ${num(attributableRuns)} of them carry a lead_email; the other ${num(dripRuns.length - attributableRuns)} cannot be attached to anybody and are in no per-person figure here`)}`
+              : '')
+            + `<br>${runOutcomeLine}`
+            + (zeroSend.length ? `<br><span class="t-hot">${num(zeroSend.length)} with nothing sent on either channel since enrolment</span>` : '')
           : instrumented === false
             ? warn('The drip workflow does not write to the audit log, so enrolments cannot be counted')
-            : muted(eligible.length
-              ? `No drip run has ever been logged. ${num(eligible.length)} ${plural(eligible.length, 'lead is', 'leads are')} eligible to start one on`
-              : 'No drip run has ever been logged, and no lead is currently eligible to start one on')),
+            : runsButNobody
+              ? warn(`${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run is', 'runs are')} logged and every one has a NULL lead_email, so no run can be attached to a person. `
+                  + 'The campaign has run; who for is not recorded')
+              : muted(eligible.length
+                ? `No drip run has ever been logged. ${num(eligible.length)} ${plural(eligible.length, 'lead is', 'leads are')} eligible to start one on`
+                : 'No drip run has ever been logged, and no lead is currently eligible to start one on')),
       kpi('Replied while enrolled', num(replied.length),
         replied.length
-          ? `<span class="t-hot">${num(repliedMid.length)} still inside the ${SEQUENCE_DAYS}-day sequence</span>`
+          ? [
+              /* Not red any more, and not "still being sequenced". The gates stop
+                 the sequence; what is open is the answer nobody has written. */
+              warn(`${num(repliedMid.length)} still inside the ${SEQUENCE_DAYS}-day window — the next gate stops the sequence, the reply still needs a person`),
+              muted('Counted across every key each person is filed under, not just the address they were enrolled on'),
+            ].filter(Boolean).join('<br>')
           : roster.size
             ? muted('No enrolled lead has written back since being enrolled')
             : muted('Nobody is enrolled, so there is nothing to answer'),
-        replied.length ? 't-hot' : ''),
-      kpi('Outbound mail logged', num(mail.length),
-        lastMail
-          ? muted(`Last one ${ago(lastMail.created_at)}`)
+        replied.length ? 't-warm' : ''),
+      /* Counts what the drip actually sends. The tile used to read `mail.length`
+         and so reported zero for a lead who had received both WhatsApp legs. */
+      kpi('Outbound sends logged', num(sends.length),
+        lastSend
+          ? [
+              muted(`${channelSummary(sends)} outbound`),
+              muted(`Last one ${ago(lastSend.created_at)}`),
+              mail.length ? '' : warn('None of them on a mail channel — every send logged here went out over WhatsApp'),
+            ].filter(Boolean).join('<br>')
           : [
-              muted(`Nothing on a mail channel in the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read`),
+              muted(`Nothing on a mail or WhatsApp channel in the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read`),
               muted(`Channels on those messages: ${channelMixText}`),
               delivery === 'broken' ? warn('Consistent with the mail credential failure above') : '',
             ].filter(Boolean).join('<br>'),
-        lastMail ? '' : 't-hot'),
+        lastSend ? '' : 't-hot'),
       kpi('Silence escalations', num(silenced.length),
         silenced.length
           ? warn('Twelve hours with no reply')
@@ -962,9 +1477,11 @@ SCREENS.campaigns = async host => {
         + `matched ${matchedByRegistry ? 'through workflow_registry\u2019s audit aliases' : 'on the workflow name'}. Each carries the status the workflow logged.`],
       ['What has actually been sent, and when?',
         `Every outbound row in communication_logs: ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read, `
-        + `${num(mail.length)} of them outbound on a mail channel. Channels present: ${channelMixText}.`],
+        + `${num(sends.length)} of them outbound on a channel the drip uses (${num(mail.length)} mail, ${num(sends.length - mail.length)} WhatsApp). `
+        + `The drip sends on both — days 1, 3 and 7 by email, days 1 and 5 by WhatsApp. Channels present: ${channelMixText}.`],
       ['Did the person answer after being enrolled?',
-        'Inbound rows in communication_logs dated at or after their first drip run. This is the one question on this screen that changes what an operator should do in the next five minutes.'],
+        'Inbound rows in communication_logs dated at or after their first drip run, gathered across every key that person is filed under — an address, a @c.us chat id and a +digits@whatsapp.lead key are all the same customer, matched on the last nine digits of the phone. '
+        + 'This is the one question on this screen that changes what an operator should do in the next five minutes.'],
       ['Is the workflow itself failing?',
         healthErr
           ? 'Normally from v_workflow_health over a 30-day window — but the view could not be read on this paint, so it is unknown right now rather than fine.'
@@ -973,7 +1490,9 @@ SCREENS.campaigns = async host => {
             : 'Only if the workflow is registered. No row in v_workflow_health triggers on the lead-trigger webhook or is named as a drip, so its health cannot be reported.'],
       ['Can mail leave at all?',
         delivery === 'broken'
-          ? 'Not right now — a workflow recorded a mail credential failure and nothing has succeeded on that mailbox since.'
+          ? (credLiveNow
+              ? 'Not right now — a workflow recorded a mail credential failure in the last 24 hours and nothing has succeeded on that mailbox since.'
+              : 'Unproven, and the last evidence is bad: the most recent thing recorded about this mailbox is a credential failure, read from audit_log because v_needs_attention keeps a failure for only 24 hours. Nothing has succeeded on it since.')
           : delivery === 'recovered'
             ? 'A credential failure is recorded, and a later run completed successfully on the same mailbox — evidence that it works again, read from what the workflows logged rather than from the credential itself.'
             : 'Only as far as the wreckage shows. n8n does not expose credential state to the browser, so the absence of a recorded failure is not proof that mail is going out.'],
@@ -1061,9 +1580,11 @@ SCREENS.campaigns = async host => {
           const bits = [];
           if (r) {
             bits.push(`${pill('Enrolled', 'ok')} <span class="cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
-            if (r.replies.length) bits.push(`<div class="cell-sub t-hot">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the rest of the sequence is still queued' : 'after the sequence had finished'}</div>`);
-            if (r.judgeable && !r.mails.length) bits.push('<div class="cell-sub t-hot">Nothing sent since enrolment</div>');
-            if (r.failures) bits.push(`<div class="cell-sub t-hot">${num(r.failures)} logged as failed</div>`);
+            if (r.replies.length) bits.push(`<div class="cell-sub t-warm">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
+            if (r.judgeable && !r.sends.length) bits.push('<div class="cell-sub t-hot">Nothing sent on either channel since enrolment</div>');
+            else if (r.judgeable && !r.mails.length) bits.push(`<div class="cell-sub t-warm">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
+            if (r.failures) bits.push(`<div class="cell-sub t-hot">${num(r.failures)} failed or went out half-done</div>`);
+            if (r.stops) bits.push(`<div class="cell-sub t-muted">${num(r.stops)} stopped on purpose by the reply gate</div>`);
           }
           if (mine) bits.push(`<div class="cell-sub t-ok">Queued ${esc(ago(mine))} · this session, not yet in the audit log</div>`);
           if (!bits.length) bits.push('<span class="t-muted">Not enrolled</span>');
@@ -1104,8 +1625,9 @@ SCREENS.campaigns = async host => {
         : stateEmpty('No lead can be enrolled in the drip right now',
             nLeads
               ? `The drip is addressed by email and nurtures warm and cold leads only. By status the database holds `
-                + `${statusMix}${noEmailLeads.length ? `, and ${num(noEmailLeads.length)} of the warm or cold ones ${plural(noEmailLeads.length, 'has', 'have')} no email address` : ''}. `
-                + 'A lead appears in this table when the router scores it WARM or COLD and it has an email address on file.'
+                + `${statusMix}${unreachable.length ? `, and ${num(unreachable.length)} of the warm or cold ones ${plural(unreachable.length, 'has', 'have')} no address the drip can send to` : ''}. `
+                + 'A lead appears in this table when the router scores it WARM or COLD and carries a real email address — a synthesised '
+                + '+digits@whatsapp.lead key is not one, and a lead holding one is listed in the alert strip above rather than offered here.'
               : 'There is no lead in the database at all. Leads arrive from the WhatsApp router and the web form; this table fills as soon as one is scored warm or cold with an email address on it.',
             'campaign');
       wireRows(tableHost, rows, leadDrawer);
@@ -1201,7 +1723,8 @@ SCREENS.campaigns = async host => {
       <div class="card-head"><div>
         <div class="card-title">Who is enrolled</div>
         <div class="card-sub">Built from drip runs in <span class="mono">audit_log</span>, newest activity first.
-          Mail counted per lead is every outbound mail row logged at or after that lead's first run.</div>
+          Counted per lead is every outbound row on a mail <em>or</em> WhatsApp channel logged at or after that lead's first run — the drip sends on both —
+          gathered across every key that person is filed under in <span class="mono">communication_logs</span>, not just the address they were enrolled on.</div>
       </div></div>
       <div style="max-height:46vh;overflow-y:auto">${rosterRows.length
         ? rosterRows.map(r => {
@@ -1215,20 +1738,24 @@ SCREENS.campaigns = async host => {
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-weight:500">${personLine(p)}</span>
                   ${pill(r.last.status || 'Unknown')}
-                  ${r.replies.length ? `<span class="chip t-hot" title="This contact wrote back after being enrolled. Continuing a sequence after someone has answered is the thing this screen exists to catch.">replied ${esc(ago(r.replies[0].created_at))}</span>` : ''}
-                  ${r.failures ? `<span class="chip t-hot">${num(r.failures)} failed</span>` : ''}
-                  ${r.addressable ? '' : '<span class="chip t-hot" title="The audit row carries this in lead_email, but it is not an email address, so an email sequence has nowhere to send.">not an email address</span>'}
+                  ${r.replies.length ? `<span class="chip t-warm" title="This contact wrote back after being enrolled. The workflow's day-1/3/5/7 gates stop the sequence at its next step; what is outstanding is a reply from a person.">replied ${esc(ago(r.replies[0].created_at))}</span>` : ''}
+                  ${r.failures ? `<span class="chip t-hot" title="Runs that failed outright or went out half-done, classified by lib/health.js. Sequences that stopped because the customer replied are excluded.">${num(r.failures)} failed</span>` : ''}
+                  ${r.stops ? `<span class="chip" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
+                  ${r.addressable ? '' : '<span class="chip t-hot" title="The audit row carries this in lead_email, but it is not an address an email sequence can send to.">not an email address</span>'}
                 </div>
                 <div class="cell-sub">${esc(str(r.email) || 'no email on the audit row')} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
+                ${r.keyExpanded
+                  ? `<div class="cell-sub t-muted" title="communication_logs files one person under several keys — an address, a @c.us chat id and a +digits@whatsapp.lead key. Messages under all of them are counted for this person, matched on the last nine digits of the phone number.">Messages counted across ${num(r.keys.size)} keys this person is filed under</div>`
+                  : `<div class="cell-sub t-muted" title="Without a lead row there is no phone number to derive this person's WhatsApp keys from, so only the address the drip was enrolled on is searched. A reply filed under a chat handle would not be seen.">Only the enrolment key is searched — ${r.lead ? 'no phone number on the lead row' : 'no lead row matches this address'}</div>`}
                 ${r.replies.length ? `<div class="cell-sub t-hot">“${esc(String(r.replies[0].message || '').replace(/\s+/g, ' ').trim().slice(0, 140))}”</div>` : ''}
               </div>
               <div style="text-align:right;flex-shrink:0">
-                <div class="num" style="font-weight:500">${num(r.mails.length)}</div>
-                <div class="cell-sub">${r.mails.length
-                  ? 'mail logged since'
+                <div class="num" style="font-weight:500">${num(r.sends.length)}</div>
+                <div class="cell-sub">${r.sends.length
+                  ? esc(`${channelSummary(r.sends)} since`)
                   : r.judgeable
-                    ? '<span class="t-hot">no mail logged</span>'
-                    : '<span class="t-warm" title="This enrolment is older than the oldest message read, so mail sent to them could sit outside the window. It is not counted as a zero.">not judged</span>'}</div>
+                    ? '<span class="t-hot">nothing logged on either channel</span>'
+                    : '<span class="t-warm" title="This enrolment is older than the oldest message read, so a send to them could sit outside the window. It is not counted as a zero.">not judged</span>'}</div>
               </div>
             </div>`;
           }).join('')
@@ -1236,13 +1763,20 @@ SCREENS.campaigns = async host => {
               <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
               <div class="cell-sub" style="white-space:normal">${num(unkeyedIdx.length)} drip ${plural(unkeyedIdx.length, 'run has', 'runs have')} no lead_email on the audit row and cannot be attached to anybody.</div>
             </div>` : '')
-        : stateEmpty('Nobody is enrolled',
+        /* This card said "No drip run has been logged in the 540 audit rows read"
+           while the activity card below it listed five. The roster is keyed by
+           lead_email and those rows have none; that is a third state, and it now
+           has its own sentence rather than borrowing the never-ran one. */
+        : stateEmpty(runsButNobody ? 'Runs are logged, but none names a lead' : 'Nobody is enrolled',
             instrumented === false
               ? 'The registered drip workflow does not write to the audit log, so enrolments cannot be listed here even if leads are mid-sequence. Instrument the workflow to see this roster.'
-              : `No drip run has been logged${auditCapped ? ` in the newest ${num(AUDIT_LIMIT)} audit rows read` : ` in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read`}. `
-                + (eligible.length
-                  ? `Enrol one of the ${num(eligible.length)} eligible ${plural(eligible.length, 'lead', 'leads')} above and the workflow writes its first row here.`
-                  : 'No lead is currently eligible to enrol either, so there is nothing to start. This roster fills the first time the drip workflow logs a run against a lead\u2019s email.'),
+              : runsButNobody
+                ? `${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run is', 'runs are')} in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read — they are listed in Campaign activity below — and every one carries a NULL lead_email, `
+                  + 'so this roster has nobody to list. The campaign has run. This card cannot say who for, and it will not say the campaign never ran instead.'
+                : `No drip run has been logged${auditCapped ? ` in the newest ${num(AUDIT_LIMIT)} audit rows read` : ` in the ${num(audit.length)} audit ${plural(audit.length, 'row', 'rows')} read`}. `
+                  + (eligible.length
+                    ? `Enrol one of the ${num(eligible.length)} eligible ${plural(eligible.length, 'lead', 'leads')} above and the workflow writes its first row here.`
+                    : 'No lead is currently eligible to enrol either, so there is nothing to start. This roster fills the first time the drip workflow logs a run against a lead\u2019s email.'),
             'group_off')}</div>`;
 
     /* ── What has actually been sent ─────────────────────────────────────── */
@@ -1250,6 +1784,7 @@ SCREENS.campaigns = async host => {
       <div class="card-head"><div>
         <div class="card-title">Outbound mail logged</div>
         <div class="card-sub">Every outbound row in <span class="mono">communication_logs</span> whose channel mentions mail, newest first.
+          The drip's two WhatsApp legs are counted in the roster and the summary strip but are not listed here — this card is the mail log specifically, because mail is the leg the Gmail credential can kill.
           The table records no workflow id, so drip mail cannot be separated from other outbound mail.</div>
       </div></div>
       <div style="max-height:46vh;overflow-y:auto">${mail.length
@@ -1316,12 +1851,28 @@ SCREENS.campaigns = async host => {
             return `<div class="list-item" data-key="run-${i}" style="cursor:default;align-items:flex-start">
             <span class="mono t-muted" title="${esc(stamp(x.logged_at))}">${clock(x.logged_at)}</span>
             ${pill(x.status || 'Unknown')}
+            ${(() => {
+              /* The raw status stays, because it is what the row literally says.
+                 Beside it, what lib/health.js makes of it — the two differ, and
+                 the difference is the point: a FAILED row whose summary reads
+                 "N of M claimed steps did not land" is a PARTIAL, and a PARTIAL
+                 that begins "Stopped before" is the reply gate working. */
+              const w = outcomeWords(outcomeOf(x));
+              const stop = isDeliberateStop(x);
+              const label = stop ? 'Stopped by the reply gate' : w.label;
+              const blurb = stop
+                ? 'The sequence exited early because the customer replied or the lead went terminal. Not counted against the workflow.'
+                : w.blurb;
+              return up(x.status) === up(label)
+                ? ''
+                : `<span class="chip t-${esc(stop ? 'muted' : w.tone)}" title="${esc(blurb)}">${esc(label)}</span>`;
+            })()}
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${keyed || str(x.lead_name)
                 ? personLine(p)
                 : `<span class="t-warm">No lead on this run</span> <span class="chip mono">${esc(str(x.workflow) || 'unnamed workflow')}</span>`}</div>
-              ${keyed && !EMAILISH.test(keyed)
-                ? `<div class="cell-sub t-hot">lead_email is <span class="mono">${esc(str(x.lead_email))}</span>, which is not an email address — an email sequence has nowhere to send.</div>`
+              ${keyed && !isRealEmail(keyed)
+                ? `<div class="cell-sub t-hot">lead_email is <span class="mono">${esc(str(x.lead_email))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
                 : ''}
               <div class="cell-sub">${esc(String(x.summary || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
             </div>

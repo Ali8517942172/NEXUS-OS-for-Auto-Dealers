@@ -67,11 +67,77 @@
    everything this screen knows (an empty knowledge base, a DEGRADED workflow, a
    question that failed in this tab) is invisible to that view anyway, so it is
    stated in the strip below where each row can say where it came from — not
-   compressed into a digit in the sidebar that nothing can explain. */
+   compressed into a digit in the sidebar that nothing can explain.
+
+   ── 31 Aug 2026: the screen started reading the grounding it was already sent ─
+   On 30 Aug the Ask-AI workflow's Format Response node was rewritten to send
+   the evidence behind every answer: which of the model's [S#] markers resolved
+   to a retrieved section and which named nothing (`invalid_refs`), which numbers
+   in the answer appear in none of the text the model was handed
+   (`unsupported_figures`), which retrieved sections never reached the prompt
+   (`dropped_from_prompt`), which were cut before it saw the end of them
+   (`truncated_sources`), and one `state` naming what happened. This screen was
+   written on 24 Aug against the older contract and read none of it. Every turn
+   still got the same green "N sources cited" pill, including a turn whose own
+   payload said a figure in it came from nowhere.
+
+   That is not a hypothetical here. This system has already put a model-invented
+   monthly instalment, 26-44% above the real one, in front of a customer. The
+   lesson recorded from it was that "the model said something plausible" and
+   "the model said something grounded" are different sentences, and only the
+   second one is safe to repeat. `unsupported_figures` is the deterministic
+   check built to tell them apart; it arrived on the wire and was thrown away.
+
+   So a turn now carries one of FIVE verdicts, and green is the narrowest of
+   them. `grounded()` is still the single place that decides — the pill, the
+   border, the banners and the alert strip all read it, so they cannot disagree
+   about the same answer — and it now reads the whole grounding object rather
+   than counting the citation array:
+
+     CLEAN     the workflow said `cited`, at least one marker resolved, and every
+               one of its warning lists came back empty. Only this is green.
+     DECLINED  the model answered NOT_IN_CONTEXT. `sources` is legitimately
+               empty here, and the old code fired "Nothing was cited for this
+               answer … do not repeat it" over the single most trustworthy thing
+               this screen can produce. A refusal is now its own state, said
+               plainly and not dressed up as a failure — the inverse error is
+               what teaches an operator to ignore the amber banner.
+     DEGRADED  the answer stands on less than the full evidence: no citation
+               markers at all, sections retrieved but never sent to the model,
+               a section the model saw only part of, or nothing retrieved.
+     SEVERE    the answer contains, or claims support from, something the model
+               was never given — an unsupported figure, a citation marker naming
+               no section, a citation resolving to a section that never reached
+               the prompt, or no model tier answering at all. This is the
+               instalment failure, and the turn says do not repeat it.
+     UNKNOWN   there was no grounding object. Never clean: a workflow that sent
+               nothing has not told us the answer was fine, it has told us
+               nothing, and an older Format Response is still a thing that can
+               be deployed on that box.
+
+   Two of those go past what the workflow itself flags. A [S#] marker is
+   resolved upstream against EVERY retrieved section, including the ones that
+   never fitted in the 8000-character prompt budget, so a model shown S1-S13 and
+   writing [S14] gets a real document title rendered under its answer while that
+   section's own `note` reads "The answer cannot have come from this section."
+   That is a fabricated citation arriving pre-validated, and it is caught here.
+   The other is the count itself: "N sources cited" means N distinct markers the
+   MODEL emitted that resolved to a retrieved section. It is a count of the
+   model's claims, not of verified support, and the screen now says so where the
+   number is printed.
+
+   One thing this screen cannot say, and therefore does not: whether the answer
+   came from the primary model tier or the backup one. The workflow's error
+   output falls through to a second three-model ladder, and Format Response
+   cannot tell which node it was fed by — nothing in the payload marks a
+   fallback. `model` names whichever model replied and is printed; a silent
+   drop to the backup tier is invisible from here and is stated as unknown
+   rather than guessed at from a hard-coded ladder that would drift. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
+import { HEALTH_WORDS, healthWords, isQualifying, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { panel, table } from '../lib/ui.js';
@@ -117,6 +183,36 @@ const PHONE_LOOKUPS = 6;
    written to storage. */
 const HISTORY = [];
 let SEQ = 0;
+
+/* ── Which render owns the screen ─────────────────────────────────────────
+   HISTORY and SEQ are module state, which is the whole point: a question still
+   in flight when the operator navigates away lands later, and turn ids stay
+   stable so the next render of the screen recreates the same `#askE{id}` cards
+   and the answer has somewhere to go.
+
+   That is also how this screen used to lock itself solid. Ask a question,
+   navigate away, come back inside the 45 s deadline: a NEW closure paints the
+   thread and binds its buttons, then the OLD closure's request resolves and its
+   `paint` finds the live `#askE1` BY ID, overwrites it, and rebinds every
+   button to the old closure's handlers — whose `box` and `thread` are the
+   previous render's nodes, detached from the document. "Edit question" then
+   typed into a textarea nobody could see. "Ask again" was worse: it read the
+   detached box, genuinely sent the question, wrote the new turn's card into the
+   detached thread, and `paint` found no `#askE2` to fill — so nothing appeared,
+   while `syncControls` (which DID look its controls up live) disabled the
+   visible Ask button for 45 s with "A question is already running." A frozen
+   screen with no visible cause, until a reload.
+
+   `syncControls` had the right rule and only it followed it: look every node up
+   at the moment of use. Two things make the rest follow it. Every node is now
+   looked up per call here too — nothing is captured — and one render at a time
+   OWNS the screen. A stale closure paints nothing; it hands its finished work
+   to whichever render is live through the dispatchers below, so a late answer
+   is still rendered, by the render that is actually on screen. */
+let ACTIVE = null;
+const repaint = e => { if (ACTIVE) ACTIVE.paint(e); };
+const rethread = () => { if (ACTIVE) ACTIVE.thread(); };
+const resync = () => { if (ACTIVE) { ACTIVE.sync(); ACTIVE.alerts(); } };
 
 const TIMED_OUT = { timedOut: true };
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -170,11 +266,28 @@ function docCount(res) {
   }
   return null;
 }
+/* `sources` means ONE thing in the current contract, and the workflow's own
+   comment is explicit about it: the blocks the model itself marked. Everything
+   retrieval returned moved to `retrieved_sources` under a different key
+   precisely so no renderer could mistake it for a citation. `citations` is the
+   older key and is still read, because this screen cannot see which build of
+   the workflow answered it.
+
+   Every field the workflow records ABOUT a citation is carried through, not
+   just the ones that print a title. `included_in_prompt` and `truncated` are
+   how a citation gets checked rather than counted: a section the model never
+   saw, or saw half of, is still a real document with a real page number and
+   reads on screen exactly like a section it read end to end. */
 function sourcesOf(res) {
   const raw = res && Array.isArray(res.sources) ? res.sources
     : res && Array.isArray(res.citations) ? res.citations : [];
   return raw.map(s => {
-    if (typeof s === 'string') return { title: s, unknown: false };
+    /* The empty-string case used to take this branch and become a counted,
+       titled citation rendered as "Untitled document". The current Format
+       Response cannot emit one — `cited_refs` only holds refs that resolved —
+       but an older build on that box is not something this screen can rule
+       out, and a citation with no content in it is not a citation. */
+    if (typeof s === 'string') return str(s) ? { title: str(s), unknown: false } : { unknown: true, blob: JSON.stringify(s) };
     if (!s || typeof s !== 'object') return { unknown: true, blob: String(s) };
     const norm = {
       title:   s.title ?? s.doc_title ?? s.document ?? null,
@@ -184,6 +297,15 @@ function sourcesOf(res) {
       snippet: typeof s.content === 'string' ? s.content
              : typeof s.chunk === 'string' ? s.chunk
              : typeof s.text === 'string' ? s.text : null,
+      /* Provenance, all of it optional. `shown` is deliberately tri-state:
+         false means the workflow SAID this section never reached the model,
+         null means it did not say, and those are not the same claim. */
+      ref:        str(s.ref) || null,
+      shown:      typeof s.included_in_prompt === 'boolean' ? s.included_in_prompt : null,
+      cut:        typeof s.truncated === 'boolean' ? s.truncated : null,
+      charsFed:   n0(s.chars_fed),
+      charsTotal: n0(s.chars_total),
+      note:       str(s.note) || null,
     };
     /* An unrecognised citation shape is shown verbatim rather than silently
        dropped — a citation the operator cannot see is a citation they cannot
@@ -193,12 +315,165 @@ function sourcesOf(res) {
   });
 }
 
+/* The grounding block, read defensively. Every field is optional and every one
+   is allowed to arrive as the wrong type: this screen is talking to a workflow
+   it cannot see the version of, and a payload that is half the current contract
+   must degrade into "unknown", never into "clean". */
+const EMPTY_GROUNDING = {
+  present: false, state: '', method: '',
+  citedRefs: [], invalidRefs: [], dropped: [], truncated: [], sentToModel: [],
+  figures: [], retrievedCount: null,
+};
+const refList = v => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
+function groundingOf(res) {
+  const g = res && typeof res === 'object' ? res.grounding : null;
+  if (!g || typeof g !== 'object' || Array.isArray(g)) return EMPTY_GROUNDING;
+  return {
+    present: true,
+    state: low(g.state),
+    method: str(g.method),
+    citedRefs:      refList(g.cited_refs),
+    invalidRefs:    refList(g.invalid_refs),
+    dropped:        refList(g.dropped_from_prompt),
+    truncated:      refList(g.truncated_sources),
+    sentToModel:    refList(g.sent_to_model),
+    figures:        refList(g.unsupported_figures),
+    retrievedCount: n0(g.retrieved_count),
+  };
+}
+
+/* The five states this screen is prepared to say about an answer, worst first.
+   `rank` orders them; `edge` is the left border of the turn card. Colour is
+   never the only carrier — every one of these puts its verdict in words in the
+   pill, and the two that matter put it in a banner as well. */
+const VERDICTS = {
+  severe:   { rank: 0, tone: 'hot',     edge: 'var(--hot)' },
+  degraded: { rank: 1, tone: 'warm',    edge: 'var(--warm)' },
+  unknown:  { rank: 2, tone: 'unknown', edge: 'var(--neutral)' },
+  declined: { rank: 3, tone: 'cold',    edge: 'var(--neutral)' },
+  clean:    { rank: 4, tone: 'ok',      edge: 'var(--ok)' },
+};
+const KNOWN_STATES = ['cited', 'uncited', 'declined', 'no_documents', 'model_unavailable'];
+
 /* One place decides whether a turn is grounded, so the border, the pill, the
-   banner and the alert strip can never disagree about the same answer. */
+   banner and the alert strip can never disagree about the same answer.
+
+   The rule, and why it is drawn where it is. SEVERE is reserved for evidence
+   that the answer contains — or claims support from — something that was not in
+   the text the model was handed. Those four checks are the ones that would have
+   caught the invented instalment: a number nowhere in the retrieved text, a
+   marker naming no section, a marker resolving to a section that never reached
+   the prompt, and no model tier having answered at all. Each is a positive
+   finding, not an absence, which is why each is worth the words "do not repeat
+   this to a customer".
+
+   DEGRADED is the opposite shape: nothing here says the answer is wrong, only
+   that it rests on less than the whole record — no markers at all, sections
+   dropped for budget, a section cut mid-way, or nothing retrieved. That is a
+   warning and not a prohibition, and conflating the two would make the
+   prohibition worthless inside a week.
+
+   DECLINED outranks DEGRADED but not SEVERE. A model that says NOT_IN_CONTEXT
+   has done the right thing and its empty `sources` is the correct value, so it
+   is not warned about — but a declined turn whose markers were fabricated is
+   still severe, because a fabricated marker is a fabricated marker. */
 function grounded(e) {
   if (!e || e.status !== 'ok') return null;
   const src = sourcesOf(e.res);
-  return { src, cited: src.length, uncited: !!e.answer && src.length === 0, zeroDocs: docCount(e.res) === 0 };
+  const g = groundingOf(e.res);
+  const modelError = str(e.res?.model_error);
+  const dc = docCount(e.res);
+
+  /* A citation the model was never shown. Format Response resolves [S#] against
+     every retrieved section, dropped ones included, so this is a fabricated
+     marker that arrives already validated. Read from the citation's own
+     `included_in_prompt` first — the workflow states it per source — and fall
+     back to the dropped list for a payload that carries one but not the other. */
+  const droppedSet = new Set(g.dropped.map(r => r.toUpperCase()));
+  const unseen = src.filter(s => s.shown === false
+    || (s.shown == null && s.ref && droppedSet.has(s.ref.toUpperCase())));
+  const cutSet = new Set(g.truncated.map(r => r.toUpperCase()));
+  const citedCut = src.filter(s => s.cut === true
+    || (s.cut == null && s.ref && cutSet.has(s.ref.toUpperCase())));
+
+  /* A citation entry with nothing identifying in it — an empty string, a bare
+     number, an object with no title, file or section. `sourcesOf` shows it
+     verbatim rather than dropping it, which is right, but it must not be
+     COUNTED: "2 sources cited" over two unreadable blobs is a green claim made
+     out of nothing. The count is readable citations only, and the blobs get a
+     row of their own saying the count cannot be trusted. */
+  const readable = src.filter(x => !x.unknown);
+  const unreadable = src.filter(x => x.unknown);
+
+  const reasons = [];
+  const add = (sev, kind, title, detail) => reasons.push({ sev, kind, title, detail });
+
+  if (g.figures.length)
+    add('severe', 'figures',
+      `${num(g.figures.length)} figure${plural(g.figures.length, '', 's')} in this answer ${plural(g.figures.length, 'is', 'are')} in none of the retrieved text`,
+      'The workflow diffs every number in the answer against the numbers actually present in the sections the model was handed. These matched nothing, so each is either arithmetic the model did or a number it invented. A monthly instalment invented this way has already reached a customer of this dealership.');
+  if (g.invalidRefs.length)
+    add('severe', 'invalid',
+      `${num(g.invalidRefs.length)} citation marker${plural(g.invalidRefs.length, '', 's')} name${plural(g.invalidRefs.length, 's', '')} no retrieved section`,
+      'The answer text cites these markers and no section with that number was retrieved. They are marked in the answer above. A sentence carrying one of them is not attributable to anything.');
+  if (unseen.length)
+    add('severe', 'unseen',
+      `${num(unseen.length)} cited section${plural(unseen.length, '', 's')} ${plural(unseen.length, 'was', 'were')} never sent to the model`,
+      'These were retrieved by the search but did not fit the prompt budget, so the model never read them. It cited them anyway. The section is listed under Sources with a real title and page number and the answer cannot have come from it.');
+  if (modelError || g.state === 'model_unavailable')
+    add('severe', 'model',
+      'No model answered this question',
+      'Both model tiers failed, so the text above is the workflow reporting that rather than an answer. Nothing in it comes from your documents.');
+
+  if (unreadable.length)
+    add('degraded', 'unreadable',
+      `${num(unreadable.length)} citation entr${plural(unreadable.length, 'y', 'ies')} could not be read`,
+      'The reply listed something under sources with no title, file or section in it. It is printed verbatim below because a citation nobody can see is a citation nobody can check, and it is left out of the count above.');
+  /* `cited_refs` naming markers that resolved, next to an EMPTY citation list,
+     is the reply contradicting itself. There is no honest count to print. */
+  if (g.present && g.citedRefs.length && !readable.length)
+    add('degraded', 'mismatch',
+      `The reply says ${num(g.citedRefs.length)} marker${plural(g.citedRefs.length, '', 's')} resolved but sent no citation to show`,
+      `Its grounding block lists ${g.citedRefs.join(', ')} as having matched a retrieved section, and its sources list is empty. The two halves of the same reply disagree, so what this answer rests on cannot be stated from here.`);
+  if (g.state === 'uncited' || (!src.length && !!e.answer && !g.citedRefs.length && g.state !== 'declined' && g.state !== 'no_documents' && g.state !== 'model_unavailable'))
+    add('degraded', 'uncited',
+      'Nothing was cited for this answer',
+      'The model marked no sentence with a source, so there is no document to check this against. Treat it as the model\'s own words.');
+  if (g.state === 'no_documents' || dc === 0)
+    add('degraded', 'nodocs',
+      'Retrieval matched nothing',
+      'No indexed section matched this question, so whatever is above is not grounded in your documents.');
+  if (g.dropped.length)
+    add('degraded', 'dropped',
+      `${num(g.dropped.length)} retrieved section${plural(g.dropped.length, '', 's')} never reached the model`,
+      `Only the top matches fit the prompt budget. ${g.dropped.length === 1 ? 'That section' : 'Those sections'} may hold the part of the answer that matters, and the model did not see ${plural(g.dropped.length, 'it', 'them')}.`);
+  if (g.truncated.length || citedCut.length)
+    add('degraded', 'truncated',
+      `${num(Math.max(g.truncated.length, citedCut.length))} section${plural(Math.max(g.truncated.length, citedCut.length), ' was', 's were')} cut before the end`,
+      'The model was handed the opening of these sections and not the rest, so it answered — and cited — text it had only partly read.');
+
+  const worst = reasons.some(r => r.sev === 'severe') ? 'severe'
+    : reasons.length ? 'degraded' : null;
+
+  let verdict;
+  if (!g.present) verdict = 'unknown';
+  else if (worst === 'severe') verdict = 'severe';
+  else if (g.state === 'declined') verdict = 'declined';
+  else if (worst === 'degraded') verdict = 'degraded';
+  else if (!KNOWN_STATES.includes(g.state)) verdict = 'unknown';
+  else if (g.state === 'cited' && readable.length) verdict = 'clean';
+  /* `cited` with nothing readable under it is the reply contradicting itself.
+     It is not clean, and calling it degraded would imply this screen understood
+     what it got. It did not. */
+  else verdict = 'unknown';
+
+  return {
+    src, g, dc, modelError, reasons, unseen, citedCut, verdict, readable, unreadable,
+    /* The count the pill prints, and the one thing it is allowed to mean:
+       readable citations, which is distinct markers the model emitted that
+       resolved to a section the search returned. */
+    cited: readable.length,
+  };
 }
 
 /* ── Failure classification ─────────────────────────────────────────────────
@@ -231,24 +506,44 @@ function diagnose(msg) {
    string is model output and is treated as hostile. Deliberately not rendered
    in a .bubble: that class is pre-wrap, which would also honour the whitespace
    in this generated markup. */
-function inlineMarks(s) {
-  return esc(s)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<span class="mono">$1</span>');
+/* The same two marker spellings Format Response parses. A model that wrote
+   [Source 2] instead of [S2] has still named a source, and the workflow refuses
+   to punish the formatting; this has to read the answer the same way it did or
+   the two would disagree about which markers are in the text. */
+const MARKER_RE = /\[\s*(?:S|SOURCE)?\s*(\d{1,2})\s*\]|\(\s*SOURCE\s*(\d{1,2})\s*\)/gi;
+
+/* A marker naming no retrieved section is a fabricated citation, and it stays
+   in the prose: `[S7]` is not markup, so it renders literally in the middle of
+   the sentence it is vouching for. Counting it in a banner underneath is not
+   enough — the operator reads the sentence, not the footnote — so it is called
+   out where it sits. Not by colour alone: it carries a dotted underline and the
+   words "no such source" after it. */
+function markInvalid(html, invalid) {
+  if (!invalid || !invalid.size) return html;
+  return html.replace(MARKER_RE, (whole, a, b) => {
+    const ref = 'S' + (a || b);
+    if (!invalid.has(ref)) return whole;
+    return `<span class="mono t-hot" style="border-bottom:2px dotted currentColor" title="The workflow found no retrieved section with this number. This marker is the model claiming a source that does not exist.">${esc(whole)}</span><span class="t-hot" style="font-size:11px;font-weight:600;white-space:nowrap"> no such source</span>`;
+  });
 }
-function answerHtml(text) {
+function inlineMarks(s, invalid) {
+  return markInvalid(esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<span class="mono">$1</span>'), invalid);
+}
+function answerHtml(text, invalid) {
   const blocks = String(text).replace(/\r/g, '').split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
   return blocks.map(b => {
     const rows = b.split('\n');
     if (rows.length === 1 && /^#{1,6}\s+/.test(rows[0]))
-      return `<div class="label-caps" style="margin:14px 0 6px">${inlineMarks(rows[0].replace(/^#{1,6}\s+/, ''))}</div>`;
+      return `<div class="label-caps" style="margin:14px 0 6px">${inlineMarks(rows[0].replace(/^#{1,6}\s+/, ''), invalid)}</div>`;
     const bulleted = rows.every(r => /^\s*([-*•]|\d+[.)])\s+/.test(r));
     if (bulleted) return `<div style="margin:0 0 10px">${rows.map(r => {
       const marker = r.match(/^\s*(\d+[.)])\s+/);
       const body = r.replace(/^\s*([-*•]|\d+[.)])\s+/, '');
-      return `<div style="display:flex;gap:8px;margin-bottom:4px"><span class="t-muted" style="flex-shrink:0">${marker ? esc(marker[1]) : '•'}</span><span>${inlineMarks(body)}</span></div>`;
+      return `<div style="display:flex;gap:8px;margin-bottom:4px"><span class="t-muted" style="flex-shrink:0">${marker ? esc(marker[1]) : '•'}</span><span>${inlineMarks(body, invalid)}</span></div>`;
     }).join('')}</div>`;
-    return `<div style="margin:0 0 10px">${inlineMarks(b).replace(/\n/g, '<br>')}</div>`;
+    return `<div style="margin:0 0 10px">${inlineMarks(b, invalid).replace(/\n/g, '<br>')}</div>`;
   }).join('') || `<div class="t-muted">Empty answer.</div>`;
 }
 
@@ -294,53 +589,110 @@ function entryBody(e) {
   /* Answered. */
   const g = grounded(e);
   const src = g.src;
-  const dc = docCount(e.res);
+  const gr = g.g;
+  const dc = g.dc;
   const model = typeof e.res?.model === 'string' ? e.res.model : null;
+  const invalidSet = new Set(gr.invalidRefs.map(r => r.toUpperCase()));
 
   /* The grounding verdict leads the meta line rather than trailing it. An
-     operator skims the first thing under an answer, and whether anything was
-     cited is the single fact that decides if the answer may be repeated to a
-     customer. */
-  const verdict = e.answer
-    ? (src.length
-        ? pill(`${num(src.length)} source${plural(src.length, '', 's')} cited`, 'ok')
-        : pill('No sources cited', 'warm'))
-    : '';
+     operator skims the first thing under an answer, and whether it may be
+     repeated to a customer is the single fact that decides what to do next.
+     Every one of these says its verdict in words: the pill is read by people
+     who cannot tell the amber from the green. */
+  const nWarn = g.reasons.length;
+  const verdict = {
+    clean:    () => pill(`${num(g.cited)} source${plural(g.cited, '', 's')} cited, no problems found`, 'ok'),
+    declined: () => pill('Answered nothing — the documents do not cover this', 'cold'),
+    degraded: () => pill(`Partly grounded — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'warm'),
+    severe:   () => pill(`Not safe to repeat — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'hot'),
+    unknown:  () => pill('Grounding not reported', 'unknown'),
+  }[g.verdict]();
+
+  /* "N sections consulted" was the old wording and it overclaimed: the number
+     is everything RETRIEVAL returned, and the workflow drops whatever does not
+     fit an 8000-character prompt budget. A section the model never saw was not
+     consulted by anything. Retrieved and sent are now two numbers. */
+  const sent = gr.present && gr.sentToModel.length ? gr.sentToModel.length : null;
+  const retrieved = gr.retrievedCount != null ? gr.retrievedCount : dc;
   const meta = [
     e.ms != null ? `Answered in ${esc(secs(e.ms))}` : null,
     e.late ? '<span class="t-warm">arrived after the timeout</span>' : null,
     `asked at ${esc(clock(e.at))}`,
-    dc != null ? `${esc(num(dc))} document section${dc === 1 ? '' : 's'} consulted` : null,
+    retrieved != null
+      ? `${esc(num(retrieved))} section${retrieved === 1 ? '' : 's'} retrieved${sent != null ? `, ${esc(num(sent))} sent to the model` : ''}`
+      : null,
     model ? `model ${esc(model)}` : null,
   ].filter(Boolean).join(' · ');
 
   const body = e.answer
-    ? answerHtml(e.answer)
+    ? answerHtml(e.answer, invalidSet)
     : `<div class="banner warm" style="margin-bottom:0">
          <span class="material-symbols-outlined" style="font-size:20px">help_center</span>
          <div>The workflow replied, but the reply carried no answer text. The raw response below is exactly what it sent.</div></div>`;
 
-  const zeroDocs = dc === 0 ? `<div class="banner warm" style="margin:14px 0 0">
-      <span class="material-symbols-outlined" style="font-size:20px">search_off</span>
-      <div>Nothing in the knowledge base matched this question, so whatever is above is not grounded in your documents. Asking in a full sentence, with the words the document itself uses, is what makes retrieval fire.</div></div>` : '';
+  /* Every problem the verdict was built from, named, with the offending values
+     printed. A count on its own cannot be checked; "the figures 3.49 and 60
+     appear in no retrieved section" can be, in about ten seconds, against the
+     documents listed underneath. */
+  const reasonList = list => list.map(r => `<div style="margin-top:8px">
+      <div style="font-weight:500">${esc(r.title)}</div>
+      <div style="margin-top:2px">${esc(r.detail)}</div>
+      ${r.kind === 'figures' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.figures.map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'invalid' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.invalidRefs.map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'unseen' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${g.unseen.map(u => esc(`${u.ref || '?'} ${u.title || u.file || 'untitled'}`)).join(' · ')}</div>` : ''}
+      ${r.kind === 'dropped' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.dropped.map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'truncated' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${(gr.truncated.length ? gr.truncated : g.citedCut.map(c => c.ref || '?')).map(f => esc(f)).join('   ')}</div>` : ''}
+      ${r.kind === 'model' && g.modelError ? `<div class="mono cell-sub" style="margin-top:6px;white-space:normal;word-break:break-word">${esc(g.modelError.slice(0, 300))}</div>` : ''}
+    </div>`).join('');
 
-  /* An uncited answer is the model speaking for itself and must not be skimmed
-     as a sourced one, so it gets a banner of its own on top of the pill and the
-     border. Suppressed where the workflow already reported consulting nothing,
-     because the banner above says the same thing better. */
-  const uncited = (g.uncited && dc !== 0) ? `<div class="banner warm" style="margin:14px 0 0">
+  const severeList = g.reasons.filter(r => r.sev === 'severe');
+  const warnList = g.reasons.filter(r => r.sev === 'degraded');
+
+  /* The two treatments that matter. SEVERE says the sentence an operator needs
+     to read before they open WhatsApp; DEGRADED says what the answer is missing
+     without pretending it is wrong. Neither relies on its colour: both lead
+     with a heading that carries the whole instruction in words. */
+  const severeBanner = severeList.length ? `<div class="banner hot" style="margin:14px 0 0;align-items:flex-start">
+      <span class="material-symbols-outlined" style="font-size:20px">dangerous</span>
+      <div><div style="font-weight:600">Do not repeat this answer to a customer</div>
+        <div style="margin-top:4px">Something in it is not in the documents it was drawn from. Check every one of these against the source before any part of this leaves the building.</div>
+        ${reasonList(severeList)}</div></div>` : '';
+
+  const warnBanner = warnList.length ? `<div class="banner warm" style="margin:14px 0 0;align-items:flex-start">
       <span class="material-symbols-outlined" style="font-size:20px">unpublished</span>
-      <div><div style="font-weight:500">Nothing was cited for this answer</div>
-        <div style="margin-top:4px">The workflow returned no citation list, so there is no document to check this against — treat it as the model's own words${dc != null ? `, even though it reported consulting ${esc(num(dc))} section${dc === 1 ? '' : 's'}` : ''}. Do not repeat it to a customer without opening the source document yourself.</div></div></div>` : '';
+      <div><div style="font-weight:500">This answer rests on less than the full evidence</div>
+        <div style="margin-top:4px">Nothing here says it is wrong. It says the model did not have, or did not use, everything the search found — so open the documents before quoting it.</div>
+        ${reasonList(warnList)}</div></div>` : '';
+
+  /* A refusal is the most trustworthy output this screen can produce and used
+     to be the one that got the amber "nothing was cited" banner, because its
+     `sources` list is correctly empty. Warning an operator off the one honest
+     answer is how they learn to ignore every warning on the screen. */
+  const declinedBanner = g.verdict === 'declined' ? `<div class="banner info" style="margin:14px 0 0;align-items:flex-start">
+      <span class="material-symbols-outlined" style="font-size:20px">rule</span>
+      <div><div style="font-weight:500">The model declined to answer, which is the correct outcome here</div>
+        <div style="margin-top:4px">It was instructed to refuse rather than answer from its own training data, and it did. Nothing above is a claim about company policy. The sections the search returned are listed below in case one of them should have covered this.</div></div></div>` : '';
+
+  /* Absence is not the clean path. A reply with no grounding block is a reply
+     from a build of the workflow this screen does not recognise, and the
+     evidence that would separate a sourced answer from an invented one is
+     simply not in it. */
+  const unknownBanner = g.verdict === 'unknown' ? `<div class="banner warm" style="margin:14px 0 0;align-items:flex-start">
+      <span class="material-symbols-outlined" style="font-size:20px">help</span>
+      <div><div style="font-weight:500">${gr.present ? 'The workflow reported a grounding state this screen does not know' : 'This reply carried no grounding information at all'}</div>
+        <div style="margin-top:4px">${gr.present
+          ? `Its <span class="mono">grounding.state</span> was <span class="mono">${esc(gr.state || 'empty')}</span>, which is not one of ${esc(KNOWN_STATES.join(', '))}. It is printed as it arrived rather than mapped to a verdict it may not mean.`
+          : 'Since 30 Aug 2026 the Ask-AI workflow sends a <span class="mono">grounding</span> block with every answer — which markers resolved, which named nothing, which numbers appear in no retrieved text. This reply has none, so an older build answered it, or something else did. That is not the same as the answer being fine: the checks that would have found an invented figure did not run, or did not report.'}</div>
+        <div style="margin-top:4px">Treat it as unverified and open the raw response below to see exactly what was sent.</div></div></div>` : '';
 
   const sources = src.length ? `<div style="margin-top:18px">
-      <div class="label-caps" style="margin-bottom:8px">Sources</div>
+      <div class="label-caps" style="margin-bottom:8px">Sources the model cited</div>
       ${src.map((s, i) => s.unknown
         ? `<div class="list-item" style="cursor:default;align-items:flex-start">
              <span class="chip">${i + 1}</span>
              <div class="mono cell-sub" style="flex:1;min-width:0;white-space:normal;word-break:break-word">${esc(s.blob)}</div></div>`
         : `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="chip">${i + 1}</span>
+             <span class="chip">${esc(s.ref || String(i + 1))}</span>
              <div style="flex:1;min-width:0">
                <div style="font-weight:500">${esc(s.title || s.file || 'Untitled document')}</div>
                <div class="cell-sub">${[
@@ -348,13 +700,34 @@ function entryBody(e) {
                   s.page != null ? 'p. ' + esc(s.page) : null,
                   s.file && s.file !== s.title ? esc(s.file) : null,
                 ].filter(Boolean).join(' · ') || 'No section recorded'}</div>
+               ${s.shown === false ? `<div class="t-hot" style="font-size:13px;font-weight:600;margin-top:4px">Never sent to the model — the answer cannot have come from this section</div>` : ''}
+               ${s.cut === true ? `<div class="t-warm" style="font-size:13px;font-weight:600;margin-top:4px">Cut short${s.charsFed != null && s.charsTotal != null ? ` — the model was given ${esc(num(s.charsFed))} of its ${esc(num(s.charsTotal))} characters` : ''}</div>` : ''}
+               ${s.note ? `<div class="cell-sub" style="white-space:normal;margin-top:4px">${esc(s.note)}</div>` : ''}
                ${s.snippet ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
              </div></div>`).join('')}
-      <div class="cell-sub" style="white-space:normal;margin-top:8px">A citation says which indexed section an answer came from. It cannot say how old that section is: rag_documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
+      <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(`This list is ${g.cited} distinct [S#] marker${plural(g.cited, '', 's')} the MODEL emitted that named a section the search really returned${g.unreadable.length ? `, plus ${g.unreadable.length} entr${plural(g.unreadable.length, 'y', 'ies')} printed verbatim because nothing in ${plural(g.unreadable.length, 'it', 'them')} could be read as a document` : ''}. It is a count of the model's claims, not proof that any sentence came from the section it points at — the workflow's own note says so: a marker is the model claiming a source. What is checked deterministically is the figures, and that check is reported above.`)}</div>
+      <div class="cell-sub" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: rag_documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
     </div>` : '';
 
-  return head + body + zeroDocs + uncited + sources
+  /* Printed on every answered turn that carried grounding, whatever the
+     verdict. It is the audit trail for the pill: the numbers the verdict was
+     computed from, in one place, so a clean turn can be checked as easily as a
+     failing one. */
+  const evidence = gr.present ? `<div class="cell-sub" style="white-space:normal;margin-top:10px">${esc([
+      `Grounding state ${gr.state || 'empty'}`,
+      `${retrieved == null ? 'unknown' : num(retrieved)} retrieved`,
+      `${sent == null ? 'unknown' : num(sent)} sent to the model`,
+      `${num(gr.citedRefs.length)} marker${plural(gr.citedRefs.length, '', 's')} resolved`,
+      `${num(gr.invalidRefs.length)} named nothing`,
+      `${num(gr.dropped.length)} dropped for budget`,
+      `${num(gr.truncated.length)} truncated`,
+      `${num(gr.figures.length)} unsupported figure${plural(gr.figures.length, '', 's')}`,
+    ].join(' · '))}</div>
+    <div class="cell-sub" style="white-space:normal;margin-top:4px">${esc(`The reply names ${model || 'no'} model${model ? '' : ' at all'} but carries no marker saying whether the primary tier answered or the workflow had already dropped to its backup ladder, so a silent fallback is not visible from here.`)}</div>` : '';
+
+  return head + body + severeBanner + warnBanner + declinedBanner + unknownBanner + sources
     + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">${verdict}<span class="cell-sub">${meta}</span></div>`
+    + evidence
     + foot(e.rawText);
 }
 
@@ -365,8 +738,11 @@ function turnEdge(e) {
   if (e.status === 'error' || e.status === 'timeout') return '3px solid var(--hot)';
   const g = grounded(e);
   if (!g) return '';
-  if (!e.answer || g.uncited || g.zeroDocs) return '3px solid var(--warm)';
-  return '3px solid var(--ok)';
+  /* The edge is the verdict and nothing else, so it can never disagree with the
+     pill next to it. An answered turn with no answer text in it is not a state
+     the verdict knows about, and it is not green. */
+  if (!e.answer && g.verdict === 'clean') return `3px solid ${VERDICTS.degraded.edge}`;
+  return `3px solid ${VERDICTS[g.verdict].edge}`;
 }
 
 SCREENS.ask = async host => {
@@ -403,8 +779,18 @@ SCREENS.ask = async host => {
     <div id="askThread" style="margin-top:16px"></div>
     <div id="askRuns" style="margin-top:16px"></div>`;
 
-  const thread = $('askThread');
-  const box = $('askQ');
+  /* This invocation's claim on the screen. Anything that outlives it — a
+     ticker, an in-flight request, a promise continuation — checks `live()`
+     before it touches the DOM, and routes through the module dispatchers when
+     it has real work to hand over. */
+  const self = {};
+  ACTIVE = self;
+  const live = () => ACTIVE === self;
+
+  /* Never captured. `nav.go()` empties #screen without cancelling anything, so
+     these are allowed to be absent as well as replaced, and every caller
+     null-guards. */
+  const qBox = () => $('askQ');
   const goBtn = $('askGo');
 
   /* ── Availability. A control that cannot work is disabled and says why. ── */
@@ -427,6 +813,10 @@ SCREENS.ask = async host => {
      promise continuation, where there was nothing to catch it and the operator
      saw only a screen that had stopped updating. */
   function syncControls() {
+    /* `blocked` is this render's state — it is set when THIS render's knowledge
+       base read comes back empty — so a superseded render must not use it to
+       disable a button belonging to the render that replaced it. */
+    if (!live()) return;
     const goNode = $('askGo'), boxNode = $('askQ'), wipe = $('askWipe'), reset = $('askReset');
     const inFlight = HISTORY.some(e => e.status === 'pending');
     const typed = boxNode ? boxNode.value.trim() : '';
@@ -588,6 +978,9 @@ SCREENS.ask = async host => {
       const h = str(w.health).toUpperCase();
       const r30 = n0(w.runs_30d) || 0;
       const f30 = n0(w.failures_30d) || 0;
+      const p30 = n0(w.partials_30d) || 0;
+      const eff30 = n0(w.effective_runs_30d);
+      const rej30 = n0(w.rejected_30d) || 0;
       if (w.is_active === false) {
         out.push({
           id: 'wf-inactive', tone: 'hot', icon: 'toggle_off', durable: true,
@@ -600,7 +993,10 @@ SCREENS.ask = async host => {
         out.push({
           id: 'wf-degraded', tone: 'hot', icon: 'error', durable: true,
           title: 'The Ask-AI workflow is DEGRADED',
-          detail: `v_workflow_health reports ${esc(num(f30))} failure${plural(f30, '', 's')} out of ${esc(num(r30))} run${plural(r30, '', 's')} in the last 30 days. An answer that does come back is still worth reading — the failures are the runs that never produced one.`,
+          /* Failures and partials together, over the effective denominator. A
+           half-landed run is not a success and a refusal-by-design is not a
+           miss; lib/health.js is the only thing allowed to draw either line. */
+        detail: `v_workflow_health reports ${esc(num(f30 + p30))} run${plural(f30 + p30, '', 's')} that failed or went out half-done${eff30 != null ? ` out of the ${esc(num(eff30))} rated run${plural(eff30, '', 's')}` : ` out of ${esc(num(r30))} logged run${plural(r30, '', 's')}`} in the last 30 days${rej30 ? `, with ${esc(num(rej30))} further request${plural(rej30, '', 's')} refused by design and deliberately not counted against it` : ''}. An answer that does come back is still worth reading — the failures are the runs that never produced one.`,
           foot: w.last_failure ? `Last recorded failure ${esc(ago(w.last_failure))}` : '',
           target: 'askRuns',
         });
@@ -626,17 +1022,26 @@ SCREENS.ask = async host => {
           target: 'askRuns',
         });
       } else if (h !== 'HEALTHY') {
-        /* Anything that is not one of the four documented values falls to here,
-           including an empty one. Without this branch such a row raised no
-           alert at all, and the all-clear underneath then claimed the workflow
-           "is not reporting failures" — which is not what an unknown says. Cold
-           on purpose: not knowing is not a fault, so it is stated and not
-           dressed up as one. */
+        /* Everything the view's vocabulary can return that is not one of the
+           branches above, plus everything it cannot. That vocabulary GREW when
+           v_workflow_health was rebuilt on nexus_outcome_class — PRODUCING_NOTHING,
+           NO_QUALIFYING_RUNS and UNKNOWN_OUTCOME did not exist when this branch
+           was written and it called all three "not one of the four values this
+           build knows how to read", which was this screen being out of date and
+           blaming the database for it. lib/health.js holds the closed set and
+           the wording for each; a value inside it is spoken about properly, and
+           only a value outside it is printed verbatim as unrecognised. */
+        const known = Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h);
+        const hw = healthWords(h);
         out.push({
-          id: 'wf-unreported', tone: 'cold', icon: 'help', durable: true,
-          title: h ? `Unrecognised workflow health: ${h}` : 'The registry reports no health for this workflow',
+          id: 'wf-unreported', tone: known ? hw.tone : 'cold', icon: 'help', durable: true,
+          title: h
+            ? (known ? `The Ask-AI workflow is ${h}: ${hw.label}` : `Unrecognised workflow health: ${h}`)
+            : 'The registry reports no health for this workflow',
           detail: h
-            ? `v_workflow_health returned <span class="mono">${esc(h)}</span> for <span class="mono">${esc(str(w.name) || 'this workflow')}</span>, which is not one of the four values this build knows how to read (HEALTHY, DEGRADED, NEVER_RAN, NOT_INSTRUMENTED). It is printed verbatim above rather than mapped to a verdict it may not mean.`
+            ? (known
+                ? `${esc(hw.blurb)} An answer that does come back is still worth reading on its own citations — that verdict is computed per turn in the thread below and does not depend on this.`
+                : `v_workflow_health returned <span class="mono">${esc(h)}</span> for <span class="mono">${esc(str(w.name) || 'this workflow')}</span>, which is not in the closed set lib/health.js defines. It is printed verbatim above rather than mapped to a verdict it may not mean.`)
             : `v_workflow_health matched <span class="mono">${esc(str(w.name) || 'this workflow')}</span> but left its <span class="mono">health</span> column empty, so whether ask-ai is healthy or failing is not known from here. Pressing Ask remains the direct test.`,
           target: 'askComposer',
         });
@@ -667,20 +1072,64 @@ SCREENS.ask = async host => {
         target: `askE${newest.id}`,
       });
     }
-    const uncited = HISTORY.filter(e => grounded(e)?.uncited);
-    if (uncited.length) {
-      const zero = uncited.filter(e => grounded(e).zeroDocs).length;
+    /* The three verdicts worth raising, each on its own row. They were one row
+       — "N answers cited nothing" — which put a fabricated figure and a model
+       that simply did not mark its sentences in the same amber sentence. */
+    const byVerdict = v => HISTORY.filter(e => grounded(e)?.verdict === v);
+
+    const severeTurns = byVerdict('severe');
+    if (severeTurns.length) {
+      /* Every distinct problem across those turns, so the row says what is
+         wrong rather than only how many turns are. */
+      const kinds = [...new Set(severeTurns.flatMap(e => grounded(e).reasons.filter(r => r.sev === 'severe').map(r => r.kind)))];
+      const WORDS = {
+        figures: 'a figure that appears in none of the retrieved text',
+        invalid: 'a citation marker naming no retrieved section',
+        unseen:  'a citation resolving to a section the model was never sent',
+        model:   'no model tier having answered at all',
+      };
       out.push({
-        id: 'turn-uncited', tone: 'warm', icon: 'unpublished', durable: false,
-        title: `${num(uncited.length)} answer${plural(uncited.length, '', 's')} in this session cited nothing`,
-        detail: `An answer with no citation is not attributable to any indexed document — it is the model's own words, and on screen it reads exactly like a sourced one.${zero ? ` ${esc(num(zero))} of them came back reporting zero document sections consulted, meaning retrieval found nothing at all.` : ''} Open each one and check it before repeating it to anybody.`,
-        target: `askE${uncited[0].id}`,
+        id: 'turn-severe', tone: 'hot', icon: 'dangerous', durable: false,
+        title: `${num(severeTurns.length)} answer${plural(severeTurns.length, '', 's')} in this session must not be repeated to a customer`,
+        detail: `The workflow's own checks found ${esc(kinds.map(k => WORDS[k] || k).join('; '))}. Each of those is the answer containing, or claiming support from, something the model was never given — the same shape as the invented monthly instalment this system has already quoted to a buyer. Open each turn: the offending figures and markers are printed on it.`,
+        target: `askE${severeTurns[0].id}`,
+      });
+    }
+
+    const degradedTurns = byVerdict('degraded');
+    if (degradedTurns.length) {
+      const kinds = [...new Set(degradedTurns.flatMap(e => grounded(e).reasons.map(r => r.kind)))];
+      const WORDS = {
+        uncited:   'no citation markers at all',
+        nodocs:    'nothing retrieved',
+        dropped:   'sections retrieved but never sent to the model',
+        truncated: 'sections the model saw only part of',
+      };
+      out.push({
+        id: 'turn-degraded', tone: 'warm', icon: 'unpublished', durable: false,
+        title: `${num(degradedTurns.length)} answer${plural(degradedTurns.length, '', 's')} in this session rest${plural(degradedTurns.length, 's', '')} on less than the full evidence`,
+        detail: `Across ${plural(degradedTurns.length, 'it', 'them')}: ${esc(kinds.map(k => WORDS[k] || k).join('; '))}. None of that says the answer is wrong; it says the model did not have, or did not use, everything the search found. On screen such an answer reads exactly like a fully sourced one, which is why it is listed here.`,
+        target: `askE${degradedTurns[0].id}`,
+      });
+    }
+
+    const ungroundedTurns = byVerdict('unknown');
+    if (ungroundedTurns.length) {
+      out.push({
+        id: 'turn-ungrounded', tone: 'warm', icon: 'help', durable: false,
+        title: `${num(ungroundedTurns.length)} answer${plural(ungroundedTurns.length, '', 's')} came back with no usable grounding report`,
+        detail: 'Since 30 Aug 2026 the Ask-AI workflow sends a grounding block with every answer, naming which markers resolved and which numbers appear in no retrieved text. These replies carried none, or carried a state this build does not recognise. That is not the same as the answer being fine — it means the checks that would have found an invented figure did not report, so nothing on screen can tell a sourced answer from an invented one. Worth reconciling against the workflow actually deployed on that box.',
+        target: `askE${ungroundedTurns[0].id}`,
       });
     }
     return out.sort((a, b) => (SEV_RANK[a.tone] ?? 3) - (SEV_RANK[b.tone] ?? 3));
   }
 
   function renderAlerts() {
+    /* A superseded render's attnState/kbState/healthState are its own reads,
+       and repainting the live strip from them showed the previous visit's
+       answers under the current visit's questions. */
+    if (!live()) return;
     const bodyHost = $('askAlertBody');
     if (!bodyHost) return; /* navigated away while a read was in flight */
     const alerts = computeAlerts();
@@ -741,8 +1190,20 @@ SCREENS.ask = async host => {
         ? `v_workflow_health reports the ask-ai workflow ${str(healthState.row.health) || 'with no health value'}.`
         : '',
       attnState?.rows ? 'v_needs_attention returned no row filed against this screen.' : '',
+      /* This sentence asserted that every answer "came back answered" and
+         "cited at least one document" without consulting a single turn, so a
+         turn with status ok and an empty answer would have been covered by it.
+         It is derived now, like everything else in this list. The branch is in
+         practice unreachable — `kb-undated` is pushed on every settled non-empty
+         knowledge base, by design, so `alerts` is never empty — but an
+         unreachable sentence that would be false if it ran is still a false
+         sentence sitting in the file. */
       HISTORY.length
-        ? `All ${num(HISTORY.length)} question${plural(HISTORY.length, '', 's')} asked in this session came back answered, and every answer cited at least one document.`
+        ? (() => {
+            const done = HISTORY.filter(e => e.status === 'ok');
+            const cleanTurns = done.filter(e => grounded(e).verdict === 'clean').length;
+            return `${num(done.length)} of the ${num(HISTORY.length)} question${plural(HISTORY.length, '', 's')} asked in this session came back answered, and ${num(cleanTurns)} of those carried citations with no grounding problem reported.`;
+          })()
         : 'No question has been asked in this session yet, so there is no answer here to judge.',
     ].filter(Boolean);
 
@@ -800,6 +1261,7 @@ SCREENS.ask = async host => {
     if (t) { clearInterval(t); tickers.delete(id); }
   }
   function paint(e) {
+    if (!live()) { stopTicker(e.id); return; }
     const node = document.getElementById(`askE${e.id}`);
     stopTicker(e.id);
     if (!node) return;
@@ -807,6 +1269,10 @@ SCREENS.ask = async host => {
     node.style.borderLeft = turnEdge(e);
     if (e.status === 'pending') {
       tickers.set(e.id, setInterval(() => {
+        /* A ticker from a superseded render drives the same `askT{id}` node by
+           id, so two of them counted the same wait against two different start
+           states. The stale one stands down. */
+        if (!live()) { stopTicker(e.id); return; }
         const t = document.getElementById(`askT${e.id}`);
         if (!t) { stopTicker(e.id); return; }
         const elapsed = Date.now() - e.at;
@@ -827,8 +1293,8 @@ SCREENS.ask = async host => {
   function onEntryAct(btn, e) {
     const act = btn.dataset.act;
     if (act === 'raw') { e.showRaw = !e.showRaw; paint(e); return; }
-    if (act === 'edit') { box.value = e.q; box.focus(); syncControls(); return; }
-    if (act === 'again') { box.value = e.q; syncControls(); submit(); return; }
+    if (act === 'edit') { const b = qBox(); if (b) { b.value = e.q; b.focus(); } syncControls(); return; }
+    if (act === 'again') { const b = qBox(); if (b) b.value = e.q; syncControls(); submit(); return; }
     if (act === 'copy') {
       const clip = navigator.clipboard;
       if (!clip || typeof clip.writeText !== 'function') {
@@ -842,29 +1308,43 @@ SCREENS.ask = async host => {
     }
   }
   function renderThread() {
+    if (!live()) return;
+    const threadNode = $('askThread');
+    if (!threadNode) return;
     if (!HISTORY.length) {
-      thread.innerHTML = `<div class="card">${stateEmpty('Nothing asked yet',
+      threadNode.innerHTML = `<div class="card">${stateEmpty('Nothing asked yet',
         'Answers appear here newest first and stay for as long as this tab is open. They are not saved anywhere.',
         'auto_awesome')}</div>`;
       return;
     }
-    thread.innerHTML = HISTORY.map(e => `<div class="card" id="askE${e.id}" style="margin-bottom:14px"></div>`).join('');
+    threadNode.innerHTML = HISTORY.map(e => `<div class="card" id="askE${e.id}" style="margin-bottom:14px"></div>`).join('');
     HISTORY.forEach(paint);
   }
+
+  /* Registered only once the four are defined, and after `syncControls` above,
+     so a dispatcher can never reach a half-built render. */
+  self.paint = paint;
+  self.thread = renderThread;
+  self.sync = syncControls;
+  self.alerts = renderAlerts;
 
   /* ── Asking ─────────────────────────────────────────────────────────────── */
   async function submit() {
     if (blocked) return;
-    const q = box.value.trim();
+    const b = qBox();
+    const q = b ? b.value.trim() : '';
     if (!q) return;
     if (HISTORY.some(e => e.status === 'pending')) return;
 
     const e = { id: ++SEQ, q, at: Date.now(), status: 'pending', ms: null, showRaw: false, slow: false };
     HISTORY.unshift(e);
-    box.value = '';
-    renderThread();
-    syncControls();
-    renderAlerts();
+    b.value = '';
+    /* Through the dispatchers from here on. The awaits below can outlast this
+       render by minutes — the deadline alone is 45 s and a late answer is still
+       rendered — so every paint after one of them goes to whichever render is
+       on screen when it lands, not to this closure's nodes. */
+    rethread();
+    resync();
 
     const call = n8n(HOOK.askAi, { question: q });
     const settle = call.then(r => ({ ok: true, r }), err => ({ ok: false, err }));
@@ -881,9 +1361,8 @@ SCREENS.ask = async host => {
         e.err = out.err?.message || String(out.err);
         e.rawText = '';
       }
-      paint(e);
-      syncControls();
-      renderAlerts();
+      repaint(e);
+      resync();
     };
 
     const winner = await Promise.race([settle, wait(DEADLINE_MS).then(() => TIMED_OUT)]);
@@ -892,20 +1371,19 @@ SCREENS.ask = async host => {
     e.status = 'timeout';
     e.ms = DEADLINE_MS;
     e.slow = false;
-    paint(e);
-    syncControls();
-    renderAlerts();
+    repaint(e);
+    resync();
     /* The connection is still open. If it lands, the turn is rewritten with the
        real answer and flagged late — an answer that arrived is an answer. */
     settle.then(out => { e.late = true; finish(out); });
   }
 
   goBtn.addEventListener('click', submit);
-  box.addEventListener('input', syncControls);
-  box.addEventListener('keydown', ev => {
+  qBox().addEventListener('input', syncControls);
+  qBox().addEventListener('keydown', ev => {
     if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); submit(); }
   });
-  $('askReset').addEventListener('click', () => { box.value = ''; box.focus(); syncControls(); });
+  $('askReset').addEventListener('click', () => { const b = qBox(); if (b) { b.value = ''; b.focus(); } syncControls(); });
   $('askWipe').addEventListener('click', () => {
     /* A running turn is kept — dropping it would leave a request in flight with
        nowhere to land. */
@@ -929,7 +1407,15 @@ SCREENS.ask = async host => {
      a box that is already struggling is how a slow dashboard becomes a dead
      one. */
   const attnP   = settled(db(`v_needs_attention?select=kind,severity,ref,title,detail,at,screen&screen=eq.ask&order=at.desc&limit=${ATTN_LIMIT}`));
-  const healthP = settled(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,description,is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,last_failure,health&limit=200'));
+  /* The 30-day columns are the graded ones and they are what this screen reads.
+     `runs_30d` counts everything the workflow logged; `effective_runs_30d`
+     counts only what it was expected to deliver on, with refusals-by-design
+     taken out of the denominator. Ask-AI logs both — its JWT guard writes a
+     REJECTED row every time an unauthenticated caller is turned away — so the
+     two numbers differ here and quoting the wrong one turns a workflow the
+     database calls HEALTHY into a 79% one on screen. lib/health.js owns that
+     distinction; this screen only reads the columns it publishes. */
+  const healthP = settled(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,description,is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,successes_30d,effective_runs_30d,success_rate_30d,last_failure,health&limit=200'));
   const auditP  = settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`));
   const regP    = settled(db('workflow_registry?select=id,name,audit_name,audit_aliases'));
 
@@ -982,8 +1468,10 @@ SCREENS.ask = async host => {
           `<button class="btn sm" data-chip="${esc(t)}" title="Ask about ${esc(t)}">${esc(t)}</button>`).join('')}
         </div>`;
       $('askChips').querySelectorAll('[data-chip]').forEach(b => b.addEventListener('click', () => {
-        box.value = `What does the ${b.dataset.chip} say?`;
-        box.focus();
+        const q = qBox();
+        if (!q) return;
+        q.value = `What does the ${b.dataset.chip} say?`;
+        q.focus();
         syncControls();
       }));
     } else {
@@ -1035,17 +1523,32 @@ SCREENS.ask = async host => {
            settled centrally after four screens each decided it privately.
            A blank health falls through tone('') === '' to pill()'s own
            fallback, which reads the UNREPORTED label and lands on 'cold'. */
+        /* The counts used to read "N runs in 30 d, M failed" straight off
+           runs_30d/failures_30d. For this workflow that is 14 and 0 — and the
+           three of those 14 that are its JWT guard turning away an
+           unauthenticated caller are not runs it was expected to deliver on.
+           Printing them in the denominator next to a HEALTHY pill is the same
+           defect lib/health.js was written to end, one step milder: a number
+           that disagrees with the verdict beside it. Refusals are named
+           separately, and never folded into a rate. */
+        const eff = n0(w.effective_runs_30d);
+        const succ = n0(w.successes_30d);
+        const rej = n0(w.rejected_30d) || 0;
+        const hw = healthWords(h);
         const bits = [
           `<span class="mono">${esc(HOOK.askAi)}</span>`,
-          pill(h || 'UNREPORTED', tone(h)),
+          h ? pill(h, Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? hw.tone : tone(h)) : pill('UNREPORTED', tone('')),
           w.is_active === false ? '<span class="t-hot">registered inactive</span>' : '',
-          n0(w.runs_30d) != null
-            ? `${esc(num(w.runs_30d))} run${plural(w.runs_30d, '', 's')} in 30 d, ${esc(num(n0(w.failures_30d) || 0))} failed`
-            : '',
+          eff != null && succ != null
+            ? `${esc(num(succ))} of ${esc(num(eff))} rated run${plural(eff, '', 's')} succeeded in 30 d`
+            : n0(w.runs_30d) != null
+              ? `${esc(num(w.runs_30d))} run${plural(w.runs_30d, '', 's')} logged in 30 d, no rated breakdown`
+              : '',
+          rej ? `${esc(num(rej))} refused by design, not rated` : '',
           w.last_run ? `last run ${esc(ago(w.last_run))}` : 'no run ever recorded',
         ].filter(Boolean);
         line.innerHTML = `<span style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">${bits.join('<span class="t-muted">·</span>')}</span>`;
-        line.title = m.how || '';
+        line.title = [m.how, h ? `${h}: ${hw.blurb}` : ''].filter(Boolean).join(' ');
       }
     }
     renderAlerts();
@@ -1057,12 +1560,27 @@ SCREENS.ask = async host => {
      name containing both words: if it logs as "RAG Query" that filter returns
      nothing and the panel reports "no runs" for a workflow that runs fine. The
      newest AUDIT_LIMIT rows are read once instead and matched here against the
-     names workflow_registry actually records for it. */
+     names workflow_registry actually records for it.
+
+     The three reads are shared with the alert strip, and `panel()`'s own
+     comment names exactly what that costs: a `load` that awaits an already
+     settled promise hands back the SAME rejection every time, so its Retry
+     button looks like it is working and can never succeed. So the first attempt
+     uses the reads already in flight and every attempt after it issues fresh
+     ones. */
+  let runsAttempt = 0;
   panel($('askRuns'), {
     title: 'Ask-AI run history',
     sub: 'Rows the workflow itself wrote to audit_log — the dashboard cannot write these',
     load: async () => {
-      const [audit, reg, health] = await Promise.all([auditP, regP, healthP]);
+      const first = runsAttempt++ === 0;
+      const [audit, reg, health] = first
+        ? await Promise.all([auditP, regP, healthP])
+        : await Promise.all([
+            settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`)),
+            settled(db('workflow_registry?select=id,name,audit_name,audit_aliases')),
+            healthP,
+          ]);
       if (!audit.ok) throw new Error(audit.err);
       const healthRow = health.ok ? matchAsk(health.v).row : null;
 
@@ -1137,8 +1655,24 @@ SCREENS.ask = async host => {
           'No audit_log row inside the window described below matches an Ask-AI workflow.', 'history') + foot;
       }
 
-      const ok = rows.filter(r => str(r.status).toUpperCase() === 'SUCCESS').length;
-      const head = `<div class="cell-sub" style="padding:14px 20px 0">${esc(num(ok))} of the ${esc(num(rows.length))} matched run${plural(rows.length, '', 's')} succeeded${rows[0]?.logged_at ? ' · most recent ' + esc(ago(rows[0].logged_at)) : ''}</div>`;
+      /* `rows.filter(status === 'SUCCESS').length / rows.length` is what stood
+         here, and on live data it prints "11 of the 14 matched runs succeeded"
+         directly beneath a pill reading HEALTHY. Both were right about their own
+         arithmetic and the screen still contradicted itself, because the other
+         three rows are this workflow's JWT guard rejecting an unauthenticated
+         caller — refused by design, and excluded from the rate by the same
+         Postgres function v_workflow_health uses. lib/health.js mirrors that
+         function and is the only thing in the frontend allowed to decide what a
+         status means, so the count is built from it: successes over qualifying
+         runs, refusals named separately, and a partial never quietly counted as
+         either. */
+      const rated = rows.filter(isQualifying);
+      const ok = rated.filter(isSuccess).length;
+      const refused = rows.filter(isRefusal).length;
+      const head = `<div class="cell-sub" style="padding:14px 20px 0">${esc(num(ok))} of the ${esc(num(rated.length))} rated run${plural(rated.length, '', 's')} succeeded${
+        refused ? ` · ${esc(num(refused))} further request${plural(refused, '', 's')} refused by design and not rated` : ''}${
+        rows.length !== rated.length + refused ? ` · ${esc(num(rows.length - rated.length - refused))} handed to a person on purpose` : ''}${
+        rows[0]?.logged_at ? ' · most recent ' + esc(ago(rows[0].logged_at)) : ''}</div>`;
 
       /* A person, with their phone number beside their name — and an absent
          number rendered as an absence, never as a blank. A workflow has written
@@ -1165,7 +1699,15 @@ SCREENS.ask = async host => {
 
       return head + table([
         { label: 'When', render: r => `<span class="t-muted">${esc(ago(r.logged_at))}</span>` },
-        { label: 'Status', render: r => pill(str(r.status) || 'UNKNOWN') },
+        /* The raw status is not the outcome. Finance Calc and Master Router
+           both write FAILED on rows whose own summary says some claimed step did
+           not land, and that correction lives in lib/health.js beside the SQL it
+           mirrors — not in a per-screen ternary. The database's own word is kept
+           in the hover so nothing is hidden by the translation. */
+        { label: 'Outcome', render: r => {
+            const w = outcomeWords(outcomeOf(r));
+            return `<span title="${esc(`audit_log.status is ${str(r.status) || 'empty'}. ${w.blurb}`)}">${pill(w.label, w.tone)}</span>`;
+          } },
         { label: 'Workflow', render: r => esc(str(r.workflow) || '—') },
         { label: 'Lead', render: who },
         { label: 'Summary', render: r => `${esc(str(r.summary) || '—')}${r.intent ? `<div class="cell-sub">${esc(r.intent)}</div>` : ''}` },

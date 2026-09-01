@@ -98,10 +98,22 @@ const initials = name => (name || '?').split(/\s+/).filter(Boolean).slice(0,2).m
                                   different things. See the lifecycle block
                                   below; it is the reason this table grew a
                                   'won', a 'dead' and an 'open'.
-   plus v_workflow_health.health, which is the one with a genuine fourth state:
-   NOT_INSTRUMENTED is not health, it is the absence of evidence, so it maps to
-   'cold' and never to 'ok'. Colouring an unmeasured workflow green is how a
-   dashboard lies without anyone writing a false sentence. */
+   plus v_workflow_health.health and the outcome classes behind it, which are
+   the vocabulary with a genuine fourth state: NOT_INSTRUMENTED is not health,
+   it is the absence of evidence, so it never maps to 'ok'. Colouring an
+   unmeasured workflow green is how a dashboard lies without anyone writing a
+   false sentence.
+
+   Those last two vocabularies are NOT this table's to define. lib/health.js
+   mirrors nexus_outcome_class() and already declares a tone for every value of
+   HEALTH_WORDS and OUTCOME_WORDS; the entries below are copied from it, and if
+   the two ever disagree health.js is right. Both were audited against it on
+   1 Sep 2026 and three of its values were simply absent — PRODUCING_NOTHING
+   worst among them. A workflow that runs without failing and achieves nothing
+   is a fault, and with no entry here tone() fell through to the neutral grey
+   reserved for words nobody has taught this table: Competitor Price Scraping,
+   96 runs and 12 successes in the window with 84 producing no usable price,
+   was painted as though the dashboard had no opinion about it. */
 const TONE = {
   HOT:'hot', WARM:'warm', COLD:'cold',
   GOOD:'ok', OK:'ok', SUCCESS:'ok', APPROVED:'ok', HEALTHY:'ok', ACTIVE:'ok', SENT:'ok',
@@ -115,7 +127,40 @@ const TONE = {
      dead Gmail credential put Lead Escalation in, and it stopped every
      escalation email the dealership sends. */
   DEGRADED:'hot',
-  NEVER_RAN:'cold', NOT_INSTRUMENTED:'cold', UNKNOWN:'cold', INACTIVE:'cold', VOIDED:'cold',
+  /* ── v_workflow_health.health, in full, copied from HEALTH_WORDS ──────────
+     PRODUCING_NOTHING is 'hot' for the same reason DEGRADED is: it is a fault,
+     not a note. NEVER_RAN and NOT_INSTRUMENTED moved from 'cold' to 'unknown'
+     to match health.js — 'cold' is a graded low state, and neither of these is
+     graded at all; they are the absence of evidence, which is what the
+     'unknown' tone exists to say. Nothing turns green either way. */
+  PRODUCING_NOTHING:'hot',
+  UNKNOWN_OUTCOME:'unknown', NO_QUALIFYING_RUNS:'unknown',
+  NEVER_RAN:'unknown', NOT_INSTRUMENTED:'unknown',
+  /* ── The outcome classes, copied from OUTCOME_WORDS ───────────────────────
+     SUCCESS is already 'ok' above. These are the CLASS names returned by
+     outcomeOf(), not the raw audit_log.status spellings — FAILURE is the class,
+     FAILED is the status the row carries, and both must be red. NO_RESULT and
+     REJECTED_EXPECTED were reaching the neutral grey by fallback, which was the
+     right colour for the wrong reason: they are neutral because health.js says
+     a run that produced nothing is neither a crash nor a success, not because
+     nobody had heard of them. Naming them is what makes that checkable.
+
+     Two words in this table are shared with a vocabulary health.js does not
+     govern and are therefore deliberately NOT aligned to it:
+       ESCALATED — health.js tones it neutral, because an escalated workflow run
+         is deliberate and excluded from every rate. But kyc_documents.verdict
+         also spells a document handed to a human ESCALATED, and that one is
+         waiting on somebody. It stays 'warm' above. A screen reading workflow
+         outcomes must take its tone from OUTCOME_WORDS, not from here.
+       REJECTED — likewise the KYC verdict for a refused document, which stays
+         'hot'. The outcome class for a refused workflow call is spelled
+         REJECTED_EXPECTED and is neutral, which is the entry below. */
+  PARTIAL:'hot', FAILURE:'hot',
+  NO_RESULT:'unknown', REJECTED_EXPECTED:'unknown',
+  /* UNKNOWN was 'cold', which contradicted this table's own fallback four lines
+     below: a word nobody has taught it tones 'unknown', while the word UNKNOWN
+     itself toned like a graded cold item. */
+  UNKNOWN:'unknown', INACTIVE:'cold', VOIDED:'cold',
   /* The screens' own derived alerts speak a second vocabulary. It lives here
      rather than in five private maps so that one severity can never be two
      colours on two screens. */
@@ -149,16 +194,26 @@ const TONE = {
    router never gave it. 'unknown' is its own tone: legible, obviously not one
    of the graded states, and carrying a title that says so on hover. Callers
    that must distinguish can read TONE directly. */
+const toneKey = s => String(s ?? '').toUpperCase().replace(/[\s-]+/g, '_');
 const tone = s => {
-  const k = String(s ?? '').toUpperCase().replace(/[\s-]+/g, '_');
+  const k = toneKey(s);
   return TONE[k] || (k ? 'unknown' : '');
 };
 const UNKNOWN_WHY = 'This dashboard has no wording for that status. It is shown exactly as the database holds it rather than folded into a state it might mean.';
 const pill = (label, t) => {
   const k = t || tone(label);
   /* The hover text is the only place an unrecognised status can explain itself,
-     and without it 'unknown' is just another grey pill. */
-  return `<span class="pill ${k}"${k === 'unknown' ? ` title="${esc(UNKNOWN_WHY)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
+     and without it 'unknown' is just another grey pill.
+
+     It is attached only when the label really is unrecognised, which needs the
+     TONE lookup rather than the resulting tone. Since 1 Sep the table maps five
+     values health.js tones neutral on purpose — NO_RESULT, REJECTED_EXPECTED,
+     NO_QUALIFYING_RUNS, NOT_INSTRUMENTED, NEVER_RAN — and hovering any of them
+     would have read "this dashboard has no wording for that status" over a
+     state the dashboard has a whole paragraph of wording for. A grey pill that
+     misexplains itself is worse than one that says nothing. */
+  const named = TONE[toneKey(label)] != null;
+  return `<span class="pill ${k}"${k === 'unknown' && !named ? ` title="${esc(UNKNOWN_WHY)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
 };
 
 /* ── States. Every panel has all four; a panel without them is not done. ─── */
