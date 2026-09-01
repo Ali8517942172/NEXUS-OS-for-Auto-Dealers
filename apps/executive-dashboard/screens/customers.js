@@ -1273,9 +1273,9 @@ SCREENS.customers = async host => {
           ? `<span class="t-warm">communication_logs could not be read — ${esc(comms.err)}</span>`
             + (viewMsgs == null
                 ? ''
-                : `<div><span class="t-muted">v_customer_360 reports ${esc(String(viewMsgs))}, but it counts only the rows filed under the email address, so it is not the history and is not shown as the figure.</span></div>`)
+                : `<div><span class="t-muted">v_customer_360 reports ${esc(String(viewMsgs))}, but a count is not the history, so it is not shown as the figure.</span></div>`)
           : viewMsgs != null
-            ? `<span class="t-warm">${esc(String(viewMsgs))} on v_customer_360, which counts the email key only — nothing on this row could be matched to a message key, so no history was read directly</span>`
+            ? `<span class="t-warm">${esc(String(viewMsgs))} on v_customer_360 — nothing on this row could be matched to a message key here, so no history was read directly</span>`
             : `<span class="t-muted">Not countable — ${esc(commsFilter.note)}</span>`)
       : `<span class="t-muted">${msgCapped
             ? `At least ${esc(String(MSG_LIMIT))} — the read is capped there, so this is a floor`
@@ -1286,7 +1286,7 @@ SCREENS.customers = async host => {
             ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
             : msgCapped || viewMsgs === commCount
               ? ''
-              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}. It counts only the rows filed under the email address, so it is ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'short of' : 'ahead of'} what was just read across every key.</span></div>`);
+              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}, ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'below' : 'above'} the figure above. Since 1 Sep 2026 the view expands the same key shapes this screen does, so the remaining gap is the internal markers: it excludes rows whose message begins [SILENCE-, which are written because nobody was in touch and are not messages to or from the customer. This screen counts them. Neither number is wrong; they are answering different questions.</span></div>`);
 
     /* LIFETIME VALUE, and what the view's figure actually is.
 
@@ -1315,10 +1315,15 @@ SCREENS.customers = async host => {
     const noAmount = purch.rows ? purch.rows.length - withAmount.length : 0;
     const ltvFromView = n0(v.lifetime_value_aed);
     const viewPurchases = n0(v.purchase_count);
+    /* Until 1 Sep 2026 v_customer_360 summed DISTINCT amount_aed, so two
+       purchases at the same price counted once and the view reported the sum of
+       a customer's distinct PRICES rather than what they had spent. It now sums
+       over distinct purchase rows, so a disagreement no longer has that
+       explanation and this screen must not offer it. What is left is the read
+       window: this screen sums the rows it fetched, the view sums all of them. */
     const DISTINCT_CAVEAT =
-      'v_customer_360 sums DISTINCT amount_aed, so two purchases at the same price count once. It is the sum of '
-      + 'this customer’s distinct purchase amounts, which is only the same thing as what they have spent when no '
-      + 'two of their purchases cost the same.';
+      'Both sides now sum over distinct purchase rows, so this gap is not the old DISTINCT-amount defect. '
+      + 'The likeliest cause is the read: this screen sums only the purchase rows it fetched, while the view sums every row on file.';
 
     let ltvValue, ltvSub;
     if (purch.rows && !purch.rows.length) {
@@ -1326,7 +1331,7 @@ SCREENS.customers = async host => {
       ltvSub = `<span class="t-muted">No purchase recorded for this customer, so there is no lifetime value to state.</span>`
         + (ltvFromView == null
             ? ''
-            : `<div><span class="t-muted">v_customer_360 reports ${esc(aed(ltvFromView))} here because its sum is COALESCE’d to zero — a customer who has never bought and one who bought at no charge are the same 0 to it.</span></div>`);
+            : `<div><span class="t-muted">v_customer_360 also reports ${esc(aed(ltvFromView))} here. Until 1 Sep 2026 it COALESCE’d its sum to zero, so a customer who had never bought and one who bought at no charge were the same 0 to it; it now returns null for the first, which is why both sides agree.</span></div>`);
     } else if (purchTotal != null) {
       ltvValue = aed(purchTotal);
       ltvSub = `<span class="t-muted">Summed from the ${esc(String(withAmount.length))} purchase row${withAmount.length === 1 ? '' : 's'} read here${noAmount ? `, ${esc(String(noAmount))} more carrying no amount_aed` : ''}</span>`
