@@ -124,6 +124,18 @@
       the audit log records only runs that COMPLETED, so a workflow hung right
       now leaves no row at all and cannot be distinguished from an idle one here.
 
+   Identity, 1 Sep 2026. Three places in this file decided that a database row
+   belonged to a person, and all three did it with a private rule of their own:
+   the reply-gap analysis on `lower(leads.email) === lower(lead_email)`, the
+   Needs-attention lead lookup on the same, and the KYC contact count on
+   `lower(kyc_documents.lead_email)`. All three now go through lib/identity.js,
+   which applies the last-nine-digit rule the n8n `Resolve Lead Identity` node
+   used to WRITE these keys and bridges a `@lid` through whatsapp_contacts.
+   `communication_logs.lead_email` is not an email column — it holds four
+   incompatible key shapes for one person — and reading it as one is what let
+   this screen attach 8 of 19 replies while its own disclosure sentence claimed
+   it had missed only 5. The measurements are in the notes at each site.
+
    Everything below is a number Postgres produced. Nothing is estimated, and
    where a figure rests on a handful of rows the screen says how few — a single
    test record must not read as a trend. */
@@ -137,6 +149,12 @@ import { aed, ago, clock, esc, mins, n0, num, pct, pill, tone } from '../lib/for
    screen reads the columns v_workflow_health already computed from the same
    rule and does not classify anything itself. */
 import { healthWords, successRate } from '../lib/health.js';
+/* The shared identity resolver, and the only rule this screen is allowed to use
+   to decide that a communication_logs row belongs to a lead. Until 1 Sep 2026
+   this file matched `lower(leads.email) === lower(lead_email)` and nothing else
+   — see the note above the reply analysis in the core read for what that cost
+   and what it was measured at. */
+import { expandIdentity, isHandle, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -158,6 +176,13 @@ import { kpi, panel, table, wireRows } from '../lib/ui.js';
 const WINDOW_DAYS = 30;
 const OUTBOUND_LIMIT = 5000;
 const LEAD_LIMIT = 2000;
+/* whatsapp_contacts is the ONLY thing that can attach a `@lid`-keyed message to
+   a lead: a LID's digits are a machine id, not a phone number, so the handle can
+   never be derived from what the lead row holds and can only be looked up. The
+   table is a directory with one row per chat — 11 rows live on 1 Sep 2026 — so
+   this ceiling is a guard, not a window. Same value as screens/leads.js:152,
+   deliberately, so the two screens cannot read different slices of it. */
+const CONTACT_LIMIT = 2000;
 const INV_LIMIT = 2000;
 const ATTN_LIMIT = 200;
 const AWAITING_LIMIT = 200;
@@ -196,10 +221,27 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const warn = msg => `<span class="t-warm">${esc(msg)}</span>`;
 const muted = msg => `<span class="t-muted">${esc(msg)}</span>`;
 
-/* A WhatsApp handle. A LID contains no phone digits at all, so it identifies
-   nobody — it is rendered as a handle, in mono, and never as a name. */
-const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
-const isHandle = v => HANDLE.test(String(v == null ? '' : v).trim());
+/* Why the reply-gap check was withheld, in the operator's words. Said the same
+   way in the KPI subtitle and in the panel below it, so the two cannot describe
+   the same outage differently. A capped read is reported as a failed one on
+   purpose: it means some chat-to-lead bridges are missing and nothing on this
+   screen can say which. */
+const bridgeWhy = (err, capped) => (err
+  ? `whatsapp_contacts could not be read (${err.message}), and that table is the only thing that can attach a @lid-keyed message to a lead — a LID carries no phone digits, so the handle can only be looked up, never derived.`
+  : capped
+    ? `The whatsapp_contacts read hit its ${CONTACT_LIMIT}-row ceiling, so some chat-to-lead bridges are missing and there is no way to tell from here which leads are affected.`
+    : '');
+
+/* `isHandle` is imported from lib/identity.js above rather than restated here.
+   It used to be a private copy of the same regex, and a private copy is how the
+   disclosure sentence in the reply-gap panel came to be wrong: identity.js's
+   handle set is the four WAHA address shapes, and `+<digits>@whatsapp.lead` —
+   the key the workflows synthesise from a phone number — is not one of them.
+   Reading that as "everything this screen cannot match" was the error. What the
+   screen cannot match is now measured directly rather than inferred from a key
+   shape; this predicate is left for what it is actually for, which is refusing
+   to print a machine handle where a person's name goes.
+   A LID contains no phone digits at all, so it identifies nobody. */
 const str = v => String(v == null ? '' : v).trim();
 
 /* What `identified` means, in the operator's words. `lead` is the only value
@@ -637,7 +679,7 @@ SCREENS.overview = async host => {
   const up = s => String(s || '').toUpperCase();
   const norm = v => String(v || '').trim().toLowerCase();
   try {
-    const [leads, inv, metrics, outbound] = await Promise.all([
+    const [leads, inv, metrics, outbound, contactsRes] = await Promise.all([
       /* `phone` and `assigned_to` are real columns on leads (probed 24 Aug) and
          both are read below: a lead waiting for a reply is a person somebody has
          to ring, and the rep's name is what makes "unanswered" somebody's job.
@@ -672,7 +714,18 @@ SCREENS.overview = async host => {
          customer from a marker this system wrote to itself. See the reply
          analysis below. */
       db(`communication_logs?select=lead_email,created_at,channel,direction&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
+      /* The `@lid` bridge, added 1 Sep 2026. Settled rather than awaited with
+         the rest: this read is a precondition of the reply-gap check and not of
+         anything else on the strip, so its failure must withhold that one check
+         and take nothing else down with it. Rejections are turned into a value
+         here for the same reason lib/lead-drawer.js does it — a consumer may not
+         assert an absence whose source errored. */
+      db(`whatsapp_contacts?select=chat_id,phone,push_name,lead_email&limit=${CONTACT_LIMIT}`)
+        .then(rows => ({ rows, err: null }), e => ({ rows: [], err: e })),
     ]);
+    const contacts = contactsRes.rows || [];
+    const contactsErr = contactsRes.err;
+    const contactsCapped = !contactsErr && contacts.length >= CONTACT_LIMIT;
 
     const hot = leads.filter(l => up(l.status) === 'HOT').length;
     const warm = leads.filter(l => up(l.status) === 'WARM').length;
@@ -738,62 +791,150 @@ SCREENS.overview = async host => {
        before the lead row existed — so a returning customer quoted in August
        and re-enquiring today is exempted from the five-minute rule on the
        strength of the earlier quote, silently, for exactly the segment with the
-       highest close rate. The newest reply per address is kept and compared
-       against the lead's own created_at. */
+       highest close rate. The newest reply per PERSON is kept and compared
+       against the lead's own created_at.
+
+       And the third thing, which was the largest and was still here on the
+       morning of 1 Sep 2026. "Per person" was `lower(leads.email)` compared to
+       `lower(communication_logs.lead_email)` — string equality on one column,
+       no resolver, no phone rule, no whatsapp_contacts read on this screen at
+       all. That column is not an email column. It holds four incompatible key
+       shapes for the same human being (a real address, `<digits>@c.us`,
+       `<lid>@lid`, `+<digits>@whatsapp.lead`), the backend joins them on the
+       LAST NINE DIGITS of the phone number, and a `@lid` carries no phone
+       digits and bridges only through whatsapp_contacts. Measured against the
+       live database on 1 Sep 2026, the old rule attached 8 of the 19 real
+       replies in the window; per lead it reached 3 of 8, 0 of 10 and 15 of 29
+       where lib/identity.js reaches all of them. Lead 35's `email` column is
+       the empty string, so `norm('')` was `''` and every one of its ten
+       messages was dropped.
+
+       The conclusions survived by luck — 34 and 38 read ANSWERED either way and
+       35 is DISQUALIFIED so it never entered this queue — but a WhatsApp-only
+       lead answered only under a `@lid` would have been printed on the front
+       page as awaiting its first reply. The rule is not this screen's to choose:
+       lib/identity.js is the same rule the n8n `Resolve Lead Identity` node used
+       to WRITE these keys, and eight other consumers now read on it. */
     const INTERNAL_CHANNELS = new Set(['system', 'internal']);
     const isInternal = c => INTERNAL_CHANNELS.has(norm(c.channel)) || norm(c.direction) === 'internal';
     const internalMarkers = outbound.filter(isInternal).length;
     const replies = outbound.filter(c => !isInternal(c));
+
+    /* ── Who each lead is ────────────────────────────────────────────────
+       One expansion per lead, seeded from the row and bridged through
+       whatsapp_contacts, exactly as screens/leads.js:407 does it. `leads` goes
+       in as the candidate pool so that two people whose numbers end in the same
+       nine digits are REPORTED as a collision and merged into neither, rather
+       than silently becoming one customer on the front page.
+
+       `canonical` is the comparison form. It collapses `@c.us`,
+       `@s.whatsapp.net`, `@whatsapp.lead` and a bare number onto
+       `phone:<last 9>` while keeping a LID as `lid:<digits>` and an address as
+       `email:<address>` — so a LID whose digits happen to end like somebody's
+       phone number can never compare equal to it. Matching happens in memory
+       over the window this screen already reads, not as one query per person:
+       the panel is about every recent lead at once, and 2000 personFilter reads
+       to answer one KPI is not a trade this screen can make. */
+    const canonOf = new Map();
+    for (const l of leads) {
+      const idn = expandIdentity(
+        { leadId: l.id, email: l.email, phone: l.phone, name: l.name },
+        { links: contacts, leads });
+      canonOf.set(String(l.id), new Set(idn.keys.map(k => normalizeKey(k).canonical).filter(Boolean)));
+    }
+    /* canonical -> the leads filed under it. A list and not a single lead: if
+       two leads ever do resolve to the same canonical, a reply under it answers
+       both of them and neither is quietly given away to the other. */
+    const leadsForCanon = new Map();
+    for (const l of leads) {
+      for (const k of canonOf.get(String(l.id))) {
+        if (!leadsForCanon.has(k)) leadsForCanon.set(k, []);
+        leadsForCanon.get(k).push(String(l.id));
+      }
+    }
+    const owners = c => leadsForCanon.get(normalizeKey(c.lead_email).canonical) || [];
+
+    /* Newest reply per lead, not per address — a person filed under three keys
+       has one answer time, and it is the latest of them. */
     const lastReply = new Map();
     replies.forEach(c => {
-      const k = norm(c.lead_email);
       const t = Date.parse(c.created_at);
-      if (!k || Number.isNaN(t)) return;
-      const seen = lastReply.get(k);
-      if (seen == null || t > seen) lastReply.set(k, t);
+      if (Number.isNaN(t)) return;
+      owners(c).forEach(id => {
+        const seen = lastReply.get(id);
+        if (seen == null || t > seen) lastReply.set(id, t);
+      });
     });
     /* At or after, not merely present. Equal timestamps are counted as an
        answer: the router writes the lead and the BDC agent's first message
        within the same second on a WhatsApp enquiry. */
     const answeredSince = l => {
-      const t = lastReply.get(norm(l.email));
+      const t = lastReply.get(String(l.id));
       const born = Date.parse(l.created_at);
       return t != null && !Number.isNaN(born) && t >= born;
     };
-    /* communication_logs.lead_email holds an email when the lead is known and a
-       raw WhatsApp handle when it is not, so some outbound messages in this
-       window are filed against a handle and can never match a lead row. They
-       are counted, not silently dropped: a lead answered on WhatsApp before it
-       was identified would still be listed below as unanswered, and an operator
-       has to be told that rather than left to discover it. */
-    const outboundHandles = replies.filter(c => isHandle(c.lead_email)).length;
+    /* ── The screen's own blind spot, measured rather than guessed ────────
+       Some outbound messages in this window belong to a WhatsApp thread with no
+       lead record behind it at all. Those can never match a lead, so the join
+       is provably incomplete and this is by how much.
+
+       It is counted from the matching OUTCOME — a reply no lead claimed — and
+       not, as it was until 1 Sep 2026, from the key's shape. That test was
+       `isHandle(lead_email)`, whose handle set is the four WAHA address forms
+       and does NOT include `+<digits>@whatsapp.lead`. So on 1 Sep it reported 5
+       where the true number the screen could not match was 11: the six missing
+       were one customer's own replies under `+918517942172@whatsapp.lead`. The
+       screen understated its own blind spot by more than half, in the single
+       sentence written to admit it. Counting the outcome cannot drift from the
+       rule again, because it IS the rule's output. Measured live the same day
+       with the resolver in place: 2 of 19, both under `61207646060562@lid`,
+       a chat that has no lead. */
+    const unmatchedReplies = replies.filter(c => owners(c).length === 0).length;
     const recent = leads.filter(l => Date.parse(l.created_at) >= sinceMs);
     /* Terminal leads are not people waiting for a call. A lead the BDC agent
        disqualified as spam was eligible for this queue, in red, as somebody who
        needed ringing. */
     const recentOpen = recent.filter(isOpenLead);
     const recentTerminal = recent.length - recentOpen.length;
-    /* A lead with no email cannot be matched against communication_logs, which
-       keys on lead_email; one with no readable created_at cannot be compared
-       against a reply time. Neither is counted as unanswered — that would
-       invent a queue — and neither is counted as answered either, which is what
-       the all-clear sentence used to do by printing `recent.length` as its
-       denominator while testing a strictly smaller set. `tested` is the cohort
-       every claim on this strip is now made about, and the untested rows are
-       reported as their own number rather than absorbed into a green line. */
-    const noEmail = recentOpen.filter(l => !norm(l.email)).length;
-    const tested = recentOpen.filter(l => norm(l.email) && !Number.isNaN(Date.parse(l.created_at)));
+    /* A lead the resolver cannot key on at all — no address, no phone, no chat
+       id — cannot be matched against communication_logs; one with no readable
+       created_at cannot be compared against a reply time. Neither is counted as
+       unanswered — that would invent a queue — and neither is counted as
+       answered either, which is what the all-clear sentence used to do by
+       printing `recent.length` as its denominator while testing a strictly
+       smaller set. `tested` is the cohort every claim on this strip is made
+       about, and the untested rows are reported as their own number rather than
+       absorbed into a green line.
+
+       "No email address" was the old test and it was the wrong one twice over:
+       it excluded lead 35, which has an empty email and a phone number the
+       backend matches on perfectly well, and it would have admitted a lead
+       carrying an address the log has never once been keyed under. What decides
+       it now is whether the resolver produced a usable key. */
+    const unkeyed = recentOpen.filter(l => !canonOf.get(String(l.id)).size).length;
+    const tested = recentOpen.filter(l => canonOf.get(String(l.id)).size
+      && !Number.isNaN(Date.parse(l.created_at)));
     const untestable = recentOpen.length - tested.length;
-    const waiting = tested
-      .filter(l => !answeredSince(l))
-      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    /* Without whatsapp_contacts there is no `@lid` bridge, and a lead whose
+       whole conversation is LID-keyed would be named on the front page as never
+       answered. That is a false accusation against a rep, so the check is
+       withheld rather than run on a partial identity — the same call
+       screens/leads.js:670 makes for the same reason. A capped read is treated
+       as a failed one: some bridges would be missing and there is no way to
+       know which. */
+    const bridgeOk = !contactsErr && !contactsCapped;
+    const waiting = bridgeOk
+      ? tested.filter(l => !answeredSince(l))
+        .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+      : [];
 
     core = { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
              openCount: openLeads.length, terminalCount: terminal.length, terminalNames,
              risk, warning, riskHolding, riskList, holding, metrics, waiting,
-             untestable, noEmail, recentTerminal, testedCount: tested.length,
-             outboundHandles, outboundCount: replies.length, internalMarkers,
-             recentCount: recent.length,
+             untestable, unkeyed, recentTerminal, testedCount: tested.length,
+             unmatchedReplies, outboundCount: replies.length, internalMarkers,
+             recentCount: recent.length, canonOf,
+             bridgeOk, contactsErr, contactsCapped, contactCount: contacts.length,
              leadsCapped: leads.length >= LEAD_LIMIT,
              invCapped: inv.length >= INV_LIMIT,
              outboundCapped: outbound.length >= OUTBOUND_LIMIT };
@@ -812,8 +953,8 @@ SCREENS.overview = async host => {
     const { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
             openCount, terminalCount, terminalNames,
             risk, warning, riskHolding, riskList, holding, metrics, waiting, recentCount,
-            testedCount, untestable, noEmail, recentTerminal,
-            leadsCapped, invCapped } = core;
+            testedCount, untestable, unkeyed, recentTerminal, bridgeOk,
+            contactsErr, contactsCapped, leadsCapped, invCapped } = core;
 
     /* Deltas only exist once there are two snapshots. Until then no delta line
        renders at all — an earlier build showed "-18s vs last week" as a
@@ -883,14 +1024,21 @@ SCREENS.overview = async host => {
     const untestedNote = (untestable || recentTerminal)
       ? `<br>${warn([
           untestable
-            ? `${num(untestable)} open ${plural(untestable, 'lead', 'leads')} in this window could not be checked${noEmail ? ` — ${num(noEmail)} ${plural(noEmail, 'has', 'have')} no email address, and communication_logs can only be matched on one` : ''}, so ${plural(untestable, 'it is', 'they are')} not in the figure above either way.`
+            ? `${num(untestable)} open ${plural(untestable, 'lead', 'leads')} in this window could not be checked${unkeyed ? ` — ${num(unkeyed)} ${plural(unkeyed, 'carries', 'carry')} no address, no phone number and no chat id, so there is nothing to match ${plural(unkeyed, 'it', 'them')} to communication_logs on` : ''}, so ${plural(untestable, 'it is', 'they are')} not in the figure above either way.`
             : '',
           recentTerminal
             ? `${num(recentTerminal)} further ${plural(recentTerminal, 'lead in this window is', 'leads in this window are')} already closed and ${plural(recentTerminal, 'is', 'are')} not counted as waiting.`
             : '',
         ].filter(Boolean).join(' '))}`
       : '';
-    const waitSub = waiting.length
+    /* An empty list is only good news when the check actually ran. Without the
+       whatsapp_contacts bridge every `@lid` message is unattachable, so the
+       zero above would be a green all-clear painted over a check that was
+       never performed — the same overclaim `untestedNote` exists to prevent,
+       arriving from the read side instead of the data side. */
+    const waitSub = !bridgeOk
+      ? warn(`This check did not run. ${bridgeWhy(contactsErr, contactsCapped)} No lead is being claimed as answered or unanswered.`)
+      : waiting.length
       ? `<span class="t-hot">Oldest arrived ${esc(ago(waiting[0].created_at))}, still unanswered</span>`
         + `<br>${muted(`Out of ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked`)}`
         + untestedNote
@@ -924,11 +1072,17 @@ SCREENS.overview = async host => {
        view's own sla_breach branch does not either, since `response_time_minutes
        > 5` is null for that row and the comparison drops it. The reply-gap
        analysis two blocks up is what answers "was this lead answered", off
-       communication_logs, and it does not read this column at all; on this
-       particular lead it cannot answer it either, because that message is filed
-       under a WhatsApp handle and the lead carries no email — which is exactly
-       what the `outboundHandles` and `noEmail` counters below exist to say out
-       loud rather than let it pass as an answered lead. */
+       communication_logs, and it does not read this column at all.
+
+       That last sentence used to continue "on this particular lead it cannot
+       answer it either, because that message is filed under a WhatsApp handle
+       and the lead carries no email". That stopped being true on 1 Sep 2026,
+       when the reply analysis moved onto lib/identity.js. It CAN answer it now:
+       lead 35's phone is +971505433953, whatsapp_contacts ties that number to
+       `111948809162873@lid`, and all ten of its messages — the 06:40:38 outbound
+       included — resolve to it. Measured live the same day: 0 rows under the old
+       rule, 10 under the resolver. The lead stays out of the queue because it is
+       DISQUALIFIED, which is a different reason and the correct one. */
     const oneMeasure = withResp.length === 1;
     const respLabel = oneMeasure ? 'Response time' : 'Avg response time';
     const respBasis = muted(`From ${num(withResp.length)} of ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} with a recorded response time`);
@@ -1138,14 +1292,14 @@ SCREENS.overview = async host => {
   /* 1 · Leads nobody has replied to. */
   panels.push(panel(replyHost, {
     title: 'No reply sent',
-    sub: `Open leads created in the last ${WINDOW_DAYS} days with no outbound message in communication_logs sent after they arrived. Internal markers do not count as a reply, and closed leads are not listed`,
+    sub: `Open leads created in the last ${WINDOW_DAYS} days with no outbound message in communication_logs sent after they arrived. A message counts for a lead when it is filed under any key that lead resolves to — lib/identity.js, the same last-nine-digit rule the workflows used to write those keys. Internal markers do not count as a reply, and closed leads are not listed`,
     actions: `<button class="btn sm" data-act="leads">Open Leads</button>`,
     load: async () => requireCore(),
     render: d => {
       const noPhone = d.waiting.filter(l => !str(l.phone)).length;
       const notes = [
         d.untestable
-          ? `${num(d.untestable)} of the ${num(d.recentCount)} leads in this window could not be checked at all${d.noEmail ? ` — ${num(d.noEmail)} of them have no email address, and communication_logs keys on one` : ''}. They are neither listed above nor counted as answered.`
+          ? `${num(d.untestable)} of the ${num(d.recentCount)} leads in this window could not be checked at all${d.unkeyed ? ` — ${num(d.unkeyed)} of them ${plural(d.unkeyed, 'carries', 'carry')} no address, no phone number and no chat id, so there is nothing to match ${plural(d.unkeyed, 'it', 'them')} to communication_logs on` : ''}. They are neither listed above nor counted as answered.`
           : '',
         d.recentTerminal
           ? `${num(d.recentTerminal)} lead${d.recentTerminal === 1 ? '' : 's'} in this window ${plural(d.recentTerminal, 'is', 'are')} already closed — won, lost or disqualified — and ${plural(d.recentTerminal, 'is', 'are')} not listed as waiting for a reply.`
@@ -1157,15 +1311,20 @@ SCREENS.overview = async host => {
         d.internalMarkers
           ? `${num(d.internalMarkers)} outbound row${d.internalMarkers === 1 ? '' : 's'} in this window ${plural(d.internalMarkers, 'is', 'are')} an internal marker rather than a message to a customer (channel 'system' or direction 'internal' — the silence detector writes one when a thread has gone quiet). ${plural(d.internalMarkers, 'It is', 'They are')} not counted as a reply.`
           : '',
-        /* The join this panel rests on is lead.email = communication_logs.lead_email,
-           and that column holds a WhatsApp handle whenever the message was sent
-           to a thread with no identified lead behind it. Those messages cannot
-           match any lead row, so the join is provably incomplete and says by how
-           much rather than presenting itself as exact. */
-        d.outboundHandles
-          ? `${num(d.outboundHandles)} of the ${num(d.outboundCount)} outbound messages read in this window are filed under a WhatsApp handle rather than an email address, because communication_logs.lead_email holds whichever the thread had at the time. They cannot be matched to any lead, so a lead answered on WhatsApp before it was identified would still be listed above as unanswered.`
+        /* How incomplete this panel's join is, measured on the join's own
+           output. Until 1 Sep 2026 this counted `isHandle(lead_email)` — a key
+           SHAPE — and that regex has no `@whatsapp.lead` branch, so on the live
+           database it printed 5 where the true unmatchable count was 11. It is
+           now the number of replies no lead claimed, which is the same quantity
+           the sentence has always been trying to name and cannot drift from the
+           matching rule because it is that rule's output. */
+        d.unmatchedReplies
+          ? `${num(d.unmatchedReplies)} of the ${num(d.outboundCount)} outbound messages read in this window could not be matched to any lead. ${d.bridgeOk
+              ? 'They belong to WhatsApp threads with no lead record behind them. A lead answered on such a thread before it was identified would still be listed above as unanswered.'
+              : 'Some of those threads do have a lead behind them — without the whatsapp_contacts bridge this screen cannot tell which, so this number is larger than it would otherwise be.'}`
           : '',
         d.outboundCapped ? `Outbound history was capped at ${num(OUTBOUND_LIMIT)} messages for this window, so this list may be incomplete.` : '',
+        !d.bridgeOk ? `${bridgeWhy(d.contactsErr, d.contactsCapped)} The check above was withheld rather than run without it — a lead whose whole conversation is filed under a @lid would otherwise be named here as never answered.` : '',
         d.testedCount && d.testedCount <= THIN ? `Only ${num(d.testedCount)} ${plural(d.testedCount, 'lead', 'leads')} in this window could be checked, so an empty list here is a very small sample.` : '',
         noPhone ? `${num(noPhone)} of these ${plural(noPhone, 'lead has', 'leads have')} no phone number on the lead record, so ${plural(noPhone, 'it', 'they')} can only be answered by email.` : '',
         d.waiting.length ? NO_STAFF_PHONE : '',
@@ -1179,11 +1338,14 @@ SCREENS.overview = async host => {
            answered" over a set that excluded the untested ones is the same
            overclaim the KPI strip was making, one panel down. */
         return stateEmpty(
-          d.testedCount ? 'Every lead we could check has been answered'
+          !d.bridgeOk ? 'This check could not be run'
+            : d.testedCount ? 'Every lead we could check has been answered'
             : d.recentCount ? 'No lead in this window could be checked'
               : 'No leads in this window',
-          d.testedCount
-            ? `All ${d.testedCount} open ${plural(d.testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(d.testedCount, 'has', 'have')} an outbound message against ${plural(d.testedCount, 'its', 'their')} address, sent after ${plural(d.testedCount, 'it', 'they')} arrived.`
+          !d.bridgeOk
+            ? 'An empty list here would be an all-clear over a check that never ran, so nothing is claimed either way. The note below says what could not be read.'
+            : d.testedCount
+            ? `All ${d.testedCount} open ${plural(d.testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(d.testedCount, 'has', 'have')} an outbound message filed under one of the keys ${plural(d.testedCount, 'it resolves', 'they resolve')} to, sent after ${plural(d.testedCount, 'it', 'they')} arrived.`
             : d.recentCount
               ? `${d.recentCount} ${plural(d.recentCount, 'lead was', 'leads were')} created in the last ${WINDOW_DAYS} days and none of them could be matched to communication_logs, so this list is empty for want of evidence rather than because everyone was answered.`
               : `No lead was created in the last ${WINDOW_DAYS} days, so there is nothing to answer.`, 'mark_email_read') + foot;
@@ -1365,14 +1527,33 @@ SCREENS.overview = async host => {
          both halves of it. */
       const extra = att ? extraGaps(rows, att.items) : [];
 
-      const keyOf = r => str(r.lead_email).toLowerCase() || str(r.lead_name).toLowerCase();
+      /* How many PEOPLE these gaps belong to, and therefore a question about
+         identity rather than about strings. `lower(lead_email)` was the rule
+         until 1 Sep 2026 and it is the same one the reply analysis was carrying:
+         kyc_documents.lead_email is the same free-text column as
+         communication_logs.lead_email, so one person filed once under a real
+         address and once under a `@lid` counted as two contacts and the note
+         below said the trail was spread across the book when it was not.
+         normalizeKey() collapses the phone-derived shapes onto the last nine
+         digits; the name is kept as the fallback for a row with no usable key
+         at all, which is what it always was. Latent today either way —
+         kyc_documents held 0 rows on 1 Sep 2026, counted live — so this is a
+         wrong rule removed before its first document, not a wrong number
+         corrected. Bridging a `@lid` here would need a whatsapp_contacts read
+         this panel does not make; that is a narrower rule than the reply
+         analysis uses, and it is narrower in the direction of splitting one
+         person into two rather than merging two people into one. */
+      const keyOf = r => normalizeKey(r.lead_email).canonical || str(r.lead_name).toLowerCase();
       const contactKeys = [...new Set(live.map(keyOf).filter(Boolean))];
       const contacts = contactKeys.length;
       /* Where every gap belongs to one person, name them. "All 8 belong to 1
          contact" leaves an owner to go and find out who; the address is already
          in the rows being counted. */
+      /* Named from the row, never from `contactKeys` — those are canonical
+         forms now (`email:…`, `phone:<last 9>`, `lid:<digits>`), which is the
+         right thing to COUNT on and the wrong thing to show a person. */
       const soleContact = contacts === 1
-        ? (str(live[0].lead_name) || str(live[0].full_name) || contactKeys[0])
+        ? (str(live[0].lead_name) || str(live[0].full_name) || str(live[0].lead_email))
         : '';
 
       const notes = [
@@ -1557,16 +1738,29 @@ SCREENS.overview = async host => {
       /* Leads already read for the strip, indexed both ways the view keys its
          refs. A matched ref means the item is about a lead we hold, which buys
          two things: the customer's phone number beside their name, and a click
-         that opens that record rather than the screen it lives on. */
-      const leadById = new Map(), leadByEmail = new Map();
+         that opens that record rather than the screen it lives on.
+
+         The fallback index used to be `lower(leads.email)`, which is the same
+         private rule the reply analysis was carrying and was fixed on 1 Sep
+         2026: it cannot match a ref that arrives as a chat id, and on the live
+         data it holds `+971547484167@whatsapp.lead` as if it were an address
+         while lead 35's empty email produces no entry at all. It is the
+         canonical index now — the same one the reply analysis matches on, built
+         once in the core read — so a ref in any of the four key shapes resolves
+         to the lead it belongs to. `screens/leads.js:436` does exactly this.
+         In practice the view keys both of these kinds on `l.id::text`, so the id
+         lookup is the hit; this is the fallback, and a wrong fallback is still
+         a wrong rule waiting for the view to change. */
+      const leadById = new Map(), leadByCanon = new Map();
       (core?.leads || []).forEach(l => {
         leadById.set(str(l.id), l);
-        const e = str(l.email).toLowerCase();
-        if (e) leadByEmail.set(e, l);
+        for (const k of (core.canonOf.get(String(l.id)) || [])) {
+          if (!leadByCanon.has(k)) leadByCanon.set(k, l);
+        }
       });
       const LEAD_KINDS = new Set(['lead_unassigned', 'sla_breach']);
       const leadFor = it => (LEAD_KINDS.has(it.kind)
-        ? leadById.get(str(it.ref)) || leadByEmail.get(str(it.ref).toLowerCase()) || null
+        ? leadById.get(str(it.ref)) || leadByCanon.get(normalizeKey(it.ref).canonical) || null
         : null);
 
       const byChat = new Map();
