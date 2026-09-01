@@ -322,6 +322,250 @@ ok('a contact row on the same full number is still absorbed', !sameNumberLink.am
    JSON.stringify(sameNumberLink.ambiguity));
 eq('and hands the email-less lead its address', sameNumberLink.email, 'effco@example.com');
 
+/* ── 6c. the 1 Sep refusal, attacked rather than re-read ─────────────────────
+   Written 2 Sep 2026. §6b closed the blind spot that MERGED two customers; this
+   section is the adversarial pass over the closure itself, and it found the
+   same class of error three more times — twice pointing at over-refusal, once
+   still pointing at a silent merge. Refusing a customer their own history is
+   not the safe side of this bug: the pane goes blank under an ambiguity banner
+   that names no one, and a rep reads that as "this customer has never written
+   to us". Every case below is executed against the module, not reasoned about.
+
+   The shapes are the live ones: lead 35's `email` column is '' and lead 34's
+   holds `+971547484167@whatsapp.lead` rather than an address, both confirmed by
+   selecting the leads table on 2 Sep 2026. */
+
+/* A LEAD IS NOT A STRANGER TO ITS OWN ROW. `resolveIdentity({ leadId, phone })`
+   builds a seed carrying an id and no email — so does any caller holding a row
+   whose email column is blank — and the row it then meets in the pool carries
+   the address. Keyed on one value per row, that address was not in `mine`, and
+   the module raised a phone-suffix collision against the very lead it was asked
+   about: ok:false, no keys, the whole history blanked. */
+const ownRowLead = { id: '35', name: 'Effco Contracting llc', email: 'effco@example.com', phone: L35_PHONE };
+const ownRow = expandIdentity({ id: '35', email: '', phone: L35_PHONE }, { leads: [ownRowLead] });
+ok('a lead seeded without its own address is not a collision with itself',
+   !ownRow.ambiguous, JSON.stringify(ownRow.ambiguity));
+ok('and is not blanked', ownRow.ok && ownRow.keys.length > 0, ownRow.keys.join(' '));
+eq('and learns the address off its own row', ownRow.email, 'effco@example.com');
+eq('and matches exactly one lead', ownRow.leadIds, ['35']);
+ok('and still reads under its WhatsApp keys',
+   ownRow.keys.includes('971505433953@c.us'), ownRow.keys.join(' '));
+ok('and its filter still applies the last-9 rule',
+   personFilter(ownRow).filter.includes('*505433953@c.us'), personFilter(ownRow).filter);
+
+/* The same seed through the async entry point IA-SPEC §3.3 documents, which is
+   where a caller reaches this without ever constructing the seed by hand. */
+const byLeadId = await resolveIdentity({ leadId: '35', phone: L35_PHONE }, {
+  db: async path => (path.startsWith('leads?') ? [ownRowLead] : []),
+});
+ok('resolveIdentity on a lead id and a phone does not refuse the lead',
+   !byLeadId.ambiguous && byLeadId.ok, JSON.stringify(byLeadId.ambiguityCodes));
+eq('and lands on the address the leads row carries', byLeadId.personKey, 'effco@example.com');
+
+/* REFUSING IS STILL RIGHT WHEN THERE REALLY ARE TWO. Same seed, same own row,
+   plus a genuine second person on the suffix. */
+const ownRowPlusTwin = expandIdentity({ id: '35', email: '', phone: L35_PHONE },
+  { leads: [ownRowLead, other35] });
+ok('but a genuine second owner is still refused', ownRowPlusTwin.ambiguous,
+   JSON.stringify(ownRowPlusTwin.ambiguityCodes));
+ok('and names it a suffix collision',
+   ownRowPlusTwin.ambiguityCodes.includes(AMBIGUITY.PHONE_SUFFIX_COLLISION));
+ok('and adopts neither address', !ownRowPlusTwin.email, ownRowPlusTwin.email);
+
+/* ONE PERSON DESCRIBED THROUGH DIFFERENT COLUMNS. Two rows for one customer
+   where one carries the address and the other does not. Keyed on a single value
+   each, they landed in different buckets and collided with each other — found
+   by fuzzing the pool rule rather than by reading it. */
+const halfAddressed = expandIdentity({ id: '35', email: '', phone: L35_PHONE }, {
+  leads: [{ id: '35', email: '', phone: L35_PHONE },
+          { id: '36', email: 'effco@example.com', phone: L35_PHONE }],
+});
+ok('two rows for one customer, only one of them addressed, are one person',
+   !halfAddressed.ambiguous, JSON.stringify(halfAddressed.ambiguity));
+ok('and both rows are absorbed',
+   halfAddressed.leadIds.includes('35') && halfAddressed.leadIds.includes('36'),
+   halfAddressed.leadIds.join(','));
+eq('and the address on the second row is this person’s', halfAddressed.email, 'effco@example.com');
+
+/* And the same three rows with a fourth that is genuinely somebody else. */
+const halfAddressedPlusTwin = expandIdentity({ id: '35', email: '', phone: L35_PHONE }, {
+  leads: [{ id: '35', email: '', phone: L35_PHONE },
+          { id: '36', email: 'effco@example.com', phone: L35_PHONE },
+          other35],
+});
+ok('a stranger on the same suffix is still refused', halfAddressedPlusTwin.ambiguous,
+   JSON.stringify(halfAddressedPlusTwin.ambiguityCodes));
+ok('and the stranger is not merged in', !halfAddressedPlusTwin.leadIds.includes('99'),
+   halfAddressedPlusTwin.leadIds.join(','));
+
+/* LEAD 34'S SHAPE, DUPLICATED. Its `email` column holds a synthesised
+   `@whatsapp.lead` key, which is not an address, so both rows fell through to
+   the lead id and one customer became two people. */
+const L34_KEY = '+971547484167@whatsapp.lead';
+const waLeadDup = expandIdentity({ id: '34', email: L34_KEY, phone: '+971547484167' }, {
+  leads: [{ id: '34', email: L34_KEY, phone: '+971547484167' },
+          { id: '40', email: L34_KEY, phone: '+971547484167' }],
+});
+ok('one customer entered twice with no address is not a collision',
+   !waLeadDup.ambiguous, JSON.stringify(waLeadDup.ambiguity));
+ok('and both rows are absorbed',
+   waLeadDup.leadIds.includes('34') && waLeadDup.leadIds.includes('40'), waLeadDup.leadIds.join(','));
+ok('and the read still applies the last-9 rule',
+   personFilter(waLeadDup).patterns.some(p => p.includes('547484167')),
+   JSON.stringify(personFilter(waLeadDup).patterns));
+
+/* The same two rows carrying two DIFFERENT whole numbers are two people, and
+   this is the assertion that stops the fix above from becoming a merge. */
+const waLeadTwo = expandIdentity({ id: '34', email: L34_KEY, phone: '+971547484167' }, {
+  leads: [{ id: '34', email: L34_KEY, phone: '+971547484167' },
+          { id: '40', email: '+44547484167@whatsapp.lead', phone: '+44547484167' }],
+});
+ok('but two different whole numbers on one suffix are still two people',
+   waLeadTwo.ambiguous, JSON.stringify(waLeadTwo.ambiguityCodes));
+ok('and the other number is never inferred as a key',
+   !waLeadTwo.keys.some(k => k.includes('44547484167')), waLeadTwo.keys.join(' '));
+
+/* `00` IS THE SAME NUMBER. phoneSuffix() has always said so — `suffix from 0091`
+   in §2 asserts it — but these refusals compared raw digit strings, so one
+   customer entered twice with the two spellings became two people. */
+const iddDup = expandIdentity({ id: '35', email: '', phone: L35_PHONE }, {
+  leads: [{ id: '35', email: '', phone: L35_PHONE },
+          { id: '36', email: '', phone: '00971505433953' }],
+});
+ok('the same number spelled +971 and 00971 is one person', !iddDup.ambiguous,
+   JSON.stringify(iddDup.ambiguity));
+ok('and both rows are absorbed',
+   iddDup.leadIds.includes('35') && iddDup.leadIds.includes('36'), iddDup.leadIds.join(','));
+
+/* THE ARRAY INDEX IS NOT A PERSON. Where a caller hands over rows carrying
+   neither an address nor an id, the fallback key was the row's POSITION, a
+   value that can never be equal — so every duplicate counted as another human
+   being and the refusal could only ever fire. */
+const anonDup = expandIdentity({ phone: L35_PHONE }, {
+  leads: [{ email: '', phone: L35_PHONE }, { email: '', phone: L35_PHONE }],
+});
+ok('two identical rows with neither an address nor an id are one person',
+   !anonDup.ambiguous, JSON.stringify(anonDup.ambiguity));
+ok('and are still read under', anonDup.ok && anonDup.keys.includes('971505433953@c.us'),
+   anonDup.keys.join(' '));
+const anonTwo = expandIdentity({ phone: L35_PHONE }, {
+  leads: [{ email: '', phone: L35_PHONE }, { email: '', phone: '+44505433953' }],
+});
+ok('while two different numbers with neither are still two people', anonTwo.ambiguous,
+   JSON.stringify(anonTwo.ambiguityCodes));
+
+/* A row addressed by primary key carrying a SECOND address is not a suffix
+   collision — nothing there was matched on nine digits — and calling it one
+   both refused the customer and named the wrong cause. */
+const staleSeed = expandIdentity({ id: '35', email: 'old@example.com', phone: L35_PHONE },
+  { leads: [{ id: '35', email: 'new@example.com', phone: L35_PHONE }] });
+ok('a lead row disagreeing with the seed about the address is readable',
+   staleSeed.ok && !staleSeed.ambiguityCodes.includes(AMBIGUITY.PHONE_SUFFIX_COLLISION),
+   JSON.stringify(staleSeed.ambiguityCodes));
+ok('and the disagreement is reported as two addresses',
+   staleSeed.ambiguityCodes.includes(AMBIGUITY.MULTIPLE_EMAILS), JSON.stringify(staleSeed.ambiguityCodes));
+ok('and the second address is not adopted as a key',
+   !staleSeed.keys.includes('new@example.com'), staleSeed.keys.join(' '));
+
+/* ── 6d. the link side: nine digits are not an introduction ──────────────────
+   The 1 Sep refusal on this side guards only the row's EMAIL column. Fuzzing
+   the link rule on 2 Sep walked past it: a contact row for a stranger who
+   merely shares our last nine digits was still absorbed whole, and handed over
+   its `@lid` — the one key that can never be derived and can only ever be
+   looked up — and its own `@c.us`. Both went into the or=() as this person's
+   keys, so a second customer's entire WhatsApp thread read into this pane with
+   ambiguous:false over it. */
+
+const foreignLidRow = { chat_id: '222222222222222@lid', phone: '44505433953' };
+const lidSmuggled = expandIdentity(lead35, { links: [foreignLidRow] });
+ok('a suffix-matching contact row may not hand over a foreign LID',
+   !lidSmuggled.keys.includes('222222222222222@lid'), lidSmuggled.keys.join(' '));
+ok('and the refusal is reported', lidSmuggled.ambiguous,
+   JSON.stringify(lidSmuggled.ambiguityCodes));
+ok('and named a suffix collision, because nine digits is all it matched on',
+   lidSmuggled.ambiguityCodes.includes(AMBIGUITY.PHONE_SUFFIX_COLLISION));
+ok('and the LID never reaches the query',
+   !personFilter(lidSmuggled).filter.includes('222222222222222'),
+   personFilter(lidSmuggled).filter);
+
+/* The same row with no email and no LID, carrying only a foreign chat id: the
+   1 Sep guard had nothing to look at here at all. */
+const foreignChat = expandIdentity(lead35, { links: [{ chat_id: '44505433953@c.us' }] });
+ok('nor a foreign chat id', !foreignChat.keys.includes('44505433953@c.us'),
+   foreignChat.keys.join(' '));
+ok('and says so', foreignChat.ambiguous, JSON.stringify(foreignChat.ambiguityCodes));
+
+/* OVER-REFUSAL GUARD. The same shape carrying OUR whole number was not reached
+   on nine digits at all, and is how an email-less customer legitimately learns
+   both their address and their LID. */
+const ownLidRow = expandIdentity(lead35, {
+  links: [{ chat_id: '333333333333333@lid', phone: '971505433953', lead_email: 'effco@example.com' }],
+});
+ok('a contact row carrying our whole number is still absorbed', !ownLidRow.ambiguous,
+   JSON.stringify(ownLidRow.ambiguity));
+ok('and its LID becomes a key, which is the only way a LID ever can',
+   ownLidRow.keys.includes('333333333333333@lid'), ownLidRow.keys.join(' '));
+eq('and it hands the email-less lead its address', ownLidRow.email, 'effco@example.com');
+
+/* And the same row spelling that number with the international-dialling prefix.
+   Comparing raw digit strings made `00971…` a stranger, so an email-less
+   customer was refused their own contact row. */
+const iddLinkRow = expandIdentity(lead35, {
+  links: [{ chat_id: '00971505433953@c.us', phone: '00971505433953', lead_email: 'effco@example.com' }],
+});
+ok('a contact row spelling our number with 00 is not a stranger', !iddLinkRow.ambiguous,
+   JSON.stringify(iddLinkRow.ambiguity));
+eq('and still hands over the address', iddLinkRow.email, 'effco@example.com');
+
+/* ── 6e. one WhatsApp address, two phone numbers ─────────────────────────────
+   A `@lid` carries no digits of its own, so whatever number the contact row
+   beside it names becomes this person's. Two rows naming two different numbers
+   for one handle is the contact table contradicting itself, and it used to
+   change nothing on screen: the first row won, its `@c.us` and `@whatsapp.lead`
+   spellings became query keys, and both people's histories arrived in one pane
+   with ambiguous:false. */
+const contested = expandIdentity({ key: L38_LID }, {
+  links: [{ chat_id: L38_LID, phone: '918517942172' },
+          { chat_id: L38_LID, phone: '971509999111' }],
+});
+ok('one handle filed against two numbers is ambiguous', contested.ambiguous,
+   JSON.stringify(contested.ambiguityCodes));
+ok('and is reported as a handle with more than one owner',
+   contested.ambiguityCodes.includes(AMBIGUITY.HANDLE_MULTIPLE_OWNERS),
+   contested.ambiguityCodes.join(','));
+ok('and the second number is never adopted as a key',
+   !contested.keys.some(k => k.includes('971509999111')), contested.keys.join(' '));
+ok('and the flag names the handle a human has to look at',
+   ((contested.ambiguity[0] || {}).keys || []).includes(L38_LID),
+   JSON.stringify((contested.ambiguity[0] || {}).keys));
+
+/* The sharper form: the second row also carries its own chat id, so the
+   disputed number arrived as a handle rather than as a phone column. */
+const contestedChat = expandIdentity({ key: L38_LID }, {
+  links: [{ chat_id: L38_LID, phone: '918517942172', lead_email: L38_EMAIL },
+          { thread_key: L38_LID, chat_id: '971509999111@c.us', phone: '971509999111' }],
+});
+ok('a second contact bridged by the same LID is refused', contestedChat.ambiguous,
+   JSON.stringify(contestedChat.ambiguityCodes));
+ok('and its chat id does not become this person’s key',
+   !contestedChat.keys.includes('971509999111@c.us'), contestedChat.keys.join(' '));
+ok('while everything the first row gave is kept',
+   contestedChat.keys.includes(L38_LID) && contestedChat.keys.includes(L38_CUS),
+   contestedChat.keys.join(' '));
+
+/* OVER-REFUSAL GUARDS. Two rows agreeing about the number in two spellings are
+   not a contradiction, and a row carrying no number at all asserts nothing —
+   links38's LID row is exactly that, and lead 38 must stay unflagged. */
+const agreeing = expandIdentity({ key: L38_LID }, {
+  links: [{ chat_id: L38_LID, phone: '918517942172' },
+          { chat_id: L38_LID, phone: '00918517942172' }],
+});
+ok('two spellings of one number are not a contradiction', !agreeing.ambiguous,
+   JSON.stringify(agreeing.ambiguity));
+ok('lead 38 is still unflagged over his real contact rows', !id38.ambiguous,
+   JSON.stringify(id38.ambiguity));
+ok('and still resolves to all four of his shapes', id38.keys.length >= 4, id38.keys.join(' '));
+
 /* ── 7. the query helper ─────────────────────────────────────────────────── */
 
 const f = personFilter(id38);

@@ -71,6 +71,26 @@ function phoneSuffix(v) {
   return d.length >= SUFFIX_LEN ? d.slice(-SUFFIX_LEN) : '';
 }
 
+/* THE WHOLE NUMBER, not the last nine of it. Two rows carry the same number when
+   they carry the same digits after the international-dialling prefix — `00971…`
+   and `+971…` are one number, and phoneSuffix() has always said so, but the
+   1 Sep refusals compared raw digit strings and therefore disagreed with it: a
+   contact row spelling a customer's own number with `00` read as a stranger's,
+   and an email-less customer was refused their own contact row.
+
+   Leading zeros are dropped and the REST must match exactly. Nothing looser is
+   allowed here — in particular "one is a suffix of the other" would make
+   `505433953` the same number as `44505433953`, which is the last-9 rule again,
+   and the last-9 rule is precisely the thing these comparisons exist to check. */
+const numberKey = v => {
+  const d = digitsOf(v);
+  return d ? (d.replace(/^0+/, '') || d) : '';
+};
+const sameNumber = (a, b) => {
+  const A = numberKey(a), B = numberKey(b);
+  return !!A && A === B;
+};
+
 function isHandle(key) { return HANDLE_RE.test(text(key)); }
 
 function keyShape(key) {
@@ -347,7 +367,7 @@ function expandIdentity(seed, opts = {}) {
   const suffixHits = id.suffix
     ? pool.filter(l => l && phoneSuffix(l.phone) === id.suffix)
     : [];
-  /* COUNT PEOPLE, NOT ADDRESSES. Until 1 Sep 2026 this map was keyed on the
+  /* COUNT PEOPLE, NOT ADDRESSES. Until 1 Sep 2026 this was a map keyed on the
      lead's email, so a lead whose `email` is the empty string never entered it
      and counted as nobody. Lead 35 is that row — `email` is '' in the live
      table, not null — and seeding this function with it against a second lead
@@ -357,36 +377,81 @@ function expandIdentity(seed, opts = {}) {
      conversation under another customer's identity is worse than showing none
      of it, and is the reason this refusal exists at all.
 
-     A person is their email where they have one — two lead rows under a single
-     address are one human being and must not be refused — and their lead id
-     where they do not, because an id is always present and two email-less rows
-     are two people until something says otherwise. `row:` is the last resort
-     for a pool row a caller hands us carrying neither. */
-  const people = new Map();   /* person key -> the label a human is shown */
+     That fix keyed each row on ONE value — its email if it had one, else its
+     lead id — and on 2 Sep 2026, attacked rather than re-read, that turned out
+     to be the same mistake pointing the other way. A row states who it is
+     through more than one column, so two rows describing ONE person through
+     DIFFERENT columns landed in different buckets and collided with each other:
+
+       · a seed carrying a lead id but no email — which is exactly what
+         `resolveIdentity({ leadId, phone })` builds, and what any caller holding
+         a row with a blank `email` passes — met its own lead in the pool under
+         that lead's address and declared a suffix collision AGAINST ITSELF:
+         ok:false, no keys, the customer's whole history blanked beneath an
+         ambiguity banner;
+       · one customer entered twice with no address — lead 34's live shape,
+         whose `email` column holds `+971547484167@whatsapp.lead` rather than an
+         address — was two lead ids and therefore two people;
+       · and where a caller passed rows with neither, the bucket key fell back to
+         the row's POSITION IN THE ARRAY, a value that can never be equal, so
+         every duplicate was another person by construction.
+
+     So rows are GROUPED rather than bucketed, joined transitively on either
+     piece of evidence the last-9 rule cannot manufacture: a shared email
+     address, or a shared WHOLE phone number. What is counted is the number of
+     groups, and what is refused is a group that is not ours. Sharing nine
+     digits joins nothing — that is the inference under suspicion, and the whole
+     point of the count. */
+  const parent = new Map();
+  const node = k => { if (!parent.has(k)) parent.set(k, k); return k; };
+  const find = k => { node(k); while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  const union = (a, b) => { const A = find(a), B = find(b); if (A !== B) parent.set(A, B); };
+
+  /* Us. A seed knows its own number whenever it knows its own suffix, so this
+     node effectively always exists where there is anything to collide with. */
+  const MINE = '\u0000mine';
+  const myNumber = numberKey(id.digits);
+  node(MINE);
+  if (emailCanon) union(MINE, emailCanon);
+  if (myNumber) union(MINE, 'number:' + myNumber);
+
+  const rowLabel = new Map();   /* row node -> the label a human is shown */
   suffixHits.forEach((l, i) => {
     const n = normalizeKey(l.email);
     const lid = text(l.id);
+    const num = numberKey(l.phone);
     const hasEmail = n.usable && n.shape === KEY_SHAPE.EMAIL;
-    const who = hasEmail ? n.canonical : (lid ? 'lead:' + lid : 'row:' + i);
-    if (people.has(who)) return;
-    people.set(who, hasEmail ? n.raw.toLowerCase()
+    const self = 'row:' + i;
+    node(self);
+    if (hasEmail) union(self, n.canonical);
+    if (num) union(self, 'number:' + num);
+    /* Addressed by primary key, this row is the person we were asked about
+       whatever else it carries. Where it also carries a second address,
+       MULTIPLE_EMAILS below is the honest name for that — nothing here was
+       matched on nine digits, so calling it a suffix collision would be false. */
+    if (lid && lid === seedLeadId) union(self, MINE);
+    rowLabel.set(self, hasEmail ? n.raw.toLowerCase()
       : lid ? `lead ${lid} (no email on file)`
+      : num ? `an unnamed lead row on ${text(l.phone)}`
       : 'a lead row with neither an email nor an id');
   });
-  /* Which of those people we were asked about. The seed's lead id counts
-     alongside its email, or an email-less seed would be foreign to its own row
-     and refuse to read itself. */
-  const mine = new Set();
-  if (emailCanon) mine.add(emailCanon);
-  if (seedLeadId) mine.add('lead:' + seedLeadId);
-  const foreign = [...people.keys()].filter(k => !mine.has(k));
+
+  /* One entry per group, labelled by its most human member — a real address
+     first, since that is what a rep can act on. */
+  const people = new Map();   /* group root -> the label a human is shown */
+  suffixHits.forEach((l, i) => {
+    const root = find('row:' + i);
+    const label = rowLabel.get('row:' + i);
+    if (!people.has(root) || (!/@/.test(people.get(root)) && /@/.test(label))) people.set(root, label);
+  });
+  const foreign = [...people.keys()].filter(root => root !== find(MINE));
 
   /* Two people, one suffix. The backend's rule cannot separate them and neither
      can we — so say so, and absorb neither. A caller that merges anyway is
      merging two customers' histories into one pane. Knowing who we are, one
      other person is already too many; knowing nothing but a number, the tie is
      only unbreakable once two people answer to it. */
-  if (mine.size ? foreign.length > 0 : people.size > 1) {
+  if (foreign.length > 0) {
     id.ambiguous = true;
     id.ambiguityCodes.push(AMBIGUITY.PHONE_SUFFIX_COLLISION);
     id.ambiguity.push({
@@ -422,6 +487,15 @@ function expandIdentity(seed, opts = {}) {
   const pending = links.filter(Boolean);
   const absorbed = new Set();
   const linkOwners = new Map();
+  /* exact handle -> the whole phone number a link row asserted for it, and the
+     handles for which two rows asserted two different ones. One WhatsApp address
+     cannot be two phone numbers, so that is a contradiction in the contact rows
+     and not a fact about a person. It matters most for a `@lid`, which carries
+     no digits of its own: a LID reached through one contact row lends its
+     thread to whatever number that row names, and a second row naming a second
+     number used to change nothing on screen at all. */
+  const handleNumbers = new Map();
+  const contestedHandles = new Map();
   for (let pass = 0; pass <= pending.length; pass++) {
     let grew = false;
     pending.forEach((row, i) => {
@@ -456,26 +530,86 @@ function expandIdentity(seed, opts = {}) {
       const linkEmail = f.emails.map(normalizeKey).find(n => n.usable && n.shape === KEY_SHAPE.EMAIL);
       const linkDigits = (phoneN.phoneDerived && phoneN.digits)
         || (cands.find(n => n.phoneDerived && n.digits) || {}).digits || '';
-      const differentNumber = !!(id.digits && linkDigits && linkDigits !== id.digits);
+      /* sameNumber() and not `!==`: comparing raw digit strings made `00971…`
+         a different number from `+971…`, so a contact row spelling this
+         person's own number with the international-dialling prefix was refused
+         as a stranger's and an email-less customer lost their own address. */
+      const differentNumber = !!(id.digits && linkDigits) && !sameNumber(linkDigits, id.digits);
       const foreignLinkEmail = !!linkEmail && (emailCanon
         ? linkEmail.canonical !== emailCanon
         : differentNumber);
-      if (strength === 'phone' && foreignLinkEmail) {
+      /* NINE DIGITS ARE NOT AN INTRODUCTION. The refusal above guards only this
+         row's EMAIL column, and a fuzz of the link side on 2 Sep 2026 walked
+         straight past it. A contact row for a stranger who merely shares our
+         last nine digits still reached `strength === 'phone'`, and being
+         absorbed it handed over its `@lid` — the one key that can never be
+         derived and can only ever be looked up — and its own `@c.us`, both of
+         which went into the or=() as THIS person's keys and read a second
+         customer's entire WhatsApp thread into this pane with ambiguous:false
+         over it. That is the incident again, arriving through the handle
+         columns instead of the email one.
+
+         So a row tied to us by nothing but the rule under suspicion may hand us
+         no identity at all. A row carrying our WHOLE number was not reached on
+         nine digits and is still absorbed — that is how an email-less customer
+         legitimately learns their own address — and so is any row carrying an
+         exact key we already hold, which is `strength === 'strong'` above and
+         never enters this branch. */
+      const nineDigitsOnly = strength === 'phone' && !sameNumber(linkDigits, id.digits);
+      if (strength === 'phone' && (foreignLinkEmail || nineDigitsOnly)) {
         if (!id.ambiguityCodes.includes(AMBIGUITY.PHONE_SUFFIX_COLLISION)) {
           id.ambiguous = true;
           id.ambiguityCodes.push(AMBIGUITY.PHONE_SUFFIX_COLLISION);
           id.ambiguity.push({
             code: AMBIGUITY.PHONE_SUFFIX_COLLISION,
-            message: `A WhatsApp contact whose number ends ${id.suffix} is filed under `
-              + linkEmail.raw.toLowerCase()
-              + (id.email ? `, not ${id.email}`
-                : ', and this person has no email on file to check it against')
-              + '. The two were not merged.',
-            keys: [linkEmail.raw.toLowerCase()],
+            message: linkEmail
+              ? `A WhatsApp contact whose number ends ${id.suffix} is filed under `
+                + linkEmail.raw.toLowerCase()
+                + (id.email ? `, not ${id.email}`
+                  : ', and this person has no email on file to check it against')
+                + '. The two were not merged.'
+              : `A WhatsApp contact ends ${id.suffix} but its full number is `
+                + `${text(f.phone) || linkDigits}, not ${id.phone || id.digits}. It matched on `
+                + 'the last nine digits alone, so nothing it carries was merged in.',
+            keys: linkEmail ? [linkEmail.raw.toLowerCase()]
+              : f.handles.map(h => text(h)).filter(Boolean),
           });
         }
         absorbed.add(i);
         return;
+      }
+
+      /* ONE ADDRESS, TWO NUMBERS. A row asserting a whole phone number for a
+         handle that an earlier row already gave a different whole number is not
+         evidence about a person, it is two contact rows disagreeing. Refused on
+         the same terms as the foreign email above — recorded, flagged, and the
+         row left alone — because absorbing it would let the disputed number's
+         `@c.us` and `@whatsapp.lead` spellings become query keys and pull a
+         second person's WhatsApp history into this one's pane. Everything the
+         first row gave is kept, so nothing legitimate is blanked. A row with no
+         number at all asserts nothing: links38's LID row is exactly that, and
+         must not read as a contradiction. */
+      const rowNumber = numberKey(linkDigits);
+      const contested = rowNumber ? f.handles.map(h => normalizeKey(h))
+        .filter(n => n.usable && n.shape !== KEY_SHAPE.GROUP)
+        .filter(n => {
+          const prev = handleNumbers.get(n.raw.toLowerCase());
+          return prev && prev !== rowNumber;
+        }) : [];
+      if (contested.length) {
+        contested.forEach(n => {
+          const k = n.raw.toLowerCase();
+          if (!contestedHandles.has(k)) contestedHandles.set(k, [handleNumbers.get(k), rowNumber]);
+        });
+        absorbed.add(i);
+        return;
+      }
+      if (rowNumber) {
+        f.handles.forEach(h => {
+          const n = normalizeKey(h);
+          if (!n.usable || n.shape === KEY_SHAPE.GROUP) return;
+          if (!handleNumbers.has(n.raw.toLowerCase())) handleNumbers.set(n.raw.toLowerCase(), rowNumber);
+        });
       }
 
       absorbed.add(i);
@@ -529,11 +663,38 @@ function expandIdentity(seed, opts = {}) {
   }
   if (id.chatIds.length > 1 && linkOwners.size > 1) {
     id.ambiguous = true;
-    id.ambiguityCodes.push(AMBIGUITY.HANDLE_MULTIPLE_OWNERS);
+    if (!id.ambiguityCodes.includes(AMBIGUITY.HANDLE_MULTIPLE_OWNERS)) {
+      id.ambiguityCodes.push(AMBIGUITY.HANDLE_MULTIPLE_OWNERS);
+    }
     id.ambiguity.push({
       code: AMBIGUITY.HANDLE_MULTIPLE_OWNERS,
       message: 'More than one WhatsApp address here resolves to a different lead email.',
       keys: [...linkOwners.values()],
+    });
+  }
+  /* The same statement from the other column. Two contact rows filing one
+     WhatsApp address under two different phone numbers is the empty-email blind
+     spot wearing a third face: nothing compared the numbers, so the first row
+     won, its number became this person's, and its `@c.us` / `@whatsapp.lead`
+     spellings became query keys for a thread that the second row says belongs
+     to somebody else. Both numbers' histories then arrive in one pane with
+     ambiguous:false over them. Reported here rather than resolved, for the same
+     reason MULTIPLE_EMAILS is: the first source is still the best evidence
+     there is, the second is recorded and never adopted, and which of the two is
+     right is not something this database says. */
+  if (contestedHandles.size) {
+    id.ambiguous = true;
+    if (!id.ambiguityCodes.includes(AMBIGUITY.HANDLE_MULTIPLE_OWNERS)) {
+      id.ambiguityCodes.push(AMBIGUITY.HANDLE_MULTIPLE_OWNERS);
+    }
+    const [handle, nums] = [...contestedHandles.entries()][0];
+    id.ambiguity.push({
+      code: AMBIGUITY.HANDLE_MULTIPLE_OWNERS,
+      message: `The WhatsApp address ${handle} is filed against more than one phone number (`
+        + nums.join(', ') + '). One address cannot be two numbers, so the contact rows '
+        + `contradict each other; only ${nums[0]} was read under, and the row carrying the `
+        + 'other was not merged in.',
+      keys: [...contestedHandles.keys()],
     });
   }
 
