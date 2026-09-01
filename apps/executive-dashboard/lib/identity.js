@@ -347,26 +347,55 @@ function expandIdentity(seed, opts = {}) {
   const suffixHits = id.suffix
     ? pool.filter(l => l && phoneSuffix(l.phone) === id.suffix)
     : [];
-  const owners = new Map();
-  suffixHits.forEach(l => {
+  /* COUNT PEOPLE, NOT ADDRESSES. Until 1 Sep 2026 this map was keyed on the
+     lead's email, so a lead whose `email` is the empty string never entered it
+     and counted as nobody. Lead 35 is that row — `email` is '' in the live
+     table, not null — and seeding this function with it against a second lead
+     ending 505433953 returned leadIds ['35','99'], ambiguous:false, and lead
+     99's ADDRESS adopted as lead 35's, with the resulting filter reading lead
+     99's email-keyed history into lead 35's pane. Filing one customer's
+     conversation under another customer's identity is worse than showing none
+     of it, and is the reason this refusal exists at all.
+
+     A person is their email where they have one — two lead rows under a single
+     address are one human being and must not be refused — and their lead id
+     where they do not, because an id is always present and two email-less rows
+     are two people until something says otherwise. `row:` is the last resort
+     for a pool row a caller hands us carrying neither. */
+  const people = new Map();   /* person key -> the label a human is shown */
+  suffixHits.forEach((l, i) => {
     const n = normalizeKey(l.email);
-    if (n.usable && n.shape === KEY_SHAPE.EMAIL) owners.set(n.canonical, n.raw.toLowerCase());
+    const lid = text(l.id);
+    const hasEmail = n.usable && n.shape === KEY_SHAPE.EMAIL;
+    const who = hasEmail ? n.canonical : (lid ? 'lead:' + lid : 'row:' + i);
+    if (people.has(who)) return;
+    people.set(who, hasEmail ? n.raw.toLowerCase()
+      : lid ? `lead ${lid} (no email on file)`
+      : 'a lead row with neither an email nor an id');
   });
-  const foreign = [...owners.entries()].filter(([c]) => c !== emailCanon);
+  /* Which of those people we were asked about. The seed's lead id counts
+     alongside its email, or an email-less seed would be foreign to its own row
+     and refuse to read itself. */
+  const mine = new Set();
+  if (emailCanon) mine.add(emailCanon);
+  if (seedLeadId) mine.add('lead:' + seedLeadId);
+  const foreign = [...people.keys()].filter(k => !mine.has(k));
 
   /* Two people, one suffix. The backend's rule cannot separate them and neither
      can we — so say so, and absorb neither. A caller that merges anyway is
-     merging two customers' histories into one pane. */
-  if ((emailCanon && foreign.length) || (!emailCanon && owners.size > 1)) {
+     merging two customers' histories into one pane. Knowing who we are, one
+     other person is already too many; knowing nothing but a number, the tie is
+     only unbreakable once two people answer to it. */
+  if (mine.size ? foreign.length > 0 : people.size > 1) {
     id.ambiguous = true;
     id.ambiguityCodes.push(AMBIGUITY.PHONE_SUFFIX_COLLISION);
     id.ambiguity.push({
       code: AMBIGUITY.PHONE_SUFFIX_COLLISION,
       message: `More than one lead has a phone number ending ${id.suffix} — `
-        + [...owners.values()].join(', ')
+        + [...people.values()].join(', ')
         + '. The last-9 rule the backend matches on cannot tell them apart, so no '
         + 'key was inferred from the phone number alone.',
-      keys: [...owners.values()],
+      keys: [...people.values()],
     });
   } else {
     pool.forEach(l => {
@@ -413,16 +442,35 @@ function expandIdentity(seed, opts = {}) {
 
       /* A link reached only through the last-9 rule may not introduce a second
          email — that is the same collision as above, arriving from the other
-         side. Record it and leave the row alone. */
+         side. Record it and leave the row alone.
+
+         `emailCanon &&` carried the same empty-email blind spot the lead pool
+         did: it made this refusal unreachable for a person who has no email of
+         their own, so lead 35 adopted a foreign address — and a foreign number —
+         from a contact row it had only ever matched on nine digits. When there
+         is no email to compare, the number itself is the test: a row whose FULL
+         number differs from ours reached us on the last-9 rule alone and cannot
+         be trusted to name us. A row carrying the same full number is how an
+         email-less person legitimately learns their own address, and is still
+         absorbed — refusing that would blank a customer who is not ambiguous. */
       const linkEmail = f.emails.map(normalizeKey).find(n => n.usable && n.shape === KEY_SHAPE.EMAIL);
-      if (strength === 'phone' && linkEmail && emailCanon && linkEmail.canonical !== emailCanon) {
+      const linkDigits = (phoneN.phoneDerived && phoneN.digits)
+        || (cands.find(n => n.phoneDerived && n.digits) || {}).digits || '';
+      const differentNumber = !!(id.digits && linkDigits && linkDigits !== id.digits);
+      const foreignLinkEmail = !!linkEmail && (emailCanon
+        ? linkEmail.canonical !== emailCanon
+        : differentNumber);
+      if (strength === 'phone' && foreignLinkEmail) {
         if (!id.ambiguityCodes.includes(AMBIGUITY.PHONE_SUFFIX_COLLISION)) {
           id.ambiguous = true;
           id.ambiguityCodes.push(AMBIGUITY.PHONE_SUFFIX_COLLISION);
           id.ambiguity.push({
             code: AMBIGUITY.PHONE_SUFFIX_COLLISION,
             message: `A WhatsApp contact whose number ends ${id.suffix} is filed under `
-              + `${linkEmail.raw.toLowerCase()}, not ${id.email}. The two were not merged.`,
+              + linkEmail.raw.toLowerCase()
+              + (id.email ? `, not ${id.email}`
+                : ', and this person has no email on file to check it against')
+              + '. The two were not merged.',
             keys: [linkEmail.raw.toLowerCase()],
           });
         }

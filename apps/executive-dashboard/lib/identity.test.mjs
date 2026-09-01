@@ -226,6 +226,102 @@ const clean = expandIdentity({ email: 'buyer@example.com' },
 ok('a clean single owner is not flagged', !clean.ambiguous, JSON.stringify(clean.ambiguity));
 ok('and the unrelated lead 38 is nowhere in it', !clean.keys.includes(L38_EMAIL));
 
+/* ── 6b. a lead whose email is the empty string ──────────────────────────────
+   Lead 35 is real and its `email` column holds '' — not null, not absent. The
+   collision test above used to count DISTINCT EMAILS among the suffix-matching
+   leads, so lead 35 counted as nobody: seeded with it against a second lead
+   ending 505433953 the module returned leadIds ['35','99'], ambiguous:false and
+   the OTHER lead's address adopted as lead 35's own, which is one customer's
+   conversation filed under another customer's name with nothing on screen to
+   say so. The rule now counts people: an email where there is one, a lead id
+   where there is not.
+
+   Every phone below really shares its last nine digits; the four cases differ
+   only in what the leads' email columns hold. */
+
+const L35_PHONE = '+971505433953';
+const lead35    = { id: '35', name: 'Effco Contracting llc', email: '', phone: L35_PHONE };
+const other35   = { id: '99', name: 'Someone Else', email: 'other@example.com', phone: '+44505433953' };
+const nameless  = { id: '77', name: 'Walk-in', email: '', phone: '+44505433953' };
+
+eq('lead 35 and the twin share a suffix',
+   [phoneSuffix(lead35.phone), phoneSuffix(other35.phone)], ['505433953', '505433953']);
+
+/* One empty email. The case that was silently adopting an address. */
+const emptyOne = expandIdentity(lead35, { leads: [lead35, other35] });
+ok('an email-less lead colliding with an addressed one is ambiguous', emptyOne.ambiguous,
+   JSON.stringify(emptyOne.ambiguityCodes));
+ok('and names it a suffix collision',
+   emptyOne.ambiguityCodes.includes(AMBIGUITY.PHONE_SUFFIX_COLLISION));
+eq('and the other lead is NOT merged in', emptyOne.leadIds, ['35']);
+ok('and above all its address is not adopted', !emptyOne.email, emptyOne.email);
+ok('and never becomes a query key', !emptyOne.keys.includes('other@example.com'),
+   emptyOne.keys.join(' '));
+ok('and the email-less lead is named in the flag so a human can tell them apart',
+   ((emptyOne.ambiguity[0] || {}).keys || []).some(k => /lead 35/.test(k)),
+   JSON.stringify((emptyOne.ambiguity[0] || {}).keys));
+ok('a collided read is refused rather than issued',
+   !personFilter(emptyOne).ok, personFilter(emptyOne).filter);
+
+/* Both empty. Two rows with no email are still two different people — there is
+   nothing in the database that says otherwise. */
+const emptyBoth = expandIdentity(lead35, { leads: [lead35, nameless] });
+ok('two email-less leads on one suffix are ambiguous', emptyBoth.ambiguous,
+   JSON.stringify(emptyBoth.ambiguityCodes));
+eq('and neither absorbs the other', emptyBoth.leadIds, ['35']);
+
+/* Seeded with the number alone, with no lead id to say which row is ours. */
+const emptyBlind = expandIdentity({ phone: L35_PHONE }, { leads: [lead35, other35] });
+ok('a phone-only seed over an email-less lead and an addressed one is ambiguous',
+   emptyBlind.ambiguous, JSON.stringify(emptyBlind.ambiguityCodes));
+ok('and adopts no address', !emptyBlind.email, emptyBlind.email);
+
+/* OVER-REFUSING IS ALSO A DEFECT. Two lead rows under one address are one human
+   being — a duplicate row, which this database has — and refusing there would
+   blank a legitimate customer's history just as surely as merging blanks the
+   truth. Counting rows instead of people would fail here. */
+const dupA = { id: '35', email: 'dup@example.com', phone: L35_PHONE };
+const dupB = { id: '36', email: 'dup@example.com', phone: '+44505433953' };
+const sameOwner = expandIdentity(dupA, { leads: [dupA, dupB] });
+ok('two lead rows under one address are one person, not a collision',
+   !sameOwner.ambiguous, JSON.stringify(sameOwner.ambiguity));
+ok('and both rows are absorbed', sameOwner.leadIds.includes('35') && sameOwner.leadIds.includes('36'),
+   sameOwner.leadIds.join(','));
+ok('and the suffix rule is still applied to the read',
+   personFilter(sameOwner).patterns.some(p => p.includes('505433953')),
+   JSON.stringify(personFilter(sameOwner).patterns));
+
+/* And the live shape: lead 35 alone on its suffix, which is the whole leads
+   table today. An email-less lead that collides with nobody must still read. */
+const lone35 = expandIdentity(lead35, { leads: [lead35] });
+ok('an email-less lead alone on its suffix is not flagged', !lone35.ambiguous,
+   JSON.stringify(lone35.ambiguity));
+ok('and is still read under its WhatsApp keys',
+   lone35.keys.includes('971505433953@c.us'), lone35.keys.join(' '));
+ok('and its filter still applies the last-9 rule',
+   personFilter(lone35).filter.includes('*505433953@c.us'), personFilter(lone35).filter);
+
+/* The same blind spot from the link side: `emailCanon &&` guarded that refusal
+   too, so an email-less person could be handed a foreign address by a contact
+   row it had only ever matched on nine digits. */
+const emptyCross = expandIdentity(lead35, {
+  links: [{ chat_id: '44505433953@c.us', phone: '44505433953', lead_email: 'other@example.com' }],
+});
+ok('a phone-matched link may not name an email-less person either',
+   emptyCross.ambiguous, JSON.stringify(emptyCross.ambiguityCodes));
+ok('and its address is not adopted', !emptyCross.email, emptyCross.email);
+ok('nor is its number', !emptyCross.keys.some(k => k.includes('44505433953')),
+   emptyCross.keys.join(' '));
+
+/* But a contact row carrying the SAME full number is how an email-less person
+   legitimately learns their own address. Refusing that would be over-refusal. */
+const sameNumberLink = expandIdentity(lead35, {
+  links: [{ chat_id: '971505433953@c.us', phone: '971505433953', lead_email: 'effco@example.com' }],
+});
+ok('a contact row on the same full number is still absorbed', !sameNumberLink.ambiguous,
+   JSON.stringify(sameNumberLink.ambiguity));
+eq('and hands the email-less lead its address', sameNumberLink.email, 'effco@example.com');
+
 /* ── 7. the query helper ─────────────────────────────────────────────────── */
 
 const f = personFilter(id38);

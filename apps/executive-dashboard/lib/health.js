@@ -36,12 +36,24 @@ const REFUSED_BY_DESIGN =
  * reads "... | N of M claimed steps did not land" - a quote that reached the
  * customer while its record did not. That is a partial delivery. The structured
  * phrase the writers already emit outranks the status they mislabel it with.
- * When the writers are fixed, delete rule 1 here and in the SQL together. */
+ * Both writers were fixed on the box on 2026-09-01 and neither can emit FAILED
+ * any more, so rule 1 has nothing new to correct. It is kept because six
+ * historical rows still carry the old spelling: deleting it reclassifies them to
+ * FAILURE and empties the Finance Desk's "quote issued, record lost" panel,
+ * which reads them with no time window, and rewriting the rows would destroy the
+ * record that the writers were once wrong.
+ *
+ * It is NOT time-bounded, and that is the cost being accepted: a future writer
+ * regression emitting FAILED with this phrase would be silently downgraded to
+ * PARTIAL rather than surfacing as a failure. Bounding it needs the row's
+ * logged_at passed in on both sides - see the Postgres migration
+ * correct_rule_1_comment_it_is_not_time_bounded for the exact shape. */
 export function outcomeOf(row) {
   const status  = String((row && row.status)  || '').toUpperCase();
   const summary = String((row && row.summary) || '');
 
-  if (/did not land/i.test(summary))      return OUTCOME.PARTIAL;
+  if (/did not land/i.test(summary) && (status === 'FAILED' || status === 'SUCCESS'))
+                                          return OUTCOME.PARTIAL;
   if (status === 'ESCALATED')             return OUTCOME.ESCALATED;
   if (status === 'PARTIAL')               return OUTCOME.PARTIAL;
   if (status === 'NOT_EXECUTED')          return OUTCOME.NO_RESULT;
