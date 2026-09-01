@@ -568,16 +568,59 @@ function withCounts(identity, { expected, fetched } = {}) {
 
 /* ── Query helpers ───────────────────────────────────────────────────────── */
 
-/* PostgREST wants a double-quoted value. The quotes are written as %22 and the
-   value is percent-encoded on its own, so the commas, quotes and parentheses
-   that delimit a filter survive as delimiters whatever the key contains.
-   encodeURIComponent leaves !'()*~ alone and every one of those is structural
-   inside an or=(), so they are encoded here too. */
+/* Percent-encode one value. encodeURIComponent leaves !'()*~ alone and every one
+   of those is structural inside an or=(), so they are encoded here too. */
+const pctEncode = s => encodeURIComponent(s)
+  .replace(/[!'()*~]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase());
+
+/* LIKE-ESCAPE. `ilike` is not equality: PostgREST hands the value to SQL ILIKE,
+   where `%` and `_` are WILDCARDS and a backslash escapes them. Until 1 Sep 2026
+   this file escaped `"` and `\` and neither of those two, so a key containing an
+   underscore — which is ordinary in an email address — was sent as a pattern
+   rather than a literal, and `john_smith@x.com` also matched `johnXsmith@x.com`.
+   That is one customer's messages inside another's history, rendered with
+   nothing on screen to say so. screens/customers.js hit this from the other
+   direction on its leads read and closed it there with likePattern(); this is
+   the same escape, moved into the module so every consumer gets it.
+
+   Confirmed against the live database rather than assumed:
+     select 'axb' ilike 'a\_b'  -> false      (the escape reaches SQL)
+     select 'a_b' ilike 'a\_b'  -> true       (and matches the literal)
+     select 'axb' ilike 'a_b'   -> true       (unescaped, it is a wildcard)
+   `\` must be escaped FIRST, or the backslashes this adds get escaped again.
+
+   Only for like/ilike. An `eq` filter compares the value literally, so escaping
+   `_` there would stop `john_smith@x.com` matching itself. resolveIdentity's
+   eq reads below are deliberately left alone. */
+const likeEscape = s => String(s).replace(/[\\%_]/g, m => '\\' + m);
+
+/* A value inside an or=(...). PostgREST's LOGIC parser reads a double-quoted
+   string and unescapes it — `\x` yields x — before the result becomes the ILIKE
+   pattern, so every backslash meant for SQL has to be doubled to survive that
+   pass. Verified on the live PostgREST by echoing the parsed value back out of a
+   cast error: or=(col.eq."a\_b") reaches Postgres as `a_b` — the backslash eaten,
+   the wildcard restored, the bug still open — while or=(col.eq."a\\_b") reaches
+   it as `a\_b`, which is the pattern we want. The quotes stay because a comma or
+   a parenthesis in a key would otherwise end the term. */
 function quoteValue(v) {
-  const escaped = String(v).replace(/["\\]/g, m => '\\' + m);
-  return '%22'
-    + encodeURIComponent(escaped).replace(/[!'()*~]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase())
-    + '%22';
+  const pattern = likeEscape(v);
+  return '%22' + pctEncode(pattern.replace(/[\\"]/g, m => '\\' + m)) + '%22';
+}
+
+/* A value in a plain `col=ilike.…` filter, which is a different context with
+   different rules — the reason this is a second function and not a slice of the
+   first. PostgREST only treats double quotes as quoting inside a list or logic
+   context (`in.()`, `or=()`, `and=()`); in a horizontal filter the value is
+   taken verbatim, quotes and all. The same echo probe shows it: or=(col.eq."a_b")
+   reaches Postgres as `a_b`, but col=eq."a_b" reaches it as `"a_b"` — the quotes
+   are DATA. Wrapping a lone key in %22 therefore asked ILIKE for an address that
+   begins and ends with a quote character and matched nothing, which is why a
+   customer with exactly one key and no phone number read back an empty history.
+   Nothing is unescaped here either, so the backslash likeEscape adds is passed
+   through singly rather than doubled. This is byte-for-byte what likePattern()
+   in screens/customers.js:173 already sends on the leads and purchase reads. */
+function bareValue(v) {
+  return pctEncode(likeEscape(v));
 }
 
 function toIdentity(source, opts) {
@@ -630,8 +673,15 @@ function personFilter(source, options = {}) {
       identity: id,
     };
   }
+  /* One term is still a plain horizontal filter rather than a one-armed or().
+     It is rebuilt from the value rather than sliced back out of `terms[0]`,
+     because the two contexts quote differently — see bareValue() above. Slicing
+     was what carried the or=() spelling, quotes and all, into a filter where
+     PostgREST does not read quotes as quoting. A single pattern cannot occur
+     (the suffix rule always adds three at once), but it is handled rather than
+     assumed away. */
   const filter = terms.length === 1
-    ? `${column}=ilike.${terms[0].slice(column.length + '.ilike.'.length)}`
+    ? `${column}=ilike.${keys.length === 1 ? bareValue(keys[0]) : patterns[0]}`
     : `or=(${terms.join(',')})`;
   return { ok: true, column, keys, patterns, filter, note, identity: id };
 }

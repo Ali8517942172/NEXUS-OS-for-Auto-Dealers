@@ -67,14 +67,19 @@
        text is too short to match now says the matcher declined to try, rather
        than "no unit on this table matches", which is a claim about the lot that
        was never tested.
-     · `competitors` is no longer empty: 9 rows, 3 of them newest-per-(competitor,
-       model) in `v_competitor_latest` (1 Sep 2026). The disabled button and its
-       sentence about the table having been emptied are both false now, so the
-       drawer reads the view and says what it found for THIS unit. All 9 rows
-       predate the scraper's `match_quality` columns and carry NULL there —
-       unrated, which is not the same as weak — so no pricing conclusion is drawn
-       from any of them, only the scraped price and the reason it cannot settle
-       anything.
+     · `competitors` is no longer empty: 11 rows, 5 of them newest-per-(competitor,
+       model) in `v_competitor_latest` (counted live 1 Sep 2026, 14:18 UTC; it
+       was 9 and 3 earlier the same day, and the scraper appends, so expect both
+       to keep climbing). The disabled button and its sentence about the table
+       having been emptied are both false now, so the drawer reads the view and
+       says what it found for THIS unit. Nine of the 11 predate the scraper's
+       `match_quality` columns and carry NULL there — UNRATED, which is not the
+       same as weak — and the two written since the scraper rewrite are both
+       rated `weak`. Neither answer entitles this screen to a comparison, so no
+       pricing conclusion is drawn from any of the 11: only the scraped price
+       and the reason it cannot settle anything. The two reasons are different
+       and MATCH_WORDS keeps them apart — "nothing on the page tied that price
+       to this car" is evidence, "nothing was recorded either way" is not.
      · The nightly job is checked rather than assumed. This screen told the
        reader the stored columns "were last written by the nightly job" without
        ever asking whether it had run; that is a provenance claim, and it is now
@@ -124,18 +129,66 @@
        comparison found something, which is when a reader most needs to know how
        much of it ran.
 
+   1 Sep 2026, third pass. A SAVE NO LONGER TOUCHES THE STORED COLUMNS, and two
+   alerts on this screen were telling operators the opposite.
+
+   lib/unit-form.js unitRow() — read as it stands today, not remembered — sends
+   exactly id, model, vin, status, acquired_at, price_aed, cost_aed and
+   ai_recommendation. Every derived column it used to recompute in the browser
+   and write alongside them is gone: days_in_stock, holding_cost_accrued,
+   gross_margin, net_margin, vat_amount, recommended_commission, aging_alert.
+   The reason is the `inventory` table comment at architecture/schema.sql:160,
+   which says those columns "are DERIVED and are recomputed wholesale by
+   recompute_inventory_derived() ... Do not hand-edit them", and the browser was
+   hand-editing them under a different threshold rule — so a save was
+   manufacturing the very stored_drift alert this screen raises, clearing it,
+   and having the next nightly run bring it straight back. Neither event meant
+   anything about the data.
+
+   Two sentences here were written for the old behaviour and are now corrected.
+   `stored_drift` ended "saving a unit from its Edit form writes the same live
+   recompute back to the stored columns, which is what clears this" — a save
+   will not clear it, and sending an operator to save twelve units to fix a lag
+   is the same shape of wrong answer as sending them to restart a job that ran.
+   `band_definition` claimed a save "writes 75-day banding into the stored
+   column"; it no longer writes any band. What clears the drift is the
+   Inventory Ageing Recompute workflow calling recompute_inventory_derived().
+   That workflow lives in n8n and runs at 00:15 Asia/Dubai — its audit_log rows
+   land at 20:15 UTC every night, which is the same instant — and it is NOT a
+   pg_cron job. Comments elsewhere in this repo have called the recompute
+   "nightly Postgres" and some have implied cron; `cron.job` on the live
+   database holds exactly one entry, nexus-daily-metrics, running
+   capture_daily_metrics() at 19:50 UTC (read live 1 Sep 2026). The function is
+   Postgres; the schedule is not.
+
+   The cost of that change, stated here because this screen is where it shows:
+   a unit added or edited with a backdated acquisition date carries empty or
+   previous stored figures until the recompute next runs, so this screen and
+   Overview will legitimately disagree for up to a day. That is the lag arm of
+   stored_drift doing its job, not a fault.
+
    What Overview does, read out of overview.js again on 1 Sep 2026 rather than
-   remembered. overview.js:594 selects exactly
+   remembered. overview.js:650 selects exactly
    `id,model,days_in_stock,price_aed,holding_cost_accrued,aging_alert` and the
    file's import list carries no deriveUnit(), so Overview is reading the stored
    nightly columns — the structural fact the provenance block below depends on.
-   Its "units at risk" figures are overview.js:653-664, `up(i.aging_alert) ===
+   Its "units at risk" figures are overview.js:709-720, `up(i.aging_alert) ===
    'CRITICAL'`, and the holding and list totals beside them are summed over that
    same filtered set. There is no `status` in its select and it needs none: both
    band definitions force a sold unit to HEALTHY — lib/unit-form.js deriveUnit(),
    and `when d.sold then 'HEALTHY'` in recompute_inventory_derived(), both read
    on 1 Sep 2026 — so a sold unit is excluded from its money-at-risk by the band
-   before status could matter.
+   before status could matter. With one exception worth naming rather than
+   glossing: a SOLD unit with no acquisition date is not covered by either rule,
+   because the Postgres update skips it and deriveUnit() now returns null for
+   it, so whatever band was last written to that row stands and Overview would
+   still count it. No such row exists today — all twelve units carry a date
+   (read live 1 Sep 2026) — and this screen's no_acquired_at alert is what would
+   surface one.
+
+   Those line numbers were re-taken from overview.js on 1 Sep 2026 after that
+   file was edited the same day; they are dated for the same reason the figures
+   are, and a line number in another file is the fastest of all of these to rot.
 
    What this file deliberately does NOT say about Overview is anything about
    Overview's on-screen wording. An older note here claimed a reader "is not told
@@ -143,7 +196,7 @@
    which is not this one's to characterise and goes stale the first time somebody
    rewrites it. (For the record, and only as a dated observation rather than a
    claim this screen renders: on 1 Sep 2026 Overview names the stored/live split
-   in a code comment at overview.js:917 and not in any string it paints.)
+   in a code comment at overview.js:993 and not in any string it paints.)
    Everything said above about Overview is a fact about what it reads, checked
    against the file, and dated so the next reader knows to check it again rather
    than trust it. */
@@ -166,26 +219,38 @@ const isSold = u => low(u.status) === 'sold';
    sort to the bottom of both margin orders instead. */
 const priced = u => n0(u.price_aed) != null || n0(u.cost_aed) != null;
 
-/* deriveUnit() cannot hand back an unknown day count. With no `acquired_at` it
-   falls back to `n0(u.days_in_stock) || 0`, and that `|| 0` turns an empty
-   stored column into a zero — so an undated unit arrived on this screen as
-   0 days, HEALTHY, with a green bar reading "0 of 120 days to critical", and was
-   averaged into "Average days in stock" as a zero under a caption saying the
-   mean came "from their acquisition dates". A missing record rendering as the
-   newest car on the lot is the plausible-zero failure this pass exists to end,
-   and three guards in this file were written against a null that can never
-   arrive. The real fix is in lib/unit-form.js, which nothing owns this round, so
-   this screen decides for itself what it knows and reads the raw column: no
-   date, no day count, no band, no holding figure, and it says so in each place
-   rather than printing a number it cannot stand behind. */
+/* deriveUnit() USED TO be unable to hand back an unknown day count. With no
+   `acquired_at` it fell back to `n0(u.days_in_stock) || 0`, and that `|| 0`
+   turned an empty stored column into a zero — so an undated unit arrived on
+   this screen as 0 days, HEALTHY, with a green bar reading "0 of 120 days to
+   critical", and was averaged into "Average days in stock" as a zero under a
+   caption saying the mean came "from their acquisition dates". A missing record
+   rendering as the newest car on the lot is the plausible-zero failure this
+   pass exists to end, and three guards in this file were written against a null
+   that could never arrive.
+
+   That fallback is gone: read on 1 Sep 2026, lib/unit-form.js deriveUnit()
+   returns null for days_in_stock, holding_cost_accrued, net_margin,
+   recommended_commission and aging_alert on a unit with no acquired_at, so the
+   guards below can finally reach the null they were written for. The guards
+   stay exactly as they are, and deliberately so: they decide from the raw
+   `acquired_at` column rather than from what deriveUnit() happened to return,
+   which is why this screen was correct through the old behaviour and is correct
+   through the new one. No date, no day count, no band, no holding figure, and it
+   says so in each place rather than printing a number it cannot stand behind.
+   Nothing below should be rewritten to trust deriveUnit()'s null instead — a
+   guard that only works while another module keeps its current shape is how
+   this failure got here. */
 const dated = u => !!String(u.acquired_at == null ? '' : u.acquired_at).trim();
 const daysOf = u => (dated(u) ? n0(u.days_in_stock) : null);
 /* Same rule for the two figures that are days × a rate. A unit with no date has
-   no live holding cost either; what deriveUnit() returns for it is the stored
-   day count times fifty dirhams, which is a stored figure wearing a live label. */
+   no live holding cost either. deriveUnit() answers null for it now; it used to
+   answer the stored day count times fifty dirhams, a stored figure wearing a
+   live label, and this guard predates the fix. */
 const holdingOf = u => (dated(u) ? n0(u.holding_cost_accrued) : null);
-/* The live band, or nothing. `aging_alert` on an undated unit is whatever band
-   the fabricated day count fell into, which is not a fact about the car. */
+/* The live band, or nothing. `aging_alert` on an undated unit is null from
+   deriveUnit() today and was whatever band the fabricated day count fell into
+   before that. Neither is a fact about the car. */
 const bandOf = u => (dated(u) ? up(u.aging_alert) : '');
 
 const ALERTS = ['CRITICAL', 'WARNING', 'HEALTHY'];
@@ -302,7 +367,14 @@ const dateLabel = d => {
    guess and every sentence built on it has to say so — which is also why the
    match is never used to change a status, only to name the units worth looking
    at. Two shared words is the floor: "2024" alone, or "Toyota" alone, matches
-   half a lot. */
+   half a lot.
+
+   "No reference to a stock number" was re-checked against information_schema on
+   1 Sep 2026 rather than carried forward, because purchase_history does carry a
+   `deal_id` and that looks like the missing key. It is not one: there is no
+   `deals` table on this database at all — only `deals_embeddings`, whose own
+   deal_id leads nowhere near a stock number — so the column joins to nothing
+   and the text match above is still the only bridge there is. */
 const SALE_NOISE = new Set(['the', 'a', 'and', 'aed', 'edition', 'model', 'used', 'new', 'car', 'suv']);
 const words = v => str(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
   .split(' ').filter(w => w && !SALE_NOISE.has(w));
@@ -607,7 +679,7 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
     add('no_acquired_at', onLot ? 'WARNING' : 'LOW', 'event_busy',
       `${num(undated.length)} ${plural(undated.length, 'unit has', 'units have')} no acquisition date`,
       `${refList(undated)}. Days in stock, holding cost, the ageing band and the net margin are all counted from that date, so none of them can be stated for ${plural(undated.length, 'this unit', 'these units')}. `
-      + `deriveUnit() falls back to the stored days_in_stock and to zero where that is empty, which is why ${plural(undated.length, 'it used to read', 'they used to read')} as the newest ${plural(undated.length, 'car', 'cars')} on the lot; this screen now prints "—" and leaves ${plural(undated.length, 'it', 'them')} out of every live count, average and band on the page, so they are missing from those totals rather than flattering them. `
+      + `deriveUnit() used to fall back to the stored days_in_stock and to zero where that was empty, which is why ${plural(undated.length, 'it read', 'they read')} as the newest ${plural(undated.length, 'car', 'cars')} on the lot; it returns nothing at all for an undated unit as of 1 Sep 2026. This screen prints "—" either way and leaves ${plural(undated.length, 'it', 'them')} out of every live count, average and band on the page, so they are missing from those totals rather than flattering them. `
       + `The stored columns are no fallback either: recompute_inventory_derived() updates only rows where acquired_at is not null (body read live 1 Sep 2026), so the nightly job has never written ${plural(undated.length, 'this row', 'these rows')} and never will — whatever the stored days, holding cost and band hold is frozen wherever it was last written, which is why ${plural(undated.length, 'it is', 'they are')} left out of the stored-versus-live comparison rather than reported as stale. `
       + `The unit form requires a date, so ${plural(undated.length, 'this row', 'these rows')} did not come from it — an ERP import or a hand-written insert is where to look.`,
       undated);
@@ -701,17 +773,18 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
       /* THE WHOLE COMPARISON IS GATED ON AN ACQUISITION DATE, all four columns,
          and until 1 Sep 2026 only two of them were.
 
-         Two independent reasons, and either alone is enough. deriveUnit() falls
-         back to the stored day count when there is no date, so the "live" side
-         of every one of these four is derived from the stored side and the
-         comparison is a number against itself. And `recompute_inventory_derived()`
+         Two independent reasons, and either alone is enough. There is no live
+         side to compare on an undated row: deriveUnit() returns null for all
+         four as of 1 Sep 2026, and before that it fell back to the stored day
+         count, which made the "live" side a restatement of the stored one and
+         the comparison a number against itself. And `recompute_inventory_derived()`
          — body read live on 1 Sep 2026 — updates `from … where acquired_at is
          not null`, so the nightly job never touches an undated row at all: its
          stored columns are frozen wherever they were last written, and no
          amount of the job running will ever reconcile them.
 
          Ungated, the band check turned that into a CRITICAL. An undated unit
-         with a stored day count of 80 is HEALTHY in the stored column (90-day
+         with a stored day count of 80 was HEALTHY in the stored column (90-day
          threshold) and WARNING off deriveUnit's fallback (75), and since
          daysOf() is null for it the defGap test could not catch it — so it was
          reported as a real flip, "in a way the threshold difference does not
@@ -777,7 +850,7 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
     if (defGap.length) {
       add('band_definition', 'WARNING', 'rule',
         `${num(defGap.length)} unsold ${plural(defGap.length, 'unit is', 'units are')} WARNING here and HEALTHY in the stored column`,
-        `${refList(defGap)}. Nothing is stale and nothing has failed. This screen raises WARNING at ${num(INV.WARN_DAYS)} days (lib/unit-form.js INV.WARN_DAYS) and the nightly Postgres job recompute_inventory_derived() raises it at ${num(STORED_WARN_DAYS)} (architecture/schema.sql:826); CRITICAL is ${num(INV.CRITICAL_DAYS)} on both sides. Between those two numbers the same car is amber here and green in Overview, in the n8n workflows and on the Finance Desk, and an ageing campaign keyed on the stored column will not fire for ${plural(defGap.length, 'it', 'them')}. Only one of the two can be the dealership's policy, and choosing is not something this screen can do — saving the unit from its Edit form writes ${num(INV.WARN_DAYS)}-day banding into the stored column, which changes the answer without settling the question.`,
+        `${refList(defGap)}. Nothing is stale and nothing has failed. This screen raises WARNING at ${num(INV.WARN_DAYS)} days (lib/unit-form.js INV.WARN_DAYS) and the nightly Postgres job recompute_inventory_derived() raises it at ${num(STORED_WARN_DAYS)} (architecture/schema.sql:826); CRITICAL is ${num(INV.CRITICAL_DAYS)} on both sides. Between those two numbers the same car is amber here and green in Overview, in the n8n workflows and on the Finance Desk, and an ageing campaign keyed on the stored column will not fire for ${plural(defGap.length, 'it', 'them')}. Only one of the two can be the dealership's policy, and choosing is not something this screen can do. It is not something a save can do either, any more: until 1 Sep 2026 saving the unit from its Edit form wrote ${num(INV.WARN_DAYS)}-day banding into the stored column, which changed the answer without settling the question and manufactured the drift alert below. The form stopped writing the derived columns that day, so the stored side now stays on the ${num(STORED_WARN_DAYS)}-day rule until a person changes one of the two thresholds.`,
         defGap);
     }
 
@@ -807,7 +880,7 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
         `${num(drift.length)} unsold ${plural(drift.length, 'unit disagrees', 'units disagree')} with ${plural(drift.length, 'its', 'their')} stored figures`,
         `${shown}${more > 0 ? `; and ${num(more)} more` : ''}. This screen shows the live recompute; Overview, the workflows and the Finance Desk read the stored columns, so the two are acting on different numbers. `
         + causes
-        + ` ${jobLine(job)} Every ageing and margin figure on this screen is the live one; saving a unit from its Edit form writes the same live recompute back to the stored columns, which is what clears this.`,
+        + ` ${jobLine(job)} Every ageing and margin figure on this screen is the live one. Saving the unit from its Edit form does NOT clear this: since 1 Sep 2026 the form writes only what a person typed — stock number, model, VIN, status, acquisition date, price, cost and recommendation — and no derived column at all, because architecture/schema.sql:160 says those columns are recomputed wholesale by recompute_inventory_derived() and are not to be hand-edited. What rewrites them is the ${RECOMPUTE_WORKFLOW} workflow, which calls that function; it runs in n8n at 00:15 Asia/Dubai and is NOT a pg_cron job, whatever older comments say — cron.job holds only capture_daily_metrics (checked live 1 Sep 2026). Until it next runs, the stored figures stay exactly where they are.`,
         drift.map(d => d.u));
     }
     /* Unconditional. This was `else if (drift.length)` until 1 Sep 2026, so the
@@ -820,7 +893,7 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
       notes.push(`Only ${storedCols.join(', ')} came back with these rows, so the stored-versus-live comparison covered ${plural(storedCols.length, 'that column', 'those columns')} alone and says nothing about ${absent.join(', ')}.`);
     }
     if (undatedSkipped) {
-      notes.push(`${num(undatedSkipped)} unsold ${plural(undatedSkipped, 'unit has', 'units have')} no acquisition date and ${plural(undatedSkipped, 'was', 'were')} left out of the stored-versus-live comparison entirely. Two reasons: deriveUnit() falls back to the stored day count for ${plural(undatedSkipped, 'it', 'them')}, so the live side would be the stored side; and recompute_inventory_derived() only updates rows where acquired_at is not null, so the nightly job has never written ${plural(undatedSkipped, 'that row', 'those rows')} and never will. Whatever ${plural(undatedSkipped, 'its stored figures say', 'their stored figures say')} is unreconcilable, not stale.`);
+      notes.push(`${num(undatedSkipped)} unsold ${plural(undatedSkipped, 'unit has', 'units have')} no acquisition date and ${plural(undatedSkipped, 'was', 'were')} left out of the stored-versus-live comparison entirely. Two reasons, and the second alone is enough: there is no live side to compare — deriveUnit() returns nothing for an undated unit as of 1 Sep 2026, and before that it returned the stored day count, so the comparison was the stored side against itself; and recompute_inventory_derived() only updates rows where acquired_at is not null, so the nightly job has never written ${plural(undatedSkipped, 'that row', 'those rows')} and never will. Whatever ${plural(undatedSkipped, 'its stored figures say', 'their stored figures say')} is unreconcilable, not stale.`);
     }
     if (missingBand) {
       notes.push(`${num(missingBand)} unsold ${plural(missingBand, 'unit carries', 'units carry')} no stored aging_alert at all — the column is empty on ${plural(missingBand, 'that row', 'those rows')}, not holding a value this screen failed to read — so for ${plural(missingBand, 'it', 'them')} there was no stored band to compare the live one against.`);
@@ -876,9 +949,10 @@ SCREENS.inventory = async host => {
      That read answered one question — is the table empty — and the drawer then
      disabled its compare button with a sentence about every scraped price having
      been removed as unusable and the scraper next running at 05:00 UTC. On
-     1 Sep 2026 the table holds 9 rows and the view holds 3, so both halves of
-     that sentence were false and the button was disabled on a memory. The view
-     is one row per (competitor, model), newest snapshot, and it is indexed;
+     1 Sep 2026 at 14:18 UTC the table holds 11 rows and the view holds 5, so
+     both halves of that sentence were false and the button was disabled on a
+     memory. The view is one row per (competitor, model), newest snapshot, and
+     it is indexed;
      reading it lets the drawer say what exists for THIS unit instead of
      guessing from a table-level count. `competitors` itself stays an
      append-only log and is not read here.
@@ -1054,7 +1128,7 @@ SCREENS.inventory = async host => {
   };
   const alertPill = r => {
     if (!dated(r)) {
-      return '<span class="t-muted" title="No acquisition date on record, so this unit has no ageing band. deriveUnit() would call it HEALTHY off a day count of zero; that is the absence of a date, not a young car.">—</span>';
+      return '<span class="t-muted" title="No acquisition date on record, so this unit has no ageing band. It is not HEALTHY and it is not anything else — the absence of a date is not a young car. The nightly recompute skips rows with no acquired_at, so nothing will fill this in either.">—</span>';
     }
     const a = bandOf(r);
     return ALERTS.includes(a)
@@ -1071,7 +1145,7 @@ SCREENS.inventory = async host => {
       return '<span class="t-muted" title="This unit has neither a list price nor a cost on record, so no margin can be derived.">—</span>';
     }
     if (field !== 'gross_margin' && !dated(r)) {
-      return '<span class="t-muted" title="Net margin is gross margin less holding cost, and holding cost cannot be counted without an acquisition date. What deriveUnit() returns here is the gross margin with a holding cost of zero, which would read as a better car than the record supports.">—</span>';
+      return '<span class="t-muted" title="Net margin is gross margin less holding cost, and holding cost cannot be counted without an acquisition date. There is no net margin to show for this unit — it used to render as the gross margin with a holding cost of zero, which read as a better car than the record supports.">—</span>';
     }
     return `<span class="${(n0(r[field]) || 0) < 0 ? 't-hot' : ''}">${aed(r[field])}</span>`;
   };
@@ -1097,7 +1171,7 @@ SCREENS.inventory = async host => {
            below was written for a null that could never arrive. */
         const d = daysOf(r);
         if (d == null) {
-          return '<span class="t-muted" title="No acquisition date on record, so days in stock cannot be counted for this unit. What deriveUnit() returns for it is the stored column, or zero where that is empty, and neither is a live figure — so nothing is shown.">—</span>';
+          return '<span class="t-muted" title="No acquisition date on record, so days in stock cannot be counted for this unit, and the nightly recompute skips it too. Nothing is shown rather than a number. This cell used to print the stored column, or zero where that was empty, neither of which was a live figure.">—</span>';
         }
         const t = tone(bandOf(r)) || 'cold';
         const w = Math.max(2, Math.min(100, (d / INV.CRITICAL_DAYS) * 100));
@@ -1136,7 +1210,7 @@ SCREENS.inventory = async host => {
      this screen and a reader trusting Overview. Everything in the table below is
      deriveUnit() run in this browser against `acquired_at`, so it is true today.
      The identically-named columns stored on the row are what Overview (verified
-     1 Sep 2026: overview.js:594 selects days_in_stock, holding_cost_accrued and
+     1 Sep 2026: overview.js:650 selects days_in_stock, holding_cost_accrued and
      aging_alert, and that file does not import deriveUnit), the n8n workflows
      and the Finance Desk read. Neither is the truth to quietly prefer; printing
      both, and saying which is which, is what makes the two screens explainable
@@ -1377,10 +1451,16 @@ SCREENS.inventory = async host => {
      model.
 
      What it will not do is turn a scraped number into a pricing conclusion it
-     has not earned. Every one of the 9 rows in the table on 1 Sep 2026 carries
-     match_quality NULL, so on today's data this section prints prices and
-     refuses comparisons on every line, which is the correct output and not a
-     bug. `our_price_aed` is the scraper's snapshot of our price at scrape time,
+     has not earned. On 1 Sep 2026 at 14:18 UTC the table holds 11 rows: 9 with
+     match_quality NULL (unrated — they predate the columns) and 2 rated `weak`
+     by the scraper itself, one of them recording that the price came from a
+     language model asked for the lowest advertised figure. Nothing in the table
+     is `exact_year`, so this section prints prices and refuses comparisons on
+     every line, which is the correct output and not a bug — but it now refuses
+     them for two different reasons and says which. An earlier version of this
+     note claimed all 9 rows were unrated and drew that conclusion from their
+     being unrated alone, which stopped being true within the day.
+     `our_price_aed` is the scraper's snapshot of our price at scrape time,
      not the current one, so where the two differ that is said rather than left
      to be read as a stale comparison. */
   function compSection(unit, comps) {

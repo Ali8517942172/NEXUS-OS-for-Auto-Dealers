@@ -82,40 +82,59 @@
       never report a null, so a rep with no leads at all rendered as a factual
       AED 0; a rep holding no open lead now says that instead.
 
-      `leads.response_time_minutes` is worse, because it is not a wider set than
-      its label — it is a manufactured value. A BEFORE INSERT trigger on `leads`
-      looks for a reply at the instant the lead row is created, and in this
-      system the WhatsApp bot answers the conversation before the router mints
-      the lead, so it measures a reply that predates the row, computes a negative
-      interval, and `greatest(0, …)` turns "I measured the wrong thing" into
-      "answered in 0 minutes". The writer that would be correct — an AFTER INSERT
-      on `communication_logs` — is guarded by `response_time_minutes is null`,
-      and `0 is null` is false, so it is locked out permanently. All three live
-      leads carry 0 (1 Sep 2026). Resolving each lead's own WhatsApp and email
-      keys against `communication_logs` and taking the first message after the
-      lead row that `nexus_is_reply` accepts, the true figures are 1 minute
-      (id 34), 4 minutes (id 38) and **no reply at all** (id 35) — a customer
-      nobody has answered since the day they became a lead, whom the column
-      reports as answered instantly. Note that the earlier audit note put id 38
-      at 81 minutes; that is the first message filed under its *real* email
-      address, and it is what a fix to the trigger alone would write, because
-      `nexus_lead_for_comm_key` cannot resolve the `+<digits>@whatsapp.lead`
-      shape for a lead whose email column is a real address. The reply is real
-      and it is at 4 minutes. Neither number is what the column holds.
-      `within_sla` is `count(*) FILTER (WHERE response_time_minutes <= 5)`, so it
-      counts every lead; `breached_sla` is always 0; and `v_needs_attention` can
-      never raise an SLA breach — and its `sla_breach` branch is filed under
-      `screen = 'leads'` in any case, so it could not reach this screen even if
-      the column were sound.
+      `leads.response_time_minutes` WAS a manufactured value and is now a
+      measurement, and this paragraph said the opposite until the afternoon of
+      1 Sep 2026. What it used to describe was real: a BEFORE INSERT trigger on
+      `leads` (`trg_leads_backfill_response`) looked for a reply at the instant
+      the lead row was created, and because the WhatsApp bot answers the
+      conversation before the router mints the lead, it measured a reply that
+      predated the row, computed a negative interval, and `greatest(0, …)`
+      turned "I measured the wrong thing" into "answered in 0 minutes". The
+      writer that would have been correct — AFTER INSERT on
+      `communication_logs` — was guarded by `response_time_minutes is null`, and
+      `0 is null` is false, so it was locked out permanently.
 
-      The database fix is being made separately. This screen neither waits for it
-      nor hard-codes a date: it asks whether the column, across the leads it
-      read, distinguishes any two states at all — a NULL anywhere, or a value
-      above zero anywhere. All-zero-with-no-nulls is the fingerprint of the
-      clamp, and while that is what it sees, every rate, ranking, verdict and
-      per-lead "answered in" derived from the column is withheld with the reason
-      on it. The counts, the panel and the SLA sort come back on their own on the
-      first lead the fixed writer touches; nothing here is disabled by hand.
+      That trigger is gone. Read off the live catalogue on 1 Sep 2026, the only
+      trigger left on `leads` is `trg_assign_hot_lead`, and the only function in
+      `public` that writes the column is `nexus_mark_first_response`, fired
+      AFTER INSERT on `communication_logs`. The live column reads 1 minute
+      (id 34), NULL (id 35) and 4 minutes (id 38) — taken at 14:17 UTC on
+      1 Sep 2026.
+
+      A NULL MEANS NOT MEASURED. It does not mean nobody replied, and nothing on
+      this screen may say or imply that it does. Lead 35 is the case that proves
+      it and the case this screen got wrong: it WAS answered, by an outbound
+      WhatsApp message at 06:40:38.827 on 26 Aug that `nexus_is_reply()`
+      accepts, 74 seconds before its own lead row existed. That is inside the
+      trigger's 90-second clock-skew allowance, but the guard then finds inbound
+      messages already on file from 06:39 and declines to stamp — correctly,
+      because that reply belongs to the conversation that produced the lead
+      rather than to answering it. It is the normal shape for a WhatsApp lead
+      here, not an edge case. (The earlier audit note put id 38 at 81 minutes;
+      that is the first message filed under its *real* email address. The reply
+      that answered it is at 4 minutes, which is what the column now holds.)
+
+      One consequence of the new writer, before anyone reads a 0 here again:
+      0 is now a legitimate value. `nexus_mark_first_response` rounds seconds to
+      the nearest minute, so a reply inside 30 seconds stores 0, and so does a
+      reply logged up to 90 seconds early with no prior inbound on file. An
+      all-zero table is no longer the fingerprint of anything — which is exactly
+      what the gate below was built to detect, and why that gate was rewritten
+      at the same time as this note.
+
+      `within_sla` is `count(l.id) FILTER (WHERE response_time_minutes <= 5)`
+      and `breached_sla` the same over `> 5`, so a NULL lead falls into neither
+      and the pair partitions the leads that were measured rather than the whole
+      book. Their sum is what this file calls `measured(r)`. `v_needs_attention`
+      files its `sla_breach` branch under `screen = 'leads'`, so it could not
+      reach this screen in any case.
+
+      What this screen still asks of the column, on every load, is whether the
+      trigger has stamped any of the leads it read. Where it has not, every
+      rate, ranking, verdict and per-lead "answered in" drawn from it is
+      withheld with the reason on it, because there is no input. Today two of
+      the three leads read carry a figure, so all of it is shown. Nothing here
+      is disabled by hand and nothing waits on a date.
 
    There is still no endpoint that can invite anybody — `users` is service-role
    only from the browser and none of the deployed n8n webhooks sends an
@@ -151,9 +170,20 @@ const NO_DELETE =
 
 /* Said wherever a figure derived from leads.response_time_minutes is withheld.
    The mechanism is named rather than summarised, because "the data is bad" is
-   the kind of sentence that gets ignored until somebody re-derives the number. */
+   the kind of sentence that gets ignored until somebody re-derives the number.
+   Rewritten 1 Sep 2026: the previous text described the BEFORE INSERT clamp as
+   a live trigger and asserted that every lead carried 0, both of which stopped
+   being true that morning. It is now about what a missing measurement is,
+   which is the only thing this constant is ever shown for. */
 const NO_TIMING =
-  'leads.response_time_minutes is not a measured first-response time. A BEFORE INSERT trigger on leads (trg_leads_backfill_response) looks for a reply at the instant the lead row is created; in this system the WhatsApp bot answers the conversation before the router mints the lead, so it finds a reply that predates the row, computes a negative interval, and greatest(0, …) stores 0. The writer that would be correct fires AFTER INSERT on communication_logs and is guarded by "response_time_minutes is null", so that stored 0 locks it out permanently. Every lead in the live table carried 0 when this was last checked against the database (1 Sep 2026), including one that nobody has replied to at all since the day it became a lead — the column reports that customer as answered instantly. within_sla in v_team_performance is count(*) FILTER (WHERE response_time_minutes <= 5), so it counts every lead, and breached_sla is always 0. The database fix is being made separately; until the column distinguishes an answered lead from an unanswered one, this screen shows the counts nowhere and scores nobody against the 5-minute rule.';
+  'leads.response_time_minutes is written by one trigger and nothing else: nexus_mark_first_response, AFTER INSERT on communication_logs, which stamps the minutes between the lead row and the first reply it can attribute to that lead. A null means it never stamped — usually nothing has gone back since the lead row was created, and sometimes the only reply on file predates the lead row, which it declines to measure because that reply belongs to the conversation that produced the lead rather than to answering it. A null is therefore not a statement that nobody replied. Until 31 Aug 2026 a second, BEFORE INSERT trigger on leads clamped that negative interval to 0 and locked this writer out; it has been deleted, and the three live leads read 1 minute, null and 4 minutes (1 Sep 2026). within_sla and breached_sla in v_team_performance are count(*) FILTER on response_time_minutes at <= 5 and > 5, so a null lead counts in neither and their sum is the number of leads a rep was actually timed on. Wherever this note appears, that sum has nothing behind it in the leads read here, so nobody is scored against the 5-minute rule in either direction.';
+
+/* Said on a lead whose response_time_minutes is null. Deliberately the same
+   account leads.js, lib/lead-drawer.js and screens/customers.js give for the
+   same null: four surfaces render this column, and a maintainer who reads two
+   of them should not find two meanings. */
+const NULL_RT =
+  'nexus_mark_first_response stamps this column for the first reply it can attribute to the lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger declines to measure. Either way there is no measured wait here — it is not a fast reply and not a slow one — and the 5-minute rule cannot be applied to this lead at all.';
 
 /* `users` has no phone column. Verified against the live schema on 24 Aug 2026,
    not assumed: asking for one returns PostgREST 42703, and a 42703 does not blank
@@ -384,38 +414,46 @@ SCREENS.team = async host => {
     return t;
   };
 
-  /* ── Is leads.response_time_minutes a measurement today? ─────────────────
-     See item 5 in the header. The column is written by a BEFORE INSERT trigger
-     that measures a reply which predates the lead row and clamps the negative
-     result to 0, and the correct writer is locked out by that 0, so every lead
-     carries 0 — the answered, the unanswered and the never-contacted alike.
-     Everything on this screen that scores anybody against the 5-minute rule
-     comes off that column, directly or through within_sla / breached_sla /
-     avg_response_minutes in the view.
+  /* ── Has leads.response_time_minutes been stamped on anything here? ──────
+     See item 5 in the header. This gate was written on 31 Aug against a
+     different column — one a since-deleted BEFORE INSERT trigger clamped to 0
+     on every row — where the useful question was "does this column take any
+     value other than exactly 0", and all-zero-with-no-nulls was the clamp's
+     fingerprint. Both halves of that test are now wrong, and the reasons are
+     worth keeping rather than leaving the shape in place:
 
-     The test is deliberately about the column and not about a date: if the
-     leads read shows the column taking any value other than exactly 0 — a NULL
-     for a lead nobody answered, or a positive number for one somebody did — then
-     something is distinguishing states and the figures can be shown. All-zero
-     with no nulls is the fingerprint of the clamp, and it is the state today.
-     The moment the database fix lands and the first repaired or newly-written
-     row appears, this returns true and every panel below comes back on its own.
+     — 0 is no longer a fingerprint. nexus_mark_first_response rounds to the
+       nearest minute and reserves 0 for a genuine sub-30-second reply, so a
+       floor that answered everything fast would trip the old test, and this
+       screen would withhold every real figure while blaming a trigger that no
+       longer exists.
+     — A NULL is not evidence that the column grades anything; it is the
+       absence of a measurement. The old test counted nulls towards `rtGraded`,
+       so a table where NOTHING had been stamped read as trustworthy — and that
+       is what licensed the untimed-lead count below to speak about every lead
+       on it.
+
+     The question that survives both is simply whether the writer has stamped
+     any of the leads read here. One non-null value is a measurement; no
+     non-null value is no input, and no rate, ranking or per-rep verdict is
+     drawn from a column nothing has written to. Live at 14:17 UTC on
+     1 Sep 2026: id 34 → 1, id 35 → NULL, id 38 → 4, so two of three are
+     measured and this is true.
 
      A leads read that failed leaves this false: not because the column is known
-     to be broken, but because it could not be checked, and an unverified SLA
+     to be unwritten, but because it could not be checked, and an unverified SLA
      figure on the screen whose founding promise is the 5-minute rule is the one
      number nobody should be shown on trust. */
   const rtOf = l => n0(l.response_time_minutes);
-  const rtZeros = (leads || []).filter(l => rtOf(l) === 0).length;
-  const rtGraded = (leads || []).filter(l => rtOf(l) == null || rtOf(l) > 0).length;
-  const timingTrusted = !!leads && rtGraded > 0;
+  const rtMeasured = (leads || []).filter(l => rtOf(l) != null).length;
+  const timingTrusted = !!leads && rtMeasured > 0;
   /* Why it is false, in the words of whichever case applies. */
   const timingWhy = timingTrusted ? ''
     : !leads
       ? `Leads could not be read here (${leadsErr || 'unknown error'}), so nothing could be checked against the response-time column and nothing derived from it is claimed.`
       : !leads.length
         ? 'No lead was read here at all, so there was nothing to check the response-time column against.'
-        : `${num(rtZeros)} of the ${num(leads.length)} leads read here carry exactly 0 minutes and not one carries a null or anything above it — the fingerprint of the clamp described above, not of a floor full of instant replies.`;
+        : `Not one of the ${num(leads.length)} leads read here carries a response_time_minutes: the trigger on communication_logs has stamped none of them, so there is no measured wait to score anybody on. That is a statement about the record and not about the customers — a lead nobody answered and a lead whose only reply predates its own row are indistinguishable here.`;
 
   const pending = roster.filter(isPending);
   const withAccount = roster.filter(hasAccount);
@@ -445,24 +483,33 @@ SCREENS.team = async host => {
   };
   const idle = roster.filter(holdsNothing);
 
-  /* Leads against their name and not one of them timed. This is not "slow" — it
-     is no response recorded at all, which is what the view reports when nobody
-     ever replied. Kept separate from "no activity" (which means no leads either),
-     because a rep sitting on work is a different problem from a rep with none. */
+  /* Leads against their name and not one of them timed. This is not "slow", and
+     since 1 Sep 2026 this comment no longer says it is "no response recorded"
+     either: within_sla and breached_sla are count(*) FILTER on
+     response_time_minutes, so a rep whose every lead carries a null is reported
+     exactly like a rep the trigger has never stamped for any other reason.
+     Usually that does mean nothing has gone back; it is also what the view
+     reports for a lead whose only reply predates its own row. Kept separate
+     from "no activity" (which means no leads either), because a rep sitting on
+     work is a different problem from a rep with none. */
   const stalled = r => (leadsAssigned(r) ?? 0) > 0 && !(measured(r) > 0) && avgResponse(r) == null;
   const stalledReps = roster.filter(stalled);
-  /* Their book, as the leads read sees it: a lead with no response_time_minutes
-     has never been answered. Only counted where the leads read succeeded, and
-     only where a null in that column still means something — while the clamp is
-     writing 0 over every row there are no nulls to count and the honest answer
-     is that it is unknown, not that every lead was answered. */
-  const untouchedOf = r => (timingTrusted ? ownedBy(r).filter(l => rtOf(l) == null) : []);
+  /* Their book, as the leads read sees it: leads carrying no
+     response_time_minutes. This was `untouchedOf` until 1 Sep 2026, under a
+     comment that read "a lead with no response_time_minutes has never been
+     answered" — the false premise the whole screen was built on, and lead 35 is
+     the counter-example: answered 74 seconds before its own lead row existed.
+     What the count supports is that nothing was timed on those leads. It is
+     taken only where the column has been stamped on something, so a column
+     nothing has written to can never be read as a floor of unanswered
+     customers. */
+  const untimedOf = r => (timingTrusted ? ownedBy(r).filter(l => rtOf(l) == null) : []);
 
   /* Breaches are read from the view's breached_sla, which is
-     count(*) FILTER (WHERE response_time_minutes > 5) — so while the column is
-     clamped to 0 this is structurally always empty, and if it were ever not
-     empty the count would still be built on the clamp. No breach is claimed
-     against anybody until the column can be scored. */
+     count(l.id) FILTER (WHERE response_time_minutes > 5). A null does not
+     satisfy that filter, so nobody is ever counted as breaching on a wait that
+     was never measured. No breach is claimed against anybody while the leads
+     read shows the column stamped on nothing at all. */
   const breachers = timingTrusted
     ? roster.filter(r => (breachedSla(r) ?? 0) > 0).sort((a, b) => breachedSla(b) - breachedSla(a))
     : [];
@@ -540,8 +587,9 @@ SCREENS.team = async host => {
             + '<div class="t-muted">Sending one is not built either, so the first hire has to be added outside this dashboard</div>',
         pending.length ? 't-warm' : ''),
       /* The counts here are within_sla / breached_sla straight off the view, and
-         both are count(*) FILTER on response_time_minutes. While that column is
-         the clamp's 0 they are not a measurement of anything, so the figure is
+         both are count(*) FILTER on response_time_minutes, so their sum is the
+         number of leads anyone was actually timed on and a null lead is in
+         neither. Where the column has been stamped on nothing the figure is
          withheld rather than printed with a caveat under it: "3 / 3 · 100.0%"
          with an explanation beside it is still read as 100%. */
       kpi('Within the 5-minute rule',
@@ -711,17 +759,17 @@ SCREENS.team = async host => {
   if (stalledReps.length) {
     const worst = stalledReps.slice().sort((a, b) => (leadsAssigned(b) ?? 0) - (leadsAssigned(a) ?? 0));
     const held = worst.reduce((a, r) => a + (leadsAssigned(r) ?? 0), 0);
-    const untouched = (leads && timingTrusted) ? worst.reduce((a, r) => a + untouchedOf(r).length, 0) : null;
+    const untimed = (leads && timingTrusted) ? worst.reduce((a, r) => a + untimedOf(r).length, 0) : null;
     add({
       sev: 'WARM', icon: 'hourglass_disabled',
-      titleHtml: `${num(stalledReps.length)} ${plural(stalledReps.length, 'rep is', 'reps are')} holding ${num(held)} ${plural(held, 'lead', 'leads')} with no response recorded`,
+      titleHtml: `${num(stalledReps.length)} ${plural(stalledReps.length, 'rep is', 'reps are')} holding ${num(held)} ${plural(held, 'lead', 'leads')} with no first reply timed`,
       detailHtml: `${nameList(worst)} ${plural(stalledReps.length, 'has', 'have')} leads assigned and no measured response against ${plural(stalledReps.length, 'that name', 'those names')} — `
-        + 'not a slow average, no <span class="mono">within_sla</span> or <span class="mono">breached_sla</span> count at all, which is what the view reports when nobody replied. '
-        + (untouched != null
-          ? `In the ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here, ${num(untouched)} of their ${plural(untouched, 'leads carries', 'leads carry')} no <span class="mono">response_time_minutes</span>${leadsCapped ? `, and that read is capped at ${num(LEAD_LIMIT)} so there may be more` : ''}.`
+        + 'not a slow average, no <span class="mono">within_sla</span> or <span class="mono">breached_sla</span> count at all. That is usually what the view reports when nobody has replied, but it is not proof of it: the trigger also leaves a lead unstamped when its only reply predates the lead row. So this names work nobody has been timed on, not customers nobody has answered. '
+        + (untimed != null
+          ? `In the ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here, ${num(untimed)} of their ${plural(untimed, 'leads carries', 'leads carry')} no <span class="mono">response_time_minutes</span>${leadsCapped ? `, and that read is capped at ${num(LEAD_LIMIT)} so there may be more` : ''}.`
           : !leads
             ? 'Leads could not be read, so this cannot be confirmed lead by lead.'
-            : 'It cannot be confirmed lead by lead either: <span class="mono">response_time_minutes</span> is 0 on every lead read here, so counting the ones with no reply recorded would return nought no matter what happened.'),
+            : 'It cannot be confirmed lead by lead either: not one lead read here carries a <span class="mono">response_time_minutes</span>, so counting the untimed ones would return every lead on the page no matter what happened.'),
       act: () => focusRoster('STALLED'),
       actLabel: 'Show them',
     });
@@ -739,7 +787,7 @@ SCREENS.team = async host => {
         + `${avgResponse(r) == null ? '' : ` <span class="t-muted">(${esc(mins(avgResponse(r)))} average)</span>`}`).join(' · ')
         + `${breachers.length > 5 ? ` and ${num(breachers.length - 5)} more` : ''}. `
         + 'Each of these is a lead the view timed at longer than five minutes to a first reply — the window in which the odds of qualifying it drop by about four fifths. '
-        + 'These counts come from the view itself and are all-time, not a window computed here. They are only shown at all because <span class="mono">leads.response_time_minutes</span> is currently telling one lead apart from another; while it is not, no breach is claimed against anybody.',
+        + 'These counts come from the view itself and are all-time, not a window computed here. They are only shown at all because <span class="mono">leads.response_time_minutes</span> has been stamped on at least one lead read here; where it has been stamped on none, no breach is claimed against anybody.',
       act: () => focusRoster('BREACHED'),
       actLabel: 'Show them',
     });
@@ -882,15 +930,15 @@ SCREENS.team = async host => {
      (v_team_performance is FROM users u LEFT JOIN leads l, so every performance
      row is a users row; that branch is kept in the code for the day the view is
      rebuilt elsewhere, but it is not listed here as something that was run).
-     The SLA entry is conditional for the same reason: while
-     response_time_minutes is clamped, nobody was scored. */
+     The SLA entry is conditional for the same reason: where nothing has been
+     stamped into response_time_minutes, nobody was scored. */
   const CHECKED = 'Checked: seats still at pending_invite, '
     + 'reps holding no leads while HOT leads sit unassigned, reps holding leads the performance view has never timed, '
     + (carriers.length >= MIN_CARRIERS ? 'one rep carrying a disproportionate share of the open pipeline, ' : '')
     + 'and leads with no owner at all'
     + (timingTrusted
       ? ', including reps with an SLA breach.'
-      : '. Nobody was checked against the 5-minute rule: leads.response_time_minutes cannot currently tell an answered lead from an unanswered one, so no rep was scored either way, in either direction.');
+      : '. Nobody was checked against the 5-minute rule: no measured response_time_minutes was found in the leads read here, so there was no wait to score any rep against, in either direction.');
 
   const waitedHtml = a => {
     if (a.atHtml) return a.atHtml;
@@ -965,9 +1013,9 @@ SCREENS.team = async host => {
 
   /* "No activity yet" asks the same questions the columns answer, or the slice
      and the table disagree about the same person. `measured(r)` stays in even
-     while the response column is clamped: every term here only ever removes
-     somebody from the quiet slice, so a clamped counter cannot put anyone into
-     it who does not belong. Pipeline is asked of the open figure computed on
+     where nothing has been stamped into the response column: every term here
+     only ever removes somebody from the quiet slice, so a counter with no input
+     cannot put anyone into it who does not belong. Pipeline is asked of the open figure computed on
      this screen, not of the view's pipeline_aed — see item 5 in the header. */
   const noActivity = r => !r.perf
     || (!(leadsAssigned(r) > 0) && !(hotLeads(r) > 0) && !(measured(r) > 0)
@@ -985,11 +1033,11 @@ SCREENS.team = async host => {
     IDLE:     { label: 'Holding nothing',        match: holdsNothing },
     STALLED:  { label: 'Leads, no response',     match: stalled },
     /* Gated on the same test as the breach alert. breached_sla is
-       count(*) FILTER (WHERE response_time_minutes > 5) over a column clamped to
-       0, so today this is structurally empty and the segment is not offered at
-       all; if the column were ever unreadable the segment would still be an SLA
-       claim, so it is withheld there too rather than shown against a figure the
-       strip above has already declined to use. */
+       count(*) FILTER (WHERE response_time_minutes > 5), so it is empty
+       wherever the column has been stamped on nothing and the segment is not
+       offered at all; if the column were unreadable the segment would still be
+       an SLA claim, so it is withheld there too rather than shown against a
+       figure the strip above has already declined to use. */
     BREACHED: { label: 'Breached SLA',           match: r => timingTrusted && (breachedSla(r) ?? 0) > 0 },
     QUIET:    { label: 'No activity yet',        match: noActivity },
   };
@@ -1015,11 +1063,12 @@ SCREENS.team = async host => {
     account:  { type: 'text', get: r => statusLabel(r),  dir: 1  },
     leads:    { type: 'num',  get: leadsAssigned,        dir: -1 },
     hot:      { type: 'num',  get: hotLeads,             dir: -1 },
-    /* Both response keys are withheld while leads.response_time_minutes is the
-       clamp's 0 — item 5 in the header. A sort is a ranking, and ranking the
-       team on a column every row of which reads 0 puts somebody at the top of an
-       order the data does not contain. Null sinks the row into the name order
-       the sorter already uses for rows it cannot speak about. */
+    /* Both response keys are withheld where nothing has been stamped into
+       leads.response_time_minutes — item 5 in the header. A sort is a ranking,
+       and ranking the team on a column no row of which has been written puts
+       somebody at the top of an order the data does not contain. Null sinks the
+       row into the name order the sorter already uses for rows it cannot speak
+       about. */
     response: { type: 'num',  get: r => (timingTrusted ? avgResponse(r) : null), dir: -1 },
     /* The cell prints "one lead, so no rate" below MIN_RATE_SAMPLE, and this key
        used to rank on exactly that suppressed number — a rep at 1/1 sorted above
@@ -1079,10 +1128,11 @@ SCREENS.team = async host => {
         const n = hotLeads(r);
         return n == null ? notReported : `<span class="${n > 0 ? 't-hot' : 't-muted'}">${num(n)}</span>`;
       } },
-    /* avg_response_minutes is round(avg(l.response_time_minutes)) over the same
-       column the clamp writes, so while that column is telling no lead apart
-       from another this cell shows the reason instead of the figure. "0m" in a
-       green tone is the single most confident lie this screen could print. */
+    /* avg_response_minutes is round(avg(l.response_time_minutes), 1), and avg
+       skips nulls, so it is an average over the leads a rep was timed on and
+       not over their book. Where nothing has been stamped at all this cell
+       shows the reason instead of a figure: "0m" in a green tone is the single
+       most confident lie this screen could print. */
     { label: 'Avg response', align: 'r', sort: 'response', render: r => {
         if (!timingTrusted) return `<span class="t-warm" title="${esc(NO_TIMING)}">Not measurable</span>`;
         const a = avgResponse(r);
@@ -1093,10 +1143,12 @@ SCREENS.team = async host => {
           + (measured(r) === 1 ? '<div class="cell-sub">one lead, not an average</div>' : '');
       } },
     /* within_sla and breached_sla are both count(*) FILTER on
-       response_time_minutes, so the pair is a partition of a clamped column:
-       every lead lands in within_sla and breached_sla is structurally 0. The
-       counts are withheld rather than captioned — "1 / 1" beside an explanation
-       is still read as one for one. */
+       response_time_minutes, at <= 5 and > 5, so a lead carrying a null falls
+       into neither and the pair partitions the leads that were measured rather
+       than the rep's whole book. The denominator here is that measured count
+       and never leads_assigned. Where nothing has been stamped the counts are
+       withheld rather than captioned — "1 / 1" beside an explanation is still
+       read as one for one. */
     { label: 'Within SLA', align: 'r', sort: 'sla', render: r => {
         if (!timingTrusted) return `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`;
         const m = measured(r), w = withinSla(r);
@@ -1317,14 +1369,13 @@ SCREENS.team = async host => {
     sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
       ${stateError('the performance view', perfErr)}`;
   } else if (!timingTrusted) {
-    /* Not an empty state and not an error: the counters exist and are populated,
-       they just do not measure what the panel is named after. Everything below
-       the headline — the split bar, both percentages, the breach ranking, the
-       one-lead sentence — is a statement about the 5-minute rule, so the panel
-       states the defect instead of drawing a green bar over it. Nothing here is
-       switched off by hand or by date: the moment the fixed writer stamps a lead
-       with a real figure, or leaves one null because nobody replied, the column
-       distinguishes two states and this whole panel renders again. */
+    /* Not an empty state and not an error: the counters exist, they simply have
+       no input. Everything below the headline — the split bar, both
+       percentages, the breach ranking, the one-lead sentence — is a statement
+       about the 5-minute rule, so the panel says why it cannot make one instead
+       of drawing a green bar over it. Nothing here is switched off by hand or
+       by date: the moment the trigger on communication_logs stamps any lead
+       read here, this whole panel renders again. */
     sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
       <div class="banner warm">
         <span class="material-symbols-outlined">timer_off</span>
@@ -1336,9 +1387,10 @@ SCREENS.team = async host => {
       <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_TIMING)}</div>
       <div class="cell-sub" style="margin-top:10px;white-space:normal">
         The ${num(roster.length)} ${plural(roster.length, 'person', 'people')} on the roster ${plural(roster.length, 'is', 'are')} neither passing nor
-        failing this rule here — they are unscored, which is a third state and the only true one while the column reads the same on a lead
-        answered in four minutes and a lead nobody has answered at all. This panel is not disabled by hand and carries no date: it comes back
-        by itself on the first lead whose response time is either null or above zero.</div>`;
+        failing this rule here — they are unscored, which is a third state and the only true one while no lead read here has been timed at all.
+        An untimed lead is not a slow one and not a fast one, and it is not evidence that nobody answered it: the trigger declines to measure a
+        reply that predates the lead row, which is the ordinary shape of a WhatsApp lead in this system. This panel is not disabled by hand and
+        carries no date: it comes back by itself on the first lead the trigger stamps.</div>`;
   } else if (!timed.length) {
     sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
       ${stateEmpty('No response times measured yet',
@@ -1427,10 +1479,24 @@ SCREENS.team = async host => {
                 <div style="font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
                   ${esc(l.name || 'Unnamed lead')} ${leadPhone(l)}</div>
                 <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
-                  ${!timingTrusted
+                  ${/* A null here is NOT "nobody answered". This printed
+                        ' · no reply recorded' in HOT red until 1 Sep 2026 — a
+                        claim about a customer, made by a screen that only knows
+                        whether a trigger stamped a column. It was unreachable
+                        while every lead carried 0 (timingTrusted was false, so
+                        every lead took the arm above), and the database repair
+                        that morning switched it on; the only thing still hiding
+                        it is that no lead carries assigned_to_id, so ownedBy()
+                        is empty for the one rep on the roster. Lead 35 is what
+                        it would have printed against first: answered 74 seconds
+                        before its own lead row existed, which the trigger will
+                        not measure. The wording and the warm tone are
+                        leads.js's, lib/lead-drawer.js's and customers.js's, so
+                        the four surfaces that render this column say one
+                        thing. */''}${!timingTrusted
                     ? ` · <span class="t-warm" title="${esc(NO_TIMING)}">reply time not measurable</span>`
                     : rtOf(l) == null
-                      ? ' · <span class="t-hot">no reply recorded</span>'
+                      ? ` · <span class="t-warm" title="${esc(NULL_RT)}">no first reply timed</span>`
                       : ` · answered in ${esc(mins(l.response_time_minutes))}`}
                   ${l.escalated_at ? ` · <span class="t-warm">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
               </div>

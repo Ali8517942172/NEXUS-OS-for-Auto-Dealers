@@ -257,15 +257,165 @@ const nasty = personFilter({ keys: ['a,b(c)"d\\e@example.com'] });
 ok('a comma in a key is encoded', !nasty.filter.includes(','), nasty.filter);
 ok('a parenthesis in a key is encoded',
    nasty.filter.slice(3).replace(/\)$/, '').indexOf('(') === -1, nasty.filter);
-ok('a quote in a key is escaped', nasty.filter.includes('%5C%22'), nasty.filter);
+/* `nasty` is a lone key, so it is a horizontal filter, and there a double quote
+   is DATA to PostgREST rather than quoting — percent-encoding is what stops it
+   ending the value. Inside an or=() the same quote has to be backslash-escaped
+   for the logic parser instead. Both spellings are asserted, because the two
+   contexts are the thing this module kept getting wrong. */
+ok('a quote in a lone key is encoded, never left bare',
+   nasty.filter.includes('%22') && !nasty.filter.includes('"'), nasty.filter);
+ok('a quote inside an or() is escaped for the logic parser',
+   personFilter({ keys: ['we"ird@example.com', 'other@example.com'] }).filter.includes('%5C%22'),
+   personFilter({ keys: ['we"ird@example.com', 'other@example.com'] }).filter);
 
-/* A single key still produces a valid horizontal filter, not a one-armed or(). */
+/* A single key still produces a valid horizontal filter, not a one-armed or().
+   It is NOT %22-quoted, and that is the correction of 1 Sep 2026 rather than a
+   loosening: verified against the live PostgREST, a horizontal filter takes its
+   value verbatim — `col=eq."a_b"` reaches Postgres as `"a_b"`, quotes included —
+   while `or=(col.eq."a_b")` reaches it as `a_b`. Quoting is only read as quoting
+   inside in.() / or=() / and=(). The quotes this used to emit were therefore
+   matched as two literal characters of the address, so a customer with exactly
+   one key and no phone number read back an empty history. */
 const one = personFilter({ email: 'nobody@example.com' }, { suffix: false });
-eq('a single key uses a plain filter', one.filter, `lead_email=ilike.%22nobody%40example.com%22`);
+eq('a single key uses a plain unquoted filter', one.filter, `lead_email=ilike.nobody%40example.com`);
 
 /* The column is not hardcoded — kyc_documents has the same four-shape problem. */
 ok('the column is configurable',
    personFilter(id38, { column: 'chat_id' }).filter.includes('chat_id.ilike.'));
+
+/* ── 7b. `%` and `_` are wildcards to ILIKE, and an address may contain them ─
+
+   The hole this section closes: quoteValue escaped `"` and `\` and neither `%`
+   nor `_`, so `john_smith@x.com` went to PostgREST as a PATTERN and came back
+   with `johnXsmith@x.com`'s messages inside it. Reported by the agent who fixed
+   screens/customers.js, which defends its own call site with a row-level
+   re-check; the escape belongs here so every consumer gets it.
+
+   These assert on MATCHING rather than on spelling, because the spelling is
+   exactly what nobody could check by eye. Each helper replays one stage of the
+   real pipeline, in the order the live database applies them — the behaviour of
+   every stage was confirmed against the live PostgREST and Postgres on
+   1 Sep 2026, not assumed from the documentation. */
+
+/* Stage 1, only inside a quoted or=() term: PostgREST's logic parser yields the
+   character after a backslash, so `\_` arrives as a bare `_` and `\\_` as `\_`. */
+const unquoteLogic = s => s.replace(/\\(.)/g, '$1');
+/* Stage 2: for like/ilike PostgREST rewrites `*` to `%` before SQL sees it —
+   which is why the suffix patterns below are written with `*`. */
+const starToPct = s => s.replace(/\*/g, '%');
+
+/* Every ilike value in a filter, decoded to the pattern SQL would receive. */
+function sqlPatterns(res) {
+  const valueOf = t => t.slice(t.indexOf('.ilike.') + '.ilike.'.length);
+  const decode = v => (v.startsWith('%22')
+    ? unquoteLogic(decodeURIComponent(v.slice(3, -3)))   /* an or=() term: quoted */
+    : decodeURIComponent(v));                            /* a horizontal filter: verbatim */
+  if (res.filter.startsWith('or=(')) {
+    return res.filter.slice(4, -1).split(',').map(t => starToPct(decode(valueOf(t))));
+  }
+  return [starToPct(decodeURIComponent(res.filter.slice(res.filter.indexOf('=ilike.') + '=ilike.'.length)))];
+}
+
+/* Stage 3: SQL LIKE itself. `%` is any run, `_` is any one character, and a
+   backslash makes the next character literal — the semantics proved on the live
+   database with `select 'axb' ilike 'a\_b'` -> false. */
+function likeMatches(pattern, value) {
+  const lit = c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let re = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') { const n = pattern[++i]; re += n === undefined ? '\\\\' : lit(n); continue; }
+    if (c === '%') { re += '.*'; continue; }
+    if (c === '_') { re += '.'; continue; }
+    re += lit(c);
+  }
+  return new RegExp('^' + re + '$', 'i').test(value);
+}
+/* Does the filter built for `key` match `candidate` under any of its terms? */
+const filterMatches = (res, candidate) => sqlPatterns(res).some(p => likeMatches(p, candidate));
+
+/* The helper is only trustworthy if it can still see a wildcard when there is
+   one, so prove it fails open before relying on it to prove anything negative. */
+ok('the LIKE simulator treats a bare _ as a wildcard', likeMatches('a_b', 'axb'));
+ok('the LIKE simulator treats a bare % as a wildcard', likeMatches('a%b', 'axxxb'));
+ok('the LIKE simulator honours a backslash escape', !likeMatches('a\\_b', 'axb'));
+ok('and still matches the literal it escaped', likeMatches('a\\_b', 'a_b'));
+
+/* The addresses. An underscore is ordinary in an email address; the others are
+   rarer but all are legal, and `\` and `"` really do appear in the free-text
+   `lead_email` column because three different systems write to it. */
+const UND  = 'john_smith@example.com';
+const NEAR = 'johnXsmith@example.com';          /* differs ONLY where the _ is */
+const PCT  = 'jane%doe@example.com';
+const PNEAR= 'janeQQQQdoe@example.com';         /* what a bare % would drag in */
+const BOTH = 'a_b%c@example.com';
+const QUO  = 'we"ird@example.com';
+const BSL  = 'back\\slash@example.com';
+const BNEAR= 'backXslash@example.com';
+
+/* A lone key takes the horizontal-filter path; a second key forces the or=()
+   path. Both are exercised for every address, because the two encode
+   differently and only one of them was ever right. */
+const lone = k => personFilter({ keys: [k] }, { suffix: false });
+const ored = k => personFilter({ keys: [k, 'someone.else@example.com'] }, { suffix: false });
+
+[['horizontal', lone], ['or()', ored]].forEach(([where, build]) => {
+  ok(`an underscore address matches itself — ${where}`,
+     filterMatches(build(UND), UND), sqlPatterns(build(UND)).join(' | '));
+  ok(`and NOT the neighbour the wildcard would have caught — ${where}`,
+     !filterMatches(build(UND), NEAR), sqlPatterns(build(UND)).join(' | '));
+
+  ok(`a percent address matches itself — ${where}`,
+     filterMatches(build(PCT), PCT), sqlPatterns(build(PCT)).join(' | '));
+  ok(`and NOT an unrelated address the % would have spanned — ${where}`,
+     !filterMatches(build(PCT), PNEAR), sqlPatterns(build(PCT)).join(' | '));
+
+  ok(`an address with BOTH wildcards matches itself — ${where}`,
+     filterMatches(build(BOTH), BOTH), sqlPatterns(build(BOTH)).join(' | '));
+  ok(`and does not become a pattern — ${where}`,
+     !filterMatches(build(BOTH), 'aXbYYYc@example.com'), sqlPatterns(build(BOTH)).join(' | '));
+
+  ok(`a double quote in an address survives to SQL — ${where}`,
+     filterMatches(build(QUO), QUO), sqlPatterns(build(QUO)).join(' | '));
+  ok(`a backslash in an address survives to SQL — ${where}`,
+     filterMatches(build(BSL), BSL), sqlPatterns(build(BSL)).join(' | '));
+  ok(`and a backslash does not escape the character after it — ${where}`,
+     !filterMatches(build(BSL), BNEAR), sqlPatterns(build(BSL)).join(' | '));
+});
+
+/* The whole point, stated as the two customers it protects: two people whose
+   addresses differ only where one of them has a wildcard character must never
+   match each other, in either direction. This is the assertion that would have
+   failed before today's fix. */
+ok('customer A does not match customer B', !filterMatches(lone(UND), NEAR));
+ok('customer B does not match customer A', !filterMatches(lone(NEAR), UND));
+ok('nor through the or() path, A to B', !filterMatches(ored(UND), NEAR));
+ok('nor through the or() path, B to A', !filterMatches(ored(NEAR), UND));
+ok('and each still finds itself, A', filterMatches(lone(UND), UND));
+ok('and each still finds itself, B', filterMatches(lone(NEAR), NEAR));
+
+/* The escape must not eat the suffix patterns, which are the one place a `*`
+   is deliberate. They are appended raw, never run through likeEscape. */
+const wild = personFilter(id38);
+ok('the last-9 patterns keep their leading *', wild.filter.includes('*517942172@c.us'), wild.filter);
+ok('and still match a real chat id', filterMatches(wild, '918517942172@c.us'),
+   sqlPatterns(wild).join(' | '));
+ok('while a foreign number is still refused', !filterMatches(wild, '971501234567@c.us'),
+   sqlPatterns(wild).join(' | '));
+
+/* OVER-ESCAPING IS THE SAME BUG POINTING THE OTHER WAY. `eq` compares literally,
+   so `%` and `_` are ordinary characters there — escaping them would stop an
+   address matching itself, and underscores are common in email addresses.
+   resolveIdentity's reads are all `eq`, and they must stay unescaped. */
+const eqPaths = [];
+await resolveIdentity({ email: UND, chatId: 'a_b@c.us' },
+  { db: async path => { eqPaths.push(path); return []; } });
+ok('an eq read percent-encodes the address',
+   eqPaths.some(p => p.includes('email=eq.' + encodeURIComponent(UND))), eqPaths.join('\n'));
+ok('and does NOT backslash-escape the underscore',
+   !eqPaths.some(p => /%5C/i.test(p)), eqPaths.join('\n'));
+ok('an eq read on a chat id is left alone too',
+   eqPaths.some(p => p.includes('chat_id=eq.a_b%40c.us')), eqPaths.join('\n'));
 
 /* ── 8. fetchPersonRows goes through db() ────────────────────────────────── */
 
