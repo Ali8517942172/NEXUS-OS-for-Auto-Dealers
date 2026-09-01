@@ -30,12 +30,27 @@
    Every health figure on this screen — the KPI strip, the banners, the per-row
    rate, the per-category rate, the drawer — was computed from `runs_30d` and
    `failures_30d`, and `failures_30d` counted `status = 'FAILED'` and nothing
-   else. The writers also emit PARTIAL, REJECTED, NOT_EXECUTED and ESCALATED, so
-   every one of those scored here as a success: Customer 360 writes a partial
-   every night and this screen showed it clean at 100.0%, and Competitor Price
-   Scraping produced no price on 73 of its 84 runs and showed green. Three other
-   screens had made the same mistake independently, so what a status means now
-   lives in exactly one place — `lib/health.js`, which mirrors
+   else. The writers also emit PARTIAL, REJECTED and NOT_EXECUTED, so every one
+   of those scored here as a success. Counted against the live database on
+   1 Sep 2026, this is what that cost:
+
+     · Competitor Price Scraping — 96 runs, 12 of which recorded a price. The
+       other 84 wrote REJECTED with "Scrape produced no usable intel … no price
+       could be extracted from the page", and all 84 counted as successes. The
+       row read HEALTHY at 100.0% while the dealership was getting no competitor
+       pricing at all.
+     · Finance Calc — 60 runs, 3 outright successes. It read 91.7%. The real
+       figure is 11.1%.
+     · Customer 360 Aggregation — 12 nightly partials counted as successes, so
+       it read 91.3% against a real 39.1%. Worth being exact about this one,
+       because it is the case the 31 Aug audit named: it was not showing green.
+       Its red came from two unrelated Bitrix24 credential failures logged on
+       23 Aug, and when those age out of the window on 22 September the old
+       arithmetic would have turned it HEALTHY at 100.0% with the nightly
+       partial still happening every night.
+
+   Three other screens had made the same mistake independently, so what a status
+   means now lives in exactly one place — `lib/health.js`, which mirrors
    `public.nexus_outcome_class()` in Postgres one-for-one — and this screen
    consumes it. Nothing below decides what a status means; where it needs to
    know, it asks.
@@ -68,12 +83,26 @@
        never share a colour. Most of the registered workflows do not write to
        audit_log; they are NOT_INSTRUMENTED, and a blank health record for those
        is reported as a blind spot, not as good news.
-     · Seven health values arrive from the view and each is rendered as itself.
+     · Seven health values arrive from the view and each is rendered as itself,
+       with its own segment, its own icon and its own place in the sort. None of
+       the three that were added is folded into a state it might mean.
        PRODUCING_NOTHING is neither healthy nor degraded — it is a workflow that
        runs without failing and achieves nothing, which is what Competitor Price
-       Scraping has been doing all month — and NO_QUALIFYING_RUNS and
-       UNKNOWN_OUTCOME are the absence of a rate rather than a low one. None of
-       the three is folded into a state it might mean.
+       Scraping has been doing all month, and it needs a person as badly as a
+       failure does. NO_QUALIFYING_RUNS is the absence of a rate, not a low one,
+       and is not an attention state. UNKNOWN_OUTCOME is health that cannot be
+       stated at all, which is a finding rather than a pass, so it is.
+     · The activity log is filtered and coloured by outcome, not by the status
+       word a row happens to hold, because the counts above are — and a filter
+       that disagreed with the KPI over the same rows would be worse than no
+       filter. Every row still shows the raw status beside the outcome wherever
+       the two differ, so a writer mislabelling its own row is visible rather
+       than quietly relabelled.
+     · A pill whose words come from `lib/health.js` is built here rather than
+       through `pill()`, which attaches "this dashboard has no wording for that
+       status" to anything grey. On this screen that sentence is false, and the
+       31 Aug audit caught the result: a grey PARTIAL pill claiming no wording
+       existed, two lines above the sentence that gave it.
      · One exception to that, added 24 Aug 2026: a request/response endpoint the
        dashboard itself calls — whatsapp-send, ask-ai, finance-calc — returns its
        outcome in the HTTP reply and is read by the operator at the moment of the
@@ -90,7 +119,7 @@ import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pct, pill } from '../lib/format.js';
 import {
-  OUTCOME, healthWords, isIncomplete, isSuccess, outcomeOf, outcomeWords, successRate,
+  OUTCOME, OUTCOME_WORDS, healthWords, isIncomplete, outcomeOf, outcomeWords, successRate,
 } from '../lib/health.js';
 import { renderIntegrations } from '../lib/integrations.js';
 import { modalError, openModal } from '../lib/modal.js';
@@ -180,6 +209,24 @@ const UNKNOWN_HEALTH = {
    title. Everything else on the screen still goes through pill(). */
 const wordPill = (label, tone, why) =>
   `<span class="pill ${esc(tone || '')}"${why ? ` title="${esc(why)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
+
+/* One logged run's outcome, in the canonical layer's words, with the raw status
+   the writer actually wrote kept beside it rather than replaced by it. Both
+   halves earn their place: the words are what every count on this screen is
+   built from, and the raw value is what is really in the column — and for the
+   five Finance Calc rows that say FAILED over a quote that reached the customer,
+   the two disagree. An operator should be able to see that disagreement. The
+   chip is dropped where the status and the class are the same word, because
+   printing "SUCCESS" next to "Succeeded" says nothing. */
+const outcomePill = a => {
+  const words = outcomeWords(outcomeOf(a));
+  const raw = up(a.status);
+  const same = raw === up(outcomeOf(a));
+  return `${wordPill(words.label, words.tone, words.blurb)}${
+    raw && !same
+      ? `<span class="chip mono" title="${esc(`audit_log.status holds "${a.status}" for this run. nexus_outcome_class reads it as ${words.label}, classifying from the summary as well as the status word.`)}">${esc(a.status)}</span>`
+      : ''}`;
+};
 
 /* ── Endpoints that answer their caller ────────────────────────────────────
    A workflow with no Audit Log node is normally a blind spot: it may be running
@@ -453,76 +500,92 @@ const exemptFrom = w => CEILING_EXEMPT.find(e => e.test(w)) || null;
    REJECTED instead of being inserted.
 
    So a REJECTED row from that workflow is the guard doing its job — the run
-   completed and refused to write rubbish — and reading it as a fault is the same
-   mistake as reading a ceiling stop as a broken workflow. It is matched on the
-   workflow name and the status, because audit_log has no reason column, and it
-   is worded as a reading of those two fields rather than as something the
-   database asserted. */
+   completed and refused to write rubbish. It is matched on the workflow name and
+   the run's outcome class, because audit_log has no reason column, and it is
+   worded as a reading of those two fields rather than as something the database
+   asserted.
+
+   The outcome it matches on is NO_RESULT, not REJECTED. nexus_outcome_class
+   splits a REJECTED row two ways — refused by design where the summary says the
+   caller was unauthorised, otherwise "ran and produced nothing usable" — and all
+   84 of the scraper's refusals land in the second half. That is the right half:
+   the gate working and the dealership having competitor pricing are two
+   different things, and it is these runs that put this workflow in
+   PRODUCING_NOTHING. So the label below explains them without excusing them. */
 const SCRAPE_GUARD_RE = /competitor|scrap/i;
 const looksGuardRejected = a =>
-  up(a.status) === 'REJECTED' && SCRAPE_GUARD_RE.test(String(a.workflow || ''));
-const GUARD_NOTE = 'Read as the Is This Real Intel? gate refusing a scrape rather than the workflow breaking: since 24 Aug the scraper checks what Parse AI Price produced before inserting it, and writes a REJECTED audit row instead of storing a bot-detection page or the string \u201cnull\u201d as a rival dealership. The run completed. audit_log has no reason column, so this is read off the workflow name and status \u2014 the summary above is the thing that says what was refused.';
+  outcomeOf(a) === OUTCOME.NO_RESULT && SCRAPE_GUARD_RE.test(String(a.workflow || ''));
+const GUARD_NOTE = 'Read as the Is This Real Intel? gate refusing a scrape rather than the workflow breaking: since 24 Aug the scraper checks what Parse AI Price produced before inserting it, and writes a REJECTED audit row instead of storing a bot-detection page or the string \u201cnull\u201d as a rival dealership. The run completed. It is still a run that produced no price and is counted as one \u2014 the gate working correctly and the dealership having competitor intel are two different findings. audit_log has no reason column, so this is read off the workflow name and the run\u2019s outcome class \u2014 the summary above is the thing that says what was refused.';
 
-/* A failure whose summary reads like the ceiling stopping a run. Matched on the
-   summary text because audit_log has no separate reason column — so this is
-   worded as a reading of the text, never as a fact the database asserted. */
+/* A run whose summary reads like the ceiling stopping it. Matched on the summary
+   text because audit_log has no separate reason column — so this is worded as a
+   reading of the text, never as a fact the database asserted. Gated to the two
+   outcomes a ceiling stop can arrive as: n8n aborts the execution, so it lands
+   either as a failure or as a run that finished holding nothing. A run that
+   succeeded and merely mentions a timeout in its summary is not one. */
 const TIMEOUT_RE = /\btimed?\s*-?\s*out\b|\btimeout\b|execution time(?: limit)? exceeded|exceeded the (?:maximum )?execution|max(?:imum)? execution time|ETIMEDOUT/i;
 const looksTimedOut = a =>
-  ['FAILED', 'REJECTED'].includes(up(a.status)) && TIMEOUT_RE.test(String(a.summary || ''));
+  [OUTCOME.FAILURE, OUTCOME.NO_RESULT].includes(outcomeOf(a))
+  && TIMEOUT_RE.test(String(a.summary || ''));
 
 /* ── PARTIAL is not a success ──────────────────────────────────────────────
-   Every `Delivery Report` node in this system writes one of SUCCESS, PARTIAL or
-   FAILED, and PARTIAL has one meaning throughout: the run finished, but a step
+   PARTIAL has one meaning throughout this system: the run finished, but a step
    it was about to claim did not land — and in these workflows that step is
    almost always the message to the customer. The BDC agent writes PARTIAL when
    `Send Reply via WAHA HTTP API` swallowed an error; the KYC auditor writes it
    when the re-upload request never reached the customer's phone.
 
-   Until 30 Aug 2026 this screen did not know the word. `STATUSES` listed
-   SUCCESS / FAILED / REJECTED / ESCALATED only, so PARTIAL fell through to
-   "Other", was left out of the failure count, and — worst — its timeline dot
-   took the final `: 'ok'` branch and was painted the same green as a clean run.
-   A run in which the customer was never messaged read here as a success.
+   Until 30 Aug 2026 this screen did not know the word at all: PARTIAL fell
+   through to "Other", was left out of the failure count, and its timeline dot
+   took a bare `: 'ok'` branch and was painted the same green as a clean run.
 
-   `audit_log.status` also carries a compound vocabulary this screen had never
-   seen: `Log KYC Escalation` writes `'ESCALATED_' + delivery.status`, so
-   ESCALATED_PARTIAL and ESCALATED_FAILED both arrive. The first half names the
-   branch that ran; the half after the underscore is the delivery verdict, and
-   that is the half that says whether a person was actually reached.
+   What changed on 31 Aug is where the word is understood. This screen used to
+   read `audit_log.status` itself, including hand-splitting the compound
+   `'ESCALATED_' + delivery.status` vocabulary the KYC escalation logger can
+   write. It no longer does either. A second reading of that column is a second
+   definition of it, and two definitions is how this screen went wrong the first
+   time: `outcomeOf` is now the only thing here that looks at a status, it is a
+   mirror of the Postgres function the view counts with, and so a number in the
+   KPI strip and the colour of a dot in the drawer cannot drift apart.
 
-   This is read here rather than added to `TONE` in lib/format.js on purpose.
-   `tone()` is shared by every screen, and PARTIAL means "the customer was not
-   messaged" only in audit_log — elsewhere the same word may not mean that. */
-const DELIVERY_MISSED = ['PARTIAL', 'FAILED'];
-/* 'ESCALATED_PARTIAL' → 'PARTIAL'. Anything without the prefix is unchanged. */
-const deliveryHalf = s => up(s).replace(/^ESCALATED_/, '');
-/* The run completed but its customer-facing step did not land. A plain FAILED is
-   deliberately excluded: that is the whole run breaking, and it is already
-   counted, filtered and coloured as its own finding. */
-const looksUndelivered = a =>
-  up(a.status) !== 'FAILED' && DELIVERY_MISSED.includes(deliveryHalf(a.status));
-const PARTIAL_NOTE = 'A Delivery Report node writes PARTIAL when the run completed but a step it was about to claim did not land — in these workflows that is normally the WhatsApp message to the customer. It is not a success: somebody was waiting for a reply and did not get one. audit_log has no dropped-steps column, so which step it was is only in the summary text.';
+   Two consequences, stated rather than smoothed over:
 
-/* The colour of one run's dot in the history timeline. Anything this screen does
-   not recognise is deliberately NOT green — the version this replaced ended in a
-   bare `: 'ok'`, which is how PARTIAL came to be painted as a clean run. */
-const runDot = a => {
-  const k = up(a.status);
-  if (k === 'FAILED' || k === 'REJECTED' || deliveryHalf(k) === 'FAILED') return 'hot';
-  if (looksUndelivered(a) || k === 'ESCALATED') return 'warm';
-  if (k === 'SUCCESS') return 'ok';
-  return 'cold';   /* matches TONE's UNKNOWN — legible, and obviously not a pass */
-};
+     · The writers mislabel their own rows, and the canonical layer corrects them
+       from the structured phrase rather than from the status word. Five Finance
+       Calc rows say FAILED and read "Quote issued | 1 of 1 claimed steps did not
+       land [finance_quotes row …]" — a customer holding a quote that nobody
+       recorded — and they class as PARTIAL. That correction is made once, in
+       nexus_outcome_class and its mirror. Nothing in this file re-makes it.
+     · nexus_outcome_class has no case for ESCALATED_PARTIAL or ESCALATED_FAILED,
+       so either would class as UNKNOWN and render here as "Unrecognised" rather
+       than as a missed delivery. No row carries one today: counted against the
+       live table on 1 Sep 2026 the entire status vocabulary in audit_log is
+       SUCCESS, FAILED, PARTIAL, REJECTED, NOT_EXECUTED and ESCALATED. If a
+       compound value does appear, the fix is a case in the SQL function and its
+       mirror — not a private split re-grown here. */
+const missedCustomer = a => outcomeOf(a) === OUTCOME.PARTIAL;
+const PARTIAL_NOTE = 'A Delivery Report node writes PARTIAL when the run completed but a step it was about to claim did not land — in these workflows that is normally the WhatsApp message to the customer. It is not a success: somebody was waiting for a reply and did not get one. Some of these rows say FAILED rather than PARTIAL and are classified from the “did not land” phrase in their own summary, because the writers mislabel them; that correction is made in nexus_outcome_class in Postgres, which is what every count on this screen is built from. audit_log has no dropped-steps column, so which step it was is only in the summary text.';
+
+/* The colour of one run's dot in the history timeline, taken from the same table
+   that words its pill so that the two can never say different things about the
+   same row. The version this replaced ended in a bare `: 'ok'`, which is how
+   PARTIAL came to be painted as a clean run; there is no default branch here
+   that can paint an unrecognised status green, because outcomeWords() falls back
+   to UNKNOWN and UNKNOWN is grey. */
+const runDot = a => outcomeWords(outcomeOf(a)).tone || 'unknown';
 
 /* ── Schedule cadence: has a scheduled job silently stopped? ────────────────
-   `v_workflow_health.health` cannot answer this. A workflow that stops firing
-   logs no runs, and therefore logs no failures, so it stays HEALTHY — or drifts
-   to NEVER_RAN — while nothing happens at all. That is exactly what Competitor
-   Price Scraping did: its n8n trigger was an "every 24 hours" *interval*, which
-   counts from the last activation rather than from the clock, so every VM
-   restart silently moved its fire time and after the 19 Aug outage it stopped
-   landing altogether — one run in 36 hours, with a green health record. It is
-   now on a cron.
+   `v_workflow_health.health` cannot answer this, and the 31 Aug rebuild did not
+   change that — it is a gap in the evidence, not in the arithmetic. A workflow
+   that stops firing logs no runs and therefore logs nothing bad, so it keeps
+   whatever health its last few in-window runs earned it: HEALTHY for as long as
+   any of them survive the 30-day window, then NO_QUALIFYING_RUNS, which is grey
+   and says "there is nothing to rate" rather than "this job has stopped". At no
+   point does it turn red. That is exactly what Competitor Price Scraping did:
+   its n8n trigger was an "every 24 hours" *interval*, which counts from the last
+   activation rather than from the clock, so every VM restart silently moved its
+   fire time and after the 19 Aug outage it stopped landing altogether — one run
+   in 36 hours, and nothing on this screen went red. It is now on a cron.
 
    So the check here is the one `scripts/nexus_healthcheck.py` section 7 makes
    server-side: judge each scheduled job against its OWN cadence rather than
@@ -770,13 +833,32 @@ SCREENS.automation = async host => {
     return (audit || []).filter(a => names.has(low(a.workflow)));
   };
 
+  /* Worst first. The tie-break after the rate is the count of runs that failed
+     or went out half-done, not failures alone — sorting on failures would have
+     put Competitor Price Scraping, which has never failed once and has produced
+     nothing 84 times, at the bottom of its own category. A workflow with no rate
+     sorts after every workflow that has one (101 is deliberately off the scale):
+     "we cannot say" is not a good score and it is not a bad one either. */
   const rows = (health || []).slice().sort((a, b) =>
     (healthOf(a).rank - healthOf(b).rank)
     || ((rate30(a) ?? 101) - (rate30(b) ?? 101))
-    || ((n0(b.failures_30d) || 0) - (n0(a.failures_30d) || 0))
+    || (incomplete30(b) - incomplete30(a))
     || String(a.name || '').localeCompare(String(b.name || '')));
 
   const degraded = rows.filter(w => stateKey(w) === 'DEGRADED');
+  /* Everything a person has to look at, in one list, because three different
+     things below have to agree about what that means: the KPI, the banner, and
+     the green all-clear that must never appear while one of these is non-empty.
+     DEGRADED is failing or half-delivering; PRODUCING_NOTHING runs cleanly and
+     achieves nothing; UNKNOWN_OUTCOME logged a word this system cannot read. All
+     three need a human and none of them is a success. */
+  const attention = rows.filter(w => NEEDS_ATTENTION.includes(stateKey(w)));
+  const producingNothing = rows.filter(w => stateKey(w) === 'PRODUCING_NOTHING');
+  const unknownOutcome = rows.filter(w => stateKey(w) === 'UNKNOWN_OUTCOME');
+  /* Not attention states: these are the absences. A workflow every one of whose
+     runs was refused by design has no rate, which is a different sentence from a
+     bad one, and it is not evidence of anything being wrong. */
+  const noQualifying = rows.filter(w => stateKey(w) === 'NO_QUALIFYING_RUNS');
   /* Split deliberately: a workflow that answers its caller is not part of the
      blind-spot count and must not inflate it. */
   const blind = rows.filter(w => stateKey(w) === 'NOT_INSTRUMENTED');
@@ -832,51 +914,99 @@ SCREENS.automation = async host => {
     strip.innerHTML = stateEmpty('No workflows registered',
       'v_workflow_health returned no rows, so there is nothing to report on. workflow_registry is what populates it.', 'account_tree');
   } else {
+    /* Every figure in this strip is a sum of the view's own outcome columns. The
+       version this replaced summed runs_30d and failures_30d and divided one by
+       the other, which across the fleet turned 199 failures, 13 partials, 103
+       runs that produced nothing and 36 refusals into a single number that said
+       most of it had gone fine. */
     const sum = k => rows.reduce((a, w) => a + (n0(w[k]) || 0), 0);
-    const runs30 = sum('runs_30d'), fails30 = sum('failures_30d');
-    const runsAll = sum('runs'), failsAll = sum('failures');
-    const esc30 = sum('escalations');
+    const runs30 = sum('runs_30d');
+    const ok30 = sum('successes_30d');
+    const fails30 = sum('failures_30d');
+    const partials30 = sum('partials_30d');
+    const bad30 = fails30 + partials30;
+    const none30 = sum('no_result_30d');
+    const refused30 = sum('rejected_30d');
+    const esc30in = sum('escalated_30d');
+    const unknown30 = sum('unknown_30d');
+    const eff30 = sum('effective_runs_30d');
+    const escAll = sum('escalations');
     const active = rows.filter(w => w.is_active !== false).length;
     const logged = rows.filter(w => w.writes_audit_log).length;
-    const lastFail = rows.map(w => w.last_failure).filter(Boolean)
+    /* last_incomplete is the newest failure OR partial, which is the question
+       this line is actually asking. last_failure alone would have said "none
+       recorded, ever" over a workflow that half-delivered this morning. */
+    const newest = k => rows.map(w => w[k]).filter(Boolean)
       .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null;
-    const r30 = rateOf(runs30, fails30);
-    const rAll = rateOf(runsAll, failsAll);
+    const lastBad = newest('last_incomplete');
+    const r30 = successRate(ok30, eff30);
+    /* There is deliberately no all-time counterpart to r30. The view exposes
+       success_rate per workflow but no all-time successes column, and a fleet
+       rate cannot be built by averaging per-workflow percentages — a workflow
+       with two runs would weigh the same as one with 286. So the strip states
+       the 30-day figure and says nothing about all-time rather than inventing
+       one out of runs minus failures, which is the arithmetic this rebuild
+       removed. */
+
+    const attentionSub = () => {
+      if (attention.length) {
+        const names = attention.slice(0, 2).map(w => w.name).filter(Boolean).join(', ');
+        const kinds = [...new Set(attention.map(w => healthOf(w).label))].join(' · ');
+        return `<span class="t-hot">${esc(names)}${attention.length > 2 ? ` +${attention.length - 2} more` : ''}</span>
+          <br><span class="t-muted">${esc(kinds)}</span>`;
+      }
+      if (!logged) return '<span class="t-muted">Nothing writes to audit_log, so nothing can be measured</span>';
+      /* Three separate ways this can be a true statement and still not mean
+         "everything is fine", each said out loud rather than left to the green.
+         A stopped schedule fails nothing by definition; a workflow with no
+         qualifying runs has produced no evidence either way. */
+      const caveats = [
+        overdue.length ? `${num(overdue.length)} scheduled job${overdue.length === 1 ? ' has' : 's have'} not run on cadence` : '',
+        noQualifying.length ? `${num(noQualifying.length)} ${noQualifying.length === 1 ? 'has' : 'have'} no qualifying run to rate` : '',
+      ].filter(Boolean);
+      return `<span class="t-ok">No workflow is failing, half-delivering or logging a word this system cannot read</span>${
+        caveats.length ? `<br><span class="t-warm">but ${esc(caveats.join(', and '))}</span>` : ''}`;
+    };
 
     strip.innerHTML = [
       kpi('Workflows registered', num(rows.length),
         `${active} active · ${logged} of ${rows.length} write to audit_log${
           byDesign.length ? ` · ${num(byDesign.length)} answer${byDesign.length === 1 ? 's' : ''} the caller instead` : ''}${
-          pages.length ? ` · ${num(pages.length)} are web pages, not automations` : ''}`),
-      kpi('Degraded now', num(degraded.length),
-        degraded.length
-          ? `<span class="t-hot">${esc(degraded.map(w => w.name).slice(0, 2).join(', '))}${degraded.length > 2 ? ` +${degraded.length - 2} more` : ''}</span>`
-          : (logged
-              /* "Nothing is failing" must never be allowed to read as "nothing is
-                 wrong" while a schedule has silently stopped: a stopped job fails
-                 nothing, by definition. */
-              ? (overdue.length
-                  ? `<span class="t-ok">No logged workflow failed inside the 30-day window</span><br><span class="t-warm">but ${num(overdue.length)} scheduled job${overdue.length === 1 ? ' has' : 's have'} not run on cadence</span>`
-                  : '<span class="t-ok">No logged workflow failed inside the 30-day window</span>')
-              : '<span class="t-muted">Nothing writes to audit_log, so nothing can be measured</span>'),
-        degraded.length ? 't-hot' : ''),
+          pages.length ? ` · ${num(pages.length)} ${pages.length === 1 ? 'is a web page' : 'are web pages'}, not automations` : ''}`),
+      /* "Degraded now" until 31 Aug, which could only ever count one of the three
+         states that need a person. A workflow producing nothing scored zero here
+         while producing nothing. */
+      kpi('Needs attention now', num(attention.length), attentionSub(),
+        attention.length ? 't-hot' : ''),
       kpi('Runs · last 30 days', num(runs30),
-        runsAll
-          ? `<span class="t-muted">${num(runsAll)} logged all-time</span>`
-          : '<span class="t-muted">No run has ever been logged</span>'),
-      kpi('Failures · last 30 days', num(fails30),
-        fails30
-          ? `<span class="t-hot">Most recent ${esc(ago(lastFail))}</span>`
-          : (failsAll
-              ? `<span class="t-muted">${num(failsAll)} all-time, none inside the window</span>`
-              : '<span class="t-muted">None logged, ever</span>'),
-        fails30 ? 't-hot' : ''),
-      kpi('Success rate · 30 days', r30 == null ? '—' : pct(r30),
+        runs30
+          ? `<span class="t-muted">${num(ok30)} delivered · ${num(bad30)} failed or half-done · ${num(none30)} produced nothing${
+              refused30 || esc30in ? ` · ${num(refused30 + esc30in)} refused or escalated, left out of the rate` : ''}${
+              unknown30 ? ` · ${num(unknown30)} unreadable` : ''}</span>`
+          : '<span class="t-muted">No run logged inside the window</span>'),
+      /* Failures and partials in one number because both are the same finding —
+         work that did not land — and split in the sub-line because they are not
+         the same repair. */
+      kpi('Failed or half-done · 30 days', num(bad30),
+        bad30
+          ? `<span class="t-hot">${num(fails30)} failed · ${num(partials30)} went out half-done</span>
+             <br><span class="t-muted">most recent ${esc(ago(lastBad))}</span>`
+          : (none30
+              ? `<span class="t-warm">None — but ${num(none30)} run${none30 === 1 ? '' : 's'} produced nothing usable, which is not the same as none</span>`
+              : '<span class="t-muted">None logged inside the window</span>'),
+        bad30 ? 't-hot' : ''),
+      /* A zero denominator prints its reason, never a number. Green is reserved
+         for a rate with nothing failed, nothing half-done and nothing produced
+         empty behind it — the old tile went green on failures alone. */
+      kpi('Success rate · 30 days', r30 == null ? 'no rate' : pct(r30),
         r30 == null
-          ? '<span class="t-muted">No runs inside the window to divide by</span>'
-          : `Across ${num(runs30)} logged run${runs30 === 1 ? '' : 's'} in the window${rAll == null ? '' : ` · ${pct(rAll)} all-time`}${
-              esc30 ? ` · ${num(esc30)} escalation${esc30 === 1 ? '' : 's'} all-time` : ''}`,
-        r30 == null ? '' : (fails30 ? 't-hot' : 't-ok')),
+          ? `<span class="t-muted">${eff30 === 0 && runs30 > 0
+              ? `every one of the ${num(runs30)} logged run${runs30 === 1 ? '' : 's'} was refused by design or handed to a person, so none of them counted toward a rate`
+              : 'nothing was logged inside the window, so there is no denominator'}</span>`
+          : `${num(ok30)} of ${num(eff30)} qualifying run${eff30 === 1 ? '' : 's'} succeeded outright${
+              refused30 || esc30in ? ` · ${num(refused30 + esc30in)} of the ${num(runs30)} logged runs are excluded as refused by design or escalated` : ''}${
+              escAll ? ` · ${num(escAll)} escalation${escAll === 1 ? '' : 's'} all-time` : ''}`,
+        r30 == null ? '' : (bad30 || none30 || unknown30 ? 't-hot' : 't-ok')),
     ].join('');
   }
 
@@ -889,25 +1019,83 @@ SCREENS.automation = async host => {
 
   if (degraded.length) {
     /* rows are already worst-first, so the first degraded entry is the one with
-       the lowest 30-day success rate. */
+       the lowest 30-day success rate. The count it quotes is failures plus
+       partials: a run that half-delivered did not fail, and saying "N failed"
+       over a workflow whose whole problem is twelve nightly partials sends
+       whoever reads it looking for a crash that is not there. */
     const worst = degraded[0];
     const wr = rate30(worst);
+    const bad = incomplete30(worst);
+    const runs = n0(worst.runs_30d) || 0;
     const b = el('div', 'banner hot');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">error</span>
       <div style="flex:1">
         <strong>${num(degraded.length)} workflow${degraded.length === 1 ? ' is' : 's are'} degraded right now.</strong>
-        ${esc(worst.name || 'One workflow')} is the worst of them${wr == null ? '' : ` at ${esc(pct(wr))} success`}
-        over the last 30 days — ${num(n0(worst.failures_30d) || 0)} of ${num(n0(worst.runs_30d) || 0)} logged run${(n0(worst.runs_30d) || 0) === 1 ? '' : 's'} failed${
-          worst.last_failure ? `, most recently ${esc(ago(worst.last_failure))}` : ''}.
+        ${esc(worst.name || 'One workflow')} is the worst of them${
+          wr == null ? ` — and has no rate at all, because ${esc(noRateWhy(worst))}` : ` at ${esc(pct(wr))} success`}
+        over the last 30 days — ${num(bad)} of ${num(runs)} logged run${runs === 1 ? '' : 's'}
+        ${(n0(worst.partials_30d) || 0) ? 'failed or went out half-done' : 'failed'}${
+          worst.last_incomplete ? `, most recently ${esc(ago(worst.last_incomplete))}` : ''}.
       </div>
       <button class="btn sm" id="aShowDegraded">Show ${degraded.length === 1 ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
     b.querySelector('#aShowDegraded').addEventListener('click', () => focusHealth('DEGRADED'));
-  } else if (health && rows.length && rows.some(w => w.writes_audit_log)) {
+  }
+
+  /* The state that had no banner, no KPI and no colour until 31 Aug, because
+     nothing on the screen could express it. Competitor Price Scraping ran 96
+     times in the window and recorded a price 12 times; the other 84 runs wrote
+     REJECTED with "no price could be extracted" and were counted as successes,
+     so the row sat at a green 100.0% for the whole month while the dealership
+     had no competitor pricing. It is not degraded — nothing failed — and it is
+     emphatically not healthy, so it gets its own sentence rather than being
+     folded into either. */
+  if (producingNothing.length) {
+    const one = producingNothing.length === 1;
+    const worst = producingNothing[0];
+    const wr = rate30(worst);
+    const b = el('div', 'banner hot');
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">do_not_disturb_on</span>
+      <div style="flex:1">
+        <strong>${num(producingNothing.length)} workflow${one ? '' : 's'} run${one ? 's' : ''} without failing and produce${one ? 's' : ''} nothing usable.</strong>
+        ${esc(worst.name || 'One workflow')} logged ${num(n0(worst.runs_30d) || 0)} run${(n0(worst.runs_30d) || 0) === 1 ? '' : 's'} in the window and
+        ${num(n0(worst.successes_30d) || 0)} of them produced a result${wr == null ? '' : ` — ${esc(pct(wr))}`}. The rest completed and had nothing to show for it.
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">Nothing here is red in n8n: these runs did not crash, they finished. That is exactly why this state needs its own banner — a workflow achieving nothing raises no failure for anything else on this screen to notice.</div>
+      </div>
+      <button class="btn sm" id="aShowNothing">Show ${one ? 'it' : 'them'}</button>`;
+    banners.appendChild(b);
+    b.querySelector('#aShowNothing').addEventListener('click', () => focusHealth('PRODUCING_NOTHING'));
+  }
+
+  /* A workflow logging a status neither Postgres nor lib/health.js defines. The
+     honest reading is that its health is not known, which is a finding and not a
+     pass — so it is named here rather than left to sort quietly mid-list. */
+  if (unknownOutcome.length) {
+    const one = unknownOutcome.length === 1;
+    const b = el('div', 'banner warm');
+    b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">help</span>
+      <div style="flex:1">
+        <strong>${num(unknownOutcome.length)} workflow${one ? '' : 's'} logged a status this system does not define.</strong>
+        ${esc(unknownOutcome.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} wrote a value
+        <span class="mono">nexus_outcome_class</span> has no case for, so ${one ? 'its' : 'their'} health cannot be stated either way and no rate is claimed for ${one ? 'it' : 'them'}.
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">Adding the value to <span class="mono">nexus_outcome_class</span> and to <span class="mono">lib/health.js</span> together is what resolves this. Guessing at it on the screen is what this rebuild removed.</div>
+      </div>
+      <button class="btn sm" id="aShowUnknown">Show ${one ? 'it' : 'them'}</button>`;
+    banners.appendChild(b);
+    b.querySelector('#aShowUnknown').addEventListener('click', () => focusHealth('UNKNOWN_OUTCOME'));
+  }
+
+  /* The all-clear, and the one banner on this screen with the most power to
+     mislead. It used to say "no instrumented workflow has failed", which was
+     true of Competitor Price Scraping every day it produced nothing. It now
+     covers all three attention states, and it still refuses to generalise past
+     the workflows that are actually instrumented. */
+  if (!attention.length && health && rows.length && rows.some(w => w.writes_audit_log)) {
     const b = el('div', 'banner info');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">check_circle</span>
-      <div>No instrumented workflow has failed inside the 30-day window. This statement only covers the
-      ${num(rows.filter(w => w.writes_audit_log).length)} of ${num(rows.length)} workflows that write to audit_log.</div>`;
+      <div>No instrumented workflow failed, went out half-done, produced nothing usable or logged an unreadable status inside the 30-day window.
+      This statement only covers the ${num(rows.filter(w => w.writes_audit_log).length)} of ${num(rows.length)} workflows that write to audit_log${
+        noQualifying.length ? `, and ${num(noQualifying.length)} of those had no qualifying run in the window, so ${noQualifying.length === 1 ? 'it is' : 'they are'} covered by the sentence without being evidence for it` : ''}.</div>`;
     banners.appendChild(b);
   }
 
@@ -1056,9 +1244,11 @@ SCREENS.automation = async host => {
 
   /* ── Scheduled jobs, each against its own cadence ──────────────────────── */
   /* The check v_workflow_health cannot make. Its `health` column needs runs to
-     judge, and a job that has stopped firing has none — so it stays HEALTHY
-     while nothing happens. This card asks a different question: given what this
-     job's own trigger says its cadence is, is a run overdue? */
+     judge, and a job that has stopped firing has none — so it holds HEALTHY
+     until its last in-window run ages out and then goes to NO_QUALIFYING_RUNS,
+     neither of which is a warning that anything stopped. This card asks a
+     different question: given what this job's own trigger says its cadence is,
+     is a run overdue? */
   if (!health) {
     schedCard.innerHTML = `<div class="card-head"><div><div class="card-title">Scheduled jobs</div></div></div>
       ${stateError('workflow health', healthErr)}`;
@@ -1093,7 +1283,7 @@ SCREENS.automation = async host => {
       </div>
       <div class="toolbar" style="background:var(--surface-sunken)">
         <div class="cell-sub" style="white-space:normal;flex:1">
-          <strong>Interval or cron is not a detail.</strong> An n8n “every N hours” interval counts from the workflow's last activation, not from the clock, so every VM restart moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, with a perfectly green health record the whole time. It is on <span class="mono">0 5 * * *</span> now — 05:00 UTC, on the clock, unmoved by a restart. ${
+          <strong>Interval or cron is not a detail.</strong> An n8n “every N hours” interval counts from the workflow's last activation, not from the clock, so every VM restart moves its fire time — and after the 19 Aug outage Competitor Price Scraping stopped landing altogether, one run in 36 hours, and its health record stayed green the whole time. (It reads <span class="mono">No output</span> today for an unrelated reason — its scrapes are landing and finding no price — so the green is gone but the blind spot is not: a schedule that stops still turns nothing red.) It is on <span class="mono">0 5 * * *</span> now — 05:00 UTC, on the clock, unmoved by a restart. ${
             trulyDrifting.length
               ? `<span class="t-warm">${num(trulyDrifting.length)} job${trulyDrifting.length === 1 ? ' still records its trigger as an interval' : 's still record their triggers as intervals'}: ${esc(trulyDrifting.map(w => w.name).join(', '))}. Worth checking in n8n whether ${trulyDrifting.length === 1 ? 'it is' : 'they are'} a real interval rather than a cron.</span>`
               : 'No job in this list records an interval this screen has reason to warn about.'}${
@@ -1196,8 +1386,19 @@ SCREENS.automation = async host => {
     const hCount = k => rows.filter(w => stateKey(w) === k).length;
     /* SCHED_LATE is not a health state and is not presented as one — it is a
        filter over the same list for the condition `health` cannot express. */
-    const segs = [['ALL', rows.length], ['DEGRADED', hCount('DEGRADED')], ['SCHED_LATE', overdue.length],
+    /* One segment per state the view can return, in worst-first order, so that
+       every health value is reachable as itself. Three of them had no segment
+       before 31 Aug — a PRODUCING_NOTHING workflow could not be filtered to at
+       all, which is a quiet way of saying the screen could not show you the
+       thing that was wrong with it. A segment with a zero count is dropped
+       rather than shown empty. */
+    const segs = [['ALL', rows.length],
+                  ['DEGRADED', hCount('DEGRADED')],
+                  ['PRODUCING_NOTHING', hCount('PRODUCING_NOTHING')],
+                  ['UNKNOWN_OUTCOME', hCount('UNKNOWN_OUTCOME')],
+                  ['SCHED_LATE', overdue.length],
                   ['HEALTHY', hCount('HEALTHY')],
+                  ['NO_QUALIFYING_RUNS', hCount('NO_QUALIFYING_RUNS')],
                   ['NEVER_RAN', hCount('NEVER_RAN')], ['NOT_INSTRUMENTED', hCount('NOT_INSTRUMENTED')],
                   ['RETURNS_RESULT', hCount('RETURNS_RESULT')], ['PUBLIC_PAGE', hCount('PUBLIC_PAGE')]]
       .filter(([k, c]) => k === 'ALL' || c > 0);
@@ -1207,13 +1408,21 @@ SCREENS.automation = async host => {
 
     healthCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Workflow health by category</div>
-        <div class="card-sub">This list is <span class="mono">workflow_registry</span>, which records the dealership's automations; the n8n instance also carries the three published workflows that only serve NEXUS's public home, privacy and terms pages, so a count taken in n8n is larger than the count here and is labelled where those pages are registered. Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>; the all-time <span class="mono">runs</span>/<span class="mono">failures</span> totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
+        <div class="card-sub">This list is <span class="mono">workflow_registry</span>, which records the dealership's automations; the n8n instance also carries the three published workflows that only serve NEXUS's public home, privacy and terms pages, so a count taken in n8n is larger than the count here and is labelled where those pages are registered. Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
-          ${segs.map(([k, c], i) => `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
-            k === 'SCHED_LATE' ? ' title="Not a health state — these are scheduled jobs whose last logged run is older than their own cadence allows. v_workflow_health cannot express this: a job that stops firing logs no failures."' : ''
-            }>${esc(segLabel(k))} · ${num(c)}</button>`).join('')}
+          ${/* Each segment carries the canonical layer's own sentence about the
+                state it filters to, so the definition is on the control rather
+                than only in a banner somebody may have scrolled past. */ ''}
+          ${segs.map(([k, c], i) => {
+            const title = k === 'SCHED_LATE'
+              ? 'Not a health state — these are scheduled jobs whose last logged run is older than their own cadence allows. v_workflow_health cannot express this: a job that stops firing logs no failures.'
+              : (STATES[k] ? STATES[k].detail : '');
+            return `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
+              title ? ` title="${esc(title)}"` : ''
+              }>${esc(segLabel(k))} · ${num(c)}</button>`;
+          }).join('')}
         </div>
         <div class="grow"><input type="search" id="aWfQ" aria-label="Search workflows"
           placeholder="Search workflow, category, trigger or description" /></div>
@@ -1238,9 +1447,22 @@ SCREENS.automation = async host => {
     const wfRow = (w, i) => {
       const h = healthOf(w);
       const r30 = rate30(w), rAll = rateAll(w);
-      const runs30 = n0(w.runs_30d), fails30 = n0(w.failures_30d);
+      const runs30 = n0(w.runs_30d);
+      const bad30 = incomplete30(w);
+      const none30 = n0(w.no_result_30d) || 0;
       const t = triggerState(w);
       const answers = respondsToCaller(w) ? callerInfo(w) : null;
+      /* The line under the run count, built from what actually happened rather
+         than from one number and the word "failed". "none failed" was true of
+         every workflow in PRODUCING_NOTHING on the day this was rebuilt. */
+      const mixLine = [
+        `${num(n0(w.successes_30d) || 0)} delivered`,
+        bad30 ? `<span class="t-hot">${num(bad30)} failed or half-done</span>` : '',
+        none30 ? `<span class="t-warm">${num(none30)} produced nothing</span>` : '',
+        (n0(w.rejected_30d) || 0) ? `<span class="t-muted">${num(n0(w.rejected_30d) || 0)} refused by design, left out of the rate</span>` : '',
+        (n0(w.escalated_30d) || 0) ? `<span class="t-muted">${num(n0(w.escalated_30d) || 0)} escalated, left out of the rate</span>` : '',
+        (n0(w.unknown_30d) || 0) ? `<span class="t-unknown">${num(n0(w.unknown_30d) || 0)} logged a status this system cannot read</span>` : '',
+      ].filter(Boolean).join(' · ');
       return `<div class="list-item" data-wf="${i}" role="button" tabindex="0"
         aria-label="Open ${esc(w.name || 'workflow')} — ${esc(healthLabel(w))}" style="align-items:flex-start">
         <span class="material-symbols-outlined ${h.tone === 'hot' ? 't-hot' : h.tone === 'ok' ? 't-ok' : 't-muted'}"
@@ -1248,7 +1470,7 @@ SCREENS.automation = async host => {
         <div style="flex:1;min-width:0">
           <div class="wf-head">
             <span style="font-weight:500">${esc(w.name || 'Unnamed workflow')}</span>
-            ${pill(healthLabel(w), h.tone || undefined)}
+            ${wordPill(healthLabel(w), h.tone, h.detail)}
             ${w.is_active === false ? pill('Inactive', 'warm') : ''}
             <span class="chip">${esc(w.trigger_type || 'trigger not recorded')}${w.trigger_detail ? ' · ' + esc(w.trigger_detail) : ''}</span>
             ${ceilingChip(w)}
@@ -1262,11 +1484,13 @@ SCREENS.automation = async host => {
                   : answers
                     ? `Answers its caller in the reply instead of logging, so there is no run count here by design — ${esc(answers.where)} reports each call as it happens.`
                     : 'Not instrumented — nothing reaches audit_log, so no run can be counted.')
-              : `${num(runs30)} run${runs30 === 1 ? '' : 's'} in the window · ${
-                  fails30 ? `<span class="t-hot">${num(fails30)} failed</span>` : 'none failed'}`}
-            ${w.runs ? ` · <span class="t-muted">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${rAll == null ? '' : ` (${pct(rAll)})`}</span>` : ''}
+              : `${num(runs30)} run${runs30 === 1 ? '' : 's'} in the window · ${mixLine}`}
+            ${w.runs ? ` · <span class="t-muted">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${
+              rAll == null ? ', no all-time rate' : ` (${pct(rAll)} of the runs that qualified)`}</span>` : ''}
           </div>
-          ${w.last_failure ? `<div class="cell-sub t-hot" style="margin-top:2px">Last failure ${esc(ago(w.last_failure))}</div>` : ''}
+          ${/* last_incomplete, not last_failure: a run that went out half-done is
+                the same finding and the old line said "none recorded" over it. */ ''}
+          ${w.last_incomplete ? `<div class="cell-sub t-hot" style="margin-top:2px">Last failed or half-done run ${esc(ago(w.last_incomplete))}</div>` : ''}
           ${(() => {
             const s = schedOf.get(w);
             if (!s) return '';
@@ -1280,9 +1504,21 @@ SCREENS.automation = async host => {
           })()}
         </div>
         <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          ${/* A rate with a zero denominator is not 0% and it is not 100%. The
+                dash it used to print was read as "nothing to see"; the words
+                below say which absence it is instead, and the row is only green
+                when nothing failed, nothing went half-done and nothing came back
+                empty — a workflow can hold a rate of 12.5% with no failure on
+                it at all. */ ''}
           <div class="num" style="font-weight:500;font-size:16px"
-            ><span class="${r30 == null ? 't-muted' : fails30 ? 't-hot' : 't-ok'}">${r30 == null ? '—' : esc(pct(r30))}</span></div>
-          <div class="cell-sub">${r30 == null ? (answers ? 'no rate kept here' : 'no 30-day rate') : '30-day success'}</div>
+            ><span class="${r30 == null ? 't-unknown' : (bad30 || none30) ? 't-hot' : 't-ok'}">${
+              r30 == null ? 'no rate' : esc(pct(r30))}</span></div>
+          <div class="cell-sub" style="white-space:normal;max-width:190px">${
+            r30 == null
+              ? (answers
+                  ? 'no rate is kept here — this endpoint answers its caller instead of logging'
+                  : esc(noRateWhy(w)))
+              : `30-day success, over ${num(n0(w.effective_runs_30d) || 0)} qualifying run${(n0(w.effective_runs_30d) || 0) === 1 ? '' : 's'}`}</div>
           <div class="cell-sub">${w.last_run
             ? 'ran ' + esc(ago(w.last_run))
             : (answers ? 'no run log kept' : 'never logged a run')}</div>
@@ -1314,15 +1550,26 @@ SCREENS.automation = async host => {
         || a[0].localeCompare(b[0]));
 
       listHost.innerHTML = ordered.map(([cat, list]) => {
-        const bad = list.filter(w => up(w.health) === 'DEGRADED').length;
-        const catRuns = list.reduce((a, w) => a + (n0(w.runs_30d) || 0), 0);
-        const catFails = list.reduce((a, w) => a + (n0(w.failures_30d) || 0), 0);
-        const cr = rateOf(catRuns, catFails);
+        /* The category rate is the sum of successes over the sum of qualifying
+           runs, not an average of percentages and not runs-minus-failures. The
+           pill counts every state that needs a person, so a category holding one
+           workflow that produces nothing can no longer show a bare workflow
+           count and a green rate beside it. */
+        const catBad = list.filter(w => NEEDS_ATTENTION.includes(stateKey(w)));
+        const catSum = k => list.reduce((a, w) => a + (n0(w[k]) || 0), 0);
+        const catRuns = catSum('runs_30d');
+        const catEff = catSum('effective_runs_30d');
+        const cr = successRate(catSum('successes_30d'), catEff);
         return `<div class="toolbar" style="background:var(--surface-sunken)">
             <div class="label-caps" style="flex:1">${esc(cat)}</div>
-            ${bad ? pill(`${bad} degraded`, 'hot') : ''}
+            ${catBad.length ? pill(`${catBad.length} need${catBad.length === 1 ? 's' : ''} attention`, 'hot') : ''}
             <span class="cell-sub">${list.length} workflow${list.length === 1 ? '' : 's'}${
-              catRuns ? ` · ${num(catRuns)} run${catRuns === 1 ? '' : 's'} in 30 days · ${esc(pct(cr))} success` : ' · no runs logged in 30 days'}</span>
+              catRuns
+                ? ` · ${num(catRuns)} run${catRuns === 1 ? '' : 's'} in 30 days · ${
+                    cr == null
+                      ? 'no rate — every one of them was refused by design or escalated'
+                      : `${esc(pct(cr))} success over ${num(catEff)} qualifying`}`
+                : ' · no runs logged in 30 days'}</span>
           </div>
           ${list.map(w => wfRow(w, rows.indexOf(w))).join('')}`;
       }).join('');
@@ -1377,19 +1624,20 @@ SCREENS.automation = async host => {
     if (!w) return;
     const h = healthOf(w);
     const r30 = rate30(w), rAll = rateAll(w);
-    const viewRate = n0(w.success_rate);
-    /* `success_rate` sits with runs/failures in the view, which are all-time,
-       while `health` is judged on 30 days — so which window it belongs to is not
-       documented anywhere. Rather than assume, the drawer works it out from the
-       numbers: whichever computed rate it matches is the window it is in. It is
-       only reported as a discrepancy when it matches neither, which is the case
-       that would genuinely mean the view's window has moved. */
+    /* The comparison this drawer makes, and the one it used to make, are not the
+       same question. It used to guess which window `success_rate` belonged to by
+       seeing which of two locally computed rates it landed nearest, because the
+       view documented neither. The view now publishes both windows explicitly —
+       `success_rate_30d` and `success_rate`, each successes over effective runs —
+       so there is nothing left to guess. What is worth checking is whether this
+       screen's arithmetic and the view's arithmetic agree over the same window
+       and the same columns; where they do not, one of the two has drifted from
+       nexus_outcome_class and the number on screen should not be trusted until
+       somebody says which. It is reported, never silently resolved. */
+    const viewRate30 = n0(w.success_rate_30d);
     const near = (a, b) => a != null && b != null && Math.abs(a - b) <= 0.6;
-    const rateWindow = viewRate == null ? null
-      : near(viewRate, rAll) ? 'all-time'
-      : near(viewRate, r30) ? '30-day'
-      : 'neither';
-    const drift = rateWindow === 'neither';
+    const drift = (r30 == null) !== (viewRate30 == null)
+      || (r30 != null && viewRate30 != null && !near(r30, viewRate30));
     const sched = schedOf.get(w) || null;
     const exempt = exemptFrom(w);
     const t = triggerState(w);
@@ -1411,7 +1659,7 @@ SCREENS.automation = async host => {
         <div class="section">
           <div class="label-caps">Health</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            ${pill(healthLabel(w), h.tone || undefined)}
+            ${wordPill(healthLabel(w), h.tone, h.detail)}
             ${w.is_active === false ? pill('Inactive', 'warm') : pill('Active', 'ok')}
             ${w.writes_audit_log ? '' : (answers ? pill('Answers the caller', 'cold') : pill('No audit node', 'warm'))}
           </div>
@@ -1458,31 +1706,64 @@ SCREENS.automation = async host => {
             answers
               ? 'Nothing is logged for this endpoint at all, so there is no bar to draw and the figures below stay empty. That is expected here — it is not evidence that it did or did not run.'
               : 'Nothing logged in the window, so there is no bar to draw.'}</div>`}
+          ${/* Every outcome the window holds, named, in the order they matter.
+                The list this replaced had two rows — Runs and Failures — under
+                which a workflow that half-delivered twelve times and produced
+                nothing eighty-four more looked identical to a clean one. Each
+                line carries the canonical layer's own sentence about what that
+                outcome means, so the definition is one hover away from the
+                count. */ ''}
           <dl class="kv" style="margin-top:12px">
-            <dt>Runs</dt><dd class="num">${w.runs_30d == null ? '<span class="t-muted">—</span>' : num(w.runs_30d)}</dd>
-            <dt>Failures</dt><dd class="num ${n0(w.failures_30d) ? 't-hot' : ''}">${w.failures_30d == null ? '<span class="t-muted">—</span>' : num(w.failures_30d)}</dd>
-            <dt>Success rate</dt><dd class="num">${r30 == null ? '<span class="t-muted">no runs to divide by</span>' : esc(pct(r30))}</dd>
+            <dt>Runs logged</dt><dd class="num">${w.runs_30d == null ? '<span class="t-muted">—</span>' : num(w.runs_30d)}</dd>
+            ${[[OUTCOME.SUCCESS, 'successes_30d', ''],
+               [OUTCOME.FAILURE, 'failures_30d', 't-hot'],
+               [OUTCOME.PARTIAL, 'partials_30d', 't-hot'],
+               [OUTCOME.NO_RESULT, 'no_result_30d', 't-warm'],
+               [OUTCOME.REJECTED_EXPECTED, 'rejected_30d', 't-muted'],
+               [OUTCOME.ESCALATED, 'escalated_30d', 't-muted'],
+               [OUTCOME.UNKNOWN, 'unknown_30d', 't-unknown']].map(([o, col, cls]) => {
+              const c = n0(w[col]) || 0;
+              const words = outcomeWords(o);
+              /* A zero is shown for every outcome rather than hidden, because
+                 "no partials" is a finding and a missing row is not. */
+              return `<dt title="${esc(words.blurb)}">${esc(words.label)}</dt>
+                <dd class="num ${c ? cls : 't-muted'}" title="${esc(words.blurb)}">${num(c)}</dd>`;
+            }).join('')}
+            <dt title="Runs the workflow was expected to deliver on: everything except what was refused by design or handed to a person on purpose. This is the denominator of the rate below.">Qualifying runs</dt>
+            <dd class="num">${num(n0(w.effective_runs_30d) || 0)}</dd>
+            <dt>Success rate</dt><dd class="num">${
+              r30 == null
+                ? `<span class="t-unknown">no rate</span><div class="cell-sub" style="white-space:normal">${esc(noRateWhy(w))}</div>`
+                : `${esc(pct(r30))}<div class="cell-sub">${num(n0(w.successes_30d) || 0)} outright successes over ${num(n0(w.effective_runs_30d) || 0)} qualifying runs</div>`}</dd>
             <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
+            <dt title="A run that finished but left a claimed step undone. Tracked separately because it is not a failure and the workflow will not tell you about it.">Last half-delivered</dt>
+            <dd>${w.last_partial ? `<span class="t-hot">${esc(ago(w.last_partial))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
+            <dt>Last success</dt><dd>${w.last_success ? esc(ago(w.last_success)) : '<span class="t-muted">none recorded</span>'}</dd>
           </dl>
           ${drift ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">warning</span>
-            <div>The view reports <span class="mono">success_rate</span> ${esc(pct(viewRate))}, which matches neither the 30-day rate
-            (${esc(r30 == null ? 'no runs in the window' : pct(r30))}) nor the all-time rate
-            (${esc(rAll == null ? 'no runs ever' : pct(rAll))}) computed from the count columns. Every figure on this screen is computed from
-            <span class="mono">runs</span>/<span class="mono">failures</span> and <span class="mono">runs_30d</span>/<span class="mono">failures_30d</span>,
-            whose windows are documented; treat the difference as a signal that the window behind <span class="mono">success_rate</span> has moved.</div></div>` : ''}
+            <div>This screen and the view disagree about this workflow's 30-day rate. The view reports
+            <span class="mono">success_rate_30d</span> ${esc(viewRate30 == null ? 'null' : pct(viewRate30))}; the same arithmetic run here over
+            <span class="mono">successes_30d</span> and <span class="mono">effective_runs_30d</span> gives ${esc(r30 == null ? 'no rate' : pct(r30))}.
+            Both are meant to be successes over qualifying runs, so one of them has drifted from <span class="mono">nexus_outcome_class</span>.
+            Neither figure should be relied on until somebody says which — the difference is shown rather than resolved, because picking one silently
+            is what this screen was rebuilt to stop doing.</div></div>` : ''}
         </div>
 
         <div class="section">
           <div class="label-caps">All time</div>
           <dl class="kv" style="margin-top:8px">
             <dt>Runs</dt><dd class="num">${w.runs == null ? '<span class="t-muted">—</span>' : num(w.runs)}</dd>
-            <dt>Failures</dt><dd class="num">${w.failures == null ? '<span class="t-muted">—</span>' : num(w.failures)}</dd>
-            <dt>Escalations</dt><dd class="num">${w.escalations == null ? '<span class="t-muted">—</span>' : num(w.escalations)}</dd>
-            <dt>Success rate</dt><dd class="num">${rAll == null ? '<span class="t-muted">no runs to divide by</span>' : esc(pct(rAll))}</dd>
-            <dt>success_rate (view)</dt><dd class="num">${viewRate == null ? '<span class="t-muted">null</span>' : esc(pct(viewRate))}${
-              rateWindow && rateWindow !== 'neither'
-                ? `<div class="cell-sub">matches the ${esc(rateWindow)} figure, so that is the window it is in</div>`
-                : rateWindow === 'neither' ? '<div class="cell-sub t-warm">matches neither window — see the note above</div>' : ''}</dd>
+            <dt title="${esc(OUTCOME_WORDS.FAILURE.blurb)}">Failures</dt><dd class="num">${w.failures == null ? '<span class="t-muted">—</span>' : num(w.failures)}</dd>
+            <dt title="${esc(OUTCOME_WORDS.ESCALATED.blurb)}">Escalations</dt><dd class="num">${w.escalations == null ? '<span class="t-muted">—</span>' : num(w.escalations)}</dd>
+            ${/* All-time is the view's own figure and is labelled as such. There
+                  is no all-time successes column to recompute it from, and this
+                  screen does not fabricate one out of runs minus failures — that
+                  subtraction is the exact arithmetic the 31 Aug rebuild removed,
+                  and all-time is precisely where nobody would notice it. */ ''}
+            <dt>Success rate</dt><dd class="num">${
+              rAll == null
+                ? '<span class="t-unknown">no rate</span><div class="cell-sub" style="white-space:normal">nothing has qualified for one — every logged run was refused by design or escalated, or nothing was logged at all</div>'
+                : `${esc(pct(rAll))}<div class="cell-sub">reported by the view as <span class="mono">success_rate</span>, over the same definition as the 30-day figure. There is no all-time successes column, so this one is not recomputed here and the two cannot be cross-checked.</div>`}</dd>
             <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) : '<span class="t-muted">never logged</span>'}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">All-time counts start from the day each workflow gained an Audit Log node, not from the day it was built, so they understate anything older than instrumentation.</div>
@@ -1498,7 +1779,7 @@ SCREENS.automation = async host => {
                     <span class="tl-dot" style="background:var(--${runDot(a)})"></span>
                     <div class="tl-body">
                       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                        ${pill(a.status || 'LOGGED')}
+                        ${a.status ? outcomePill(a) : pill('No status written', 'unknown')}
                         <span class="cell-sub">${esc(ago(a.logged_at))}</span>
                         ${a.lead_name ? `<span class="chip">${esc(a.lead_name)}</span>` : ''}
                       </div>
@@ -1552,7 +1833,13 @@ SCREENS.automation = async host => {
         <dt>Webhook</dt><dd class="mono">${esc(t.hook)}</dd>
         <dt>Body</dt><dd class="mono">{}</dd>
         <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) : 'never logged'}</dd>
-        <dt>30-day health</dt><dd>${esc(healthLabel(w))}</dd>
+        <dt>30-day health</dt><dd>${esc(healthLabel(w))}<div class="cell-sub" style="white-space:normal">${esc(healthOf(w).detail)}</div></dd>
+        <dt>30-day success rate</dt><dd>${(() => {
+          const r = rate30(w);
+          return r == null
+            ? `<span class="t-unknown">no rate</span><div class="cell-sub" style="white-space:normal">${esc(noRateWhy(w))}</div>`
+            : `${esc(pct(r))}<div class="cell-sub">${num(n0(w.successes_30d) || 0)} of ${num(n0(w.effective_runs_30d) || 0)} qualifying runs succeeded outright</div>`;
+        })()}</dd>
       </dl>
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
         The counts on this screen come from audit_log. They will not change until the workflow writes a row and the screen is reloaded.
@@ -1589,31 +1876,36 @@ SCREENS.automation = async host => {
     logCard.innerHTML = `<div class="card-head"><div><div class="card-title">Activity log</div></div></div>
       ${stateError('the activity log', auditErr)}`;
   } else {
-    /* Every word audit_log is known to write, including the two compound values
-       `Log KYC Escalation` builds by hand. A status missing from this list is
-       filed under "Other" and counted nowhere, which is exactly how PARTIAL went
-       unnoticed. */
-    const STATUSES = ['SUCCESS', 'PARTIAL', 'FAILED', 'REJECTED', 'ESCALATED',
-                      'ESCALATED_PARTIAL', 'ESCALATED_FAILED'];
-    const sCount = s => audit.filter(a => up(a.status) === s).length;
-    const other = audit.filter(a => a.status && !STATUSES.includes(up(a.status))).length;
+    /* The log is filtered by outcome, not by the status word a workflow happened
+       to write. That is the same change the counts above went through and it has
+       to be the same here, or the filters would disagree with the KPI over the
+       same rows: five Finance Calc runs say FAILED and are partial deliveries,
+       and a "FAILED" segment would put them somewhere the numbers above do not.
+       The old segment list was a hand-kept table of status words with an "Other"
+       bucket at the end, and PARTIAL sat in Other counting toward nothing for
+       weeks. There is no Other any more — UNKNOWN is a defined outcome and it is
+       filed as one. */
+    const OUTCOME_ORDER = [OUTCOME.SUCCESS, OUTCOME.PARTIAL, OUTCOME.FAILURE, OUTCOME.NO_RESULT,
+                           OUTCOME.REJECTED_EXPECTED, OUTCOME.ESCALATED, OUTCOME.UNKNOWN];
+    const oCount = o => audit.filter(a => a.status && outcomeOf(a) === o).length;
     const unset = audit.filter(a => !a.status).length;
-    const failedCount = sCount('FAILED');
-    /* Failures whose summary reads like the five-minute ceiling stopping the run
-       rather than the workflow itself breaking. Since 24 Aug those executions are
-       saved rather than discarded, so they arrive here in full. */
+    /* The red banner below counts failures and partials together, because both
+       are runs whose work did not land. It is named that way rather than
+       "failed", so it cannot be read as a crash count. */
+    const incomplete = audit.filter(a => a.status && isIncomplete(a));
+    /* Runs whose summary reads like the five-minute ceiling stopping them rather
+       than the workflow itself breaking. Since 24 Aug those executions are saved
+       rather than discarded, so they arrive here in full. */
     const timedOut = audit.filter(looksTimedOut);
-    /* Runs that completed without reaching the customer: PARTIAL, and the
-       ESCALATED_ compounds whose delivery half is PARTIAL or FAILED. */
-    const undelivered = audit.filter(looksUndelivered);
+    /* Runs that completed without reaching the customer. */
+    const undelivered = audit.filter(missedCustomer);
 
     const wfNames = [...new Set(audit.map(a => a.workflow).filter(Boolean))]
       .sort((a, b) => String(a).localeCompare(String(b)));
 
-    const segs = [['ALL', audit.length], ...STATUSES.map(s => [s, sCount(s)]).filter(([, c]) => c > 0)];
-    if (undelivered.length) segs.push(['UNDELIVERED', undelivered.length]);
+    const segs = [['ALL', audit.length],
+                  ...OUTCOME_ORDER.map(o => [o, oCount(o)]).filter(([, c]) => c > 0)];
     if (timedOut.length) segs.push(['TIMEOUT', timedOut.length]);
-    if (other) segs.push(['OTHER', other]);
     if (unset) segs.push(['NONE', unset]);
 
     const lf = { status: 'ALL', wf: 'ALL', q: '' };
@@ -1625,10 +1917,22 @@ SCREENS.automation = async host => {
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegStatus" role="group" aria-label="Filter runs by status">
-          ${segs.map(([k, c], i) => `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
-            k === 'TIMEOUT' ? ` title="Failures whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run. audit_log has no reason column, so this is a reading of the summary, not something the database asserts."`
-            : k === 'UNDELIVERED' ? ` title="${esc(PARTIAL_NOTE)}"` : ''
-            }>${k === 'ALL' ? 'All' : k === 'OTHER' ? 'Other' : k === 'NONE' ? 'No status' : k === 'TIMEOUT' ? 'Hit the ceiling' : k === 'UNDELIVERED' ? 'Never reached the customer' : esc(k)} · ${num(c)}</button>`).join('')}
+          ${/* Each segment is labelled and explained by lib/health.js, so the
+                filter, the pill in the row and the count in the KPI strip above
+                all use one vocabulary. */ ''}
+          ${segs.map(([k, c], i) => {
+            const known = OUTCOME_ORDER.includes(k);
+            const label = k === 'ALL' ? 'All'
+              : k === 'NONE' ? 'No status'
+              : k === 'TIMEOUT' ? 'Hit the ceiling'
+              : outcomeWords(k).label;
+            const title = k === 'TIMEOUT'
+              ? `Runs whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping them. audit_log has no reason column, so this is a reading of the summary, not something the database asserts. They also appear under their own outcome.`
+              : k === 'NONE' ? 'Rows where audit_log holds no status at all. Nothing is claimed about these runs — a missing status is not a pass.'
+              : known ? outcomeWords(k).blurb : '';
+            return `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
+              title ? ` title="${esc(title)}"` : ''}>${esc(label)} · ${num(c)}</button>`;
+          }).join('')}
         </div>
         <div class="grow"><input type="search" id="aLogQ" aria-label="Search the activity log"
           placeholder="Search workflow, customer, intent or summary" /></div>
@@ -1640,24 +1944,27 @@ SCREENS.automation = async host => {
       </div>
       <div id="aLogTable"></div>`;
 
-    /* A run that finished without reaching the customer belongs here too. It is
-       not the same finding as a broken workflow, so it is coloured amber rather
-       than red wherever the two are shown side by side. */
-    const isBad = a => ['FAILED', 'REJECTED'].includes(up(a.status)) || looksUndelivered(a);
+    /* Runs somebody has to look at. A refusal by design is deliberately not one:
+       an unauthorised caller being turned away is the system working. A run that
+       produced nothing usable IS one, which is the change — the version this
+       replaced treated every REJECTED row as a fault and every PARTIAL that had
+       been mislabelled FAILED as a crash. */
+    const NEEDS_LOOKING_AT = [OUTCOME.FAILURE, OUTCOME.PARTIAL, OUTCOME.NO_RESULT, OUTCOME.UNKNOWN];
+    const isBad = a => !!a.status && NEEDS_LOOKING_AT.includes(outcomeOf(a));
 
     const cols = [
       { label: 'Logged', render: a => `<span class="mono t-muted">${esc(clock(a.logged_at))}</span>
           <div class="cell-sub">${esc(ago(a.logged_at))}</div>` },
-      { label: 'Status', render: a => a.status
-          ? `${pill(a.status)}${
+      { label: 'Outcome', render: a => a.status
+          ? `${outcomePill(a)}${
               looksTimedOut(a)
                 ? `<div class="cell-sub" title="${esc(CEILING.onTimeout)}">Reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run, not the workflow breaking</div>`
                 : looksGuardRejected(a)
-                  ? `<div class="cell-sub" title="${esc(GUARD_NOTE)}">Reads as the scrape guard refusing bad intel, not the workflow breaking</div>`
-                  : looksUndelivered(a)
-                    ? `<div class="cell-sub t-warm" title="${esc(PARTIAL_NOTE)}">The run finished; the customer-facing step did not land</div>`
+                  ? `<div class="cell-sub" title="${esc(GUARD_NOTE)}">Reads as the scrape guard refusing bad intel — the run completed, and it still produced no price</div>`
+                  : missedCustomer(a)
+                    ? `<div class="cell-sub t-hot" title="${esc(PARTIAL_NOTE)}">The run finished; the customer-facing step did not land</div>`
                     : isBad(a) ? '<div class="cell-sub t-hot">Needs investigation</div>' : ''}`
-          : '<span class="t-muted">No status written</span>' },
+          : '<span class="t-muted">No status written — nothing is claimed about this run</span>' },
       { label: 'Workflow', strong: true, render: a => `${esc(a.workflow || 'Unnamed')}
           ${a.intent ? `<div class="cell-sub">${esc(a.intent)}</div>` : ''}` },
       /* Name, then the number to reach them on, then the email. The phone comes
@@ -1671,7 +1978,7 @@ SCREENS.automation = async host => {
           : '<span class="t-muted">Not a per-customer run</span>' },
       { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score) },
       { label: 'Summary', render: a => a.summary
-          ? `<span class="${looksUndelivered(a) ? 't-warm' : isBad(a) && !looksGuardRejected(a) ? 't-hot' : ''}" style="white-space:normal">${esc(String(a.summary).slice(0, 200))}</span>`
+          ? `<span class="${looksGuardRejected(a) ? 't-warm' : isBad(a) ? 't-hot' : ''}" style="white-space:normal">${esc(String(a.summary).slice(0, 200))}</span>`
           : '<span class="t-muted">No summary written</span>' },
     ];
 
@@ -1683,9 +1990,11 @@ SCREENS.automation = async host => {
       return audit.filter(a => {
         if (lf.status === 'NONE') { if (a.status) return false; }
         else if (lf.status === 'TIMEOUT') { if (!looksTimedOut(a)) return false; }
-        else if (lf.status === 'UNDELIVERED') { if (!looksUndelivered(a)) return false; }
-        else if (lf.status === 'OTHER') { if (!a.status || STATUSES.includes(up(a.status))) return false; }
-        else if (lf.status !== 'ALL' && up(a.status) !== lf.status) return false;
+        /* Every remaining filter is an outcome, matched through the canonical
+           layer rather than against the raw status word — so filtering to
+           "Partly landed" catches the five Finance Calc rows that say FAILED,
+           which is the whole reason the segments were changed. */
+        else if (lf.status !== 'ALL') { if (!a.status || outcomeOf(a) !== lf.status) return false; }
         if (lf.wf !== 'ALL' && a.workflow !== lf.wf) return false;
         if (!q) return true;
         return [a.workflow, a.lead_name, a.lead_email, a.intent, a.summary, a.status]
@@ -1730,31 +2039,53 @@ SCREENS.automation = async host => {
        over a filter that really exists. Its count is the failures actually
        loaded here, which is a narrower claim than the 30-day KPI above and is
        worded that way. */
-    if (failedCount) {
+    if (incomplete.length) {
+      const failed = incomplete.filter(a => outcomeOf(a) === OUTCOME.FAILURE).length;
+      const half = incomplete.length - failed;
       const b = el('div', 'banner hot');
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">report</span>
-        <div style="flex:1"><strong>${num(failedCount)} logged run${failedCount === 1 ? '' : 's'} failed.</strong>
+        <div style="flex:1"><strong>${num(incomplete.length)} logged run${incomplete.length === 1 ? '' : 's'} did not land.</strong>
+        ${num(failed)} failed outright and ${num(half)} finished with a claimed step undone.
         Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.
         ${timedOut.length
           ? `<div class="cell-sub" style="margin-top:6px;white-space:normal"><strong>${num(timedOut.length)} of them read as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run</strong> rather than the workflow breaking — since 24 Aug those executions are saved with their data, so what made the run slow is still in n8n to look at. Filter to “Hit the ceiling” below to see them. audit_log has no reason column, so this is read off the summary text and is worth confirming on the execution itself.</div>`
           : ''}</div>
-        <button class="btn sm" id="aShowFailed">Show failed runs</button>`;
+        <button class="btn sm" id="aShowFailed">Show the failures</button>`;
       banners.appendChild(b);
-      b.querySelector('#aShowFailed').addEventListener('click', () => focusLog('FAILED'));
+      b.querySelector('#aShowFailed').addEventListener('click', () => focusLog(OUTCOME.FAILURE));
     }
 
-    /* Separate from the failure banner above, and amber rather than red, because
-       it is a different finding: these runs did not break — they completed and
-       told the truth about it in a status this screen used to read as green. */
+    /* Separate from the banner above, and red rather than amber, because a
+       customer who was promised something and never got it is not a milder
+       finding than a crash — it is the finding this screen used to paint green.
+       The two are split because they are different repairs, not different
+       severities. */
     if (undelivered.length) {
-      const b = el('div', 'banner warm');
+      const b = el('div', 'banner hot');
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">forward_to_inbox</span>
         <div style="flex:1"><strong>${num(undelivered.length)} logged run${undelivered.length === 1 ? '' : 's'} completed without reaching the customer.</strong>
         ${esc(PARTIAL_NOTE)}
         Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.</div>
         <button class="btn sm" id="aShowPartial">Show them</button>`;
       banners.appendChild(b);
-      b.querySelector('#aShowPartial').addEventListener('click', () => focusLog('UNDELIVERED'));
+      b.querySelector('#aShowPartial').addEventListener('click', () => focusLog(OUTCOME.PARTIAL));
+    }
+
+    /* The third banner this section needed and did not have. A run that produced
+       nothing usable is neither a failure nor a delivery, so before 31 Aug it
+       appeared nowhere on the screen at all except as an unremarked row in the
+       log — 84 of the 96 Competitor Price Scraping runs in the window are this. */
+    const nothing = audit.filter(a => a.status && outcomeOf(a) === OUTCOME.NO_RESULT);
+    if (nothing.length) {
+      const one = nothing.length === 1;
+      const b = el('div', 'banner warm');
+      b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">do_not_disturb_on</span>
+        <div style="flex:1"><strong>${num(nothing.length)} logged run${one ? '' : 's'} finished and produced nothing usable.</strong>
+        ${esc(OUTCOME_WORDS.NO_RESULT.blurb)} Nothing excuses these from the rate: they count against it in full. A refusal by design is left out of the denominator because the workflow was never expected to deliver; a run that simply came back empty was.
+        Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.</div>
+        <button class="btn sm" id="aShowNoResult">Show ${one ? 'it' : 'them'}</button>`;
+      banners.appendChild(b);
+      b.querySelector('#aShowNoResult').addEventListener('click', () => focusLog(OUTCOME.NO_RESULT));
     }
 
     drawLog();
@@ -1770,11 +2101,15 @@ SCREENS.automation = async host => {
   /* ── One logged run, in full ───────────────────────────────────────────── */
   function openRun(a) {
     if (!a) return;
+    const outcome = outcomeOf(a);
+    const words = outcomeWords(outcome);
     const guarded = looksGuardRejected(a);
-    /* A rejection the scrape guard made is not a run that went wrong, so it does
-       not get the red "did not complete" banner. */
-    const bad = ['FAILED', 'REJECTED'].includes(up(a.status)) && !guarded;
-    const missedCustomer = looksUndelivered(a);
+    /* The red "this run did not complete" banner belongs only to a run that
+       really did not complete. A scrape the guard refused completed and declined
+       to write rubbish; a partial completed and left a step undone — both get
+       their own banner below, saying the thing that is actually true of them. */
+    const bad = outcome === OUTCOME.FAILURE;
+    const undelivered = missedCustomer(a);
     const ceilingHit = looksTimedOut(a);
     const trace = execUrl(a);
     const wf = (health || []).find(w => namesFor(w).has(low(a.workflow))) || null;
@@ -1790,18 +2125,25 @@ SCREENS.automation = async host => {
         <div class="section">
           <div class="label-caps">Outcome</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            ${a.status ? pill(a.status) : '<span class="t-muted">No status written</span>'}
+            ${a.status ? outcomePill(a) : pill('No status written', 'unknown')}
             ${a.intent ? `<span class="chip">${esc(a.intent)}</span>` : ''}
           </div>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${
+            a.status
+              ? esc(words.blurb)
+              : 'audit_log holds no status for this run, so nothing is claimed about it either way. A blank status is not a pass.'}</div>
           <div class="quote" style="margin-top:12px;white-space:pre-wrap">${esc(a.summary || 'The workflow wrote no summary for this run.')}</div>
-          ${guarded ? `<div class="banner info" style="margin-top:12px"><span class="material-symbols-outlined">shield</span>
-            <div><strong>This run rejected a scrape rather than failing.</strong> ${esc(GUARD_NOTE)}</div></div>` : ''}
+          ${guarded ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">shield</span>
+            <div><strong>This run refused a scrape rather than failing — and came away with no price.</strong> ${esc(GUARD_NOTE)}</div></div>` : ''}
           ${ceilingHit ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">timer_off</span>
             <div><strong>This reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run.</strong> ${esc(CEILING.onTimeout)}
             <div class="cell-sub" style="margin-top:6px;white-space:normal">audit_log records a status and a summary but no reason code, so this is read off the summary text above.
             The execution itself is the place that says for certain.</div></div></div>` : ''}
-          ${missedCustomer ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">forward_to_inbox</span>
-            <div><strong>This run completed, but its customer-facing step did not land.</strong> ${esc(PARTIAL_NOTE)}</div></div>` : ''}
+          ${undelivered ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">forward_to_inbox</span>
+            <div><strong>This run completed, but its customer-facing step did not land.</strong> ${esc(PARTIAL_NOTE)}${
+              up(a.status) !== outcome
+                ? `<div class="cell-sub" style="margin-top:6px;white-space:normal">This row's own status says <span class="mono">${esc(a.status)}</span>. It is counted as a partial delivery because its summary states which claimed steps did not land, and that structured phrase is the more specific evidence. The classification is made by <span class="mono">nexus_outcome_class</span> in Postgres, so the counts above and this drawer cannot disagree about it.</div>`
+                : ''}</div></div>` : ''}
           ${bad ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">error</span>
             <div>This run did not complete. ${trace
               ? 'The Error Handler recorded the execution\'s own n8n URL in the summary, so the link at the bottom of this drawer opens that execution in n8n. Inspecting or re-running it happens there — the dashboard has no endpoint that can.'
@@ -1822,7 +2164,7 @@ SCREENS.automation = async host => {
           <div class="label-caps">Workflow</div>
           ${wf
             ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-                 ${pill(healthLabel(wf), healthOf(wf).tone || undefined)}
+                 ${wordPill(healthLabel(wf), healthOf(wf).tone, healthOf(wf).detail)}
                  <span class="chip">${esc(wf.category || 'Uncategorised')}</span>
                </div>
                <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(wf.description || 'No description in workflow_registry.')}</div>`

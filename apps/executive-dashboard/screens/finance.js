@@ -51,6 +51,19 @@
       calculator refused to price this file. An em dash is not one of those
       three answers, so none of them is rendered as one.
 
+   6. An empty table is not an idle desk, and this screen may not imply that it
+      is. finance_quotes is EMPTY while audit_log holds five runs whose own
+      summary reads "Quote issued | 1 of 1 claimed steps did not land
+      [finance_quotes row ...]" — a customer was given a rate and the record of
+      it never arrived. Those quotes cannot appear in the history below, so the
+      alert strip names them and the empty state refuses to read as "nothing has
+      happened here". What an audit_log status MEANS is decided in one place for
+      the whole dashboard — lib/health.js, mirroring public.nexus_outcome_class()
+      — and this file calls it rather than testing the string itself. The status
+      on those five rows is FAILED; the module classifies them PARTIAL, because
+      a run that quoted a customer and lost the record went out half-done rather
+      than failing. Nothing in this file reads `status === 'FAILED'`.
+
    The workflow's own limits, mirrored below so the rep sees them before the
    round trip rather than after it: `vehicleValue` must be at least AED 5,000,
    `lead_email` is required and format-checked, and `finance_quotes.credit_score`
@@ -160,6 +173,7 @@ import { HOOK, ME, SESSION, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { OUTCOME, outcomeOf } from '../lib/health.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -661,6 +675,10 @@ SCREENS.finance = async host => {
   const checkByKey = new Map();
   let people = new Map();               // lead_email -> the quotes filed under it
   let refusals = null, refusalsErr = null, refusalOther = 0;
+  /* audit_log rows for this workflow that lib/health.js classifies as PARTIAL:
+     a quote that reached a customer whose finance_quotes row did not. null =
+     the read failed, which is not the same as "none". */
+  let lost = null, lostErr = null;
 
   const keyOf = r => (r && r.id != null ? String(r.id) : 'row-' + rows.indexOf(r));
   const leadByEmail = new Map();
@@ -800,25 +818,49 @@ SCREENS.finance = async host => {
     const creditHigh = n0(q.total_cost_of_credit_high_aed);
     const aprSource = str(q.apr_source);
     const ltvSource = str(q.ltv_policy_source);
-    /* Only a live response carries this — no column stores it. Where it is
-       there it is the calculator's own account of why there is no instalment,
-       which beats anything this screen could infer from the nulls. */
+    /* The calculator's own account of why it produced no instalment. No column
+       stores it and the DEPLOYED workflow does not return it — only the
+       replacement calculator at fixes/finance/calc_new.js writes it — so it is
+       absent everywhere today and this read is what makes it appear the day
+       that workflow goes live. Where it is there it beats anything this screen
+       could infer from the nulls, which is why it is preferred over both of the
+       sentences below. */
     const calcReason = str(q.emi_unavailable_reason);
 
-    const declined = q.quotable === false || rate.low == null;
+    /* 'declined' is a claim about something the CALCULATOR did, so it may only
+       be read off evidence the calculator wrote: `quotable: false` on a live
+       response (an AECB score below 541, for which no UAE lender publishes a
+       band) or an error status on one. Neither is a column on finance_quotes,
+       so no stored row is ever 'declined' — correctly, because a row exists
+       only where a quote was issued.
+
+       This test used to also read `|| rate.low == null`, which turned "this row
+       records no rate" into "the calculator refused to price this file" and put
+       a referral to the bank in front of a rep on the strength of an empty
+       column. An absent figure is not evidence of a refusal. Asserting an
+       unknown as a fact is the same fault as inventing a figure, one step to
+       the left, and it is the fault this whole file is being corrected for. */
+    const declined = q.quotable === false
+      || ['error', 'input_error'].includes(lower(q.status));
     const state = declined ? 'declined' : (monthly == null ? 'unpriced' : 'priced');
 
     const why = declined
-      ? 'The calculator put no rate on this file, so there is no instalment behind it and none may be worked out. '
+      ? 'The calculator would not put a rate on this file, so there is no instalment behind it and none may be worked out here. '
         + 'A file it declines to price is a referral to the bank, not a cheaper quote.'
       : state === 'unpriced'
         ? (calcReason
-          || (price == null
-            ? 'The calculator was never told the price of the car being BOUGHT, so it returned no instalment. '
-              + 'This desk captures a trade-in value and a payoff and no purchase price at all — there is no field for one on '
-              + 'this form — and a payment worked out without it is a payment on the wrong car. That is the 31 Aug 2026 incident exactly.'
-            : `The calculator returned no instalment for this quote: monthly_payment_low_aed on the row is empty. `
-              + 'The row does not record why, and this screen will not guess at it.'))
+          /* Three different absences, and the screen says which one it is
+             rather than collapsing them. The first deliberately declines to
+             choose between two explanations it cannot tell apart. */
+          || (rate.low == null
+            ? 'This quote records no indicative APR in any of the three places one can be written — the column, the disclaimer prefix, or the live response — and no instalment either. '
+              + 'Whether the calculator refused this file or the row was written incompletely is not something this screen can tell from empty columns, so it claims neither.'
+            : price == null
+              ? 'The calculator was never told the price of the car being BOUGHT, so it returned no instalment. '
+                + 'This desk captures a trade-in value and a payoff and no purchase price at all — there is no field for one on '
+                + 'this form — and a payment worked out without it is a payment on the wrong car. That is the 31 Aug 2026 incident exactly.'
+              : 'The calculator returned no instalment for this quote: monthly_payment_low_aed on the row is empty. '
+                + 'The row does not record why, and this screen will not guess at it.'))
         : '';
 
     const aprRanged = rate.low != null && rate.high != null && rate.low !== rate.high;
@@ -954,9 +996,21 @@ SCREENS.finance = async host => {
          calculator returned no figure for ("not calculated") or a file it
          declined to price ("not priced"). finance_quotes is empty today, so
          this is what the desk actually shows. */
-      body.innerHTML = stateEmpty('No quotes recorded yet',
+      body.innerHTML = stateEmpty(
+        lost && lost.length ? 'No quote recorded here — and some were issued' : 'No quotes recorded yet',
         'finance_quotes holds no row at all, so there is no figure on this desk to show or to withhold. '
-        + 'Every calculation from this screen is stored here, with the customer and the rep it belongs to.', 'receipt_long');
+        + 'Every calculation from this screen is stored here, with the customer and the rep it belongs to. '
+        /* An empty table is not the same fact as an idle desk, and until the
+           audit_log read existed this panel could not tell them apart. It said
+           "no quotes recorded yet" over a month in which the calculator issued
+           three quotes cleanly and lost five more after quoting the customer. */
+        + (lost === null
+          ? 'Whether any quote was issued without being recorded is unknown: the audit_log read failed, so an empty table here is not evidence of an empty desk.'
+          : lost.length
+            ? `It is NOT evidence that nothing has been quoted: ${num(lost.length)} ${plural(lost.length, 'quote', 'quotes')} in audit_log ${plural(lost.length, 'was', 'were')} issued to a customer and never landed here. `
+              + 'They are named in the strip at the top of this screen and they cannot be listed below, because there is no row to list.'
+            : 'audit_log records no quote issued whose row failed to land, so nothing is missing from this table — it is empty because the desk has not quoted, not because quotes were lost.'),
+        'receipt_long');
       return;
     }
     const shown = rows.filter(matches);
@@ -975,8 +1029,21 @@ SCREENS.finance = async host => {
            ? esc(str(r.lead_email))
            : '<span class="t-hot" title="This quote has no lead_email, so it can never be matched back to a person.">no email recorded</span>'}</div>` },
       { label: 'Score', align: 'r', render: r => num(r.credit_score) },
-      { label: 'Value', align: 'r', render: r => `<span title="As entered by the rep at quote time — no rate, term or down payment applied.">${aed(r.vehicle_value_aed)}</span>` },
-      { label: 'Payoff', align: 'r', render: r => `<span title="As entered by the rep at quote time — the loan outstanding on the trade-in.">${aed(r.loan_payoff_aed)}</span>` },
+      /* Both are what the rep TYPED, not what the calculator returned, and both
+         are legitimately empty for a cash buyer. So a blank here is either "no
+         trade-in, and that is the answer" or "the rep recorded none", and the
+         two are said apart rather than sharing an em dash with everything else
+         on the row. */
+      { label: 'Value', align: 'r', render: r => (n0(r.vehicle_value_aed) != null
+        ? `<span title="As entered by the rep at quote time — no rate, term or down payment applied.">${aed(r.vehicle_value_aed)}</span>`
+        : isNoTradeIn(r.equity_status)
+          ? '<span class="t-muted" title="This customer had no trade-in, so there is no vehicle to value. The blank is the answer.">no trade-in</span>'
+          : absent('unpriced', 'This quote records no trade-in value and is not marked as a no-trade-in quote either. The rep entered none, or the row was written without one.')) },
+      { label: 'Payoff', align: 'r', render: r => (n0(r.loan_payoff_aed) != null
+        ? `<span title="As entered by the rep at quote time — the loan outstanding on the trade-in.">${aed(r.loan_payoff_aed)}</span>`
+        : isNoTradeIn(r.equity_status)
+          ? '<span class="t-muted" title="This customer had no trade-in, so there is no loan on one to settle. The blank is the answer.">no trade-in</span>'
+          : absent('unpriced', 'This quote records no payoff. A trade-in owned outright is written as 0 by the workflow, so an empty column here is an absent figure and not a settled loan.')) },
       { label: 'Equity', align: 'r', render: r => (isNoTradeIn(r.equity_status)
         ? '<span class="t-muted" title="This customer had no trade-in, so there is no equity to have. The blank is the answer, not a missing figure.">no trade-in</span>'
         : `<span class="${eqClass(r.equity_status)}" title="Vehicle value less the outstanding payoff, as the workflow returned it.">${aed(r.equity_aed)}</span>`) },
@@ -999,7 +1066,15 @@ SCREENS.finance = async host => {
       { label: 'Credit band', render: r => (r.finance_tier ? `<span class="chip">${esc(r.finance_tier)}</span>` : '<span class="t-muted">—</span>') },
       { label: 'APR reducing', align: 'r', render: r => {
         const rate = aprOf(r);
-        if (rate.low == null) return '<span class="t-muted">—</span>';
+        /* The rate is the figure every other figure on this row rests on, so
+           its absence is named rather than dashed. `indicative_apr_pct` is NOT
+           NULL on the table, so a row reaching this branch was written by
+           something other than the calculator — which is worth saying, not
+           worth hiding behind the same glyph as a missing instalment. */
+        if (rate.low == null) {
+          return absent('unpriced', 'This quote records no APR in any of the three places one can be written — the indicative_apr_pct column, the disclaimer prefix, or a live response. '
+            + 'The column is NOT NULL on finance_quotes, so this row did not come from the calculator. Nothing on it should be repeated to a customer until that is explained.');
+        }
         /* Ranged, or named as the end it is. `indicative_apr_pct` holds the LOW
            end of the range and nothing else, so a bare number off that column is
            the cheapest rate the bank might offer being read out as the rate. */
@@ -1288,9 +1363,11 @@ SCREENS.finance = async host => {
         key: 'stale',
         sev: 'WARNING',
         icon: 'event_busy',
-        /* Deliberately not "expired". finance_quotes has no term, no monthly
-           payment and no validity column, so nothing in the database knows when
-           a quote stops standing and this screen must not imply that it does.
+        /* Deliberately not "expired". finance_quotes has no validity column
+           under any name — that one absence is real, and the two this comment
+           used to bundle with it (no term, no monthly payment) were not — so
+           nothing in the database knows when a quote stops standing and this
+           screen must not imply that it does.
            Age is a fact about the row; expiry would be a status invented here
            and repeated to a customer as if the system had said it. */
         title: cols2.valid
@@ -1463,17 +1540,62 @@ SCREENS.finance = async host => {
       'no customer is recorded under more than one name',
       leads && leads.length < LEAD_LIMIT ? 'every quote matches a lead record' : '',
       leads ? 'no quote belongs to a lead that has gone cold' : '',
+      /* The only entry here drawn from something other than finance_quotes, and
+         the only one that stays true when the table is empty. Gated on the read
+         having returned NONE, not merely on it having succeeded: this list is
+         the all-clear's evidence, and an entry that would be false the moment a
+         quote went missing does not belong in it. */
+      lost && !lost.length ? 'no quote was issued to a customer without its record landing' : '',
     ].filter(Boolean);
     /* Built as a sentence, not a comma salad: this line is the whole claim the
        panel is making on a day with no alerts, and it has to read like one. */
     const checkedText = checked.length > 1
       ? `${checked.slice(0, -1).join(', ')} and ${checked[checked.length - 1]}`
       : checked.join('');
+    /* ── The quotes that never reached the table ──────────────────────────
+       Rendered before every other row in the strip and never as a filter: the
+       whole point of these is that there is no quote in the history to filter
+       to. That is also why they cannot be one of the checks above, all of which
+       are `.filter(c => c.quotes.length)` and take their evidence from rows
+       this screen read out of finance_quotes.
+
+       Severity is stated as CRITICAL and meant as it: a rep who does not know a
+       figure was already given to this customer will either quote a second one
+       or start the conversation from nothing, and the customer heard the first. */
+    const lostRow = (lost && lost.length) ? `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-hot" style="font-size:20px">report</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${pill('CRITICAL', sevTone('CRITICAL'))}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued to a customer and never recorded`)}
+        </div>
+        <div class="cell-sub">${esc(
+          `Finance Calc logged ${plural(lost.length, 'this run', 'these runs')} as having quoted the customer while the finance_quotes row it claimed to write did not land. `
+          + `The ${plural(lost.length, 'quote is', 'quotes are')} therefore NOT in the history below and cannot be — that absence is the fault itself, not a filter. `
+          + 'A rate was said out loud to the person named here and this desk has no record of what it was. Read the conversation before quoting them again: '
+          + 'a second, different figure is how one lost row becomes a dispute.')}</div>
+        <div class="cell-sub" style="margin-top:4px">${lost.slice(0, PREVIEW).map(a => `<span class="chip">${
+          personName(a.lead_name, esc(str(a.lead_email) || 'Unnamed customer'))}${
+          str(a.lead_email) && str(a.lead_name) ? ` <span class="t-muted">·</span> ${esc(str(a.lead_email))}` : ''} <span class="t-muted">·</span> ${esc(ago(a.logged_at))}</span>`).join(' ')}${
+          lost.length > PREVIEW ? ` <span class="t-muted">+${num(lost.length - PREVIEW)} more</span>` : ''}</div>
+        <div class="cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
+          'Classified by lib/health.js, which mirrors nexus_outcome_class() in the database. The status on these rows reads FAILED and this screen does not read it: '
+          + 'a run that quoted a customer and lost the record went out half-done rather than failing, and one module decides that for the whole dashboard. '
+          + 'These are what make Finance Calc DEGRADED on the automation screen — the same rows, counted rather than named.')}</div>
+      </div>
+    </div>` : '';
+
     /* "Nothing needs attention" is a claim, and it may only be made when both
        halves of the strip actually reported. A failed read is not an all-clear,
        and the panel that says otherwise is worse than no panel: it is the one
-       an operator stops checking. */
-    const clear = !attnErr && !quotesErr;
+       an operator stops checking.
+
+       A failed audit_log read is now one of the ways it cannot be said. An
+       all-clear drawn from finance_quotes alone is exactly the sentence this
+       desk must never print: the table is EMPTY today while five quotes sit in
+       audit_log as issued-and-unrecorded, and a strip reading only its own
+       table would have announced all-clear over the worst state this desk has
+       ever been in. */
+    const clear = !attnErr && !quotesErr && !lostErr;
     const cannotSay = attnErr && quotesErr
       ? 'v_needs_attention could not be read and the quote read failed, so neither the database’s list nor this screen’s own checks could be produced. Nothing is being claimed here.'
       : attnErr
@@ -1481,7 +1603,13 @@ SCREENS.finance = async host => {
           + (rows.length
             ? `This screen’s own checks did run, and across the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${checkedText} — that is those checks only, not an all-clear.`
             : 'There is no quote on the desk for this screen’s own checks to judge either, so nothing here is an all-clear.')
-        : `v_needs_attention returned no row for this screen. The quote read failed, so this screen’s own checks could not run and nothing here speaks for them.`;
+        : quotesErr
+          ? `v_needs_attention returned no row for this screen. The quote read failed, so this screen’s own checks could not run and nothing here speaks for them.`
+          /* The audit_log read is the only one of the three that can tell this
+             screen a quote exists which its own table does not contain, so its
+             failure is never quietly absorbed into an all-clear. */
+          : `audit_log could not be read (${lostErr?.message}), so whether any quote was issued to a customer without its finance_quotes row landing is unknown. `
+            + 'Everything else this screen checks did run; that is not the same as nothing being wrong.';
     const nothing = `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-${clear ? 'ok' : 'warm'}" style="font-size:20px">${clear ? 'task_alt' : 'help'}</span>
       <div style="flex:1;min-width:0">
@@ -1493,8 +1621,12 @@ SCREENS.finance = async host => {
             ? `v_needs_attention returned no row for this screen, and across the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${checkedText}.`
             /* Zero quotes is not five checks passing — it is five checks with
                nothing to judge, and saying "every quote carries an email" of an
-               empty table is how a panel starts lying quietly. */
-            : 'v_needs_attention returned no row for this screen, and there is no quote on the desk for this screen’s own checks to judge.')
+               empty table is how a panel starts lying quietly. The audit_log
+               check is the exception and is stated separately: it is the one
+               that has something to say about an empty table, because it reads
+               what the workflow did rather than what it managed to store. */
+            : 'v_needs_attention returned no row for this screen, and there is no quote on the desk for this screen’s own checks to judge.'
+              + (lost ? ' audit_log records no quote issued whose finance_quotes row failed to land, so the empty table is an empty desk and not a lost one.' : ''))
           : esc(cannotSay)}</div>
       </div>
     </div>`;
@@ -1504,7 +1636,12 @@ SCREENS.finance = async host => {
       <div class="cell-sub" style="white-space:normal">${built.notes.map(esc).join('<br>')}</div>
     </div>` : '';
 
-    body.innerHTML = (viewItems.length || checks.length ? viewRows + checkRows : nothing) + notesRow;
+    /* `lostRow` counts as an item, so a strip carrying one never also prints
+       the all-clear beneath it. It leads, because it is the only row here about
+       a quote that is not in the table below. */
+    body.innerHTML = (viewItems.length || checks.length || lostRow
+      ? lostRow + viewRows + checkRows
+      : nothing) + notesRow;
 
     /* Every alert row is the only route from the alert to the quotes it is
        about, so all of them are keyboard-operable. */
@@ -1580,6 +1717,47 @@ SCREENS.finance = async host => {
       refusalOther = all.length - refusals.length;
       refusalsErr = null;
     } catch (e) { refusals = null; refusalsErr = e; refusalOther = 0; }
+  }
+
+  /* ── Quotes that were issued and never recorded ──────────────────────────
+     The worst thing this screen can be asked about, and until 31 Aug 2026 it
+     could not be asked at all: a customer was given an APR and the record of it
+     never reached the table below. Finance Calc logs each run against the steps
+     it claimed to complete, and on five of them the summary reads
+     "Quote issued | 1 of 1 claimed steps did not land [finance_quotes row (the
+     quote the Finance Desk reads) — Bad request…]". The history cannot show
+     these — their absence from it IS the fault — so the strip above says they
+     exist and names the customer, because a rep who reopens that conversation
+     needs to know a figure was already said out loud.
+
+     THE STATUS ON THOSE ROWS IS `FAILED` AND THIS SCREEN DOES NOT READ IT.
+     What an audit_log status means is lib/health.js's to decide and nothing
+     else's — it mirrors public.nexus_outcome_class() one for one, and it
+     reclassifies exactly this case as PARTIAL on the structured phrase the
+     writer already emits, because a workflow that quoted a customer and lost
+     the record did not fail: it went out half-done. Four screens each invented
+     their own reading of that column and each got a different answer, which is
+     why there is now one module and why this file calls it rather than testing
+     a string.
+
+     v_workflow_health COUNTS these (5 partials in 30 days, which is most of why
+     Finance Calc reads DEGRADED at 11.1%) but a count cannot say whose quote
+     was lost. That is the one question worth asking here, so the rows are read
+     directly and classified through the module — the case the module's own
+     header names as the right reason to do so.
+
+     The workflow filter is server-side and mirrors FINANCE_FLOW word for word,
+     so this read cannot be crowded out of its limit by a busy hour on another
+     workflow — which client-side filtering after a bare `limit` would allow,
+     and which would show an empty panel as though nothing had been lost. */
+  async function loadLost() {
+    try {
+      const all = await db('audit_log?select=workflow,status,lead_name,lead_email,summary,logged_at'
+        + '&or=(workflow.ilike.*financ*,workflow.ilike.*quote*,workflow.ilike.*trade-in*,workflow.ilike.*calc*)'
+        + `&order=logged_at.desc&limit=${REJECT_LIMIT}`);
+      lost = all.filter(a => FINANCE_FLOW.test(str(a.workflow)) && outcomeOf(a) === OUTCOME.PARTIAL);
+      lostErr = null;
+    } catch (e) { lost = null; lostErr = e; }
   }
 
   function drawRefusals() {
@@ -1659,7 +1837,7 @@ SCREENS.finance = async host => {
   $('fqRecheck').addEventListener('click', async () => {
     alertCard.querySelector('.pbody').innerHTML = stateLoading(2);
     $('fxBody').innerHTML = stateLoading(3);
-    await Promise.all([loadAttention(), loadQuotes(), loadLeads(), loadRefusals()]);
+    await Promise.all([loadAttention(), loadQuotes(), loadLeads(), loadRefusals(), loadLost()]);
     focusKey = null;
     fillLeadPicker();
     renderAll();
@@ -1709,7 +1887,11 @@ SCREENS.finance = async host => {
             <dt>Indicative APR</dt><dd class="num">${qRate.ranged
               ? `${aprRange(qRate.low, qRate.high)}<div class="cell-sub">${esc(RATE_BASIS)}</div>`
               : qRate.low == null
-                ? '—'
+                /* Was a bare em dash, which read the same as every other blank
+                   in this drawer. indicative_apr_pct is NOT NULL, so a row with
+                   no recoverable rate did not come from the calculator. */
+                ? `${absent('unpriced', 'This quote records no APR in the column, in the disclaimer prefix, or anywhere else on the row. indicative_apr_pct is NOT NULL on finance_quotes, so this row was not written by the calculator.')}`
+                  + `<div class="cell-sub">${esc('Every other figure in this drawer rests on a rate. There is none on this row to rest on.')}</div>`
                 : `<span class="t-warm">${pct(qRate.low)}+</span><div class="cell-sub t-warm">${esc('Lower bound only — this is the low end of the range and the high end is not recorded on the row. Not the rate.')}</div>`}</dd>
             <!-- finance_tier is the legacy column name. The workflow has
                  written the AECB credit band into it since 30 Aug 2026 and the
@@ -2126,7 +2308,7 @@ SCREENS.finance = async host => {
     };
   }
 
-  await Promise.all([loadQuotes(), loadLeads(), loadAttention(), loadRefusals()]);
+  await Promise.all([loadQuotes(), loadLeads(), loadAttention(), loadRefusals(), loadLost()]);
   fillLeadPicker();
   renderAll();
 

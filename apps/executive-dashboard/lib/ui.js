@@ -70,14 +70,28 @@ function wireRows(host, rows, handler) {
    The consequence for callers: wire in `.then(card => …)`. Wiring written after
    `const card = await panel(...)` cannot be replayed — nothing records the code
    that follows an await — so it is the one form that still goes dead on retry.
-   The `.then` form costs nothing extra and survives. */
+   The `.then` form costs nothing extra and survives. Overview and the second
+   Competitors block already use it. screens/competitors.js:1097 is the one
+   caller left on the await form ("Stock with no market reference", on the
+   empty-inventory branch): its rows and its Open Inventory button still stop
+   working after a retry there, and no change confined to this file can reach
+   them. That is a two-line change in its own file, not a defect in this one. */
 function panel(host, { title, sub, actions, load, render, cols = '' }) {
   const card = el('div', 'card flush');
   if (cols) card.style.gridColumn = cols;
   host.appendChild(card);
 
   const wirings = [];
-  const rewire = () => { for (const fn of wirings) fn(card); };
+  /* Each wiring is isolated: these are independent callers' handlers, and one
+     of them throwing must not swallow the ones after it — which is how a panel
+     would come back from a retry half-wired, the same silent-dead-click this
+     whole change exists to prevent. A throw here would also escape as an
+     unhandled rejection, since nothing awaits the retry. */
+  const rewire = () => {
+    for (const fn of wirings) {
+      try { fn(card); } catch (e) { console.error('panel: re-wiring failed after retry', e); }
+    }
+  };
 
   const attempt = async () => {
     card.innerHTML = `${title ? `<div class="card-head"><div><div class="card-title">${esc(title)}</div>${sub ? `<div class="card-sub">${sub}</div>` : ''}</div><div style="flex:1"></div>${actions || ''}</div>` : ''}<div class="pbody">${stateLoading(4)}</div>`;

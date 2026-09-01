@@ -27,15 +27,29 @@ async function renderIntegrations(node) {
       }},
     /* Finance Calc used to be probed here, on the grounds that the calculator
        is pure JavaScript inside n8n and therefore free. The calculation is
-       free; the invocation is not. The workflow's `Audit Log` node POSTs a row
-       to audit_log on EVERY call, rejections included, and this helper runs on
-       mount of both Settings and Automation and again on every "Re-run checks"
-       click. It manufactured 52 of Finance Calc's 60 runs in the 30-day window
-       — 46 REJECTED ("quote refused by validation", empty error list) and 6
-       NOT_EXECUTED inside one hour on 31 Aug — so the health page was
-       generating the runs the health page reports, and the success rate shown
-       on the same screen was computed over its own noise. A health check must
-       not create business activity.
+       free; the invocation is not. The workflow's `Audit Log` node writes a row
+       on EVERY call, rejections included, and this helper runs on mount of both
+       Settings and Automation and again on every "Re-run checks" click.
+
+       The probe sent { vehicleValue: 1, loanPayoffAmount: 0, creditScore: 700 }
+       and no lead_email — unchanged since the probe was written — so every call
+       it made is identifiable in audit_log by the rejection that payload and
+       only that payload produces: "vehicleValue must be a realistic vehicle
+       valuation of at least AED 5000. lead_email is required…". There are
+       exactly 10 such rows (one 17 Aug, seven through the 24 Aug working
+       session, one 28 Aug), plus the 6 NOT_EXECUTED input_error rows of 31 Aug,
+       once the workflow began classifying bad input that way — consecutive
+       execution ids 7722-7724 and 7741-7743, which is what repeatedly opening a
+       page looks like. So 16 of Finance Calc's 60 logged runs in the 30-day
+       window were manufactured by opening a health page: the dashboard was
+       generating better than a quarter of the runs the dashboard reports, and
+       the success rate shown on the same screen was computed over its own
+       noise. A health check must not create business activity.
+
+       It also painted green either way. `r.status === 'success' ? 'Responding'
+       : 'Reachable'` RETURNS on both branches, and a probe that returns is a
+       probe that succeeded — the same defect fixed on the n8n tile above, so a
+       refused quote drew the same green dot as a good one.
 
        Do not re-add it. There is no read-only substitute: the only endpoint is
        POST /webhook/finance-calc, which runs the workflow; a GET is not
@@ -46,13 +60,32 @@ async function renderIntegrations(node) {
        It is listed as unprobed below, which is what this panel already does
        with everything it cannot check for free.
 
-       Ask AI is likewise not probed on load: every call spends OpenRouter
-       tokens, and a health dot is not worth paying for on every page view. It
-       gets a manual Test button instead. */
+       One correction to the audit that raised this, so the number is not
+       re-derived wrongly later: it reported 52 of 60, treating all 46 REJECTED
+       rows as the probe's and describing them as "quote refused by validation"
+       with an empty error list. Only one row in the table has an empty error
+       list, and the largest REJECTED group — 23 rows inside half an hour on
+       30 Aug — complains that the AECB credit score is missing, which this
+       probe always supplied. Those are somebody using the finance desk, not
+       this file. The real figure is 16, the defect is identical, and one
+       manufactured run would have been one too many. */
   ];
+  /* The one thing in this module that still calls a workflow, and it stays
+     manual for that reason: it spends OpenRouter tokens, and — like the finance
+     probe above — the Ask-AI workflow logs every call, so each press adds a row
+     to the run history the Ask AI screen presents as that workflow's own record.
+     A button a person chooses to press is a different thing from a call this
+     module makes on mount, which is the line Finance Calc crossed. It is not
+     re-armed to run automatically for exactly that reason.
+
+     The question is worded to identify itself rather than sent as "ping": the
+     workflow logs `Q: <question>`, so the row it leaves reads as the health
+     check it was instead of sitting in the history looking like a customer who
+     asked something meaningless. That makes the row legible; it does not make
+     the call free, and nothing in the deployed workflow treats it specially. */
   const manual = [
     { name: 'Ask AI (RAG)', run: async () => {
-        const r = await n8n('ask-ai', { question: 'ping' });
+        const r = await n8n('ask-ai', { question: 'Dashboard connectivity check, not a customer question' });
         /* Same defect the n8n tile had: returning 'No answer' painted the green
            dot next to the words "No answer". A 200 carrying no answer is a
            failed RAG call, not a healthy one. */
@@ -69,14 +102,14 @@ async function renderIntegrations(node) {
        <div class="cell-sub">Checking…</div></div>`).join('')}
     ${manual.map((m, i) => `<div class="card" style="padding:14px" id="mg${i}">
        <div style="font-weight:500">${esc(m.name)}</div>
-       <div class="cell-sub">Costs tokens — not auto-checked</div>
+       <div class="cell-sub">Runs a real query — spends tokens and logs a run</div>
        <button class="btn sm" data-manual="${i}" style="margin-top:8px">Test</button></div>`).join('')}</div>
     <div style="margin-top:14px">
       <div class="label-caps" style="margin-bottom:8px">Not probed from the browser</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${unprobed.map(u => `<span class="chip">${esc(u)}</span>`).join('')}
       </div>
-      <div class="cell-sub" style="margin-top:8px">None of these has a browser-reachable health endpoint. Most run server-side inside n8n; Finance Calc has only its live webhook, and calling that runs a real quote and writes a row to audit_log, which is how this panel came to manufacture most of that workflow's logged runs. Their real status is visible in the activity log above — a green dot here would be decoration, not a check.</div>
+      <div class="cell-sub" style="margin-top:8px">None of these has a browser-reachable health endpoint. Most run server-side inside n8n; Finance Calc has only its live webhook, and calling that runs a real quote and writes a row to audit_log, which is how this panel came to manufacture 16 of that workflow's 60 logged runs before the check was withdrawn. Their real status is visible in the activity log above — a green dot here would be decoration, not a check.</div>
     </div>`;
 
   /* Every tile is found inside `node` and never by global id, and a tile that

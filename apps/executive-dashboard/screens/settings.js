@@ -32,19 +32,27 @@
        compiled into the bundle; the knowledge-base panel prints the columns
        rag_documents really returned, and where a column it would like does not
        exist it says so rather than showing a plausible zero.
-     · Webhook endpoints are listed but never probed, and no workflow is called
-       from this screen at all — not on mount, not on "Re-run checks", not from
-       a button. Firing lead-trigger to see whether it answers would enrol a
-       real customer in a real drip campaign. That rule was written here on
-       20 Aug and broken in the same breath: the shared connectivity panel
-       probed `finance-calc` on every mount and on every re-check, and that
-       workflow writes an audit_log row on every invocation, refusals included.
-       52 of Finance Calc's 60 runs inside the 30-day window were manufactured
-       by people opening this page — written into the very table the Workflows
-       and Credentials cards below read and report on. A monitoring screen may
-       not mutate the state it is monitoring. What is left is a one-row Supabase
-       select and the n8n /healthz endpoint; both are reads, and everything else
-       is named, not called.
+     · This screen starts no workflow execution of its own. Not on mount, not
+       on "Re-run checks", not on a timer. Webhook endpoints are listed and
+       never probed — firing lead-trigger to see whether it answers would enrol
+       a real customer in a real drip campaign.
+       That rule was written here on 20 Aug and broken in the same breath: the
+       shared connectivity panel probed `finance-calc` on every mount and on
+       every re-check, and that workflow writes an audit_log row on every
+       invocation, refusals included. 52 of Finance Calc's 60 runs inside the
+       30-day window were manufactured by people opening this page — written
+       into the very table the Workflows and Credentials cards below read and
+       report on, so the success rate printed here was computed over this
+       screen's own noise. A monitoring screen may not mutate the state it is
+       monitoring. What runs automatically now is a one-row Supabase select and
+       a GET on n8n's /healthz, and the screen names that pair where it mounts
+       the panel rather than inheriting whatever the shared helper decides.
+     · One control here does call a workflow, and a person has to press it:
+       "Test" on the Ask AI tile posts to ask-ai. That spends OpenRouter tokens
+       and Ask-AI — RAG Query Agent writes an audit row, so a click adds a run
+       to the numbers below. It is never automatic and it says what it costs
+       before it is pressed. "Side-effect-free" is a claim about what this
+       screen does by itself, and it must not be written any wider than that.
      · Two honesty rules added 24 Aug and enforced below. A workflow whose
        health is NOT_INSTRUMENTED has not been proven working — it has merely
        never reported — so it is never coloured green, and the word used for it
@@ -59,7 +67,8 @@ import { HOOK, ME, SESSION, db, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
 import { ago, clock, dubaiTime, esc, n0, num, pct, pill, tone } from '../lib/format.js';
-import { HEALTH_WORDS, healthWords, outcomeOf, outcomeWords } from '../lib/health.js';
+import { HEALTH_WORDS, OUTCOME, healthWords, outcomeOf, outcomeWords } from '../lib/health.js';
+import { renderIntegrations } from '../lib/integrations.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { applyDensity } from '../lib/prefs.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -102,6 +111,15 @@ const NO_KB_EDIT =
    So the control exists, disabled, and names exactly what is missing. */
 const NO_CRED_FIX =
   'Reconnecting a credential is done in the n8n UI under Credentials — n8n exposes no browser-reachable endpoint for it, there is no webhook in HOOK for it, and its API key must not ship inside this bundle. This dashboard can only report the failures the credential caused.';
+
+/* v_needs_attention has no branch that files anything against this screen. Its
+   seven UNION ALL branches emit screen = leads (twice), inventory, competitors,
+   automation, compliance and conversations, and there is no settings arm at
+   all. So the partition this screen filters out of it is empty on every read
+   and always will be, and an empty partition must not be reported as the
+   database having looked at Settings and found it clean. It never looked. */
+const NO_ATTN_BRANCH =
+  'v_needs_attention files nothing against this screen — its rows carry screen = leads, inventory, competitors, automation, compliance or conversations, and the view has no settings branch — so an empty result here is the view never having been asked about Settings, not a verdict that Settings is clean. Everything in this strip is worked out on this screen from its own reads.';
 
 const low = s => String(s || '').trim().toLowerCase();
 const str = v => String(v == null ? '' : v).trim();
@@ -164,9 +182,11 @@ const KIND_ICON = {
    four, and this screen is not entitled to invent wording for any of them.
 
    What stays local is presentation — an icon and a sort rank per state —
-   because neither is a claim about the data. Worst first: the two states that
-   need a human, then the states that are an absence of evidence, then the one
-   green state last. The tone comes from HEALTH_WORDS rather than from tone() in
+   because neither is a claim about the data. The icons are the ones the alert
+   strip uses for the same states, read from here rather than typed twice, so
+   the strip and the table cannot illustrate one state two different ways.
+   Worst first: the two states that need a human, then the states that are an
+   absence of evidence, then the one green state last. The tone comes from HEALTH_WORDS rather than from tone() in
    lib/format.js, because that table has never been taught PRODUCING_NOTHING,
    NO_QUALIFYING_RUNS or UNKNOWN_OUTCOME and its fallback for a word it does not
    know is the neutral 'unknown' grey — right for two of those three, and wrong
@@ -220,7 +240,68 @@ const incomplete30 = w => {
   const f = n0(w?.failures_30d), p = n0(w?.partials_30d);
   return f == null && p == null ? null : (f || 0) + (p || 0);
 };
+/* Runs that did not deliver at all: the two above plus the runs that completed
+   without erroring and produced nothing usable. The three are added because the
+   dealership feels them identically — no quote, no message, no record — and
+   broken apart wherever there is room, because the fix for each is different.
+   Refusals and deliberate escalations are NOT in here: those are the system
+   working, and counting them as misses is how a real miss rate gets diluted. */
+const undelivered30 = w => {
+  const bad = incomplete30(w), none = n0(w?.no_result_30d);
+  return bad == null && none == null ? null : (bad || 0) + (none || 0);
+};
 const NO_RATE_WHY = 'No run inside the 30-day window counts toward a rate — either nothing ran, or every run was refused by design, and refusals are excluded from the denominator. There is no percentage to state: it is not 0% and it is not 100%.';
+/* Three different absences reach the no-rate branch and they are not the same
+   fact. A workflow that never ran, a workflow that cannot report, and a
+   workflow whose every run was refused by design are told apart here rather
+   than sharing one em dash and one sentence. */
+const noRateWhy = w => {
+  switch (stateKey(w)) {
+    case 'NEVER_RAN':
+      return 'Nothing has been logged for this workflow, so there is no rate. That is an absence of evidence, not a score of zero.';
+    case 'NOT_INSTRUMENTED':
+      return 'This workflow writes no audit row at all, so nothing it did can be counted here. From this screen, running perfectly and failing every time look identical.';
+    case 'NO_QUALIFYING_RUNS':
+      return 'Every run inside the window was refused by design. Refusals are excluded from the denominator so an unauthorised caller cannot dilute a real miss rate, which leaves nothing to divide by.';
+    default:
+      return NO_RATE_WHY;
+  }
+};
+/* The same seven counters as rows, for the drawer, where there is room to show
+   every one instead of a sentence. Label, column, and what the column means —
+   the wording follows OUTCOME_WORDS in lib/health.js, because these ARE those
+   outcomes counted up, and two names for one thing is how the last set of
+   private vocabularies started. */
+const OUTCOME_ROWS = [
+  ['Succeeded', 'successes_30d', 'Did the whole job it was started to do.'],
+  ['Landed half-done', 'partials_30d', 'A step the workflow claimed did not land. The customer may hold a reply the database has no record of.'],
+  ['Failed', 'failures_30d', 'The run could not complete.'],
+  ['Produced nothing usable', 'no_result_30d', 'It ran without erroring and produced no result. Not a crash, and not a success either.'],
+  ['Refused by design', 'rejected_30d', 'An unauthorised or invalid request the workflow was right to turn away. Excluded from the rate so it cannot dilute a real miss rate.'],
+  ['Escalated to a person', 'escalated_30d', 'Handed to a human on purpose. Excluded from the rate.'],
+  ['Unrecognised status', 'unknown_30d', 'The row carried a status nexus_outcome_class() has no class for, so nothing is claimed about it.'],
+];
+
+/* The breakdown behind the rate, in one sentence, entirely out of the view's
+   own counters. Shown on hover next to every figure derived from them, so the
+   number and the rows it came from are never more than a pointer apart. */
+const runsBreakdown = w => {
+  const r = n0(w?.runs_30d);
+  if (r == null) return 'v_workflow_health reports no 30-day counters for this workflow.';
+  if (!r) return 'No run at all was logged inside the 30-day window.';
+  const parts = [
+    [n0(w?.successes_30d), 'succeeded outright'],
+    [n0(w?.partials_30d), 'went out half-done'],
+    [n0(w?.failures_30d), 'failed'],
+    [n0(w?.no_result_30d), 'ran and produced nothing usable'],
+    [n0(w?.rejected_30d), 'were refused by design and are excluded from the rate'],
+    [n0(w?.escalated_30d), 'were handed to a person on purpose and are excluded from the rate'],
+    [n0(w?.unknown_30d), 'logged a status this system has no class for'],
+  ].filter(([n]) => n).map(([n, word]) => `${num(n)} ${word}`);
+  return parts.length
+    ? `${num(r)} logged ${plural(r, 'run', 'runs')} in the window: ${parts.join(', ')}.`
+    : `${num(r)} logged ${plural(r, 'run', 'runs')} in the window, none of which the view classified — which is a fault in the writer, not a pass.`;
+};
 
 /* ── Credential failures ───────────────────────────────────────────────────
    n8n reports a broken credential in the text of the failure it causes — the
@@ -244,27 +325,59 @@ const credName = txt => {
   }
   return null;
 };
-/* What stops working, stated only where the credential names the channel. The
-   sentence is about the channel; the workflows actually seen failing are listed
-   beside it from the audit rows themselves, never assumed. */
+/* What stops working, keyed by the CHANNEL the evidence names, and matched
+   against each failing row's own text rather than against the group it landed
+   in. Until 31 Aug this was one `find()` over the group name concatenated with
+   every workflow name in the group, so whichever member matched first spoke for
+   all of them: seven failing escalation emails and two failing Bitrix reads
+   shared a single row that read "the ERP/CRM sync cannot write". A manager saw
+   one broken credential where there were two, was sent to the wrong system, and
+   was never told that hot-lead escalation had been failing for a fortnight.
+
+   The word boundaries are deliberate. `erp` unanchored matches "interpret" and
+   `meta` matches "metallic", and these regexes are run over free text a model
+   wrote — an escalation briefing runs to kilobytes of prose about a customer. */
 const CRED_IMPACT = [
-  { re: /gmail|smtp|\bmail\b|outlook|sendgrid|resend|postmark/i,
-    line: 'Outbound email is dead. Anything that mails a customer — the cold-lead drip, quote mail, and the nightly Gmail aggregation the Customer 360 totals are built from — reaches the send step and fails there. Enrolments still queue; nothing leaves.' },
-  { re: /slack/i,
+  { key: 'email', label: 'Email',
+    re: /gmail|smtp|\be-?mail\b|outlook|sendgrid|resend|postmark/i,
+    line: 'Outbound email is dead. Anything that mails a customer — hot-lead escalation briefings, the cold-lead drip, quote mail, and the nightly Gmail aggregation the Customer 360 totals are built from — reaches the send step and fails there. Enrolments still queue; nothing leaves.' },
+  { key: 'slack', label: 'Slack',
+    re: /slack/i,
     line: 'Slack alerting is dead. A hot lead can be scored and routed correctly and still reach nobody, because the last step is the one that cannot authenticate.' },
-  { re: /whatsapp|waha|twilio|meta/i,
+  { key: 'whatsapp', label: 'WhatsApp',
+    re: /whatsapp|waha|twilio|\bmeta\b/i,
     line: 'WhatsApp sending is affected: a reply posted from Conversations can be accepted by the workflow and still never reach the customer.' },
-  { re: /odoo|bitrix|erp|crm|xml-?rpc/i,
+  { key: 'erp', label: 'ERP/CRM',
+    re: /odoo|bitrix|\berp\b|\bcrm\b|xml-?rpc/i,
     /* Writes are the half that works on the current Bitrix24 plan — `crm.*`
        reads already answer 403 there regardless of credential, which is a plan
        limit and not a fault this panel can see. So a credential failure on this
        channel takes out the only direction that was still working. */
     line: 'The ERP/CRM sync cannot write, so records created here stop mirroring outward and the two systems drift apart silently. On the current Bitrix24 plan writing is the only direction that works at all — crm.* reads answer 403 whatever credential is presented — so this fault removes the half that was functioning.' },
-  { re: /openrouter|openai|anthropic|gpt|gemini/i,
+  { key: 'model', label: 'Model provider',
+    re: /openrouter|openai|anthropic|\bgpt\b|gemini/i,
     line: 'The model calls fail, so leads arrive unscored and Ask AI answers nothing.' },
-  { re: /supabase|postgres|database/i,
+  { key: 'db', label: 'Database',
+    re: /supabase|postgres|database/i,
     line: 'The workflow cannot reach the database, so whatever it was supposed to record was not recorded.' },
 ];
+/* Only the head of a summary is scanned for a channel. These writers put the
+   error first and the payload after, and the payload is not evidence about a
+   credential: an escalation briefing quotes the customer's own gmail address
+   two kilobytes in, and a Lexus spec sheet is not a statement about Bitrix. */
+const CRED_SCAN_CHARS = 300;
+const credScan = text => String(text || '').slice(0, CRED_SCAN_CHARS);
+const credChannels = text => CRED_IMPACT.filter(c => c.re.test(String(text || ''))).map(c => c.key);
+const CRED_IMPACT_UNKNOWN = 'Every run listed here fails at the step that presents this credential. Which channel that is cannot be read out of the text those runs logged, so nothing narrower is claimed.';
+/* One sentence per channel the group's own rows actually name. A group whose
+   evidence names two channels is two faults, and it says both, labelled —
+   never the first one speaking for the rest. */
+const credImpact = channels => {
+  const hits = CRED_IMPACT.filter(c => channels.includes(c.key));
+  if (!hits.length) return CRED_IMPACT_UNKNOWN;
+  if (hits.length === 1) return hits[0].line;
+  return hits.map(h => `${h.label} — ${h.line}`).join(' ');
+};
 /* This panel reads failure HISTORY, not the credential itself — there is no
    credential API a browser may call — so a credential repaired ten minutes ago
    looks exactly like one still broken, until enough time passes with no new
@@ -282,53 +395,50 @@ const credStale = newest => {
   const t = Date.parse(newest || '');
   return !Number.isNaN(t) && Date.now() - t > CRED_STALE_MS;
 };
-/* ── A credential a live run has since proved working ──────────────────────
-   The 24-hour rule below is the general case: silence is weak evidence, so the
-   panel waits before softening its tense. But silence is not the only evidence
-   there is. Where a credential has actually been exercised since its last
-   failure and answered, that is a stronger fact than anything the failure
-   history can offer, and continuing to say "is failing" over the top of it
-   sends someone to reconnect a credential that already works.
+/* ── There is deliberately no "verified working" state ─────────────────────
+   There was one until 31 Aug 2026, and it was a fact about production asserted
+   from a literal in this source file: a hard-coded `at: '2026-08-24T19:46:00Z'`
+   with the note that a manual Customer 360 run had returned Gmail → ok. It
+   softened the Gmail row to a green "Verified working" pill and dropped its
+   severity out of the tally. It stayed green because the panel read only
+   status=eq.FAILED, so the eight newer PARTIAL rows from Customer 360 — the
+   newest 2026-08-29, reading "Gmail read failed" — were invisible to the very
+   comparison that was supposed to keep it honest. A date typed into a source
+   file outranked six days of contradicting evidence sitting in the table below.
 
-   n8n's credential store is not reachable from a browser and audit_log records
-   no successful Gmail fetch of its own, so the confirmation cannot be read — it
-   is recorded here with what confirmed it and when, and it only ever applies to
-   failures OLDER than that confirmation. A failure logged after the check would
-   mean the credential broke again, and this table must never hide that. */
-const CRED_VERIFIED = [
-  {
-    re: /gmail|google\s*oauth|google/i,
-    at: '2026-08-24T19:46:00Z',
-    how: 'a manual Customer 360 - Data Aggregation run at 19:46 returned Gmail - Get Emails \u2192 ok',
-    fix: 'The OAuth consent screen for the nexus-os-backend GCP project was stuck in \u201cTesting\u201d, where Google expires every refresh token after seven days \u2014 so the credential died on a timer no amount of reconnecting could beat. The app is now published to production, which is what stops the expiry; the home, privacy and terms pages Google requires for that are served by n8n itself over nip.io, because vercel.app is rejected as a public suffix.',
-  },
-];
-/* Returns the confirmation only when it post-dates the newest failure naming
-   this credential — an older confirmation says nothing about a newer failure. */
-const credVerified = (name, newestFailure) => {
-  const hit = CRED_VERIFIED.find(v => v.re.test(String(name || '')));
-  if (!hit) return null;
-  const at = Date.parse(hit.at);
-  if (Number.isNaN(at) || at > Date.now()) return null;
-  /* No usable failure timestamp means the ordering cannot be established, and
-     "verified since" is a claim about ordering. Stay critical rather than
-     softening a fault whose age is unknown. */
-  const f = Date.parse(newestFailure || '');
-  if (Number.isNaN(f) || f >= at) return null;
-  return hit;
-};
+   Two rules come out of that and both are enforced here. A credential's state
+   is read from data or it is not claimed at all: nothing in this file may
+   assert that a credential works. And the read must be wide enough to see the
+   evidence that would disagree, which is why the failure read below now takes
+   PARTIAL rows too — a half-landed delivery is exactly where a credential fault
+   surfaces once the workflow has learned to carry on around it.
+
+   What survives is the staleness rule above, which claims nothing: it says only
+   that nothing has named this credential for a day, and says in the same breath
+   that silence is not proof of repair. */
 
 const CRED_STALE_LINE = 'No logged failure has named it since, so it may already have been reconnected — but this panel reads failure history, not the credential, so a fixed credential and one whose workflows simply have not run again look identical from here. The next run is what settles it.';
 
-const credImpact = (name, workflows) => {
-  const hay = `${name} ${workflows.join(' ')}`;
-  const hit = CRED_IMPACT.find(c => c.re.test(hay));
-  return hit ? hit.line : 'Every run of the workflows listed here that reaches this credential fails at that step. Whatever those workflows were supposed to do is not being done.';
-};
+/* ── The only checks this screen lets run without a person asking ──────────
+   Both are reads: one row out of Supabase, and a GET on n8n's /healthz. This
+   list is passed INTO renderIntegrations rather than left to the helper's own
+   defaults, and it is the same list the strip is entitled to raise an alarm
+   about, so "what was checked" and "what may be complained about" cannot drift
+   apart.
 
-/* Which connectivity tiles the strip is entitled to raise an alarm about. The
-   Ask AI tile is deliberately excluded: it is not auto-probed (it spends
-   OpenRouter tokens), so "not green" there means "not asked", not "down". */
+   The constraint, written here so nobody re-adds it: a check that runs by
+   itself on this screen may not cause a workflow execution. Every execution
+   this dashboard causes lands in audit_log, and audit_log is what the Workflows
+   and Credentials cards below read and report on — a monitoring screen that
+   writes to the table it monitors is reporting on itself. `finance-calc` was
+   probed here until 31 Aug on the grounds that the calculator is pure
+   JavaScript and therefore free; the calculation is free and the invocation is
+   not, and 52 of that workflow's 60 runs in the window were people opening this
+   page. Anything that can only be checked by running it is listed as unprobed.
+
+   The Ask AI tile is excluded for a second reason: it is not auto-probed at all
+   (a call spends OpenRouter tokens), so "not green" there means "not asked",
+   which is not "down" and must never be alarmed on. */
 const AUTO_PROBE = /^(supabase|n8n)$/i;
 
 /* Session expiry as a number the operator can act on. supabase-js refreshes in
@@ -506,15 +616,21 @@ SCREENS.settings = async host => {
     </div>
     <div class="banner info" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">lock</span>
-      <div>API keys, service-role keys and webhook secrets are never displayed or accepted on this screen, masked or otherwise. They live in n8n and in the server environment.</div>
+      <div>API keys, service-role keys and webhook secrets are never displayed or accepted on this screen, masked or otherwise. They live in n8n and in the server environment. The one thing this screen does print in full is the list of webhook <em>paths</em> under Connectivity below: those are compiled into this bundle, so anyone who can load this page already has them and listing them exposes nothing further — and a path is not what authorises a call.</div>
     </div>`;
   top.appendChild(envCard);
 
   /* ── Connectivity ───────────────────────────────────────────────────────
-     renderIntegrations owns the probes themselves — a one-row Supabase read,
-     the n8n /healthz endpoint, and a free finance-calc round trip. It is the
-     same helper the Automation screen uses, so the two screens cannot disagree
-     about what "reachable" means. */
+     renderIntegrations owns the probes themselves; this screen owns which of
+     them may run without a person asking, and passes that list in. Two do: a
+     one-row Supabase select and a GET on the n8n /healthz endpoint. Both are
+     reads. See AUTO_PROBE above for why the third one — a finance-calc round
+     trip, described here until 31 Aug as "free" — is gone and must not return.
+
+     It is the same helper the Automation screen uses, so the two screens cannot
+     disagree about what "reachable" means; naming the allow-list at the call
+     site is what stops them disagreeing about what may be *called*, since a
+     probe added for Automation's benefit would otherwise start firing here. */
   const conn = el('div', 'card'); conn.id = 'setConn'; conn.style.marginTop = '16px'; host.appendChild(conn);
   conn.innerHTML = `<div class="card-head" style="padding:0 0 14px">
       <div><div class="card-title">Connectivity</div>
@@ -530,7 +646,8 @@ SCREENS.settings = async host => {
             .map(p => `<span class="chip mono">${esc(N8N_BASE)}/webhook/${esc(p)}</span>`).join('')}</div>`
         : `<div class="cell-sub t-hot">No base URL is configured, so none of these can be called: ${
             hooks.map(p => esc(p)).join(', ')}.</div>`}
-      <div class="cell-sub" style="margin-top:8px">These are listed, not probed. Calling them to see whether they answer would do real work — <span class="mono">lead-trigger</span> enrols a customer in a drip campaign and <span class="mono">ask-ai</span> spends tokens — so a green dot here would cost more than it is worth. What they actually did is in the workflow table below, which reads what they logged.</div>
+      <div class="cell-sub" style="margin-top:8px">These are listed, not probed, and nothing on this screen posts to one of them by itself. Calling one to see whether it answers does real work: <span class="mono">lead-trigger</span> enrols a customer in a drip campaign, <span class="mono">ask-ai</span> spends OpenRouter tokens, and <span class="mono">finance-calc</span> writes a row to <span class="mono">audit_log</span> on every call, refusals included — which is how the tiles above came to manufacture most of that workflow's logged runs before that probe was removed on 31 Aug. The only checks that run on their own are the Supabase and n8n tiles above, and both are reads. What these endpoints actually did is in the workflow table below, which reads what they logged.</div>
+      <div class="cell-sub" style="margin-top:8px">The paths themselves are not secrets — they are compiled into this bundle and reachable by anyone who can open this page — so printing them here reveals nothing the JavaScript does not. They are shown as plain text and nothing on this card can call one. What makes a call succeed is the credential behind it, and no key, token or webhook secret is rendered anywhere on this screen.</div>
     </div>`;
 
   /* The tiles report into their own DOM and return nothing, and this screen may
@@ -590,7 +707,14 @@ SCREENS.settings = async host => {
     const sub = $('setConnSub');
     if (sub) sub.textContent = `Checks started ${clock(new Date().toISOString())} — each tile stamps its own result`;
     probeState = null;
-    renderIntegrations($('setIntg'));
+    /* The allow-list travels with the call: renderIntegrations may run only the
+       checks named here, and everything else it knows about is to be listed as
+       unprobed rather than fired. lib/integrations.js belongs to someone else,
+       and its automatic list today is already exactly these two — this argument
+       is what keeps that true from this screen's side if a third is ever added
+       there for Automation's benefit. Monitoring does not get to write to the
+       table it monitors, and "opening Settings" is not a business event. */
+    renderIntegrations($('setIntg'), { autoProbe: AUTO_PROBE });
     watchProbes();
   };
   $('setRecheck').addEventListener('click', runChecks);
@@ -624,12 +748,27 @@ SCREENS.settings = async host => {
   const settle = p => p.then(v => ({ ok: true, value: v }), e => ({ ok: false, err: e?.message || 'Unknown error' }));
   const sysRead = Promise.all([
     settle(db(`v_needs_attention?select=kind,severity,ref,title,detail,at,screen&order=at.desc&limit=${ATTN_LIMIT}`)),
+    /* Every 30-day counter the view computes is selected, not just runs and
+       failures. The rate, the state pill and the breakdown under each figure
+       are all read from these columns; this screen does no arithmetic on them
+       beyond adding the ones it says out loud that it is adding. */
     settle(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,description,is_active,'
-      + `writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,last_failure,health&limit=${HEALTH_LIMIT}`)),
-    /* Failures only. Per-workflow totals come from v_workflow_health, whose
-       windows are documented; this read exists to carry the text of the
-       failure, which is the only place a broken credential names itself. */
-    settle(db(`audit_log?select=workflow,status,summary,logged_at&status=eq.FAILED&order=logged_at.desc&limit=${FAIL_LIMIT}`)),
+      + 'writes_audit_log,runs,failures,success_rate,last_run,last_success,last_partial,last_incomplete,'
+      + 'runs_30d,effective_runs_30d,successes_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,'
+      + `escalated_30d,unknown_30d,success_rate_30d,last_failure,health&limit=${HEALTH_LIMIT}`)),
+    /* Runs that did not complete, in the writers' own words. Per-workflow
+       totals come from v_workflow_health, whose windows are documented; this
+       read exists to carry the TEXT, which is the only place a broken
+       credential names itself.
+
+       The filter was status=eq.FAILED until 31 Aug 2026, and that is how the
+       Gmail credential held a green pill for six days. The newest evidence
+       against it is eight PARTIAL rows from Customer 360 reading "Gmail read
+       failed" — invisible to a read that only asks for FAILED, so the panel
+       could not see the thing that would have contradicted it. A half-landed
+       delivery is where a credential fault surfaces once a workflow has learned
+       to carry on around it, so PARTIAL rows are read here too. */
+    settle(db(`audit_log?select=workflow,status,summary,logged_at&status=in.(FAILED,PARTIAL)&order=logged_at.desc&limit=${FAIL_LIMIT}`)),
     /* The registry is what ties an n8n workflow to the string it writes into
        audit_log. Without it the failure list falls back to matching on the
        display name, which is a weaker join — so the difference is stated rather
@@ -650,44 +789,107 @@ SCREENS.settings = async host => {
      Everything below is derived from reads this screen already made. Nothing
      here costs a round trip of its own, and every count names the read it came
      from so a smaller number can never quietly mean a failed one. */
+  /* What makes two faults two rows.
+
+     A quoted credential name is the best identifier there is, and where the
+     text carries one it is the key. Where it carries none — "Forbidden -
+     perhaps check your credentials?" names nothing — the key is the workflow
+     that broke, because that is a real distinction and "we could not read a
+     name" is not. Grouping every un-named failure together is what produced a
+     single top-of-card row reading "unnamed credential · CRITICAL · the ERP/CRM
+     sync cannot write" out of seven failing escalation emails and two failing
+     Bitrix reads: one broken credential shown where there were two, the manager
+     pointed at the wrong system, and nothing said about hot-lead escalation
+     having been dead for a fortnight.
+
+     Grouping by workflow errs the other way — two workflows failing on one
+     shared credential appear twice — and that is the safer error: it overstates
+     how many things to look at and understates nothing. The card says so. */
   const credGroups = () => {
     const s = sysState;
     if (!s || !s.fails) return null;
     const groups = new Map();
+    const take = (name, workflow) => {
+      const key = name ? `name:${low(name)}` : `wf:${low(workflow) || '(unattributed)'}`;
+      let g = groups.get(key);
+      if (!g) {
+        g = { key, name: name || null, workflow: workflow || null, rows: [], workflows: new Set(), channels: new Set(), viewItems: [] };
+        groups.set(key, g);
+      }
+      return g;
+    };
+    /* Channel attribution reads the row's own head text plus its workflow name
+       and, where there is one, the credential name. Never the other members'
+       text: one row's Bitrix is not another row's evidence. */
+    const learn = (g, text, workflow, name) =>
+      credChannels(`${credScan(text)} ${workflow || ''} ${name || ''}`).forEach(c => g.channels.add(c));
+
     for (const rowF of s.fails) {
       const text = str(rowF.summary);
       if (!CRED_RE.test(text)) continue;
-      const name = credName(text) || 'unnamed credential';
-      let g = groups.get(low(name));
-      if (!g) { g = { name, rows: [], workflows: new Set(), viewItems: [] }; groups.set(low(name), g); }
+      const wf = str(rowF.workflow);
+      const name = credName(text);
+      const g = take(name, wf);
       g.rows.push(rowF);
-      if (str(rowF.workflow)) g.workflows.add(str(rowF.workflow));
+      if (wf) g.workflows.add(wf);
+      learn(g, text, wf, name);
     }
     /* The same fault as reported by v_needs_attention. It is the same incident,
        so it joins the group rather than being counted a second time; where the
        view names a credential this read did not see, it becomes its own group,
-       so a fault is never dropped for being in the wrong place. */
+       so a fault is never dropped for being in the wrong place. The view's
+       `ref` on a workflow_failure row is the workflow name, which is what makes
+       it groupable on the same key as an un-named audit row. */
     for (const it of (s.attn || [])) {
       const text = `${str(it.title)} ${str(it.detail)}`;
       if (!CRED_RE.test(text)) continue;
-      const name = credName(text) || 'unnamed credential';
-      let g = groups.get(low(name));
-      if (!g) { g = { name, rows: [], workflows: new Set(), viewItems: [] }; groups.set(low(name), g); }
+      const wf = str(it.ref) || str(it.title);
+      const name = credName(text);
+      const g = take(name, wf);
       g.viewItems.push(it);
+      if (wf) g.workflows.add(wf);
+      learn(g, text, wf, name);
     }
     return [...groups.values()].map(g => {
       const times = g.rows.map(r => Date.parse(r.logged_at))
         .concat(g.viewItems.map(v => Date.parse(v.at)))
         .filter(t => !Number.isNaN(t));
+      /* Failed and half-landed are counted apart. "Nine failed runs" over a
+         set that is really seven failures and two partial deliveries describes
+         neither, and the partial is the one that reached a customer. */
+      const partial = g.rows.filter(r => outcomeOf(r) === OUTCOME.PARTIAL).length;
       return {
         name: g.name,
+        workflow: g.workflow,
+        named: !!g.name,
+        /* How the card and the alert name it. An un-named credential is never
+           given a made-up name; it is described by what it broke. */
+        display: g.name || (g.workflow ? `Unnamed credential · ${g.workflow}` : 'Unnamed credential'),
+        subject: g.name
+          ? `The ${g.name} credential`
+          : g.workflow
+            ? `The credential ${g.workflow} presents`
+            : 'A credential this dashboard cannot name',
+        channels: [...g.channels],
         workflows: [...g.workflows],
         count: g.rows.length,
+        partialCount: partial,
+        failedCount: g.rows.length - partial,
         viewCount: g.viewItems.length,
         newest: times.length ? new Date(Math.max(...times)).toISOString() : null,
         oldest: times.length ? new Date(Math.min(...times)).toISOString() : null,
       };
     }).sort((a, b) => (b.count + b.viewCount) - (a.count + a.viewCount));
+  };
+  /* "3 failed runs and 1 partial delivery" rather than "4 runs". Written once
+     so the strip and the card cannot describe the same rows differently. */
+  const credEvidence = g => {
+    if (!g.count) return 'No logged run in this window names it';
+    const bits = [
+      g.failedCount ? `${num(g.failedCount)} failed ${plural(g.failedCount, 'run', 'runs')}` : '',
+      g.partialCount ? `${num(g.partialCount)} partial ${plural(g.partialCount, 'delivery', 'deliveries')}` : '',
+    ].filter(Boolean);
+    return `${bits.join(' and ')} among the newest ${num(FAIL_LIMIT)} logged incomplete runs name it`;
   };
 
   function computeAlerts() {
@@ -776,6 +978,9 @@ SCREENS.settings = async host => {
     if (s?.health) {
       const rows = s.health;
       const deg = rows.filter(w => stateKey(w) === 'DEGRADED');
+      const noOutput = rows.filter(w => stateKey(w) === 'PRODUCING_NOTHING');
+      const unrated = rows.filter(w => stateKey(w) === 'NO_QUALIFYING_RUNS');
+      const oddStatus = rows.filter(w => stateKey(w) === 'UNKNOWN_OUTCOME');
       const never = rows.filter(w => stateKey(w) === 'NEVER_RAN');
       /* Pages are split out of the blind-spot count deliberately. "Nothing it
          does reaches audit_log" is true of a static page and completely
@@ -789,25 +994,58 @@ SCREENS.settings = async host => {
 
       if (deg.length) {
         const f30 = deg.reduce((a, w) => a + (n0(w.failures_30d) || 0), 0);
-        const last = deg.map(w => w.last_failure).filter(Boolean).sort().pop();
+        const p30 = deg.reduce((a, w) => a + (n0(w.partials_30d) || 0), 0);
+        const last = deg.map(w => w.last_incomplete || w.last_failure).filter(Boolean).sort().pop();
         const stillOn = deg.filter(w => w.is_active !== false).length;
         out.push({
-          key: 'wf-degraded', sev: 'CRITICAL', icon: 'error',
+          key: 'wf-degraded', sev: 'CRITICAL', icon: HEALTH_LOOK.DEGRADED.icon,
           title: `${num(deg.length)} ${plural(deg.length, 'workflow is', 'workflows are')} degraded`,
-          detail: `${esc(deg.map(w => str(w.name)).join(', '))} — ${num(f30)} failed ${plural(f30, 'run', 'runs')} inside the 30-day window v_workflow_health measures.${
-            stillOn ? ` ${num(stillOn)} of ${plural(deg.length, 'them is', 'them are')} still active in n8n, which means n8n keeps running ${plural(stillOn, 'it', 'them')} and ${plural(stillOn, 'it keeps', 'they keep')} failing.` : ''}`,
-          foot: last ? `Most recent failure ${esc(ago(last))}.` : 'v_workflow_health recorded no last_failure timestamp for these.',
+          /* Failures and partial deliveries are named separately. They are both
+             the dealership's problem, which is why the view puts both in this
+             state, but they are not the same problem: one workflow never got
+             there, and the other told the customer it had. */
+          detail: `${esc(deg.map(w => str(w.name)).join(', '))} — inside the 30-day window v_workflow_health measures, ${
+            f30 ? `${num(f30)} ${plural(f30, 'run', 'runs')} failed outright` : 'no run failed outright'}${
+            p30 ? ` and ${num(p30)} went out half-done — a step the workflow claimed did not land, so a customer may hold a reply the database has no record of` : ''}.${
+            stillOn ? ` ${num(stillOn)} of ${plural(deg.length, 'them is', 'them are')} still active in n8n, which means n8n keeps running ${plural(stillOn, 'it', 'them')} and ${plural(stillOn, 'it keeps', 'they keep')} doing this.` : ''}`,
+          foot: last ? `Most recent failed or half-landed run ${esc(ago(last))}.` : 'v_workflow_health recorded no last_incomplete timestamp for these.',
           target: 'setWfCard', wf: 'DEGRADED',
         });
       }
+      /* Deliberately its own alert, and not folded into the one above. A
+         PRODUCING_NOTHING workflow is not failing: n8n reports its runs as
+         completed, no error is raised, no failure count moves, and every
+         dashboard that counted only FAILED called it healthy. Competitor Price
+         Scraping sat on a green "Clean, 30 d · 100.0%" pill for a month while
+         84 of its 96 runs produced no price. Ran-and-achieved-nothing needs its
+         own sentence or it will keep hiding inside a clean one. */
+      if (noOutput.length) out.push({
+        key: 'wf-nothing', sev: 'CRITICAL', icon: HEALTH_LOOK.PRODUCING_NOTHING.icon,
+        title: `${num(noOutput.length)} ${plural(noOutput.length, 'workflow runs', 'workflows run')} cleanly and ${plural(noOutput.length, 'produces', 'produce')} nothing`,
+        detail: `${noOutput.map(w => `${esc(str(w.name))} (${esc(pct(rate30(w)))} of ${num(n0(w.effective_runs_30d) ?? n0(w.runs_30d))} counted runs delivered)`).join(', ')}. Nothing here failed — the runs completed, no error was logged, and a screen counting only failures reports ${plural(noOutput.length, 'it', 'them')} as clean. The work is simply not getting done.`,
+        foot: 'This state exists because the old success rate on this screen was (runs − failures) ÷ runs, which scored every refusal, every no-result and every half-landed delivery as a success.',
+        target: 'setWfCard', wf: 'PRODUCING_NOTHING',
+      });
+      if (unrated.length) out.push({
+        key: 'wf-unrated', sev: 'WARNING', icon: HEALTH_LOOK.NO_QUALIFYING_RUNS.icon,
+        title: `${num(unrated.length)} ${plural(unrated.length, 'workflow has', 'workflows have')} run, and no run counts toward a rate`,
+        detail: `${esc(unrated.map(w => str(w.name)).join(', '))} — every run inside the window was refused by design, so there is nothing to divide by and no success rate exists. Refusals are excluded from the denominator on purpose, so that an unauthorised caller hammering a webhook cannot dilute a real miss rate; the effect is that a workflow doing nothing but turning callers away reports no rate at all rather than a flattering one.`,
+        target: 'setWfCard', wf: 'NO_QUALIFYING_RUNS',
+      });
+      if (oddStatus.length) out.push({
+        key: 'wf-odd-status', sev: 'WARNING', icon: HEALTH_LOOK.UNKNOWN_OUTCOME.icon,
+        title: `${num(oddStatus.length)} ${plural(oddStatus.length, 'workflow logged a status', 'workflows logged statuses')} the database has no class for`,
+        detail: `${esc(oddStatus.map(w => str(w.name)).join(', '))} wrote an audit_log status that nexus_outcome_class() does not define, so ${plural(oddStatus.length, 'its', 'their')} health cannot be stated either way. This is a writer emitting a word nobody agreed on, not a workflow failing — and it is reported rather than rounded to the nearest state it might have meant.`,
+        target: 'setWfCard', wf: 'UNKNOWN_OUTCOME',
+      });
       if (never.length) out.push({
-        key: 'wf-never', sev: 'WARNING', icon: 'schedule',
+        key: 'wf-never', sev: 'WARNING', icon: HEALTH_LOOK.NEVER_RAN.icon,
         title: `${num(never.length)} ${plural(never.length, 'workflow has', 'workflows have')} never recorded a run`,
         detail: `${esc(never.map(w => str(w.name)).join(', '))} ${plural(never.length, 'is', 'are')} registered as writing to audit_log and ${plural(never.length, 'has', 'have')} never written a row. That is not evidence of health, it is the absence of evidence — ${plural(never.length, 'this workflow has', 'these workflows have')} never been observed working in this deployment.`,
         target: 'setWfCard', wf: 'NEVER_RAN',
       });
       if (blind.length) out.push({
-        key: 'wf-blind', sev: 'INFO', icon: 'visibility_off',
+        key: 'wf-blind', sev: 'INFO', icon: HEALTH_LOOK.NOT_INSTRUMENTED.icon,
         title: `${num(blind.length)} ${plural(blind.length, 'workflow reports', 'workflows report')} nothing at all`,
         detail: `${plural(blind.length, 'It has', 'They have')} no Audit Log node, so nothing ${plural(blind.length, 'it does', 'they do')} reaches audit_log and this dashboard cannot see ${plural(blind.length, 'it', 'them')} succeed or fail. Counted as healthy nowhere on this screen: unmeasured is not the same as working.`,
         foot: `The Automation screen separates out the few of these that answer their caller directly — those hand their result back in the HTTP reply, so a missing audit row is the design rather than a gap.${
@@ -831,10 +1069,15 @@ SCREENS.settings = async host => {
         detail: `${esc(off.map(w => str(w.name)).join(', '))} — an inactive workflow has no live webhook, so anything posting to it gets a 404 however well-formed the request is.`,
         target: 'setWfCard', wf: 'INACTIVE',
       });
+      /* Not the same finding as wf-odd-status above, and the difference
+         matters: that one is the DATABASE saying a workflow logged a status it
+         has no class for. This one is the VIEW returning a health word neither
+         this screen nor lib/health.js has ever heard — a shared vocabulary that
+         has moved on without the frontend. Two unknowns, about two things. */
       if (odd.length) out.push({
-        key: 'wf-odd', sev: 'WARNING', icon: 'help',
-        title: `${num(odd.length)} ${plural(odd.length, 'workflow reports', 'workflows report')} a health state this screen has no wording for`,
-        detail: `Reported verbatim as ${esc([...new Set(odd.map(w => str(w.health) || 'null'))].join(', '))} rather than folded into one of the states it might mean.`,
+        key: 'wf-odd', sev: 'WARNING', icon: UNKNOWN_HEALTH.icon,
+        title: `${num(odd.length)} ${plural(odd.length, 'workflow reports', 'workflows report')} a health state this build has no wording for`,
+        detail: `Reported verbatim as ${esc([...new Set(odd.map(w => str(w.health) || 'null'))].join(', '))} rather than folded into one of the states it might mean. lib/health.js is the shared vocabulary and it does not carry ${plural(odd.length, 'this word', 'these words')}, so this bundle is older than the view it is reading.`,
         target: 'setWfCard', wf: 'ALL',
       });
     }
@@ -844,41 +1087,32 @@ SCREENS.settings = async host => {
        switched off underneath every workflow that uses it. */
     if (s?.failsErr) out.push({
       key: 'cred-read', sev: 'WARNING', icon: 'error',
-      title: 'Failed runs could not be read, so credential faults cannot be reported',
-      detail: `audit_log returned: ${esc(s.failsErr)}. A broken credential names itself only in the text of the failure it causes, so with this read down the credentials panel is blank for lack of evidence, not for lack of faults.`,
+      title: 'Incomplete runs could not be read, so credential faults cannot be reported',
+      detail: `audit_log returned: ${esc(s.failsErr)}. A broken credential names itself only in the text of the run it broke, so with this read down the credentials panel is blank for lack of evidence, not for lack of faults.`,
       target: 'setCredsCard',
     });
-    /* Severity stays CRITICAL even where the newest evidence is a day old — a
-       credential nobody has proved fixed is not a lesser fault — but the tense
-       does not. "Is failing" about a fault repaired this morning sends someone
-       to reconnect a credential that already works. */
+    /* Severity is CRITICAL and stays CRITICAL. The tense softens after a day
+       of silence — "is failing" about a fault repaired this morning sends
+       someone to reconnect a credential that already works — but the severity
+       does not, because nothing this screen can read proves a repair. There is
+       no green branch here any more; see the CRED_VERIFIED note above for the
+       one that used to be, and what it cost. */
     (credGroups() || []).forEach(g => {
       const stale = credStale(g.newest);
-      /* A run that exercised this credential after its last failure and got an
-         answer. Stronger evidence than the silence `stale` reasons about, so it
-         is checked first and it changes the severity, not just the tense: a
-         credential proved working is not a critical fault, and leaving it red
-         is how a strip full of resolved incidents stops being read. */
-      const ok = credVerified(g.name, g.newest);
       out.push({
-        key: `cred-${low(g.name)}`,
-        sev: ok ? 'INFO' : 'CRITICAL',
-        icon: ok ? 'key' : 'key_off',
-        title: ok
-          ? `The ${g.name} credential was failing and has since been verified working`
-          : stale
-            ? `The ${g.name} credential was failing, and nothing since proves it is fixed`
-            : `The ${g.name} credential is failing`,
-        detail: `${ok || stale ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}<div class="cell-sub" style="margin-top:4px">${
-          g.count ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it` : 'No failed audit row in this window names it'}${
+        key: `cred-${low(g.key || g.display)}`,
+        sev: 'CRITICAL',
+        icon: 'key_off',
+        title: stale
+          ? `${g.subject} was failing, and nothing since proves it is fixed`
+          : `${g.subject} is failing`,
+        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}<div class="cell-sub" style="margin-top:4px">${esc(credEvidence(g))}${
           g.viewCount ? `, and v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
-          g.workflows.length ? ` · seen failing in ${esc(g.workflows.join(', '))}` : ''}.${
-          ok ? ` Those rows are the incident, not the current state: ${esc(ok.how)}, after the newest of them. They will keep appearing here until they fall out of the ${num(FAIL_LIMIT)}-row window, and v_needs_attention will keep listing them until its own 24-hour window ages them out.` : ''}</div>`,
-        foot: ok
-          ? `${esc(ok.fix)} Most recent failure ${esc(ago(g.newest))}; confirmed working ${esc(ago(ok.at))}.`
-          : g.newest
-            ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.${stale ? ` ${esc(CRED_STALE_LINE)}` : ''}`
-            : '',
+          g.workflows.length ? ` · seen in ${esc(g.workflows.join(', '))}` : ''}.${
+          g.named ? '' : ' The text names no credential, so this row is keyed on the workflow it broke rather than merged with every other un-named fault.'}</div>`,
+        foot: g.newest
+          ? `Most recent ${esc(ago(g.newest))}${g.oldest && g.oldest !== g.newest ? `, first seen in this window ${esc(ago(g.oldest))}` : ''}.${stale ? ` ${esc(CRED_STALE_LINE)}` : ''}`
+          : '',
         target: 'setCredsCard',
       });
     });
@@ -928,6 +1162,10 @@ SCREENS.settings = async host => {
        Settings was open and a different one a minute later, and neither could be
        explained by opening anything. The count belongs here, next to the rows it
        counts, where clicking it lands on the evidence. */
+    /* `mine` is structurally empty — see NO_ATTN_BRANCH — so this sum is this
+       screen's own findings and nothing else. It is written as a sum anyway,
+       because the day a settings branch is added to the view its rows must
+       start counting here without anybody remembering to come back. */
     const durable = alerts.filter(a => a.sev === 'CRITICAL' || a.sev === 'WARNING');
     const tally = $('setAlertCount');
     if (tally) {
@@ -972,13 +1210,17 @@ SCREENS.settings = async host => {
     const checked = [
       !s ? 'v_needs_attention: still reading'
         : s.attnErr ? 'v_needs_attention: unreadable'
-        : `v_needs_attention: ${num(mine.length)} row${plural(mine.length, '', 's')} for this screen`,
+        : mine.length
+          ? `v_needs_attention: ${num(mine.length)} row${plural(mine.length, '', 's')} for this screen`
+          /* Not "0 rows". The view files nothing against Settings, and a zero
+             here reads as a clean bill of health from the database. */
+          : 'v_needs_attention: files nothing against this screen',
       !s ? 'v_workflow_health: still reading'
         : s.healthErr ? 'v_workflow_health: unreadable'
         : `v_workflow_health: ${num(s.health.length)} workflow${plural(s.health.length, '', 's')}`,
-      !s ? 'failed runs: still reading'
+      !s ? 'incomplete runs: still reading'
         : s.failsErr ? 'audit_log: unreadable'
-        : `audit_log: newest ${num(s.fails.length)} failed run${plural(s.fails.length, '', 's')}`,
+        : `audit_log: newest ${num(s.fails.length)} failed or half-landed run${plural(s.fails.length, '', 's')}`,
       !probeState ? 'connectivity: probing'
         : (() => {
             const named = probeState.filter(p => AUTO_PROBE.test(p.name));
@@ -999,10 +1241,11 @@ SCREENS.settings = async host => {
     const notes = [
       s?.attnErr ? `v_needs_attention is unreadable (${s.attnErr}), so any item the database itself filed against this screen is missing from the list above, and the count in the header covers only what this screen worked out for itself. The nav badge is painted from that same view by lib/badges.js, so it is blank right now for the same reason — not because there is nothing behind it.` : '',
       s && s.attn && s.attn.length >= ATTN_LIMIT ? `The attention read is capped at ${num(ATTN_LIMIT)} rows and hit the cap, so items beyond it are outside this window rather than absent.` : '',
-      s && s.fails && s.fails.length >= FAIL_LIMIT ? `The failure read is capped at ${num(FAIL_LIMIT)} rows and hit the cap, so a credential that last failed before that is not counted above. Per-workflow failure totals in the table below come from v_workflow_health and are unaffected by this cap.` : '',
+      s && s.fails && s.fails.length >= FAIL_LIMIT ? `The read of failed and partial runs is capped at ${num(FAIL_LIMIT)} rows and hit the cap, so a credential whose last incomplete run is older than that is not counted above. Per-workflow totals in the table below come from v_workflow_health and are unaffected by this cap.` : '',
       s?.regErr ? `workflow_registry is unreadable (${s.regErr}), so failures are matched to workflows by display name only. A workflow that logs under a different name than it is registered with will show fewer failures here than it really had.` : '',
       probeState && probeUnread.length ? `The connectivity tile for ${probeUnread.map(p => p.name).join(', ')} did not resolve into a result this strip could read, so no claim is made either way about it — read the tile itself.` : '',
       wfElsewhere.length ? `${num(wfElsewhere.length)} workflow-failure ${plural(wfElsewhere.length, 'item is', 'items are')} filed by v_needs_attention against the Automation screen rather than this one. ${plural(wfElsewhere.length, 'It is', 'They are')} not listed above as this screen's work; ${plural(wfElsewhere.length, 'it feeds', 'they feed')} the credential check only.` : '',
+      NO_ATTN_BRANCH,
       `The count beside this card's title is ${num(durable.length)} critical or warning ${plural(durable.length, 'item', 'items')} this screen derived${mine.length ? ` plus ${num(mine.length)} v_needs_attention ${plural(mine.length, 'row', 'rows')} filed against this screen` : ' and nothing else'}${s ? '' : ' so far — the database reads have not landed yet, so this figure can only rise'}. Informational findings are listed but not counted.`,
       `That count is deliberately not the nav badge. lib/badges.js paints every badge from one read of v_needs_attention, so the sidebar counts only the rows that view files against this screen — a missing environment variable, an expired token or a credential named inside a failure exist nowhere but here and cannot be reproduced from it. This screen used to write its own badge, and the sidebar then disagreed with itself a minute later, when badges.js repainted from the view.`,
     ].filter(Boolean);
@@ -1019,10 +1262,12 @@ SCREENS.settings = async host => {
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${attnUnread
           ? 'Nothing this screen could check for itself is wrong'
-          : 'Nothing on this screen needs attention right now'}</div>
+          : 'Nothing this screen checks is wrong right now'}</div>
         <div class="cell-sub">${attnUnread
-          ? 'v_needs_attention could not be read, so whether the database has filed anything against this screen is unknown'
-          : 'v_needs_attention returned no row for this screen'}${s && !s.healthErr
+          ? 'v_needs_attention could not be read, so whether the database has filed anything against this screen is unknown — though it has no settings branch to file from in the first place'
+          /* Never "the view returned none today". It has no settings branch;
+             its silence about this screen is structural, not a finding. */
+          : 'v_needs_attention has no settings branch, so it files nothing here either way'}${s && !s.healthErr
           ? ', no registered workflow is degraded, inactive or still waiting for its first run, and no failed run in the window read here names a credential'
           : ''}${envErrors.length ? '' : ', and every environment variable this build needs is set'}.</div>
       </div></div>`;
@@ -1066,12 +1311,17 @@ SCREENS.settings = async host => {
      Automation owns the deep history; this table answers the narrower Settings
      question — is the automation wired up, and which parts of it have never
      proved they work. */
+  /* Every state the view can return gets a filter, in the same worst-first
+     order the table sorts in, and the labels are read from HEALTH_WORDS rather
+     than typed here — a chip that says "Clean" over rows whose pills say
+     something else is a second vocabulary by the back door. Only chips with a
+     non-zero count are rendered, so adding the four new states costs nothing on
+     an instance that has none of them. */
   const WF_FILTERS = [
     { key: 'ALL', label: 'All' },
-    { key: 'DEGRADED', label: 'Degraded' },
-    { key: 'NEVER_RAN', label: 'Never ran' },
-    { key: 'NOT_INSTRUMENTED', label: 'Not logged' },
-    { key: 'HEALTHY', label: 'Clean' },
+    ...Object.keys(HEALTH_LOOK)
+      .sort((a, b) => HEALTH_LOOK[a].rank - HEALTH_LOOK[b].rank)
+      .map(key => ({ key, label: healthWords(key).label })),
     { key: 'INACTIVE', label: 'Inactive' },
   ];
   const matchFilter = (w, key) =>
@@ -1100,7 +1350,11 @@ SCREENS.settings = async host => {
 
     const rows = (s.health || []).slice().sort((a, b) =>
       healthOf(a).rank - healthOf(b).rank
-      || ((n0(b.failures_30d) || 0) - (n0(a.failures_30d) || 0))
+      /* Tie-break on runs that did not deliver, not on failures_30d. Sorting a
+         list of degraded workflows by a column that counts only FAILED puts the
+         one that half-landed eleven customer replies below the one that erred
+         once. */
+      || ((undelivered30(b) || 0) - (undelivered30(a) || 0))
       || String(a.name || '').localeCompare(String(b.name || '')));
 
     const active = rows.filter(w => w.is_active !== false).length;
@@ -1141,6 +1395,8 @@ SCREENS.settings = async host => {
       <div class="pbody" style="padding-top:0">
         <div class="cell-sub" style="white-space:normal">${[
           'Active means n8n will run the workflow. It does not mean the workflow succeeds — an active workflow with a revoked credential runs on every trigger and fails on every trigger, and both of those are true at once.',
+          'Success is successes ÷ the runs that counted, computed by v_workflow_health against nexus_outcome_class(). Runs refused by design and runs escalated to a person on purpose are excluded from the denominator, so an unauthorised caller cannot dilute a real miss rate — which is why “Runs 30 d” can be larger than the number the rate is taken over, and says so where it is.',
+          'No output is not Degraded and is not a milder version of it. Those workflows are not failing: n8n completes the run, no error is raised, and every screen that counted only failures called them clean. They simply produce nothing — Competitor Price Scraping held a green “Clean, 30 d · 100.0%” pill for a month while 84 of its 96 runs returned no price.',
           'Not logged is not a pass. Those workflows have no Audit Log node, so nothing they do reaches audit_log; they are left uncoloured because this dashboard has no evidence either way, and colouring them green would manufacture some.',
           'No runs yet is the same kind of absence: registered to log, never logged, never observed working.',
           'This list is the automation register. The n8n instance also carries the three published workflows that serve NEXUS’s public home, privacy and terms pages — Google requires all three before an OAuth consent screen can go to production, and it rejects vercel.app as a public suffix — so a count taken in n8n is larger than the count here. Where one of those pages is registered it is labelled "web page" and left out of the not-logged count: a page that logs nothing is not a blind spot.',
@@ -1177,20 +1433,43 @@ SCREENS.settings = async host => {
         } },
         { label: 'Runs 30 d', align: 'r', render: w => {
           const r = n0(w.runs_30d);
-          return r == null ? '<span class="t-muted">—</span>' : num(r);
+          if (r == null) return '<span class="t-muted">—</span>';
+          /* Two numbers where the view excludes some: runs logged, and runs
+             that count toward the rate. Printing only the first invites the
+             reader to do the division themselves and get a different answer
+             from the one in the next-but-one column. */
+          const eff = n0(w.effective_runs_30d);
+          const excluded = eff == null ? 0 : r - eff;
+          return `<span title="${esc(runsBreakdown(w))}">${num(r)}</span>${
+            excluded > 0 ? `<div class="cell-sub">${num(eff)} count toward the rate</div>` : ''}`;
         } },
-        { label: 'Failed 30 d', align: 'r', render: w => {
-          const f = n0(w.failures_30d);
-          if (f == null) return '<span class="t-muted">—</span>';
-          return f ? `<span class="t-hot">${num(f)}</span>` : num(0);
+        /* Was "Failed 30 d", reading straight off failures_30d — a column that
+           counted status='FAILED' and nothing else, so a workflow whose every
+           run was REJECTED or NOT_EXECUTED showed a proud 0 here and 100% in
+           the next column. What the dealership feels is a run that did not
+           deliver, whatever the writer called it, so all three shapes of that
+           are added and then broken apart underneath. */
+        { label: 'Did not deliver 30 d', align: 'r', render: w => {
+          const total = undelivered30(w);
+          if (total == null) return '<span class="t-muted">—</span>';
+          const f = n0(w.failures_30d) || 0, pa = n0(w.partials_30d) || 0, none = n0(w.no_result_30d) || 0;
+          const parts = [
+            f ? `${num(f)} failed` : '',
+            pa ? `${num(pa)} half-landed` : '',
+            none ? `${num(none)} produced nothing` : '',
+          ].filter(Boolean);
+          return total
+            ? `<span class="t-hot">${num(total)}</span><div class="cell-sub">${esc(parts.join(' · '))}</div>`
+            : num(0);
         } },
         { label: 'Success 30 d', align: 'r', render: w => {
           const r = rate30(w);
-          /* No runs means no rate. Printing 0% or 100% for a workflow that has
-             never run would state a result the data does not contain. */
+          /* successes_30d ÷ effective_runs_30d, computed by the view against
+             nexus_outcome_class(). Null is not 0% and not 100%: it is no
+             qualifying run, and the reason differs by state. */
           return r == null
-            ? '<span class="t-muted" title="No logged runs inside the 30-day window, so there is no rate to compute.">—</span>'
-            : esc(pct(r));
+            ? `<span class="t-muted" title="${esc(noRateWhy(w))}">—</span>`
+            : `<span title="${esc(runsBreakdown(w))}">${esc(pct(r))}</span>`;
         } },
         { label: 'Last run', align: 'r', render: w => w.last_run
           ? esc(ago(w.last_run))
@@ -1206,7 +1485,7 @@ SCREENS.settings = async host => {
       const h = healthOf(w);
       const fails = failsFor(w);
       const shown = (fails || []).slice(0, 6);
-      const r30 = n0(w.runs_30d), f30 = n0(w.failures_30d);
+      const r30 = n0(w.runs_30d), eff30 = n0(w.effective_runs_30d);
       const viewRate = n0(w.success_rate);
       const own30 = rate30(w);
       openDrawer(`
@@ -1231,33 +1510,58 @@ SCREENS.settings = async host => {
             <div class="label-caps">What the view reports</div>
             <dl class="kv" style="margin-top:10px">
               <dt>Runs, 30 days</dt><dd>${r30 == null ? '<span class="t-muted">not reported</span>' : num(r30)}</dd>
-              <dt>Failures, 30 days</dt><dd>${f30 == null ? '<span class="t-muted">not reported</span>' : num(f30)}</dd>
+              <dt>Counted toward the rate</dt><dd>${eff30 == null
+                ? '<span class="t-muted">not reported</span>'
+                : `${num(eff30)}${r30 != null && r30 !== eff30
+                    ? ` <span class="t-muted">· ${num(r30 - eff30)} excluded: refused by design or escalated to a person on purpose</span>`
+                    : ''}`}</dd>
+              ${OUTCOME_ROWS.map(([label, key, why]) => {
+                const v = n0(w[key]);
+                /* Every outcome the view separates is shown, and a zero is
+                   shown as a zero — the point of the row is that this workflow
+                   was measured on it. A column the view did not return is the
+                   only thing that reads "not reported". */
+                return `<dt title="${esc(why)}">${esc(label)}</dt><dd>${v == null
+                  ? '<span class="t-muted">not reported</span>'
+                  : (v ? `${num(v)}` : '<span class="t-muted">0</span>')}</dd>`;
+              }).join('')}
               <dt>Success, 30 days</dt><dd>${own30 == null
-                ? '<span class="t-muted">no runs in the window, so no rate exists</span>'
-                : `${esc(pct(own30))} <span class="t-muted">· computed here from runs_30d and failures_30d</span>`}</dd>
+                ? `<span class="t-muted">${esc(noRateWhy(w))}</span>`
+                : `${esc(pct(own30))} <span class="t-muted">· successes_30d ÷ effective_runs_30d, computed by the view</span>`}</dd>
               <dt>Runs, all time</dt><dd>${num(n0(w.runs) ?? 0)}</dd>
               <dt>Failures, all time</dt><dd>${num(n0(w.failures) ?? 0)}</dd>
               <dt>success_rate</dt><dd>${viewRate == null
                 ? '<span class="t-muted">not reported</span>'
-                : `${esc(pct(viewRate))} <span class="t-muted">· the view's own figure, over its own window</span>`}</dd>
+                : `${esc(pct(viewRate))} <span class="t-muted">· the view's all-time column, over its own window</span>`}</dd>
               <dt>Last run</dt><dd>${w.last_run ? esc(ago(w.last_run)) + ` <span class="t-muted mono">${esc(clock(w.last_run))}</span>` : '<span class="t-muted">never</span>'}</dd>
+              <dt>Last success</dt><dd>${w.last_success ? esc(ago(w.last_success)) + ` <span class="t-muted mono">${esc(clock(w.last_success))}</span>` : '<span class="t-muted">no run has ever succeeded outright</span>'}</dd>
               <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
+              <dt>Last half-landed</dt><dd>${w.last_partial ? `<span class="t-hot">${esc(ago(w.last_partial))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
             </dl>
+            <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(runsBreakdown(w))}</div>
             ${own30 != null && viewRate != null && Math.abs(own30 - viewRate) > 0.1
-              ? '<div class="cell-sub" style="margin-top:8px;white-space:normal">The two rates differ. They are not the same measurement — the first is the documented 30-day window, the second is the view’s own column over its own window — so neither is corrected against the other here.</div>'
+              ? '<div class="cell-sub" style="margin-top:8px;white-space:normal">The two rates differ, and they are not the same measurement: the first is the 30-day window classified through nexus_outcome_class(), the second is the view’s own all-time column. Neither is corrected against the other here.</div>'
               : ''}
           </div>
           <div class="section" style="margin-top:20px">
-            <div class="label-caps">Recent failures</div>
+            <div class="label-caps">Recent incomplete runs</div>
             ${fails == null
               ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`audit_log could not be read (${s.failsErr || 'unknown error'}), so the text of any failure is unavailable. The counts above come from v_workflow_health and are unaffected.`)}</div>`
               : shown.length
-                ? shown.map(f => `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
-                    <div class="cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</div>
-                    <div class="cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The workflow logged a failure with no summary text.')}</div>
-                  </div>`).join('')
-                : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either it has not failed inside that window, or it logs under a name the registry does not list.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
-            ${fails && fails.length > shown.length ? `<div class="cell-sub" style="margin-top:8px">${esc(`${fails.length - shown.length} older failures in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
+                ? shown.map(f => {
+                    /* The row is labelled with what it actually was. A FAILED
+                       whose own summary says "n of m claimed steps did not
+                       land" is a partial delivery, and lib/health.js is the one
+                       place allowed to make that call. */
+                    const o = outcomeWords(outcomeOf(f));
+                    return `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span title="${esc(o.blurb)}">${pill(o.label, o.tone)}</span>
+                      <span class="cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</span></div>
+                    <div class="cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The run logged no summary text.')}</div>
+                  </div>`;
+                  }).join('')
+                : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed or half-landed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either nothing of either kind happened inside that window, or it logs under a name the registry does not list. Note that a run which produced nothing usable is neither, and would not appear here — the counters above are where those are counted.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
+            ${fails && fails.length > shown.length ? `<div class="cell-sub" style="margin-top:8px">${esc(`${fails.length - shown.length} older rows in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
           </div>
         </div>
         <div class="drawer-foot">
@@ -1274,7 +1578,7 @@ SCREENS.settings = async host => {
       b.addEventListener('click', () => setWfFilter(b.dataset.f)));
 
     credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
-      <div class="card-sub">Faults n8n reported in the text of a failed run — the only credential evidence a browser can have</div></div></div>
+      <div class="card-sub">Faults n8n reported in the text of a failed or half-landed run — the only credential evidence a browser can have. Nothing here claims a credential works: n8n exposes no credential state to a browser, so this panel reports faults and their age, and never a clean bill of health.</div></div></div>
       <div class="pbody">${renderCreds()}</div>`;
     wireCreds();
   });
@@ -1288,38 +1592,36 @@ SCREENS.settings = async host => {
     if (!s) return stateLoading(2);
     if (s.failsErr) {
       return stateError('credential faults',
-        `${s.failsErr}. A broken credential names itself only inside the failure it causes, so with audit_log unreadable this panel has no evidence to show — which is not the same as there being none.`);
+        `${s.failsErr}. A broken credential names itself only inside the run it breaks, so with audit_log unreadable this panel has no evidence to show — which is not the same as there being none.`);
     }
     const groups = credGroups() || [];
     if (!groups.length) {
       return stateEmpty('No credential fault in this window',
-        `None of the newest ${FAIL_LIMIT} failed runs mentions a credential. That covers the failures that were logged: a workflow with no Audit Log node could be failing on a credential right now and would not appear here.`,
+        `None of the newest ${FAIL_LIMIT} failed or half-landed runs mentions a credential. That covers the runs that were logged: a workflow with no Audit Log node could be failing on a credential right now and would not appear here.`,
         'key');
     }
     return `<div>${groups.map(g => {
-      const ok = credVerified(g.name, g.newest);
+      const stale = credStale(g.newest);
       return `
       <div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%">
-          <span class="material-symbols-outlined t-${ok ? 'ok' : 'hot'}" style="font-size:20px">${ok ? 'key' : 'key_off'}</span>
-          <span style="font-weight:500">${esc(g.name)}</span>
-          ${ok ? pill('Verified working', 'ok') : pill('CRITICAL', 'hot')}
+          <span class="material-symbols-outlined t-hot" style="font-size:20px">key_off</span>
+          <span style="font-weight:500">${esc(g.display)}</span>
+          ${pill('CRITICAL', 'hot')}
           <div style="flex:1"></div>
           <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
         </div>
-        ${ok ? `<div class="cell-sub" style="white-space:normal"><strong>This is history, not the current state.</strong> ${esc(ok.how)} — after the newest failure below. ${esc(ok.fix)}</div>` : ''}
-        <div class="cell-sub" style="white-space:normal">${ok || credStale(g.newest) ? 'While it was failing: ' : ''}${esc(credImpact(g.name, g.workflows))}</div>
-        <div class="cell-sub">${g.count
-          ? `${num(g.count)} failed ${plural(g.count, 'run', 'runs')} among the newest ${num(FAIL_LIMIT)} logged failures name it`
-          : 'No failed audit row in this window names it'}${
+        ${g.named ? '' : `<div class="cell-sub t-muted" style="white-space:normal">The text of these runs names no credential — “Forbidden - perhaps check your credentials?” names nothing — so this row is keyed on the workflow that broke rather than pooled with every other un-named fault. Two workflows failing on one shared credential will therefore appear here twice, which is the safer error: it overstates how many things to look at and hides nothing.</div>`}
+        <div class="cell-sub" style="white-space:normal">${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}</div>
+        <div class="cell-sub">${esc(credEvidence(g))}${
           g.viewCount ? ` · v_needs_attention reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.newest ? ` · most recent ${esc(ago(g.newest))}` : ''}</div>
-        ${!ok && credStale(g.newest) ? `<div class="cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
+        ${stale ? `<div class="cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
         ${g.workflows.length
-          ? `<div class="cell-sub">Seen failing in: ${g.workflows.map(w =>
+          ? `<div class="cell-sub">Seen in: ${g.workflows.map(w =>
               `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
                 title="Show this in the workflow table above">${esc(w)}</button>`).join(' ')}</div>`
-          : '<div class="cell-sub t-muted">No failed run in this window records which workflow it belongs to.</div>'}
+          : '<div class="cell-sub t-muted">No run in this window records which workflow it belongs to.</div>'}
       </div>`;
     }).join('')}
       <div class="list-item" style="cursor:default">

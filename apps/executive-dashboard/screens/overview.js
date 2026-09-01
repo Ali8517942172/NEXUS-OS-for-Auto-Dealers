@@ -126,10 +126,17 @@ import { kpi, panel, table, wireRows } from '../lib/ui.js';
 
 /* The reply-gap analysis is windowed so it is provably complete rather than
    merely likely: a reply to a lead can only be logged at or after that lead was
-   created, so if we read every outbound message inside the window we know the
-   true reply state of every lead created inside the same window. Reading
+   created, so if we read every outbound message inside the window we hold every
+   message that could possibly be a reply to a lead created inside it. Reading
    "the newest N messages" instead would silently mark answered leads as
-   unanswered the moment the dealership got busy. */
+   unanswered the moment the dealership got busy.
+
+   Reading them all is necessary and it is not sufficient, and this comment used
+   to stop one sentence early — as did the code. Holding every candidate proves
+   nothing until the at-or-after test is actually performed on each one, and it
+   was not: membership of an address in the outbound set was the whole check, so
+   a message sent weeks BEFORE a lead existed marked that lead answered. The
+   comparison is done below, against each lead's own created_at. */
 const WINDOW_DAYS = 30;
 const OUTBOUND_LIMIT = 5000;
 const LEAD_LIMIT = 2000;
@@ -203,43 +210,66 @@ const IDENT = {
 
      failing    nothing has succeeded since the newest run that failed or went
                 out half-done (`last_incomplete`), or nothing has succeeded at
-                all in the window. Red.
-     stale      a run did succeed after that (`last_success` > `last_incomplete`)
-                but it is NOT the newest run: `last_run` is later, and because
-                `last_success` is the newest success by construction, whatever
-                ran last was not one. Amber, and the sentence says exactly that
-                and no more — this file cannot tell a NOT_EXECUTED from a
-                refusal without reading audit_log itself, so it claims neither.
+                all in the window, or the view's own `health` says the workflow
+                produces nothing usable. Red.
+     stale      a run did succeed, and it is NOT the newest run: `last_run` is
+                later, and because `last_success` is the newest success by
+                construction, whatever ran last was not one. Amber, and the
+                sentence says exactly that and no more — this file cannot tell a
+                NOT_EXECUTED from a refusal without reading audit_log itself, so
+                it claims neither.
      recovered  the newest run there is, is a success. Green.
-     unknown    the view records no time for the last failed-or-half-done run,
-                so nothing can be told from here.
+     unknown    the view records no time for any run at all, so nothing can be
+                told from here.
+
+   The PRODUCING_NOTHING test is first and it is not decoration. `last_incomplete`
+   is the newer of `last_failure` and `last_partial`, and a workflow that never
+   fails and never goes half-done — it just returns nothing — has NEITHER, so it
+   arrives here with `last_incomplete` null. Keyed on that column alone this
+   function returned "unknown", in grey. Competitor Price Scraping is exactly
+   that workflow: 84 of its 96 runs this month produced nothing usable, and its
+   last success landed 0.9 seconds before its newest run tonight, so a recency
+   test would also have called it stale rather than broken. Producing nothing is
+   not an incident that a later run can be "since"; it is the current condition,
+   and the view already computed it.
 
    This function never guesses upward: an alert wrongly softened is worse than
    one left loud. */
 const failureState = w => {
+  const health = String((w && w.health) || '').toUpperCase();
   const incompleteAt = Date.parse(w && w.last_incomplete);
   const partialAt = Date.parse(w && w.last_partial);
   const successAt = Date.parse(w && w.last_success);
   const ranAt = Date.parse(w && w.last_run);
-  if (Number.isNaN(incompleteAt)) {
-    return { key: 'unknown',
-      text: '<span class="t-muted">the view records no time for the last failed or half-done run, so whether anything has succeeded since cannot be told from here</span>' };
+  const hasIncomplete = !Number.isNaN(incompleteAt);
+  if (health === 'PRODUCING_NOTHING') {
+    return { key: 'failing',
+      text: `<span class="t-hot">most of what it runs produces nothing usable, so a newer run is not evidence of recovery${
+        Number.isNaN(successAt) ? ' — nothing it has run in the window succeeded outright' : `; its last outright success was ${esc(ago(w.last_success))}`}</span>` };
   }
   /* Which kind of not-clean the newest one was. last_incomplete is the newer of
      last_failure and last_partial, so an exact match on last_partial names it. */
-  const halfDone = !Number.isNaN(partialAt) && partialAt === incompleteAt;
+  const halfDone = hasIncomplete && !Number.isNaN(partialAt) && partialAt === incompleteAt;
   const wording = halfDone ? 'went out half-done' : 'failed';
   if (Number.isNaN(successAt)) {
+    if (hasIncomplete) {
+      return { key: 'failing',
+        text: `<span class="t-hot">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
+    }
+    if (Number.isNaN(ranAt)) {
+      return { key: 'unknown',
+        text: '<span class="t-muted">the view records no time for any run, so whether anything has succeeded cannot be told from here</span>' };
+    }
     return { key: 'failing',
-      text: `<span class="t-hot">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
+      text: `<span class="t-hot">nothing it has run in the window succeeded outright; its newest run was ${esc(ago(w.last_run))} and it was not one</span>` };
   }
-  if (successAt <= incompleteAt) {
+  if (hasIncomplete && successAt <= incompleteAt) {
     return { key: 'failing',
       text: `<span class="t-hot">its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}, and nothing has succeeded outright since</span>` };
   }
   if (!Number.isNaN(ranAt) && ranAt > successAt) {
     return { key: 'stale',
-      text: `<span class="t-warm">succeeded since, ${esc(ago(w.last_success))}, but that is not its newest run — something ran ${esc(ago(w.last_run))} and it was not a success</span>` };
+      text: `<span class="t-warm">its newest run is not a success — something ran ${esc(ago(w.last_run))} that did not succeed, and its last outright success was ${esc(ago(w.last_success))}</span>` };
   }
   return { key: 'recovered',
     text: `<span class="t-ok">its newest run is a success, ${esc(ago(w.last_success))}</span>` };
@@ -248,9 +278,68 @@ const failureState = w => {
    row per run that COMPLETED, so "it has succeeded since" is evidence about the
    last run that finished — not proof of health, and a workflow hung right now
    writes no row at all and is indistinguishable from an idle one from here. */
-const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from v_workflow_health: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never inferred from last_run any more: that column is the newest row of ANY status, and reading it as a clean run is what printed "that run did not fail" over six consecutive runs that produced nothing.';
+const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from v_workflow_health: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never read off last_run: that column is the newest row of ANY status, and a run that produced nothing is not a recovery.';
 /* Said wherever a row is amber rather than green. */
 const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newest run is stating arithmetic, not a diagnosis: last_success is the newest success by construction, so a later last_run is a run that was not one. What it was instead — half-done, no result, refused by design or escalated to a person — is in the counts beside it and in full on Automation.';
+
+/* The two numbers every workflow row on this screen is rated on, derived once
+   so the triage card and the Needs-attention enrichment cannot print different
+   arithmetic about the same workflow three panels apart.
+
+   `failures_30d` is deliberately NOT one of them. It counts only rows the
+   outcome rule classes as an outright failure, and a workflow can be DEGRADED
+   with none: Finance Calc has zero tonight and has issued three quotes out of
+   twenty-seven runs that counted. A Needs-attention item reading "2 failed runs
+   in the last 24 h" beside an enrichment reading "0 failures in 30 days" is the
+   screen arguing with itself, and both sentences were true — they were counting
+   different things. `effective_runs_30d` excludes runs refused by design and
+   runs escalated to a person on purpose; neither is the workflow failing to
+   deliver, and leaving them in dilutes a real miss rate. */
+const runCounts = w => {
+  const eff = n0(w && w.effective_runs_30d);
+  const succ = n0(w && w.successes_30d);
+  return { eff, succ, notClean: (eff != null && succ != null) ? eff - succ : null };
+};
+
+/* ── One thing needing a human, listed once ──────────────────────────────────
+   `v_needs_attention` has no DISTINCT ON, and its `undercut` branch selects
+   straight from `competitors`, which accumulates one row per nightly scrape.
+   The same Toyota Fortuner at the same price against the same rival therefore
+   arrives as one item per night it has been checked — five rows tonight, refs
+   18, 20, 23, 24 and 25, identical in kind, title and detail and differing only
+   in `scraped_at`. The panel listed all five, counted all five, and then closed
+   with "This panel lists all 17 items the view returned" as though that were a
+   reconciliation. Thirteen things actually need a human.
+
+   The right fix is a DISTINCT ON in the view; this file cannot make it and must
+   not pretend the number is fine until someone does.
+
+   SNAPSHOT_KINDS is the whole of the rule and it is deliberately narrow. It
+   names the kinds whose `ref` identifies a LOG ROW rather than the subject —
+   `undercut` is the only one today — and for those, and only those, rows that
+   agree on kind, title and detail are one item and the newest is kept. Every
+   other kind keys on a ref that IS the subject (a chat id, a lead id, a unit
+   id, a workflow name), so nothing is collapsed and two same-named leads cannot
+   silently become one. If the view gains its DISTINCT ON the groups become
+   singletons, `collapsed` falls to zero and the sentence about it disappears on
+   its own — this does not have to be unwound by hand. */
+const SNAPSHOT_KINDS = new Set(['undercut']);
+const collapseSnapshots = rows => {
+  const seen = new Map();
+  const out = [];
+  let collapsed = 0;
+  rows.forEach(it => {
+    if (!SNAPSHOT_KINDS.has(it.kind)) { out.push(it); return; }
+    const key = `${it.kind}|${str(it.title)}|${str(it.detail)}`;
+    const at = seen.get(key);
+    if (at == null) { seen.set(key, out.length); out.push(it); return; }
+    collapsed += 1;
+    /* Rows are already sorted newest-first inside a kind, so the one held is
+       the most recent observation. Kept explicit rather than relied upon. */
+    if (Date.parse(it.at) > Date.parse(out[at].at)) out[at] = it;
+  });
+  return { rows: out, collapsed };
+};
 
 /* Open or finished, taken straight out of the TONE table in lib/format.js so
    this screen cannot grow a second lead-lifecycle vocabulary. Three writers
@@ -785,7 +874,19 @@ SCREENS.overview = async host => {
         + (withBudget.length <= THIN
             ? `<br>${warn(`This is ${num(withBudget.length)} ${plural(withBudget.length, 'budget field', 'budget fields')} added up, not a forecast.`)}`
             : '')
-        + ((() => { const d = delta(pipeline, prev?.pipeline_aed, v => aed(v)); return d ? `<br>${d}` : ''; })());
+        /* No delta on this tile, and the reason is not that there is nothing to
+           compare against. daily_metrics.pipeline_aed is written by
+           capture_daily_metrics() as `coalesce(sum(budget_aed), 0)` over EVERY
+           lead with a budget — no status filter, and zero where the answer is
+           "none recorded". Those are precisely the two defects the headline
+           above no longer has. Subtracting the two produces a number that moves
+           when the cohort changes and not when the pipeline does, so the
+           comparison is refused and the reason is printed instead of it. The
+           response-time tile still carries its delta because the snapshot and
+           the live figure there really are the same population. */
+        + (prev
+            ? `<br>${muted(`No comparison is drawn against ${snapshotWhen.replace(/^The/, 'the')}: its pipeline figure sums every lead with a budget, closed ones included, and records zero where none is recorded — a different figure from the one above, not an earlier value of it.`)}`
+            : '');
 
     /* ── Units at risk ──────────────────────────────────────────────────── */
     const riskSub = (risk.length
@@ -1041,31 +1142,42 @@ SCREENS.overview = async host => {
           'Nothing failed, went out half-done or produced nothing usable in the last 30 days. Workflows that do not write to the audit log cannot report health at all — Automation lists those separately.', 'task_alt');
       }
       /* Ordered so the ones still broken sit above the ones that recovered.
-         The read is already sorted by failure count, which put a workflow that
-         failed five times this morning and has run clean all afternoon above a
+         The read is sorted by failure count, which put a workflow that failed
+         five times this morning and has run clean all afternoon above a
          workflow that is failing right now — the wrong way round for a triage
-         card. Recovery first, failure count second, so the sort inside each
-         group is unchanged. */
+         card. State first, then size.
+
+         Size is `notClean`, the number the row actually prints, not
+         `failures_30d` which the read ordered on. They can be far apart:
+         Competitor Price Scraping has zero failures and zero half-done runs, so
+         the read puts it last, and 84 of its 96 runs produced nothing — the
+         largest miss on the card. Sorting on the displayed number is also the
+         only ordering an operator can check against what is in front of them. */
       const state = new Map(rows.map(w => [w, failureState(w)]));
       const ORDER = { failing: 0, stale: 1, unknown: 2, recovered: 3 };
-      const sorted = [...rows].sort((a, b) => ORDER[state.get(a).key] - ORDER[state.get(b).key]);
+      const size = w => { const n = runCounts(w).notClean; return n == null ? -1 : n; };
+      const sorted = [...rows].sort((a, b) => ORDER[state.get(a).key] - ORDER[state.get(b).key]
+        || size(b) - size(a));
       const recovered = rows.filter(w => state.get(w).key === 'recovered').length;
       const stale = rows.filter(w => state.get(w).key === 'stale').length;
       const notes = [
         recovered ? RECOVERY_CAVEAT : '',
         stale ? STALE_CAVEAT : '',
         `A row here means a run failed, went out half-done or produced nothing usable inside the 30-day window that v_workflow_health.health is computed over. All-time failures are not used: they would keep a workflow that was fixed in June red forever. What each status means is decided in one place — public.nexus_outcome_class(), mirrored in lib/health.js — and never on this screen.`,
-        `The count on the right is runs that did not succeed outright, not runs labelled FAILED. Those are not the same number: tonight Finance Calc has none labelled FAILED and has issued three quotes out of twenty-seven runs that counted.`,
+        /* Stated as a rule, not as tonight's example. An earlier draft of this
+           note named a workflow and quoted its live figures in words; a
+           hardcoded number in a footnote is the "-18s vs last week" this file
+           already threw out once, and it is wrong by morning. The per-row
+           counts beside each name carry the specifics. */
+        `The count on the right is runs that did not succeed outright, not runs labelled FAILED. A workflow can be degraded with none labelled FAILED at all — a run that goes out half-done or returns nothing usable is neither a crash nor a delivery.`,
       ].filter(Boolean);
       return `<div>${sorted.map(w => {
-        /* The denominator is effective_runs_30d, which excludes runs refused by
-           design and runs escalated to a person on purpose — neither is the
-           workflow failing to deliver, and leaving them in dilutes a real miss
-           rate. The numerator is every qualifying run that was not an outright
+        /* runCounts, shared with the Needs-attention enrichment so the same
+           workflow cannot be rated on two different denominators three panels
+           apart. `notClean` is every qualifying run that was not an outright
            success: a failure, a half-done run, a run that produced nothing, or
            a status this system does not recognise. */
-        const eff = n0(w.effective_runs_30d), succ = n0(w.successes_30d);
-        const notClean = (eff != null && succ != null) ? eff - succ : null;
+        const { eff, succ, notClean } = runCounts(w);
         const rate = successRate(w.successes_30d, w.effective_runs_30d);
         const parts = n0(w.partials_30d), nores = n0(w.no_result_30d);
         const rej = n0(w.rejected_30d), esc30 = n0(w.escalated_30d), unk = n0(w.unknown_30d);
@@ -1260,6 +1372,34 @@ SCREENS.overview = async host => {
     kyc_archive_gap: 'compliance', workflow_failure: 'automation', undercut: 'competitors',
     inventory_aging: 'inventory',
   };
+  /* What `at` means, branch by branch, taken from the view's own definition:
+
+       unanswered_chat   v.last_message_at   when the customer wrote
+       lead_unassigned   l.created_at        when the lead arrived
+       sla_breach        l.created_at        when the lead arrived
+       kyc_archive_gap   k.created_at        when the document was taken
+       workflow_failure  max(logged_at)      when it last failed
+       undercut          c.scraped_at        when the price was last seen
+       inventory_aging   now()               the moment the query ran
+
+     Only the first four are a waiting time. `undercut` is an observation time —
+     the gap is as old as the price, not as old as the scrape — and
+     `inventory_aging` is not a time about the item at all: the view stamps it
+     with now(), so every aging unit reads as having arrived this second and
+     they all tie with each other in the secondary sort below. For that kind the
+     age is in the view's own `detail` string ("148 days in stock"), which is
+     the figure to read, so nothing is printed here rather than a number that
+     contradicts the sentence beside it. */
+  const AT_WORDS = {
+    unanswered_chat:  { verb: 'waiting' },
+    lead_unassigned:  { verb: 'waiting' },
+    sla_breach:       { verb: 'waiting' },
+    kyc_archive_gap:  { verb: 'waiting' },
+    workflow_failure: { verb: 'last failed' },
+    undercut:         { verb: 'price last seen' },
+    inventory_aging:  { none: true, blank: 'the view timestamps this kind with the moment the query ran, not a waiting time — the age is in the detail above' },
+    _default:         { verb: 'recorded' },
+  };
   /* Severity alone put four parked cars above a person who had already written
      in. A customer waiting on a reply decays in hours; a HOT lead with no owner
      in minutes-to-hours; a car aging on the lot over weeks. */
@@ -1268,11 +1408,19 @@ SCREENS.overview = async host => {
 
   panels.push(panel(attnHost, {
     title: 'Needs attention',
-    sub: `Live union from v_needs_attention — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock. The view bounds two of these itself: unanswered threads to ${CHAT_WINDOW_DAYS} days and SLA breaches to ${SLA_WINDOW_DAYS}, so this is what is still live, not everything that ever slipped`,
+    /* Not "Live". This panel reads once, when the screen opens, and nothing on
+       this screen re-renders on a timer — the only poller in the app is
+       lib/badges.js, and it repaints nav badges, not panels. A dashboard left
+       open on the showroom floor was showing a list from whenever the tab was
+       opened under a word that says otherwise. The word is gone and the read
+       time is printed in the notes, where it can be checked. */
+    sub: `Union of v_needs_attention — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock. The view bounds two of these itself: unanswered threads to ${CHAT_WINDOW_DAYS} days and SLA breaches to ${SLA_WINDOW_DAYS}, so this is what is still open, not everything that ever slipped`,
     load: async () => {
+      const readAt = new Date().toISOString();
       const { items, threads } = await readAttention();
       const sorted = [...items].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9)
         || new Date(b.at) - new Date(a.at));
+      const { rows: distinct, collapsed } = collapseSnapshots(sorted);
       /* Soft: a failed KYC read must not take this panel down with it, but it
          does change what the badge can honestly claim, so it is reported. */
       const gapRows = await readKycGaps().catch(() => null);
@@ -1281,9 +1429,16 @@ SCREENS.overview = async host => {
          human, which is the one thing this panel exists to show. */
       const health = await readHealth().catch(() => null);
       const rivals = await readRivals().catch(() => null);
-      return { items: sorted, threads, gapRows, health, rivals };
+      return { items: sorted, distinct, collapsed, threads, gapRows, health, rivals, readAt };
     },
-    render: ({ items, threads, gapRows, health, rivals }) => {
+    render: ({ items, distinct, collapsed, threads, gapRows, health, rivals, readAt }) => {
+      /* The badge floor is still computed over every row the view returned, not
+         over the collapsed list. badges.js reads the same view without the
+         collapse and paints the nav from it; making this screen's floor smaller
+         would give Math.max() a number that fights it, and a badge that shrinks
+         the moment Overview renders is the failure this floor exists to
+         prevent. The collapse is a display and counting decision, and the
+         difference it makes to the two numbers is stated in the notes below. */
       need.attention = items.length;
       need.items = items;
       need.kycExtra = gapRows ? extraGaps(gapRows, items).length : null;
@@ -1351,7 +1506,7 @@ SCREENS.overview = async host => {
 
       let matchedLeads = 0, unmatchedLeadRefs = 0;
 
-      const body = items.map(it => {
+      const body = distinct.map(it => {
         const target = SCREENS[it.screen] ? it.screen : (KIND_SCREEN[it.kind] || 'overview');
         const flow = healthFor(it);
         const flowState = flow ? failureState(flow) : null;
@@ -1359,19 +1514,28 @@ SCREENS.overview = async host => {
           if (!flow) unmatchedFlows += 1;
           else if (flowState.key === 'recovered') recoveredFlows += 1;
         }
-        /* A workflow that has run clean since the failure that raised this item
-           is still on the list — the view raised it and this screen does not
-           overrule the view — but it is not screaming. The clock icon says the
-           row is about something that happened, not something happening. */
+        /* A workflow whose newest run is a success is still on the list — the
+           view raised it and this screen does not overrule the view — but it is
+           not screaming. The clock icon says the row is about something that
+           happened, not something happening. Only `recovered` earns it: a
+           `stale` workflow has run since and that run was not a success, which
+           is not a thing that has stopped. */
         const icon = flowState && flowState.key === 'recovered'
           ? 'history'
           : (KIND_ICON[it.kind] || 'warning');
-        /* `at` is a real column on the view. How long a thing has been waiting
-           is most of what ranks it, so it is shown — and where the view left it
-           null that is said, not rendered as an em dash. */
-        const waited = it.at
-          ? `<span class="t-muted">waiting ${esc(ago(it.at))}</span>`
-          : '<span class="t-muted">no timestamp on this item, so how long it has waited is unknown</span>';
+        /* `at` is a real column on the view, but it is not one thing, and this
+           line used to read it as though it were. Every branch was rendered as
+           "waiting <ago(at)>", and NX-1010 — a Range Rover on the lot since
+           April — printed "waiting just now" beside its own detail string
+           reading "148 days in stock". AT_WORDS is read straight off the view's
+           branches rather than guessed; a kind this file does not know about
+           gets the neutral wording and claims nothing. */
+        const meaning = AT_WORDS[it.kind] || AT_WORDS._default;
+        const waited = meaning.none
+          ? `<span class="t-muted">${esc(meaning.blank)}</span>`
+          : it.at
+            ? `<span class="t-muted">${esc(meaning.verb)} ${esc(ago(it.at))}</span>`
+            : '<span class="t-muted">no timestamp on this item, so when it arrived is unknown</span>';
         const lead = leadFor(it);
         if (LEAD_KINDS.has(it.kind)) { if (lead) matchedLeads += 1; else unmatchedLeadRefs += 1; }
         let head, sub;
@@ -1393,12 +1557,12 @@ SCREENS.overview = async host => {
              hours ago" and "failing right now" are the same row until something
              says which. Where v_workflow_health had no row to match, that is
              said too — an unmatched item is not evidence of anything. */
+          const fc = flow ? runCounts(flow) : null;
           sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
             flowState ? flowState.text
-              : '<span class="t-muted">no row in v_workflow_health matched this item, so whether it has run since cannot be told from here</span>'
-          }${flow && n0(flow.failures_30d) != null
-            ? ` <span class="t-muted">· ${esc(num(flow.failures_30d))} ${plural(n0(flow.failures_30d), 'failure', 'failures')} in 30 days${
-                n0(flow.runs_30d) != null ? ` of ${esc(num(flow.runs_30d))} ${plural(n0(flow.runs_30d), 'run', 'runs')}` : ''}</span>`
+              : '<span class="t-muted">no row in v_workflow_health matched this item, so whether it has succeeded since cannot be told from here</span>'
+          }${fc && fc.notClean != null
+            ? ` <span class="t-muted">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
             : ''}</div>`;
         } else {
           head = esc(it.title);
@@ -1411,10 +1575,10 @@ SCREENS.overview = async host => {
           ? `data-lead="${esc(lead.id)}" title="Open this lead"`
           : `data-goto="${esc(target)}" title="Open ${esc(target)}"`;
         /* Severity colours the icon, except where the row has just said the
-           thing has already run clean since — a red glyph beside "has completed
-           a run since, and that run did not fail" is the screen arguing with
-           itself, and the operator believes the colour. The severity pill is
-           untouched: that is the view's rating and it stays visible. */
+           workflow's newest run is a success — a red glyph beside "its newest
+           run is a success" is the screen arguing with itself, and the operator
+           believes the colour. The severity pill is untouched: that is the
+           view's rating and it stays visible. */
         const iconTone = flowState && flowState.key === 'recovered' ? 'muted' : tone(it.severity);
         return `<div class="list-item" role="button" tabindex="0" ${jump}>
           <span class="material-symbols-outlined t-${iconTone}" style="font-size:20px">${icon}</span>
@@ -1442,10 +1606,12 @@ SCREENS.overview = async host => {
          everything the view returned. Rather than quietly differing, the
          difference is named — item counts, the COLD exclusion, and the one
          thing this screen adds that the view cannot see. */
-      const coldItems = items.filter(i => !BADGE_SEVERITIES.has(str(i.severity).toUpperCase())).length;
-      const unscreened = items.filter(i => !str(i.screen)).length;
+      const coldItems = distinct.filter(i => !BADGE_SEVERITIES.has(str(i.severity).toUpperCase())).length;
+      const unscreened = distinct.filter(i => !str(i.screen)).length;
 
       const notes = [
+        /* First, because it governs how everything under it should be read. */
+        `Read once at ${clock(readAt)}, when this screen opened. Nothing on this screen refreshes on a timer, so an item resolved since then is still listed and one raised since then is not — reopen Overview for a fresh read. The nav badges are the part that does poll, every 60 seconds.`,
         !threads ? 'v_conversations did not load, so WhatsApp threads above could not be checked against their contact records, and threads waiting outside this list could not be counted.' : '',
         stale ? `${num(stale)} further ${plural(stale, 'thread is', 'threads are')} awaiting a reply but older than the ${CHAT_WINDOW_DAYS}-day window this list uses — see Conversations.` : '',
         other ? `${num(other)} further ${plural(other, 'thread is', 'threads are')} marked awaiting_reply in v_conversations but ${plural(other, 'does', 'do')} not appear above.` : '',
@@ -1476,9 +1642,14 @@ SCREENS.overview = async host => {
           : '',
         /* Badge arithmetic, in words, every time — a badge nobody can reproduce
            from the screen under it is a number people learn to ignore. */
-        `This panel lists all ${num(items.length)} ${plural(items.length, 'item', 'items')} the view returned${
+        `This panel lists ${num(distinct.length)} distinct ${plural(distinct.length, 'item', 'items')}${
           coldItems ? `, including ${num(coldItems)} not marked HOT or WARM` : ''}${
           unscreened ? ` and ${num(unscreened)} the view attributes to no screen` : ''}.`,
+        /* The one number on this panel that does not match the sidebar, said
+           out loud. It used to match by listing the duplicates. */
+        collapsed
+          ? `The view returned ${num(items.length)} rows to get there: ${num(collapsed)} of them ${plural(collapsed, 'is a repeat', 'are repeats')} of a price undercut already listed, one row per nightly scrape of the same vehicle at the same price, and ${plural(collapsed, 'it is', 'they are')} shown once. v_needs_attention has no DISTINCT ON, so the nav badge — painted by badges.js from the same view without this collapse — counts ${plural(collapsed, 'that repeat', 'those repeats')} and reads higher than the list.`
+          : '',
         `Nav badges are painted by lib/badges.js from one read of v_needs_attention every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading. Items the view files against no screen have no nav item to sit on, so they are counted into the Overview badge and nowhere else.`,
         gapRows == null
           ? `The KYC archive-gap read failed, so the badge is the shared count alone${need.floor == null ? '' : ` (${num(need.floor)})`} and any gap it would have added is missing from it.`
@@ -1513,21 +1684,35 @@ SCREENS.overview = async host => {
 
   const FEED_LIMIT = 8;
   panels.push(panel(feedHost, {
-    title: 'Live lead feed',
-    sub: 'Newest first',
+    /* Called a "Live lead feed" until 1 Sep 2026, and it was neither live nor a
+       feed: one read when the screen opens, no timer anywhere on this screen to
+       repaint it, and the word "Live" sitting over a table that had not moved
+       since the tab was opened. A new enquiry does NOT appear here the moment
+       the router receives it, which is exactly what an owner watching this
+       panel would assume it meant. The name now says what it is and the read
+       time is printed under the table. */
+    title: 'Latest leads',
+    sub: 'Newest first — a snapshot, read once when this screen opened',
     actions: `<button class="btn sm" data-act="leads">View all</button>`,
     /* `phone` is on the lead row, so the newest enquiry can be rung from the
        first screen an owner opens. `ai_score` is the router's score — there is
        no `lead_score` column on this table, whatever older code called it. */
-    load: () => db(`leads?select=id,name,phone,status,ai_score,vehicle_interest,source,created_at&order=created_at.desc&limit=${FEED_LIMIT}`),
+    load: async () => ({
+      readAt: new Date().toISOString(),
+      rows: await db(`leads?select=id,name,phone,status,ai_score,vehicle_interest,source,created_at&order=created_at.desc&limit=${FEED_LIMIT}`),
+    }),
     /* `card` is handed the rows so they can be wired to the drawer once this
        HTML is actually in the document — render() runs before it is. */
-    render: (rows, card) => {
+    render: ({ rows, readAt }, card) => {
       card.__rows = rows;
-      if (!rows.length) return stateEmpty('No leads yet', 'They appear here the moment the router webhook receives one.');
+      if (!rows.length) {
+        return stateEmpty('No leads yet',
+          `Nothing in the leads table as of ${clock(readAt)}, when this panel read it. New enquiries appear here on the next read, not as they arrive — reopen Overview to check.`);
+      }
       /* Fewer rows than the page size means this is not the top of a long list,
          it is the whole list — which reads very differently. */
       const notes = [
+        `Read once at ${clock(readAt)}, when this screen opened. This table does not update on its own — a lead that arrived since is not on it. Reopen Overview for a fresh read.`,
         rows.length < FEED_LIMIT
           ? `The query asked for the newest ${FEED_LIMIT} leads and got ${rows.length}, so this is the whole leads table, not the top of it.`
           : '',
