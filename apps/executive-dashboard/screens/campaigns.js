@@ -76,8 +76,14 @@
      address, a `@c.us` chat id, a `@lid` handle and a `+digits@whatsapp.lead`
      key for the same customer. The workflow's own reply gates expand across
      those shapes before deciding to send; this screen did not, so half of a
-     conversation was invisible to it. See `keysFor` — it deliberately duplicates
-     `lib/identity.js`, which is not on this branch yet.
+     conversation was invisible to it. Expanded here through a private `keysFor`,
+     written as an admitted duplicate of `lib/identity.js` while that module was
+     still on another branch. **The duplicate was deleted later the same day**,
+     when the resolver landed in this tree — see the block above `personCanon`.
+     It matched less than the private rule was claimed to: the shared resolver
+     bridges a `@lid` handle through `whatsapp_contacts` / `v_conversations`,
+     which is the only way a LID can ever reach a person, and the counts below
+     are what that is worth on today's data.
 
    And `['FAILED','REJECTED']`, the screen's private definition of failure, is
    gone: `lib/health.js` classifies every run, and the else-branch no longer
@@ -95,6 +101,13 @@
    is mostly empty states — which is the deliverable, not a failure of it. An
    empty state that names what is empty, why, and what would fill it is the most
    useful thing this screen can be today; a fabricated funnel would be the least.
+
+   Those two figures are 24 Aug ones and have moved. Counted 01 Sep 2026 14:18
+   UTC: `leads` holds 3 rows — 34 Siva and 35 Effco both DISQUALIFIED, 38 Ali
+   WARM — and `communication_logs` holds 95 messages, which `v_conversations`
+   resolves to 11 threads and not to one person. So the audience for a drip is
+   the single WARM lead, and the paragraph above is still the right description
+   of what this screen mostly is; it is the numbers in it that were stale.
 
    Three things it will not print, at any n, and each one is stated on the screen
    with the column that is missing:
@@ -142,6 +155,10 @@ import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/fo
    — and then printed "Every logged drip run succeeded" of everything else,
    which is a false sentence over a PARTIAL row. */
 import { OUTCOME, isIncomplete, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
+/* The only place allowed to decide whether two keys are the same person. This
+   screen used to carry its own copy of that rule; see the block above
+   `personCanon` for what the copy could not see. */
+import { expandIdentity, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -300,67 +317,74 @@ const channelSummary = rows => {
   return bits.join(' and ');
 };
 
-/* ── One person, several keys. THIS DELIBERATELY DUPLICATES lib/identity.js. ──
+/* ── One person, several keys. Resolved by lib/identity.js. ──────────────────
    `communication_logs.lead_email` is not an address, it is whichever key the
    writer happened to hold: a real address from the drip and the web form,
    `+<digits>@whatsapp.lead` and `<digits>@c.us` from the Master Router, and a
    bare `<digits>@lid` handle from WAHA. One person therefore sits under several
    values, and this screen used to read exactly one of them.
 
-   Live on 01 Sep 2026 02:50 UTC, lead 38 "Ali" (`shabbir53ujjainwala@gmail.com`,
-   `+918517942172`): 7 inbound and 8 outbound rows filed under the gmail address,
-   and 6 inbound and 6 outbound filed under `+918517942172@whatsapp.lead`. The
-   roster read the first pair and reported the second half of his conversation as
-   not having happened.
+   Until 01 Sep 2026 the expansion was a private `keysFor()` here, written as an
+   admitted duplicate while `lib/identity.js` was still on branch
+   `frontend/identity-resolver`, with a comment saying it must not survive the
+   resolver landing. It has landed: `lib/identity.js` is in this tree and five
+   other modules read it — conversations.js, customers.js, deals.js, leads.js and
+   lib/lead-drawer.js. The duplicate is deleted, and this screen now answers "is
+   this the same person?" with the code they answer it with.
 
-   The workflow does not have this bug. Every `Replies Since Enrol (Day N)` node
-   builds `or=(lead_email.eq.<email>,lead_email.eq.<digits>@c.us,
-   lead_email.eq.+<digits>@whatsapp.lead)` before it decides whether to send. A
-   screen that now leans on those gates to say the sequence stops itself has to
-   see at least what they see.
+   That is not a tidying change; the two rules disagree on every lead in the
+   database. Messages in `communication_logs` per lead, measured on the live
+   database at 01 Sep 2026 14:18 UTC, private rule -> shared resolver:
 
-   Matched on the LAST NINE DIGITS of the phone, which is what the backend
-   `Resolve Lead Identity` node in whatsapp_bdc_ai_agent.json does and for its
-   reason: the country code and the leading zero are written inconsistently by
-   WAHA, by the router and by hand, and the last nine digits are the part that
-   survives all three.
+     lead 38 Ali    shabbir53ujjainwala@gmail.com / +918517942172   27 -> 29
+     lead 34 Siva   +971547484167@whatsapp.lead   / +971547484167    3 ->  8
+     lead 35 Effco  email is the empty string     / +971505433953    0 -> 10
 
-   `@lid` keys are excluded from the digit match on purpose. A LID is an internal
-   WAHA id, not a phone number — `111948809162873@lid` is fifteen digits of
-   something else — so matching its tail against a phone would attach a stranger's
-   messages to a lead. That is the same blind spot the gate has, and it is stated
-   on screen in GATE_BLIND_SPOT rather than papered over here.
+   Every one of those 17 extra rows is filed under a `@lid` handle and nothing
+   else — 2 of Ali's under `158510264357112@lid`, 5 of Siva's under
+   `155315328786434@lid`, all 10 of Effco's under `111948809162873@lid`. A LID
+   carries no phone digits, so it can never be derived from a number; it is
+   reached only through a `whatsapp_contacts` / `v_conversations` row that ties
+   the handle to a phone, and `keysFor` had no way to read one. It skipped every
+   `@lid` key by name — correctly, given what it had, because matching a machine
+   id's tail against a phone number attaches a stranger's messages to a lead —
+   and so found none of them. `convs` is passed in as `links` below, which is
+   what supplies the bridge.
 
-   THIS IS A DUPLICATE AND MUST NOT SURVIVE. `lib/identity.js` exists on branch
-   frontend/identity-resolver and is not on this branch, so it cannot be imported
-   yet. When it lands, delete everything down to `keysFor` and import it — two
-   resolvers will drift, and the one that drifts is the one nobody is testing. */
-const LID_KEY  = /@lid$/i;
-const digitsOf = v => String(v == null ? '' : v).replace(/[^0-9]/g, '');
-const last9    = v => { const d = digitsOf(v); return d.length >= 9 ? d.slice(-9) : ''; };
-function keysFor(email, phone, known) {
-  const out = new Set();
-  const e = low(email);
-  if (e) out.add(e);
-  const d = digitsOf(phone);
-  if (d.length >= 9) {
-    /* The two shapes the router writes, added whether or not a row exists under
-       them yet, so the set means "this person's keys" and not "keys we have
-       already seen traffic on". */
-    out.add(`${d}@c.us`);
-    out.add(`+${d}@whatsapp.lead`);
-    const tail = d.slice(-9);
-    for (const k of known) {
-      if (LID_KEY.test(k)) continue;
-      if (last9(k.split('@')[0]) === tail) out.add(k);
-    }
-  }
-  return out;
-}
-/* Every row filed under any of a person's keys, newest first. */
-const gather = (index, keys) => {
+   Effco is the sharpest case and the reason 0 is in that table. `leads.email`
+   for lead 35 is the EMPTY STRING, not null and not an address, so `keysFor`
+   started from nothing, added the two phone-derived shapes no row is filed
+   under, and matched zero of the ten messages that are demonstrably his.
+
+   `expandIdentity` + `normalizeKey().canonical`, not `personFilter` /
+   `personQuery`: those two build a PostgREST filter for a per-person read, and
+   this screen issues none. It takes one bounded pass over communication_logs and
+   matches in memory, so what it needs is the comparison form, not the query.
+   That is the same shape screens/customers.js:556 and screens/leads.js:411 use.
+
+   The rule is still not ours to choose. The n8n node `Resolve Lead Identity`
+   (whatsapp_bdc_ai_agent.json) joins a chat to a lead on the LAST NINE DIGITS of
+   the phone, every key in this column was written by a workflow that used that
+   rule, and lib/identity.js is that rule — including its refusal to merge two
+   leads whose numbers end in the same nine digits, which is why `leads` goes in
+   as the candidate pool rather than being left out. */
+
+/* Every canonical form this person's rows could be filed under. `canonical` is
+   identity.js's comparison form: it collapses `@c.us`, `@s.whatsapp.net`,
+   `@whatsapp.lead` and a bare number onto `phone:<last 9>` while keeping a LID
+   as `lid:<digits>` and an address as `email:<address>`, so a LID whose digits
+   happen to end like somebody's phone number can never compare equal to it. */
+const personCanon = (seed, links, leads) => {
+  const idn = expandIdentity(seed, { links: links || [], leads: leads || [] });
+  return { identity: idn, canon: new Set((idn.keys || []).map(k => normalizeKey(k).canonical).filter(Boolean)) };
+};
+/* Every row filed under any canonical this person resolves to, newest first.
+   Keyed on the canonical rather than on the raw string because the raw strings
+   are what disagree: three of Ali's keys are one person and the index has to
+   say so before the roster can count them together. */
+const gather = (index, canon) => {
   const out = [];
-  keys.forEach(k => { const rows = index.get(k); if (rows) out.push(...rows); });
+  canon.forEach(c => { const rows = index.get(c); if (rows) out.push(...rows); });
   return out.sort((a, b) => ts(b.created_at) - ts(a.created_at));
 };
 
@@ -411,16 +435,27 @@ const SELF_STOPPING_NOTE =
   + 'next step. n8n exposes no cancel webhook either — HOOK in lib/data.js lists only lead-trigger, which starts a sequence — '
   + 'and this dashboard will not write to a service-role table to fake one. Open the conversation and answer them.';
 
-/* What the gates cannot see, stated because this screen now leans on them.
-   Each `Replies Since Enrol (Day N)` node builds its `or=` from the lead\u2019s
-   email plus `<digits>@c.us` and `+<digits>@whatsapp.lead`, taking the digits
-   from the phone on the leads row via `Lead State (Day N)`. So a reply filed
-   only under a @lid handle, or a lead carrying no phone number, is invisible to
-   the gate — and to the expansion this screen does, for the same reason. */
+/* What the gates cannot see, stated because this screen leans on them to say a
+   sequence stops itself. Each `Replies Since Enrol (Day N)` node builds its
+   `or=` from the lead\u2019s email plus `<digits>@c.us` and
+   `+<digits>@whatsapp.lead`, taking the digits from the phone on the leads row
+   via `Lead State (Day N)`. So a reply filed only under a @lid handle, or a lead
+   carrying no phone number, is invisible to the gate.
+
+   Until 01 Sep 2026 this note also said the screen shared that blind spot, and
+   it no longer does. lib/identity.js reaches a @lid through the
+   whatsapp_contacts / v_conversations row that ties the handle to a phone, and
+   the gate has no step that does. So the two now disagree, in one direction
+   only: this screen can see a reply the gate cannot. That is the case where the
+   sequence does NOT stop itself and SELF_STOPPING_NOTE would be wrong about it,
+   which is why the divergence is printed rather than quietly enjoyed. */
 const GATE_BLIND_SPOT =
   'The gate builds its lookup from the lead\u2019s email plus the two WhatsApp key shapes it can derive from the phone number on '
-  + 'the leads row, so a reply filed only under a @lid handle, or a lead with no phone number on it, is invisible to the gate — '
-  + 'and to the key expansion this screen does, for the same reason: a LID carries no phone digits and identifies nobody.';
+  + 'the leads row, so a reply filed only under a @lid handle, or a lead with no phone number on it, is invisible to it. This screen '
+  + 'is no longer blind to those rows: lib/identity.js bridges a @lid through the whatsapp_contacts / v_conversations row that ties '
+  + 'the handle to a phone number, and on 01 Sep 2026 that bridge is the only thing attaching 17 of the 95 messages in '
+  + 'communication_logs to a lead at all — 2 of Ali\u2019s 29, 5 of Siva\u2019s 8, and all 10 of Effco\u2019s 10. The two therefore '
+  + 'disagree in one direction: a reply counted here may be one the gate cannot see, and a sequence the gate will not stop.';
 
 /* n8n does not expose credential state to the browser directly. What the
    dashboard can see is the wreckage: a failure row in v_needs_attention and the
@@ -439,9 +474,12 @@ const FILTERS = [
 SCREENS.campaigns = async host => {
   const alertCard  = el('div', 'card flush');
   const strip      = el('div', 'grid g5');
-  /* With one lead and one person's messages, the list of questions this screen
-     refuses to answer is more useful than anything it can answer, and each "no"
-     is a specification: the column that is missing, and what would fill it. */
+  /* With one drip-eligible lead — 3 leads on 01 Sep 2026, of which only 38 Ali
+     is WARM — the list of questions this screen refuses to answer is more useful
+     than anything it can answer, and each "no" is a specification: the column
+     that is missing, and what would fill it. ("one lead and one person's
+     messages" until today; there are three leads and eleven conversation
+     threads now, and only the first half of that sentence was ever the point.) */
   const scopeCard  = el('div', 'card flush');
   const enrolCard  = el('div', 'card flush');
   const midRow     = el('div', 'grid g2 top');
@@ -630,13 +668,21 @@ SCREENS.campaigns = async host => {
        two of the five away and then called the result maximally generous. */
     const sends = outbound.filter(c => isMail(c) || isWhatsApp(c))
       .sort((a, b) => ts(b.created_at) - ts(a.created_at));
-    /* Every distinct key in communication_logs, needed before the per-enrolment
-       indexes so a person's other keys can be found by phone tail. */
+    /* Every distinct RAW key in communication_logs. Only for the sentence in
+       identityNote that contrasts the raw column against v_conversations' person
+       count — the matching below no longer walks this set looking for a phone
+       tail, because lib/identity.js resolves a person's keys from the person. */
     const commKeys = new Set(comms.map(c => low(c.lead_email)).filter(Boolean));
+    /* Indexed on identity.js's canonical form, not on the raw string. Three of
+       Ali's keys are one person and the index has to say so before the roster
+       can add them up; a row whose key canonicalises to nothing — a null, or the
+       empty string lead 35 carries — identifies nobody and is dropped here
+       rather than becoming a bucket everybody matches. */
+    const canonOfRow = c => normalizeKey(c.lead_email).canonical;
     const indexBy = rows => {
       const m = new Map();
       for (const c of rows) {
-        const k = low(c.lead_email);
+        const k = canonOfRow(c);
         if (!k) continue;
         if (!m.has(k)) m.set(k, []);
         m.get(k).push(c);
@@ -645,6 +691,19 @@ SCREENS.campaigns = async host => {
     };
     const sendsBy   = indexBy(sends);
     const inboundBy = indexBy(inbound);
+    /* canonical -> the raw lead_email values in communication_logs that collapse
+       onto it. The roster says how many keys a person's messages were actually
+       FOUND under, which is a fact about the database; the resolver's own key
+       list also contains synthesised shapes nothing is filed under, and printing
+       that count would overstate what was matched. */
+    const rawKeysByCanon = new Map();
+    for (const c of comms) {
+      const k = low(c.lead_email);
+      const cn = canonOfRow(c);
+      if (!k || !cn) continue;
+      if (!rawKeysByCanon.has(cn)) rawKeysByCanon.set(cn, new Set());
+      rawKeysByCanon.get(cn).add(k);
+    }
     const lastMail = mail[0] || null;
     const lastSend = sends[0] || null;
 
@@ -728,15 +787,34 @@ SCREENS.campaigns = async host => {
       r.since = since;
       r.lead = leadByEmail.get(r.key) || null;
       /* All of this person's keys, not just the one the drip was enrolled on.
-         Without the lead row there is no phone number, so the set collapses to
-         the single enrolment key — which is stated on the roster row rather
-         than silently producing a smaller count. */
-      r.keys = keysFor(r.key, r.lead && r.lead.phone, commKeys);
-      r.keyExpanded = r.keys.size > 1;
-      r.sends   = gather(sendsBy, r.keys).filter(x => ts(x.created_at) >= since);
+         `convs` is v_conversations, and it is the links argument for one reason:
+         it is the only thing here that ties a @lid handle to a phone number, and
+         a LID cannot be derived from one. Where it could not be read the bridge
+         is simply absent and the expansion is narrower — that is a real loss and
+         it is not smoothed over, it is why convsErr is stated in identityNote.
+         Without the lead row there is no phone number either, so the set
+         collapses towards the single enrolment key, which the roster row says
+         rather than silently producing a smaller count.
+
+         `leads` is the candidate pool: two customers whose numbers end in the
+         same nine digits are REPORTED by identity.js as a collision and left
+         unmerged, instead of one person's drip history appearing in the other's
+         row. There is no such collision in the database today — the three leads
+         end 517942172, 547484167 and 505433953 — so this costs nothing now and
+         is the difference between a wrong roster and an honest one later. */
+      const resolved = personCanon(
+        { leadId: r.lead && r.lead.id, email: r.key, phone: r.lead && r.lead.phone, name: r.name },
+        convs || [], leads);
+      r.identity = resolved.identity;
+      r.canon    = resolved.canon;
+      /* The raw keys actually carrying rows for this person, for the roster. */
+      r.matchedKeys = new Set();
+      r.canon.forEach(c => (rawKeysByCanon.get(c) || []).forEach(k => r.matchedKeys.add(k)));
+      r.keyExpanded = r.matchedKeys.size > 1;
+      r.sends   = gather(sendsBy, r.canon).filter(x => ts(x.created_at) >= since);
       r.mails   = r.sends.filter(isMail);
       r.waSends = r.sends.filter(isWhatsApp);
-      r.replies = gather(inboundBy, r.keys).filter(x => ts(x.created_at) >= since);
+      r.replies = gather(inboundBy, r.canon).filter(x => ts(x.created_at) >= since);
       r.judgeable = since >= commFloor;
       /* Within the sequence window the remaining steps are still queued inside
          n8n; past it the sequence has run out by itself. The two need different
@@ -1268,8 +1346,13 @@ SCREENS.campaigns = async host => {
         ? `${num(mailOnlyGap.length)} ${plural(mailOnlyGap.length, 'enrolment has', 'enrolments have')} a logged WhatsApp send since enrolment and no logged email. That is the per-lead shape of a mail credential failure, and it is not counted as "nothing sent".`
         : '',
       /* Said once, because the roster, the reply KPI and the zero-send check all
-         depend on it and none of them can see past it. */
-      rosterAll.some(r => !r.keyExpanded)
+         depend on it. The trigger used to be `some(r => !r.keyExpanded)` — a
+         test for this screen's OWN expansion having collapsed to one key, which
+         was the right question while the note was about this screen's blind
+         spot. It is now about the divergence between the gate and lib/identity.js,
+         and that divergence holds for every person on the roster regardless of
+         how many keys any of them turned out to have. */
+      rosterAll.length
         ? GATE_BLIND_SPOT
         : '',
       alerts.length > 1 ? 'A lead can satisfy more than one alert, so these counts overlap and do not add up to a total.' : '',
@@ -1745,8 +1828,18 @@ SCREENS.campaigns = async host => {
                 </div>
                 <div class="cell-sub">${esc(str(r.email) || 'no email on the audit row')} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
                 ${r.keyExpanded
-                  ? `<div class="cell-sub t-muted" title="communication_logs files one person under several keys — an address, a @c.us chat id and a +digits@whatsapp.lead key. Messages under all of them are counted for this person, matched on the last nine digits of the phone number.">Messages counted across ${num(r.keys.size)} keys this person is filed under</div>`
-                  : `<div class="cell-sub t-muted" title="Without a lead row there is no phone number to derive this person's WhatsApp keys from, so only the address the drip was enrolled on is searched. A reply filed under a chat handle would not be seen.">Only the enrolment key is searched — ${r.lead ? 'no phone number on the lead row' : 'no lead row matches this address'}</div>`}
+                  ? `<div class="cell-sub t-muted" title="communication_logs files one person under several keys — a real address, a @c.us chat id, a +digits@whatsapp.lead key and a @lid handle. Messages under all of them are counted for this person. lib/identity.js resolves them: the phone-shaped keys on the last nine digits of the number, the @lid handle through the whatsapp_contacts row that ties it to that number, because a LID carries no phone digits of its own.">Messages counted across ${num(r.matchedKeys.size)} keys this person is filed under</div>`
+                  /* Not "only the enrolment key is searched" any more, which is
+                     what this said until 01 Sep 2026 and stopped being true when
+                     the private rule went: identity.js searches every canonical
+                     the person resolves to, and it can reach a @lid handle from
+                     the enrolment key alone through the conversation view. What
+                     is worth saying here is the narrower true thing — the
+                     expansion ran and the database has rows under at most one of
+                     the identities it produced. */
+                  : `<div class="cell-sub t-muted" title="${esc(`lib/identity.js resolved this enrolment to ${r.canon.size} ${plural(r.canon.size, 'identity', 'identities')} — the address, the last nine digits of the phone number, and any @lid handle a whatsapp_contacts or v_conversations row ties to that number. communication_logs holds rows under ${r.matchedKeys.size === 1 ? 'one of them' : 'none of them'}.${r.lead ? '' : ' No lead row matches the key the drip was enrolled on, so no phone number came from that side; whatever was reached came from the conversation view.'}`)}">${r.matchedKeys.size === 1
+                    ? `Found under one key only, of ${num(r.canon.size)} ${plural(r.canon.size, 'identity', 'identities')} searched`
+                    : `No message is filed under any of the ${num(r.canon.size)} ${plural(r.canon.size, 'identity', 'identities')} this person resolves to`}${r.lead ? '' : ' — no lead row matches this enrolment key'}</div>`}
                 ${r.replies.length ? `<div class="cell-sub t-hot">“${esc(String(r.replies[0].message || '').replace(/\s+/g, ' ').trim().slice(0, 140))}”</div>` : ''}
               </div>
               <div style="text-align:right;flex-shrink:0">

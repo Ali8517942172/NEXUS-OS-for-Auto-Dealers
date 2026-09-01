@@ -34,9 +34,23 @@
      · Two `unanswered_chat` items are gone with the 136 messages from thirteen
        WhatsApp handles belonging to the owner's personal phone book. They were
        never customers.
-     · The database now holds one customer and one lead, so nearly every figure
-       on the strip is n=1. Each of them says so in its own words instead of
-       standing there looking like a rate.
+     · The database then held one customer and one lead, so nearly every figure
+       on the strip was n=1. Each of them says so in its own words instead of
+       standing there looking like a rate. (1 Sep 2026: three leads, two of them
+       carrying a recorded response time. The n=1 wording is conditional on the
+       counts and simply stops firing — which is what it was written for; the
+       sentence above is left as the dated observation it was, not as a claim
+       about the table today.)
+
+   Every bullet above is an observation dated 24 Aug 2026, and none of them
+   still describes the database. Counted live on 1 Sep 2026 at 14:18 UTC,
+   v_needs_attention returns 13 items: 8 unanswered_chat, 2 workflow_failure,
+   2 undercut and 1 inventory_aging. `competitors` refilled and holds 11 rows,
+   so the undercut kind is firing again — which is what the paragraph above
+   predicted would happen and the reason the kind was left handled rather than
+   removed. `kyc_documents` went the other way and is now empty. The bullets
+   are kept as the record of why the code is shaped this way; they are not a
+   description of what is on screen.
 
    Nothing below is written against the rows that happen to be there tonight.
    There is no list of expected items in this file: a screen that hardcodes
@@ -56,11 +70,15 @@
       resolves it against `v_conversations` (`identified`, `phone`) rather than
       printing it as one.
 
-   2. The KYC table contains rows that were never KYC submissions — uncaptioned
-      WhatsApp images auto-routed to the auditor. They now carry `void_reason`,
+   2. The KYC table can hold rows that were never KYC submissions — uncaptioned
+      WhatsApp images auto-routed to the auditor. Those carry `void_reason`,
       and the view's own `kyc_archive_gap` branch excludes them. The archive-gap
       count computed here excludes them too (`void_reason is null`); the voided
       rows with no stored file are reported separately as what they are.
+      Written as a rule rather than as a census, because it stopped being one:
+      `kyc_documents` holds 0 rows on 1 Sep 2026 (counted live, 14:18 UTC), so
+      there is nothing of either kind in it today and every branch below takes
+      its empty path. The partitioning stays for the next time it fills.
 
    3. The nav badge is no longer this screen's to own. `lib/badges.js` paints
       every badge — including this one — from one read of `v_needs_attention`
@@ -227,10 +245,12 @@ const IDENT = {
    fails and never goes half-done — it just returns nothing — has NEITHER, so it
    arrives here with `last_incomplete` null. Keyed on that column alone this
    function returned "unknown", in grey. Competitor Price Scraping is exactly
-   that workflow: 84 of its 96 runs this month produced nothing usable, and its
-   last success landed 0.9 seconds before its newest run tonight, so a recency
-   test would also have called it stale rather than broken. Producing nothing is
-   not an incident that a later run can be "since"; it is the current condition,
+   that workflow: 94 of its 108 runs in the window produced nothing usable, and
+   its last success landed 0.8 seconds before its newest run — both figures read
+   live from v_workflow_health on 1 Sep 2026 at 14:18 UTC, and both were quoted
+   here as 84 of 96 until then. So a recency test would also have called it
+   stale rather than broken. Producing nothing is not an incident that a later
+   run can be "since"; it is the current condition,
    and the view already computed it.
 
    This function never guesses upward: an alert wrongly softened is worse than
@@ -288,9 +308,11 @@ const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newes
 
    `failures_30d` is deliberately NOT one of them. It counts only rows the
    outcome rule classes as an outright failure, and a workflow can be DEGRADED
-   with none: Finance Calc has zero tonight and has issued three quotes out of
-   twenty-seven runs that counted. A Needs-attention item reading "2 failed runs
-   in the last 24 h" beside an enrichment reading "0 failures in 30 days" is the
+   with none: Finance Calc has zero, and has issued three quotes out of the
+   twenty-nine runs that counted (v_workflow_health, live 1 Sep 2026 14:18 UTC;
+   the denominator was twenty-seven when this was written). A Needs-attention
+   item reading "2 failed runs in the last 24 h" beside an enrichment reading
+   "0 failures in 30 days" is the
    screen arguing with itself, and both sentences were true — they were counting
    different things. `effective_runs_30d` excludes runs refused by design and
    runs escalated to a person on purpose; neither is the workflow failing to
@@ -302,17 +324,18 @@ const runCounts = w => {
 };
 
 /* ── One thing needing a human, listed once ──────────────────────────────────
-   `v_needs_attention` has no DISTINCT ON, and its `undercut` branch selects
-   straight from `competitors`, which accumulates one row per nightly scrape.
-   The same Toyota Fortuner at the same price against the same rival therefore
-   arrives as one item per night it has been checked — five rows tonight, refs
-   18, 20, 23, 24 and 25, identical in kind, title and detail and differing only
-   in `scraped_at`. The panel listed all five, counted all five, and then closed
-   with "This panel lists all 17 items the view returned" as though that were a
-   reconciliation. Thirteen things actually need a human.
+   Until 1 Sep 2026 `v_needs_attention` had no DISTINCT ON, and its `undercut`
+   branch selected straight from `competitors`, which accumulates one row per
+   nightly scrape. The same Toyota Fortuner at the same price against the same
+   rival therefore arrived as one item per night it had been checked — five rows
+   that evening, refs 18, 20, 23, 24 and 25, identical in kind, title and detail
+   and differing only in `scraped_at`. The panel listed all five, counted all
+   five, and then closed with "This panel lists all 17 items the view returned"
+   as though that were a reconciliation. Thirteen things actually needed a human.
 
-   The right fix is a DISTINCT ON in the view; this file cannot make it and must
-   not pretend the number is fine until someone does.
+   The right fix was a DISTINCT ON in the view, and the view has it now — see
+   the dated note below. This file could not make that change and must not
+   pretend the number is fine until someone does.
 
    SNAPSHOT_KINDS is the whole of the rule and it is deliberately narrow. It
    names the kinds whose `ref` identifies a LOG ROW rather than the subject —
@@ -329,6 +352,12 @@ const runCounts = w => {
    rather than upserts, so the raw table keeps growing and any new branch that
    reads it unguarded reintroduces the fault. If it ever collapses anything
    again, the source has regressed.
+
+   Confirmed rather than assumed on 1 Sep 2026: `competitors` holds 11 rows,
+   `v_competitor_latest` and the view's own DISTINCT ON reduce them to 5 per
+   (competitor, model), and `v_needs_attention` emits 2 undercut items — one
+   each for the two whose price_diff_aed is negative. `collapsed` is 0 on this
+   data, so every sentence below that is conditional on it stays silent.
 */
 const SNAPSHOT_KINDS = new Set(['undercut']);
 const collapseSnapshots = rows => {
@@ -432,15 +461,29 @@ SCREENS.overview = async host => {
      The filter is `health`, not `failures_30d=gt.0`, and the difference is not
      cosmetic. Since v_workflow_health was rebuilt on nexus_outcome_class(), a
      workflow can be DEGRADED with zero rows labelled FAILED — Finance Calc is
-     DEGRADED tonight on 5 PARTIAL runs and 19 that produced nothing, and
-     `failures_30d=gt.0` would have dropped it out of this panel entirely on the
-     evening its calculator stopped issuing quotes. PRODUCING_NOTHING is here
+     DEGRADED on 5 half-done runs and 21 that produced nothing (live 1 Sep 2026,
+     14:18 UTC; 19 when this was written), and `failures_30d=gt.0` would have
+     dropped it out of this panel entirely on the evening its calculator stopped
+     issuing quotes. The rule is what matters here and it is not tonight's
+     numbers: v_workflow_health raises DEGRADED on `failures_30d > 0` OR
+     `partials_30d > 0` (view definition read live the same day), so a workflow
+     that only ever goes half-done never touches the FAILED count and is still
+     degraded. PRODUCING_NOTHING is here
      for the same reason: a workflow that runs clean and achieves nothing is not
      a workflow to leave off a triage card. UNKNOWN_OUTCOME is a workflow
      logging a status this system does not define, which is also not health.
 
-     A workflow_failure item in v_needs_attention comes from FAILED rows in the
-     last 24 h, so its workflow is DEGRADED and is inside this set; an item with
+     A workflow_failure item in v_needs_attention does NOT come from rows
+     labelled FAILED, whatever this note said until 1 Sep 2026. Its branch —
+     definition read live that day — counts audit_log rows in the last 24 h
+     where `nexus_outcome_class(workflow, status, summary)` is FAILURE **or**
+     PARTIAL, and its detail string says "N runs that did not deliver", not
+     "failed". Two n8n Delivery Reports were changed the same day to stop
+     writing FAILED on a partial delivery, so the two kinds of item genuinely
+     separated rather than being a wording difference. The conclusion the old
+     sentence drew is unchanged and now rests on the right premise: either class
+     puts failures_30d or partials_30d above zero, and v_workflow_health raises
+     DEGRADED on either, so the item's workflow is inside this set. An item with
      no match here is still reported as unmatched rather than assumed healthy. */
   const readHealth = shared(() => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,last_run,last_success,last_failure,last_partial,last_incomplete,is_active'
     + '&health=in.(DEGRADED,PRODUCING_NOTHING,UNKNOWN_OUTCOME)'
@@ -479,9 +522,22 @@ SCREENS.overview = async host => {
      `screen`. Overview is the one documented exception allowed to refine its
      own badge, and it exists for exactly one reason: a KYC archive gap that the
      view's `kyc_archive_gap` branch does not list (its branch carries a recency
-     cut-off of its own) is a compliance hole no badge would otherwise mention.
-     Tonight that is the larger half of the number: the view returns three items
-     and there are eight unarchived submissions it says nothing about.
+     cut-off of its own — `created_at > 2026-08-17 16:01:48+00`, read off the
+     view definition on 1 Sep 2026) is a compliance hole no badge would
+     otherwise mention.
+
+     On 24 Aug that refinement was the larger half of the badge: the view
+     returned three items and there were eight unarchived submissions it said
+     nothing about. It adds nothing today, and the sentence claiming those eight
+     was still here a week after they stopped existing. `kyc_documents` holds
+     0 rows — counted live 1 Sep 2026, 14:18 UTC — so there is no gap to find,
+     the view lists none, `need.kycExtra` is 0 and rule 2 below leaves the badge
+     exactly as badges.js painted it. The mechanism stays, because the table
+     refills the first time the KYC auditor writes to it again. An empty table is
+     also not an all-clear: KYC/AML Document Auditor (Phase 5) reads DEGRADED in
+     v_workflow_health with 0 successes in 9 runs and nothing logged since
+     17 Aug (same read), so what this panel is looking at is a stopped pipeline,
+     not a clean book.
 
      Two rules make that refinement safe rather than a second opinion:
 
@@ -848,11 +904,31 @@ SCREENS.overview = async host => {
           : muted(`No lead was created in the last ${WINDOW_DAYS} days, so there is nothing here to be waiting on`);
 
     /* ── Response time ──────────────────────────────────────────────────────
-       The mean of one number is that number, and calling it an average is the
-       single easiest way for this screen to lie now that the database holds one
+       The mean of one number is that number, and calling it an average was the
+       single easiest way for this screen to lie back when the database held one
        lead. So the tile renames itself: with one measurement the label reads
        "Response time" and the subtitle says whose it is. The value is unchanged
-       and correct either way — what changes is the claim made about it. */
+       and correct either way — what changes is the claim made about it.
+
+       The n=1 case is not today's case and the wording no longer implies it is.
+       Live 1 Sep 2026: three leads, response_time_minutes 1, NULL and 4, so
+       `withResp` is two and this tile reads "Avg response time" over two
+       measurements with the THIN caveat under it. The NULL is the one to be
+       careful about — `withResp` filters it out, which is the whole of what
+       this screen does with it. A null response time means nobody measured
+       that lead, NOT that nobody answered it. Lead 35 is the proof: its
+       response_time_minutes is null, and the outbound WhatsApp message that
+       answered it went at 06:40:38 on 26 Aug, 74 seconds BEFORE the lead row
+       was written at 06:41:52 (both timestamps read live 1 Sep 2026). Nothing
+       here treats a null as a breach, and nothing here should start — the
+       view's own sla_breach branch does not either, since `response_time_minutes
+       > 5` is null for that row and the comparison drops it. The reply-gap
+       analysis two blocks up is what answers "was this lead answered", off
+       communication_logs, and it does not read this column at all; on this
+       particular lead it cannot answer it either, because that message is filed
+       under a WhatsApp handle and the lead carries no email — which is exactly
+       what the `outboundHandles` and `noEmail` counters below exist to say out
+       loud rather than let it pass as an answered lead. */
     const oneMeasure = withResp.length === 1;
     const respLabel = oneMeasure ? 'Response time' : 'Avg response time';
     const respBasis = muted(`From ${num(withResp.length)} of ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} with a recorded response time`);
@@ -1167,9 +1243,10 @@ SCREENS.overview = async host => {
          Size is `notClean`, the number the row actually prints, not
          `failures_30d` which the read ordered on. They can be far apart:
          Competitor Price Scraping has zero failures and zero half-done runs, so
-         the read puts it last, and 84 of its 96 runs produced nothing — the
-         largest miss on the card. Sorting on the displayed number is also the
-         only ordering an operator can check against what is in front of them. */
+         the read puts it last, and 94 of its 108 runs produced nothing (live
+         1 Sep 2026, 14:18 UTC) — the largest miss on the card. Sorting on the
+         displayed number is also the only ordering an operator can check
+         against what is in front of them. */
       const state = new Map(rows.map(w => [w, failureState(w)]));
       const ORDER = { failing: 0, stale: 1, unknown: 2, recovered: 3 };
       const size = w => { const n = runCounts(w).notClean; return n == null ? -1 : n; };
@@ -1395,9 +1472,17 @@ SCREENS.overview = async host => {
        lead_unassigned   l.created_at        when the lead arrived
        sla_breach        l.created_at        when the lead arrived
        kyc_archive_gap   k.created_at        when the document was taken
-       workflow_failure  max(logged_at)      when it last failed
+       workflow_failure  max(logged_at)      when it last did not deliver
        undercut          c.scraped_at        when the price was last seen
        inventory_aging   now()               the moment the query ran
+
+     Re-read off the view on 1 Sep 2026, and the workflow_failure row had gone
+     stale: that max(logged_at) is taken over runs the outcome rule classes
+     FAILURE **or** PARTIAL, so it is not "when it last failed". Live the same
+     day, Customer 360 - Data Aggregation carried that item with an `at` equal
+     to its last_partial and no failure since 23 Aug — the word "failed" under
+     it was flatly wrong about the run it was pointing at. The verb below says
+     "last did not deliver", which is what the view's own detail string says.
 
      Only the first four are a waiting time. `undercut` is an observation time —
      the gap is as old as the price, not as old as the scrape — and
@@ -1412,7 +1497,7 @@ SCREENS.overview = async host => {
     lead_unassigned:  { verb: 'waiting' },
     sla_breach:       { verb: 'waiting' },
     kyc_archive_gap:  { verb: 'waiting' },
-    workflow_failure: { verb: 'last failed' },
+    workflow_failure: { verb: 'last did not deliver' },
     undercut:         { verb: 'price last seen' },
     inventory_aging:  { none: true, blank: 'the view timestamps this kind with the moment the query ran, not a waiting time — the age is in the detail above' },
     _default:         { verb: 'recorded' },
@@ -1449,13 +1534,21 @@ SCREENS.overview = async host => {
       return { items: sorted, distinct, collapsed, threads, gapRows, health, rivals, readAt };
     },
     render: ({ items, distinct, collapsed, threads, gapRows, health, rivals, readAt }) => {
-      /* The badge floor is still computed over every row the view returned, not
-         over the collapsed list. badges.js reads the same view without the
-         collapse and paints the nav from it; making this screen's floor smaller
-         would give Math.max() a number that fights it, and a badge that shrinks
-         the moment Overview renders is the failure this floor exists to
-         prevent. The collapse is a display and counting decision, and the
-         difference it makes to the two numbers is stated in the notes below. */
+      /* `need.items` is every row the view returned, uncollapsed, because
+         sharedFloor() and ownFloor() do their own collapsing and have to be
+         handed the raw rows to do it on.
+
+         What this note used to say — that the floor is counted over the raw
+         rows and that "badges.js reads the same view without the collapse" —
+         was wrong on both halves, and it contradicted the two functions
+         directly above it. Read live on 1 Sep 2026: badges.js calls
+         collapseAttention() BEFORE its severity filter and paints every badge,
+         Overview's grand total included, from the collapsed list; and
+         ownFloor() here collapses too. That is the point — the floor has to be
+         measured on the same footing as the number it is protecting, or
+         Math.max() re-inflates exactly what the panel just collapsed. The two
+         cannot drift: badges.js exports SNAPSHOT_KINDS and collapseAttention
+         for this file to share. */
       need.attention = items.length;
       need.items = items;
       need.kycExtra = gapRows ? extraGaps(gapRows, items).length : null;
@@ -1662,10 +1755,16 @@ SCREENS.overview = async host => {
         `This panel lists ${num(distinct.length)} distinct ${plural(distinct.length, 'item', 'items')}${
           coldItems ? `, including ${num(coldItems)} not marked HOT or WARM` : ''}${
           unscreened ? ` and ${num(unscreened)} the view attributes to no screen` : ''}.`,
-        /* The one number on this panel that does not match the sidebar, said
-           out loud. It used to match by listing the duplicates. */
+        /* Says what was collapsed and why the sidebar still agrees. This
+           sentence used to end "the nav badge — painted by badges.js from the
+           same view without this collapse — counts those repeats and reads
+           higher than the list", which was false about badges.js: it collapses
+           with the same exported rule before it counts (read live 1 Sep 2026).
+           A note that tells an operator to expect two numbers to disagree, when
+           they are computed identically, teaches them to distrust a badge that
+           is right. */
         collapsed
-          ? `The view returned ${num(items.length)} rows to get there: ${num(collapsed)} of them ${plural(collapsed, 'is a repeat', 'are repeats')} of a price undercut already listed, one row per nightly scrape of the same vehicle at the same price, and ${plural(collapsed, 'it is', 'they are')} shown once. v_needs_attention has no DISTINCT ON, so the nav badge — painted by badges.js from the same view without this collapse — counts ${plural(collapsed, 'that repeat', 'those repeats')} and reads higher than the list.`
+          ? `The view returned ${num(items.length)} rows to get there: ${num(collapsed)} of them ${plural(collapsed, 'is a repeat', 'are repeats')} of a price undercut already listed, one row per nightly scrape of the same vehicle at the same price, and ${plural(collapsed, 'it is', 'they are')} shown once. The nav badge does not double-count ${plural(collapsed, 'it', 'them')}: badges.js collapses the same way before it counts. As of 1 Sep 2026 v_needs_attention de-duplicates its undercut branch itself, so anything collapsing here means that has regressed and the raw table is being read unguarded again.`
           : '',
         `Nav badges are painted by lib/badges.js from one read of v_needs_attention every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading. Items the view files against no screen have no nav item to sit on, so they are counted into the Overview badge and nowhere else.`,
         gapRows == null
