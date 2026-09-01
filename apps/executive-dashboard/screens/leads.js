@@ -81,15 +81,28 @@
 
    That trigger has been deleted. The sole writer is now
    `trg_comm_logs_first_response`, AFTER INSERT on `communication_logs`, which
-   resolves the row to a lead through `nexus_lead_for_comm_key` and stamps the
-   minutes between the lead's `created_at` and the first reply it can attribute
-   to it — no clamp, no backward grace window. The three live rows were repaired
-   and on 1 Sep 2026 read: lead 34 → 1, lead 38 → 4, lead 35 → NULL, because no
-   reply has been logged against lead 35 since its row was created.
+   resolves the row to a lead through `nexus_lead_for_comm_key` (integer-returning
+   as of 1 Sep 2026 — the `RETURNS uuid` defect the 31 Aug audit filed under L2 is
+   gone) and stamps `round(seconds / 60)` between the lead's `created_at` and the
+   first reply it can attribute to it. The three live rows were repaired and on
+   1 Sep 2026 read: lead 34 → 1, lead 38 → 4, lead 35 → NULL.
 
-   So NULL now means nobody has answered this customer. It does not mean nobody
-   measured, it is not a zero, and it must never render as a blank — a blank in
-   a response column reads as "fast" to everyone who has ever looked at one. */
+   What a NULL means, stated no more strongly than the function supports. Read
+   out of `nexus_mark_first_response` on 1 Sep 2026: it counts only an OUTBOUND
+   whatsapp / email / sms row that is not a `[system]` or `[SILENCE-` message; it
+   writes once, and only while the column is still null; and a reply older than
+   the lead row is admitted as 0 only when it is under 90 seconds older AND no
+   inbound message was already on file — a clock-skew allowance between n8n
+   (Asia/Dubai) and Postgres, not a floor under a real wait.
+
+   So NULL does NOT mean "nobody has answered this customer", and lead 35 is the
+   live proof: its one outbound message was logged at 06:40:38 on 26 Aug, its lead
+   row was minted 74 seconds later at 06:41:52, and eight inbound messages were
+   already on file — the conversation began before the lead did, so the trigger
+   declined to call that a response time. The customer was answered; the wait was
+   not measurable. NULL means no measured wait. It does not mean nobody measured,
+   it is not a zero, and it must never render as a blank — a blank in a response
+   column reads as "fast" to everyone who has ever looked at one. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
@@ -140,6 +153,14 @@ const CONTACT_LIMIT = 2000;
 /* The audit read behind the per-row workflow history. Ceiling disclosed like
    every other one on this screen; 555 rows on 1 Sep 2026, so it is not near it. */
 const AUDIT_LIMIT = 1000;
+/* purchase_history, behind the VIP badge. Empty on 1 Sep 2026 — nobody in this
+   table can be a returning customer yet — but until today this read carried no
+   `limit` at all, which does not mean unbounded: PostgREST applies its own server
+   ceiling and returns the truncated page with a 200. A repeat buyer whose row
+   fell outside it would have rendered as a first-timer with nothing on screen
+   saying the set was cut, which is the failure mode the rest of this file is
+   written against. Stated when it is hit, like every other ceiling here. */
+const PURCHASE_LIMIT = 5000;
 
 /* The "never contacted" check is windowed so it is provably complete rather
    than merely likely: a message to a lead can only be logged at or after that
@@ -201,6 +222,20 @@ const PREVIEW = 3;
    nobody — it is never printed as a name. */
 const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 
+/* Whatever is in `leads.email`, is it somewhere a person can be WRITTEN TO?
+   That is a different question from "which rows belong to this person", which is
+   lib/identity.js's job and is answered by matching on every key including the
+   ones nobody can post to. Live on 1 Sep 2026 lead 34's email column holds
+   `+971547484167@whatsapp.lead` and lead 35's holds an empty string; neither is
+   an address, and screens/campaigns.js already refuses to enrol either of them
+   (its `isRealEmail`, which names lead 34 in its own comment). This screen fires
+   the same drip webhook and did not, so one screen guarded the send and the other
+   offered it. KEY_SHAPE.EMAIL is the same test expressed through the shared
+   module rather than through a second private regex. */
+const realEmail = l => keyShape(l && l.email) === KEY_SHAPE.EMAIL
+  ? String(l.email).toLowerCase()
+  : '';
+
 /* `v_needs_attention.severity` is HOT | WARM | COLD, and TONE covers all three
    (plus an unknown value, which it gives its own 'unknown' tone rather than
    leaving unstyled or filing under COLD).
@@ -256,11 +291,13 @@ const ACTIONS = {
     done: 'Drip started',
     blurb: 'Day 1 welcome, day 3 follow-up, day 7 final offer — sent by n8n over the following week, not by this browser. '
          + 'Starting it twice enrols the lead twice.',
-    blocker: l => !l.email
-      ? 'The drip is addressed by email and this lead has no email address on record.'
-      : null,
+    blocker: l => realEmail(l)
+      ? null
+      : str(l.email)
+        ? `The drip is addressed by email, and this lead's email column holds ${str(l.email)} — the key its messages are filed under, not an address. Enrolling it would point a Gmail node at something nobody can deliver to.`
+        : 'The drip is addressed by email and this lead has no email address on record.',
     payload: l => ({
-      lead_email: l.email,
+      lead_email: realEmail(l),
       lead_name: l.name || '',
       vehicle_interest: l.vehicle_interest || '',
     }),
@@ -662,12 +699,12 @@ SCREENS.leads = async host => {
       ? `response_time_minutes is null on ${plural(all.length, 'the only lead on file', `all ${num(all.length)} leads on file`)}. `
         + `That column is the only record this database keeps of how long a lead waited for its first answer, so the ${SLA_MINUTES}-minute rule is currently being measured by nothing here: `
         + `v_needs_attention can raise an sla_breach only against a lead that carries a figure, and no average response time anywhere in this dashboard has an input. `
-        + 'A null now means nobody has replied to that lead since its row was created — the column is written by a Postgres trigger on communication_logs, which fires when a reply lands, and by nothing else. It is not the router, and nothing in this browser can supply it.'
+        + 'A null means the column was never stamped: nothing has gone back since the lead row was created, or the only reply on file predates the lead row, which the trigger declines to measure. Either way there is no measured wait. The column is written by a Postgres trigger on communication_logs and by nothing else — not by the router, and nothing in this browser can supply it.'
       : '',
     !leadsErr && measured.length && measured.length < all.length
       ? `${num(all.length - measured.length)} of the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here ${plural(all.length - measured.length, 'carries', 'carry')} no response_time_minutes. `
-        + `Since 31 Aug that is a statement about the customer, not about the instrument: the trigger on communication_logs stamps the column the moment a reply it can match to the lead lands, so a null means no such reply has ever been logged. `
-        + `The ${SLA_MINUTES}-minute rule cannot be applied to ${plural(all.length - measured.length, 'it', 'them')} at all — ${plural(all.length - measured.length, 'it is', 'they are')} unanswered, not fast.`
+        + `Since 31 Aug that is a statement about the record, not about the instrument: the trigger on communication_logs stamps the column for the first reply it can match to the lead, and it has not stamped ${plural(all.length - measured.length, 'this one', 'these')}. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure — that is why lead 35 carries no figure despite having been answered. `
+        + `The ${SLA_MINUTES}-minute rule cannot be applied to ${plural(all.length - measured.length, 'it', 'them')} at all — there is no measured wait, which is not the same as a fast one.`
       : '',
     !leadsErr && measured.length
       ? `${num(breached.length)} of the ${num(measured.length)} ${plural(measured.length, 'lead', 'leads')} that do carry a first-reply time ${plural(breached.length, 'is', 'are')} over ${SLA_MINUTES} minutes.`
@@ -768,10 +805,10 @@ SCREENS.leads = async host => {
     leadsErr || !all.length
       ? ''
       : !measured.length
-      ? `None of that is a statement about how fast anyone was answered: response_time_minutes is null on ${plural(all.length, 'the only lead here', 'every lead here')}, which since 31 Aug means no reply has been logged against ${plural(all.length, 'it', 'any of them')} at all. The sla_breach branch above has nothing to fire on and neither does this screen.`
+      ? `None of that is a statement about how fast anyone was answered: response_time_minutes is null on ${plural(all.length, 'the only lead here', 'every lead here')}, so nothing here has a measured wait — either nothing has gone back since the lead row was created, or the only reply on file predates it, which the trigger will not measure. The sla_breach branch above has nothing to fire on and neither does this screen.`
       : `On reply speed, which those checks say nothing about: ${num(measured.length)} of ${nLeads} ${plural(measured.length, 'carries', 'carry')} a first-reply time and ${plural(breached.length, `${num(breached.length)} of those is`, `${num(breached.length)} of those are`)} over ${SLA_MINUTES} minutes.`
         + (measured.length < all.length
-          ? ` The other ${num(all.length - measured.length)} ${plural(all.length - measured.length, 'has', 'have')} had no reply logged, so ${plural(all.length - measured.length, 'it is', 'they are')} unanswered rather than fast.`
+          ? ` The other ${num(all.length - measured.length)} ${plural(all.length - measured.length, 'carries', 'carry')} no measured wait at all, which is not the same as a fast one — see the note below for what a null does and does not say.`
           : ''),
   ].filter(Boolean);
 
@@ -806,8 +843,14 @@ SCREENS.leads = async host => {
   let vipSet = null, hist = null;
   const notes = [];
   try {
-    const purchases = await db('purchase_history?select=email');
-    vipSet = new Set(purchases.map(p => low(p.email)));
+    const purchases = await db(`purchase_history?select=email&limit=${PURCHASE_LIMIT}`);
+    /* Empty keys dropped. A purchase row with a blank email would otherwise match
+       lead 35, whose email column is an empty string, and badge a disqualified
+       wrong-number lead as a returning customer. */
+    vipSet = new Set(purchases.map(p => low(p.email)).filter(Boolean));
+    if (purchases.length >= PURCHASE_LIMIT) {
+      notes.push(`The purchase-history read stopped at ${num(PURCHASE_LIMIT)} rows, so the VIP badge covers only the buyers in those rows. A lead without one is not being shown as a first-time buyer — it may simply be outside the rows read.`);
+    }
   } catch (e) {
     notes.push(`Purchase history is unavailable (${e.message}), so returning customers are not flagged.`);
   }
@@ -1001,7 +1044,10 @@ SCREENS.leads = async host => {
        somebody picking up a phone, and a number two columns away is a number
        nobody reads out. */
     { label:'Lead', strong: true, render: r =>
-        `${leadName(r)}${vipSet?.has(low(r.email)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}
+        /* Matched on a real address only. purchase_history is keyed on one, so a
+           `+digits@whatsapp.lead` or an empty string can never be a buyer there,
+           and asking is how a blank comes to equal a blank. */
+        `${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}
          <div class="cell-sub">${phoneText(r)}</div>` },
     /* `leads.email` is not always an email. Live on 1 Sep 2026 lead 34's holds
        `+971547484167@whatsapp.lead`, a key the Master Router synthesises for a
@@ -1059,15 +1105,17 @@ SCREENS.leads = async host => {
        instant reply. The BEFORE INSERT trigger that produced those zeroes is
        gone; the AFTER INSERT trigger on communication_logs stamps the column
        when a reply it can attribute to the lead lands, and nothing else writes
-       it. A null is therefore a statement about the customer — nobody has
-       answered them — and the cell says so rather than saying nobody counted. */
+       it. A null is not a statement about the customer either, though: the
+       trigger declines to measure a reply that predates the lead row, and lead 35
+       was answered 74 seconds before his row existed. So the cell says the wait
+       was never timed, which is the only thing a null actually carries. */
     { label:'First reply', align:'r', render: r => {
         const m = respOf(r);
         if (m == null) return `<span class="t-warm" title="${esc(
-          'response_time_minutes is null on this row. The trigger on communication_logs stamps it the moment a reply it can match to this lead is logged, so a null means no such reply has ever been logged — nobody has answered this customer since the lead row was created. '
-          + `It is not a fast reply and not a slow one: the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and v_needs_attention cannot raise an sla_breach for it either.`)}">No reply logged</span>`;
+          'response_time_minutes is null on this row. The trigger on communication_logs stamps it for the first reply it can match to this lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure. '
+          + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and v_needs_attention cannot raise an sla_breach for it either.`)}">No first reply timed</span>`;
         return `<span class="${m > SLA_MINUTES ? 't-hot' : 't-ok'}" title="${esc(
-          `response_time_minutes on this row: the minutes between the lead being created and the first reply the communication_logs trigger could attribute to it, rounded to whole minutes and never clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
+          `response_time_minutes on this row: the minutes between the lead being created and the first outbound whatsapp, email or sms message the communication_logs trigger could attribute to it, rounded to the nearest whole minute. A reply logged up to 90 seconds before the lead row is recorded as 0 when no inbound message was already on file — a clock-skew allowance between n8n and Postgres — and anything earlier is left unmeasured rather than clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
       }},
     { label:'Actions', align:'r', render: actionCell },
   ];
@@ -1081,7 +1129,19 @@ SCREENS.leads = async host => {
       <dl class="kv">
         <dt>Lead</dt><dd>${leadName(lead)}</dd>
         <dt>Phone</dt><dd>${phoneText(lead)}</dd>
-        <dt>Email</dt><dd>${esc(lead.email) || '<span class="t-muted">—</span>'}</dd>
+        <dt>Email</dt><dd>${(() => {
+          /* The same three states the Email column and the drawer paint. This row
+             printed the raw value, so the dialog that asks an operator to confirm
+             an email-addressed action showed `+971547484167@whatsapp.lead` under
+             the word "Email" with nothing saying it is not one — the exact fault
+             the column above was rewritten to stop, on the last screen before the
+             send. */
+          const shape = keyShape(lead.email);
+          if (shape === KEY_SHAPE.NONE) return '<span class="t-muted">No email address on this lead</span>';
+          if (shape === KEY_SHAPE.EMAIL) return esc(lead.email);
+          return `<span class="mono t-warm">${esc(str(lead.email))}</span>`
+            + `<div class="cell-sub">Not an address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under.</div>`;
+        })()}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
         <dt>Status</dt><dd>${pill(lead.status || 'NEW')}</dd>
         <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>

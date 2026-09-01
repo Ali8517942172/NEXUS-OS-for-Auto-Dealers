@@ -79,22 +79,74 @@
        reader the stored columns "were last written by the nightly job" without
        ever asking whether it had run; that is a provenance claim, and it is now
        read from `v_workflow_health` through lib/health.js, the only module
-       allowed to interpret an audit_log status. Live on 1 Sep 2026: Inventory
-       Ageing Recompute, HEALTHY, 17 runs in 30 days, last run 31 Aug 20:15 UTC.
+       allowed to interpret an audit_log status. Live on 1 Sep 2026, 09:44 UTC:
+       Inventory Ageing Recompute, HEALTHY, 17 runs in 30 days, 17 of them
+       SUCCESS, last run 31 Aug 20:15 UTC. Its audit_log summaries were read too,
+       because a job that succeeds while touching nothing is the shape of a job
+       not doing its work: 15 of those 17 runs say "for 12 units" and only the
+       two oldest, 14 and 15 Aug, say "for 0 units" — from before the lot was
+       loaded. So there is no live finding there, and none is manufactured. That
+       is a fact about the summaries, not about the view, and the view carries no
+       summary column, so this screen does not assert it on the page.
 
-   What Overview does, re-checked on 1 Sep 2026 rather than remembered.
-   overview.js:594 selects `days_in_stock, holding_cost_accrued, aging_alert` and
-   the file does not import deriveUnit(), so Overview is reading the stored
+   1 Sep 2026, second pass. The pass above split the definition gap out of the
+   drift alert but left three claims behind it that the data can reach.
+
+     · THE DRIFT ALERT DIAGNOSED A CAUSE IT HAD NOT ESTABLISHED. It ended with a
+       flat "This is lag: more than one day of it means the nightly recompute has
+       not run" whatever had actually differed — so a list price raised this
+       morning (net margin moves, nothing else does) and a stored band flip that
+       nothing explains both read as a job that had failed overnight. That is the
+       same fault as the 75-versus-90 confusion, one layer down: a real
+       disagreement reported under the wrong cause, sending somebody to restart a
+       job that ran. The three causes are now counted apart and said apart.
+     · THE COMPARISON RAN ON UNDATED UNITS, where it cannot mean anything. Days
+       and holding cost were gated on an acquisition date; the band and net
+       margin were not. `recompute_inventory_derived()` updates `where
+       acquired_at is not null`, so the nightly job never touches an undated row —
+       its stored columns are frozen, not stale — while deriveUnit() derives the
+       "live" side of all four from the stored day count. An undated unit at 80
+       stored days therefore produced a CRITICAL reading "band HEALTHY stored vs
+       WARNING live … in a way the threshold difference does not account for",
+       when it is exactly the threshold difference measured against a fallback,
+       about a unit whose Days, Holding cost, Net margin and Alert cells all read
+       "—" three inches below because this screen had already ruled it could not
+       state them. All four columns are gated now, and the skipped units are
+       counted out loud.
+     · THE HEADLINE CONTRADICTED THE ALERTS IT CLAIMED TO SUMMARISE. The
+       provenance block counted a unit whose stored band is empty or unrecognised
+       as sitting "in a different band under the two, and the alerts above name
+       them", while the alert for those same units said the stored band "was not
+       compared against the live one at all". Both sentences on one screen. Only
+       readable bands are compared now; the rest are reported as uncompared. The
+       "only these stored columns came back" caveat also stopped being an
+       `else if` on the drift alert — it used to vanish at exactly the moment the
+       comparison found something, which is when a reader most needs to know how
+       much of it ran.
+
+   What Overview does, read out of overview.js again on 1 Sep 2026 rather than
+   remembered. overview.js:594 selects exactly
+   `id,model,days_in_stock,price_aed,holding_cost_accrued,aging_alert` and the
+   file's import list carries no deriveUnit(), so Overview is reading the stored
    nightly columns — the structural fact the provenance block below depends on.
-   Its "units at risk" figures filter on `aging_alert = 'CRITICAL'`, and both
-   band definitions force a sold unit to HEALTHY, so a sold unit cannot reach
-   them: it is excluded by the band, which is why Overview does not need a
-   `status` column to be right about that. The older note here also claimed a
-   reader "is not told which of the two they are looking at" — a claim about
-   Overview's on-screen wording, which is not this file's to make and goes stale
-   the first time somebody rewrites a sentence over there. Everything said below
-   about Overview is a fact about what it reads, checked against the file, and
-   dated so the next reader knows to check it again rather than trust it. */
+   Its "units at risk" figures are overview.js:653-664, `up(i.aging_alert) ===
+   'CRITICAL'`, and the holding and list totals beside them are summed over that
+   same filtered set. There is no `status` in its select and it needs none: both
+   band definitions force a sold unit to HEALTHY — lib/unit-form.js deriveUnit(),
+   and `when d.sold then 'HEALTHY'` in recompute_inventory_derived(), both read
+   on 1 Sep 2026 — so a sold unit is excluded from its money-at-risk by the band
+   before status could matter.
+
+   What this file deliberately does NOT say about Overview is anything about
+   Overview's on-screen wording. An older note here claimed a reader "is not told
+   which of the two they are looking at"; that is a sentence in another file,
+   which is not this one's to characterise and goes stale the first time somebody
+   rewrites it. (For the record, and only as a dated observation rather than a
+   claim this screen renders: on 1 Sep 2026 Overview names the stored/live split
+   in a code comment at overview.js:917 and not in any string it paints.)
+   Everything said above about Overview is a fact about what it reads, checked
+   against the file, and dated so the next reader knows to check it again rather
+   than trust it. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, dubaiDate, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
@@ -556,6 +608,7 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
       `${num(undated.length)} ${plural(undated.length, 'unit has', 'units have')} no acquisition date`,
       `${refList(undated)}. Days in stock, holding cost, the ageing band and the net margin are all counted from that date, so none of them can be stated for ${plural(undated.length, 'this unit', 'these units')}. `
       + `deriveUnit() falls back to the stored days_in_stock and to zero where that is empty, which is why ${plural(undated.length, 'it used to read', 'they used to read')} as the newest ${plural(undated.length, 'car', 'cars')} on the lot; this screen now prints "—" and leaves ${plural(undated.length, 'it', 'them')} out of every live count, average and band on the page, so they are missing from those totals rather than flattering them. `
+      + `The stored columns are no fallback either: recompute_inventory_derived() updates only rows where acquired_at is not null (body read live 1 Sep 2026), so the nightly job has never written ${plural(undated.length, 'this row', 'these rows')} and never will — whatever the stored days, holding cost and band hold is frozen wherever it was last written, which is why ${plural(undated.length, 'it is', 'they are')} left out of the stored-versus-live comparison rather than reported as stale. `
       + `The unit form requires a date, so ${plural(undated.length, 'this row', 'these rows')} did not come from it — an ERP import or a hand-written insert is where to look.`,
       undated);
   }
@@ -626,8 +679,16 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
     const drift = [];
     const defGap = [];
     /* Counted so a silent comparison cannot be reported as a passing one: a
-       stored band this screen does not recognise is a check that did not run. */
+       stored band that is absent, or is a word this screen does not recognise,
+       is a check that did not run. The two are counted apart because they are
+       different faults — an empty column is a row the nightly job has never
+       written, and an unrecognised word is a writer this app does not know
+       about. */
     let unreadableBand = 0;
+    let missingBand = 0;
+    /* Unsold units the comparison could not cover at all, because they carry no
+       acquisition date. See the gate inside the loop. */
+    let undatedSkipped = 0;
     for (const u of inv) {
       /* Sold units are excluded by construction, not by choice: deriveUnit()
          hands a sold unit its stored holding cost straight back, so that column
@@ -637,31 +698,60 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
       if (isSold(u)) continue;
       const r = rawById.get(String(u.id));
       if (!r) continue;
-      const why = [];
-      /* Without an acquisition date deriveUnit() falls back to the stored day
-         count, so comparing the two would be comparing a number with itself.
-         The undated units have their own alert above. */
+      /* THE WHOLE COMPARISON IS GATED ON AN ACQUISITION DATE, all four columns,
+         and until 1 Sep 2026 only two of them were.
+
+         Two independent reasons, and either alone is enough. deriveUnit() falls
+         back to the stored day count when there is no date, so the "live" side
+         of every one of these four is derived from the stored side and the
+         comparison is a number against itself. And `recompute_inventory_derived()`
+         — body read live on 1 Sep 2026 — updates `from … where acquired_at is
+         not null`, so the nightly job never touches an undated row at all: its
+         stored columns are frozen wherever they were last written, and no
+         amount of the job running will ever reconcile them.
+
+         Ungated, the band check turned that into a CRITICAL. An undated unit
+         with a stored day count of 80 is HEALTHY in the stored column (90-day
+         threshold) and WARNING off deriveUnit's fallback (75), and since
+         daysOf() is null for it the defGap test could not catch it — so it was
+         reported as a real flip, "in a way the threshold difference does not
+         account for", about a unit whose Days, Holding cost, Net margin and
+         Alert cells on the same page all read "—" because this screen had
+         already decided it could not state them. Net margin did the same in
+         money: it quoted a live figure the table refuses to print.
+
+         Undated units are not silently dropped — they have the no_acquired_at
+         alert above, and the count below keeps the gap visible. */
       const hasDate = dated(u);
-      if (hasDate && has('days_in_stock')) {
+      if (!hasDate) { undatedSkipped += 1; continue; }
+      /* What actually differs, kept apart from what it means. `lag` is the
+         stored figure trailing the calendar and is what a missed nightly run
+         looks like; `repriced` is net margin alone, which moves the moment
+         somebody edits a price or a cost and says nothing about the job;
+         `flipped` is a band difference the two thresholds do not explain. */
+      const why = [];
+      let lagged = false, repriced = false, flipped = false;
+      if (has('days_in_stock')) {
         const v = n0(r.days_in_stock);
-        if (v != null && Math.abs(v - u.days_in_stock) > LAG_DAYS) why.push(`days ${num(v)} stored vs ${num(u.days_in_stock)} live`);
+        if (v != null && Math.abs(v - u.days_in_stock) > LAG_DAYS) { lagged = true; why.push(`days ${num(v)} stored vs ${num(u.days_in_stock)} live`); }
       }
-      if (hasDate && has('holding_cost_accrued')) {
+      if (has('holding_cost_accrued')) {
         const v = n0(r.holding_cost_accrued);
-        if (v != null && Math.abs(v - u.holding_cost_accrued) > LAG_AED) why.push(`holding cost ${aed(v)} stored vs ${aed(u.holding_cost_accrued)} live`);
+        if (v != null && Math.abs(v - u.holding_cost_accrued) > LAG_AED) { lagged = true; why.push(`holding cost ${aed(v)} stored vs ${aed(u.holding_cost_accrued)} live`); }
       }
-      let flipped = false;
       if (has('aging_alert')) {
         const v = band(r.aging_alert);
         const liveBand = band(u.aging_alert);
-        if (!ALERTS.includes(v)) {
+        if (!v) {
+          missingBand += 1;
+        } else if (!ALERTS.includes(v)) {
           unreadableBand += 1;
         } else if (v !== liveBand) {
           /* The 75–89 window, and only that window: HEALTHY stored, WARNING
              live, both correct under their own threshold. Anything else — a
              CRITICAL that has not appeared in the stored column, a band that
              moved the wrong way — is a real flip and stays in the drift alert. */
-          if (hasDate && v === 'HEALTHY' && liveBand === 'WARNING' && inBandGap(daysOf(u))) {
+          if (v === 'HEALTHY' && liveBand === 'WARNING' && inBandGap(daysOf(u))) {
             defGap.push(u);
           } else {
             flipped = true;
@@ -673,10 +763,12 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
         const v = n0(r.net_margin);
         /* Net margin legitimately moves with holding cost, so it is allowed the
            same slack plus a rounding dirham; anything past that is a price or a
-           cost that changed after the last nightly run. */
-        if (v != null && Math.abs(v - u.net_margin) > LAG_AED + 1) why.push(`net margin ${aed(v)} stored vs ${aed(u.net_margin)} live`);
+           cost that changed after the last nightly run — an edit, not a late
+           job, which is why it is flagged separately below rather than being
+           reported as staleness. */
+        if (v != null && Math.abs(v - u.net_margin) > LAG_AED + 1) { repriced = true; why.push(`net margin ${aed(v)} stored vs ${aed(u.net_margin)} live`); }
       }
-      if (why.length) drift.push({ u, why, flipped });
+      if (why.length) drift.push({ u, why, lagged, repriced, flipped });
     }
 
     /* The definition gap first: it is the one a reader will otherwise "fix" by
@@ -691,17 +783,47 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
 
     if (drift.length) {
       const flips = drift.filter(d => d.flipped).length;
+      const lags = drift.filter(d => d.lagged).length;
+      /* Rows whose ONLY disagreement is net margin. A row that is also lagging
+         is already explained by the lag. */
+      const edits = drift.filter(d => d.repriced && !d.lagged && !d.flipped).length;
       const shown = drift.slice(0, SHOWN_REFS)
         .map(d => `${str(d.u.id)} (${d.why.join(', ')})`).join('; ');
       const more = drift.length - Math.min(drift.length, SHOWN_REFS);
+      /* Three causes, said apart. Until 1 Sep 2026 this alert ended with a flat
+         "This is lag: more than one day of it means the nightly recompute has
+         not run" regardless of what had actually differed — so a price raised
+         this morning, and a band flip nothing explains, both read as a job that
+         had failed to run overnight. Diagnosing a cause the screen has not
+         established is the same fault as the 75-versus-90 confusion this file
+         was rewritten to end, one layer down. */
+      const onN = n => (drift.length === 1 ? 'On this unit' : `On ${num(n)} of them`);
+      const causes = [
+        lags ? `${onN(lags)} the stored day count or holding figure trails the calendar by more than ${num(LAG_DAYS)} day, which is what a missed nightly run looks like — and is the only one of these that the job running will fix.` : '',
+        edits ? `${onN(edits)} the only difference is net margin, which moves the moment a price or a cost is edited and says nothing about the job: the stored figure is simply older than the edit.` : '',
+        flips ? `${onN(flips)} the stored ageing band differs from the live one in a way the ${num(INV.WARN_DAYS)}-versus-${num(STORED_WARN_DAYS)}-day threshold difference does not account for, and nothing on this screen explains it — an ageing campaign keyed on the stored column is acting on the stored answer.` : '',
+      ].filter(Boolean).join(' ');
       add('stored_drift', flips ? 'CRITICAL' : 'WARNING', 'sync_problem',
         `${num(drift.length)} unsold ${plural(drift.length, 'unit disagrees', 'units disagree')} with ${plural(drift.length, 'its', 'their')} stored figures`,
-        `${shown}${more > 0 ? `; and ${num(more)} more` : ''}. This screen shows the live recompute; Overview, the workflows and the Finance Desk read the stored columns, so the two are acting on different numbers`
-        + (flips ? `, and on ${num(flips)} of them the stored ageing band differs from the live one in a way the ${num(INV.WARN_DAYS)}-versus-${num(STORED_WARN_DAYS)}-day threshold difference does not account for` : '')
-        + `. This is lag: more than ${num(LAG_DAYS)} day of it means the nightly recompute has not run, not that the clock moved. ${jobLine(job)} Every ageing and margin figure on this screen is the live one; saving a unit from its Edit form writes the same live recompute back to the stored columns, which is what clears this.`,
+        `${shown}${more > 0 ? `; and ${num(more)} more` : ''}. This screen shows the live recompute; Overview, the workflows and the Finance Desk read the stored columns, so the two are acting on different numbers. `
+        + causes
+        + ` ${jobLine(job)} Every ageing and margin figure on this screen is the live one; saving a unit from its Edit form writes the same live recompute back to the stored columns, which is what clears this.`,
         drift.map(d => d.u));
-    } else if (storedCols.length < 4) {
-      notes.push(`Only ${storedCols.join(', ')} came back, so the stored-versus-live comparison covered ${plural(storedCols.length, 'that column', 'those columns')} alone.`);
+    }
+    /* Unconditional. This was `else if (drift.length)` until 1 Sep 2026, so the
+       sentence saying how much of the comparison had actually been possible
+       disappeared at exactly the moment the comparison found something — the
+       findings were then read as complete. A caveat that only shows up when
+       there is nothing to caveat is not a caveat. */
+    if (storedCols.length < 4) {
+      const absent = ['days_in_stock', 'holding_cost_accrued', 'net_margin', 'aging_alert'].filter(c => !has(c));
+      notes.push(`Only ${storedCols.join(', ')} came back with these rows, so the stored-versus-live comparison covered ${plural(storedCols.length, 'that column', 'those columns')} alone and says nothing about ${absent.join(', ')}.`);
+    }
+    if (undatedSkipped) {
+      notes.push(`${num(undatedSkipped)} unsold ${plural(undatedSkipped, 'unit has', 'units have')} no acquisition date and ${plural(undatedSkipped, 'was', 'were')} left out of the stored-versus-live comparison entirely. Two reasons: deriveUnit() falls back to the stored day count for ${plural(undatedSkipped, 'it', 'them')}, so the live side would be the stored side; and recompute_inventory_derived() only updates rows where acquired_at is not null, so the nightly job has never written ${plural(undatedSkipped, 'that row', 'those rows')} and never will. Whatever ${plural(undatedSkipped, 'its stored figures say', 'their stored figures say')} is unreconcilable, not stale.`);
+    }
+    if (missingBand) {
+      notes.push(`${num(missingBand)} unsold ${plural(missingBand, 'unit carries', 'units carry')} no stored aging_alert at all — the column is empty on ${plural(missingBand, 'that row', 'those rows')}, not holding a value this screen failed to read — so for ${plural(missingBand, 'it', 'them')} there was no stored band to compare the live one against.`);
     }
     if (unreadableBand) {
       notes.push(`${num(unreadableBand)} unsold ${plural(unreadableBand, 'unit carries', 'units carry')} a stored aging_alert this screen does not recognise as one of ${ALERTS.join(', ')}, so for ${plural(unreadableBand, 'that unit', 'those units')} the stored band was not compared against the live one at all — that check did not run rather than passing.`);
@@ -1027,17 +1149,34 @@ SCREENS.inventory = async host => {
      days, the window where the two WARNING thresholds part company. That is a
      property of today's acquisition dates, and it will stop being true the week
      NX-1002 crosses 75 days. Agreement is now reported as what it is. */
+  /* Whether the stored band came back at all, as opposed to coming back empty.
+     The read is select=*, so PostgREST returns every column of the table on
+     every row — a key that is absent is a column that is not on the table any
+     more, which is a schema change and not a data fault. Without this the
+     "Stored:" line below printed "0 critical · 0 warning · 0 healthy · 12 with
+     no band at all" for a dropped column, which reads as twelve broken rows. */
+  const hasStoredBand = raw.length > 0 && columnsOf(raw).has('aging_alert');
   const storedCount = a => raw.filter(r => band(r.aging_alert) === a).length;
   /* inv is raw.map(deriveUnit) — the same rows in the same order — so pairing by
      index here needs no id lookup and cannot mis-pair.
 
-     Only unsold, dated units are compared, because they are the only ones the
-     alerts above will name. A sold unit is forced HEALTHY live and left alone in
-     the stored column, and an undated unit has no live band at all; counting
-     either as a disagreement produced a headline number larger than the alerts
-     that were supposed to explain it. */
-  const bandDiff = inv.filter((u, i) => !isSold(u) && dated(u)
+     Only unsold, dated units with a READABLE stored band are compared, because
+     they are the only ones the alerts above will name. A sold unit is forced
+     HEALTHY live and left alone in the stored column; an undated unit has no
+     live band at all and is not touched by the nightly job either; and a row
+     whose stored band is empty or is a word this screen does not know was not
+     compared at all — the alerts say so in as many words. Counting any of them
+     as a disagreement produced a headline larger than the alerts that were
+     supposed to explain it, and in the unreadable case a headline that flatly
+     contradicted them: "2 units sit in a different band" directly above "for
+     those units the stored band was not compared against the live one at all".
+     Reconciled on 1 Sep 2026. */
+  const comparableBand = (u, i) => !isSold(u) && dated(u) && ALERTS.includes(band(raw[i].aging_alert));
+  const bandDiff = inv.filter((u, i) => comparableBand(u, i)
     && band(raw[i].aging_alert) !== band(u.aging_alert)).length;
+  /* Unsold, dated units the stored band cannot speak for — so the line below can
+     say the comparison was partial instead of implying it was complete. */
+  const bandUncomparable = inv.filter((u, i) => !isSold(u) && dated(u) && !ALERTS.includes(band(raw[i].aging_alert))).length;
   /* Units the two definitions genuinely disagree about, separated from units
      one of the two is merely late on. */
   const gapUnits = inv.filter(u => !isSold(u) && dated(u) && inBandGap(daysOf(u))).length;
@@ -1062,13 +1201,25 @@ SCREENS.inventory = async host => {
       ${undatedCount
         ? `${num(undatedCount)} ${plural(undatedCount, 'unit has', 'units have')} no acquisition date and ${plural(undatedCount, 'is', 'are')} therefore in none of the live counts, averages or bands below — not counted as healthy, not counted at all.`
         : ''}
-      Live today: ${esc(spread(alertCount, inv.length))}. Stored: ${esc(spread(storedCount, raw.length))}.
-      ${bandDiff
-        ? `${num(bandDiff)} ${plural(bandDiff, 'unit sits', 'units sit')} in a different band under the two, and the alerts above name ${plural(bandDiff, 'it', 'them')}.`
-        : 'The two put every unit in the same band today.'}
-      ${gapUnits
-        ? `${num(gapUnits)} of that difference is definition, not lag: this screen raises WARNING at ${num(INV.WARN_DAYS)} days and the nightly Postgres job at ${num(STORED_WARN_DAYS)}, so between those two numbers the same car is amber here and green on Overview with both sides working.`
-        : `That is not the same as the two agreeing on how to count: this screen raises WARNING at ${num(INV.WARN_DAYS)} days and the nightly Postgres job raises it at ${num(STORED_WARN_DAYS)}. They match today only because no unit is between those two numbers, and they will part company on the day one is.`}
+      Live today: ${esc(spread(alertCount, inv.length))}. Stored: ${hasStoredBand ? esc(spread(storedCount, raw.length)) : 'not shown — these rows carry no aging_alert column at all, so there is no stored band to count and no comparison below'}.
+      ${!hasStoredBand ? ''
+        : bandDiff
+          ? `${num(bandDiff)} ${plural(bandDiff, 'unit sits', 'units sit')} in a different band under the two, and the alerts above name ${plural(bandDiff, 'it', 'them')}.`
+          : 'The two put every unit they can both speak for in the same band today.'}
+      ${hasStoredBand && bandUncomparable
+        ? `${num(bandUncomparable)} unsold ${plural(bandUncomparable, 'unit is', 'units are')} outside that comparison because ${plural(bandUncomparable, 'its', 'their')} stored band is empty or is a word this screen does not recognise — ${plural(bandUncomparable, 'it was', 'they were')} not compared rather than found to agree.`
+        : ''}
+      ${/* Three cases, not two. The old else-branch asserted "they match today"
+            unconditionally whenever no unit sat in the 75–89 window, so a real
+            band flip printed "N units sit in a different band under the two"
+            and "They match today" one sentence apart. */
+        !hasStoredBand
+        ? `The two definitions still differ whether or not the column is there to show it: this screen raises WARNING at ${num(INV.WARN_DAYS)} days and the nightly Postgres job raises it at ${num(STORED_WARN_DAYS)}, and nothing here can say which band the stored side would have given.`
+        : gapUnits
+          ? `${num(gapUnits)} of that difference is definition, not lag: this screen raises WARNING at ${num(INV.WARN_DAYS)} days and the nightly Postgres job at ${num(STORED_WARN_DAYS)}, so between those two numbers the same car is amber here and green on Overview with both sides working.`
+          : bandDiff
+            ? `None of that difference is the threshold gap: this screen raises WARNING at ${num(INV.WARN_DAYS)} days and the nightly Postgres job raises it at ${num(STORED_WARN_DAYS)}, and no unit is currently between those two numbers — so the disagreements above need another explanation, and the alerts give what this screen can establish of one.`
+            : `That is not the same as the two agreeing on how to count: this screen raises WARNING at ${num(INV.WARN_DAYS)} days and the nightly Postgres job raises it at ${num(STORED_WARN_DAYS)}. They match today only because no unit is between those two numbers, and they will part company on the day one is.`}
     </div></div>`;
 
   /* ── Chrome. Everything below the toolbar is repainted by draw(). ───────── */

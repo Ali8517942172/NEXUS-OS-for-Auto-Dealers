@@ -41,8 +41,11 @@
    Live at the time of writing, that is not hypothetical. Lead 38, Ali, is TWO
    rows in this inbox:
 
-     shabbir53ujjainwala@gmail.com   17 messages   identified 'lead',  named Ali
-     +918517942172@whatsapp.lead     12 messages   identified 'unidentified'
+     shabbir53ujjainwala@gmail.com   17 rows   identified 'lead',  named Ali
+     +918517942172@whatsapp.lead     12 rows   identified 'unidentified'
+
+   Rows and not messages, and the difference is §3's: one of those 17 is the
+   silence detector's own marker, so the person has 29 log rows and 28 messages.
 
    The second row carries no name, no phone and no chat_id, and this screen
    rendered it as "Unidentified contact · Not in leads · No number on file",
@@ -66,8 +69,9 @@
        screen have to keep agreeing with `v_needs_attention`, the nav badge and
        Overview, all of which count v_conversations rows;
      · the message pane reads the WHOLE person through `personFilter`, so either
-       of Ali's two rows opens the same 29 messages, and the pane says which keys
-       and which sibling rows that history came from. It is also `ilike`, which
+       of Ali's two rows opens the same 29 log rows — 28 messages and one marker
+       — and the pane says which keys and which patterns that history was
+       actually matched on, not which keys exist. It is also `ilike`, which
        incidentally fixes the case-sensitivity the 31 Aug audit filed as C2;
      · `identified` stays the view's word. A row the view called 'unidentified'
        is not relabelled 'lead' here. It gets the sibling's name with the
@@ -205,7 +209,7 @@ import { HEALTH_WORDS, healthWords, successRate } from '../lib/health.js';
    it (`msgKeys`, a three-element in-list) and that version could not see the
    `+<digits>@whatsapp.lead` half of a customer. Nothing here invents a second
    rule; every identity decision below goes through these four functions. */
-import { AMBIGUITY, SUFFIX_LEN, describeKey, expandIdentity, normalizeKey, personQuery } from '../lib/identity.js';
+import { AMBIGUITY, SUFFIX_LEN, describeKey, expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -238,8 +242,16 @@ const SPLIT_MIN = 2;
    { channel:'system', direction:'internal', message:'[SILENCE-ESCALATED] …' };
    the two rows written before that fix carry direction 'outbound' instead, so
    all three spellings are tested and neither side has to be deployed first.
-   This is the same rule screens/overview.js:686 and screens/campaigns.js:651
-   apply — the marker is not a message to a customer and never counts as one. */
+
+   Two other screens exclude the same rows and each sees half of it: overview.js
+   holds its own `INTERNAL_CHANNELS` set and tests channel and direction but not
+   the message text, and campaigns.js tests the `[SILENCE-ESCALATED]` prefix but
+   not the channel. Either is enough for the two rows live today, which carry
+   both marks. This file tests all three because it is the screen that renders
+   the row itself, and a row that is internal by only one of the three marks
+   would be drawn here as a message to a customer. No line numbers are cited:
+   those two files are being edited alongside this one and a line number is a
+   claim that goes stale without anybody touching this file. */
 const SILENCE_MARKER = '[SILENCE-ESCALATED]';
 const INTERNAL_CHANNELS = new Set(['system', 'internal']);
 const isMarkerText = v => String(v == null ? '' : v).trimStart().startsWith(SILENCE_MARKER);
@@ -339,17 +351,27 @@ const NOT_A_LEAD =
   + 'already in leads, or to messages containing dealership keywords — anything else is logged and left for a '
   + 'human on purpose, because the business number is a personal one. Whether a particular message hit a keyword '
   + 'is not recorded anywhere the dashboard can read, so this tells you one half of that rule and not the other.';
-/* Rewritten 1 Sep 2026. This used to say a blank number meant the 24 Aug WAHA
-   backfill had missed the row. That was wrong about the only blank in the data:
-   v_conversations.phone comes from whatsapp_contacts, joined on chat_id, and a
-   thread keyed on `+<digits>@whatsapp.lead` has no chat_id and therefore no row
-   in that table to be backfilled. It was never missed; it was never reachable.
-   The number is in the key, and the key is now read for it (§1a), so this
-   sentence is reserved for a thread that genuinely holds no digits anywhere. */
+/* Rewritten 1 Sep 2026, and corrected again the same day. This used to say a
+   blank number meant the 24 Aug WAHA backfill had missed the row. That was wrong
+   about the only blank in the data: `v_conversations.phone` is
+   `COALESCE(wc.phone, wc2.phone)` over TWO joins onto whatsapp_contacts —
+   `wc.chat_id = t.chat_id` and `lower(wc2.lead_email) = t.thread_key` — and a
+   thread keyed on `+<digits>@whatsapp.lead` satisfies neither, because it has no
+   chat_id and no contact row carries that address in lead_email either. Read
+   live 1 Sep 2026: whatsapp_contacts holds exactly one row for Ali, keyed
+   chat_id `158510264357112@lid` with lead_email his gmail address. His second
+   thread was never missed by the backfill; it was never reachable by it. The
+   number is in the key, and the key is now read for it (§1a), so this sentence
+   is reserved for a thread that genuinely holds no digits anywhere.
+
+   Naming only the chat_id join, as the first rewrite did, understates what was
+   checked — and "we looked in one place" is a weaker claim than the one this
+   sentence is making. */
 const NO_PHONE_WHY =
-  'Nothing on this thread carries a phone number: whatsapp_contacts has no row for it — that table is joined on '
-  + 'chat_id and this thread has none — and the thread key itself contains no dialable digits either. A LID handle '
-  + 'is the usual case, because its digits are a machine id and reading them as a number would invent one.';
+  'Nothing on this thread carries a phone number: whatsapp_contacts has no row for it under either join the view '
+  + 'makes — on chat_id, which this thread has none of, or on lead_email — and the thread key itself contains no '
+  + 'dialable digits either. A LID handle is the usual case, because its digits are a machine id and reading them '
+  + 'as a number would invent one.';
 
 /* How well we know the person on the other end. The wording is deliberately
    flat: an operator must be able to tell a matched customer from a stranger at
@@ -397,11 +419,12 @@ const IDENT = {
        alarm. The one thing that must never happen — a bare chat handle shown as
        a person — is still enforced, in normalise() and titleOf(). */
     note: 'v_conversations resolved no lead, no WhatsApp profile name and no phone number for this thread. It '
-        + 'matches on two exact joins — leads.email against the log key, and whatsapp_contacts.chat_id against it '
-        + '— so a key of the synthetic +<digits>@whatsapp.lead shape lands here whatever else is known about the '
-        + 'person, because no leads row carries that address and no contact row carries that chat id. The last-9 '
-        + 'rule in lib/identity.js is applied on top of this and will say so above if it links the thread to '
-        + 'another row in the list.',
+        + 'tries three exact joins and no others — leads.email against the thread key, whatsapp_contacts.chat_id '
+        + 'against the thread’s chat_id, and whatsapp_contacts.lead_email against the thread key — so a key of the '
+        + 'synthetic +<digits>@whatsapp.lead shape lands here whatever else is known about the person: no leads '
+        + 'row carries that address, the thread has no chat_id, and no contact row carries it in lead_email '
+        + 'either. The last-9 rule in lib/identity.js is applied on top of this and will say so above if it links '
+        + 'the thread to another row in the list.',
   },
 };
 const identOf = t => IDENT[t.identified] || IDENT.unidentified;
@@ -626,13 +649,28 @@ const realOutbound = t => Math.max(0, t.outbound - (outboundIsFloor(t) ? 1 : 0))
    at all. The older rule is unchanged: a raw handle is never a name, whatever
    route it arrives by. */
 const linkedName = t => (t.name ? '' : ((namedSibling(t) || {}).name || ''));
+/* Where a borrowed name came from is two questions, not one: which row lent it,
+   and how well that row knew it. Added 1 Sep 2026 \u2014 `namedSibling` will hand
+   back a `whatsapp_profile` row's name just as readily as a `lead` row's, and a
+   name the contact typed into their own WhatsApp profile is not the same claim
+   as a name on a leads record. Borrowing it across a digit match and then
+   presenting it with the confidence of the stronger one is two unverified steps
+   stacked and reported as none. */
+const NAME_SOURCE = {
+  lead: 'that row is matched to a leads record, so the name is the dealership\u2019s own',
+  whatsapp_profile: 'that row is not in leads either \u2014 the name is whatever the contact typed into their own '
+    + 'WhatsApp profile, and nobody has verified it',
+  phone_only: 'that row holds only a number, so the name did not come from the view at all',
+  unidentified: 'that row is unidentified too, so the name did not come from the view at all',
+};
 const linkWhy = t => {
   const s = t.name ? null : namedSibling(t);
   if (!s) return '';
   return `This name is not v_conversations\u2019 answer for this thread \u2014 the view resolved nothing for it. It is `
     + `"${s.name}", taken from the thread keyed on "${s.key}", because both keys carry the same last ${SUFFIX_LEN} `
     + `digits (${t.suffix}) and that is the rule the backend joins a chat to a lead on. The two rows are one person; `
-    + 'the view lists them separately because it matches on exact keys only.';
+    + 'the view lists them separately because it matches on exact keys only. As for the name itself: '
+    + `${NAME_SOURCE[s.identified] || NAME_SOURCE.unidentified}.`;
 };
 const anyPhone = t => addressPhone(t.phone) || addressPhone(t.keyDigits);
 const titleOf = t => t.name || linkedName(t) || (anyPhone(t) ? 'Name not known' : 'Unidentified contact');
@@ -667,7 +705,7 @@ function phoneHtml(t, cls) {
      workflow which minted that key had the number right. */
   const fromKey = addressPhone(t.keyDigits);
   if (fromKey) {
-    return `<span class="mono ${c}" title="${esc('Not stored in v_conversations.phone — whatsapp_contacts has no row for this thread. These digits are read out of the thread key itself ("' + t.key + '", a ' + keyKind(t.key) + '), which the workflows synthesise from the number they were handed. It is the same last-' + SUFFIX_LEN + '-digit form the backend matches on.')}">${esc(fromKey)}</span>`;
+    return `<span class="mono ${c}" title="${esc('Not stored in v_conversations.phone — whatsapp_contacts has no row for this thread on either of the joins the view makes, chat_id or lead_email. These digits are read out of the thread key itself ("' + t.key + '", a ' + keyKind(t.key) + '), which the workflows synthesise from the number they were handed. Nobody has verified that number against WAHA the way a whatsapp_contacts row has been. It is the same last-' + SUFFIX_LEN + '-digit form the backend matches on.')}">${esc(fromKey)}</span>`;
   }
   return `<span class="t-warm ${c}" title="${esc(NO_PHONE_WHY)}">No number on file</span>`;
 }
@@ -778,12 +816,17 @@ SCREENS.conversations = async host => {
   async function readHealth() {
     const rows = await db(`v_workflow_health?select=${HEALTH_COLS}`
       + `&name=in.(${[WF_BDC, WF_SEND].map(n => '%22' + encodeURIComponent(n) + '%22').join(',')})`);
+    /* A workflow missing from the registry comes back as null here, and null is
+       carried into `bdcHealth` / `sendHealth` unchanged. That is what makes the
+       three states distinguishable downstream: healthError is "the read failed",
+       null is "the read worked and the registry has no such row", and a row is a
+       row. A count of returned rows was also being handed back with a comment
+       saying the absence "is reported as one" — nothing read it, and the report
+       it described is the null branch in healthLine(). Removed 1 Sep 2026 rather
+       than left as a field that looks like it is doing that work. */
     return {
       bdc: rows.find(r => str(r.name) === WF_BDC) || null,
       send: rows.find(r => str(r.name) === WF_SEND) || null,
-      /* The registry row itself can be missing, which is a different absence
-         from a failed read and is reported as one. */
-      rows: rows.length,
     };
   }
 
@@ -1101,8 +1144,11 @@ SCREENS.conversations = async host => {
      thread is the allowlist working as designed rather than a workflow that
      crashed. That is only a safe thing to say while the workflow is not, in
      fact, crashing. Read live 1 Sep 2026: WhatsApp BDC AI Agent is DEGRADED,
-     119 successes over 286 rated runs in 30 days — 41.6% — with 166 failures
-     (145 of them timeouts; the most recent, 31 Aug 15:06, at WAHA Auth Gate).
+     119 successes over 286 rated runs in 30 days — 41.6% — with 166 failures.
+     Counted against the same window on 1 Sep 2026: 139 of those 166 name a
+     timeout, 11 a runner that went unresponsive and 15 the Model Ladder node;
+     the newest is 31 Aug 15:06, "Task request timed out after 60 seconds",
+     failed at WAHA Auth Gate.
      An inbox with nothing in the outbound column and a healthy agent is the
      allowlist; the same inbox with an agent failing three runs in five is
      something else, and the strip must not let the operator read the first
@@ -1336,7 +1382,7 @@ SCREENS.conversations = async host => {
           ? `<span class="t-warm">${num(noPhone)} ${plural(noPhone, 'thread has', 'threads have')} none</span>`
           : '<span class="t-ok">Every thread has a number</span>')
         + (fromKeyOnly
-          ? ` · <span class="t-muted" title="${esc('v_conversations.phone comes from whatsapp_contacts, joined on chat_id. A thread with no chat_id has no row there and no phone from the view — but a key of the +<digits>@whatsapp.lead or <digits>@c.us shape carries the number itself, and those digits are read here. A LID is excluded: its digits are a machine id.')}">${num(fromKeyOnly)} of them read out of the thread key, not from whatsapp_contacts</span>`
+          ? ` · <span class="t-muted" title="${esc('v_conversations.phone comes from whatsapp_contacts, joined twice — on chat_id and on lead_email. A thread that matches neither has no row there and no phone from the view — but a key of the +<digits>@whatsapp.lead or <digits>@c.us shape carries the number itself, and those digits are read here. A LID is excluded: its digits are a machine id. A number read this way came from a workflow that minted the key; it has not been through WAHA’s contact lookup the way a stored one has.')}">${num(fromKeyOnly)} of them read out of the thread key, not from whatsapp_contacts</span>`
           : '')
         + ` · ${num(by.lead)} matched to a lead · ${num(by.whatsapp_profile)} WhatsApp name · ${num(by.phone_only)} number only`
         + (by.unidentified
@@ -1401,12 +1447,30 @@ SCREENS.conversations = async host => {
        keyword list is not in the database, so this tab is honest about being
        half the rule. */
     { f: 'notlead', label: 'Not in leads', optional: true,
-      count: () => threads.filter(t => !t.lead_email).length, title: NOT_A_LEAD },
+      count: () => threads.filter(t => !t.lead_email).length,
+      /* The count is `!lead_email` on the view row, and it stays that, because
+         every count on this screen has to keep agreeing with the view. But a
+         linked row whose sibling IS in leads is counted here while its own
+         sub-line reads "In leads as <address>, via the linked thread" — so the
+         tab says what it counts rather than letting the two disagree silently.
+         Added 1 Sep 2026. */
+      title: NOT_A_LEAD + ' This tab counts what v_conversations returned for each thread on its own. A thread the '
+           + 'last-9-digit rule links to another one that IS in leads is still counted here, because the view '
+           + 'returned no lead_email for this row — the row itself says so where that happens.' },
     { f: 'unknown', label: 'Unidentified', optional: true,
       count: () => threads.filter(t => t.identified === 'unidentified').length,
-      title: 'Threads where no lead, profile name or phone number resolves — all we hold is the chat handle. Every '
-           + 'historic contact was backfilled with a real number on 24 Aug 2026, so this should be empty; it is '
-           + 'shown because it is not.' },
+      /* Rewritten 1 Sep 2026 alongside IDENT.unidentified.note, which said the
+         same retracted thing: that the 24 Aug backfill made this state an
+         anomaly. It did not. The state is what the view's three exact joins
+         report when none of them matches, and a +<digits>@whatsapp.lead key
+         matches none of them by construction. "All we hold is the chat handle"
+         was false too — for the one such thread live, the handle IS the
+         number. */
+      title: 'Threads for which v_conversations resolved no lead, no WhatsApp profile name and no phone number. '
+           + 'That is a statement about its three exact joins, not about how much is knowable: a thread keyed on '
+           + '+<digits>@whatsapp.lead matches none of them however well the dealership knows the person, and the '
+           + 'number is inside the key. Where the last-9-digit rule links such a thread to a named one, the row '
+           + 'says so and stays in this tab, because the view’s answer is still "unidentified".' },
   ];
 
   function renderShell() {
@@ -1468,7 +1532,21 @@ SCREENS.conversations = async host => {
      since the view was rebuilt — the identity and the address — and the address
      is the one printed under the composer and in the send confirmation, so it is
      the one an operator is most likely to paste back in to find the thread. */
-  const haystack = t => `${t.name} ${t.key} ${t.chat_id || ''} ${t.phone || ''} ${addressPhone(t.phone)} ${t.lead_email || ''} ${t.push_name || ''} ${t.last_message}`.toLowerCase();
+  /* Widened 1 Sep 2026, and this was left half-done by the identity work. The
+     list row for Ali's second thread shows the name "Ali" (borrowed from the
+     linked thread) and his number (read out of the thread key) — and neither was
+     in this string, so typing either one made the row he was looking at
+     disappear. A screen may not be searchable by less than it displays: whatever
+     titleOf() and phoneHtml() put on the row is what an operator will type. The
+     sibling's lead_email is in here for the same reason — the sub-line prints
+     "In leads as <address>, via the linked thread". None of this makes the
+     borrowed name any more the view's answer; it makes the row findable. */
+  const haystack = t => [
+    t.name, linkedName(t), t.key, t.chat_id || '', t.phone || '', addressPhone(t.phone),
+    t.keyDigits || '', addressPhone(t.keyDigits), t.lead_email || '', t.push_name || '',
+    ...(t.siblings || []).map(s => `${s.name} ${s.lead_email || ''} ${s.key}`),
+    t.last_message,
+  ].join(' ').toLowerCase();
 
   /* Searching for a number has to work however the operator types it. The stored
      form is bare digits, the rendered form has spaces and a plus, and the person
@@ -1481,7 +1559,14 @@ SCREENS.conversations = async host => {
     if (haystack(t).includes(q)) return true;
     const qd = q.replace(/\D+/g, '');
     if (qd.length < 3) return false;
-    const d = phoneDigits(t.phone);
+    /* Both places a number can live. `phone` is whatsapp_contacts' answer;
+       `keyDigits` is the number sitting inside a whatsapp.lead or c.us thread
+       key, which is the only number Ali's second thread has. Before 1 Sep this
+       read `phone` alone, so the row that PRINTS +91 851 794 2172 could not be
+       found by typing it with spaces in — the literal-string pass above only
+       catches it typed exactly as the key spells it. A LID contributes nothing
+       here, because normalise() leaves keyDigits empty for one. */
+    const d = phoneDigits(t.phone) + ' ' + (t.keyDigits || '');
     /* A UAE number written the way it is dialled locally starts 050…, and the
        same number is stored 97150…. Dropping a leading zero is what makes the
        number on the operator's own phone screen find the row. */
@@ -1744,16 +1829,36 @@ SCREENS.conversations = async host => {
         <span title="${esc(id.note)}">${pill(id.label, id.tone)}</span>
         ${t.lead_status ? pill(t.lead_status) : ''}
         <button class="btn sm" id="cvRefresh"><span class="material-symbols-outlined">refresh</span>Refresh</button>
+        ${/* The disabled tooltip used to say flatly "No lead record resolves for
+              this thread". On a linked row the sub-line two lines above it says
+              "In leads as <address>, via the linked thread", and both cannot be
+              true. Corrected 1 Sep 2026. The button stays disabled either way —
+              this row has no lead_email of its own and the drawer is opened by
+              address — but the reason it gives is now the true one, and it names
+              the row that does open. */''}
         ${t.lead_email
           ? `<button class="btn sm" id="cvLead">Open lead</button>`
-          : `<button class="btn sm" disabled title="${esc('No lead record resolves for this thread — v_conversations returned no lead_email, so there is nothing to open. ' + NOT_A_LEAD)}">Open lead</button>`}
+          : (t.siblings.find(s => s.lead_email)
+              ? `<button class="btn sm" disabled title="${esc('This thread has no lead_email of its own, and the drawer is opened by address, so there is nothing here to open it with. The same person IS in leads, as ' + t.siblings.find(s => s.lead_email).lead_email + ', on the linked thread keyed "' + t.siblings.find(s => s.lead_email).key + '" — open that row and the button works there.')}">Open lead</button>`
+              : `<button class="btn sm" disabled title="${esc('No lead record resolves for this thread — v_conversations returned no lead_email, and no other thread in the list is the same person, so there is nothing to open. ' + NOT_A_LEAD)}">Open lead</button>`)}
       </div>
       <div class="cell-sub" id="cvNote" style="padding:0 20px" aria-live="polite"></div>
       ${bannerHtml ? `<div style="padding:16px 20px 0">${bannerHtml}</div>` : ''}
       <div style="flex:1;overflow-y:auto" id="cvBody">${stateLoading(5)}</div>
       <div style="padding:16px 20px;border-top:1px solid var(--border-subtle)">
         <div class="field">
-          <label for="cvReply">Reply on WhatsApp to ${t.name ? esc(t.name) : (addressPhone(t.phone) ? esc(addressPhone(t.phone)) : 'this contact')}</label>
+          ${/* The same ladder as the confirmation dialog's To field, and it was
+                left off this label by the identity work on 1 Sep 2026: the pane
+                header said "Ali", the phone beside it said his number, and the
+                box underneath said "Reply on WhatsApp to this contact". A
+                borrowed name is carried here with the sentence that says where
+                it came from, on the title — never bare, and never as though
+                v_conversations had answered with it. */''}
+          <label for="cvReply">Reply on WhatsApp to ${t.name
+            ? esc(t.name)
+            : (linkedName(t)
+                ? `<span title="${esc(linkWhy(t))}">${esc(linkedName(t))}</span> <span class="t-muted">(named by the linked thread, not by this one)</span>`
+                : (anyPhone(t) ? esc(anyPhone(t)) : 'this contact'))}</label>
           <textarea id="cvReply" rows="3"${dis}
             placeholder="${canSend ? 'Type a reply. Enter adds a line break — nothing is sent until you confirm.' : 'Replying from the dashboard is unavailable for this thread'}"></textarea>
           <div class="hint">${canSend
@@ -1829,10 +1934,14 @@ SCREENS.conversations = async host => {
          stored in. A log row written `Shabbir53Ujjainwala@Gmail.com` is grouped
          into the thread by the view and not returned by the read. Filed as C2 by
          the 31 Aug audit. personFilter uses `ilike`, which ends it.
-       · the three keys were only the ones on THIS view row. Ali's messages sit
-         under three keys and the view puts two of them on one row and the third
-         on another, so this read returned 17 of his 29 messages and said nothing
-         about the other 12.
+       · the three keys were only the ones on THIS view row. Ali's rows sit under
+         three keys and the view puts two of them on one thread and the third on
+         another, so this read returned 17 of his 29 rows and said nothing about
+         the other 12. The count check underneath it could not catch that either:
+         it compared the read against `t.count`, which is that same one view
+         row's total, so both numbers were 17 and agreed. Two figures drawn from
+         the same narrow scope cannot disagree about the scope being narrow —
+         which is why `expected` is now the whole linked group's count.
 
      personQuery builds the filter from expandIdentity's key set plus the
      last-nine-digit patterns the backend matches on, over the whole linked group
@@ -1849,13 +1958,28 @@ SCREENS.conversations = async host => {
     if (!body) return;
     body.innerHTML = stateLoading(5);
     const identity = groupIdentity(t);
-    const keys = identity.keys || [];
     const collision = (identity.ambiguityCodes || []).includes(AMBIGUITY.PHONE_SUFFIX_COLLISION);
-    const path = personQuery('communication_logs', identity, {
+    const readOpts = {
       select: 'id,direction,message,channel,created_at',
       order: 'created_at.desc',
       limit: MSG_LIMIT,
-    });
+    };
+    /* The filter is asked for twice — once as a path to send, once as the list
+       of things it matched on — from the same identity and the same options, so
+       what this pane SAYS it read under cannot drift from what it read under.
+
+       Corrected 1 Sep 2026. The note below used to print `identity.keys`, and
+       that is not the read. expandIdentity SYNTHESISES `<digits>@c.us` and
+       `<digits>@s.whatsapp.net` for a number it has only ever seen written some
+       other way, and personFilter then drops those in favour of the suffix
+       patterns that already cover them. Live, Ali's identity carries five keys
+       and the query goes out on two of them plus three patterns — so the pane
+       named three addresses as sources of his history that had never been
+       looked for and, for two of them, do not exist in the column at all. */
+    const matched = personFilter(identity, readOpts);
+    const keys = matched.keys || [];
+    const patterns = matched.patterns || [];
+    const path = personQuery('communication_logs', identity, readOpts);
     /* No usable key at all. personQuery returns '' rather than a filter that
        would quietly match every row in the table, and this is the one branch
        that must never be confused with "this person has no messages". */
@@ -1883,9 +2007,10 @@ SCREENS.conversations = async host => {
 
     if (!list.length) {
       body.innerHTML = stateEmpty('No messages in this thread',
-        `v_conversations counts ${num(expected)} ${plural(expected, 'message', 'messages')} for this contact, but `
-        + `communication_logs returned none under ${plural(keys.length, 'the key', 'any of the keys')} that resolve `
-        + `onto them (${keys.join(', ')}). Nothing is being shown rather than guessing at the history.`,
+        `v_conversations counts ${num(expected)} ${plural(expected, 'row', 'rows')} for this contact, but `
+        + `communication_logs returned none under ${plural(keys.length, 'the key', 'any of the keys')} this read `
+        + `matched on (${keys.join(', ')}${patterns.length ? `, and any key ending ${identity.suffix}` : ''}). `
+        + 'Nothing is being shown rather than guessing at the history.',
         'forum');
       return;
     }
@@ -1942,17 +2067,19 @@ SCREENS.conversations = async host => {
        why the pane holds more messages than the address at the top would
        suggest. The suffix patterns are named too — they are the part of the read
        that is a rule rather than a key, and an operator is entitled to know that
-       a message arrived here by digit-matching. */
-    const patterns = collision ? [] : (/^[0-9]{9}$/.test(identity.suffix || '') ? [identity.suffix] : []);
+       a message arrived here by digit-matching. Both lists come off the filter
+       that was actually issued, never re-derived here: a second derivation is a
+       second chance to describe a read that did something else. */
     const keyNote = (keys.length > 1 || patterns.length)
       ? `<div style="margin-top:6px">Assembled from ${num(keys.length)} ${plural(keys.length, 'key', 'keys')} in communication_logs.lead_email — `
         + keys.map(k => `<span class="mono">${esc(k)}</span> <span class="t-muted">(${esc(keyRole(t, k))})</span>`).join(', ')
         + (patterns.length
-          ? ` — plus any key ending in the last ${SUFFIX_LEN} digits of the number (<span class="mono">${esc(patterns[0])}</span>) on the `
-            + '<span class="mono">@c.us</span>, <span class="mono">@s.whatsapp.net</span> and '
-            + '<span class="mono">@whatsapp.lead</span> shapes, which is the rule the workflows and '
-            + 'nexus_lead_for_comm_key() join on. A <span class="mono">@lid</span> is never matched that way: its '
-            + 'digits are a machine id.'
+          ? ` — plus any key ending in the last ${SUFFIX_LEN} digits of the number `
+            + `(<span class="mono">${esc(identity.suffix)}</span>) on ${num(patterns.length)} address `
+            + `${plural(patterns.length, 'shape', 'shapes')}: `
+            + patterns.map(p => `<span class="mono">${esc(p)}</span>`).join(', ')
+            + '. That is the rule the workflows and nexus_lead_for_comm_key() join on. A '
+            + '<span class="mono">@lid</span> is never matched that way: its digits are a machine id.'
           : ' — which resolve onto the same person.')
         + '</div>'
       : '';

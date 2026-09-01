@@ -35,9 +35,24 @@
       measured a reply that predated the lead row and `greatest(0, …)` wrote 0,
       so every lead read "0 min · within SLA". That trigger is deleted. The sole
       writer is now `trg_comm_logs_first_response`, AFTER INSERT on
-      `communication_logs`, with no clamp — so a null means nobody has replied to
-      this customer since the lead row was created, which is a statement about
-      the customer and not about the instrument. */
+      `communication_logs`.
+
+      Read out of `nexus_mark_first_response` on 1 Sep 2026, because "no clamp"
+      is near enough to be misleading. It stamps `round(seconds / 60)` for the
+      first OUTBOUND whatsapp / email / sms message it can resolve to the lead
+      (`nexus_is_reply` excludes `[system]` and `[SILENCE-` rows); it writes once
+      and only while the column is still null; and a reply older than the lead row
+      is admitted as 0 only when it is less than 90 seconds older AND no inbound
+      message was already on file. That is a clock-skew allowance between n8n
+      (Asia/Dubai) and Postgres, not a floor placed under a real wait.
+
+      So a null is NOT the sentence "nobody has answered this customer" — an
+      earlier draft of this file said exactly that and the live data contradicts
+      it. Lead 35 is the counter-example: its one outbound message was logged at
+      06:40:38 on 26 Aug and its lead row was minted 74 seconds later at 06:41:52
+      with eight inbound messages already on file, so the trigger correctly
+      declined to call that a response time. What a null rules out is a MEASURED
+      wait. It never means fast. */
 import { db, dbWrite } from './data.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
@@ -69,6 +84,17 @@ const EVENT_LIMIT = 30;
    phone digits, so it can never be derived from a number — only looked up in
    whatsapp_contacts. Bounded because this runs on every drawer open. */
 const LINK_LIMIT = 50;
+/* Candidate leads read to answer the one question this drawer cannot answer from
+   the row it was handed: does anybody ELSE end in the same nine digits?
+   screens/leads.js has the whole table in memory and so reports that collision;
+   a drawer opened from that very row had no pool, could not detect it, and would
+   have gone on to match on the last-nine-digit rule anyway — merging two
+   customers' messages under one name while the screen behind it said it had
+   refused to. That is the same two-files-disagree fault this pass exists to end,
+   in its worst form. Keyed on the suffix, so it reads only rows that could
+   collide, and never on a lead with no phone number, where the rule is not in
+   play at all. */
+const POOL_LIMIT = 50;
 
 async function leadDrawer(lead) {
   openDrawer(`
@@ -127,11 +153,13 @@ async function leadDrawer(lead) {
           })()}</dd>
           <dt>Response time</dt><dd>${n0(lead.response_time_minutes) == null
             /* Not a blank, and no longer "Not measured" either. A dash reads as
-               instant; "not measured" blamed the instrument. The trigger on
-               communication_logs stamps this column the moment a reply it can
-               attribute to the lead lands, so a null is the customer's fact:
-               nobody has answered them since the row was created. */
-            ? '<span class="t-warm">No reply logged</span><span class="cell-sub"> · the communication_logs trigger writes this column when a first reply lands, and it never has for this lead — so this is neither fast nor slow, and v_needs_attention cannot raise an SLA breach for it</span>'
+               instant; "not measured" blamed the instrument. But it is not the
+               customer's fact either — see note 3 in the header. The trigger
+               declines to stamp a reply that predates the lead row, so "no reply
+               logged" would be a false claim about lead 35, who was in fact
+               answered 74 seconds before his lead row existed. What this cell can
+               say is that nothing was timed. */
+            ? '<span class="t-warm">No first reply timed</span><span class="cell-sub"> · the trigger on communication_logs stamps this column for the first reply it can attribute to the lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the conversation started before the lead existed, which the trigger will not measure. Either way there is no measured wait here — it is not a fast reply — and v_needs_attention cannot raise an SLA breach for it</span>'
             : `${mins(lead.response_time_minutes)} ${Number(lead.response_time_minutes) > SLA_MINUTES
                 ? `<span class="t-hot">· breaches the ${SLA_MINUTES}-minute rule</span>`
                   + (Date.now() - new Date(lead.created_at).getTime() > SLA_VIEW_WINDOW_DAYS * 86400000
@@ -177,10 +205,11 @@ async function leadDrawer(lead) {
     : { ok: false, rows: [], err: String(r.reason?.message || r.reason).slice(0, 140) };
   const skipped = why => ({ ok: false, rows: [], err: null, skipped: why });
 
-  /* Stage one: the `@lid` bridge, plus the one read that genuinely keys on an
-     email. This costs a round trip before the history reads, and it buys the
-     only thing that can attach a LID to a person — the LID's own digits are a
-     machine id and cannot be derived from a phone number. */
+  /* Stage one: the `@lid` bridge, the one read that genuinely keys on an email,
+     and the collision pool. This costs a round trip before the history reads, and
+     it buys the only thing that can attach a LID to a person — the LID's own
+     digits are a machine id and cannot be derived from a phone number — plus the
+     only thing that can rule out attaching the wrong one. */
   const firstPass = expandIdentity({ leadId: lead.id, email: lead.email, phone: lead.phone, name: lead.name });
   const linkReads = [];
   if (firstPass.suffix) {
@@ -191,23 +220,39 @@ async function leadDrawer(lead) {
     linkReads.push(db('whatsapp_contacts?select=chat_id,phone,push_name,lead_email'
       + `&lead_email=eq.${encodeURIComponent(realEmail)}&limit=${LINK_LIMIT}`));
   }
-  const [linkSettled, purchR] = await Promise.all([
+  const [linkSettled, purchR, poolR] = await Promise.all([
     Promise.allSettled(linkReads),
     realEmail
       ? Promise.allSettled([db(`purchase_history?select=*&email=eq.${encodeURIComponent(realEmail)}`)])
           .then(([r]) => r)
       : Promise.resolve(null),
+    /* The collision pool. See POOL_LIMIT above. */
+    firstPass.suffix
+      ? Promise.allSettled([db('leads?select=id,name,email,phone'
+          + `&phone=like.*${encodeURIComponent(firstPass.suffix)}&limit=${POOL_LIMIT}`)])
+          .then(([r]) => r)
+      : Promise.resolve(null),
   ]);
   const linkErr = linkSettled.find(r => r.status === 'rejected');
   const links = linkSettled.flatMap(r => (r.status === 'fulfilled' ? (r.value || []) : []));
+  const pool = poolR && poolR.status === 'fulfilled' ? (poolR.value || []) : [];
+  /* A failed pool read is not "no collision". expandIdentity would then see an
+     empty pool, report nothing ambiguous, and personQuery would go on to use the
+     last-nine-digit patterns — the merge this read exists to prevent, arrived at
+     by silence. It is disclosed in the gaps below rather than assumed away. */
+  const poolErr = poolR && poolR.status === 'rejected'
+    ? String(poolR.reason?.message || poolR.reason).slice(0, 140)
+    : null;
 
   /* Stage two: the full key set, and the two reads that must use it. `personQuery`
      builds the same or=() over every key plus the last-nine-digit patterns that
-     the backend matched on when it wrote them. An empty path means nothing
-     identifies this person at all, which is said rather than queried around. */
+     the backend matched on when it wrote them — unless the pool says two leads
+     share those nine digits, in which case it drops the patterns and matches on
+     exact keys only. An empty path means nothing identifies this person at all,
+     which is said rather than queried around. */
   const ident = expandIdentity(
     { leadId: lead.id, email: lead.email, phone: lead.phone, name: lead.name },
-    { links });
+    { links, leads: pool });
   const commPath = personQuery('communication_logs', ident,
     { select: '*', order: 'created_at.desc', limit: EVENT_LIMIT });
   const auditPath = personQuery('audit_log', ident,
@@ -323,6 +368,7 @@ async function leadDrawer(lead) {
       commCapped ? `the message read stopped at its ${EVENT_LIMIT}-row ceiling, so older messages are missing` : '',
       auditCapped ? `the workflow-activity read stopped at its ${EVENT_LIMIT}-row ceiling` : '',
       linkErr ? 'whatsapp_contacts could not be read, so any @lid handle belonging to this person could not be bridged to them and messages filed under one are missing' : '',
+      poolErr ? `the leads table could not be read (${poolErr}), so whether another lead ends in the same nine digits was never checked — this history was matched on that rule anyway, and if two customers share those digits their messages are mixed together here` : '',
     ].filter(Boolean);
     if (events.length && gaps.length) {
       timelineBox.insertAdjacentHTML('afterbegin',
