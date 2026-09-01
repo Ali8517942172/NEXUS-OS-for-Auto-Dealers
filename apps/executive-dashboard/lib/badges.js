@@ -65,7 +65,14 @@ const COUNTS = new Set(['HOT', 'WARM']);
    kept identical by hand and this comment is the warning: change one, change
    both, or the badge and the panel start disagreeing again. If the view gains
    its DISTINCT ON the groups become singletons and both copies quietly become
-   no-ops — this does not have to be unwound. */
+   no-ops — this does not have to be unwound. 
+   As of 2026-09-01 the view itself de-duplicates: its undercut branch selects
+   DISTINCT ON (competitor, model) the newest snapshot, so it should no longer
+   emit these. This stays as defence in depth -- the scraper still appends
+   rather than upserts, so the raw table keeps growing and any new branch that
+   reads it unguarded reintroduces the fault. If it ever collapses anything
+   again, the source has regressed.
+*/
 const SNAPSHOT_KINDS = new Set(['undercut']);
 const str = v => String(v == null ? '' : v).trim();
 function collapseAttention(rows) {

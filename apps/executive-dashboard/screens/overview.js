@@ -322,7 +322,14 @@ const runCounts = w => {
    id, a workflow name), so nothing is collapsed and two same-named leads cannot
    silently become one. If the view gains its DISTINCT ON the groups become
    singletons, `collapsed` falls to zero and the sentence about it disappears on
-   its own — this does not have to be unwound by hand. */
+   its own — this does not have to be unwound by hand. 
+   As of 2026-09-01 the view itself de-duplicates: its undercut branch selects
+   DISTINCT ON (competitor, model) the newest snapshot, so it should no longer
+   emit these. This stays as defence in depth -- the scraper still appends
+   rather than upserts, so the raw table keeps growing and any new branch that
+   reads it unguarded reintroduces the fault. If it ever collapses anything
+   again, the source has regressed.
+*/
 const SNAPSHOT_KINDS = new Set(['undercut']);
 const collapseSnapshots = rows => {
   const seen = new Map();
