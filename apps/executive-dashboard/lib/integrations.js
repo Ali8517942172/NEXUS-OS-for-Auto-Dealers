@@ -5,7 +5,44 @@ import { db, n8n } from './data.js';
 import { N8N_BASE } from './env.js';
 import { clock, esc } from './format.js';
 
-async function renderIntegrations(node) {
+/* ── Which checks may fire by themselves ─────────────────────────────────────
+   The constraint, stated once so nobody has to rediscover it: MONITORING MUST
+   NOT MUTATE BUSINESS STATE. A health check that runs on mount is a check that
+   runs every time anybody opens a page, and every execution this dashboard
+   causes lands in audit_log — the same table the Workflows card, the Automation
+   screen and the 30-day success rates all read back as the business's own
+   record. The finance-calc probe removed on 31 Aug (see the long note below)
+   had manufactured 16 of Finance Calc's 60 logged runs in the window: better
+   than a quarter of a workflow's month, invented by opening a page, and then
+   reported on the same screen as though the workflow had done it.
+
+   `opts.autoProbe` is the guard against that returning. It is an allow-list
+   supplied by the CALLER, because the caller is the screen that knows what it
+   is willing to cause: screens/settings.js passes /^(supabase|n8n)$/i and names
+   the rule at its call site. A check not on the list is still rendered and
+   still runnable — it gets a button, exactly like the Ask-AI tile, because a
+   person choosing to press it is a different thing from this module firing it —
+   it simply does not run on mount.
+
+   Absent the option, everything auto-runs, which is today's behaviour and is
+   what screens/automation.js:2099 (which passes nothing) keeps getting. That
+   default is safe only because of what `checks` currently holds: one indexed
+   SELECT and one GET on /healthz, both reads that write nothing anywhere. It is
+   NOT a licence to add a third. Anything that causes a workflow execution
+   belongs in `manual`, not in `checks` behind an allow-list nobody passed.
+
+   An autoProbe value this function cannot interpret fails CLOSED — nothing
+   auto-runs — because a guard that fails open on a typo is not a guard. The
+   tiles then visibly say they were not run, so it cannot fail silently. */
+function autoAllowed(autoProbe, name) {
+  if (autoProbe == null) return true;                 // no constraint declared
+  if (autoProbe instanceof RegExp) return autoProbe.test(name);
+  if (typeof autoProbe === 'function') return !!autoProbe(name);
+  if (Array.isArray(autoProbe)) return autoProbe.some(x => String(x).toLowerCase() === name.toLowerCase());
+  return false;
+}
+
+async function renderIntegrations(node, opts = {}) {
   const checks = [
     { name: 'Supabase', probe: async () => { await db('leads?select=id&limit=1'); return 'Connected'; } },
     { name: 'n8n', probe: async () => {
@@ -96,10 +133,18 @@ async function renderIntegrations(node) {
   ];
   const unprobed = ['Finance Calc', 'WhatsApp (WAHA)', 'Bitrix24', 'Slack', 'Gmail', 'OpenRouter'];
 
+  /* Decided once, before anything is rendered, so the tile a check gets and the
+     decision to fire it cannot come apart: a tile saying "Checking…" for a probe
+     that will never run is the stuck state this panel already had once. */
+  const auto = checks.map(c => autoAllowed(opts && opts.autoProbe, c.name));
+
   node.innerHTML = `<div class="grid g4">${checks.map((c, i) =>
     `<div class="card" style="padding:14px" id="ig${i}">
        <div style="font-weight:500">${esc(c.name)}</div>
-       <div class="cell-sub">Checking…</div></div>`).join('')}
+       ${auto[i]
+         ? '<div class="cell-sub">Checking…</div>'
+         : `<div class="cell-sub">Not run automatically on this screen</div>
+            <button class="btn sm" data-deferred="${i}" style="margin-top:8px">Check</button>`}</div>`).join('')}
     ${manual.map((m, i) => `<div class="card" style="padding:14px" id="mg${i}">
        <div style="font-weight:500">${esc(m.name)}</div>
        <div class="cell-sub">Runs a real query — spends tokens and logs a run</div>
@@ -140,14 +185,25 @@ async function renderIntegrations(node) {
     }
   }));
 
-  checks.forEach(async (c, i) => {
+  const runCheck = async i => {
+    const c = checks[i];
     try {
       const msg = await c.probe();
       paint(`#ig${i}`, 'ok', c.name, `${esc(msg)} · ${esc(clock(Date.now()))}`);
     } catch (e) {
       paint(`#ig${i}`, 'hot', c.name, esc(String(e.message).slice(0, 90)), ' t-hot');
     }
-  });
+  };
+
+  /* A deferred check is not a disabled one — the person pressing the button is
+     the authorisation the mount did not have. */
+  node.querySelectorAll('[data-deferred]').forEach(btn => btn.addEventListener('click', () => {
+    const i = Number(btn.dataset.deferred);
+    btn.disabled = true; btn.textContent = 'Checking…';
+    runCheck(i);
+  }));
+
+  checks.forEach((c, i) => { if (auto[i]) runCheck(i); });
 }
 
 /* ==========================================================================

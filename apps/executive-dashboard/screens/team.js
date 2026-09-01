@@ -91,10 +91,22 @@
       "answered in 0 minutes". The writer that would be correct — an AFTER INSERT
       on `communication_logs` — is guarded by `response_time_minutes is null`,
       and `0 is null` is false, so it is locked out permanently. All three live
-      leads carry 0: one whose first reply came 81 minutes later, and one nobody
-      has ever replied to. `within_sla` is `count(*) FILTER (WHERE
-      response_time_minutes <= 5)`, so it counts every lead; `breached_sla` is
-      always 0; and `v_needs_attention` can never raise an SLA breach.
+      leads carry 0 (1 Sep 2026). Resolving each lead's own WhatsApp and email
+      keys against `communication_logs` and taking the first message after the
+      lead row that `nexus_is_reply` accepts, the true figures are 1 minute
+      (id 34), 4 minutes (id 38) and **no reply at all** (id 35) — a customer
+      nobody has answered since the day they became a lead, whom the column
+      reports as answered instantly. Note that the earlier audit note put id 38
+      at 81 minutes; that is the first message filed under its *real* email
+      address, and it is what a fix to the trigger alone would write, because
+      `nexus_lead_for_comm_key` cannot resolve the `+<digits>@whatsapp.lead`
+      shape for a lead whose email column is a real address. The reply is real
+      and it is at 4 minutes. Neither number is what the column holds.
+      `within_sla` is `count(*) FILTER (WHERE response_time_minutes <= 5)`, so it
+      counts every lead; `breached_sla` is always 0; and `v_needs_attention` can
+      never raise an SLA breach — and its `sla_breach` branch is filed under
+      `screen = 'leads'` in any case, so it could not reach this screen even if
+      the column were sound.
 
       The database fix is being made separately. This screen neither waits for it
       nor hard-codes a date: it asks whether the column, across the leads it
@@ -119,9 +131,13 @@ import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
 
-/* Leads are read only to answer three questions the view cannot: who owns
-   nothing, which assignments point at a user that no longer exists, and what a
-   given rep is actually holding. The read is capped, and where a count depends
+/* Leads are read to answer three questions the view cannot: which leads have no
+   owner at all, what a given rep is actually holding, and how much of that is
+   still open money — the last of these because the view's own pipeline_aed
+   answers a different question under the same name (item 5 above). It is no
+   longer read to look for assignments pointing at a user who no longer exists:
+   the FK is ON DELETE SET NULL and `users` is fully readable by `authenticated`,
+   so that condition cannot arise. The read is capped, and where a count depends
    on the cap the screen says the cap was hit rather than letting a windowed
    number read as a total. */
 const LEAD_LIMIT = 1000;
@@ -137,7 +153,7 @@ const NO_DELETE =
    The mechanism is named rather than summarised, because "the data is bad" is
    the kind of sentence that gets ignored until somebody re-derives the number. */
 const NO_TIMING =
-  'leads.response_time_minutes is not a measured first-response time. A BEFORE INSERT trigger on leads (trg_leads_backfill_response) looks for a reply at the instant the lead row is created; in this system the WhatsApp bot answers the conversation before the router mints the lead, so it finds a reply that predates the row, computes a negative interval, and greatest(0, …) stores 0. The writer that would be correct fires AFTER INSERT on communication_logs and is guarded by "response_time_minutes is null", so that stored 0 locks it out permanently. Every lead in the live table carries 0 — including one whose first reply came 81 minutes later, and one nobody has ever replied to. within_sla in v_team_performance is count(*) FILTER (WHERE response_time_minutes <= 5), so it counts every lead, and breached_sla is always 0. The database fix is being made separately; until the column distinguishes an answered lead from an unanswered one, this screen shows the counts nowhere and scores nobody against the 5-minute rule.';
+  'leads.response_time_minutes is not a measured first-response time. A BEFORE INSERT trigger on leads (trg_leads_backfill_response) looks for a reply at the instant the lead row is created; in this system the WhatsApp bot answers the conversation before the router mints the lead, so it finds a reply that predates the row, computes a negative interval, and greatest(0, …) stores 0. The writer that would be correct fires AFTER INSERT on communication_logs and is guarded by "response_time_minutes is null", so that stored 0 locks it out permanently. Every lead in the live table carried 0 when this was last checked against the database (1 Sep 2026), including one that nobody has replied to at all since the day it became a lead — the column reports that customer as answered instantly. within_sla in v_team_performance is count(*) FILTER (WHERE response_time_minutes <= 5), so it counts every lead, and breached_sla is always 0. The database fix is being made separately; until the column distinguishes an answered lead from an unanswered one, this screen shows the counts nowhere and scores nobody against the 5-minute rule.';
 
 /* `users` has no phone column. Verified against the live schema on 24 Aug 2026,
    not assumed: asking for one returns PostgREST 42703, and a 42703 does not blank
@@ -399,7 +415,7 @@ SCREENS.team = async host => {
       ? `Leads could not be read here (${leadsErr || 'unknown error'}), so nothing could be checked against the response-time column and nothing derived from it is claimed.`
       : !leads.length
         ? 'No lead was read here at all, so there was nothing to check the response-time column against.'
-        : `All ${leads.length} leads read here carry exactly 0 minutes and not one carries a null — the fingerprint of the clamp described above, not of a floor full of instant replies.`;
+        : `${num(rtZeros)} of the ${num(leads.length)} leads read here carry exactly 0 minutes and not one carries a null or anything above it — the fingerprint of the clamp described above, not of a floor full of instant replies.`;
 
   const pending = roster.filter(isPending);
   const withAccount = roster.filter(hasAccount);
@@ -810,17 +826,29 @@ SCREENS.team = async host => {
      from it. A read that failed removes alerts; saying which read failed is the
      difference between a quiet screen and a screen that cannot see. */
   const notes = [
+    /* An empty partition is reported as what it is. v_needs_attention is seven
+       UNION ALL branches whose `screen` literal is one of 'leads' (twice),
+       'inventory', 'competitors', 'automation', 'compliance' and
+       'conversations' — verified against the live definition, 31 Aug 2026.
+       Neither 'team' nor anything else this screen could ask for is ever
+       emitted, so a zero here is not the database looking at the team and
+       finding it clean. Note in particular that the view's own sla_breach
+       branch is filed under screen = 'leads', so a rep breaching the 5-minute
+       rule cannot reach this strip through the view no matter what the column
+       holds. */
     attnErr
-      ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnErr)}), so anything the database filed against this screen — including any SLA branch it raises centrally — is missing from this strip. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
-      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = ${SCREEN_ID}${viewCount ? '' : ' (it returned none today)'}, and ${num(derivedCount)} derived here from `
+      ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnErr)}), so anything the database had filed against this screen is missing from this strip. It files nothing against this screen as the view is currently defined, so that is likely to be nothing — but it could not be confirmed on this page load. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = ${SCREEN_ID}`
+        + (viewCount ? '' : ', which is every row it can ever return here: none of its branches emits that screen name, so this is the view filing nothing about the team rather than the view finding nothing wrong with it')
+        + `. ${num(derivedCount)} derived here from `
         + `${users ? `${num(users.length)} directory ${plural(users.length, 'row', 'rows')}` : 'no directory rows'}, `
         + `${perf ? `${num(perf.length)} performance ${plural(perf.length, 'row', 'rows')}` : 'no performance rows'} and `
         + `${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')}` : 'no leads'}.`,
     perfErr
-      ? `<span class="t-warm">The performance view did not load (${esc(perfErr)}), so SLA breaches, pipeline concentration and reps holding unworked leads were not checked at all — they are absent from this list, not clear.</span>`
+      ? `<span class="t-warm">The performance view did not load (${esc(perfErr)}), so SLA breaches and reps holding leads it has never timed were not checked at all — they are absent from this list, not clear.</span>`
       : '',
     leadsErr
-      ? `<span class="t-warm">Leads did not load (${esc(leadsErr)}), so unassigned leads, HOT leads with no owner and assignments pointing at a missing user were not checked.</span>`
+      ? `<span class="t-warm">Leads did not load (${esc(leadsErr)}), so unassigned leads, HOT leads with no owner and open pipeline — including its concentration on one rep — were not checked.</span>`
       : '',
     leadsCapped
       ? `The leads read stopped at ${num(LEAD_LIMIT)} rows, so every lead-derived count in this strip is a floor rather than a total.`
@@ -828,10 +856,16 @@ SCREENS.team = async host => {
     /* Why an absent alert is absent. A check that cannot mean anything on a
        roster this size is skipped, and skipped is not the same as clear. */
     roster.length < 2
-      ? `The roster is ${num(roster.length)} ${plural(roster.length, 'person', 'people')}, so the checks that compare reps with each other — pipeline concentration, workload spread, the SLA ranking — were skipped rather than run over a set of one: one person holding all of the pipeline is a roster of one, not a concentration. They return on their own when a second person is on the floor.`
-      : (perf && carriers.length < MIN_CARRIERS)
-        ? `Pipeline concentration was not checked: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any pipeline at all, and a share of the money says nothing spread across fewer than ${num(MIN_CARRIERS)}.`
+      ? `The roster is ${num(roster.length)} ${plural(roster.length, 'person', 'people')}, so the checks that compare reps with each other — open-pipeline concentration, workload spread, the SLA ranking — were skipped rather than run over a set of one: one person holding all of the open money is a roster of one, not a concentration. They return on their own when a second person is on the floor.`
+      /* Concentration is computed from the leads read, not from the performance
+         view, so the guard is on `leads` — it was on `perf`, which was correct
+         only while pipeline_aed was the source. */
+      : (leads && carriers.length < MIN_CARRIERS)
+        ? `Pipeline concentration was not checked: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any open pipeline at all, and a share of the money says nothing spread across fewer than ${num(MIN_CARRIERS)}.`
         : '',
+    timingTrusted
+      ? ''
+      : `<span class="t-warm">Nothing in this strip scores anybody against the 5-minute rule, and that is a gap rather than an all-clear. ${esc(timingWhy)} ${esc(NO_TIMING)}</span>`,
     `Staff phone numbers appear nowhere in this strip because they appear nowhere in the database: ${esc(NO_STAFF_PHONE)} Leads named above carry their own number, or an explicit dash where we hold none.`,
   ].filter(Boolean);
   const notesHtml = notes.join('<br>');
@@ -839,11 +873,24 @@ SCREENS.team = async host => {
   /* Only the checks that were actually run are claimed. Listing concentration
      here on a one-rep roster would be claiming a check this screen deliberately
      did not make. */
-  const CHECKED = 'Checked: every row v_needs_attention filed against this screen, seats still at pending_invite, '
-    + 'reps holding no leads while HOT leads sit unassigned, reps holding leads with no response recorded against a single one, '
-    + (carriers.length >= MIN_CARRIERS ? 'one rep carrying a disproportionate share of the pipeline, ' : '')
-    + 'reps with an SLA breach, leads whose assignment points at a user who is not on the roster, '
-    + 'and performance rows with no account behind them.';
+  /* Two entries were removed from this list rather than reworded, because both
+     named branches that cannot fire and a check that cannot fire is not a check,
+     it is a claim: "leads whose assignment points at a user who is not on the
+     roster" (the FK is ON DELETE SET NULL and `users` reads in full under
+     USING (true), so there is no dangling id to find — the branch itself is
+     gone) and "performance rows with no account behind them"
+     (v_team_performance is FROM users u LEFT JOIN leads l, so every performance
+     row is a users row; that branch is kept in the code for the day the view is
+     rebuilt elsewhere, but it is not listed here as something that was run).
+     The SLA entry is conditional for the same reason: while
+     response_time_minutes is clamped, nobody was scored. */
+  const CHECKED = 'Checked: seats still at pending_invite, '
+    + 'reps holding no leads while HOT leads sit unassigned, reps holding leads the performance view has never timed, '
+    + (carriers.length >= MIN_CARRIERS ? 'one rep carrying a disproportionate share of the open pipeline, ' : '')
+    + 'and leads with no owner at all'
+    + (timingTrusted
+      ? ', including reps with an SLA breach.'
+      : '. Nobody was checked against the 5-minute rule: leads.response_time_minutes cannot currently tell an answered lead from an unanswered one, so no rep was scored either way, in either direction.');
 
   const waitedHtml = a => {
     if (a.atHtml) return a.atHtml;
@@ -881,8 +928,10 @@ SCREENS.team = async host => {
   if (!alerts.length) {
     /* No empty box. "Nothing needs a human" is only worth printing when it names
        what was looked at — otherwise it is indistinguishable from a panel that
-       failed to render, and v_needs_attention genuinely returns nothing for this
-       screen today, so this is the branch that runs. */
+       failed to render. v_needs_attention contributes nothing here in any case
+       (it has no branch that emits screen = 'team'), so everything this heading
+       covers was derived on this screen and the CHECKED line below is the whole
+       of it. */
     alertHost.innerHTML = `<div class="card">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <span class="material-symbols-outlined t-ok" style="font-size:20px" aria-hidden="true">task_alt</span>
@@ -914,9 +963,15 @@ SCREENS.team = async host => {
   /* ── Roster & performance ──────────────────────────────────────────────── */
   const card = el('div', 'card flush'); body.appendChild(card);
 
+  /* "No activity yet" asks the same questions the columns answer, or the slice
+     and the table disagree about the same person. `measured(r)` stays in even
+     while the response column is clamped: every term here only ever removes
+     somebody from the quiet slice, so a clamped counter cannot put anyone into
+     it who does not belong. Pipeline is asked of the open figure computed on
+     this screen, not of the view's pipeline_aed — see item 5 in the header. */
   const noActivity = r => !r.perf
     || (!(leadsAssigned(r) > 0) && !(hotLeads(r) > 0) && !(measured(r) > 0)
-        && !(pipelineOf(r) > 0) && ownedBy(r).length === 0);
+        && !(openPipelineOf(r) > 0) && ownedBy(r).length === 0);
 
   /* Each alert in the strip above hands the roster the exact set it counted, so
      the list under the toolbar can never disagree with the number in the alert.
@@ -929,7 +984,13 @@ SCREENS.team = async host => {
     PENDING:  { label: 'Pending invite',         match: isPending },
     IDLE:     { label: 'Holding nothing',        match: holdsNothing },
     STALLED:  { label: 'Leads, no response',     match: stalled },
-    BREACHED: { label: 'Breached SLA',           match: r => (breachedSla(r) ?? 0) > 0 },
+    /* Gated on the same test as the breach alert. breached_sla is
+       count(*) FILTER (WHERE response_time_minutes > 5) over a column clamped to
+       0, so today this is structurally empty and the segment is not offered at
+       all; if the column were ever unreadable the segment would still be an SLA
+       claim, so it is withheld there too rather than shown against a figure the
+       strip above has already declined to use. */
+    BREACHED: { label: 'Breached SLA',           match: r => timingTrusted && (breachedSla(r) ?? 0) > 0 },
     QUIET:    { label: 'No activity yet',        match: noActivity },
   };
   /* Seven segments do not fit a toolbar, and every slice below the first two is
@@ -954,9 +1015,19 @@ SCREENS.team = async host => {
     account:  { type: 'text', get: r => statusLabel(r),  dir: 1  },
     leads:    { type: 'num',  get: leadsAssigned,        dir: -1 },
     hot:      { type: 'num',  get: hotLeads,             dir: -1 },
-    response: { type: 'num',  get: avgResponse,          dir: -1 },
-    sla:      { type: 'num',  get: slaRate,              dir: 1  },
-    pipeline: { type: 'num',  get: pipelineOf,           dir: -1 },
+    /* Both response keys are withheld while leads.response_time_minutes is the
+       clamp's 0 — item 5 in the header. A sort is a ranking, and ranking the
+       team on a column every row of which reads 0 puts somebody at the top of an
+       order the data does not contain. Null sinks the row into the name order
+       the sorter already uses for rows it cannot speak about. */
+    response: { type: 'num',  get: r => (timingTrusted ? avgResponse(r) : null), dir: -1 },
+    /* The cell prints "one lead, so no rate" below MIN_RATE_SAMPLE, and this key
+       used to rank on exactly that suppressed number — a rep at 1/1 sorted above
+       a rep at 40/50 on a hidden 100%, with nothing on the row to explain it.
+       The key is now the same figure the cell is willing to show: null wherever
+       no rate is claimed. */
+    sla:      { type: 'num',  get: r => ((timingTrusted && measured(r) >= MIN_RATE_SAMPLE) ? slaRate(r) : null), dir: 1  },
+    pipeline: { type: 'num',  get: openPipelineOf,       dir: -1 },
   };
   const f = { view: 'ALL', q: '', sort: 'leads', dir: SORTS.leads.dir };
 
@@ -1008,7 +1079,12 @@ SCREENS.team = async host => {
         const n = hotLeads(r);
         return n == null ? notReported : `<span class="${n > 0 ? 't-hot' : 't-muted'}">${num(n)}</span>`;
       } },
+    /* avg_response_minutes is round(avg(l.response_time_minutes)) over the same
+       column the clamp writes, so while that column is telling no lead apart
+       from another this cell shows the reason instead of the figure. "0m" in a
+       green tone is the single most confident lie this screen could print. */
     { label: 'Avg response', align: 'r', sort: 'response', render: r => {
+        if (!timingTrusted) return `<span class="t-warm" title="${esc(NO_TIMING)}">Not measurable</span>`;
         const a = avgResponse(r);
         if (a == null) return '<span class="t-muted">Not measured</span>';
         /* An average of one is that one. The figure is real either way; the word
@@ -1016,7 +1092,13 @@ SCREENS.team = async host => {
         return `<span class="${a > 5 ? 't-hot' : 't-ok'}">${mins(a)}</span>`
           + (measured(r) === 1 ? '<div class="cell-sub">one lead, not an average</div>' : '');
       } },
+    /* within_sla and breached_sla are both count(*) FILTER on
+       response_time_minutes, so the pair is a partition of a clamped column:
+       every lead lands in within_sla and breached_sla is structurally 0. The
+       counts are withheld rather than captioned — "1 / 1" beside an explanation
+       is still read as one for one. */
     { label: 'Within SLA', align: 'r', sort: 'sla', render: r => {
+        if (!timingTrusted) return `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`;
         const m = measured(r), w = withinSla(r);
         if (!m) return '<span class="t-muted">Nothing measured</span>';
         if (m < MIN_RATE_SAMPLE) {
@@ -1025,9 +1107,19 @@ SCREENS.team = async host => {
         const rate = slaRate(r);
         return `${num(w ?? 0)} / ${num(m)}<div class="cell-sub ${rate != null && rate < 50 ? 't-hot' : ''}">${pct(rate)}</div>`;
       } },
-    { label: 'Pipeline', align: 'r', sort: 'pipeline', render: r => {
-        const p = pipelineOf(r);
-        return p == null ? notReported : aed(p);
+    /* Open pipeline, summed here from the leads read on this screen — not
+       v_team_performance.pipeline_aed, which sums budget_aed over every lead
+       ever assigned with no status filter and no window, and COALESCEs to 0 so
+       it can never report an absence. The header explains it; the label names
+       what is actually added up. */
+    { label: 'Open pipeline', align: 'r', sort: 'pipeline', render: r => {
+        if (!leads) return `<span class="t-muted" title="Leads could not be read on this page load, and the performance view's pipeline_aed is deliberately not shown in its place: it counts every lead ever assigned, disqualified and lost ones included.">Not summable</span>`;
+        const p = openPipelineOf(r);
+        if (p != null) return aed(p);
+        const open = openLeadsOf(r).length;
+        return open
+          ? `<span class="t-muted">No budget on file</span><div class="cell-sub">${num(open)} open ${plural(open, 'lead', 'leads')}, none carrying a budget_aed</div>`
+          : '<span class="t-muted">No open lead held</span>';
       } },
     /* The invite column exists only while somebody is waiting on one. Kept in
        the list rather than deleted — the day a seat is created it comes back by
@@ -1127,7 +1219,7 @@ SCREENS.team = async host => {
          box is also filtering and it is a claim about the wrong set. */
       empty: (f.view === 'QUIET' && !f.q.trim())
         ? stateEmpty('Everyone has activity',
-            'Every person on the roster has leads, a measured response or pipeline against their name.', 'task_alt')
+            'Every person on the roster has leads, a response the view counted, or open pipeline against their name.', 'task_alt')
         : stateEmpty('Nobody matches these filters',
             'Clear the search or pick another slice of the roster.', 'filter_alt_off'),
     });
@@ -1202,12 +1294,14 @@ SCREENS.team = async host => {
       </div>
       <div class="cell-sub" style="margin-top:8px;white-space:normal">
         ${concentration
-          ? `${esc(str(concentration.rep.name) || 'The top rep')} holds ${esc(pct(concentration.share * 100))} of the pipeline against an even share of ${esc(pct(concentration.even * 100))}. `
+          ? `${esc(str(concentration.rep.name) || 'The top rep')} holds ${esc(pct(concentration.share * 100))} of the open pipeline against an even share of ${esc(pct(concentration.even * 100))}. `
           : carriers.length >= MIN_CARRIERS
-            ? 'No single rep holds twice an even share of the pipeline. '
+            ? 'No single rep holds twice an even share of the open pipeline. '
             /* Not "the pipeline is evenly held" — nothing was measured. A share
-               needs somebody to hold the other part of it. */
-            : `Concentration is not measured here: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any pipeline, and one person holding all of the money is a roster of one rather than a concentration. `}
+               needs somebody to hold the other part of it. Open pipeline is
+               budget_aed over the non-terminal leads read here, never
+               v_team_performance.pipeline_aed — see item 5 in the header. */
+            : `Concentration is not measured here: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any open pipeline, and one person holding all of the money is a roster of one rather than a concentration. `}
         ${spread
           ? `A HOT lead is supposed to be auto-assigned to the least-loaded rep, so an uneven bar chart is either that trigger not firing or assignments made by hand around it —
              and this screen cannot tell you which: <span class="mono">leads</span> stores the owner and nothing about how the owner got there (no assigned_by, no assignment timestamp, no updated_at).`
@@ -1218,10 +1312,33 @@ SCREENS.team = async host => {
   }
 
   const sla = el('div', 'card'); pair.appendChild(sla);
-  const timed = roster.filter(r => (measured(r) ?? 0) > 0);
+  const timed = timingTrusted ? roster.filter(r => (measured(r) ?? 0) > 0) : [];
   if (perfErr) {
     sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
       ${stateError('the performance view', perfErr)}`;
+  } else if (!timingTrusted) {
+    /* Not an empty state and not an error: the counters exist and are populated,
+       they just do not measure what the panel is named after. Everything below
+       the headline — the split bar, both percentages, the breach ranking, the
+       one-lead sentence — is a statement about the 5-minute rule, so the panel
+       states the defect instead of drawing a green bar over it. Nothing here is
+       switched off by hand or by date: the moment the fixed writer stamps a lead
+       with a real figure, or leaves one null because nobody replied, the column
+       distinguishes two states and this whole panel renders again. */
+    sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
+      <div class="banner warm">
+        <span class="material-symbols-outlined">timer_off</span>
+        <div>
+          <div style="font-weight:500">Nobody can be scored against the 5-minute rule yet</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(timingWhy)}</div>
+        </div>
+      </div>
+      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_TIMING)}</div>
+      <div class="cell-sub" style="margin-top:10px;white-space:normal">
+        The ${num(roster.length)} ${plural(roster.length, 'person', 'people')} on the roster ${plural(roster.length, 'is', 'are')} neither passing nor
+        failing this rule here — they are unscored, which is a third state and the only true one while the column reads the same on a lead
+        answered in four minutes and a lead nobody has answered at all. This panel is not disabled by hand and carries no date: it comes back
+        by itself on the first lead whose response time is either null or above zero.</div>`;
   } else if (!timed.length) {
     sla.innerHTML = `<div class="label-caps" style="margin-bottom:12px">The 5-minute rule</div>
       ${stateEmpty('No response times measured yet',
@@ -1283,10 +1400,11 @@ SCREENS.team = async host => {
   function openRep(r) {
     const owned = ownedBy(r);
     const m = measured(r), w = withinSla(r), b = breachedSla(r);
-    /* What a delete would strand, stated from both sources rather than one.
-       The view's figure is all-time; the leads read here is a capped window, so
-       quoting only the window would let "0 leads would be stranded" appear next
-       to a rep the view credits with nine. */
+    /* What a delete would unassign — not strand: the FK is ON DELETE SET NULL,
+       so the leads survive with a null owner. Stated from both sources rather
+       than one, because the view's figure is all-time while the leads read here
+       is a capped window, and quoting only the window would let "0 leads" appear
+       next to a rep the view credits with nine. */
     const strandBits = [];
     if (leadsAssigned(r) != null) {
       strandBits.push(`${num(leadsAssigned(r))} lead${leadsAssigned(r) === 1 ? '' : 's'} against their name in the performance view`);
@@ -1309,9 +1427,11 @@ SCREENS.team = async host => {
                 <div style="font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
                   ${esc(l.name || 'Unnamed lead')} ${leadPhone(l)}</div>
                 <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
-                  ${n0(l.response_time_minutes) == null
-                    ? ' · <span class="t-hot">no reply recorded</span>'
-                    : ` · answered in ${esc(mins(l.response_time_minutes))}`}
+                  ${!timingTrusted
+                    ? ` · <span class="t-warm" title="${esc(NO_TIMING)}">reply time not measurable</span>`
+                    : rtOf(l) == null
+                      ? ' · <span class="t-hot">no reply recorded</span>'
+                      : ` · answered in ${esc(mins(l.response_time_minutes))}`}
                   ${l.escalated_at ? ` · <span class="t-warm">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
               </div>
               ${l.status ? pill(l.status) : ''}
@@ -1362,17 +1482,35 @@ SCREENS.team = async host => {
           <dl class="kv" style="margin-top:8px">
             <dt>Leads assigned</dt><dd class="num">${leadsAssigned(r) == null ? notReported : num(leadsAssigned(r))}</dd>
             <dt>HOT leads</dt><dd class="num">${hotLeads(r) == null ? notReported : num(hotLeads(r))}</dd>
-            <dt>Avg response</dt><dd class="num">${avgResponse(r) == null
-              ? '<span class="t-muted">Not measured</span>'
-              : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="cell-sub">· one lead, not an average</span>' : ''}`}</dd>
-            <dt>Within 5 min</dt><dd class="num">${!m
-              ? '<span class="t-muted">Nothing measured</span>'
-              : m < MIN_RATE_SAMPLE
-                ? `${num(w ?? 0)} / ${num(m)} <span class="cell-sub">· one lead, so no percentage</span>`
-                : `${num(w ?? 0)} / ${num(m)} · ${pct(slaRate(r))}`}</dd>
-            <dt>Breached</dt><dd class="num">${b == null ? notReported : `<span class="${b > 0 ? 't-hot' : ''}">${num(b)}</span>`}</dd>
-            <dt>Pipeline</dt><dd class="num">${pipelineOf(r) == null ? notReported : aed(pipelineOf(r))}</dd>
+            <dt>Avg response</dt><dd class="num">${!timingTrusted
+              ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not measurable</span>`
+              : avgResponse(r) == null
+                ? '<span class="t-muted">Not measured</span>'
+                : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="cell-sub">· one lead, not an average</span>' : ''}`}</dd>
+            <dt>Within 5 min</dt><dd class="num">${!timingTrusted
+              ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`
+              : !m
+                ? '<span class="t-muted">Nothing measured</span>'
+                : m < MIN_RATE_SAMPLE
+                  ? `${num(w ?? 0)} / ${num(m)} <span class="cell-sub">· one lead, so no percentage</span>`
+                  : `${num(w ?? 0)} / ${num(m)} · ${pct(slaRate(r))}`}</dd>
+            <dt>Breached</dt><dd class="num">${!timingTrusted
+              ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`
+              : b == null ? notReported : `<span class="${b > 0 ? 't-hot' : ''}">${num(b)}</span>`}</dd>
+            <dt>Open pipeline</dt><dd class="num">${!leads
+              ? '<span class="t-muted">Leads could not be read, so open pipeline could not be summed</span>'
+              : openPipelineOf(r) != null
+                ? aed(openPipelineOf(r))
+                : openLeadsOf(r).length
+                  ? `<span class="t-muted">No budget on file across ${num(openLeadsOf(r).length)} open ${plural(openLeadsOf(r).length, 'lead', 'leads')}</span>`
+                  : '<span class="t-muted">No open lead held</span>'}</dd>
           </dl>
+          ${/* Said in the drawer as well as the header, because this is where a
+                manager checks one person's number against what they believe. */''}
+          <div class="cell-sub" style="margin-top:12px;white-space:normal">Open pipeline is <span class="mono">budget_aed</span> summed over the
+            leads read on this screen that are assigned to this person and are not in a won or dead state${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads` : ''}.
+            <span class="mono">v_team_performance.pipeline_aed</span> is not shown: it sums every lead ever assigned, with no status filter and no
+            time window, so disqualified and lost leads count towards it forever.</div>
           ${!r.perf ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">
             ${perfErr ? `The performance view could not be read (${esc(perfErr)}).`
                       : 'The performance view has no row for this person, so nothing has been recorded against them yet.'}</div>` : ''}
@@ -1387,7 +1525,7 @@ SCREENS.team = async host => {
           <div class="label-caps">Why there is no delete</div>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">
             ${esc(NO_DELETE)}${strandBits.length
-              ? ` They have ${strandBits.join(' and ')} — every one of those would be left ownerless.`
+              ? ` They have ${strandBits.join(' and ')} — every one of those would be handed back to the unassigned queue, with nothing on the row to say it had ever had an owner.`
               : ''}
           </div>
         </div>

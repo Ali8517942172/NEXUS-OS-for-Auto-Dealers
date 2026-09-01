@@ -506,14 +506,24 @@ SCREENS.overview = async host => {
      the refinement is forbidden to do — move the badge DOWN — became possible
      the moment the view emitted a row with a null screen. It never has in the
      data we have seen, which is exactly why it would have shipped. */
+  /* Both floors collapse snapshot duplicates first, for the same reason the
+     panel does: v_needs_attention emits one `undercut` row per stored
+     competitor scrape, so a single car undercut at a single price arrives four
+     times. Counting the raw rows made the badge read 17 while the panel below
+     it listed 13 — the badge accusing the dealership of four problems that are
+     one problem seen four times. badges.js applies the identical rule (it
+     exports SNAPSHOT_KINDS and collapseAttention so the two cannot drift), and
+     the floor has to be measured on the same footing as the number it is
+     protecting or Math.max below re-inflates what the panel just collapsed. */
   const sharedFloor = () => {
     const rows = BADGE_SNAPSHOT && BADGE_SNAPSHOT.rows;
     if (!rows) return null;
-    return rows.filter(r => BADGE_SEVERITIES.has(str(r.severity).toUpperCase())).length;
+    return collapseSnapshots(rows).rows
+      .filter(r => BADGE_SEVERITIES.has(str(r.severity).toUpperCase())).length;
   };
   /* The same rule applied to the rows this screen read, so the first render has
      a floor before badges.js has polled once. */
-  const ownFloor = items => (items || [])
+  const ownFloor = items => collapseSnapshots(items || []).rows
     .filter(i => BADGE_SEVERITIES.has(str(i.severity).toUpperCase())).length;
 
   const setBadge = () => {

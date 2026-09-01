@@ -74,14 +74,31 @@ function serve(root, port) {
    list of every table, read live off the database on 24 Aug 2026, and it fails
    a query exactly the way production does. Keeping this list current is the
    price of the gate being worth running — when the schema changes, change it
-   here, and SCHEMA.md's CORRECTION section is the same list in prose. */
+   here, and SCHEMA.md's CORRECTION section is the same list in prose.
+
+   Re-read live off information_schema.columns on 1 Sep 2026, and the far more
+   expensive half of that price came due: a gate can also go stale in the other
+   direction, and a stale whitelist REJECTS CORRECT CODE. `v_workflow_health`
+   was rebuilt on nexus_outcome_class() and gained eleven columns; this list
+   still held the failures-only shape, so the gate was failing five screens
+   (settings, overview, ask, competitors, campaigns) for selecting columns that
+   exist. `finance_quotes` had grown twenty columns the finance desk reads,
+   `leads` two, `communication_logs` one. A gate that flags correct code is the
+   same failure as one that passes broken code with the sign reversed: both
+   teach the person reading the output to stop believing it. This list is from
+   the database, never from a document — SCHEMA.md is prose ABOUT it, not a
+   source for it. */
 const SCHEMA = {
-  leads: ['id','name','email','phone','status','ai_score','source','vehicle_interest','budget_aed','assigned_to','assigned_to_id','response_time_minutes','escalated_at','created_at'],
+  leads: ['id','name','email','phone','source','vehicle_interest','budget_aed','status','ai_score','assigned_to','response_time_minutes','created_at','assigned_to_id','escalated_at','bitrix_lead_id','crm_synced_at'],
   inventory: ['id','model','vin','status','acquired_at','cost_aed','price_aed','days_in_stock','holding_cost_accrued','gross_margin','net_margin','vat_amount','aging_alert','ai_recommendation','recommended_commission'],
   users: ['id','name','email','role','status','slack_user_id','created_at'],
-  communication_logs: ['id','lead_email','direction','message','channel','created_at'],
+  communication_logs: ['id','lead_email','channel','direction','message','created_at','sent_by'],
   competitors: ['id','competitor','model','our_price_aed','price_aed','price_diff_aed','scraped_at','ai_recommendation'],
-  finance_quotes: ['id','lead_email','lead_name','vehicle_value_aed','loan_payoff_aed','equity_aed','equity_status','loan_to_value_pct','indicative_apr_pct','finance_tier','credit_score','disclaimer','quoted_by','source','created_at'],
+  /* The 20 columns from `vehicle_price_aed` on are the newer calculator's, live
+     since before this branch and read all over screens/finance.js. They were
+     missing here, so `finance_quotes?select=*` gated fine while any named select
+     of a real column was rejected. */
+  finance_quotes: ['id','lead_email','lead_name','quoted_by','vehicle_value_aed','loan_payoff_aed','credit_score','equity_aed','equity_status','loan_to_value_pct','finance_tier','indicative_apr_pct','disclaimer','source','created_at','vehicle_price_aed','max_ltv_pct','min_down_payment_aed','down_payment_aed','down_payment_pct','down_payment_assumed','trade_in_equity_applied_aed','financed_aed','tenure_months','monthly_payment_low_aed','monthly_payment_high_aed','total_cost_of_credit_low_aed','total_cost_of_credit_high_aed','indicative_apr_high_pct','calculation_id','execution_id','calculated_at','apr_source','ltv_policy_source'],
   rag_documents: ['id','doc_title','source_file','section','page_number','content','search_vector'],
   purchase_history: ['id','deal_id','customer_name','email','phone','vehicle','amount_aed','purchase_date','created_at'],
   deals_embeddings: ['id','deal_id','content','embedding','created_at'],
@@ -92,7 +109,11 @@ const SCHEMA = {
   processed_messages: ['chat_id','message_id','source','processed_at'],
   whatsapp_contacts: ['chat_id','phone','push_name','lead_email','first_seen','last_seen','message_count'],
   v_needs_attention: ['kind','severity','ref','title','detail','at','screen'],
-  v_workflow_health: ['id','name','category','trigger_type','trigger_detail','description','is_active','writes_audit_log','runs','failures','escalations','success_rate','last_run','runs_30d','failures_30d','last_failure','health'],
+  /* Rebuilt on nexus_outcome_class(). The eleven columns from `partials_30d`
+     on are what makes the canonical health model expressible at all: a screen
+     can no longer only see failures. Every one of them is selected by a screen
+     on this branch. */
+  v_workflow_health: ['id','name','category','trigger_type','trigger_detail','description','is_active','writes_audit_log','runs','failures','escalations','runs_30d','failures_30d','partials_30d','no_result_30d','rejected_30d','escalated_30d','successes_30d','unknown_30d','effective_runs_30d','success_rate_30d','success_rate','last_run','last_success','last_failure','last_partial','last_incomplete','health'],
   v_team_performance: ['id','name','email','role','status','leads_assigned','hot_leads','pipeline_aed','avg_response_minutes','within_sla','breached_sla'],
   v_customer_360: ['name','email','phone','lead_count','best_ai_score','latest_status','is_vip','last_contact_at','message_count','total_emails','total_slack_messages','purchase_count','lifetime_value_aed','last_purchase_date'],
   v_customer_directory: ['id','name','email','phone','source_records','last_seen_at'],
@@ -117,7 +138,22 @@ const VALUE = {
   phone: '+971500000000', push_name: 'Ali', display_name: 'Test Row', identified: 'lead',
   chat_id: '971500000000@c.us', thread_key: '971500000000@c.us', message_id: 'ABC123',
   role: 'senior_rep', status: 'HOT', lead_status: 'HOT', latest_status: 'HOT',
-  verdict: 'APPROVED', health: 'DEGRADED', severity: 'HOT', kind: 'unanswered_chat',
+  verdict: 'APPROVED', severity: 'HOT', kind: 'unanswered_chat',
+  /* The health block is one coherent workflow, not eight independent numbers.
+     Left to the suffix rules below, `partials_30d`, `no_result_30d`,
+     `rejected_30d`, `escalated_30d`, `successes_30d` and `unknown_30d` all
+     matched nothing and were fabricated as the STRING 'Test Row' — n0() turns
+     that into null, so every new counter rendered as '—' and the gate could not
+     see a screen misreading any of them. The figures below are Competitor Price
+     Scraping's real 30-day shape on 1 Sep 2026: 96 runs, no failures at all,
+     and 84 of them producing nothing usable. Chosen on purpose, because a
+     screen still on the old failures-only model reads failures_30d = 0 and
+     calls this workflow clean — the exact regression the canonical health layer
+     was built to end, now expressible here. */
+  runs_30d: 96, failures_30d: 0, partials_30d: 0, no_result_30d: 84,
+  rejected_30d: 0, escalated_30d: 0, successes_30d: 12, unknown_30d: 0,
+  effective_runs_30d: 96, success_rate_30d: 12.5, success_rate: 12.5,
+  runs: 96, failures: 0, escalations: 0, health: 'PRODUCING_NOTHING',
   screen: 'conversations', ref: 'NX-1010', detail: 'Waiting since 19 Aug',
   direction: 'inbound', last_direction: 'inbound', message: 'hello there',
   last_message: 'hello there', channel: 'whatsapp', source: 'whatsapp',
@@ -140,7 +176,14 @@ function fabricate(table) {
   const row = {};
   for (const c of cols) {
     if (c in VALUE) { row[c] = VALUE[c]; continue; }
-    if (/(_at|_date|^at$)$/.test(c)) row[c] = '2026-08-01T00:00:00Z';
+    /* `last_*` and `first_*` are timestamps and none of them ends in `_at`:
+       last_run, last_success, last_failure, last_partial, last_incomplete,
+       last_seen, first_seen. They were all falling through to 'Test Row', so
+       every "last failed run" the gate exercised was an Invalid Date. The
+       columns in this family that are NOT timestamps — last_message,
+       last_direction, latest_status — are all named in VALUE above and have
+       already been taken by the line above this one. */
+    if (/(_at|_date|^at$)$/.test(c) || /^(last|first)_/.test(c)) row[c] = '2026-08-01T00:00:00Z';
     else if (/^(is_|has_)/.test(c)) row[c] = true;
     else if (/(_aed|_pct|_score|_count|_minutes|_number|count|runs|failures|escalations|_margin|_commission|days_in_stock|holding_cost_accrued|success_rate|page_number|credit_score)/.test(c)) row[c] = 120000;
     else row[c] = 'Test Row';
@@ -200,6 +243,47 @@ function stubRest(url) {
         purged_at: '2026-08-20T00:00:00Z' },
       { ...row, id: '00000000-0000-4000-8000-000000000004',
         storage_path: null },              // archive gap
+    ] };
+  }
+  if (table === 'v_workflow_health') {
+    /* Six rows, one per health value the rebuilt view can return, because the
+       one thing this view is for is telling those states apart and [row, row]
+       could not exercise a single branch between them. The base row is
+       PRODUCING_NOTHING (see VALUE above); the five below are the rest of the
+       vocabulary in lib/health.js. NO_QUALIFYING_RUNS and the two absences
+       carry a null success_rate_30d on purpose: zero qualifying runs is not 0%
+       and not 100%, it is no rate at all, and a screen that prints "0.0%" or
+       "100.0%" for one of these must fail here rather than in front of the
+       owner. */
+    const wf = (id, name, o) => ({ ...row, id, name, ...o });
+    return { status: 200, body: [
+      row,
+      wf('wf-degraded', 'Customer 360 - Data Aggregation', {
+        health: 'DEGRADED', runs_30d: 23, failures_30d: 2, partials_30d: 12,
+        no_result_30d: 0, successes_30d: 9, effective_runs_30d: 23,
+        success_rate_30d: 39.1, runs: 23, failures: 2, success_rate: 39.1 }),
+      wf('wf-healthy', 'Inventory Ageing Recompute', {
+        health: 'HEALTHY', runs_30d: 17, failures_30d: 0, partials_30d: 0,
+        no_result_30d: 0, successes_30d: 17, effective_runs_30d: 17,
+        success_rate_30d: 100, runs: 17, failures: 0, success_rate: 100 }),
+      wf('wf-norate', 'Ask-AI - RAG Query Agent', {
+        health: 'NO_QUALIFYING_RUNS', runs_30d: 3, failures_30d: 0, partials_30d: 0,
+        no_result_30d: 0, rejected_30d: 3, successes_30d: 0, effective_runs_30d: 0,
+        success_rate_30d: null, runs: 3, failures: 0, success_rate: null }),
+      wf('wf-uninstrumented', 'NEXUS Error Handler', {
+        health: 'NOT_INSTRUMENTED', writes_audit_log: false,
+        runs_30d: 0, failures_30d: 0, partials_30d: 0, no_result_30d: 0,
+        rejected_30d: 0, escalated_30d: 0, successes_30d: 0, unknown_30d: 0,
+        effective_runs_30d: 0, success_rate_30d: null, runs: 0, failures: 0,
+        success_rate: null, last_run: null, last_success: null, last_failure: null,
+        last_partial: null, last_incomplete: null }),
+      wf('wf-neverran', 'NEXUS Retention Purge', {
+        health: 'NEVER_RAN',
+        runs_30d: 0, failures_30d: 0, partials_30d: 0, no_result_30d: 0,
+        rejected_30d: 0, escalated_30d: 0, successes_30d: 0, unknown_30d: 0,
+        effective_runs_30d: 0, success_rate_30d: null, runs: 0, failures: 0,
+        success_rate: null, last_run: null, last_success: null, last_failure: null,
+        last_partial: null, last_incomplete: null }),
     ] };
   }
   if (table === 'competitors') {

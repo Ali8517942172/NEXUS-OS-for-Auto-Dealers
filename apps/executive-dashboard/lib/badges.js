@@ -37,7 +37,58 @@ import { $ } from './dom.js';
    the HOT item that arrives tomorrow. Only HOT and WARM count. */
 const COUNTS = new Set(['HOT', 'WARM']);
 
-let LAST = { at: null, rows: null, error: null, homeless: 0 };
+/* ── One thing needing a human, counted once ────────────────────────────────
+   `v_needs_attention` has no DISTINCT ON, and its `undercut` branch selects
+   straight from `competitors`, which accumulates one row per nightly scrape. So
+   the same Toyota Fortuner, at the same price, against the same rival, arrives
+   once per night it has been checked — five rows on 1 Sep 2026, refs 18, 20,
+   23, 24 and 25, identical in kind, title and detail and differing only in
+   `at`. This module counted all five. The Competitors badge therefore read 5
+   over a panel listing one, and the Overview badge read 17 over a panel listing
+   13, which is the disagreement a badge exists to not have: "why does it say
+   17" stopped having an answer you could get by opening the screen.
+
+   The right fix is a DISTINCT ON in the view. Until someone makes it, the
+   collapse happens on both sides of the glass, and it is the SAME collapse:
+   screens/overview.js has had this rule since 31 Aug and the badge has to agree
+   with the panel it sits above, not merely be closer to it.
+
+   SNAPSHOT_KINDS is the whole of the rule and it is deliberately narrow. It
+   names the kinds whose `ref` identifies a LOG ROW rather than the subject —
+   `undercut` is the only one today — and for those, and only those, rows that
+   agree on kind, title and detail are one item. Every other kind keys on a ref
+   that IS the subject (a chat id, a lead id, a unit id, a workflow name), so
+   nothing is collapsed and two same-named leads can never silently become one.
+
+   Exported so screens/overview.js can eventually import it the way it already
+   imports COUNTS, and stop being the second copy. Until it does, the two are
+   kept identical by hand and this comment is the warning: change one, change
+   both, or the badge and the panel start disagreeing again. If the view gains
+   its DISTINCT ON the groups become singletons and both copies quietly become
+   no-ops — this does not have to be unwound. */
+const SNAPSHOT_KINDS = new Set(['undercut']);
+const str = v => String(v == null ? '' : v).trim();
+function collapseAttention(rows) {
+  const seen = new Map();
+  const out = [];
+  let collapsed = 0;
+  (rows || []).forEach(it => {
+    if (!SNAPSHOT_KINDS.has(it.kind)) { out.push(it); return; }
+    const key = `${it.kind}|${str(it.title)}|${str(it.detail)}`;
+    const at = seen.get(key);
+    if (at == null) { seen.set(key, out.length); out.push(it); return; }
+    collapsed += 1;
+    /* The newest observation is the one kept, and it is chosen explicitly here
+       rather than assumed from the order the view happened to return. Overview
+       sorts before it collapses and this module does not, so relying on arrival
+       order would be the one way the two could still disagree — not on how many
+       items there are, but on which snapshot's severity gets counted. */
+    if (Date.parse(it.at) > Date.parse(out[at].at)) out[at] = it;
+  });
+  return { rows: out, collapsed };
+}
+
+let LAST = { at: null, rows: null, error: null, homeless: 0, distinct: null, collapsed: 0 };
 
 function paintOne(screen, n, title) {
   const badge = $(`badge-${screen}`);
@@ -66,8 +117,17 @@ function clearAll() {
    is where "we cannot reach the database" belongs. */
 async function refreshBadges() {
   try {
-    const rows = await db('v_needs_attention?select=kind,severity,ref,screen&limit=500');
-    LAST = { at: new Date().toISOString(), rows, error: null, homeless: 0 };
+    /* `title`, `detail` and `at` are selected for the collapse above and for
+       nothing else — they are what identifies two rows as the same item. */
+    const rows = await db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen&limit=500');
+    /* Collapse BEFORE the severity filter, in that order, because that is the
+       order Overview's panel does it in: the row that survives a group is the
+       newest, and the count must use that row's severity rather than whichever
+       snapshot happened to pass the filter first. `rows` stays the raw snapshot
+       so that anything reading LAST.rows sees exactly what the view returned;
+       `distinct` is what these badges are painted from. */
+    const { rows: distinct, collapsed } = collapseAttention(rows);
+    LAST = { at: new Date().toISOString(), rows, error: null, homeless: 0, distinct, collapsed };
 
     const bySeverity = new Map();
     /* A row the view files against no screen used to be dropped here and was
@@ -77,7 +137,7 @@ async function refreshBadges() {
        Overview's badge title has to admit it exists so the number can be
        explained. Silently uncounted is how an attention item goes unseen. */
     let homeless = 0;
-    rows.forEach(r => {
+    distinct.forEach(r => {
       if (!COUNTS.has(String(r.severity || '').toUpperCase())) return;
       const s = String(r.screen || '').trim();
       if (!s) { homeless += 1; return; }
@@ -115,9 +175,10 @@ async function refreshBadges() {
         : '');
 
     LAST.homeless = homeless;
-    return { ok: true, grand, homeless, screens: bySeverity.size };
+    return { ok: true, grand, homeless, collapsed, screens: bySeverity.size };
   } catch (e) {
-    LAST = { at: new Date().toISOString(), rows: null, error: e.message };
+    LAST = { at: new Date().toISOString(), rows: null, error: e.message,
+             homeless: 0, distinct: null, collapsed: 0 };
     clearAll();
     return { ok: false, error: e.message };
   }
@@ -164,4 +225,4 @@ function stopBadges() {
    literal with a comment pointing here, which is a coupling nothing can check —
    the day one side gains COLD the badge silently disagrees with the panel
    under it. Importing it makes the two provably the same set. */
-export { refreshBadges, startBadges, stopBadges, LAST, COUNTS };
+export { refreshBadges, startBadges, stopBadges, LAST, COUNTS, SNAPSHOT_KINDS, collapseAttention };
