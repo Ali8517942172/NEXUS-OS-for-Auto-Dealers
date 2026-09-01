@@ -53,6 +53,34 @@
    those two per profile from that profile's own last_synced_at, and says which
    one it is every single time it prints one of these numbers.
 
+   AND THE SECOND CORRECTION IS ITSELF WRONG — THE DATABASE SAYS SO (1 Sep 2026).
+   The paragraph above concludes that a run finishing after GMAIL_FIXED_AT proves
+   its zero was counted. Read against audit_log tonight, that does not hold.
+   Every Customer 360 run since 26 Aug 22:00 UTC has logged PARTIAL, and the
+   newest row naming shabbir53ujjainwala@gmail.com — 28 Aug 22:00, four days
+   AFTER the timestamp below — reads "email count UNKNOWN - Gmail read failed …
+   Gmail history for this customer - Forbidden - perhaps check your credentials?".
+   The consent screen was published and the credential re-authorised; the job
+   still cannot read that mailbox. A date typed into this file is therefore not
+   evidence about a figure, and it was being rendered as though it were — in
+   green, over a number the run itself said it had failed to collect.
+
+   So the verdict moved off the constant and onto the run's own record. Each
+   figure is judged by the newest audit_log row the aggregation wrote about THAT
+   customer, classified through lib/health.js — the only module allowed to say
+   what a status means — and GMAIL_FIXED_AT is consulted only when there is no
+   such row to consult. Where the run says a step did not land, the figure it
+   wrote is labelled as coming from a run that went out half-done, never as a
+   counted zero.
+
+   Live tonight, read from v_workflow_health on 1 Sep 2026: Customer 360 - Data
+   Aggregation is DEGRADED at 39.1% — 23 qualifying runs in the 30-day window,
+   9 outright successes, 2 failures and 12 that went out half-done. Both profile
+   rows behind this screen carry last_synced_at 31 Aug 22:00, which is one of
+   those twelve. The same run logged "Slack count UNKNOWN - Slack read failed,
+   previous stored value left intact", which is why one profile's
+   total_slack_messages is NULL and the other's 0 is a value nothing overwrote.
+
    THE DUPLICATE THAT WAS: a second customer_360_profiles row (customer_id '25',
    a leftover from the Bitrix era) pointed at the same address as the live one
    and has been deleted. One person is no longer two profiles. The collapse
@@ -75,8 +103,10 @@
    Nothing here is estimated. A count the database did not return is an em dash. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { expandIdentity, personQuery } from '../lib/identity.js';
-import { aed, ago, dubaiDate, esc, initials, n0, num, pill, tone } from '../lib/format.js';
+import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
+import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
+import { aed, ago, dubaiDate, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, table, wireRows } from '../lib/ui.js';
@@ -107,6 +137,33 @@ const MSG_LIMIT = 50;
 const str  = v => String(v == null ? '' : v).trim();
 const norm = v => str(v).toLowerCase();
 
+/* `ilike` is not equality. PostgREST hands the value straight to SQL ILIKE, and
+   encodeURIComponent's %25 is decoded back to a literal % before it gets there —
+   so `%` and `_` inside a customer's OWN address are wildcards, and the reads
+   below matched on `john_smith@x.com` would also return `johnXsmith@x.com`. That
+   is one person's leads, purchases, purchase value and lead count appearing
+   under another's name, with nothing on screen to say so.
+
+   Two defences, because the first depends on PostgREST's own `*`→`%` rewriting
+   staying exactly as it is: the pattern is escaped, and every row that comes
+   back is then re-checked against the address in JavaScript, which cannot be
+   wrong about it. `ilike` stays rather than `eq` because the directory key is
+   lower-cased and the base tables are not. */
+const likePattern = s => encodeURIComponent(String(s).replace(/[\\%_]/g, m => '\\' + m));
+const sameEmail = (a, b) => !!norm(a) && norm(a) === norm(b);
+
+/* The Customer 360 aggregation, as the database names it. workflow_registry is
+   read rather than a name being written here, because audit_log.workflow says
+   "Customer 360 Aggregation" while the registry says "Customer 360 - Data
+   Aggregation" and there is a third alias besides — matching a run to a workflow
+   on a substring would let an unrelated workflow's log explain a customer's
+   profile. The `*360*` filter below is only a cheap superset; the exact names
+   from the registry row are what actually select the rows. */
+const AGG_MATCH = '*360*';
+const AGG_LOG_LIMIT = 500;
+const HEALTH_COLS = 'id,name,category,health,runs_30d,successes_30d,failures_30d,partials_30d,'
+  + 'no_result_30d,rejected_30d,effective_runs_30d,success_rate_30d,last_run,writes_audit_log,is_active';
+
 /* Neither the aggregation nor the credential behind it can be repaired from the
    browser. Spelled out once so the disabled control and the prose agree. */
 const NO_SYNC_HOOK =
@@ -123,24 +180,47 @@ const NO_SYNC_HOOK =
    outage. */
 const AGG_ZERO_CAUSE =
   'Customer 360 aggregates Gmail through an OAuth2 credential that had stopped working: its consent screen was ' +
-  'left in Testing, and Google expires a Testing app’s refresh token after seven days, so the job has been ' +
-  'authenticating with a dead token and counting nothing. The app has since been published and the credential ' +
-  're-authorised, so the cause is fixed — but a figure here is whatever the last aggregation run wrote. A 0 from ' +
-  'a run older than that fix means “not counted”; it is not evidence that the customer never wrote to us. The ' +
+  'left in Testing, and Google expires a Testing app’s refresh token after seven days, so the job authenticated ' +
+  'with a dead token and counted nothing. The app has since been published and the credential re-authorised — ' +
+  'and that did not fix the read. The newest aggregation row naming a customer with a real address, logged ' +
+  '28 Aug 2026 and four days after the re-authorisation, still reads “Gmail history for this customer - ' +
+  'Forbidden - perhaps check your credentials?”. So a figure here is whatever the last run managed to write, a 0 ' +
+  'is not evidence that the customer never wrote to us, and the only thing that says which is the run’s own ' +
+  'audit_log row, quoted beside each figure. The message counts elsewhere on this screen come from ' +
+  'communication_logs and were never affected.';
+
+/* The paragraph for a run that logged no step it failed to land. This is the
+   only wording on the screen that is allowed to call a zero an answer, and it is
+   now earned from the run's own record rather than from a date: the previous
+   version of this text concluded "the job could reach the mailbox and found
+   nothing in it for this address" off a timestamp comparison, and rendered that
+   sentence directly beneath a cell correctly reporting that the same run had
+   logged "Gmail read failed". */
+const AGG_ZERO_SUCCESS =
+  'This is an answer, not a gap. The run that wrote these figures logged no step that failed to land, so the job ' +
+  'reached its sources and found nothing for this address. A 0 here means no mail, not no count. The message ' +
+  'counts elsewhere on this screen come from communication_logs and were never affected.';
+
+/* And the case that is actually live: the run finished, wrote a profile row, and
+   said in its own summary that part of what it claimed did not happen. */
+const AGG_ZERO_HALF =
+  'The run that wrote these figures did not finish the job it claimed, and its own audit_log row is quoted above. ' +
+  'Where that row says a count is UNKNOWN, or that a step did not land, the number stored here is whatever an ' +
+  'earlier run left behind rather than something this run counted — the workflow says so itself: “previous ' +
+  'stored value left intact”. A 0 under those words is a read that failed, not a customer with no mail. The ' +
   'message counts elsewhere on this screen come from communication_logs and were never affected.';
 
-/* The same paragraph for the case the fix finally produced: a run that happened
-   after the credential was repaired, reporting nothing. The outage still has to
-   be told — a reader who remembers the warning needs to know why it is gone —
-   but the conclusion is the opposite one, and burying that in the outage wording
-   would leave a counted answer looking like a fault. */
-const AGG_ZERO_COUNTED =
-  'This is an answer, not a gap. Customer 360 aggregates Gmail through an OAuth2 credential that had stopped ' +
-  'working: its consent screen was left in Testing, and Google expires a Testing app’s refresh token after ' +
-  'seven days, so for days the job authenticated with a dead token and counted nothing. The app has since been ' +
-  'published and the credential re-authorised, and the run behind the figures here finished after that repair — ' +
-  'so the job could reach the mailbox and found nothing in it for this address. A 0 here means no mail, not no ' +
-  'count. The message counts elsewhere on this screen come from communication_logs and were never affected.';
+/* No audit row names this customer, so the only evidence is the timestamp — and
+   a timestamp is not a record of what a run collected. Said as the inference it
+   is, and deliberately not upgraded to AGG_ZERO_SUCCESS: runs on other customers
+   were still logging "Gmail read failed" four days after the re-authorisation,
+   so "later than the fix" has been observed not to imply "counted". */
+const AGG_ZERO_UNRECORDED =
+  'The run that wrote this finished after the Gmail credential was re-authorised. That is a timestamp, not a ' +
+  'record: no audit_log row names this customer, so whether the run reached the mailbox is written down nowhere ' +
+  'this screen can read, and comparable runs on other customers were still logging “Gmail read failed” four days ' +
+  'after that re-authorisation. This 0 is therefore not being called a counted zero. The message counts ' +
+  'elsewhere on this screen come from communication_logs and were never affected.';
 
 /* When the Gmail credential was repaired, in UTC. A profile written before this
    was written by a run that could not read Gmail at all, so its 0 counted
@@ -166,9 +246,13 @@ const syncedAfterFix = ts => {
   return Number.isNaN(t) ? false : t >= GMAIL_FIXED_MS;
 };
 
-/* Which of the two paragraphs a given figure has earned, decided by the run that
-   wrote it rather than by what is true tonight. */
-const aggNote = syncedAt => (syncedAfterFix(syncedAt) ? AGG_ZERO_COUNTED : AGG_ZERO_CAUSE);
+/* Which paragraph a given figure has earned, decided by the run that wrote it —
+   and by the run's own record wherever there is one. `run` is the newest
+   audit_log row the aggregation logged about this customer. */
+const aggNote = (syncedAt, run) => {
+  if (run) return outcomeOf(run) === OUTCOME.SUCCESS ? AGG_ZERO_SUCCESS : AGG_ZERO_HALF;
+  return syncedAfterFix(syncedAt) ? AGG_ZERO_UNRECORDED : AGG_ZERO_CAUSE;
+};
 
 /* Where this screen's customers come from, and — just as important — where they
    do not. Both halves of the Bitrix position are stated, because "Bitrix is
@@ -187,23 +271,54 @@ const NO_INVENTORY_LINK =
   'answerable from here — and inventory records no sale date either, so they are not answerable from that side.';
 
 /* A touch count is never rendered bare, and never as a number whose meaning
-   depends on something the reader cannot see from where the number is. */
-function touchCell(v, syncedAt) {
+   depends on something the reader cannot see from where the number is.
+
+   `run` is the newest audit_log row the aggregation wrote about this customer,
+   already classified by lib/health.js at the call site. It outranks the date
+   comparison completely: a run that logged "Gmail read failed" wrote a 0 that
+   counted nothing, whatever the clock said when it finished. The GMAIL_FIXED_AT
+   branch below survives only as the fallback for a profile no run mentions, and
+   now says out loud that it is inferring from a timestamp rather than reading a
+   record. */
+function touchCell(v, syncedAt, run) {
   const x = n0(v);
   if (x == null) return '<span class="t-muted">— not reported by the aggregation</span>';
-  if (x > 0) return `<span class="num">${num(x)}</span>`;
-  const when = ` title="Compared against ${esc(GMAIL_FIXED_AT)}, the recorded time the Gmail credential was re-authorised. That timestamp is written into this screen, not read from the database."`;
+  const o = run ? outcomeOf(run) : null;
+  const half = !!o && o !== OUTCOME.SUCCESS;
+  const why = run ? ` title="${esc(str(run.summary) || 'This run logged no summary.')}"` : '';
+  if (x > 0) {
+    /* A number greater than zero is still only as good as the run that wrote it:
+       "previous stored value left intact" means the figure on screen is whatever
+       an older run collected, not what this one found. */
+    return `<span class="num">${num(x)}</span>${half
+      ? ` <span class="t-warm"${why}>· written by a run that ${esc(outcomeWords(o).label.toLowerCase())} — it may be a value an earlier run left behind</span>`
+      : ''}`;
+  }
+  if (run) {
+    return half
+      ? `<span class="num">0</span> <span class="t-hot"${why}>· not counted — the run that wrote it ${esc(outcomeWords(o).label.toLowerCase())}: ${esc(str(run.summary).slice(0, 180))}</span>`
+      : `<span class="num">0</span> <span class="t-muted"${why}>· counted — the run that wrote it (${esc(ago(run.logged_at))}) logged no step that failed to land</span>`;
+  }
+  const when = ` title="Inferred by comparing this row's last_synced_at against ${esc(GMAIL_FIXED_AT)}, a timestamp written into this screen and not read from the database. No audit_log row names this customer, so there is no record of what the run actually collected."`;
   if (syncedAfterFix(syncedAt)) {
-    return `<span class="num">0</span> <span class="t-muted"${when}>· counted by a run that finished after the Gmail credential was fixed — a real zero, not a missing figure</span>`;
+    return `<span class="num">0</span> <span class="t-warm"${when}>· the aggregation logged nothing about this customer, so whether this 0 was counted is not recorded — only that the run finished after the Gmail credential was re-authorised</span>`;
   }
   return str(syncedAt)
-    ? `<span class="num">0</span> <span class="t-warm"${when}>· not counted — the run that wrote this finished before the Gmail credential was fixed</span>`
+    ? `<span class="num">0</span> <span class="t-warm"${when}>· not counted — the run that wrote this finished before the Gmail credential was re-authorised</span>`
     : '<span class="num">0</span> <span class="t-warm">· not counted — this source carries no sync timestamp, so which run produced it is unknown</span>';
 }
 
 /* A rejected sub-fetch must reach the section that needed it rather than
    vanishing into an empty list that reads as "this customer has no purchases". */
 const grab = promise => promise.then(rows => ({ rows }), e => ({ err: e.message }));
+/* The second half of the ilike defence. `foreign` is the number of rows the
+   database returned that do not belong to this customer — always 0 unless the
+   escaping above has been defeated, and reported on screen rather than trusted
+   to be 0, because a silent wildcard match is the failure this exists to catch. */
+const grabExact = (promise, addr) => promise.then(rows => {
+  const kept = (rows || []).filter(r => sameEmail(r.email, addr));
+  return { rows: kept, foreign: (rows || []).length - kept.length };
+}, e => ({ err: e.message }));
 const val = r => (r.status === 'fulfilled' ? r.value : null);
 const err = r => (r.status === 'rejected' ? (r.reason && r.reason.message) || 'Unknown error' : null);
 
@@ -321,13 +436,22 @@ SCREENS.customers = async host => {
   /* Every source is read independently. "The aggregation is down" and "the
      customer list is down" are different events and the screen stays useful
      under either, so nothing here is allowed to reject the whole render. */
-  const [dirR, viewR, profR, waR, leadR, buyR] = await Promise.allSettled([
+  /* The last three are the aggregation's own record. Every email and Slack
+     figure on this screen is that job's output, and until they were read this
+     screen could not tell a figure a run collected from a figure a run failed to
+     collect and left standing. It states the health in the view's words and the
+     per-customer verdict from the run's own audit row; it does not classify a
+     status itself. */
+  const [dirR, viewR, profR, waR, leadR, buyR, regR, healthR, auditR] = await Promise.allSettled([
     db(`v_customer_directory?select=*&limit=${DIR_LIMIT}`),
     db(`v_customer_360?select=*&order=lifetime_value_aed.desc,lead_count.desc&limit=${VIEW_LIMIT}`),
     db(`customer_360_profiles?select=${PROFILE_COLS}&order=last_synced_at.desc.nullslast&limit=${PROFILE_LIMIT}`),
     db(`whatsapp_contacts?select=${CONTACT_COLS}&limit=${CONTACT_LIMIT}`),
     db(`leads?select=name,email,phone,created_at&limit=${SOURCE_LIMIT}`),
     db(`purchase_history?select=*&limit=${SOURCE_LIMIT}`),
+    db(`workflow_registry?select=id,name,audit_name,audit_aliases,writes_audit_log&name=ilike.${AGG_MATCH}`),
+    db(`v_workflow_health?select=${HEALTH_COLS}&name=ilike.${AGG_MATCH}`),
+    db(`audit_log?select=status,summary,logged_at,lead_email,workflow&workflow=ilike.${AGG_MATCH}&order=logged_at.desc&limit=${AGG_LOG_LIMIT}`),
   ]);
 
   const dirRows  = val(dirR),  dirErr  = err(dirR);
@@ -336,6 +460,52 @@ SCREENS.customers = async host => {
   const contacts = val(waR)   || [], waErr   = err(waR);
   const leadRows = val(leadR), leadErr = err(leadR);
   const buyRows  = val(buyR),  buyErr  = err(buyR);
+  const regRows    = val(regR)    || [], regErr    = err(regR);
+  const healthRows = val(healthR) || [], healthErr = err(healthR);
+  const auditRows  = val(auditR)  || [], auditErr  = err(auditR);
+
+  /* ── The aggregation, identified rather than assumed ───────────────────── */
+  /* One registry row or nothing. Two rows matching "360" would mean this screen
+     cannot say which job wrote its figures, and the honest response to that is
+     to say so, not to pick one. */
+  const aggReg = regRows.length === 1 ? regRows[0] : null;
+  const aggAmbiguous = regRows.length > 1;
+  const aggNames = aggReg
+    ? new Set([aggReg.name, aggReg.audit_name, ...(Array.isArray(aggReg.audit_aliases) ? aggReg.audit_aliases : [])]
+        .filter(Boolean).map(norm))
+    : null;
+  /* Ordered logged_at.desc by the read, so [0] is the newest run anywhere on
+     this list and aggRowsFor()[0] is the newest run about one customer. */
+  const aggLog = aggNames ? auditRows.filter(r => aggNames.has(norm(r.workflow))) : [];
+  const aggHealth = aggReg ? healthRows.find(h => String(h.id) === String(aggReg.id)) || null : null;
+  const aggRate = aggHealth ? successRate(aggHealth.successes_30d, aggHealth.effective_runs_30d) : null;
+  const aggLogErr = regErr || auditErr;
+
+  /* The same match on a single value, for the screen-wide banners. A profile's
+     email IS one of the four key shapes and audit_log.lead_email holds the same
+     shapes, so the canonical form is enough here and no expansion is needed. */
+  const aggRunForKey = key => {
+    const canon = normalizeKey(key).canonical;
+    if (!canon) return null;
+    return aggLog.find(r => normalizeKey(r.lead_email).canonical === canon) || null;
+  };
+  const profileRuns = profiles.map(p => aggRunForKey(p.email));
+  const runSuccess = profileRuns.filter(r => r && outcomeOf(r) === OUTCOME.SUCCESS).length;
+  const runHalf    = profileRuns.filter(r => r && outcomeOf(r) !== OUTCOME.SUCCESS).length;
+
+  /* Which aggregation rows are about THIS person. audit_log.lead_email holds the
+     same four key shapes communication_logs does — the row explaining Siva's
+     profile is filed under `+971547484167@whatsapp.lead`, not under a name — so
+     it is matched through the identity resolver and not on the address alone. */
+  const aggRowsFor = ident => {
+    if (!ident || !ident.ok || !aggLog.length) return [];
+    const canon = new Set(ident.keys.map(k => normalizeKey(k).canonical).filter(Boolean));
+    if (!canon.size) return [];
+    return aggLog.filter(r => {
+      const c = normalizeKey(r.lead_email).canonical;
+      return !!c && canon.has(c);
+    });
+  };
 
   /* ── Build the customer list ───────────────────────────────────────────── */
   let spine = null, spineSource = '', spineNote = '';
@@ -428,13 +598,53 @@ SCREENS.customers = async host => {
   const newest = synced.length ? synced[synced.length - 1] : null;
   const oldest = synced.length ? synced[0] : null;
   const reported = profiles.map(p => ({ e: n0(p.total_emails), s: n0(p.total_slack_messages) }));
-  const anyTouch = reported.some(r => (r.e || 0) > 0 || (r.s || 0) > 0);
-  const zeroProfiles = reported.filter(r => (r.e || 0) === 0 && (r.s || 0) === 0).length;
+  /* `null || 0` is 0, and that one coercion turned "the aggregation reported
+     nothing" into "the aggregation reported zero" — the exact distinction
+     touchCell() exists to keep, contradicted by the banner three lines above the
+     cell that keeps it. A figure counts as a touch only if it is a number above
+     zero, and as a reported zero only if it is a number equal to zero.
+
+     Not hypothetical: read on 1 Sep 2026, shabbir53ujjainwala@gmail.com carries
+     total_emails 1 and total_slack_messages NULL, because the run that wrote it
+     logged "Slack count UNKNOWN - Slack read failed, previous stored value left
+     intact". A NULL here is a read that failed, not a customer with no Slack. */
+  const anyTouch = reported.some(r => (r.e != null && r.e > 0) || (r.s != null && r.s > 0));
+  const zeroProfiles = reported.filter(r => r.e === 0 && r.s === 0).length;
+  const unreported = reported.filter(r => r.e == null || r.s == null).length;
   /* The question every zero on this screen turns on: has the aggregation run at
      all since the Gmail credential was repaired? Until it has, none of these
      numbers has been collected by a job that could reach the mailbox. */
   const postFix = profiles.filter(p => syncedAfterFix(p.last_synced_at)).length;
   const noStamp = profiles.filter(p => !str(p.last_synced_at)).length;
+
+  /* The KPI sub-line used to read, in green, "Ran after the Gmail credential was
+     fixed, so the zeros below were counted" — computed from one profile's
+     timestamp against a date constant and then asserted about every zero on the
+     screen. Both halves failed: the claim is per-profile, and the evidence is
+     the run's own record, which on 28 Aug said the Gmail read was Forbidden four
+     days after that constant. It now reports what the newest logged run did, and
+     nothing about what any figure means. */
+  const newestRun = aggLog[0] || null;
+  const newestOutcome = newestRun ? outcomeOf(newestRun) : null;
+  const aggRunSub = (() => {
+    if (aggLogErr) {
+      return `<span class="t-warm">The aggregation's own log could not be read (${esc(aggLogErr)}), so nothing is claimed about the run that wrote these figures</span>`;
+    }
+    if (aggAmbiguous) {
+      return `<span class="t-warm">${esc(String(regRows.length))} workflow_registry rows match “360”, so which job wrote these profiles cannot be told from here</span>`;
+    }
+    if (!aggReg) {
+      return '<span class="t-muted">No workflow_registry row matches the Customer 360 aggregation, so its runs cannot be looked up</span>';
+    }
+    if (!aggLog.length) {
+      return '<span class="t-muted">The aggregation has written no audit_log row under any of its registered names, so what its runs did is not recorded</span>';
+    }
+    const w = outcomeWords(newestOutcome);
+    return newestOutcome === OUTCOME.SUCCESS
+      ? `<span class="t-ok">Newest logged run succeeded outright · ${esc(ago(newestRun.logged_at))}</span>`
+      : `<span class="t-hot">Newest logged run ${esc(w.label.toLowerCase())} · ${esc(ago(newestRun.logged_at))}</span>
+         <div class="cell-sub" style="white-space:normal">${esc(w.blurb)}</div>`;
+  })();
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!spine) {
@@ -477,15 +687,43 @@ SCREENS.customers = async host => {
           ? '<span class="t-warm">Unknown — the profile table could not be read</span>'
           : newest
             ? `<span class="t-muted">Newest last_synced_at${oldest && oldest !== newest ? ` · oldest ${esc(ago(oldest))}` : ''}</span>
-               <div>${syncedAfterFix(newest)
-                  ? `<span class="t-ok">Ran after the Gmail credential was fixed${anyTouch ? '' : ', so the zeros below were counted'}</span>`
-                  : `<span class="t-warm">No run since the Gmail credential was fixed</span>`}</div>`
+               <div>${aggRunSub}</div>`
             : '<span class="t-muted">No profile carries a last_synced_at value, so when this last ran is not knowable</span>'),
     ].join('');
   }
 
   /* ── Banners. Each one names the exact source that is missing or wrong. ── */
   const notes = [];
+  /* The job's health belongs at the top of this screen because every email and
+     Slack figure below is its output, and a profile built by a run that went out
+     half-done holds whatever that run managed to collect. Stated in the view's
+     own words through lib/health.js — a rate with no qualifying runs is neither
+     0% nor 100% and successRate() returns null for it, which is why the sentence
+     branches on effective_runs_30d rather than printing pct() regardless. */
+  if (aggLogErr || healthErr) {
+    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+      <div>The Customer 360 aggregation's own record could not be read (${esc(aggLogErr || healthErr)}), so this
+      screen cannot say whether the run behind each email and Slack figure below completed or went out half-done.
+      The figures are shown exactly as customer_360_profiles holds them, with no claim about how they were
+      collected.</div></div>`);
+  } else if (aggAmbiguous) {
+    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
+      <div>${esc(String(regRows.length))} rows in workflow_registry match “360”, so which job writes the email and
+      Slack figures on this screen cannot be determined from here. No run is attributed to any figure below.</div></div>`);
+  } else if (aggHealth && String(aggHealth.health || '').toUpperCase() !== 'HEALTHY') {
+    const hw = healthWords(aggHealth.health);
+    const eff = n0(aggHealth.effective_runs_30d), succ = n0(aggHealth.successes_30d);
+    const parts = n0(aggHealth.partials_30d), fails = n0(aggHealth.failures_30d);
+    notes.push(`<div class="banner warm"><span class="material-symbols-outlined">rule</span>
+      <div><strong>The job behind every email and Slack figure on this screen is ${esc(hw.label.toLowerCase())}.</strong>
+      ${esc(hw.blurb)} ${eff
+        ? `v_workflow_health reports ${esc(String(succ))} of ${esc(String(eff))} qualifying run${eff === 1 ? '' : 's'}
+           succeeded outright in the last 30 days (${esc(pct(aggRate))})${parts ? `, ${esc(String(parts))} went out half-done` : ''}${fails ? `, ${esc(String(fails))} failed` : ''}.`
+        : 'No run in the 30-day window counted toward a rate, so there is no success rate to report — that is not 0% and not 100%.'}
+      A run that went out half-done still writes a profile row, holding whatever it managed to collect and leaving
+      the rest at whatever an earlier run left there. Each figure below says which run wrote it and what that run
+      logged.</div></div>`);
+  }
   if (dirErr && spine) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
       <div>v_customer_directory could not be read (${esc(dirErr)}), so this list was rebuilt from leads and
@@ -503,32 +741,51 @@ SCREENS.customers = async host => {
        waited days for: the figure is zero because the mailbox is empty, so it is
        reported as an answer, in the neutral banner, and the warning is withdrawn
        rather than left standing over a number that no longer deserves it. */
-    const allPostFix = postFix === profiles.length;
-    notes.push(`<div class="banner ${allPostFix ? 'info' : postFix ? 'warm' : 'hot'}">
-      <span class="material-symbols-outlined">${allPostFix ? 'mark_email_read' : 'sync_problem'}</span>
-      <div><strong>${allPostFix
-        ? 'Every email and Slack touch count on this screen is zero — and this time it was counted.'
-        : postFix
-          ? 'Every email and Slack touch count on this screen is zero.'
-          : 'Email and Slack touch counts have not been collected — read every 0 on this screen as “not counted”.'}</strong>
+    /* Which of these zeros is an answer is decided by the runs that wrote them,
+       not by their timestamps. This branch used to conclude, in a green-adjacent
+       info banner, that the mailbox was genuinely empty and nothing was waiting
+       on another run — reached entirely from last_synced_at against a date
+       constant, and contradicted on 28 Aug by a run whose own summary says the
+       Gmail read was Forbidden. postFix is now consulted only for profiles that
+       no run mentions, which is the only question a timestamp can answer. */
+    const verdict = runHalf ? 'half' : runSuccess === profiles.length ? 'counted' : 'unrecorded';
+    const TONE_OF = { half: 'hot', counted: 'info', unrecorded: 'warm' };
+    notes.push(`<div class="banner ${TONE_OF[verdict]}">
+      <span class="material-symbols-outlined">${verdict === 'counted' ? 'mark_email_read' : 'sync_problem'}</span>
+      <div><strong>${verdict === 'counted'
+        ? 'Every email and Slack touch count on this screen is zero — and every run that wrote one logged no step that failed to land.'
+        : verdict === 'half'
+          ? 'Every email and Slack touch count on this screen is zero, and at least one was written by a run that went out half-done.'
+          : 'Every email and Slack touch count on this screen is zero, and nothing on record says whether they were counted.'}</strong>
       ${profiles.length === 1
         ? 'The one profile the nightly Customer 360 job has written reports'
         : `All ${esc(String(profiles.length))} profiles written by the nightly Customer 360 job report`}
-      0 emails and 0 Slack messages.
-      ${allPostFix
-        ? `${esc(AGG_ZERO_COUNTED)} The mailbox is genuinely empty for ${profiles.length === 1 ? 'this address' : 'these addresses'};
-           nothing here is waiting on another run.`
+      no email and no Slack touch above zero.
+      ${unreported
+        ? `${esc(String(unreported))} of them ${unreported === 1 ? 'leaves' : 'leave'} at least one of the two counters NULL, which is not a
+           reported zero at all — it is a counter the job never wrote, and those are shown as an em dash below rather than as a 0.`
+        : ''}
+      ${runHalf || runSuccess
+        ? `<strong>${esc(String(runHalf))} of ${esc(String(profiles.length))}</strong> ${runHalf === 1 ? 'was' : 'were'} written by a run that
+           went out half-done, ${esc(String(runSuccess))} by a run that logged no failed step, and
+           ${esc(String(profiles.length - runHalf - runSuccess))} by a run that logged nothing about that customer at all.`
+        : ''}
+      ${verdict === 'counted' ? esc(AGG_ZERO_SUCCESS)
+        : verdict === 'half' ? esc(AGG_ZERO_HALF)
         : `${esc(AGG_ZERO_CAUSE)} ${postFix
             ? `<strong>${esc(String(postFix))} of ${esc(String(profiles.length))}</strong> ${postFix === 1 ? 'was' : 'were'}
-               synced after the fix and still report zero, so ${postFix === 1 ? 'that one is a counted zero' : 'those are counted zeros'};
-               the ${esc(String(profiles.length - postFix))} written before it ${profiles.length - postFix === 1 ? 'is' : 'are'} not evidence of anything yet.`
-            : 'No profile has been synced since the fix, so nothing here has been counted by a job that could reach the mailbox. The next run is what will make these figures mean anything.'}`}
+               written after the credential was re-authorised, which dates ${postFix === 1 ? 'it' : 'them'} and nothing more.`
+            : 'No profile has been written since the credential was re-authorised.'}`}
       ${noStamp ? `${esc(String(noStamp))} profile${noStamp === 1 ? ' carries' : 's carry'} no last_synced_at at all, so which run wrote ${noStamp === 1 ? 'it' : 'them'} is unknown.` : ''}</div></div>`);
   } else if (zeroProfiles) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">sync_problem</span>
-      <div>${esc(String(zeroProfiles))} of ${esc(String(profiles.length))} profiles report 0 emails and 0 Slack
-      messages, while others report figures — so the aggregation is collecting for some customers and not for
-      others. ${esc(AGG_ZERO_CAUSE)} Each profile below says which run wrote its numbers.</div></div>`);
+      <div>${esc(String(zeroProfiles))} of ${esc(String(profiles.length))} profiles report a counted 0 for both
+      emails and Slack messages, while others report figures — so the aggregation is collecting for some customers
+      and not for others.${unreported
+        ? ` A further ${esc(String(unreported))} ${unreported === 1 ? 'leaves' : 'leave'} one of the two counters NULL,
+           which is a counter the job never wrote and is not counted as a zero here.`
+        : ''}
+      ${esc(AGG_ZERO_CAUSE)} Each profile below says which run wrote its numbers and what that run logged.</div></div>`);
   } else if (!profiles.length) {
     notes.push(`<div class="banner info"><span class="material-symbols-outlined">schedule</span>
       <div>The nightly Customer 360 aggregation has not written a single profile row, so there are no email or
@@ -616,14 +873,20 @@ SCREENS.customers = async host => {
            <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
            <div class="cell-sub" style="white-space:normal">${esc(String(collapsed))} further
            ${collapsed === 1 ? 'row' : 'rows'} from ${esc(spineSource)} shared an email address with a customer
-           above and ${collapsed === 1 ? 'was' : 'were'} collapsed into it, because leads, purchases and messages
-           are all keyed on email.</div>
+           above and ${collapsed === 1 ? 'was' : 'were'} collapsed into it, because leads and purchases are keyed
+           on email. Messages are not — they are read under every key the person is filed under.</div>
          </div>`
       : '';
 
     $('custList').innerHTML = (rows.length
       ? rows.map(c => {
           const ltv = n0(c.view && c.view.lifetime_value_aed);
+          /* v_customer_360 COALESCEs its sum to 0, so an enquiry-only customer
+             arrived in this money column as "AED 0" — indistinguishable from a
+             real sale at no charge. On 1 Sep 2026 that was every row on the
+             screen: purchase_history holds no rows at all. */
+          const ltvCount = n0(c.view && c.view.purchase_count);
+          const hasPurchase = ltvCount != null ? ltvCount > 0 : c.purchases.length > 0;
           const basis = buyErr
             ? '<span class="t-warm">purchase state unknown</span>'
             : c.purchases.length
@@ -645,7 +908,7 @@ SCREENS.customers = async host => {
                 · ${esc(c.email || 'No email on the directory row')}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
-              <div class="cell-sub num">${ltv == null ? '' : aed(ltv)}</div>
+              <div class="cell-sub num">${ltv == null || !hasPurchase ? '' : aed(ltv)}</div>
               <div class="cell-sub">${basis}</div>
             </div>
           </div>`;
@@ -671,7 +934,7 @@ SCREENS.customers = async host => {
     const pane = $('custPane');
     pane.innerHTML = stateLoading(5);
     const email = c.email;
-    const qs = email ? encodeURIComponent(email) : null;
+    const qs = email ? likePattern(email) : null;
 
     /* Every linked read keys on email. A directory row without one is listed but
        cannot be cross-referenced, and saying so is the only honest option.
@@ -686,27 +949,55 @@ SCREENS.customers = async host => {
     const ident = expandIdentity(
       { email, phone: phoneStr(c), name: c.name },
       { links: c.contacts || [], leads: c.leads || [] });
-    const [leads, purch, comms] = email
-      ? await Promise.all([
-          grab(db(`leads?select=id,name,phone,status,ai_score,vehicle_interest,budget_aed,source,created_at&email=ilike.${qs}&order=created_at.desc`)),
-          grab(db(`purchase_history?select=*&email=ilike.${qs}&order=purchase_date.desc`)),
-          grab(db(personQuery('communication_logs', ident, { select: 'channel,direction,message,created_at', order: 'created_at.desc', limit: MSG_LIMIT }))),
-        ])
-      : [{ rows: null }, { rows: null }, { rows: null }];
+    /* The message read is no longer gated on the email. A directory row without
+       one still has a phone and often a linked WhatsApp contact, and those are
+       exactly the keys the history is filed under — refusing to read because the
+       email is missing would be the same truncation arriving from the other
+       side. personQuery returns '' when nothing about this person is safe to
+       query on; issuing that path would read the whole table, so the read is
+       skipped and the section says why. */
+    const commsFilter = personFilter(ident, { column: 'lead_email' });
+    const commsPath = personQuery('communication_logs', ident,
+      { select: 'channel,direction,message,created_at', order: 'created_at.desc', limit: MSG_LIMIT });
+    /* select=*,users(id,name) so the row handed to leadDrawer() is the same
+       shape leads.js hands it — including response_time_minutes, which was a
+       permanent 0 until it was repaired today and which the drawer renders as
+       "Not measured" when it is null rather than as fast. */
+    const [leads, purch, comms] = await Promise.all([
+      email
+        ? grabExact(db(`leads?select=*,users(id,name)&email=ilike.${qs}&order=created_at.desc`), email)
+        : Promise.resolve({ rows: null }),
+      email
+        ? grabExact(db(`purchase_history?select=*&email=ilike.${qs}&order=purchase_date.desc`), email)
+        : Promise.resolve({ rows: null }),
+      commsPath ? grab(db(commsPath)) : Promise.resolve({ rows: null, noKey: true }),
+    ]);
+    /* The newest aggregation run that names this person, by any of their keys.
+       Every touch figure in this pane is judged by it. */
+    const custRuns = aggRowsFor(ident);
+    const custRun = custRuns[0] || null;
 
     /* Guard against a slower earlier click landing after a newer one. */
     if (selected !== key) return;
 
     const v = c.view || {};
-    const noEmailNote = '<div class="cell-sub" style="margin-top:8px">This directory row carries no email address, and leads, purchases and messages are all keyed on email — so none of them can be matched to it.</div>';
-    const section = (title, res, empty, body) => {
+    const noEmailNote = '<div class="cell-sub" style="margin-top:8px">This directory row carries no email address, and leads and purchases are keyed on email — so neither can be matched to it. Messages are read separately, under every key this person is filed under.</div>';
+    const section = (title, res, empty, body, nullNote) => {
       if (res.err) return `<div class="section"><div class="label-caps">${esc(title)}</div>${stateError(title.toLowerCase(), res.err, 'x')}</div>`;
-      if (res.rows == null) return `<div class="section"><div class="label-caps">${esc(title)}</div>${noEmailNote}</div>`;
+      if (res.rows == null) return `<div class="section"><div class="label-caps">${esc(title)}</div>${nullNote || noEmailNote}</div>`;
       if (!res.rows.length) return `<div class="section"><div class="label-caps">${esc(title)}</div><div class="cell-sub" style="margin-top:8px">${esc(empty)}</div></div>`;
       return `<div class="section"><div class="label-caps">${esc(title)}</div>${body(res.rows)}</div>`;
     };
 
     const ph = phoneOf(c);
+
+    /* Never expected to fire. It fires only if PostgREST's ILIKE handling has
+       changed under the escaping in likePattern(), and a silent wildcard match
+       putting another customer's records in this pane is precisely the thing
+       that must not pass unremarked. */
+    const foreignNote = res => (res.foreign
+      ? ` <span class="t-warm">· ${esc(String(res.foreign))} row${res.foreign === 1 ? '' : 's'} returned by the database belonged to a different address and ${res.foreign === 1 ? 'was' : 'were'} dropped — the email filter is matching more than this customer</span>`
+      : '');
 
     /* "The view has no row for this person" and "the view has a row and left
        that column null" are different facts and lead to different next steps.
@@ -743,36 +1034,119 @@ SCREENS.customers = async host => {
         ? `<span class="t-warm">${leadScores.length === 1 ? 'The ai_score on the one lead read here' : 'Highest ai_score on the leads read here'} — ${esc(viewGap)}</span>`
         : '<span class="t-muted">No lead of this customer’s carries an ai_score</span>';
 
+    /* MESSAGES. v_customer_360.message_count is deliberately NOT preferred here,
+       and this is the half of the identity fix that had not landed: the widened
+       read was already in place below while the number printed above it still
+       came from the view. The view counts
+       `WHERE lower(c.lead_email) = i.email` (architecture/schema.sql:1147-1152) —
+       the single key shape whose insufficiency is the reason lib/identity.js
+       exists. Read on 1 Sep 2026 it reports 15 for shabbir53ujjainwala@gmail.com
+       while communication_logs holds 29 rows for him across three keys (15 under
+       the address, 12 under +918517942172@whatsapp.lead, 2 under his LID), and 3
+       for +971547484167@whatsapp.lead against 8. The screen showed the 15 over a
+       section listing all of them.
+
+       So the figure is the one the widened read returned, and the view's is kept
+       only to say by how much it is behind. Same for the last-contact time: the
+       view's max() is over the same email-only subquery, so it is taken from the
+       newest row actually read whenever there is one. */
     const viewMsgs = n0(v.message_count);
     const commCount = comms.rows ? comms.rows.length : null;
-    const msgValue = viewMsgs != null ? viewMsgs : commCount;
-    const msgSub = viewMsgs != null
-      ? (v.last_contact_at
-          ? `<span class="t-muted">Last contact ${esc(ago(v.last_contact_at))} · v_customer_360</span>`
-          : '<span class="t-muted">No last-contact timestamp in v_customer_360</span>')
-      : commCount == null
-        ? '<span class="t-muted">Not countable — communication_logs is keyed on email and this row has none</span>'
-        : commCount >= MSG_LIMIT
-          ? `<span class="t-warm">At least ${esc(String(MSG_LIMIT))} — this read is capped and ${esc(viewGap)}</span>`
-          : `<span class="t-warm">Counted from communication_logs — ${esc(viewGap)}</span>`;
+    const msgCapped = commCount != null && commCount >= MSG_LIMIT;
+    /* A failed read may not borrow the view's number and show it as the answer.
+       The old code fell back to v_customer_360 whenever the direct read produced
+       nothing, so a 500 on communication_logs rendered as a confident count from
+       a source that is truncated by construction. An unread history is an em
+       dash, and the view's figure is demoted into the sub-line where it can be
+       labelled for what it is. */
+    const msgDisplay = commCount != null ? num(commCount) : '—';
+    /* Printed in full rather than summarised as a count. An operator who is told
+       "matched on 4 keys" cannot check it; one who is shown the four keys can
+       see at a glance whether a handle belonging to somebody else has been swept
+       in, which is the one way this widening can go wrong. */
+    const identKeyLine = commsFilter.ok
+      ? `Keys: ${commsFilter.keys.join(', ')}${commsFilter.patterns.length
+          ? ` — and any WhatsApp address whose number ends ${ident.suffix}`
+          : ''}.`
+      : '';
+    const lastContact = (comms.rows && comms.rows.length && comms.rows[0].created_at) || null;
+    const msgSub = commCount == null
+      ? (comms.err
+          ? `<span class="t-warm">communication_logs could not be read — ${esc(comms.err)}</span>`
+            + (viewMsgs == null
+                ? ''
+                : `<div><span class="t-muted">v_customer_360 reports ${esc(String(viewMsgs))}, but it counts only the rows filed under the email address, so it is not the history and is not shown as the figure.</span></div>`)
+          : viewMsgs != null
+            ? `<span class="t-warm">${esc(String(viewMsgs))} on v_customer_360, which counts the email key only — nothing on this row could be matched to a message key, so no history was read directly</span>`
+            : `<span class="t-muted">Not countable — ${esc(commsFilter.note)}</span>`)
+      : `<span class="t-muted">${msgCapped
+            ? `At least ${esc(String(MSG_LIMIT))} — the read is capped there, so this is a floor`
+            : `Counted from communication_logs across ${esc(String(commsFilter.keys.length))} recorded key${commsFilter.keys.length === 1 ? '' : 's'}${commsFilter.patterns.length ? ' and the last-nine-digit rule the backend matches on' : ''}`}${
+            lastContact ? ` · last contact ${esc(ago(lastContact))}` : ''}</span>`
+        + (viewMsgs == null
+            ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
+            : msgCapped || viewMsgs === commCount
+              ? ''
+              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}. It counts only the rows filed under the email address, so it is ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'short of' : 'ahead of'} what was just read across every key.</span></div>`);
 
-    const purchTotal = purch.rows && purch.rows.length
-      ? (() => { const xs = purch.rows.map(x => n0(x.amount_aed)).filter(x => x != null); return xs.length ? xs.reduce((a, b) => a + b, 0) : null; })()
-      : null;
+    /* LIFETIME VALUE, and what the view's figure actually is.
 
-    /* Lifetime value comes from v_customer_360. When that view has no row for
-       this customer the purchase rows just read are summed instead, and the
-       substitution is stated — a figure the operator cannot trace is worse than
-       no figure at all. */
+       v_customer_360 computes it as `COALESCE(sum(DISTINCT p.amount_aed), 0)`
+       over a join that fans out across leads as well as purchases
+       (architecture/schema.sql:1143-1144). The DISTINCT is not gratuitous — it
+       is what stops a customer with three leads having each purchase counted
+       three times — but it de-duplicates by AMOUNT rather than by purchase, so
+       two purchases at the same price collapse into one while the
+       `count(DISTINCT p.id)` printed beside it counts both. The figure is
+       therefore the sum of a customer's DISTINCT purchase amounts, and that is
+       what it is labelled when it has to be used. It is no longer preferred over
+       the row-level sum this screen can compute for itself from the purchase
+       rows it just read, which is the honest total and was being computed and
+       then thrown away.
+
+       The COALESCE matters as much as the DISTINCT. A customer with no purchase
+       at all comes back as 0, not null, so "has never bought" and "bought and it
+       came to nothing" arrived here as the same AED 0 in a currency column. Read
+       on 1 Sep 2026 that was every customer on this screen: purchase_history
+       holds no rows at all, and both v_customer_360 rows report
+       lifetime_value_aed 0 with purchase_count 0. */
+    const purchAmounts = (purch.rows || []).map(x => n0(x.amount_aed));
+    const withAmount = purchAmounts.filter(x => x != null);
+    const purchTotal = withAmount.length ? withAmount.reduce((a, b) => a + b, 0) : null;
+    const noAmount = purch.rows ? purch.rows.length - withAmount.length : 0;
     const ltvFromView = n0(v.lifetime_value_aed);
-    const ltvValue = ltvFromView != null ? ltvFromView : purchTotal;
-    const ltvSub = ltvFromView != null
-      ? (n0(v.purchase_count) == null
-          ? '<span class="t-muted">From v_customer_360</span>'
-          : `<span class="t-muted">From v_customer_360 · ${num(v.purchase_count)} purchase${Number(v.purchase_count) === 1 ? '' : 's'}</span>`)
-      : purchTotal != null
-        ? `<span class="t-warm">Summed from purchase_history — ${esc(viewGap)}</span>`
-        : `<span class="t-muted">No purchase amount recorded, and ${esc(viewGap.replace('that column', 'lifetime_value_aed'))}</span>`;
+    const viewPurchases = n0(v.purchase_count);
+    const DISTINCT_CAVEAT =
+      'v_customer_360 sums DISTINCT amount_aed, so two purchases at the same price count once. It is the sum of '
+      + 'this customer’s distinct purchase amounts, which is only the same thing as what they have spent when no '
+      + 'two of their purchases cost the same.';
+
+    let ltvValue, ltvSub;
+    if (purch.rows && !purch.rows.length) {
+      ltvValue = '—';
+      ltvSub = `<span class="t-muted">No purchase recorded for this customer, so there is no lifetime value to state.</span>`
+        + (ltvFromView == null
+            ? ''
+            : `<div><span class="t-muted">v_customer_360 reports ${esc(aed(ltvFromView))} here because its sum is COALESCE’d to zero — a customer who has never bought and one who bought at no charge are the same 0 to it.</span></div>`);
+    } else if (purchTotal != null) {
+      ltvValue = aed(purchTotal);
+      ltvSub = `<span class="t-muted">Summed from the ${esc(String(withAmount.length))} purchase row${withAmount.length === 1 ? '' : 's'} read here${noAmount ? `, ${esc(String(noAmount))} more carrying no amount_aed` : ''}</span>`
+        + (ltvFromView == null
+            ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
+            : ltvFromView === purchTotal
+              ? '<div><span class="t-muted">v_customer_360 agrees</span></div>'
+              : `<div><span class="t-warm">v_customer_360 reports ${esc(aed(ltvFromView))}. ${esc(DISTINCT_CAVEAT)}</span></div>`);
+    } else if (purch.rows) {
+      ltvValue = '—';
+      ltvSub = `<span class="t-warm">${esc(String(purch.rows.length))} purchase row${purch.rows.length === 1 ? '' : 's'} on file, none carrying an amount_aed, so there is nothing to sum</span>`;
+    } else if (ltvFromView != null) {
+      ltvValue = aed(ltvFromView);
+      ltvSub = `<span class="t-warm">Distinct purchase amounts, summed · v_customer_360${viewPurchases == null ? '' : ` · ${num(viewPurchases)} purchase${viewPurchases === 1 ? '' : 's'}`} — purchase_history could not be read here, so it could not be checked against the rows themselves</span>`
+        + `<div class="cell-sub" style="white-space:normal">${esc(DISTINCT_CAVEAT)}</div>`;
+    } else {
+      ltvValue = '—';
+      ltvSub = `<span class="t-muted">No purchase amount recorded, and ${esc(viewGap.replace('that column', 'lifetime_value_aed'))}</span>`;
+    }
 
     const waHtml = waErr
       ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">whatsapp_contacts could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
@@ -806,14 +1180,16 @@ SCREENS.customers = async host => {
             : '<span class="t-warm">No phone number on any source</span>'}
             · ${esc(c.email || 'No email on the directory row')}</div>
         </div>
-        ${leads.rows && leads.rows.length ? '<button class="btn sm" data-act="leads">Open in Leads</button>' : ''}
+        ${leads.rows && leads.rows.length
+          ? `<button class="btn sm" data-act="lead">Open ${leads.rows.length === 1 ? 'this lead' : 'newest lead'}</button>`
+          : ''}
       </div>
       <div style="padding:20px">
         <div class="grid g4">
-          ${kpi('Lifetime value', aed(ltvValue), ltvSub)}
+          ${kpi('Lifetime value', ltvValue, ltvSub)}
           ${kpi('Leads', num(leadCount), leadSub)}
           ${kpi('Best AI score', num(bestScore), scoreSub)}
-          ${kpi('Messages logged', num(msgValue), msgSub)}
+          ${kpi('Messages logged', msgDisplay, msgSub)}
         </div>
 
         <div class="section" style="margin-top:24px">
@@ -826,12 +1202,12 @@ SCREENS.customers = async host => {
               ? `<span class="t-warm">Could not be read — ${esc(leads.err)}</span>`
               : leads.rows == null
                 ? '<span class="t-muted">Cannot be matched without an email address</span>'
-                : esc(String(leads.rows.length))}</dd>
+                : `${esc(String(leads.rows.length))}${foreignNote(leads)}`}</dd>
             <dt>Purchases on file</dt><dd>${purch.err
               ? `<span class="t-warm">Could not be read — ${esc(purch.err)}</span>`
               : purch.rows == null
                 ? '<span class="t-muted">Cannot be matched without an email address</span>'
-                : esc(String(purch.rows.length))}</dd>
+                : `${esc(String(purch.rows.length))}${foreignNote(purch)}`}</dd>
             <dt>Directory row</dt><dd>${c.id
               ? `<span class="mono">${esc(c.id)}</span> <span class="cell-sub">· v_customer_directory.id</span>`
               : '<span class="t-muted">Rebuilt from leads and purchase_history — there is no directory row behind it</span>'}</dd>
@@ -846,6 +1222,11 @@ SCREENS.customers = async host => {
               ? `${esc(ago(c.lastSeen))} <span class="cell-sub">· the newest last_seen_at on this address</span>`
               : '<span class="t-muted">No last_seen_at on this row</span>'}</dd>
             <dt>Email key</dt><dd class="mono" style="word-break:break-all">${esc(c.email || '—')}</dd>
+            <dt>Message keys</dt><dd>${commsFilter.ok
+              ? `<span class="mono" style="word-break:break-all">${esc(commsFilter.keys.join(', '))}</span>
+                 <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)} communication_logs.lead_email holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
+              : `<span class="t-warm">None</span>
+                 <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
             <dt>Phone</dt><dd>${ph.phone
               ? `<span class="mono">${esc(ph.phone)}</span> <span class="cell-sub">· found on ${esc(ph.from)}</span>`
               : `<span class="t-warm">Not recorded</span>
@@ -867,26 +1248,36 @@ SCREENS.customers = async host => {
             : c.profile
               ? `<dl class="kv" style="margin-top:8px">
                    <dt>Customer ID</dt><dd class="mono">${esc(c.profile.customer_id == null ? '—' : String(c.profile.customer_id))}</dd>
-                   <dt>Email touches</dt><dd>${touchCell(c.profile.total_emails, c.profile.last_synced_at)}</dd>
-                   <dt>Slack messages</dt><dd>${touchCell(c.profile.total_slack_messages, c.profile.last_synced_at)}</dd>
+                   <dt>Email touches</dt><dd>${touchCell(c.profile.total_emails, c.profile.last_synced_at, custRun)}</dd>
+                   <dt>Slack messages</dt><dd>${touchCell(c.profile.total_slack_messages, c.profile.last_synced_at, custRun)}</dd>
                    <dt>Last synced</dt><dd>${esc(ago(c.profile.last_synced_at))}${c.profile.last_synced_at
                      ? ` <span class="cell-sub">· ${syncedAfterFix(c.profile.last_synced_at)
-                          ? 'after the Gmail credential was fixed'
-                          : 'before the Gmail credential was fixed'}</span>`
+                          ? 'after the Gmail credential was re-authorised'
+                          : 'before the Gmail credential was re-authorised'}</span>`
                      : ' <span class="t-muted">(the row exists but carries no timestamp, so which run wrote it is unknown)</span>'}</dd>
+                   <dt>Run that wrote it</dt><dd>${aggLogErr
+                     ? `<span class="t-warm">Unknown — the aggregation's log could not be read (${esc(aggLogErr)})</span>`
+                     : !aggReg
+                       ? '<span class="t-muted">Unknown — no workflow_registry row identifies the aggregation</span>'
+                       : custRun
+                         ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone)}
+                            <span class="cell-sub">· ${esc(ago(custRun.logged_at))} · ${esc(String(custRuns.length))} logged run${custRuns.length === 1 ? '' : 's'} name this customer</span>
+                            <div class="cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
+                         : `<span class="t-warm">No audit_log row names this customer</span>
+                            <div class="cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))} run${aggLog.length === 1 ? '' : 's'}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
                    <dt>Name on profile</dt><dd>${esc(str(c.profile.name) || '—')}</dd>
                    <dt>Phone on profile</dt><dd>${str(c.profile.phone)
                      ? `<span class="mono">${esc(str(c.profile.phone))}</span>`
                      : '<span class="t-muted">None on this profile row</span>'}</dd>
                  </dl>
-                 <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at))}</div>`
+                 <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))}</div>`
               : (n0(v.total_emails) != null || n0(v.total_slack_messages) != null)
                 ? `<div class="cell-sub" style="white-space:normal">The nightly job has written no customer_360_profiles row for this customer.
                      v_customer_360 carries the same two counters for them and they are shown here — but that view records no sync
                      timestamp, so when these were collected, and therefore whether they predate the Gmail fix, cannot be told from it.</div>
                    <dl class="kv" style="margin-top:8px">
-                     <dt>Email touches</dt><dd>${touchCell(v.total_emails, null)}</dd>
-                     <dt>Slack messages</dt><dd>${touchCell(v.total_slack_messages, null)}</dd>
+                     <dt>Email touches</dt><dd>${touchCell(v.total_emails, null, custRun)}</dd>
+                     <dt>Slack messages</dt><dd>${touchCell(v.total_slack_messages, null, custRun)}</dd>
                    </dl>
                    <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
                 : noSource('The nightly Customer 360 aggregation has not written a row for this customer, and v_customer_360 reports no touch counts for them either, so there are no email or Slack figures to show and no last_synced_at. Identity, phone, leads, purchases and logged messages on this screen are read live and are current.')}
@@ -919,21 +1310,50 @@ SCREENS.customers = async host => {
                 <div class="tl-meta">${esc(ago(l.created_at))}${l.source ? ' · ' + esc(l.source) : ''}${n0(l.ai_score) == null ? '' : ' · score ' + num(l.ai_score)}
                   · ${str(l.phone)
                        ? `<span class="mono">${esc(str(l.phone))}</span>`
-                       : '<span class="t-muted">no phone on this lead</span>'}</div>
+                       : '<span class="t-muted">no phone on this lead</span>'}
+                  · ${n0(l.response_time_minutes) == null
+                       /* Shown, not omitted. This column was a permanent 0 for
+                          every lead until it was repaired on 1 Sep 2026 (34 → 1,
+                          35 → NULL, 38 → 4), which is why nothing on this screen
+                          read it. A null is still not a fast reply — it is
+                          nobody having measured — and it is said that way here
+                          exactly as lib/lead-drawer.js:44 says it. */
+                       ? '<span class="t-warm">first reply not measured</span>'
+                       : `${esc(mins(l.response_time_minutes))} to first reply ${Number(l.response_time_minutes) > 5
+                            ? '<span class="t-hot">· breaches the 5-minute rule</span>'
+                            : '<span class="t-ok">· within SLA</span>'}`}</div>
                 <div>${esc(str(l.vehicle_interest) || 'No vehicle recorded')} ${pill(l.status || 'NEW')}</div>
                 ${n0(l.budget_aed) == null ? '' : `<div class="cell-sub">Budget ${aed(l.budget_aed)}</div>`}
               </div></div>`).join('')}</div>`)}
 
-        ${section('Recent messages', comms, 'No message logged for this customer.', rows => `
+        ${section('Recent messages', comms,
+          `No message is logged under any of the ${commsFilter.keys.length} key${commsFilter.keys.length === 1 ? '' : 's'} this customer is filed under${commsFilter.patterns.length ? ', nor under any WhatsApp address ending in the last nine digits of their number' : ''}.`,
+          rows => `
           <div class="timeline" style="margin-top:8px">${rows.slice(0, 10).map(m => `
             <div class="tl-item"><span class="tl-dot"></span><div class="tl-body">
               <div class="tl-meta"><span class="chip">${esc(str(m.channel) || 'unknown channel')}</span> ${esc(str(m.direction))} · ${esc(ago(m.created_at))}</div>
               <div style="white-space:pre-wrap">${esc(String(m.message || '').slice(0, 240))}</div></div></div>`).join('')}</div>
-          <div class="cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} messages read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))})` : ''}. ` : ''}These come from communication_logs and are counted independently of the aggregation's email and Slack figures above.</div>`)}
+          <div class="cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} messages read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}These come from communication_logs and are counted independently of the aggregation's email and Slack figures above.
+          ${esc(commsFilter.note)} ${esc(identKeyLine)}</div>
+          ${ident.ambiguity.length
+            ? ident.ambiguity.map(a => `<div class="banner warm" style="margin-top:10px"><span class="material-symbols-outlined">warning</span>
+                <div>${esc(a.message)}</div></div>`).join('')
+            : ''}`,
+          comms.noKey
+            ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(commsFilter.note)} No read was issued: a query with no key would have matched every message in the table rather than none, and returning that as this customer's history is the failure this section exists to avoid.</div>`
+            : undefined)}
       </div>`;
 
-    const leadsBtn = pane.querySelector('[data-act="leads"]');
-    if (leadsBtn) leadsBtn.addEventListener('click', () => go('leads'));
+    /* This was labelled "Open in Leads" and wired to `go('leads')`. lib/nav.js:84
+       takes a screen id and nothing else — there is no payload channel and no
+       hash parameter — so it landed the operator on an unfiltered Leads screen
+       with the customer to find all over again, while the label promised a deep
+       link the app cannot perform. The record is the drawer, this screen already
+       holds the lead row, and conversations.js:1160 and overview.js:1015 open it
+       exactly this way, so it now opens the record instead of changing screen.
+       Rows are ordered created_at.desc, so [0] is the newest lead. */
+    const leadBtn = pane.querySelector('[data-act="lead"]');
+    if (leadBtn) leadBtn.addEventListener('click', () => leadDrawer(leads.rows[0]));
     /* stateError() renders its own Retry; re-running open() is exactly the
        retry, since each section re-reads on every open. */
     pane.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', () => open(key)));

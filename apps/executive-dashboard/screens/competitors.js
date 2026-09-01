@@ -99,6 +99,8 @@
    price — takes the full width and leads the screen.
 
    31 Aug 2026, fourth pass. The table filled again, and a second audit found
+   (the first two of the four below were fixed at the source on 1 Sep — read
+   the fifth pass before believing the present tense in them)
    that everything this screen had learned to say honestly about its *match* was
    still being said over a source that is worse than the screen believed. Four
    things changed, and all four are the writer's faults stated out loud rather
@@ -124,7 +126,7 @@
        drawer, because it is the one that stops somebody re-pricing a car.
      · `competitors` is append-only. The Supabase node carries no `operation`
        key, so it defaults to `create` and every run inserts rather than
-       upserting on the listing. Eight rows on file are three listings. Every
+       upserting on the listing. Nine rows on file are three listings. Every
        count on this screen was a count of snapshots, which is how "We ask more
        4" and "We undercut 4" came to sit beside a subtitle correctly reading
        three vehicles. Everything countable is now reduced to the newest
@@ -141,6 +143,54 @@
    derived set now — see SCRAPE_HOURS_UTC. And the screen no longer asserts the
    scrape is healthy merely because rows are arriving: `v_workflow_health` is
    read, and it reports PRODUCING_NOTHING.
+
+   1 Sep 2026, fifth pass. The data grew the columns that make the two
+   weaknesses above falsifiable, so most of what this file said about them is
+   now history rather than description, and the screen has stopped saying it.
+
+   The scraper now ranks the offers on a page against the unit it was sent to
+   price and records what it chose: `listing_title` (the OTHER page's own words
+   for what it is selling — the field that finally lets a match FAIL rather
+   than comparing our string with itself), `source_host` and `source_kind`
+   (oem | marketplace | dealer | unknown, so a manufacturer's list page is no
+   longer indistinguishable from a rival showroom), `offer_name` and
+   `offer_condition` (which offer the price came from and whether the page
+   called it new or used), and `match_quality` / `match_note`. On the Fortuner
+   page the new logic picks the actual 2.7 VXR 2024 at 164,900 instead of the
+   cheapest new base trim at 128,900, which turns "+23,100 above theirs" into
+   12,900 below: the sign of the business conclusion inverts.
+
+   `match_quality` is what this screen keys off, and it is never re-derived
+   here — re-deriving it is what produced "+AED 23,100 · 17.9% above theirs"
+   against a new base trim in the first place:
+     · `exact_year` — the chosen offer named our model year.
+     · `model_only` — the name matched, no year was stated. A gap, hedged.
+     · `weak` — NOTHING on the page ties that price to our car. The row is
+       still written, because a cheap page is worth knowing about, but this
+       screen draws no pricing conclusion from it: no percentage, no direction,
+       no place in either market KPI. It is context, and it is labelled as
+       context.
+     · NULL — the row predates the fix. That is not `weak` and it is not
+       `exact_year`; it is UNRATED, and asserting either of the others of it
+       would be inventing a verdict that no run ever reached. Every row on the
+       screen today is one of these: 9 log rows, 3 listings, all seven columns
+       NULL, read off the live database at 04:38 UTC on 1 Sep 2026. The
+       scraper only started writing them this morning and the next run is at
+       13:00 UTC, so the unrated branch is not an edge case here — it is the
+       whole screen, and it is what a reviewer actually sees.
+
+   `competitors` stays append-only ON PURPOSE now — price history over time is
+   worth keeping — so this file no longer describes it as a fault waiting for
+   an upsert. What changed is where the screen reads: `v_competitor_latest` is
+   one indexed row per listing and every count, comparison and alert is
+   computed from it. The log is read separately, without blocking, for the two
+   questions where the history IS the subject.
+
+   And the registry caught up. `workflow_registry.trigger_detail` now reads
+   "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00 UTC)",
+   which agrees with the deployed cron, so the drift sentence this screen
+   carried renders empty. The check stays — it is what noticed the
+   disagreement — but nothing here asserts a disagreement that has been fixed.
 
    1 Sep 2026, finishing that pass. The work above stopped part-way down the
    file and left the half below it reading variables that no longer existed:
@@ -223,8 +273,8 @@ const ATTN_LIMIT = 100;
 /* The workflow's name in `workflow_registry` / `v_workflow_health`. Health is
    read rather than inferred: this screen used to conclude "the scrape is still
    writing rows, so this is not the job being down", and the view says
-   PRODUCING_NOTHING. Read live on 1 Sep 2026: 96 runs in 30 days, 12
-   successes, 84 producing no usable price — a 12.5% success rate against the
+   PRODUCING_NOTHING. Read live at 04:38 UTC on 1 Sep 2026: 96 runs in 30
+   days, 12 successes, 84 producing no usable price — 12.5% against the
    green "Clean, 30 d · 100.0%" this screen's neighbours used to print. The
    figures quoted on screen are always the ones the view returns at load; the
    ones in this comment are a dated snapshot, for the reader of the file. */
@@ -349,33 +399,63 @@ function pick(row, names) {
   return null;
 }
 
-/* The two column lists, read off the live database on 24 Aug 2026:
+/* The column lists, re-read off the live database at 04:38 UTC on 1 Sep 2026:
 
      competitors  id, competitor, model, our_price_aed, price_aed,
-                  price_diff_aed, scraped_at, ai_recommendation
+                  price_diff_aed, scraped_at, ai_recommendation,
+                  listing_title, source_host, source_kind, offer_name,
+                  offer_condition, match_quality, match_note
+     v_competitor_latest   the same fifteen columns, distinct on
+                  (competitor, model) over the newest snapshot
      inventory    id, model, vin, status, acquired_at, cost_aed, price_aed,
                   days_in_stock, holding_cost_accrued, gross_margin, net_margin,
                   vat_amount, aging_alert, ai_recommendation,
                   recommended_commission
 
-   Neither side has a make, a brand or a model year, and neither has a listing
-   contact. The alias lists below are what the feed has actually been called at
-   some point; the real column is first and nothing here reaches for a column
-   that does not exist on either table. */
+   The last seven competitor columns landed on 1 Sep 2026 and are what let this
+   screen state a provenance instead of assuming one. They are nullable and
+   every row written before that morning has all seven NULL, which is a third
+   state — unrated — and not a synonym for a bad match; see QUALITY.
+
+   Inventory still has no make, no brand and no model year, and neither table
+   has a listing contact. The alias lists below are what the feed has actually
+   been called at some point; the real column is first and nothing here reaches
+   for a column that does not exist on either table. */
 /* `competitor` is not a dealership and this reads it as one at your peril. The
    scraper sets it from `ldSeller || hostSource || modelSource`, and in practice
    that is `hostSource` — `new URL(page).hostname` with the leading "www."
-   removed. All nine rows on file at 1 Sep 2026 read "toyota.ae", which is the
-   manufacturer's own new-car site. The workflow's NOT_A_SELLER guard only excludes search and
-   social hosts, so an OEM, an aggregator and a classifieds portal all arrive
-   here looking exactly like a rival showroom. It is called a source
-   everywhere on this screen for that reason. */
+   removed. All nine rows on file at 04:38 UTC on 1 Sep 2026 read "toyota.ae".
+   The workflow's NOT_A_SELLER guard only excludes search and social hosts, so
+   an OEM, an aggregator and a classifieds portal all arrive in this column
+   looking exactly like a rival showroom, which is why it is called a source
+   everywhere on this screen. `source_host` and `source_kind` below are the
+   columns that answer it properly; this one is the fallback for the rows that
+   predate them. */
 const cName  = r => pick(r, ['competitor', 'competitor_name', 'dealer']);
-/* NOT the listing's model text — see MODEL_IS_OURS. It is our own inventory
-   row's model string, written back out by the scraper. */
+/* OUR model string, not the listing's: the scraper searched with it and writes
+   it back. It is still the join key — it is the value that matches inventory —
+   but it is no longer the only thing there is, and it is never presented as
+   the other side of a comparison on its own. See cTitle. */
 const cModel = r => pick(r, ['model', 'vehicle_model']);
 const cPrice = r => n0(pick(r, ['price_aed', 'competitor_price_aed']));
 const cAt    = r => pick(r, ['scraped_at', 'checked_at', 'created_at']);
+
+/* The 1 Sep 2026 provenance columns. Every one is nullable and every row
+   written before that morning has all of them null, so each accessor returns
+   null rather than a default: a default here would be this screen inventing
+   the answer the scraper did not record, which is the whole class of bug this
+   round exists to remove.
+
+   `listing_title` is the important one. It is the OTHER page's own words for
+   what it is selling, so it is the first field in the history of this screen
+   against which our model string can be compared and FOUND NOT TO MATCH. */
+const cTitle   = r => pick(r, ['listing_title']);
+const cHost    = r => pick(r, ['source_host']);
+const cKind    = r => pick(r, ['source_kind']);
+const cOffer   = r => pick(r, ['offer_name']);
+const cCond    = r => pick(r, ['offer_condition']);
+const cQuality = r => pick(r, ['match_quality']);
+const cNote    = r => pick(r, ['match_note']);
 
 const uModel = u => pick(u, ['model']);
 const uPrice = u => n0(pick(u, ['price_aed']));
@@ -384,25 +464,93 @@ const uRef   = u => pick(u, ['id']);          // `id` IS the stock number
 /* The sentence every match on this screen has to be read against. */
 const NO_MAKE = 'Neither table records a make or a model year — `model` is free text and it is the only thing there is to match on.';
 
-/* The harder sentence. `competitors.model` is not what the listing calls the
-   car: the scraper's `Log Competitor Intel` node writes it as `$json.model`,
-   which `Parse AI Price` carries down from `Build Apify Query` — and that node
-   reads the Supabase *inventory* row and builds its search query from it. The
-   value stored in this column is our own model string, returned to us. Matching
-   it against `inventory.model` is therefore a comparison of a value with
-   itself: it cannot fail, and any manufacturer read off "both sides" is the
-   same word counted twice. The screen can only report this, not fix it — the
-   fix is a listing-side model field in the scraper. */
-const MODEL_IS_OURS = 'The model text on this row is our own: the scraper writes back the inventory model string it searched with, so matching it against our stock compares one value with itself and cannot tell us the two cars are the same car.';
+/* `competitors.model` is our own model string round-tripped: `Log Competitor
+   Intel` writes it as `$json.model`, which `Parse AI Price` carries down from
+   `Build Apify Query`, and that node built its search query out of the Supabase
+   *inventory* row. Matching it against `inventory.model` compares a value with
+   itself — it cannot fail, and any manufacturer read off "both sides" is one
+   word counted twice.
 
-/* And the side that was never modelled here at all. `collectPrices()` walks the
-   page’s JSON-LD and returns the LOWEST AED figure above 20,000 found anywhere
-   on it; where that finds nothing, a language model reads the first 6,000
-   characters of a web-search result for "<model> price UAE dealership". Nothing
-   in either path constrains the figure to the same year, trim, mileage or even
-   to a used car. A manufacturer’s model page lists every variant, so the number
-   that arrives is the cheapest new base trim. */
-const PRICE_UNCONSTRAINED = 'Their figure is the lowest AED price over 20,000 found anywhere on the page — no year, trim, mileage or condition is matched, so on a page listing several variants it is the cheapest, usually new, one.';
+   That is still what this column is, and it is still the join key. What changed
+   on 1 Sep 2026 is that it is no longer the only thing on the row: the scraper
+   now stores `listing_title` beside it, so the page's own wording can be shown
+   against ours and the reader can see for themselves whether they describe the
+   same car. This sentence is therefore used where a row carries no title of
+   its own to check against, and not as a blanket statement about the feed. */
+const MODEL_IS_OURS = 'The model text on this row is our own: the scraper wrote back the inventory model string it searched with, so matching it against our stock compares one value with itself and cannot tell us the two cars are the same car.';
+const NO_TITLE = 'This row records no listing title, so there is nothing of the page\'s own wording to hold our model string against — the scraper only began storing it on 1 Sep 2026.';
+
+/* The price side, and the same treatment. Before 1 Sep 2026 `collectPrices()`
+   walked the page’s JSON-LD and returned the LOWEST AED figure above 20,000
+   found anywhere on it, with a language-model fallback that likewise asked for
+   the lowest advertised price. Nothing in either path constrained the figure to
+   the same year, trim, mileage or even to a used car, and a manufacturer’s
+   model page lists every variant — so the number that arrived was the cheapest
+   new base trim, and our used 2.7 VXR at 152,000 was measured against it.
+
+   The scraper now ranks the page’s offers against the unit it was sent to price
+   and records which one it took. So this sentence describes rows written before
+   that morning — which is every row on file today — and PRICE_RANKED describes
+   the ones written after. Neither is asserted of a row that does not carry the
+   evidence for it. */
+const PRICE_UNCONSTRAINED = 'Their figure is the lowest AED price over 20,000 found anywhere on the page — no year, trim, mileage or condition matched, so on a page listing several variants it is the cheapest, usually new, one.';
+const PRICE_RANKED = 'The scraper ranked the offers on that page against our unit and recorded which one it took, so this price belongs to a named offer rather than being the cheapest figure on the page.';
+
+/* How well the price on a row is tied to OUR car, in the scraper’s own words.
+   `match_quality` is the column the 1 Sep 2026 fix added, and this screen reads
+   it rather than re-deriving it: re-deriving it from a model string and a
+   minimum price is exactly what put "+AED 23,100 · 17.9% above theirs" in red
+   against a new base Fortuner.
+
+   `weak` is the one that changes what may be PRINTED. It means nothing on the
+   page ties that price to our car, so the row is shown — a cheap page is worth
+   knowing about — and no percentage, no direction and no market position is
+   drawn from it anywhere on this screen.
+
+   `unrated` is not a fourth grade of match. It is the ABSENCE of one, and it is
+   what every row written before 1 Sep 2026 carries. Calling it weak would
+   suppress a figure nobody has shown to be wrong; calling it rated would assert
+   a check that never ran. It says which it is instead. */
+const QUALITY = {
+  exact_year: {
+    chip: 'offer names our year', tone: 'ok', concludes: true,
+    text: 'The offer this price came from named our model year, so as far as the page states it the two sides are the same car. This is the strongest tie the data carries.' },
+  model_only: {
+    chip: 'offer names the model, not the year', tone: 'warm', concludes: true,
+    text: 'The offer this price came from carries our model name but states no year, so it may be a different model year of the same car. The gap is a real subtraction of two real figures; what it is a gap BETWEEN is one year less certain than it looks.' },
+  weak: {
+    chip: 'price not tied to our car', tone: 'hot', concludes: false,
+    text: 'Nothing on that page ties this price to our car: the scraper found no offer naming our model, recorded the figure as context and rated the match weak. No gap, percentage or market position is drawn from this row anywhere on this screen, because every one of them would be a conclusion the page does not support. What it supports is "this page quotes that figure for something", and the row is kept for that.' },
+  /* Reached two ways, and the wording has to be true of both: a row written
+     before 1 Sep 2026, which carries none of the provenance columns, and a row
+     whose match_quality holds a value this screen has no words for. Neither is
+     a rating this screen can act on, and neither is claimed to be worse than
+     that — so this text says only that the rating is missing, and the row's own
+     Vehicle and Their-price cells say which of the other columns are missing
+     with it. Asserting "no listing title" here was wrong on the second case. */
+  unrated: {
+    chip: 'match never rated', tone: 'warm', concludes: true,
+    text: 'No usable match quality is recorded on this row, so how well its price is tied to our car was never established — it is not a good match and it is not a bad one, it is an unchecked one, and nothing on this screen can say which it would have turned out to be. Rows written before the 1 Sep 2026 scraper fix are all in this state. The figures are a true subtraction of two stored numbers and are shown as that and no more.' },
+};
+
+/* What kind of page the price came off, as the scraper recorded it. This
+   replaces a guess: until 1 Sep 2026 the screen read the hostname’s first label
+   against a manufacturer list (oemHost(), still below) and inferred the rest,
+   which could only ever spot an OEM and called everything else nothing. Where
+   `source_kind` is present it is used and oemHost() is not consulted; where it
+   is absent the inference is used and is labelled as an inference, because "the
+   scraper recorded it" and "we worked it out from the domain" are different
+   claims and only one of them is evidence. */
+const KIND = {
+  oem: { label: 'the manufacturer\'s own site',
+    price: 'a factory list price for a new car, not a rival showroom\'s asking price for a used unit like ours', tone: 'warm' },
+  marketplace: { label: 'a classifieds marketplace',
+    price: 'an advertised asking price on a listings portal, which may be a private seller rather than a dealer', tone: '' },
+  dealer: { label: 'a dealer site',
+    price: 'a dealership\'s own advertised price — the closest thing in this feed to a rival\'s asking price', tone: '' },
+  unknown: { label: 'a page the scraper could not classify',
+    price: 'a price off a page whose kind was not established, so what sort of price it is is unknown', tone: 'warm' },
+};
 
 /* Manufacturer names, used for exactly one thing: spotting a make that somebody
    already typed into a model string. It is never used to fill a make in. A name
@@ -445,11 +593,16 @@ const MAKE_DISPLAY = { bmw: 'BMW', gmc: 'GMC', mg: 'MG', byd: 'BYD', vw: 'Volksw
 const titleCase = m => MAKE_DISPLAY[m] || String(m || '').replace(/\b[a-z]/g, c => c.toUpperCase());
 
 /* A source whose hostname IS a manufacturer's name — "toyota.ae", "lexus.com".
-   This is not a guess about the market: it is the first label of the host read
-   against the same manufacturer list the model strings are read against. When
-   it hits, the price on the row is a factory list price for a new car, and
-   calling that an undercut by a competitor is the specific wrong thing a rep
-   would repeat to a customer. It only ever adds a caution. */
+   The first label of the host, read against the same manufacturer list the
+   model strings are read against.
+
+   This is the FALLBACK now, not the answer: `source_kind` records what the page
+   is, and where it is present this is not consulted. It stays for the rows that
+   predate that column, and for one thing the column cannot do — naming the
+   manufacturer, so a row can say "Toyota's own site" rather than only "the
+   manufacturer's own site". Where it is the only thing there is, everything it
+   produces is labelled as read off the domain rather than recorded. It only
+   ever adds a caution. */
 function oemHost(name) {
   const host = String(name == null ? '' : name).trim().toLowerCase().replace(/^www\./, '');
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return null;   // not a hostname at all
@@ -493,8 +646,12 @@ function reusableName(key) {
    unreachable and the one that was reachable described itself as the loose
    fallback from a make match that never happened. */
 const BASIS = {
+  /* The price sentence used to be tacked onto the end of this one. It is a
+     separate axis now — what the price is a price OF is `offer_name` and
+     `match_quality`, not the model join — and stapling the two together made a
+     weakness in one read as a weakness in the other. */
   model: { chip: 'model name',
-    why: `Matched because our stock carries the same model name, character for character. ${NO_MAKE} Two cars sold under the same model name are the same row to this match, whoever built them. ${PRICE_UNCONSTRAINED}` },
+    why: `Matched because our stock carries the same model name, character for character. ${NO_MAKE} Two cars sold under the same model name are the same row to this match, whoever built them.` },
   loose: { chip: 'model name · loose',
     why: `Matched on the model name only after a year, or a manufacturer word somebody typed into the text, was set aside — the two strings were not even identical. ${NO_MAKE}` },
   none:  { chip: 'no unit in stock',
@@ -507,13 +664,19 @@ const BASIS = {
    not good at all: it fired when the manufacturer read out of their model text
    equalled the one read out of ours, and those are the same string, so it fired
    on every row and rendered the least alarming chip on the screen over the
-   weakest possible evidence. Where the model text is our own — which is every
-   row the scraper has ever written — the state is `circular` and `both` is
-   unreachable. `both` is kept for the day the scraper stores the listing's own
-   model text, because then it will mean something. */
+   weakest possible evidence. Where the model text is our own the state is
+   `circular` instead, and `circular` is ordered above `both` for that reason.
+
+   That was true of every row the scraper had ever written until 1 Sep 2026, and
+   it is true of all three listings on the screen today, because all three
+   predate that morning's fix. It is not a permanent property of the feed any
+   more: `listing_title` now carries the page's own wording, `isOurModelText()`
+   is still checked per row rather than assumed, and `both` becomes reachable
+   the moment a scrape stores a title that is not ours. Nothing here is
+   hard-coded to the state the table happens to be in. */
 const RISK = {
   circular: { chip: 'matched to itself', tone: 'hot',
-    text: `${MODEL_IS_OURS} Both "manufacturers" below are that one string read twice, so they agree by construction and confirm nothing. ${PRICE_UNCONSTRAINED} What this row can support is "a page selling something under this name quotes that figure", and no more.` },
+    text: `${MODEL_IS_OURS} Both "manufacturers" below are that one string read twice, so they agree by construction and confirm nothing. What this row can support is "a page selling something under this name quotes that figure", and no more.` },
   mixed: { chip: 'make ambiguous', tone: 'hot',
     text: 'The units carrying this model name do not all name the same manufacturer, so this name is used by more than one make. The gap beside it may be measured against a different car entirely.' },
   onesided: { chip: 'make unconfirmed', tone: 'warm',
@@ -567,6 +730,11 @@ const FILTERS = {
   /* Counts every gap whose match cannot rule out a different car — which now
      includes the circular ones, so "Make unknown" understated it. */
   UNNAMED:'Match unconfirmed',
+  /* The two the 1 Sep provenance columns made expressible. UNTIED is the
+     scraper's own `weak`: a real price on a page that ties it to nothing of
+     ours. UNRATED is the rows that predate the column entirely. */
+  UNTIED: 'Not tied to our car',
+  UNRATED:'Match never rated',
   BROKEN: 'Scrape failures',
 };
 const ALWAYS_SHOWN = new Set(['ALL', 'ABOVE', 'BELOW', 'LEVEL', 'NOSTOCK']);
@@ -646,10 +814,11 @@ function compare(r, index) {
   const anonUnits = units.filter(u => !makeIn(uModel(u))).length;
   /* The runtime evidence for MODEL_IS_OURS: this row's model text is, character
      for character, a model string out of our own inventory. That is what a
-     round-tripped value looks like, and it is true of all nine rows on file
-     (1 Sep 2026): three distinct model strings, every one of them ours.
-     It is checked rather than assumed so that the day the scraper starts
-     storing the listing's own text, this screen stops accusing it. */
+     round-tripped value looks like, and it is true of all nine rows on file at
+     04:38 UTC on 1 Sep 2026 — three distinct model strings, every one of them
+     ours, because every one of those rows predates that morning's fix.
+     It is checked rather than assumed, so a scrape that stores the listing's
+     own text stops this screen accusing it without anything here changing. */
   const echoed = index.isOurModelText(model);
   const risk = !units.length ? null
     : ourMakes.length > 1 ? 'mixed'
@@ -662,17 +831,52 @@ function compare(r, index) {
             : 'unnamed';
 
   const name = cName(r);
+  /* ── Provenance, as recorded rather than as inferred ─────────────────────
+     Every one of these is null on a row written before 1 Sep 2026, and each is
+     allowed to stay null. The screen's job here is to carry what the scraper
+     decided, not to reconstruct it: `match_quality` in particular is the
+     scraper's own rating of how well its price is tied to our unit, and this
+     file's whole history is what happens when a screen works that out for
+     itself from a model string and a minimum price. */
+  const title = cTitle(r);
+  /* `source_host` is the recorded hostname; `competitor` is what the rows that
+     predate it carry, and it happens to hold a hostname too. The fallback is
+     only taken when the value actually looks like one — a bot-detection page
+     title stored in `competitor` is not a host and must not be shown as one. */
+  const legacyHost = /^(www\.)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(String(name == null ? '' : name).trim())
+    ? String(name).trim().replace(/^www\./i, '') : null;
+  const host = cHost(r) || legacyHost;
+  const kindKey = low(cKind(r));
+  const kind = KIND[kindKey] ? kindKey : null;
+  /* Named only, never used to decide what the page IS where `source_kind`
+     answers that. See oemHost(). */
+  const oem = oemHost(host || name);
+  const qKey = low(cQuality(r));
+  /* Anything the column holds that this screen does not have words for is
+     unrated rather than silently coerced into the nearest grade it does know:
+     a value we cannot read is not a rating we can act on. */
+  const quality = QUALITY[qKey] ? qKey : 'unrated';
+  const cond = low(cCond(r)) || null;
   return {
     raw: r, id: pick(r, ['id']), name, model, price,
     fault: scrapeFault(name),
-    /* Set when the source's hostname is a manufacturer's own domain, which is
-       every row on file: the figure beside it is a factory list price. */
-    oem: oemHost(name),
+    title, host, kind, oem,
+    offer: cOffer(r), cond, note: cNote(r), quality,
+    unrated: quality === 'unrated',
+    /* Whether the page's price may be turned into a statement about our
+       pricing at all. False only on the scraper's own `weak`, and it gates the
+       percentage, the direction arrow and both market KPIs — not the figures
+       themselves, which are still shown as the context they are. */
+    concludes: QUALITY[quality].concludes,
+    /* `source_kind` where it is recorded; the hostname inference where it is
+       not, and `kind` stays null so every reader can tell the two apart. */
+    isOem: kind ? kind === 'oem' : !!oem,
     echoed,
     theirMake, ourMakes, risk, reusable: reusableName(keyed.key), conflictNote,
     /* A gap whose match cannot rule out another manufacturer, or whose match is
-       circular and so rules out nothing at all. Today that is every gap on the
-       screen, and the filter chip counting them says so. */
+       circular and so rules out nothing at all. That is every gap on the screen
+       today, because every row on file predates the listing_title column; the
+       filter chip counting them says how many. */
     makeUnconfirmed: risk != null && risk !== 'both',
     label: String(model == null ? '' : model).trim() || 'Unnamed vehicle',
     at: cAt(r),
@@ -690,8 +894,55 @@ function compare(r, index) {
     units, pricedUnits, unmatched: units.length === 0,
     basis: units.length ? basis : 'none',
     soldOnly, ourPrice, ourHigh, delta,
-    deltaPct: (delta != null && price) ? (delta / price) * 100 : null,
+    /* A gap this screen is willing to state as a position. A `weak` row keeps
+       its `delta` — the subtraction is real and the drawer shows both figures —
+       but nothing derived from it is printed as a conclusion. */
+    concludable: delta != null && QUALITY[quality].concludes,
+    /* Null on a weak row for the same reason: a percentage IS the conclusion.
+       "17.9% above theirs" is the sentence that nearly got a car re-priced
+       against a new base trim, and there is no honest way to render it over a
+       price the page ties to nothing of ours. */
+    deltaPct: (delta != null && price && QUALITY[quality].concludes) ? (delta / price) * 100 : null,
   };
+}
+
+/* How a source is described in a sentence, and whether that description is
+   something the scraper recorded or something this screen worked out from the
+   domain. Returns null when there is neither — an unclassified legacy row on a
+   host that is not a manufacturer's, where the honest answer is to say the
+   hostname and stop. */
+function sourceWords(c) {
+  const k = c.kind ? KIND[c.kind] : null;
+  const named = c.oem ? `${titleCase(c.oem)}'s own site` : null;
+  if (k) return { what: (c.kind === 'oem' && named) || k.label, price: k.price, tone: k.tone, sure: true };
+  if (named) return { what: named, price: KIND.oem.price, tone: KIND.oem.tone, sure: false };
+  return null;
+}
+
+/* The sentence that says what was compared with what, in one place, so the
+   tooltip, the drawer, the alert strip and the table cannot drift apart on it.
+   Four clauses in a fixed order: our model text against their page's own title,
+   which offer the price was taken from and in what condition, what kind of page
+   it came off, and how the scraper rated the tie. Where a row records none of
+   that — every row on file today — each clause says so instead of falling back
+   on the assumptions the 1 Sep fix removed. Plain text: callers escape it. */
+function provenance(c) {
+  const src = sourceWords(c);
+  const out = [];
+  out.push(c.title
+    ? `Compared our "${c.model}" against the page's own "${c.title}".`
+    : `Compared our "${c.model}" against nothing of the page's own. ${NO_TITLE}`);
+  out.push(c.offer
+    ? `${PRICE_RANKED} It took the "${c.offer}" offer`
+      + (c.cond && c.cond !== 'unknown' ? `, which the page states is ${c.cond}.` : ', and the page did not state whether it is new or used.')
+    : PRICE_UNCONSTRAINED);
+  if (c.host) {
+    out.push(`Read from ${c.host}`
+      + (src ? ` — ${src.what}${src.sure ? '' : ' (read off the domain, not recorded by the scraper)'}: ${src.price}.` : '.'));
+  }
+  out.push(QUALITY[c.quality].text);
+  if (c.note) out.push(`The scraper's own note: "${c.note}".`);
+  return out.join(' ');
 }
 
 /* Two keys off the one column there is. The exact one is the model string as
@@ -746,22 +997,37 @@ const deltaCell = c => {
           : 'The matching unit has no list price on record.';
     return `<span class="t-muted" title="${esc(why)}">—</span>`;
   }
+  /* The scraper rated this match `weak`: nothing on that page ties its price to
+     our car. The subtraction is still real, and both figures are still on the
+     row in their own columns — what is refused here is every form of
+     CONCLUSION. No arrow, no signed gap, no percentage, no "above/below
+     theirs". The cell that used to sit here on a row like this read
+     "+AED 23,100 · 17.9% above theirs" in red, against a page whose cheapest
+     new base trim was the only thing it had matched, and that sentence is the
+     reason this screen exists in its current form. */
+  if (!c.concludable) {
+    const why = `No gap is drawn from this row. ${provenance(c)}`;
+    return `<span class="t-muted" title="${esc(why)}">not comparable</span>
+      <div class="cell-sub t-hot" style="white-space:normal">Their ${esc(aed(c.price))} is not tied to our car — shown as context, not as a position</div>`;
+  }
   if (c.delta === 0) return '<span class="t-muted">level</span>';
   const worse = c.delta > 0;
-  /* The tooltip carries the three things the number itself cannot: when their
-     price was collected, what the two cars were matched on, and what their
-     figure is a price OF. The last one is why a gap this large exists at all. */
+  /* The tooltip carries what the number itself cannot: when their price was
+     collected, and the full provenance — our model text against their listing
+     title, which offer the figure came from, what kind of page it came off, and
+     how the scraper rated the tie. It used to assert the last two rather than
+     read them. */
   const why = `Our ${aed(c.ourPrice)} (list price today) against their ${aed(c.price)}, collected `
     + (c.at ? dt(c.at) : 'on a date this row does not record')
-    + `. Matched on the model name "${c.label}" alone`
-    + (c.echoed ? ' — and that name is our own text, written back by the scraper, so the match confirms nothing. ' : c.makeUnconfirmed ? ', with no make recorded on either side. ' : '. ')
-    + PRICE_UNCONSTRAINED
-    + (c.oem ? ` ${c.name} is ${titleCase(c.oem)}'s own site, so this is a factory list price for a new car.` : '');
+    + `. Matched on the model name "${c.label}"`
+    + (c.echoed ? ' — and that name is our own text, written back by the scraper, so the name alone confirms nothing. ' : c.makeUnconfirmed ? ', with no make recorded on either side. ' : '. ')
+    + provenance(c);
   return `<span class="${worse ? 't-hot' : 't-ok'}" style="font-weight:500"
       title="${esc(why)}">
       <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px" aria-hidden="true">${worse ? 'arrow_upward' : 'arrow_downward'}</span>
       ${aedSigned(c.delta)}</span>
-    ${c.deltaPct == null ? '' : `<div class="cell-sub">${pct(Math.abs(c.deltaPct))} ${worse ? 'above' : 'below'} theirs</div>`}`;
+    ${c.deltaPct == null ? '' : `<div class="cell-sub">${pct(Math.abs(c.deltaPct))} ${worse ? 'above' : 'below'} theirs</div>`}
+    ${c.unrated ? '<div class="cell-sub t-warm" style="white-space:normal">Match never rated — this comparison predates the 1 Sep provenance fix</div>' : ''}`;
 };
 
 /* The obvious answer to "these prices are old" is "run the scrape again", and
@@ -811,12 +1077,19 @@ SCREENS.competitors = async host => {
   const byCompHost = el('div'); const blindHost = el('div');
   below.appendChild(byCompHost); below.appendChild(blindHost);
 
-  /* Four reads, started together rather than one after another. Inventory and
+  /* Five reads, started together rather than one after another. Inventory and
      the attention view used to wait on the competitors fetch for no reason; on
      a single-core box that is two round-trips of dead time. All are marked
      handled the moment they are created — if the competitors read fails first
      and this function returns, a rejection with no handler surfaces in the
      console instead of in the panel that is supposed to report it. */
+  /* The append-only log. NOT the source of any figure on this screen any more —
+     see the listing read below — and read here only for the two questions where
+     the history IS the subject: what the drawer can show about a price that has
+     or has not moved, and resolving an attention row raised against a snapshot
+     a later run superseded. It is an enrichment, so it does not block and its
+     failure costs the history rather than the screen. */
+  const logP = db(`competitors?select=id,competitor,model,price_aed,scraped_at,match_quality&limit=${ROW_LIMIT}`);
   const invP = db('inventory?select=*&limit=1000');
   const attnP = db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
     + `&screen=eq.competitors&limit=${ATTN_LIMIT}`);
@@ -828,14 +1101,27 @@ SCREENS.competitors = async host => {
      computes are read as they are; nothing here classifies a status itself. */
   const healthP = db('v_workflow_health?select=name,trigger_detail,health,runs_30d,successes_30d,'
     + `no_result_30d,failures_30d,partials_30d,effective_runs_30d,success_rate_30d,last_run,last_success&name=eq.${encodeURIComponent(SCRAPE_WORKFLOW)}`);
-  invP.catch(() => {}); attnP.catch(() => {}); healthP.catch(() => {});
+  logP.catch(() => {}); invP.catch(() => {}); attnP.catch(() => {}); healthP.catch(() => {});
 
-  /* Ordering is deliberately left to the client. The competitors feed is
-     written by a scraping workflow and the column set has changed before;
-     ordering server-side on a column that has been renamed returns a 400 and
-     takes the whole screen down, while sorting here cannot. */
+  /* ── One row per listing, from the view rather than reduced here ─────────
+     `v_competitor_latest` is `distinct on (competitor, model)` over the newest
+     snapshot, and it is indexed. Every count, comparison, group and alert below
+     reads it. This screen used to pull 500 log rows and collapse them in the
+     browser, which worked but made the definition of "a listing" a private
+     opinion of this file — the attention view holds its own copy of the same
+     reduction, and two screens quietly disagreeing about how many listings
+     there are is the class of bug this project keeps hitting.
+
+     `competitors` itself stays append-only ON PURPOSE — the price history over
+     time is worth keeping — so nothing here treats the extra rows as a fault to
+     be fixed by an upsert, which is what this file said until today.
+
+     Ordering is still deliberately left to the client: the column set behind
+     this view has changed twice in a fortnight, and ordering server-side on a
+     column that has been renamed returns a 400 and takes the whole screen down,
+     while sorting here cannot. */
   let rows = [];
-  try { rows = await db(`competitors?select=*&limit=${ROW_LIMIT}`); }
+  try { rows = await db(`v_competitor_latest?select=*&limit=${ROW_LIMIT}`); }
   catch (e) {
     strip.remove(); below.remove(); alertHost.remove();
     body.innerHTML = `<div class="card">${stateError('competitor pricing', e.message, 'competitors')}</div>`;
@@ -864,6 +1150,14 @@ SCREENS.competitors = async host => {
   try { health = (await healthP)[0] || null; }
   catch (e) { healthErr = e; }
 
+  /* The fourth. Losing the log costs the drawer's scrape history and the
+     "older snapshots" figure, and nothing else — which is the point of having
+     moved every count onto the view. Where it fails the screen says the history
+     is missing rather than printing a zero that reads as "scraped once". */
+  let log = null, logErr = null;
+  try { log = await logP; }
+  catch (e) { logErr = e; }
+
   /* The health view's own words for the state it reports. Never derived here —
      lib/health.js mirrors nexus_outcome_class() in Postgres, and this screen is
      a consumer of both. */
@@ -879,9 +1173,15 @@ SCREENS.competitors = async host => {
       ? `v_workflow_health carries no row named "${esc(SCRAPE_WORKFLOW)}", so how the scrape itself is doing is unknown here — the rows below are all this screen can speak for.`
       : `v_workflow_health rates the scrape ${esc(hWords.label)} — ${esc(hWords.blurb)}${runs30 ? ` ${num(runs30)} ${plural(runs30, 'run', 'runs')} in 30 days, ${num(success30)} ${plural(success30, 'success', 'successes')}, ${num(noResult30)} producing no usable price.` : ''}`;
   /* The registry's recorded schedule against the one the workflow is running.
-     They disagree today — the registry says a single daily cron — and a
-     schedule nobody has updated is how the wrong hour got onto this screen in
-     the first place, so the disagreement is reported rather than resolved. */
+     They disagreed until 1 Sep 2026, when the registry was corrected: it now
+     reads "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00
+     UTC)", which parses to the same two UTC hours as the deployed cron, so this
+     renders empty and nothing on the screen claims a drift.
+
+     The check stays, and stays derived from the deployed cron rather than from
+     the registry, because a registry nobody updates is how "expected daily at
+     05:00 UTC" and a next run at 09:00 GST got onto this screen in the first
+     place. It reports a disagreement; it does not assert one. */
   const regHours = health ? registryHoursUtc(health.trigger_detail) : null;
   const scheduleDrift = regHours && regHours.join(',') !== SCRAPE_HOURS_UTC.join(',')
     ? `workflow_registry records this job's trigger as "${esc(String(health.trigger_detail))}" — ${num(regHours.length)} ${plural(regHours.length, 'run', 'runs')} a day, where the deployed cron is "${esc(SCRAPE_CRON)}" in Asia/Dubai and audit_log carries runs at both hours. The schedule stated here follows the deployed cron; the registry entry is out of date.`
@@ -910,51 +1210,67 @@ SCREENS.competitors = async host => {
   /* Rows the scraper produced that are not competitors — a name of "null", or
      the title of a bot-detection page. They are held apart from here down.
      `junk` is reported as a data-quality fault and is reachable through its own
-     filter, never charted as a rival source. */
+     filter, never charted as a rival source. The view collapses these the same
+     way it collapses everything else, so this is a count of broken LISTINGS. */
   const junk = all.filter(c => c.fault);
-  const snapshots = all.filter(c => !c.fault);
+  const live = all.filter(c => !c.fault);
   const junkPriced = junk.filter(c => c.price != null).length;
 
   const dated = c => !!(c.at && !Number.isNaN(Date.parse(c.at)));
 
-  /* ── Snapshots to listings ───────────────────────────────────────────────
-     `competitors` is an append-only log. The scraper's `Log Competitor Intel`
-     node carries no `operation` key, so the Supabase node defaults to `create`
-     and every run inserts a new row; nothing upserts on the listing. Eight rows
-     on file are three listings, scraped repeatedly.
+  /* ── What is left of the client-side collapse, and why it is left ────────
+     `live` is now the view's answer, not this file's. What survives here is a
+     grouping over the LOG, and it is no longer the source of any figure. It
+     earns its place on three things:
 
-     Every count on this screen used to be taken straight off those rows, which
-     is how "We ask more · 4" and "We undercut · 4" came to sit beside a
-     subtitle correctly reading 3 vehicles — 4 + 4 > 3. It grows without bound:
-     at two runs a day the 500-row cap arrives in about a month, after which
-     every headline is a function of how long the job has been up rather than of
-     the market.
+     1. The drawer's scrape history. A price that has not moved across five
+        reads of the same page is worth showing as exactly that, and the view
+        returns one row by construction.
+     2. Resolving an attention row raised against a snapshot a later run
+        superseded, so such an alert opens the listing instead of nothing.
+     3. A disagreement the view cannot report about itself. `v_competitor_latest`
+        orders `scraped_at DESC` with no NULLS LAST, and Postgres sorts NULLs
+        FIRST under DESC — checked against this database on 1 Sep 2026, not
+        assumed. So a listing that acquires one undated row would have that row
+        chosen as its representative over every dated one, and the age on screen
+        would silently become "unknown" for a listing scraped this morning. This
+        screen's own rule has always been the opposite: an undated row can only
+        represent a listing that has NO dated row. The grouping below notices
+        when the view picked one anyway and the row says so.
 
-     So `live` is one row per listing — the newest snapshot of each — and it is
-     what every KPI, filter, group, gap and market claim below is computed from.
-     `snapshots` is kept for the two questions where the history IS the subject:
-     how long a listing has gone without being covered, and what the drawer can
-     show about a price that has or has not moved. A listing is keyed on the
-     pair the scraper actually writes, source and model text. */
-  const listingKey = c => `${norm(c.name)} :: ${norm(c.model)}`;
+     No row on file carries a null `scraped_at` today (0 of 9, read 04:38 UTC on
+     1 Sep 2026), so (3) reports nothing — which is the right amount for a guard
+     to report, and this table has held undated rows before.
+
+     Keyed on the pair the view groups on, `competitor` and `model`, so the two
+     definitions of "a listing" cannot drift apart. */
+  const listingKey = o => `${norm(o.name)} :: ${norm(o.model)}`;
+  const logRows = (log || []).map(r => ({
+    id: pick(r, ['id']), name: cName(r), model: cModel(r), at: cAt(r), price: cPrice(r),
+  }));
   const historyOf = new Map();
-  snapshots.forEach(c => {
-    const k = listingKey(c);
+  logRows.forEach(h => {
+    const k = listingKey(h);
     if (!historyOf.has(k)) historyOf.set(k, []);
-    historyOf.get(k).push(c);
+    historyOf.get(k).push(h);
   });
-  const live = [];
-  historyOf.forEach(rowsOfListing => {
-    /* Newest wins. An undated row can only be the representative of a listing
-       that has no dated row at all, in which case its age is unknown and the
-       undated-rows check downstream is the one that reports it. */
-    rowsOfListing.sort((a, b) => (dated(b) ? Date.parse(b.at) : -Infinity) - (dated(a) ? Date.parse(a.at) : -Infinity));
-    const current = rowsOfListing[0];
-    current.history = rowsOfListing;
-    current.snapshotCount = rowsOfListing.length;
-    live.push(current);
+  historyOf.forEach(hs => hs.sort((a, b) =>
+    (dated(b) ? Date.parse(b.at) : -Infinity) - (dated(a) ? Date.parse(a.at) : -Infinity)));
+  all.forEach(c => {
+    const hs = historyOf.get(listingKey(c)) || [];
+    c.history = hs;
+    c.snapshotCount = hs.length;
+    /* (3) above. True only where the log holds a dated snapshot of this listing
+       and the row the view handed back is undated — which is the NULLS-FIRST
+       ordering choosing the one row whose age cannot be stated. */
+    c.datedSnapshots = hs.filter(dated).length;
+    c.viewPickedUndated = !dated(c) && c.datedSnapshots > 0;
   });
-  const supersededCount = snapshots.length - live.length;
+  /* Log rows that are not the representative of their listing. Zero when the
+     log did not load, which is why every sentence built on it checks `logErr`
+     first: "0 older snapshots" and "the history could not be read" are
+     different statements and only one of them is true then. */
+  const supersededCount = logErr ? 0 : Math.max(0, logRows.length - historyOf.size);
 
   /* Freshness is read off the current listings only: a scrape failure carries
      no price, so letting one set the "newest price collected" clock would date
@@ -1154,7 +1470,7 @@ SCREENS.competitors = async host => {
         <div class="cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market. ${healthLine}${scheduleDrift ? ` ${scheduleDrift}` : ''}</div>
 
         <div class="label-caps" style="margin-top:18px">What the rows will be able to prove</div>
-        <div class="cell-sub" style="white-space:normal;margin-top:8px">Less than it looks, and both sides of the comparison are the reason. ${esc(MODEL_IS_OURS)} ${esc(NO_MAKE)} ${esc(PRICE_UNCONSTRAINED)} A gap on this screen therefore says "a page selling something under this name quotes that figure", not "the same car costs that much elsewhere", and each row will carry a chip saying which of those it is. The scrape also has no listing contact and no model year to offer, it stores a page hostname rather than a dealership, and when it is blocked it stores the block page — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
+        <div class="cell-sub" style="white-space:normal;margin-top:8px">More than they used to, and each row will say how much. Since 1 Sep 2026 the scrape records the page's own listing title beside our model string, which offer on the page the price came from and whether that page called it new or used, what kind of site it was read off, and its own rating of how well that price is tied to our unit. Where it rates a match <strong>weak</strong> — nothing on the page ties the price to our car — the row is still written, because a cheap page is worth knowing about, and this screen draws no gap, no percentage and no market position from it. ${esc(NO_MAKE)} So a rated gap says what offer on what page was compared with which of our cars, and a weak one says only that a page quotes a figure for something. The scrape still has no listing contact and no stock number on their side, and when it is blocked it stores the block page — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 24px">
           <button class="btn sm" disabled title="${esc(NO_SCRAPE_HOOK.why)}">${esc(NO_SCRAPE_HOOK.label)}</button>
@@ -1247,10 +1563,22 @@ SCREENS.competitors = async host => {
   /* ── Headline figures. Every one is a count or a difference of two stored
      prices; where a side is missing the row is excluded and said so. ─────── */
   const comparable = live.filter(c => c.delta != null);
-  const above = comparable.filter(c => c.delta > 0);
-  const level = comparable.filter(c => c.delta === 0);
-  const belowMkt = comparable.filter(c => c.delta < 0);
+  /* A subtraction is not a market position. `concluded` is the subset the
+     scraper's own `match_quality` lets this screen speak about — everything
+     except `weak`, which means nothing on that page ties its price to our car.
+     A weak row is held out of both market KPIs and counted on its own line
+     rather than dropped, because "we could not compare 4 of 7" is a fact and
+     "we are above on 3" over a denominator that quietly shed the awkward rows
+     is the older, worse version of this screen. */
+  const concluded = comparable.filter(c => c.concludable);
+  const untied = comparable.filter(c => !c.concludable);
+  const above = concluded.filter(c => c.delta > 0);
+  const level = concluded.filter(c => c.delta === 0);
+  const belowMkt = concluded.filter(c => c.delta < 0);
   const notStocked = live.filter(c => c.unmatched);
+  /* Listings written before the scraper recorded any provenance at all. Not
+     weak, not confirmed — unchecked. All three on screen today. */
+  const unratedRows = live.filter(c => c.unrated);
   const worstAbove = above.length ? above.reduce((a, c) => (c.delta > a.delta ? c : a)) : null;
   const bestBelow = belowMkt.length ? belowMkt.reduce((a, c) => (c.delta < a.delta ? c : a)) : null;
   const competitorCount = new Set(live.map(c => norm(c.name)).filter(Boolean)).size;
@@ -1261,32 +1589,53 @@ SCREENS.competitors = async host => {
   const unconfirmed = gapRows.filter(c => c.makeUnconfirmed);
   const mixedRows = gapRows.filter(c => c.risk === 'mixed');
   /* Gaps whose two model strings are one string: the scraper wrote our own
-     model text back out, so the match agrees with itself. Today that is all of
-     them, which is why it is counted and named rather than left in a chip. */
+     model text back out, so the match agrees with itself. That is all three of
+     them today, because all three predate the listing_title column — it is
+     counted and named rather than left in a chip for that reason, and it is
+     checked per row so it stops being said the moment a scrape stores a title
+     that is not ours. */
   const circularRows = gapRows.filter(c => c.echoed);
   /* Gaps measured against a manufacturer's own site — a factory list price for
-     a new car, not a rival showroom's price for this used unit. */
-  const oemRows = gapRows.filter(c => c.oem);
+     a new car, not a rival showroom's price for this used unit. Read from
+     `source_kind` where the row records it, from the hostname where it does
+     not; `isOem` keeps the two apart. */
+  const oemRows = gapRows.filter(c => c.isOem);
   const reusableRows = unconfirmed.filter(c => c.reusable);
   const staleNote = stale && daysOld != null
     ? ` Measured against prices ${dayWord(daysOld)} old.` : '';
   /* What the other side of every one of these gaps actually is. Stated on the
-     KPI itself because the KPI is the figure that gets repeated out loud. */
-  const compareNote = ` Against the lowest price on the page, ${oemRows.length === gapRows.length && gapRows.length
-    ? "and every page is a manufacturer's own site."
-    : oemRows.length
-      ? `${oemRows.length} of ${gapRows.length} of them a manufacturer's own site.`
-      : 'with no year, trim, mileage or condition matched.'}`;
-  const capped = all.length >= ROW_LIMIT;
+     KPI itself because the KPI is the figure that gets repeated out loud.
+
+     This used to be a constant — "against the lowest price on the page" — which
+     was true of every row the scraper could then write. It is read off the rows
+     now, so the day a run lands a rated one the sentence changes with it
+     instead of libelling a comparison that was made properly. */
+  const compareNote = unratedRows.length === live.length
+    ? ' Every listing here predates the 1 Sep provenance fix: their figure is the lowest price found on the page, tied to our car by nothing that was recorded, and the match was never rated.'
+    : ` Taken from the offer the scraper matched to our unit.${untied.length
+      ? ` A further ${num(untied.length)} ${plural(untied.length, 'listing is', 'listings are')} priced off a page that ties nothing to our car and ${plural(untied.length, 'is', 'are')} not counted here.`
+      : ''}${unratedRows.length
+      ? ` ${num(unratedRows.length)} more ${plural(unratedRows.length, 'predates', 'predate')} the fix and ${plural(unratedRows.length, 'is', 'are')} unrated.`
+      : ''}${oemRows.length
+      ? ` ${oemRows.length === gapRows.length ? 'Every one of these pages is' : `${num(oemRows.length)} of these pages are`} a manufacturer's own site, so the figure is a new-car list price.`
+      : ''}`;
+  /* The cap now applies to LISTINGS, because that is what the view returns. The
+     log has its own cap and its own consequence — a truncated history, not a
+     truncated count — and they are reported separately. */
+  const capped = rows.length >= ROW_LIMIT;
+  const logCapped = !logErr && logRows.length >= ROW_LIMIT;
 
   strip.innerHTML = [
-    /* A count of LISTINGS, not of rows. `competitors` is append-only, so the
-       row count is a count of scrape snapshots and grows whether or not the
+    /* A count of LISTINGS, straight from `v_competitor_latest`. `competitors`
+       is an append-only log, so a count of its rows grows whether or not the
        market moves — which is how "We ask more · 4" and "We undercut · 4" came
-       to sit beside a subtitle correctly reading three vehicles. */
+       to sit beside a subtitle correctly reading three vehicles. Nothing on
+       this screen counts log rows any more. */
     kpi('Listings priced', num(live.length),
       `${num(competitorCount)} source${competitorCount === 1 ? '' : 's'} · ${num(modelCount)} vehicle${modelCount === 1 ? '' : 's'}${capped ? ` · capped at ${num(ROW_LIMIT)} rows` : ''}`
-      + (supersededCount ? ` · <span class="t-muted" title="The scrape inserts rather than upserting, so each listing accumulates one row per run. Only the newest snapshot of each is counted here; the rest are kept for the staleness clock and the drawer's history.">${num(supersededCount)} older ${plural(supersededCount, 'snapshot', 'snapshots')} not counted</span>` : '')
+      + (logErr
+        ? ` · <span class="t-muted" title="${esc(`The append-only log did not load (${logErr.message}). Every figure on this screen comes from v_competitor_latest and is unaffected; what is missing is the scrape history in the drawer.`)}">history unavailable</span>`
+        : supersededCount ? ` · <span class="t-muted" title="v_competitor_latest returns the newest snapshot of each listing. competitors itself is an append-only log on purpose — the price history over time is worth keeping — so these older rows are still on file and are shown in the drawer, they are simply not counted as listings.">${num(supersededCount)} older ${plural(supersededCount, 'snapshot', 'snapshots')} in the log</span>` : '')
       + (junk.length ? ` · <span class="t-hot">${num(junk.length)} more ${plural(junk.length, 'row is', 'rows are')} a scrape failure, not a listing</span>` : '')),
     /* When inventory did not load nothing could be compared, so the honest
        value is "—", not the zero that arithmetic over an empty list produces.
@@ -1295,12 +1644,18 @@ SCREENS.competitors = async host => {
       invErr
         ? '<span class="t-hot">Inventory did not load, so no comparison could be made</span>'
         : `<span class="t-muted">${num(notStocked.length)} not stocked · ${num(live.length - comparable.length - notStocked.length)} missing a price</span>`
+          + (untied.length ? ` <span class="t-hot">· ${num(untied.length)} priced off a page that ties nothing to our car</span>` : '')
+          + (unratedRows.length ? ` <span class="t-warm">· ${num(unratedRows.length)} ${plural(unratedRows.length, 'match', 'matches')} never rated</span>` : '')
           + (unconfirmed.length ? ` <span class="t-warm">· ${num(unconfirmed.length)} matched on model name only</span>` : '')),
     /* "More than what" is the question these two must not dodge. The figure on
        the other side is the lowest AED price over 20,000 anywhere on the page
        the scraper read, on a page that is usually a manufacturer's own — so
        both KPIs carry the comparison they are against rather than presenting a
        gap as a market position. */
+    /* The denominator moved on 1 Sep: these two count `concluded` rows, not
+       every row with a delta, so a `weak` match cannot become a market position
+       by arithmetic alone. Where any were held out, the sub says so — a count
+       that quietly sheds its awkward rows is worse than no count. */
     kpi('Above their page price', invErr ? '—' : num(above.length),
       invErr
         ? '<span class="t-hot">Not counted — our own prices are unknown</span>'
@@ -1350,17 +1705,28 @@ SCREENS.competitors = async host => {
      at all, because they are not listings. */
   const pricelessRows = live.filter(c => c.price == null);
 
-  /* One grouping, shared by the alert and by the By-competitor panel. */
+  /* One grouping, shared by the alert and by the By-source panel. Keyed on
+     `source_host` where the row records it and on `competitor` where it does
+     not — the same value in practice, but the recorded one is the one that
+     will still be a hostname when `competitor` goes back to being a seller
+     name. `src` is carried so the panel does not have to re-derive it.
+
+     `above` and `below` count only rows this screen may draw a conclusion from,
+     for the same reason the KPIs do: a weak match is a real price and not a
+     position, and a per-source tally is exactly where one would quietly become
+     the other. `untied` is carried so the panel can say how many it held out. */
   const groups = (() => {
     const by = new Map();
     live.forEach(c => {
-      const k = c.name || 'Unnamed source';
-      if (!by.has(k)) by.set(k, { name: k, oem: c.oem, rows: [], above: 0, below: 0, cmp: 0, priced: 0, newest: null, stale: 0 });
+      const k = c.host || c.name || 'Unnamed source';
+      if (!by.has(k)) by.set(k, { name: k, src: sourceWords(c), rows: [], above: 0, below: 0, cmp: 0, untied: 0, unrated: 0, priced: 0, newest: null, stale: 0 });
       const g = by.get(k);
       g.rows.push(c);
       if (c.price != null) g.priced += 1;
       if (staleSet.has(c)) g.stale += 1;
-      if (c.delta != null) { g.cmp += 1; if (c.delta > 0) g.above += 1; else if (c.delta < 0) g.below += 1; }
+      if (c.unrated) g.unrated += 1;
+      if (c.delta != null && !c.concludable) g.untied += 1;
+      if (c.concludable) { g.cmp += 1; if (c.delta > 0) g.above += 1; else if (c.delta < 0) g.below += 1; }
       if (dated(c) && (!g.newest || Date.parse(c.at) > Date.parse(g.newest))) g.newest = c.at;
     });
     return [...by.values()].sort((a, b) => b.above - a.above || b.rows.length - a.rows.length);
@@ -1448,6 +1814,67 @@ SCREENS.competitors = async host => {
     });
   }
 
+  /* ── The state a reviewer actually sees today ────────────────────────────
+     Every row written before 1 Sep 2026 carries no listing_title, no offer_name
+     and no match_quality, because the scraper only began writing them that
+     morning. That is not a weak match and it is not a good one. It is an
+     UNRATED one, and the difference decides what may be printed: calling it
+     weak would suppress a figure nobody has shown to be wrong, and calling it
+     rated would assert a check that never ran. This alert says which it is, and
+     when the next run will replace it.
+
+     All 3 listings are in this state right now (read 04:38 UTC, 1 Sep 2026), so
+     it leads the match items rather than sitting under them. */
+  if (!invErr && unratedRows.length) {
+    const due = nextScrape();
+    /* A row that predates the columns altogether, as against one whose rating
+       simply cannot be read. The two get different sentences because they are
+       different facts. */
+    const legacyRows = unratedRows.filter(c => !c.title && !c.offer).length;
+    const noTitle = unratedRows.filter(c => !c.title).length;
+    const noOffer = unratedRows.filter(c => !c.offer).length;
+    const unratedMissing = [
+      noTitle ? `${num(noTitle)} of them ${plural(noTitle, 'carries', 'carry')} no listing title` : '',
+      noOffer ? `${num(noOffer)} ${plural(noOffer, 'records', 'record')} no offer name` : '',
+    ].filter(Boolean);
+    push({
+      sev: unratedRows.length === live.length ? 'HOT' : 'WARM',
+      icon: 'help_center',
+      titleHtml: `${unratedRows.length === live.length ? `All ${num(live.length)}` : `${num(unratedRows.length)} of ${num(live.length)}`} ${legacyRows === unratedRows.length
+        ? `${plural(unratedRows.length, 'comparison predates', 'comparisons predate')} the fix that makes a match checkable`
+        : `${plural(unratedRows.length, 'comparison carries', 'comparisons carry')} no usable match rating`}`,
+      /* What is missing is counted rather than asserted. A row reaches this
+         branch two ways — by predating the provenance columns entirely, or by
+         carrying a match_quality this screen has no words for — and the second
+         kind does have a listing title. Saying it does not would be the same
+         species of confident wrong sentence this round exists to remove. */
+      detailHtml: esc(`${legacyRows === unratedRows.length
+        ? `${plural(unratedRows.length, 'This listing carries', 'These listings carry')} no listing title, no offer name and no match quality: the scraper began recording all three on 1 Sep 2026 and has not re-scraped ${plural(unratedRows.length, 'it', 'them')} since.`
+        : `The match quality on ${plural(unratedRows.length, 'this listing', 'these listings')} is missing or holds a value this screen has no words for${unratedMissing.length ? `, and ${unratedMissing.join(' and ')}` : ''}.`} How well each price is tied to our car was therefore never established — unrated, which is neither weak nor confirmed, and nothing on this screen can say which it would have turned out to be. ${unratedRows.some(c => !c.offer) ? `${PRICE_UNCONSTRAINED} ` : ''}The gaps below are a true subtraction of two stored numbers and are shown as that and no more.`)
+        + ` The next scheduled run is ${esc(dt(due.toISOString()))}, ${esc(waitWord(due - Date.now()))}, and will rewrite ${plural(unratedRows.length, 'it', 'them')} with a rated match — on the Fortuner page that changes which offer the price is taken from, and with it the direction of the gap.`,
+      agoHtml: '<span class="t-warm">never rated</span>',
+      noHook: NO_SCRAPE_HOOK,
+      actLabel: 'Show them',
+      act: () => focusFilter(counts.UNRATED && counts.UNRATED < counts.ALL ? 'UNRATED' : 'ALL', '', 'oldest'),
+    });
+  }
+
+  /* The scraper's own `weak`: a real price on a page that ties it to nothing of
+     ours. These rows are deliberately kept — a cheap page is worth knowing
+     about — and deliberately silent: no percentage, no direction, no place in
+     either market KPI. The alert exists so that silence is a stated decision
+     rather than a row the reader assumes was simply level. */
+  if (!invErr && untied.length) {
+    push({
+      sev: 'HOT', icon: 'link_off',
+      titleHtml: `${num(untied.length)} scraped ${plural(untied.length, 'price is', 'prices are')} not tied to any car of ours`,
+      detailHtml: esc(`The scraper rated ${plural(untied.length, 'this match', 'these matches')} weak: it read the page, found no offer naming our model, and recorded the figure as context. ${untied.map(c => `${c.label} — ${c.note || 'no offer on the page named our model'}`).join('; ')}. No gap, percentage or market position is drawn from ${plural(untied.length, 'it', 'them')} anywhere on this screen, and ${plural(untied.length, 'it is', 'they are')} excluded from "Above their page price" and "Below their page price" for the same reason. What ${plural(untied.length, 'it supports', 'they support')} is that a page quotes that figure for something, which is worth seeing and is not a comparison.`),
+      agoHtml: '<span class="t-hot">no tie to our car</span>',
+      actLabel: 'Show them',
+      act: () => focusFilter('UNTIED', ''),
+    });
+  }
+
   /* The claim this screen used to make and could not support. It is raised as
      an alert rather than left in a tooltip because it qualifies every AED figure
      on the page: a gap is only a gap if the two cars are the same car. */
@@ -1462,11 +1889,15 @@ SCREENS.competitors = async host => {
           ? `${num(unconfirmed.length)} of ${num(gapRows.length)} ${plural(gapRows.length, 'gap is', 'gaps are')} a model-name match, not a make match`
           : 'Every gap here is matched on the model name',
       detailHtml: esc((circularRows.length
-        ? `${MODEL_IS_OURS} The match therefore cannot miss and confirms nothing, on ${circularRows.length === gapRows.length ? 'every gap here' : `${circularRows.length} of them`}. `
+        ? `${MODEL_IS_OURS} The match therefore cannot miss and confirms nothing, on ${circularRows.length === gapRows.length ? 'every gap here' : `${circularRows.length} of them`}. ${circularRows.every(c => !c.title) ? `None of ${plural(circularRows.length, 'it', 'them')} carries a listing title either, so there is nothing of the page's own wording to check ours against — the scraper began storing that on 1 Sep 2026. ` : ''}`
         : '')
-        + `${NO_MAKE} A gap below therefore says "a car called this costs that much elsewhere", not "the same car costs that much elsewhere". ${PRICE_UNCONSTRAINED}`
+        + `${NO_MAKE} A gap below therefore says "a car called this costs that much elsewhere", not "the same car costs that much elsewhere".`
+        /* The price sentence is read off the rows now rather than asserted. It
+           was a constant here, and a constant would go on describing the old
+           scraper long after it stopped behaving that way. */
+        + (unratedRows.length ? ` ${PRICE_UNCONSTRAINED}` : ` ${PRICE_RANKED}`)
         + (oemRows.length
-          ? ` ${oemRows.length === gapRows.length ? 'Every one of these pages is' : `${oemRows.length} of these pages are`} a manufacturer's own site (${[...new Set(oemRows.map(c => c.name))].slice(0, 3).join(', ')}), so the figure being compared against is a factory list price for a new car — not a rival showroom's price for the used unit on our lot.`
+          ? ` ${oemRows.length === gapRows.length ? 'Every one of these pages is' : `${oemRows.length} of these pages are`} a manufacturer's own site (${[...new Set(oemRows.map(c => c.host || c.name))].slice(0, 3).join(', ')})${oemRows.every(c => !c.kind) ? ', read off the domain rather than recorded' : ''}, so the figure being compared against is a factory list price for a new car — not a rival showroom's price for the used unit on our lot.`
           : '')
         + (mixedRows.length
           ? ` ${mixedRows.length} of them carry a model name our own stock uses across more than one manufacturer — ${[...new Set(mixedRows.map(c => c.label))].slice(0, 4).join(', ')} — so those are the likeliest to be pricing us against somebody else's car.`
@@ -1504,14 +1935,30 @@ SCREENS.competitors = async host => {
      one hit is reported, because a match on a name is a weaker claim than a
      match on a key and the operator should know which they are looking at. */
   const byId = new Map(); live.forEach(c => { if (c.id != null) byId.set(String(c.id), c); });
-  /* The view files one row per SNAPSHOT, because the table it reads is
-     append-only — five "toyota.ae is AED 23,100 cheaper" alerts on 1 Sep 2026,
-     all of them the same Fortuner listing scraped five times. Superseded ids
-     still resolve here, by vehicle name, and are labelled as what they are so
-     the strip does not read as five separate findings. */
+  /* This used to file one row per SNAPSHOT and put five identical
+     "toyota.ae is AED 23,100 cheaper" alerts in the strip, all of them the same
+     Fortuner listing scraped five times. The view's undercut arm now carries
+     its own `distinct on (competitor, model)` and files one row per listing —
+     it returned exactly one for this screen at 04:38 UTC on 1 Sep 2026, and its
+     `ref` is the live row id, so it resolves by key.
+
+     The superseded map is kept anyway. It costs one pass over the log and it is
+     what stops an alert that was raised before that change, or against a row a
+     run has superseded since the strip loaded, from resolving to nothing. It is
+     empty when the log did not load, in which case such an alert simply fails
+     to resolve and says so, which is the existing unmatched path. */
   const supersededIds = new Map();
-  historyOf.forEach(rowsOfListing => {
-    rowsOfListing.slice(1).forEach(h => { if (h.id != null) supersededIds.set(String(h.id), rowsOfListing[0]); });
+  const liveByKey = new Map(live.map(c => [listingKey(c), c]));
+  historyOf.forEach((hs, k) => {
+    const current = liveByKey.get(k);
+    if (!current) return;
+    /* Every log row for this listing EXCEPT the one the view returned. Compared
+       by id rather than by position, so this stays right if the view's pick and
+       the newest dated snapshot are not the same row — which is exactly the
+       NULLS-FIRST case the collapse above exists to notice. */
+    hs.forEach(h => {
+      if (h.id != null && String(h.id) !== String(current.id)) supersededIds.set(String(h.id), current);
+    });
   });
   const byStock = new Map();
   live.forEach(c => c.units.forEach(u => { const k = String(uRef(u)); if (k && !byStock.has(k)) byStock.set(k, c); }));
@@ -1550,8 +1997,14 @@ SCREENS.competitors = async host => {
        This screen's entire thesis is that a stored gap describes a price we may
        no longer ask, so the alert is re-checked against the live list price and
        the two are shown together rather than the older one being trusted. */
-    if (c && c.delta != null) {
+    if (c && c.concludable) {
       extra.push(`Against the list price we ask today the gap is ${esc(aedSigned(c.delta))}.`);
+    } else if (c && c.delta != null) {
+      /* The view's undercut arm keys on `price_diff_aed < 0` and does not read
+         `match_quality`, so it will keep filing these over a price the scraper
+         itself rated as tied to nothing of ours. This screen will not restate
+         that figure — restating it is endorsing it. */
+      extra.push(`This screen will not restate that gap: the scraper rated the match weak — ${esc(c.note || 'no offer on that page named our model')} — so the figure behind this alert is a subtraction between two cars nothing has shown to be the same car. The view raises these on the stored price difference alone and does not read match quality.`);
     } else if (c) {
       extra.push('This screen cannot re-check that figure: '
         + (c.unmatched ? 'no unit on the lot carries this model name.'
@@ -1573,10 +2026,18 @@ SCREENS.competitors = async host => {
        name is a page hostname, and on an OEM domain the figure is a new-car
        list price. The view is not this screen's to change, so the correction is
        appended rather than the sentence being rewritten. */
-    if (c && (c.oem || c.echoed)) {
+    if (c && (c.isOem || c.echoed || c.unrated)) {
+      const src = c ? sourceWords(c) : null;
       extra.push([
-        c.oem ? `"${esc(c.name)}" is ${esc(titleCase(c.oem))}'s own website, not a rival dealership, and the figure behind that sentence is the lowest price on that page — a factory list price for a new car.` : '',
-        c.echoed ? 'The two cars were matched on a model string the scraper copied from our own inventory row, so nothing here establishes that they are the same car.' : '',
+        c.isOem && src
+          ? `"${esc(c.host || c.name)}" is ${esc(src.what)}${src.sure ? '' : ' (read off the domain, not recorded)'}, not a rival dealership: the figure behind that sentence is ${esc(src.price)}.`
+          : '',
+        c.echoed && !c.title
+          ? 'The two cars were matched on a model string the scraper copied from our own inventory row, and this row carries no listing title to check it against, so nothing here establishes that they are the same car.'
+          : '',
+        c.unrated
+          ? 'It was raised on a row that predates the 1 Sep 2026 provenance fix, so how well its price is tied to our car was never rated.'
+          : '',
       ].filter(Boolean).join(' '));
     }
     push({
@@ -1607,7 +2068,7 @@ SCREENS.competitors = async host => {
         + (blocked.length
           ? `${[...new Set(blocked.map(c => `"${c.name}"`))].join(', ')} ${plural(blocked.length, 'is the heading', 'are the headings')} of a bot-detection page rather than a dealership: the scraper was blocked, stored the block page as a competitor, and never read the listing it was sent to read — so this feed is quietly missing whatever ${plural(blocked.length, 'that run was', 'those runs were')} meant to collect. `
           : '')
-        + `${junkPriced ? 'They are excluded' : 'None of them carries a price, and all are excluded'} from every count, gap and comparison on this screen, including "Listings priced" above — of the ${all.length} rows returned, ${snapshots.length} are usable snapshots and they describe ${live.length} distinct ${plural(live.length, 'listing', 'listings')}.`),
+        + `${junkPriced ? 'They are excluded' : 'None of them carries a price, and all are excluded'} from every count, gap and comparison on this screen, including "Listings priced" above — v_competitor_latest returned ${all.length} ${plural(all.length, 'listing', 'listings')} and ${live.length} of them ${plural(live.length, 'is', 'are')} usable.`),
       agoHtml: newestJunk
         ? `<span title="${esc(dt(newestJunk.at))}">written ${esc(ago(newestJunk.at))}</span>`
         : '<span class="t-muted">no scrape date</span>',
@@ -1698,13 +2159,18 @@ SCREENS.competitors = async host => {
   const notes = [
     attnErr
       ? `v_needs_attention did not load (${esc(attnErr.message)}), so alerts raised centrally for this screen — the nightly undercut check among them — are missing from this list entirely. The ${num(localCount)} above ${plural(localCount, 'was', 'were')} derived here from the ${num(live.length)} ${plural(live.length, 'listing', 'listings')} this screen loaded.`
-      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from ${num(live.length)} ${plural(live.length, 'listing', 'listings')} (the newest snapshot of each${supersededCount ? `, out of ${num(snapshots.length)} usable rows` : ''}${junk.length ? `; ${num(junk.length)} of the ${num(all.length)} returned set aside as ${plural(junk.length, 'a scrape failure', 'scrape failures')}` : ''}) and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(live.length)} ${plural(live.length, 'listing', 'listings')} v_competitor_latest returned${junk.length ? ` (${num(junk.length)} more set aside as ${plural(junk.length, 'a scrape failure', 'scrape failures')})` : ''} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
     unresolved
       ? `${num(unresolved)} of the view's ${plural(unresolved, 'alert', 'alerts')} could not be matched to a row loaded here, so ${plural(unresolved, 'it opens', 'they open')} nothing.`
       : '',
     capped
-      ? `The competitors read was capped at ${num(ROW_LIMIT)} rows, so every count on this screen — these alerts included — may be short.`
+      ? `The listing read was capped at ${num(ROW_LIMIT)} rows, so every count on this screen — these alerts included — may be short.`
       : '',
+    logErr
+      ? `The append-only log did not load (${esc(logErr.message)}). No figure here depends on it — every count comes from v_competitor_latest — but the drawer cannot show what a listing's price has done over time, and an alert raised against a superseded scrape row will not resolve to its listing.`
+      : logCapped
+        ? `The history read was capped at ${num(ROW_LIMIT)} log rows, so a drawer's scrape history may be shorter than the listing's real one. No count on this screen is affected.`
+        : '',
     invErr
       ? 'Inventory did not load, so the check for stock with no market reference could not run and is absent from this list rather than empty.'
       : '',
@@ -1787,9 +2253,18 @@ SCREENS.competitors = async host => {
     ALL: live.length, ABOVE: above.length, BELOW: belowMkt.length,
     LEVEL: level.length, NOSTOCK: notStocked.length,
     STALE: notRefreshed.length, NOPRICE: pricelessRows.length,
-    UNNAMED: unconfirmed.length, BROKEN: junk.length,
+    UNNAMED: unconfirmed.length, UNTIED: untied.length, UNRATED: unratedRows.length,
+    BROKEN: junk.length,
   };
-  const offered = Object.entries(FILTERS).filter(([k]) => ALWAYS_SHOWN.has(k) || counts[k] > 0);
+  const offered = Object.entries(FILTERS)
+    .filter(([k]) => ALWAYS_SHOWN.has(k) || counts[k] > 0)
+    /* A chip that selects every row is not a filter, it is a label — and this
+       screen's own rule is that a control which does nothing does not get
+       rendered. UNRATED is the one that can legitimately match the whole table
+       (it matches all three listings today), so it is offered only where it
+       would actually narrow something; the alert that would have opened it
+       falls back to ALL and says the count in its own words. */
+    .filter(([k]) => k !== 'UNRATED' || counts.UNRATED < counts.ALL);
 
   const visible = () => {
     const q = f.q.trim().toLowerCase();
@@ -1805,7 +2280,11 @@ SCREENS.competitors = async host => {
       if (f.view === 'STALE' && !staleSet.has(c)) return false;
       if (f.view === 'NOPRICE' && c.price != null) return false;
       if (f.view === 'UNNAMED' && !(c.delta != null && c.makeUnconfirmed)) return false;
-      if (q && ![c.name, c.label, c.model].map(low).join(' ').includes(q)) return false;
+      if (f.view === 'UNTIED' && !(c.delta != null && !c.concludable)) return false;
+      if (f.view === 'UNRATED' && !c.unrated) return false;
+      /* The page's own title and hostname are searchable too — they are now the
+         fields somebody would actually recognise a listing by. */
+      if (q && ![c.name, c.host, c.label, c.model, c.title, c.offer].map(low).join(' ').includes(q)) return false;
       return true;
     });
   };
@@ -1828,12 +2307,20 @@ SCREENS.competitors = async host => {
      model-name match, because there is nothing else to match on — and the second
      is how far that is from being the same car. Both carry the full sentence in
      their tooltip; the drawer says it in full. */
+  /* Three chips, and they answer three different questions in a fixed order:
+     what our stock was joined on, how far that join is from being the same car,
+     and — the one the 1 Sep provenance columns added — how well the PRICE on
+     the row is tied to our unit. The third is the scraper's own rating and is
+     never re-derived here. */
   const matchChip = c => {
     const b = BASIS[c.basis] || BASIS.none;
     const r = c.risk ? RISK[c.risk] : null;
     const rWhy = r ? r.text + (c.reusable && c.risk !== 'both' ? REUSABLE_NOTE : '') : '';
+    const q = QUALITY[c.quality];
     return `<span class="chip" title="${esc(b.why)}">${esc(b.chip)}</span>
       ${r ? `<span class="chip ${r.tone ? `t-${r.tone}` : ''}" title="${esc(rWhy)}">${esc(r.chip)}</span>` : ''}
+      <span class="chip ${q.tone ? `t-${q.tone}` : ''}" title="${esc(`${q.text} ${c.note ? `The scraper's own note: "${c.note}".` : ''}`)}">${esc(q.chip)}</span>
+      ${c.note ? `<div class="cell-sub" style="white-space:normal">${esc(c.note)}</div>` : ''}
       ${c.soldOnly ? '<div class="cell-sub">Only a sold unit carries this model name</div>' : ''}
       ${c.conflictNote ? `<div class="cell-sub t-warm" style="white-space:normal">${esc(c.conflictNote)}</div>` : ''}`;
   };
@@ -1842,7 +2329,16 @@ SCREENS.competitors = async host => {
      of gaps where the dates are one uniform grey invites the reader to treat a
      six-week-old number the same as this morning's. */
   const ageCell = c => {
-    if (!dated(c)) return '<div class="cell-sub t-warm" title="This row carries no scrape timestamp, so its age is unknown.">no scrape date</div>';
+    if (!dated(c)) {
+      /* See the collapse comment: v_competitor_latest orders `scraped_at DESC`
+         with no NULLS LAST, so an undated snapshot outranks every dated one and
+         becomes the listing's representative. Where the log shows that happened
+         the row says so, rather than letting a listing scraped this morning
+         read as one whose age is simply unknown. */
+      return c.viewPickedUndated
+        ? `<div class="cell-sub t-hot" title="${esc(`The log holds ${c.datedSnapshots} dated ${plural(c.datedSnapshots, 'snapshot', 'snapshots')} of this listing, but v_competitor_latest returned an undated one: it orders scraped_at DESC and Postgres sorts nulls first under DESC, so an undated row wins. The price beside it may not be the newest one collected.`)}">no scrape date · the view picked an undated row over ${num(c.datedSnapshots)} dated ${plural(c.datedSnapshots, 'one', 'ones')}</div>`
+        : '<div class="cell-sub t-warm" title="This row carries no scrape timestamp, so its age is unknown.">no scrape date</div>';
+    }
     const cls = staleSet.has(c) ? 't-hot' : stale ? 't-warm' : 't-muted';
     const why = staleSet.has(c)
       ? `Collected ${dt(c.at)}${c.snapshotCount > 1 ? ` — the newest of ${c.snapshotCount} snapshots of this listing` : ''}. That trails the newest row in the table by more than ${REFRESH_LAG_HOURS} h, so the last scrape did not cover this listing.`
@@ -1851,19 +2347,37 @@ SCREENS.competitors = async host => {
   };
 
   const cols = [
-    /* "Source", not "Competitor". The column holds `new URL(page).hostname`,
-       which is a page this scrape happened to read — today always toyota.ae,
-       the manufacturer's own new-car site. Headed "Competitor" it read to a rep
-       as a rival showroom undercutting us on the same used unit. */
-    { label: 'Source', strong: true, render: c => `${esc(c.name || 'Unnamed source')}
-        ${c.oem ? `<div class="cell-sub t-warm" style="white-space:normal" title="${esc(`The hostname is ${titleCase(c.oem)}'s own domain, so the price beside it is a factory list price for a new car — not a rival dealership's price for a used unit like ours.`)}">${esc(titleCase(c.oem))}'s own site — a new-car list price</div>` : ''}
+    /* "Source", not "Competitor". The hostname is kept visible — it is the one
+       thing a reader can go and check — and what KIND of page it is now comes
+       from `source_kind` where the row records it and from the domain where it
+       does not, with the two never presented as the same claim. Headed
+       "Competitor" over an OEM's list page, this column read to a rep as a
+       rival showroom undercutting us on the same used unit. */
+    { label: 'Source', strong: true, render: c => {
+      const src = sourceWords(c);
+      return `${esc(c.host || c.name || 'Unnamed source')}
+        ${src ? `<div class="cell-sub ${src.tone ? `t-${src.tone}` : ''}" style="white-space:normal" title="${esc(`${src.what}: the price beside it is ${src.price}.${src.sure ? '' : ' The scraper did not record what kind of page this is; this is read off the domain.'}`)}">${esc(src.what)}${src.sure ? '' : ' (read off the domain)'}</div>` : ''}
         ${c.fault ? `<div class="cell-sub t-hot" style="white-space:normal" title="${esc(c.fault.why)}">Not a seller — ${esc(c.fault.kind === 'interstitial' ? 'a bot-detection page the scraper stored as a competitor' : 'a placeholder the scraper wrote instead of a name')}</div>` : ''}
-        ${ageCell(c)}` },
+        ${ageCell(c)}`;
+    } },
+    /* Our model string, and under it the page's own words for what IT is
+       selling. Those two lines are the comparison; until 1 Sep 2026 the second
+       did not exist and this column showed our string twice without saying so. */
     { label: 'Vehicle', render: c => `${esc(c.label)}
+        ${c.title
+          ? `<div class="cell-sub" style="white-space:normal" title="${esc(`The page's own title for what it is selling. Our model string is the line above; this is the field that lets the match fail.`)}">their page: ${esc(c.title)}</div>`
+          : `<div class="cell-sub t-warm" style="white-space:normal" title="${esc(NO_TITLE)}">no listing title recorded</div>`}
         ${c.units.length > 1 ? `<div class="cell-sub">${num(c.units.length)} comparable units in stock</div>` : ''}` },
-    { label: 'Lowest on their page', align: 'r', render: c => (c.price == null
-      ? '<span class="t-muted" title="This row has no competitor price recorded.">—</span>'
-      : aed(c.price)) },
+    /* Was "Lowest on their page", which is only what the figure is on a row the
+       old scraper wrote. On a rated row it is a named offer, so the header says
+       "Their price" and the cell says which offer and in what condition. */
+    { label: 'Their price', align: 'r', render: c => {
+      if (c.price == null) return '<span class="t-muted" title="This row has no competitor price recorded.">—</span>';
+      return `${aed(c.price)}
+        ${c.offer
+          ? `<div class="cell-sub" style="white-space:normal" title="${esc(PRICE_RANKED)}">${esc(c.offer)}${c.cond && c.cond !== 'unknown' ? ` · ${esc(c.cond)}` : ' · condition not stated'}</div>`
+          : `<div class="cell-sub t-warm" style="white-space:normal" title="${esc(PRICE_UNCONSTRAINED)}">lowest figure on the page — no offer recorded</div>`}`;
+    } },
     { label: 'Our list price', align: 'r', render: c => {
       if (invErr) return '<span class="t-muted" title="Inventory did not load.">—</span>';
       if (c.unmatched) return `<span class="t-muted" title="${esc(c.conflictNote || 'No unit on the lot carries this model name. Model name is the only thing either table records, so there is nothing looser to fall back on.')}">not stocked</span>`;
@@ -1880,7 +2394,9 @@ SCREENS.competitors = async host => {
   const card = el('div', 'card flush');
   card.innerHTML = `
     <div class="card-head"><div><div class="card-title">Price comparison</div>
-      <div class="card-sub" style="white-space:normal">Each listing's newest scrape against the cheapest unit we hold whose <strong>model name</strong> matches. Both sides of that match are weak and in opposite ways, so read the Match column before trusting a gap: the model text stored here is our own, written back by the scraper${circularRows.length ? '' : ' on every row it has produced so far'}, so the name cannot fail to match; and their figure is the lowest AED price over 20,000 found anywhere on the page, with no year, trim, mileage or condition matched${oemRows.length ? ` — and ${oemRows.length === gapRows.length ? (gapRows.length === 1 ? 'that page is' : 'every one of those pages is') : `${oemRows.length} of those pages ${plural(oemRows.length, 'is', 'are')}`} a manufacturer's own site, so the number is a factory list price for a new car` : ''}. A positive gap means we are asking more than the page quotes${stale && daysOld != null ? `, against a price collected ${esc(dayWord(daysOld))} ago` : ''}.</div></div></div>
+      <div class="card-sub" style="white-space:normal">One row per listing, from <span class="mono">v_competitor_latest</span>, against the cheapest unit we hold whose <strong>model name</strong> matches. ${unratedRows.length === live.length
+      ? `Read the Match column before trusting any gap here: ${plural(live.length, 'this listing predates', 'all of these listings predate')} the 1 Sep 2026 provenance fix, so ${plural(live.length, 'it carries', 'they carry')} no listing title of the page’s own to check our model string against, and ${plural(live.length, 'its', 'their')} figure is the lowest AED price over 20,000 found anywhere on the page — no year, trim, mileage or condition matched. How well ${plural(live.length, 'it is', 'they are')} tied to our car was never rated, which is not the same as being rated badly.`
+      : `Each row states what it compared: our model string against the page’s own listing title, the price taken from a named offer, and the scraper’s own rating of how well that offer ties to our unit.${untied.length ? ` ${num(untied.length)} of them ${plural(untied.length, 'is', 'are')} rated weak — nothing on the page tied the price to our car — so ${plural(untied.length, 'it shows', 'they show')} the figure as context and no gap is drawn from ${plural(untied.length, 'it', 'them')}.` : ''}${unratedRows.length ? ` ${num(unratedRows.length)} ${plural(unratedRows.length, 'predates', 'predate')} the fix and ${plural(unratedRows.length, 'is', 'are')} unrated.` : ''}`}${oemRows.length ? ` ${oemRows.length === gapRows.length ? (gapRows.length === 1 ? 'That page is' : 'Every one of those pages is') : `${num(oemRows.length)} of those pages ${plural(oemRows.length, 'is', 'are')}`} a manufacturer’s own site, so the number is a new-car list price rather than a rival’s asking price.` : ''} A positive gap means we are asking more than the page quotes${stale && daysOld != null ? `, against a price collected ${esc(dayWord(daysOld))} ago` : ''}.</div></div></div>
     <div class="toolbar">
       <div class="seg" id="cSeg" role="group" aria-label="Filter by where our price sits">
         ${offered.map(([k, l]) => `<button data-v="${k}">${esc(l)} · ${num(counts[k])}</button>`).join('')}
@@ -1951,6 +2467,12 @@ SCREENS.competitors = async host => {
     const disagrees = c.storedOur != null && c.ourPrice != null && c.storedOur !== c.ourPrice;
     const basis = BASIS[c.basis] || BASIS.none;
     const risk = c.risk ? RISK[c.risk] : null;
+    /* Drives the provenance block below: five rows answering, in order, what
+       our string was held against, which offer the price came from and in what
+       condition, what kind of page it came off, and how the scraper rated the
+       tie. Before 1 Sep 2026 none of those fields existed and this drawer
+       filled the gaps in from assumptions instead. */
+    const quality = QUALITY[c.quality];
     const riskWhy = risk ? risk.text + (c.reusable && c.risk !== 'both' ? REUSABLE_NOTE : '') : '';
     const best = c.pricedUnits.length
       ? c.pricedUnits.reduce((a, u) => (uPrice(u) < uPrice(a) ? u : a))
@@ -1960,7 +2482,7 @@ SCREENS.competitors = async host => {
     openDrawer(`
       <div class="drawer-head">
         <div style="flex:1"><h2 style="font-size:18px">${esc(c.label)}</h2>
-          <div class="cell-sub">${c.fault ? `<span class="t-hot">${esc(c.name)} — not a dealership</span>` : esc(c.name || 'Unnamed source')} · ${c.at ? `scraped ${esc(ago(c.at))}` : 'no scrape date recorded'}</div></div>
+          <div class="cell-sub">${c.fault ? `<span class="t-hot">${esc(c.name)} — not a dealership</span>` : esc(c.host || c.name || 'Unnamed source')} · ${c.at ? `scraped ${esc(ago(c.at))}` : 'no scrape date recorded'}</div></div>
         <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="drawer-body">
@@ -1979,6 +2501,12 @@ SCREENS.competitors = async host => {
             : c.soldOnly ? 'Every unit carrying this model name is sold, so we are not asking a price for one — no gap is computed from a car that is not for sale. The units are listed below for what we got for them.'
               : c.price == null ? 'This row has no competitor price, so no gap can be calculated.'
                 : 'The matching unit has no list price on record, so no gap can be calculated.')}</div></div>`
+        /* The scraper rated this match weak, so this banner — the sentence a rep
+           would repeat out loud — states the refusal instead of the gap. Both
+           figures are still below in the key/value list; what is withheld is the
+           conclusion, because the page supports none. */
+        : !c.concludable ? `<div class="banner hot"><span class="material-symbols-outlined">link_off</span>
+          <div>No comparison is drawn from this row. ${esc(QUALITY[c.quality].text)}${c.note ? ` The scraper's own note: "${esc(c.note)}".` : ''} Their ${esc(aed(c.price))} and our ${esc(c.ourPrice == null ? 'unpriced unit' : aed(c.ourPrice))} are both shown below, and the difference between them is not a statement about our pricing.</div></div>`
           : `<div class="banner ${c.delta > 0 ? 'hot' : c.delta < 0 ? 'info' : 'warm'}">
               <span class="material-symbols-outlined">${c.delta > 0 ? 'trending_up' : c.delta < 0 ? 'trending_down' : 'trending_flat'}</span>
               <div>${c.delta === 0
@@ -1986,23 +2514,63 @@ SCREENS.competitors = async host => {
                 /* The sign already lives in the words "more"/"less", so the figure
                    itself is stated unsigned here; the columns above keep aedSigned(). */
                 : `We are asking <strong>${esc(aed(Math.abs(c.delta)))}</strong>${c.deltaPct == null ? '' : ` (${esc(pct(Math.abs(c.deltaPct)))})`}
-                   ${c.delta > 0 ? 'more than' : 'less than'} the lowest price on ${esc(c.name || 'this page')} for something carrying the same model name${c.makeUnconfirmed ? ' — not, as far as this data can say, for the same car' : ''}.
-                   ${c.oem ? `${esc(c.name)} is ${esc(titleCase(c.oem))}'s own site, so that figure is a factory list price for a new car, not a rival showroom's price for a used unit like ours.` : ''}`}</div></div>`}
+                   ${c.delta > 0 ? 'more than' : 'less than'} ${c.offer ? `the "${esc(c.offer)}" offer on` : 'the lowest price on'} ${esc(c.host || c.name || 'this page')}${c.title ? `, which that page lists as "${esc(c.title)}"` : ' for something carrying the same model name'}${
+                     /* Two different uncertainties, and they must not shout
+                        over each other. On an `exact_year` row the page itself
+                        named our model year, so "not, as far as this data can
+                        say, for the same car" reads as a flat contradiction of
+                        the chip beside it — what is actually still open there
+                        is the manufacturer, because neither table records one.
+                        On every weaker rating the blunt clause is the right
+                        one and is kept. */
+                     !c.makeUnconfirmed ? ''
+                       : c.quality === 'exact_year' ? ' — though neither table records a manufacturer, so a model name shared across makes would still go unnoticed'
+                         : ' — not, as far as this data can say, for the same car'}.
+                   ${c.unrated ? 'This comparison predates the 1 Sep 2026 provenance fix, so how well that price is tied to our car was never rated — it is a true subtraction of two stored numbers and nothing stronger.' : ''}
+                   ${(() => { const src = sourceWords(c); return c.isOem && src ? `${esc(c.host || c.name)} is ${esc(src.what)}${src.sure ? '' : ' (read off the domain, not recorded)'}, so that figure is ${esc(src.price)}.` : ''; })()}`}</div></div>`}
 
         <dl class="kv">
-          <dt>Lowest price on their page</dt><dd class="num">${c.price == null ? '—' : aed(c.price)}</dd>
+          <dt>${c.offer ? 'Their price (from the offer below)' : 'Lowest price on their page'}</dt><dd class="num">${c.price == null ? '—' : aed(c.price)}</dd>
           <dt>Our list price</dt><dd class="num">${c.ourPrice == null ? '—' : aed(c.ourPrice)}</dd>
-          <dt>Gap (ours − theirs)</dt><dd class="num">${c.delta == null ? '—' : aedSigned(c.delta)}</dd>
-          <dt>Matched on</dt><dd>${esc(basis.chip)}${risk ? ` · ${esc(risk.chip)}` : ''}</dd>
+          <dt>Gap (ours − theirs)</dt><dd class="num">${c.delta == null ? '—'
+            /* Shown, because it is a real subtraction, and immediately labelled
+               as not a conclusion — the drawer is the one place both figures
+               and the reason they may not be compared can sit together. */
+            : c.concludable ? aedSigned(c.delta)
+              : `<span class="t-muted">${esc(aedSigned(c.delta))} <span class="cell-sub">not a comparison</span></span>`}</dd>
+          <dt>Matched on</dt><dd>${esc(basis.chip)}${risk ? ` · ${esc(risk.chip)}` : ''} · ${esc(quality.chip)}</dd>
           <dt>Scraped</dt><dd>${c.at ? `${esc(dt(c.at))} <span class="cell-sub">· ${esc(ago(c.at))}</span>` : '—'}</dd>
         </dl>
+
+        <div style="margin-top:20px"><div class="label-caps">What was compared with what</div>
+          <dl class="kv" style="margin-top:8px">
+            <dt>Our model text</dt><dd>${esc(c.model || '—')}</dd>
+            <dt>Their listing title</dt><dd>${c.title
+              ? esc(c.title)
+              : `<span class="t-warm">not recorded</span> <span class="cell-sub" style="white-space:normal">${esc(NO_TITLE)}</span>`}</dd>
+            <dt>Priced from</dt><dd>${c.offer
+              ? `${esc(c.offer)}${c.cond ? ` <span class="cell-sub">· the page states this offer is ${esc(c.cond)}</span>` : ' <span class="cell-sub">· the page did not state new or used</span>'}`
+              : `<span class="t-warm">no offer recorded</span> <span class="cell-sub" style="white-space:normal">${esc(PRICE_UNCONSTRAINED)}</span>`}</dd>
+            <dt>Source</dt><dd>${esc(c.host || c.name || '—')}${(() => {
+              const src = sourceWords(c);
+              return src
+                ? ` <span class="cell-sub ${src.tone ? `t-${src.tone}` : ''}">· ${esc(src.what)}${src.sure ? '' : ', read off the domain rather than recorded'}</span>`
+                : ' <span class="cell-sub t-warm">· kind not recorded, and the hostname does not name a manufacturer</span>';
+            })()}</dd>
+            <dt>Match quality</dt><dd><span class="${quality.tone ? `t-${quality.tone}` : ''}">${esc(quality.chip)}</span></dd>
+          </dl>
+          <div class="cell-sub ${quality.tone ? `t-${quality.tone}` : ''}" style="white-space:normal;margin-top:8px">${esc(quality.text)}</div>
+          ${c.note ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">The scraper's own note on this match: ${esc(c.note)}</div>` : ''}
+        </div>
 
         <div style="margin-top:16px"><div class="label-caps">What this match is</div>
           <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(basis.why)}</div>
           ${risk ? `<div class="cell-sub ${risk.tone ? `t-${risk.tone}` : ''}" style="white-space:normal;margin-top:6px">${esc(riskWhy)}</div>` : ''}
           ${c.conflictNote ? `<div class="cell-sub t-warm" style="white-space:normal;margin-top:6px">${esc(c.conflictNote)}</div>` : ''}
           ${c.theirMake || c.ourMakes.length ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">Manufacturer${c.theirMake && c.ourMakes.length ? 's' : ''} read out of the model text${c.theirMake ? ` — theirs names ${esc(titleCase(c.theirMake))}` : ''}${c.ourMakes.length ? `${c.theirMake ? ',' : ' —'} ours names ${esc(c.ourMakes.map(titleCase).join(', '))}` : ''}. Inferred from free text, not from a make column: there is none on either table.${c.echoed ? ' And on this row those are one string read twice — the scraper wrote our own model text back out — so their agreement is not evidence of anything.' : ''}</div>` : ''}
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">The scrape stores a page hostname, a model string, a price and a date, and nothing else. ${c.oem ? `${esc(c.name)} is ${esc(titleCase(c.oem))}'s own site` : `"${esc(c.name || 'this source')}" is the hostname of the page that was read`} — it is not a dealership this listing belongs to, there is no listing contact, no stock number and no way from here to see what the page was actually selling.</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">${c.title
+            ? `The scrape stores a hostname, our model string, the page's own listing title, the offer the price came from, a price, a date and its own rating of the match. ${esc(c.host || c.name || 'This source')} is the page that was read`
+            : `This row stores a page hostname, a model string, a price and a date, and nothing else — the listing title, the offer and the match rating arrived with the 1 Sep 2026 fix and this row predates it. "${esc(c.host || c.name || 'this source')}" is the hostname of the page that was read`}: there is still no listing contact, no stock number on their side, and no way from here to open the page and see it for yourself.</div>
         </div>
 
         <div style="margin-top:20px"><div class="label-caps">Comparable stock${c.units.length ? ` · ${num(c.units.length)}` : ''}</div>
@@ -2024,7 +2592,7 @@ SCREENS.competitors = async host => {
         </div>
 
         ${c.snapshotCount > 1 ? `<div style="margin-top:20px"><div class="label-caps">Scrape history · ${num(c.snapshotCount)}</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">The scrape inserts rather than upserting, so this listing carries one row per run that covered it. The comparison above uses the newest; the rest are counted nowhere else on this screen.</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:8px">competitors is an append-only log on purpose — what a price has done over time is worth keeping — so this listing carries one row per run that covered it. The comparison above is the row v_competitor_latest returns, which is the newest; the rest are counted nowhere else on this screen and are here because history is what this block is for.</div>
           ${c.history.map(h => `<div class="list-item" style="cursor:default">
             <div style="flex:1;min-width:0" class="cell-sub">${esc(dt(h.at))}</div>
             <div style="text-align:right;flex-shrink:0" class="num">${h.price == null ? '<span class="t-muted">no price</span>' : aed(h.price)}</div></div>`).join('')}
@@ -2084,16 +2652,18 @@ SCREENS.competitors = async host => {
       title: 'By source',
       /* Not "By competitor". These are page hostnames, and today the only one
          is the manufacturer's own new-car site. */
-      sub: `Each page the scrape read, and how old its figures are. ${stale && daysOld != null ? `Nothing here has refreshed for ${esc(dayWord(daysOld))}.` : ''} Every listing is matched to our stock on the model name alone, against the lowest price found on the page.`,
+      sub: `Each page the scrape read, and how old its figures are. ${stale && daysOld != null ? `Nothing here has refreshed for ${esc(dayWord(daysOld))}.` : ''} Listings are matched to our stock on the model name; the counts on the right are only the ones whose price the scraper tied to our car, so a page that quotes a figure for something else adds no position here.`,
       load: async () => groups,
       render: gs => (gs.length ? `<div>${gs.map((g, i) => `
         <div class="list-item" role="button" tabindex="0" data-comp="${i}" style="align-items:flex-start">
           <div style="flex:1;min-width:0">
-            <div style="font-weight:500">${esc(g.name)}${g.oem ? ` <span class="chip t-warm" style="margin-left:8px" title="${esc(`${titleCase(g.oem)}'s own domain: the prices under it are factory list prices for new cars, not a rival dealership's asking prices.`)}">manufacturer's own site</span>` : ''}</div>
+            <div style="font-weight:500">${esc(g.name)}${g.src ? ` <span class="chip ${g.src.tone ? `t-${g.src.tone}` : ''}" style="margin-left:8px" title="${esc(`${g.src.what}: the prices under it are ${g.src.price}.${g.src.sure ? '' : ' The scraper did not record what kind of page this is; this is read off the domain.'}`)}">${esc(g.src.what)}${g.src.sure ? '' : ' (from the domain)'}</span>` : ''}</div>
             <div class="cell-sub">${num(g.rows.length)} listing${g.rows.length === 1 ? '' : 's'} · ${g.priced === 0
               ? '<span class="t-warm">no price on any row</span>'
               : g.cmp ? `${num(g.cmp)} comparable` : 'none comparable to our stock'}
               ${g.newest ? ` · scraped ${esc(ago(g.newest))}` : ' · <span class="t-warm">no scrape date</span>'}</div>
+            ${g.untied ? `<div class="cell-sub t-hot">${num(g.untied)} priced off a page that ties nothing to our car — no gap drawn</div>` : ''}
+            ${g.unrated ? `<div class="cell-sub t-warm">${num(g.unrated)} ${plural(g.unrated, 'match', 'matches')} never rated — ${plural(g.unrated, 'it predates', 'they predate')} the 1 Sep provenance fix</div>` : ''}
             ${g.stale ? `<div class="cell-sub t-hot">${g.rows.length === 1
               ? 'Its only listing was'
               : `${num(g.stale)} of its ${num(g.rows.length)} listings ${plural(g.stale, 'was', 'were')}`} not covered by the last scrape</div>` : ''}
