@@ -94,40 +94,116 @@
    summary is not rendered at all with no sources, the filter chips and the
    staleness clock never get built, and the one panel with a real answer today —
    our own unsold stock, none of which has ever been checked against a rival
-   price — takes the full width and leads the screen. */
+   price — takes the full width and leads the screen.
+
+   31 Aug 2026, fourth pass. The table filled again, and a second audit found
+   that everything this screen had learned to say honestly about its *match* was
+   still being said over a source that is worse than the screen believed. Four
+   things changed, and all four are the writer's faults stated out loud rather
+   than papered over — none of them can be fixed from here.
+
+     · The match is circular. `Log Competitor Intel` writes `model` as
+       `={{ $json.model }}`, and that value is carried down from
+       `Build Apify Query`, which built the search query out of the Supabase
+       *inventory* row. `competitors.model` is therefore our own model string
+       round-tripped, not the listing's. Matching it against `inventory.model`
+       compares a value with itself: the join cannot miss, `makeIn()` reads the
+       same manufacturer word on both sides, and the "both sides name the same
+       make" conclusion was an inference drawn from one string twice. Every row
+       whose model text is byte-identical to one of ours is now labelled as the
+       circular match it is, and the reassuring branch of the match-quality
+       alert is unreachable while that holds.
+     · The price side, which was never modelled here at all, is where the real
+       like-for-like risk lives. `collectPrices()` walks the page's JSON-LD and
+       takes the *lowest* AED figure over 20,000 found anywhere on it. Nothing
+       constrains it to the same year, trim, mileage or even to a used car. Our
+       152,000 Fortuner is therefore measured against toyota.ae's cheapest new
+       base Fortuner. That sentence is now on the row, in the tooltip and in the
+       drawer, because it is the one that stops somebody re-pricing a car.
+     · `competitors` is append-only. The Supabase node carries no `operation`
+       key, so it defaults to `create` and every run inserts rather than
+       upserting on the listing. Eight rows on file are three listings. Every
+       count on this screen was a count of snapshots, which is how "We ask more
+       4" and "We undercut 4" came to sit beside a subtitle correctly reading
+       three vehicles. Everything countable is now reduced to the newest
+       snapshot per listing first; the history is kept only where history is the
+       subject, which is staleness and the drawer.
+     · `competitor` is the page's hostname, not a dealership. All eight rows
+       read `toyota.ae` — the manufacturer's own new-car site. "toyota.ae is
+       AED 23,100 cheaper" read as a rival showroom undercutting us on the same
+       used unit; it is a list price for a different, new car. The column is a
+       source now, and where the host is a manufacturer's own domain the screen
+       says so.
+
+   The schedule constants were wrong in both hour and cadence and are one
+   derived set now — see SCRAPE_HOURS_UTC. And the screen no longer asserts the
+   scrape is healthy merely because rows are arriving: `v_workflow_health` is
+   read, and it reports PRODUCING_NOTHING. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, aedSigned, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, panel, table, wireRows } from '../lib/ui.js';
 import { deriveUnit, unitForm } from '../lib/unit-form.js';
 
-/* The scraping workflow is documented as a daily job. One missed cycle is the
-   point at which the numbers stop being safe to quote at a customer. */
-const SCRAPE_EVERY_HOURS = 24;
+/* The hours the scrape actually fires, UTC, and the ONE constant every other
+   figure about the schedule is derived from — the prose, the next-run time, and
+   both staleness thresholds. It used to be two constants that disagreed with
+   the workflow and with each other: `SCRAPE_EVERY_HOURS = 24` and
+   `SCRAPE_HOUR_UTC = 5`, which put "expected daily at 05:00 UTC" on the screen
+   and a next run at 09:00 GST — an hour this job has never fired at.
 
-/* The hour the scrape actually fires, UTC. "Daily" on its own does not tell an
-   operator when to come back and look, and this screen spends most of its life
-   telling somebody to come back and look — so the hour is named, and named in
-   both clocks: the schedule is fixed in UTC and the reader is not. */
-const SCRAPE_HOUR_UTC = 5;
-const SCRAPE_SCHEDULE = `daily at ${String(SCRAPE_HOUR_UTC).padStart(2, '0')}:00 UTC`;
-const STALE_AFTER_HOURS = 48;
+   The deployed trigger is `"0 5,17 * * *"` with `"timezone": "Asia/Dubai"`, so
+   it fires twice a day at 05:00 and 17:00 GST = 01:00 and 13:00 UTC. Every
+   `scraped_at` on file is ~01:00 UTC and `audit_log` carries runs at both 01:00
+   and 13:00, which is the evidence for the second hour: the 13:00 run fires and
+   writes nothing.
+
+   `workflow_registry.trigger_detail` is NOT the source used here, deliberately.
+   It reads "Cron 0 5 * * * (05:00 Asia/Dubai = 01:00 UTC)" — right about the
+   hour, a day behind on the cadence — so deriving from it would reinstate the
+   halved cycle count this round exists to remove. It is read at runtime and
+   the disagreement is reported on the screen instead, because a registry that
+   describes a different schedule from the one running is itself worth saying.
+
+   The hour list is named in both clocks because the schedule is fixed in UTC
+   and the reader is not. */
+const SCRAPE_HOURS_UTC = [1, 13];
+const SCRAPE_CRON = '0 5,17 * * *';                        // as deployed, Asia/Dubai
+const SCRAPE_EVERY_HOURS = 24 / SCRAPE_HOURS_UTC.length;   // 12 — the gap between runs
+const SCRAPE_SCHEDULE = 'twice a day, at 01:00 and 13:00 UTC (05:00 and 17:00 GST)';
+/* Two cycles, not two days. These were 48 h against a job believed to run daily;
+   against the real cadence 48 h is four cycles, which is why a table that had
+   not been covered for two days looked fresh. Derived so they cannot drift
+   apart from the cadence again. */
+const STALE_AFTER_HOURS = SCRAPE_EVERY_HOURS * 2;
 const ROW_LIMIT = 500;
 const ATTN_LIMIT = 100;
+
+/* The workflow's name in `workflow_registry` / `v_workflow_health`. Health is
+   read rather than inferred: this screen used to conclude "the scrape is still
+   writing rows, so this is not the job being down", and the view says
+   PRODUCING_NOTHING — 84 runs, 11 successes, 73 producing no usable price. */
+const SCRAPE_WORKFLOW = 'Competitor Price Scraping';
 
 /* Past a week the wording stops hedging. "Missed a cycle" is a scheduling
    hiccup an operator can shrug at; a price collected last month is a different
    claim about the world and is coloured as the harder failure it is. */
 const VERY_STALE_DAYS = 7;
 
-/* A row whose own timestamp trails the newest row in the table by more than one
-   further cycle was not picked up by the last scrape. That is a different fault
-   from the whole table being old — the job is still running and still writing
-   rows, it has just stopped covering these listings — and it hides inside a
-   healthy-looking "last scrape" figure, which is why it is counted separately. */
-const REFRESH_LAG_HOURS = 48;
+/* A LISTING whose newest snapshot trails the newest row in the table by more
+   than one further cycle was not picked up by the last scrape. That is a
+   different fault from the whole table being old, and it hides inside a
+   healthy-looking "last scrape" figure, which is why it is counted separately.
+
+   This is measured per listing, not per row. It used to be measured per row
+   against an append-only table, so a listing scraped every day for a week was
+   accused of not being covered on the strength of its own week-old snapshot —
+   two rows were flagged as abandoned on 31 Aug while both listings behind them
+   had been re-scraped on the 29th, 30th and 31st. */
+const REFRESH_LAG_HOURS = SCRAPE_EVERY_HOURS * 2;
 
 /* Below this many comparisons the counts on this screen describe a handful of
    individual listings and nothing about a market. The scrape writes whatever it
@@ -160,13 +236,56 @@ const dayWord = n => `${num(n)} ${Number(n) === 1 ? 'day' : 'days'}`;
    wearing the same digits. dubaiStamp() pins it and labels it GST. */
 const dt = ts => dubaiStamp(ts);
 
+/* Midnight UTC on the day a moment falls in. Both functions below walk whole
+   days and pick the scheduled hours out of them, which is what keeps them
+   correct for a cron with two unevenly-spaced hours as well as this one. */
+const utcMidnight = ms => { const d = new Date(ms); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
+
 /* The next time the cron is due to fire, as a real Date rather than a phrase.
    Computed from the UTC clock so it stays right in any timezone the browser
    happens to be in. */
 function nextScrape(from = Date.now()) {
-  const d = new Date(from);
-  const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), SCRAPE_HOUR_UTC);
-  return new Date(at > from ? at : at + SCRAPE_EVERY_HOURS * 3600000);
+  for (let day = utcMidnight(from); ; day += 86400000) {
+    for (const h of SCRAPE_HOURS_UTC) {
+      const t = day + h * 3600000;
+      if (t > from) return new Date(t);
+    }
+  }
+}
+
+/* How many scheduled runs fall in (from, to]. Counted rather than divided: a
+   division by an average gap is only right while the hours are evenly spaced,
+   and it under-reported by exactly half for the whole time this screen believed
+   the job was daily. A run counted here is a run that was due — whether it
+   fired, and whether it produced anything, is what v_workflow_health answers. */
+function cyclesSince(from, to = Date.now()) {
+  if (!(from < to)) return 0;
+  let n = 0;
+  for (let day = utcMidnight(from); day <= to; day += 86400000) {
+    for (const h of SCRAPE_HOURS_UTC) {
+      const t = day + h * 3600000;
+      if (t > from && t <= to) n += 1;
+    }
+  }
+  return n;
+}
+
+/* The hours a cron string in `workflow_registry.trigger_detail` names, in UTC.
+   Used for one thing: telling the reader when the registry's recorded schedule
+   is not the schedule the workflow is running. It reads the hour field only,
+   which is all a "0 5,17 * * *" style entry carries, and returns null rather
+   than guessing at anything it cannot parse. */
+function registryHoursUtc(detail) {
+  const s = String(detail == null ? '' : detail);
+  const m = /(^|\s)([0-9*,\-/]+)\s+([0-9,]+)\s+\*\s+\*\s+\*/.exec(s);
+  if (!m) return null;
+  const hours = m[3].split(',').map(h => Number(h)).filter(h => Number.isInteger(h) && h >= 0 && h < 24);
+  if (!hours.length) return null;
+  /* Every workflow in this system runs on "timezone": "Asia/Dubai", which is a
+     fixed +04:00 with no daylight saving — so the shift is arithmetic, not a
+     calendar question. */
+  const shift = /dubai|gst|\+0?4/i.test(s) ? 4 : 0;
+  return [...new Set(hours.map(h => (h - shift + 24) % 24))].sort((a, b) => a - b);
 }
 /* How long until then, in the units a person waits in. Under an hour is stated
    in minutes because "in about 0 hours" is not an answer. */
@@ -201,7 +320,17 @@ function pick(row, names) {
    contact. The alias lists below are what the feed has actually been called at
    some point; the real column is first and nothing here reaches for a column
    that does not exist on either table. */
+/* `competitor` is not a dealership and this reads it as one at your peril. The
+   scraper sets it from `ldSeller || hostSource || modelSource`, and in practice
+   that is `hostSource` — `new URL(page).hostname` with the leading "www."
+   removed. All eight rows on file read "toyota.ae", which is the manufacturer's
+   own new-car site. The workflow's NOT_A_SELLER guard only excludes search and
+   social hosts, so an OEM, an aggregator and a classifieds portal all arrive
+   here looking exactly like a rival showroom. It is called a source
+   everywhere on this screen for that reason. */
 const cName  = r => pick(r, ['competitor', 'competitor_name', 'dealer']);
+/* NOT the listing's model text — see MODEL_IS_OURS. It is our own inventory
+   row's model string, written back out by the scraper. */
 const cModel = r => pick(r, ['model', 'vehicle_model']);
 const cPrice = r => n0(pick(r, ['price_aed', 'competitor_price_aed']));
 const cAt    = r => pick(r, ['scraped_at', 'checked_at', 'created_at']);
@@ -212,6 +341,26 @@ const uRef   = u => pick(u, ['id']);          // `id` IS the stock number
 
 /* The sentence every match on this screen has to be read against. */
 const NO_MAKE = 'Neither table records a make or a model year — `model` is free text and it is the only thing there is to match on.';
+
+/* The harder sentence. `competitors.model` is not what the listing calls the
+   car: the scraper's `Log Competitor Intel` node writes it as `$json.model`,
+   which `Parse AI Price` carries down from `Build Apify Query` — and that node
+   reads the Supabase *inventory* row and builds its search query from it. The
+   value stored in this column is our own model string, returned to us. Matching
+   it against `inventory.model` is therefore a comparison of a value with
+   itself: it cannot fail, and any manufacturer read off "both sides" is the
+   same word counted twice. The screen can only report this, not fix it — the
+   fix is a listing-side model field in the scraper. */
+const MODEL_IS_OURS = 'The model text on this row is our own: the scraper writes back the inventory model string it searched with, so matching it against our stock compares one value with itself and cannot tell us the two cars are the same car.';
+
+/* And the side that was never modelled here at all. `collectPrices()` walks the
+   page’s JSON-LD and returns the LOWEST AED figure above 20,000 found anywhere
+   on it; where that finds nothing, a language model reads the first 6,000
+   characters of a web-search result for "<model> price UAE dealership". Nothing
+   in either path constrains the figure to the same year, trim, mileage or even
+   to a used car. A manufacturer’s model page lists every variant, so the number
+   that arrives is the cheapest new base trim. */
+const PRICE_UNCONSTRAINED = 'Their figure is the lowest AED price over 20,000 found anywhere on the page — no year, trim, mileage or condition is matched, so on a page listing several variants it is the cheapest, usually new, one.';
 
 /* Manufacturer names, used for exactly one thing: spotting a make that somebody
    already typed into a model string. It is never used to fill a make in. A name
@@ -253,6 +402,21 @@ function makeIn(text) {
 const MAKE_DISPLAY = { bmw: 'BMW', gmc: 'GMC', mg: 'MG', byd: 'BYD', vw: 'Volkswagen' };
 const titleCase = m => MAKE_DISPLAY[m] || String(m || '').replace(/\b[a-z]/g, c => c.toUpperCase());
 
+/* A source whose hostname IS a manufacturer's name — "toyota.ae", "lexus.com".
+   This is not a guess about the market: it is the first label of the host read
+   against the same manufacturer list the model strings are read against. When
+   it hits, the price on the row is a factory list price for a new car, and
+   calling that an undercut by a competitor is the specific wrong thing a rep
+   would repeat to a customer. It only ever adds a caution. */
+function oemHost(name) {
+  const host = String(name == null ? '' : name).trim().toLowerCase().replace(/^www\./, '');
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(host)) return null;   // not a hostname at all
+  const label = norm(host.split('.')[0]);
+  if (!label) return null;
+  const hit = MAKE_WORDS.find(w => w === label || w.replace(/ /g, '') === label);
+  return hit ? (MAKE_CANON[hit] || hit) : null;
+}
+
 /* A model string with the year and any manufacturer word taken out, so
    "Toyota Land Cruiser 2024" on one side can still find "Land Cruiser" on the
    other. This is a looser match than an identical string and is labelled as
@@ -288,16 +452,26 @@ function reusableName(key) {
    fallback from a make match that never happened. */
 const BASIS = {
   model: { chip: 'model name',
-    why: `Matched because our stock carries the same model name, character for character. ${NO_MAKE} Two cars sold under the same model name are the same row to this match, whoever built them.` },
+    why: `Matched because our stock carries the same model name, character for character. ${NO_MAKE} Two cars sold under the same model name are the same row to this match, whoever built them. ${PRICE_UNCONSTRAINED}` },
   loose: { chip: 'model name · loose',
     why: `Matched on the model name only after a year, or a manufacturer word somebody typed into the text, was set aside — the two strings were not even identical. ${NO_MAKE}` },
   none:  { chip: 'no unit in stock',
     why: 'No unit on the lot carries this model name, so there is no price of ours to compare it against.' },
 };
 
-/* How far the match is from being the same car. `both` is as good as it gets on
-   this data and it is still an inference off free text. */
+/* How far the match is from being the same car.
+
+   `both` used to be described here as "as good as it gets on this data". It was
+   not good at all: it fired when the manufacturer read out of their model text
+   equalled the one read out of ours, and those are the same string, so it fired
+   on every row and rendered the least alarming chip on the screen over the
+   weakest possible evidence. Where the model text is our own — which is every
+   row the scraper has ever written — the state is `circular` and `both` is
+   unreachable. `both` is kept for the day the scraper stores the listing's own
+   model text, because then it will mean something. */
 const RISK = {
+  circular: { chip: 'matched to itself', tone: 'hot',
+    text: `${MODEL_IS_OURS} Both "manufacturers" below are that one string read twice, so they agree by construction and confirm nothing. ${PRICE_UNCONSTRAINED} What this row can support is "a page selling something under this name quotes that figure", and no more.` },
   mixed: { chip: 'make ambiguous', tone: 'hot',
     text: 'The units carrying this model name do not all name the same manufacturer, so this name is used by more than one make. The gap beside it may be measured against a different car entirely.' },
   onesided: { chip: 'make unconfirmed', tone: 'warm',
@@ -325,11 +499,11 @@ function scrapeFault(name) {
   if (!s) return null;
   if (PLACEHOLDER_NAME.test(s)) {
     return { kind: 'placeholder',
-      why: `The scraper stored the literal text "${s}" where the dealership's name belongs, so this row does not say who is selling anything.` };
+      why: `The scraper stored the literal text "${s}" where the source belongs, so this row does not say what page it read or who is selling anything.` };
   }
   if (INTERSTITIAL.test(s)) {
     return { kind: 'interstitial',
-      why: `"${s}" is the heading of a bot-detection page, not a dealership. The scraper was blocked, captured the block page and stored its title as a competitor — so the listing it was sent to read was never read at all.` };
+      why: `"${s}" is the heading of a bot-detection page, not a source that sells cars. The scraper was blocked, captured the block page and stored its title as a competitor — so the listing it was sent to read was never read at all.` };
   }
   return null;
 }
@@ -386,8 +560,15 @@ function compare(r, index) {
     }
   }
 
-  /* A sold car is not a car we are pricing. It is only used as the comparable
-     when it is the only thing that matches, and then it is labelled. */
+  /* A sold car is not a car we are pricing, and it is no longer allowed to set
+     one. It used to stay in `units` when it was the only thing that matched, so
+     `ourPrice`, the gap and both market KPIs were computed off a car that is
+     not for sale, with a sub-line under the Match chip as the only disclosure.
+     The units are still listed in the drawer — knowing what we got for the last
+     one is worth something — but they set no gap, and the row falls into the
+     same "no price of ours to compare" path every other unpriced row takes.
+     All twelve units are Available today, so this is a guard for the first time
+     a matched car sells rather than something visible now. */
   const onLot = units.filter(u => !isSold(u));
   const soldOnly = units.length > 0 && onLot.length === 0;
   if (onLot.length) units = onLot;
@@ -404,9 +585,10 @@ function compare(r, index) {
   const prices = pricedUnits.map(uPrice);
   /* Several units of the same car rarely carry the same sticker. The shopper
      compares against the cheapest one we advertise, so that is the figure the
-     gap is measured from; the spread is shown next to it. */
-  const ourPrice = prices.length ? Math.min(...prices) : null;
-  const ourHigh = prices.length ? Math.max(...prices) : null;
+     gap is measured from; the spread is shown next to it. A sold-only match
+     advertises nothing, so it has no "our price" at all. */
+  const ourPrice = (!soldOnly && prices.length) ? Math.min(...prices) : null;
+  const ourHigh = (!soldOnly && prices.length) ? Math.max(...prices) : null;
   const delta = (ourPrice != null && price != null) ? ourPrice - price : null;
 
   /* Which manufacturers, if any, the matched stock names in its own text. More
@@ -415,19 +597,34 @@ function compare(r, index) {
      sides are the same manufacturer, because that unit could be anybody's. */
   const ourMakes = [...new Set(units.map(u => makeIn(uModel(u))).filter(Boolean))];
   const anonUnits = units.filter(u => !makeIn(uModel(u))).length;
+  /* The runtime evidence for MODEL_IS_OURS: this row's model text is, character
+     for character, a model string out of our own inventory. That is what a
+     round-tripped value looks like, and it is true of all eight rows on file.
+     It is checked rather than assumed so that the day the scraper starts
+     storing the listing's own text, this screen stops accusing it. */
+  const echoed = index.isOurModelText(model);
   const risk = !units.length ? null
     : ourMakes.length > 1 ? 'mixed'
-      : (theirMake && ourMakes.length === 1 && ourMakes[0] === theirMake && !anonUnits) ? 'both'
-        : (theirMake || ourMakes.length === 1) ? 'onesided'
-          : 'unnamed';
+      /* Ordered above `both` on purpose: a manufacturer agreement drawn from
+         one string read twice is not an agreement, and must never render the
+         quietest chip on the screen. */
+      : echoed ? 'circular'
+        : (theirMake && ourMakes.length === 1 && ourMakes[0] === theirMake && !anonUnits) ? 'both'
+          : (theirMake || ourMakes.length === 1) ? 'onesided'
+            : 'unnamed';
 
   const name = cName(r);
   return {
     raw: r, id: pick(r, ['id']), name, model, price,
     fault: scrapeFault(name),
+    /* Set when the source's hostname is a manufacturer's own domain, which is
+       every row on file: the figure beside it is a factory list price. */
+    oem: oemHost(name),
+    echoed,
     theirMake, ourMakes, risk, reusable: reusableName(keyed.key), conflictNote,
-    /* A gap whose match cannot rule out another manufacturer. Today that is
-       every gap on the screen, and the filter chip counting them says so. */
+    /* A gap whose match cannot rule out another manufacturer, or whose match is
+       circular and so rules out nothing at all. Today that is every gap on the
+       screen, and the filter chip counting them says so. */
     makeUnconfirmed: risk != null && risk !== 'both',
     label: String(model == null ? '' : model).trim() || 'Unnamed vehicle',
     at: cAt(r),
@@ -454,6 +651,14 @@ function buildIndex(inv) {
     add(byCore, coreKey(uModel(u)), u);
   });
   return {
+    /* Does this string appear in `inventory.model` exactly as stored? The
+       scraper writes our own model text back into `competitors.model`, so a hit
+       here is the signature of that round trip rather than of a listing that
+       happens to be named the same way. It is a weaker statement than the
+       workflow proof in MODEL_IS_OURS — a real scrape could in principle return
+       the identical string — which is why the wording it drives says what the
+       row cannot support, not what the scraper did. */
+    isOurModelText: model => { const k = norm(model); return !!k && byModel.has(k); },
     /* Both sets, not the first one that hits. "Patrol" and "Nissan Patrol" are
        one model name written two ways, and taking only the identical-string
        match would have compared a scraped Patrol against the one sold unit
@@ -480,18 +685,22 @@ function buildIndex(inv) {
 const deltaCell = c => {
   if (c.delta == null) {
     const why = c.unmatched ? (c.conflictNote || BASIS.none.why)
-      : c.price == null ? 'This row has no competitor price recorded.'
-        : 'The matching unit has no list price on record.';
+      : c.soldOnly ? 'The only unit carrying this model name is sold, so we have no list price to compare against it.'
+        : c.price == null ? 'This row has no competitor price recorded.'
+          : 'The matching unit has no list price on record.';
     return `<span class="t-muted" title="${esc(why)}">—</span>`;
   }
   if (c.delta === 0) return '<span class="t-muted">level</span>';
   const worse = c.delta > 0;
-  /* The tooltip carries the two things the number itself cannot: when their
-     price was collected, and that the two cars were matched on a model name. */
+  /* The tooltip carries the three things the number itself cannot: when their
+     price was collected, what the two cars were matched on, and what their
+     figure is a price OF. The last one is why a gap this large exists at all. */
   const why = `Our ${aed(c.ourPrice)} (list price today) against their ${aed(c.price)}, collected `
     + (c.at ? dt(c.at) : 'on a date this row does not record')
     + `. Matched on the model name "${c.label}" alone`
-    + (c.makeUnconfirmed ? ', with no make recorded on either side.' : '.');
+    + (c.echoed ? ' — and that name is our own text, written back by the scraper, so the match confirms nothing. ' : c.makeUnconfirmed ? ', with no make recorded on either side. ' : '. ')
+    + PRICE_UNCONSTRAINED
+    + (c.oem ? ` ${c.name} is ${titleCase(c.oem)}'s own site, so this is a factory list price for a new car.` : '');
   return `<span class="${worse ? 't-hot' : 't-ok'}" style="font-weight:500"
       title="${esc(why)}">
       <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px" aria-hidden="true">${worse ? 'arrow_upward' : 'arrow_downward'}</span>
@@ -546,16 +755,24 @@ SCREENS.competitors = async host => {
   const byCompHost = el('div'); const blindHost = el('div');
   below.appendChild(byCompHost); below.appendChild(blindHost);
 
-  /* Three reads, started together rather than one after another. Inventory and
+  /* Four reads, started together rather than one after another. Inventory and
      the attention view used to wait on the competitors fetch for no reason; on
-     a single-core box that is two round-trips of dead time. Both are marked
+     a single-core box that is two round-trips of dead time. All are marked
      handled the moment they are created — if the competitors read fails first
      and this function returns, a rejection with no handler surfaces in the
      console instead of in the panel that is supposed to report it. */
   const invP = db('inventory?select=*&limit=1000');
   const attnP = db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
     + `&screen=eq.competitors&limit=${ATTN_LIMIT}`);
-  invP.catch(() => {}); attnP.catch(() => {});
+  /* The scrape's own health, from the shared view, because this screen is not
+     entitled to infer it. Rows arriving used to be taken as proof the job was
+     working — "the scrape is still writing rows, so this is not the job being
+     down" — and the view's answer is PRODUCING_NOTHING: it runs, it does not
+     fail, and most runs end with no usable price. The columns the view already
+     computes are read as they are; nothing here classifies a status itself. */
+  const healthP = db('v_workflow_health?select=name,trigger_detail,health,runs_30d,successes_30d,'
+    + `no_result_30d,failures_30d,partials_30d,effective_runs_30d,success_rate_30d,last_run,last_success&name=eq.${encodeURIComponent(SCRAPE_WORKFLOW)}`);
+  invP.catch(() => {}); attnP.catch(() => {}); healthP.catch(() => {});
 
   /* Ordering is deliberately left to the client. The competitors feed is
      written by a scraping workflow and the column set has changed before;
@@ -584,23 +801,92 @@ SCREENS.competitors = async host => {
   try { attn = await attnP; }
   catch (e) { attnErr = e; }
 
+  /* Health is the third enrichment. A missing row is not a healthy job: the
+     registry may simply not carry this workflow under that name, and that is
+     said rather than being allowed to read as silence. */
+  let health = null, healthErr = null;
+  try { health = (await healthP)[0] || null; }
+  catch (e) { healthErr = e; }
+
+  /* The health view's own words for the state it reports. Never derived here —
+     lib/health.js mirrors nexus_outcome_class() in Postgres, and this screen is
+     a consumer of both. */
+  const hWords = health ? healthWords(health.health) : null;
+  const noResult30 = health ? (n0(health.no_result_30d) || 0) : 0;
+  const runs30 = health ? (n0(health.runs_30d) || 0) : 0;
+  const success30 = health ? (n0(health.successes_30d) || 0) : 0;
+  /* One sentence about the job itself, for wherever this screen would otherwise
+     be tempted to conclude something about it from the rows in front of it. */
+  const healthLine = healthErr
+    ? `The scrape's health could not be read (${esc(healthErr.message)}), so nothing on this screen says whether the job is working — only what it has written.`
+    : !health
+      ? `v_workflow_health carries no row named "${esc(SCRAPE_WORKFLOW)}", so how the scrape itself is doing is unknown here — the rows below are all this screen can speak for.`
+      : `v_workflow_health rates the scrape ${esc(hWords.label)} — ${esc(hWords.blurb)}${runs30 ? ` ${num(runs30)} ${plural(runs30, 'run', 'runs')} in 30 days, ${num(success30)} ${plural(success30, 'success', 'successes')}, ${num(noResult30)} producing no usable price.` : ''}`;
+  /* The registry's recorded schedule against the one the workflow is running.
+     They disagree today — the registry says a single daily cron — and a
+     schedule nobody has updated is how the wrong hour got onto this screen in
+     the first place, so the disagreement is reported rather than resolved. */
+  const regHours = health ? registryHoursUtc(health.trigger_detail) : null;
+  const scheduleDrift = regHours && regHours.join(',') !== SCRAPE_HOURS_UTC.join(',')
+    ? `workflow_registry records this job's trigger as "${esc(String(health.trigger_detail))}" — ${num(regHours.length)} ${plural(regHours.length, 'run', 'runs')} a day, where the deployed cron is "${esc(SCRAPE_CRON)}" in Asia/Dubai and audit_log carries runs at both hours. The schedule stated here follows the deployed cron; the registry entry is out of date.`
+    : '';
+
   const index = buildIndex(inv);
   const all = rows.map(r => compare(r, index));
   const reload = () => go('competitors');
 
   /* Rows the scraper produced that are not competitors — a name of "null", or
      the title of a bot-detection page. They are held apart from here down.
-     `live` is what every count, gap, KPI, group and market claim on this screen
-     is computed from; `junk` is reported as a data-quality fault and is
-     reachable through its own filter, never charted as a rival dealership. */
+     `junk` is reported as a data-quality fault and is reachable through its own
+     filter, never charted as a rival source. */
   const junk = all.filter(c => c.fault);
-  const live = all.filter(c => !c.fault);
+  const snapshots = all.filter(c => !c.fault);
   const junkPriced = junk.filter(c => c.price != null).length;
 
   const dated = c => !!(c.at && !Number.isNaN(Date.parse(c.at)));
-  /* Freshness is read off the real rows only: a scrape failure carries no price,
-     so letting one set the "newest price collected" clock would date the screen
-     by a row that priced nothing. */
+
+  /* ── Snapshots to listings ───────────────────────────────────────────────
+     `competitors` is an append-only log. The scraper's `Log Competitor Intel`
+     node carries no `operation` key, so the Supabase node defaults to `create`
+     and every run inserts a new row; nothing upserts on the listing. Eight rows
+     on file are three listings, scraped repeatedly.
+
+     Every count on this screen used to be taken straight off those rows, which
+     is how "We ask more · 4" and "We undercut · 4" came to sit beside a
+     subtitle correctly reading 3 vehicles — 4 + 4 > 3. It grows without bound:
+     at two runs a day the 500-row cap arrives in about a month, after which
+     every headline is a function of how long the job has been up rather than of
+     the market.
+
+     So `live` is one row per listing — the newest snapshot of each — and it is
+     what every KPI, filter, group, gap and market claim below is computed from.
+     `snapshots` is kept for the two questions where the history IS the subject:
+     how long a listing has gone without being covered, and what the drawer can
+     show about a price that has or has not moved. A listing is keyed on the
+     pair the scraper actually writes, source and model text. */
+  const listingKey = c => `${norm(c.name)} :: ${norm(c.model)}`;
+  const historyOf = new Map();
+  snapshots.forEach(c => {
+    const k = listingKey(c);
+    if (!historyOf.has(k)) historyOf.set(k, []);
+    historyOf.get(k).push(c);
+  });
+  const live = [];
+  historyOf.forEach(rowsOfListing => {
+    /* Newest wins. An undated row can only be the representative of a listing
+       that has no dated row at all, in which case its age is unknown and the
+       undated-rows check downstream is the one that reports it. */
+    rowsOfListing.sort((a, b) => (dated(b) ? Date.parse(b.at) : -Infinity) - (dated(a) ? Date.parse(a.at) : -Infinity));
+    const current = rowsOfListing[0];
+    current.history = rowsOfListing;
+    current.snapshotCount = rowsOfListing.length;
+    live.push(current);
+  });
+  const supersededCount = snapshots.length - live.length;
+
+  /* Freshness is read off the current listings only: a scrape failure carries
+     no price, so letting one set the "newest price collected" clock would date
+     the screen by a row that priced nothing. */
   const stamped = live.filter(dated);
   const newest = stamped.length ? stamped.reduce((a, c) => (Date.parse(c.at) > Date.parse(a.at) ? c : a)).at : null;
   const oldest = stamped.length ? stamped.reduce((a, c) => (Date.parse(c.at) < Date.parse(a.at) ? c : a)).at : null;
@@ -608,9 +894,13 @@ SCREENS.competitors = async host => {
   const stale = ageHours != null && ageHours > STALE_AFTER_HOURS;
   const daysOld = ageHours == null ? null : Math.floor(ageHours / 24);
   const veryStale = daysOld != null && daysOld >= VERY_STALE_DAYS;
-  /* How many runs of a job scheduled every SCRAPE_EVERY_HOURS have produced
-     nothing. One cycle of age is normal for a daily job, hence the -1. */
-  const missed = ageHours == null ? null : Math.max(0, Math.floor(ageHours / SCRAPE_EVERY_HOURS) - 1);
+  /* Scheduled runs that have been and gone since the newest row was written.
+     Counted off the real fire times rather than divided by a cadence, and named
+     for what it is: these runs were due, and none of them left a row. Whether
+     they fired at all is what `healthLine` answers — today they did, and
+     produced nothing, which the old "missed about N cycles" wording asserted
+     the opposite of. */
+  const dryRuns = newest ? cyclesSince(Date.parse(newest)) : null;
 
   /* The sentence this screen exists to make impossible to miss. It renders
      whether the prices are fresh or not: "collected 2 hours ago" is as much a
@@ -619,8 +909,8 @@ SCREENS.competitors = async host => {
     ? 'No row here carries a scrape timestamp, so how old these prices are cannot be established at all.'
     : `Newest price collected ${esc(ago(newest))} (${esc(dt(newest))})`
       + (oldest && oldest !== newest ? `, oldest ${esc(ago(oldest))} (${esc(dt(oldest))})` : '')
-      + `. The scrape is expected ${SCRAPE_SCHEDULE}`
-      + (stale ? `, so it has missed about ${num(missed)} ${plural(missed, 'cycle', 'cycles')}.` : '.');
+      + `. The scrape runs ${SCRAPE_SCHEDULE}`
+      + (dryRuns ? `, so ${num(dryRuns)} scheduled ${plural(dryRuns, 'run has', 'runs have')} come and gone since without leaving a row.` : '.');
 
   /* ── Nothing to compare ──────────────────────────────────────────────────
      On 24 Aug 2026 this table was emptied, and an empty competitors table is
@@ -648,12 +938,15 @@ SCREENS.competitors = async host => {
 
     const allJunk = all.length > 0;      // rows came back, none of them usable
     const next = nextScrape();
-    const nextLine = `The scrape is a scheduled job, expected ${SCRAPE_SCHEDULE}. The next run is due ${esc(dt(next.toISOString()))}, ${esc(waitWord(next - Date.now()))}.`;
+    const nextLine = `The scrape is a scheduled job, running ${SCRAPE_SCHEDULE}. The next run is due ${esc(dt(next.toISOString()))}, ${esc(waitWord(next - Date.now()))}.`;
     /* The reason for six weeks of silence, stated in the empty state rather
        than in a commit message: the trigger was an n8n "every 24 hours"
        interval, which drifts on every restart and eventually stops firing
        without ever failing, so nothing errored and nothing ran. */
-    const cronLine = `Its trigger used to be an n8n "every ${SCRAPE_EVERY_HOURS} hours" interval, which drifts on restart and then stops firing without failing — which is why nothing refreshed for weeks and no run was ever recorded as broken. It is on a cron now.`;
+    /* The literal 24 is history, not the current cadence: the interval that
+       drifted really was a 24-hour one. It is deliberately not derived from
+       SCRAPE_EVERY_HOURS, which now describes the cron that replaced it. */
+    const cronLine = 'Its trigger used to be an n8n "every 24 hours" interval, which drifts on restart and then stops firing without failing — which is why nothing refreshed for weeks and no run was ever recorded as broken. It is on a cron now.';
 
     /* Unsold stock, and the honest reason none of it has a market reference.
        This is not "we checked and found no cheaper rival": nothing has been
@@ -671,7 +964,10 @@ SCREENS.competitors = async host => {
         allJunk
           ? `<span class="t-hot">${num(all.length)} ${plural(all.length, 'row was', 'rows were')} returned and every one is a scrape failure, not a listing</span>`
           : '<span class="t-muted">The table holds no rows at all — nothing has been scraped since it was cleared</span>'),
-      kpi('Next scrape due', `${String(SCRAPE_HOUR_UTC).padStart(2, '0')}:00 UTC`,
+      /* The hour, from the one place the schedule is defined. It used to read
+         05:00 UTC and resolve to 09:00 GST, which is an hour this job has never
+         fired at — an operator told to come back then came back to nothing. */
+      kpi('Next scrape due', `${String(next.getUTCHours()).padStart(2, '0')}:00 UTC`,
         `<span class="t-muted">${esc(dt(next.toISOString()))} · ${esc(waitWord(next - Date.now()))}</span>`),
       /* A count, not a proportion. Twelve units is a small enough number to
          state outright, and "100% of stock uncovered" would dress a plain fact
@@ -775,7 +1071,7 @@ SCREENS.competitors = async host => {
       ${stateEmpty(
         allJunk ? 'No usable competitor prices' : 'No competitor prices on file',
         allJunk
-          ? `The scrape wrote ${all.length} ${plural(all.length, 'row', 'rows')} and not one of them names a dealership or carries a price, so there is no market price to compare our stock against. Until the scraper gets past whatever is blocking it, this screen has nothing to compare.`
+          ? `The scrape wrote ${all.length} ${plural(all.length, 'row', 'rows')} and not one of them names a source that sells cars or carries a price, so there is no market price to compare our stock against. Until the scraper gets past whatever is blocking it, this screen has nothing to compare.`
           : 'The competitors table is empty, so there is nothing to compare our prices against. It is not that our stock came out level — no rival price has been collected at all.',
         'price_change')}
       <div style="padding:0 20px 8px;max-width:760px;margin:0 auto">
@@ -783,7 +1079,7 @@ SCREENS.competitors = async host => {
         <div class="cell-sub" style="white-space:normal;margin-top:8px">The fifteen rows this table held until 24 August were deleted. Twelve were seed prices that contradicted the stock we actually hold — one quoted a Land Cruiser at AED 290,000 against a list price of AED 385,000, and four of them named models that have never been on the lot at all — and the remaining three were scrape failures stored as dealerships. Every undercut this screen reported, including the five it fed to Overview, was computed from those rows, so all of them went when the rows did.</div>
 
         <div class="label-caps" style="margin-top:18px">When it fills</div>
-        <div class="cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market.</div>
+        <div class="cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market. ${healthLine}${scheduleDrift ? ` ${scheduleDrift}` : ''}</div>
 
         <div class="label-caps" style="margin-top:18px">What the rows will be able to prove</div>
         <div class="cell-sub" style="white-space:normal;margin-top:8px">Less than it looks. ${esc(NO_MAKE)} A gap on this screen therefore says "a car called this costs that much elsewhere", not "the same car costs that much elsewhere", and each row will carry a chip saying which of those it is. The scrape also has no listing contact and no model year to offer, and when it is blocked it stores the block page as a dealership — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>

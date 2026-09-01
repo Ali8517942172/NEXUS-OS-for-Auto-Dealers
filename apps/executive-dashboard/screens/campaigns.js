@@ -19,11 +19,33 @@
 
    The four checks this screen adds on top of the view are the four ways a drip
    embarrasses a dealership:
-     · it is running and has sent nothing,
-     · it is still sequencing somebody who already replied — the worst of them,
-       because the customer answered and the machine kept talking over them,
+     · it is running and has sent nothing on either of its two channels,
+     · somebody answered it and nobody here has answered them back,
      · somebody was enrolled into an *email* sequence with no email address,
      · the credential that does the sending is dead, so every "sent" is false.
+
+   ── 31 Aug 2026. The second check was accusing the workflow of a fault it
+   ── does not have. ──────────────────────────────────────────────────────────
+
+   That check used to read "it is still sequencing somebody who already replied
+   — the worst of them, because the customer answered and the machine kept
+   talking over them", rendered CRITICAL, in red, with a disabled *Stop the
+   sequence* button whose tooltip ended "Reply to these people by hand".
+
+   `7_day_warm_lead_drip_campaign.json` carries FOUR reply gates. Before every
+   send, `Replies Since Enrol (Day 1/3/5/7)` reads `communication_logs` on
+   `direction=eq.inbound` since the enrolment across three key shapes, and
+   `Still Enrolled? (Day N)` routes its false branch to `Stopped Report`; the
+   gates also stop on a terminal lead status. Every send node in the workflow
+   sits downstream of one of those gates, so no step can go out after a reply is
+   recorded. `Stopped Report`'s own header comment names this screen as the
+   reason it exists. So the screen was sending an operator to make an emergency
+   phone call to prevent something the machine already prevents, and doing it in
+   red, above a button that said the machine could not be stopped.
+
+   What is left over after removing the false part is real and is what the alert
+   says now: the customer answered and is waiting for a person. That is a
+   WARNING about a human being, not a CRITICAL about a runaway workflow.
 
    Nothing here writes to the database. `communication_logs` and `audit_log` are
    service-role only; this screen reads them and calls exactly one n8n webhook.
@@ -60,8 +82,9 @@
    screen should say:
 
      · **The 7-Day Warm Lead Drip is the one workflow in this system that carries
-       no `executionTimeout`, and that is deliberate.** Every other workflow now
-       has a five-minute ceiling. This one's Wait nodes at day 1, 3, 5 and 7 hold
+       no `executionTimeout`, and that is deliberate.** Fifteen of the other
+       twenty carry a five-minute ceiling; five do not, and the banner used to
+       say all twenty did. This one's Wait nodes at day 1, 3, 5 and 7 hold
        a single execution open for a week, so a five-minute ceiling would kill
        every enrolment four minutes into the first wait. The absence is correct
        and must not be tidied away, so it is stated on the enrolment card where
@@ -78,6 +101,11 @@ import { HOOK, db, n8n } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
+/* The only place allowed to decide what an audit_log status means. This screen
+   used to carry its own definition — `['FAILED', 'REJECTED'].includes(status)`
+   — and then printed "Every logged drip run succeeded" of everything else,
+   which is a false sentence over a PARTIAL row. */
+import { OUTCOME, isIncomplete, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
@@ -113,11 +141,15 @@ const SEQUENCE_DAYS = 7;
    enrolment four minutes into the first wait, with the webhook still returning
    200 and this screen still reporting people as enrolled. */
 const NO_TIMEOUT_NOTE =
-  'This is the one workflow in the system with no executionTimeout, and that is deliberate. Every other workflow '
-  + 'carries a five-minute ceiling; this one\u2019s Wait nodes at day 1, day 3, day 5 and day 7 hold a single execution '
-  + 'open for a week, so a five-minute ceiling would cut every enrolment off four minutes into the first wait — while the '
-  + 'webhook still answered 200 and this screen still called the lead enrolled. Do not add one. Checked in n8n on '
-  + '24 Aug 2026: the dashboard cannot read a workflow\u2019s timeout, so this is a stated fact, not a reading.';
+  'This is the one workflow in the system with no executionTimeout, and that is deliberate. This one\u2019s Wait nodes at '
+  + 'day 1, day 3, day 5 and day 7 hold a single execution open for a week, so any ceiling would cut every enrolment off '
+  + 'partway into the first wait — while the webhook still answered 200 and this screen still called the lead enrolled. '
+  + 'Do not add one. There is no single house baseline to restore it to: of the other 20 workflows, 15 carry 300 s, '
+  + 'Ask-AI \u2014 RAG Query Agent carries 120 s, Competitor Price Scraping carries 1200 s (raised from 300 on 30 Aug), and the '
+  + 'three NEXUS Public pages carry 60 s. This banner said "every other workflow carries a five-minute ceiling" until '
+  + '31 Aug 2026, when the 21 workflow JSONs were counted; it is addressed to whoever standardises them, which is exactly '
+  + 'the reader who would have standardised on the wrong number. Counted from the JSON in n8n-workflows/, not read from '
+  + 'the live n8n instance — the dashboard cannot read a workflow\u2019s timeout.';
 
 /* Names shown inline on an alert before it collapses into "+N more". The row
    itself scrolls to and highlights the full set, so this is a glance. */
@@ -135,11 +167,21 @@ const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 const muted = t => `<span class="t-muted">${esc(t)}</span>`;
 const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
 
-/* A workflow run that proves the mailbox works. Matched on the workflow name and
-   its summary together, because the evidence that mattered on 24 Aug was a
-   Customer 360 run reporting `Gmail - Get Emails → ok` — the mailbox is named in
-   the summary, not in the workflow's own name. */
-const MAILBOX_RE = /gmail|smtp|mailbox|e-?mail/i;
+/* A workflow run that proves the mailbox works. The bar is a MACHINE-WRITTEN
+   step result naming the mailbox — the evidence that mattered on 24 Aug was a
+   Customer 360 run reporting `Gmail - Get Emails → ok`, where the mailbox is
+   named in the summary and not in the workflow's own name — or a workflow whose
+   own name is the mailbox.
+
+   Prose in a summary is not proof, and that is not a hypothetical. audit_log
+   holds a Lead Escalation SUCCESS row from 30 Aug 02:39 whose summary is an
+   AI-written recommendation ending "...and an email mirroring the same offer
+   for record". The old test was /gmail|smtp|mailbox|e-?mail/i over workflow and
+   summary together, so that paragraph read as proof the mail credential had
+   recovered — eleven minutes after the same workflow logged `Escalation email
+   failed: "Forbidden - perhaps check your credentials?"`. */
+const MAILBOX_NAME_RE  = /gmail|smtp|mailbox/i;
+const MAILBOX_PROOF_RE = /(gmail|smtp|mailbox|e-?mail)[^|·\n]{0,40}(?:→|->)\s*ok\b/i;
 
 /* Resolve to [value, null] or [null, error] so one failed read cannot abort the
    others through Promise.all, and so every failure arrives as a fact the strip
@@ -167,6 +209,18 @@ const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
    cannot be the destination of an email sequence, which is the only question
    being asked. */
 const EMAILISH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/* And these are not addresses at all, however much they parse like one. The
+   Master Router synthesises `+<digits>@whatsapp.lead` when a WhatsApp lead has
+   no email — live lead 34 "Siva Thangavelu" carries exactly that string in
+   `leads.email` — and `whatsapp.lead` contains a dot, so EMAILISH alone accepted
+   it. That is not pedantry: such a lead was offered in the enrolment table with
+   the Enrol button live, and the workflow's Gmail node would then have tried to
+   send to it. The one question this pair is asked is whether a value can be the
+   destination of an email sequence, and for a WhatsApp handle it is no.
+   (`HANDLE` above answers a different question — whether a string is a chat
+   handle being rendered as somebody's *name* — so the two stay separate.) */
+const SYNTHETIC_ADDR = /@(whatsapp\.lead|lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
+const isRealEmail = v => { const k = low(v); return !!k && EMAILISH.test(k) && !SYNTHETIC_ADDR.test(k); };
 
 /* What makes a `workflow_failure` row evidence about *email delivery* rather
    than about some other workflow: it has to name a credential problem and it
@@ -175,20 +229,76 @@ const EMAILISH = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CREDENTIAL_RE = /credential|oauth|reconnect|re-?authenticat|invalid_grant|unauthori[sz]ed|401/i;
 const MAILER_RE     = /gmail|smtp|e-?mail|sendgrid|mailer/i;
 
-/* A drip message is an outbound row whose channel mentions mail, which catches
-   "email" and "gmail" both. communication_logs records no workflow id, so mail
-   the drip sent cannot be told apart from mail anything else sent; the panel
-   below says so rather than labelling all of it as drip output. */
-const isMail = c => /mail/i.test(String(c.channel || ''));
+/* The drip has TWO send channels, not one, and counting only the first is how
+   this screen came to print a red "The drip has sent nothing since it was
+   started" beside a sentence claiming its own test was "as generous as it can be
+   made". Read out of the workflow JSON on 31 Aug 2026:
 
-/* There is no webhook that stops a sequence. HOOK lists `lead-trigger`, which
-   only starts one. Faking a stop by writing to audit_log or communication_logs
-   is not available either — both are service-role only — so the control that an
-   operator actually wants here is rendered and disabled with the reason. */
-const NO_CANCEL_HOOK =
-  'There is no webhook for cancelling a drip enrolment. HOOK in lib/data.js exposes lead-trigger, '
-  + 'which only starts a sequence; n8n exposes nothing that stops one, and this dashboard will not '
-  + 'write to a service-role table to fake it. Reply to these people by hand.';
+     day 1  Email: Welcome (Gmail)      -> Log Welcome Email       channel 'email'
+     day 1  WhatsApp: Welcome           -> Log WhatsApp Welcome    channel 'whatsapp'
+     day 3  Email: Follow Up (Gmail)    -> Log Follow Up Email     channel 'email'
+     day 5  WhatsApp: Check-in          -> Log WhatsApp Check-in   channel 'whatsapp'
+     day 7  Email: Final Offer (Gmail)  -> Log Final Offer Email   channel 'email'
+
+   /mail/i does not match 'whatsapp', so two of the five legs were discarded
+   before the per-lead index was built. Both are counted now, and which channel
+   a send was on is printed rather than averaged away.
+
+   The `system` channel stays excluded on purpose: those rows are
+   [SILENCE-ESCALATED] markers, not messages to a customer.
+
+   communication_logs still records no workflow id, so a row the drip wrote
+   cannot be told apart from one anything else wrote; the panels below say so
+   rather than labelling all of it as drip output. */
+const isMail     = c => /mail/i.test(String(c.channel || ''));
+const isWhatsApp = c => /whats\s*-?app/i.test(String(c.channel || ''));
+
+/* The four gates run at the four Wait boundaries and nowhere else, so this is
+   when a reply recorded now will actually end the sequence. Null once day 7 has
+   gone by — by then it has run out on its own. */
+const GATE_DAYS = [1, 3, 5, 7];
+const nextGateAt = since => {
+  if (!since) return null;
+  const now = Date.now();
+  for (const d of GATE_DAYS) { const at = since + d * 86400000; if (at > now) return at; }
+  return null;
+};
+
+/* A deliberate exit, not a fault. `Stopped Report` is reached only from the
+   false output of a `Still Enrolled? (Day N)` gate — the customer replied, or
+   the lead went terminal — and it writes PARTIAL, because stopping always
+   leaves the remaining steps unsent. The `Audit Log` node prefixes those
+   summaries with "Stopped before <step> - "; a run that went the distance is
+   prefixed "Completed - ". That prefix is the only thing in the row separating
+   "the machine did the right thing" from "the machine dropped a step", and
+   lib/health.js cannot draw it, because at the status level both are PARTIAL.
+   So it is drawn here, once, and named at every call site. */
+const STOPPED_PREFIX   = /^\s*stopped before\b/i;
+const isDeliberateStop = a => outcomeOf(a) === OUTCOME.PARTIAL && STOPPED_PREFIX.test(String(a && a.summary || ''));
+/* What is held against the workflow: FAILURE or PARTIAL, minus the deliberate
+   stops. A customer who replied is not a failed run. */
+const countsAgainst = a => isIncomplete(a) && !isDeliberateStop(a);
+
+/* There is still no webhook that cancels an enrolment, and there no longer
+   needs to be one. This used to be a disabled *Stop the sequence* button ending
+   "Reply to these people by hand", which read as the operator being the last
+   line of defence against a machine about to talk over a customer. The machine
+   stops itself. The reply is the thing that needs a person. */
+const SELF_STOPPING_NOTE =
+  'There is no button here because there is nothing to stop: the workflow\u2019s own day-1/3/5/7 gates end the sequence at its '
+  + 'next step. n8n exposes no cancel webhook either — HOOK in lib/data.js lists only lead-trigger, which starts a sequence — '
+  + 'and this dashboard will not write to a service-role table to fake one. Open the conversation and answer them.';
+
+/* What the gates cannot see, stated because this screen now leans on them.
+   Each `Replies Since Enrol (Day N)` node builds its `or=` from the lead\u2019s
+   email plus `<digits>@c.us` and `+<digits>@whatsapp.lead`, taking the digits
+   from the phone on the leads row via `Lead State (Day N)`. So a reply filed
+   only under a @lid handle, or a lead carrying no phone number, is invisible to
+   the gate — and to the expansion this screen does, for the same reason. */
+const GATE_BLIND_SPOT =
+  'The gate builds its lookup from the lead\u2019s email plus the two WhatsApp key shapes it can derive from the phone number on '
+  + 'the leads row, so a reply filed only under a @lid handle, or a lead with no phone number on it, is invisible to the gate — '
+  + 'and to the key expansion this screen does, for the same reason: a LID carries no phone digits and identifies nobody.';
 
 /* n8n does not expose credential state to the browser directly. What the
    dashboard can see is the wreckage: a failure row in v_needs_attention and the

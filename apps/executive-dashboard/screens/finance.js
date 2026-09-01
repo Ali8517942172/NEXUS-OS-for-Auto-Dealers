@@ -13,10 +13,18 @@
       not desk language). So the form validates against the same contract
       *before* sending, per field, and a rejection that still comes back is
       rendered as prose rather than as a dump.
-   2. Nothing on this screen is computed locally from a quote, with exactly one
-      declared exception — the monthly instalment of rule 5, which the workflow
-      does not return at all. Equity, LTV, tier and APR are read off the workflow
-      response and off `finance_quotes` and are never recomputed here.
+   2. Nothing on this screen is computed locally from a quote. There is no
+      exception any more, and the one there used to be is the reason this
+      paragraph is longer than the others. Until 31 Aug 2026 this file amortised
+      a monthly instalment in the browser, and the "amount financed" it
+      amortised was `vehicle_value_aed × loan_to_value_pct / 100` — which
+      cancels, exactly, to `loan_payoff_aed`: the outstanding loan on the car
+      being TRADED IN. It was amortised at the new car's rate over a 60-month
+      desk default and printed as the payment on the car being BOUGHT. A figure
+      26–44% away from the truth was read out to a customer. Equity, LTV, credit
+      band, APR, deposit, tenure, amount financed and instalment are read off
+      the workflow response and off `finance_quotes`, and are never recomputed,
+      defaulted or filled in here.
    3. A quote is a promise made to a named person. Attribution (`lead_name`,
       `lead_email`, `quoted_by`) travels with every request — `quoted_by` from
       the session, never from a field a rep can type into. Since 24 Aug the
@@ -33,12 +41,15 @@
       and what came back, never as an empty box. A check whose read failed or
       was truncated is withheld and named rather than reported as a reassuring
       zero.
-   5. Every money figure on this screen states its assumptions. The stored ones
-      say they are stored (Value and Payoff are what the rep typed; equity, LTV,
-      tier and APR are what the workflow returned). The one modelled figure —
-      the monthly instalment — never appears without its rate, its term and its
-      down payment, because a monthly payment with hidden assumptions is not a
-      quote, it is a number a customer will hold us to.
+   5. Every money figure on this screen says where it came from, and since
+      31 Aug 2026 there is only one place any of them can come from. Value and
+      Payoff are what the rep typed. Equity, LTV, credit band, APR, deposit,
+      tenure, amount financed, instalment and total cost of credit are what the
+      Finance Calculator returned and stored. Where it returned nothing, this
+      screen prints no number and says which of exactly three things happened:
+      there is no quote, the calculator returned no figure for this one, or the
+      calculator refused to price this file. An em dash is not one of those
+      three answers, so none of them is rendered as one.
 
    The workflow's own limits, mirrored below so the rep sees them before the
    round trip rather than after it: `vehicleValue` must be at least AED 5,000,
@@ -72,12 +83,30 @@
    will hit again the next time two people type a customer differently, so it is
    raised as a check and every row says which of his names it carries.
 
-   Three absences on `finance_quotes`, restated because each is a sentence
-   somebody will otherwise invent: no term, no monthly payment, no validity
-   date. The Monthly column is therefore modelled in this browser and says so on
-   every row, and **no quote here can be marked expired** — nothing on the row
-   records when one expires. "More than 7 days old" in the alerts is this desk's
-   own prompt to re-quote, labelled as such and never as a status.
+   ONE absence on `finance_quotes`, and it is the only one: there is no validity
+   column under any name. **No quote here can be marked expired** — nothing on
+   the row records when one stops standing. "More than 7 days old" in the alerts
+   is this desk's own prompt to re-quote, labelled as such and never as a
+   status.
+
+   This file used to claim three. The other two — no term, no monthly payment —
+   were never true, and asserting them on screen is what kept the browser
+   arithmetic alive through review. `tenure_months`, `monthly_payment_low_aed`,
+   `monthly_payment_high_aed`, `financed_aed`, `down_payment_aed`,
+   `down_payment_pct`, `down_payment_assumed`, `total_cost_of_credit_low_aed`,
+   `total_cost_of_credit_high_aed`, `max_ltv_pct`, `min_down_payment_aed`,
+   `vehicle_price_aed`, `trade_in_equity_applied_aed`, `apr_source` and
+   `ltv_policy_source` are all real columns (confirmed against
+   information_schema on 31 Aug 2026) and always were. The screen looked for
+   them under names nobody ever created — `monthly_payment_aed`,
+   `loan_amount_aed`, `amount_financed_aed` — found nothing, and printed the
+   absence as a fact about the database.
+
+   They are EMPTY, not absent, which is a different sentence and the one this
+   screen now says. `finance_quotes` holds no row at all today and the deployed
+   calculator writes 13 of its 34 columns, none of them an instalment. So the
+   honest output for each of these is no number and a statement of which
+   absence it is.
 
    And a rejection from the workflow is an outcome, not a fault. finance-calc is
    live and JWT-guarded and it validates hard: `audit_log` carries real REJECTED
@@ -157,20 +186,39 @@ const ATTN_LIMIT = 100;
    the check says which of the two it used. */
 const QUOTE_VALID_DAYS = 7;
 
-/* The instalment model, in one place. The term is a desk default because no
-   column carries one; the down payment is preferably the quote's own
-   loan-to-value and only falls back to this default when the row has no LTV.
-   Both are printed next to every figure they produce. */
-const TERM_MONTHS = 60;
-const DOWN_PAYMENT_PCT = 20;
+/* ── UAE consumer-finance policy, and what it is NOT ──────────────────────
+   Three numbers that used to be two, because one constant was doing the work of
+   two different ideas and the screen quoted the wrong one at a customer.
+   Nothing below reaches arithmetic. They are printed as the policy they are —
+   to say what a deposit or a tenure is measured against — and every deposit,
+   tenure and instalment figure this screen shows comes off the row instead.
 
-/* Tolerance before a stored monthly payment and this desk's arithmetic are
-   called a disagreement. Rounding and day-count conventions move an instalment
-   by a few dirhams; anything past this is the two sides having drifted apart,
-   which is the fault nobody notices until a customer is quoted the wrong
-   number. */
-const DRIFT_AED = 25;
-const DRIFT_PCT = 2;
+   The FLOOR. CBUAE Regulation 29/2011 caps a car loan at 80% of vehicle value,
+   so 20% down is the LEAST a customer may legally put in. It is a legal
+   minimum, not a market expectation, and it was previously used as the desk's
+   "default deposit" — which produces the largest loan the law permits and
+   understates the cash the customer has to find. Per quote the row carries the
+   enforced figures in `max_ltv_pct` and `min_down_payment_aed`, with
+   `ltv_policy_source` naming the regulation; where the row has them, the row
+   wins and these are not shown at all. */
+const MIN_DOWN_PAYMENT_PCT_CBUAE = 20;                            // legal floor
+const MAX_LTV_PCT_CBUAE = 100 - MIN_DOWN_PAYMENT_PCT_CBUAE;       // 80%, the floor expressed as an LTV
+
+/* The ASSUMPTION, kept deliberately apart from the floor above. UAE banks
+   commercially cap USED cars at 70% LTV and ALBA CARS sells used cars, so a
+   customer who states no deposit is assumed to bring 30%. Ten points of vehicle
+   value separate the two — on a 290,000 car, 29,000 of the customer's own money
+   — which is the whole reason they are not one constant. The CALCULATOR applies
+   this, never this screen: `down_payment_assumed` on the row says whether the
+   deposit was stated by the customer or assumed by the calculator, and that
+   boolean exists precisely so the UI never has to guess which it is. */
+const ASSUMED_DOWN_PAYMENT_PCT_USED = 30;
+
+/* The MAXIMUM tenure, CBUAE again — not a desk default, though it was used as
+   one. A 60-month assumption both minimises every monthly figure shown and
+   maximises the total interest sitting behind it. `tenure_months` on the row is
+   the only tenure this screen prints. */
+const MAX_TENURE_MONTHS_CBUAE = 60;
 
 /* Names shown per alert before it collapses into "+N more". Clicking the row
    filters the history to the full set, so this is a glance, not the list. */
@@ -289,31 +337,38 @@ function aprOf(q) {
 }
 
 /* SCHEMA.md documents `finance_quotes` as "lead_email, lead_name, and the quote
-   fields" and stops there, so which optional columns exist is not knowable from
-   the contract. Naming one that does not exist in a `select=` is not a blank
-   column, it is PostgREST 42703 and the *whole* query dies — so this screen asks
-   for `*` and then looks at what actually arrived. Every check that depends on
-   one of these says out loud when it is absent instead of quietly not running. */
-const MONTHLY_COLS  = ['monthly_payment_aed', 'monthly_payment', 'monthly_installment_aed', 'installment_aed', 'estimated_monthly_aed'];
-const VALID_COLS    = ['valid_until', 'quote_valid_until', 'valid_till', 'expires_at'];
-const TERM_COLS     = ['term_months', 'loan_term_months', 'tenure_months'];
-const FINANCED_COLS = ['loan_amount_aed', 'financed_amount_aed', 'amount_financed_aed'];
-const DOWN_COLS     = ['down_payment_aed', 'deposit_aed', 'downpayment_aed'];
+   fields" and stops there, so this screen asks for `*` (see loadQuotes) rather
+   than naming columns in a `select=`, where one wrong name is PostgREST 42703
+   and the *whole* query dies. Everything the row has therefore arrives on the
+   row and is read below by its real name.
+
+   That is what is left of a block that used to hold five lists of GUESSED
+   names. Two of them — the monthly payment and the amount financed — guessed
+   wrong on all eight candidates, so `cols2.monthly` and `cols2.financed` were
+   permanently null: the screen concluded the columns did not exist, said so on
+   screen as a fact about the database, disabled its own safety check on the
+   strength of it, and modelled the money itself. The real names are in the
+   header comment, confirmed against information_schema on 31 Aug 2026.
+
+   ONE list survives, and only because the thing it looks for genuinely does not
+   exist: no column of any name on `finance_quotes` records when a quote stops
+   standing. If one is ever added under one of these names the age check picks
+   it up and says which of the two dates it used. Note the structural weakness
+   that made the original mismatch invisible — `hasCol` inspects returned ROWS,
+   so an empty table reports every column absent regardless of name. That is
+   survivable for a date this screen only ever prefers, and it is not survivable
+   for a figure a customer hears, which is why nothing else is probed this way. */
+const VALID_COLS = ['valid_until', 'quote_valid_until', 'valid_till', 'expires_at'];
 const hasCol = (rows, key) => rows.some(r => r && Object.prototype.hasOwnProperty.call(r, key));
 const pickCol = (rows, names) => names.find(k => hasCol(rows, k)) || null;
 
-/* Standard amortising instalment. This is the one piece of arithmetic on this
-   screen that is not the workflow's (rule 2) — the workflow returns equity, a
-   tier and an APR and no payment at all, and a rep who needs a monthly figure
-   will otherwise work it out on a phone calculator with assumptions nobody can
-   see afterwards. A zero rate is not a division by zero here, it is principal
-   over term. */
-function instalment(principal, aprPct, months) {
-  if (principal == null || aprPct == null || !months || months <= 0 || principal <= 0) return null;
-  const r = aprPct / 100 / 12;
-  if (r === 0) return principal / months;
-  return principal * r / (1 - Math.pow(1 + r, -months));
-}
+/* There was an `instalment()` here — the standard amortising formula, a
+   `Math.pow`, and a `principal / months` branch for a zero rate. It was the
+   only `Math.pow` in the entire application. It is gone, along with every call
+   site, because the principal it was fed was the payoff on the trade-in (rule 2
+   at the top of this file) and because `monthly_payment_low_aed` and
+   `monthly_payment_high_aed` exist on the row and always did. The instalment
+   this desk shows is now the one the calculator computed and stored, or none. */
 
 /* ── Refusals ───────────────────────────────────────────────────────────────
    The workflow refuses bad input, and it is supposed to: audit_log carries
@@ -383,7 +438,7 @@ SCREENS.finance = async host => {
   const alertCard = el('div', 'card flush');
   alertCard.innerHTML = `<div class="card-head"><div>
       <div class="card-title">Needs attention</div>
-      <div class="card-sub">v_needs_attention for this screen, plus six checks this screen runs on the quotes and leads it just read</div>
+      <div class="card-sub">v_needs_attention for this screen, plus five checks this screen runs on the quotes and leads it just read</div>
     </div><div style="flex:1"></div>
     <button class="btn sm" id="fqRecheck"><span class="material-symbols-outlined">refresh</span> Re-check</button></div>
     <div class="pbody">${stateLoading(2)}</div>`;
@@ -476,7 +531,7 @@ SCREENS.finance = async host => {
   const resultCard = el('div', 'card flush');
   resultCard.innerHTML = `<div class="card-head"><div>
       <div class="card-title">Quote result</div>
-      <div class="card-sub">Straight from the workflow response — the only figure worked out here is the monthly instalment, and it carries its assumptions</div>
+      <div class="card-sub">Straight from the workflow response. No figure on this card is worked out in this browser — the line that used to say one was, said it about the one figure that was wrong</div>
     </div></div><div class="pbody" id="fOut"></div>`;
   rightCol.appendChild(resultCard);
 
@@ -596,7 +651,9 @@ SCREENS.finance = async host => {
   let rows = [], quotesErr = null;      // finance_quotes
   let leads = null, leadsErr = null;    // null = the read failed, not "no leads"
   let attn = null, attnErr = null;      // v_needs_attention rows for this screen
-  let cols2 = { monthly: null, valid: null, term: null, financed: null, down: null };
+  /* Only the validity date is probed by name now; everything else is read off
+     the row directly. See the VALID_COLS comment for why this one is different. */
+  let cols2 = { valid: null };
   let filter = 'all';
   let query = '';
   let focusKey = null;                  // an alert the history is filtered to
@@ -678,54 +735,98 @@ SCREENS.finance = async host => {
     return `<span class="mono">${esc(str(lead.phone))}</span>`;
   }
 
-  /* ── The money model ────────────────────────────────────────────────────
-     Everything the monthly figure rests on, per quote, plus where each input
-     came from — the row itself or this desk. Nothing here is ever shown without
-     the sentence that `assumptions()` builds from it.
+  /* ── Three ways for a figure to be missing ───────────────────────────────
+     `aed(null)` and `pct(null)` are both an em dash, so before 31 Aug 2026 a
+     rep could not tell "there is no quote for this customer", "there is a quote
+     and the calculator returned no figure for it" and "the calculator refused
+     to price this file" apart. They are three different next actions — quote
+     them, ask the calculator for the missing input, refer them to the bank —
+     and the third is the one somebody fills in from memory if it looks like a
+     loading failure.
 
-     Since 30 Aug 2026 the rate is a range, so the instalment is one too. It is
-     amortised at BOTH ends and shown as a span. Amortising only at the low end
-     and calling the answer "the monthly" would put the cheapest payment the
-     bank might ever offer into a rep's mouth as though it were the payment —
-     the same single flattering number, one step further downstream and harder
-     to spot, because a dirham figure does not look like a rate. Where only one
-     end is known, `b.ranged` is false and every caller says which end it is. */
+     So each state gets its own words ON the page and not only in a tooltip: a
+     screenshot, a printed quote and a shared screen all have no hover.
+
+     Only two of the three are cell-level, because the third cannot be: where no
+     quote exists there is no row to draw a cell in. That state is a whole-panel
+     `stateEmpty` — "No quotes recorded yet" under the history table and "No
+     quote yet" on the result card — and it is named here so the next person
+     looking for a third key finds the reason rather than adding one. */
+  const ABSENT = {
+    unpriced: { text: 'not calculated',  cls: 't-muted' },
+    declined: { text: 'not priced',      cls: 't-warm'  },
+  };
+  const absent = (state, why) =>
+    `<span class="${ABSENT[state].cls}" title="${esc(why)}">${esc(ABSENT[state].text)}</span>`;
+
+  /* ── What the calculator returned ────────────────────────────────────────
+     A straight projection of the row onto the names this screen renders.
+     Nothing here derives, defaults or falls back: every field is a column on
+     `finance_quotes`, read by its real name, and where the column is null the
+     field is null and stays null. The `basis()` that used to live here
+     amortised the trade-in payoff at the new car's rate — rule 2 at the top of
+     this file — and its removal is the whole of this change.
+
+     `??` and not `||` throughout. A tenure of 0 or a deposit of 0 is a figure
+     the calculator recorded; `||` silently replaced it with a desk default,
+     which is the same fault as inventing one, arriving by a quieter route.
+
+     `state` is what the rest of the screen renders off:
+       'priced'   — the calculator returned an instalment. Show it.
+       'unpriced' — there is a quote and no instalment on it. `why` says what
+                    the calculator was missing, in its own words where the
+                    response carried them.
+       'declined' — the calculator would not put a rate on this file at all (an
+                    AECB score below 541 returns quotable:false), or it failed.
+                    There is nothing to show and nothing to work out. */
   function basis(q) {
-    const value = n0(q.vehicle_value_aed);
     const rate = aprOf(q);
-    const apr = rate.low;
-    const aprHigh = rate.high;
-    const ltv = n0(q.loan_to_value_pct);
-    const rowTerm = cols2.term ? n0(q[cols2.term]) : null;
-    const term = rowTerm || TERM_MONTHS;
-    const termFrom = rowTerm ? 'the quote row' : `this desk's ${TERM_MONTHS}-month default`;
+    /* `vehicle_price_aed` is the car being BOUGHT. `vehicle_value_aed` is the
+       TRADE-IN and is not read here at all — reading it here is how the wrong
+       car ended up in the instalment. It is rendered under Inputs, where it is
+       labelled as what the rep typed. */
+    const price = n0(q.vehicle_price_aed);
+    const financed = n0(q.financed_aed);
+    const tenure = n0(q.tenure_months);
+    const down = n0(q.down_payment_aed);
+    const downPct = n0(q.down_payment_pct);
+    const downAssumed = q.down_payment_assumed === true;
+    const minDown = n0(q.min_down_payment_aed);
+    const maxLtv = n0(q.max_ltv_pct);
+    const equityApplied = n0(q.trade_in_equity_applied_aed);
+    const monthly = n0(q.monthly_payment_low_aed);
+    const monthlyHigh = n0(q.monthly_payment_high_aed);
+    const creditLow = n0(q.total_cost_of_credit_low_aed);
+    const creditHigh = n0(q.total_cost_of_credit_high_aed);
+    const aprSource = str(q.apr_source);
+    const ltvSource = str(q.ltv_policy_source);
+    /* Only a live response carries this — no column stores it. Where it is
+       there it is the calculator's own account of why there is no instalment,
+       which beats anything this screen could infer from the nulls. */
+    const calcReason = str(q.emi_unavailable_reason);
 
-    let principal = null, downFrom = null;
-    const rowFinanced = cols2.financed ? n0(q[cols2.financed]) : null;
-    const rowDown = cols2.down ? n0(q[cols2.down]) : null;
-    if (rowFinanced != null) { principal = rowFinanced; downFrom = 'the amount financed recorded on the quote'; }
-    else if (rowDown != null && value != null) { principal = value - rowDown; downFrom = 'the down payment recorded on the quote'; }
-    else if (value != null && ltv != null) { principal = value * ltv / 100; downFrom = `the quote's own loan to value of ${pct(ltv)}`; }
-    else if (value != null) { principal = value * (1 - DOWN_PAYMENT_PCT / 100); downFrom = `this desk's ${DOWN_PAYMENT_PCT}% down-payment default`; }
+    const declined = q.quotable === false || rate.low == null;
+    const state = declined ? 'declined' : (monthly == null ? 'unpriced' : 'priced');
 
-    const down = (value != null && principal != null) ? value - principal : null;
-    const downPct = (value && down != null) ? down / value * 100 : null;
-    const stored = cols2.monthly ? n0(q[cols2.monthly]) : null;
-    const monthly = instalment(principal, apr, term);
-    const monthlyHigh = aprHigh == null ? null : instalment(principal, aprHigh, term);
-    const ranged = monthly != null && monthlyHigh != null && monthlyHigh !== monthly;
-    /* A stored payment is compared against the whole band, not against one end
-       of it: an instalment priced anywhere inside the range the bank quoted is
-       not a disagreement, and calling it one would raise a CRITICAL alert on
-       every row the moment the rate became a range. */
-    const tol = stored == null ? 0 : Math.max(DRIFT_AED, Math.abs(stored) * DRIFT_PCT / 100);
-    const lo = monthly, hi = monthlyHigh == null ? monthly : monthlyHigh;
-    const gap = (stored != null && lo != null)
-      ? (stored < lo ? lo - stored : stored > hi ? stored - hi : 0)
-      : null;
-    const drifted = gap != null && gap > tol;
-    return { value, apr, aprHigh, ranged, ltv, term, termFrom, principal, down, downPct, downFrom,
-             stored, monthly, monthlyHigh, gap, drifted };
+    const why = declined
+      ? 'The calculator put no rate on this file, so there is no instalment behind it and none may be worked out. '
+        + 'A file it declines to price is a referral to the bank, not a cheaper quote.'
+      : state === 'unpriced'
+        ? (calcReason
+          || (price == null
+            ? 'The calculator was never told the price of the car being BOUGHT, so it returned no instalment. '
+              + 'This desk captures a trade-in value and a payoff and no purchase price at all — there is no field for one on '
+              + 'this form — and a payment worked out without it is a payment on the wrong car. That is the 31 Aug 2026 incident exactly.'
+            : `The calculator returned no instalment for this quote: monthly_payment_low_aed on the row is empty. `
+              + 'The row does not record why, and this screen will not guess at it.'))
+        : '';
+
+    const aprRanged = rate.low != null && rate.high != null && rate.low !== rate.high;
+    const monthlyRanged = monthly != null && monthlyHigh != null && monthlyHigh !== monthly;
+    return { state, why, apr: rate.low, aprHigh: rate.high, aprRanged, aprSource,
+             maxLtv, ltvSource, price, financed, tenure,
+             down, downPct, downAssumed, minDown, equityApplied,
+             monthly, monthlyHigh, monthlyRanged, creditLow, creditHigh };
   }
   /* One quote is drawn in the table, in the drawer and in an alert on the same
      paint; the basis is identical each time and is worked out once. */
@@ -736,35 +837,45 @@ SCREENS.finance = async host => {
     return basisCache.get(k);
   };
 
-  function assumptions(b) {
-    if (b.apr == null) {
-      return 'No indicative APR is recorded on this quote, so no monthly figure is shown. '
-        + 'A payment worked out at a rate this screen invented would be worse than no payment at all.';
+  /* The sentence under any instalment. Where one exists it names the columns it
+     was read from and whether the deposit behind it was stated or assumed —
+     `down_payment_assumed` exists so that this sentence never has to guess.
+     Where none exists it is `b.why`, which names the absence rather than
+     describing arithmetic that no longer happens. */
+  function instalmentBasis(b) {
+    if (b.state !== 'priced') return b.why;
+    const parts = [];
+    parts.push(`Read off the quote, not worked out here: monthly_payment_low_aed`
+      + `${b.monthlyRanged ? ' and monthly_payment_high_aed' : ''}, as the Finance Calculator stored ${b.monthlyRanged ? 'them' : 'it'}.`);
+    if (b.financed != null) parts.push(`It is the instalment on ${aed(b.financed)} financed`
+      + `${b.tenure == null ? '' : ` over ${num(b.tenure)} months`}`
+      + `${b.apr == null ? '' : ` at ${b.aprRanged ? aprRange(b.apr, b.aprHigh) : pct(b.apr)} ${RATE_BASIS}`}.`);
+    if (b.down != null) {
+      parts.push(`Deposit ${aed(b.down)}${b.downPct == null ? '' : ` (${pct(b.downPct)} of the price)`}, `
+        + (b.downAssumed
+          ? `which the customer did NOT state — the calculator assumed it. Confirm it before this figure is repeated: a different deposit is a different payment.`
+          : `as stated by the customer.`));
     }
-    if (b.principal == null) {
-      return 'This quote records no vehicle value, so there is no amount to amortise and no monthly figure is shown. '
-        + 'A customer with no trade-in gets a rate, not an instalment: nothing here says what car they are buying.';
+    if (b.creditLow != null) {
+      parts.push(`Total cost of credit ${b.creditHigh == null || b.creditHigh === b.creditLow
+        ? aed(b.creditLow) : aedRange(b.creditLow, b.creditHigh)} over the term.`);
     }
-    const rate = b.ranged
-      ? `the ${aprRange(b.apr, b.aprHigh)} ${RATE_BASIS} on this quote`
-      : `${pct(b.apr)} ${RATE_BASIS}, which is the LOW end of the range this quote was given — `
-        + 'the high end is not recorded on this row, so the figure is the best case and not the payment';
-    return `Monthly is this desk's arithmetic, not the workflow's: ${rate}, `
-      + `a ${num(b.term)}-month term from ${b.termFrom}, and ${aed(b.down)} down`
-      + `${b.downPct == null ? '' : ` (${pct(b.downPct)} of the vehicle value)`} from ${b.downFrom}. `
-      + `It amortises ${aed(b.principal)}.`;
+    if (!b.monthlyRanged) {
+      parts.push('Only one end of the payment is stored on this row, so it is a single figure and not the span the rate is quoted at.');
+    }
+    return parts.join(' ');
   }
-  /* The span, or the one end that is known named as an end. `num` on the far
+  /* The span, or the one end that is stored named as an end. `num` on the far
      side rather than `aed`, for the same reason aedRange gives: "AED" twice in
      one cell reads as two separate prices. */
-  const monthlyRange = b => (b.ranged ? `${aed(b.monthly)} – ${num(b.monthlyHigh)}` : aed(b.monthly));
+  const monthlyRange = b => (b.monthlyRanged ? `${aed(b.monthly)} – ${num(b.monthlyHigh)}` : aed(b.monthly));
   const monthlyCell = q => {
     const b = basisOf(q);
-    const t = esc(assumptions(b));
-    if (b.monthly == null) return `<span class="t-muted" title="${t}">—</span>`;
-    return `<span title="${t}">${monthlyRange(b)}</span>`
-      + (b.ranged ? '' : ' <span class="t-warm" title="Best case only. The high end of this quote’s rate is not recorded on the row, so this is the cheapest instalment the bank might offer and not the instalment.">↓</span>')
-      + (b.drifted ? ' <span class="t-hot" title="The monthly payment stored on this row falls outside the instalment range worked out from the row’s own figures.">≠</span>' : '');
+    const t = instalmentBasis(b);
+    if (b.state !== 'priced') return absent(b.state, t);
+    return `<span title="${esc(t)}">${monthlyRange(b)}</span>`
+      + (b.monthlyRanged ? '' : ' <span class="t-warm" title="One figure, not a span. Only monthly_payment_low_aed is stored on this row, so this is the cheapest payment inside the quoted rate range and not the payment.">↓</span>')
+      + (b.downAssumed ? ' <span class="t-warm" title="The deposit behind this payment was assumed by the calculator, not stated by the customer (down_payment_assumed is true on this row). A different deposit is a different payment.">≈</span>' : '');
   };
 
   /* ── Quote history ─────────────────────────────────────────────────────── */
@@ -813,17 +924,18 @@ SCREENS.finance = async host => {
         + 'twice it over 60 months, so an unlabelled percentage read out to a customer understates what they will pay by about half.',
       `finance_quotes stores a single APR number and the workflow writes the LOW end of the range into it. The full range survives in the row's disclaimer, which is `
         + 'where the range above is read from. A row whose disclaimer carries no range shows its one figure with a + and in amber: that is a lower bound, not a rate.',
-      `Monthly is the only modelled figure on this table: it amortises the amount financed at BOTH ends of the quote's own APR range over `
-        + `${cols2.term ? 'the term on the row' : `a ${TERM_MONTHS}-month term (this desk's default — these rows carry no term column)`}, `
-        + `with the down payment taken from ${cols2.down || cols2.financed ? 'the figures on the row' : 'the quote’s own loan to value, or from this desk’s ' + DOWN_PAYMENT_PCT + '% default where the row has no LTV'}. `
-        + 'A ↓ marks a row where only the low end of the rate is recoverable, so the instalment beside it is the best case and not the payment. '
-        + 'Hover a Monthly cell for that row’s exact rate, term and down payment.',
-      'A quote with no APR shows no monthly figure at all rather than one at a rate this screen made up, and a quote with no trade-in shows none either — nothing on the row says what car is being bought.',
-      `finance_quotes stores no term, no monthly payment and no validity date. That is why Monthly is modelled here rather than read, and why no row on this table `
+      'Monthly is NOT modelled here any more. It is monthly_payment_low_aed and monthly_payment_high_aed off the row, as the Finance Calculator computed and stored them, '
+        + 'together with the tenure, the amount financed and the deposit behind them. Until 31 Aug 2026 this browser amortised the figure itself and amortised the wrong '
+        + 'number — the payoff on the trade-in rather than the loan on the car being bought. Nothing on this table is arithmetic performed in this browser.',
+      'Monthly says which of three things it is when there is no figure, because they are three different next actions: "not calculated" is a quote the calculator returned no '
+        + 'instalment for (hover it for what it was missing), "not priced" is a file it declined to put a rate on at all, and an empty table says so in its own words above. '
+        + 'A ↓ marks a row storing only one end of the payment. A ≈ marks a row whose deposit the calculator ASSUMED rather than the customer stating it.',
+      `A deposit is not a desk default. The calculator decides it and records down_payment_assumed to say whether the customer stated it: ${MIN_DOWN_PAYMENT_PCT_CBUAE}% is `
+        + `the CBUAE 29/2011 legal floor (a ${MAX_LTV_PCT_CBUAE}% LTV ceiling), roughly ${ASSUMED_DOWN_PAYMENT_PCT_USED}% is what a UAE bank wants on a used car, and the two `
+        + `are ${ASSUMED_DOWN_PAYMENT_PCT_USED - MIN_DOWN_PAYMENT_PCT_CBUAE} points of the price apart. Tenure comes from tenure_months; ${MAX_TENURE_MONTHS_CBUAE} months is `
+        + 'the CBUAE ceiling and never an assumption made here.',
+      `finance_quotes stores no validity date under any name, which is why no row on this table `
         + `is ever marked expired: nothing records when a quote stops standing. When is what the table shows, and "more than ${num(QUOTE_VALID_DAYS)} days old" above it is this desk's prompt to re-quote.`,
-      cols2.monthly
-        ? `A ≠ marks a row whose stored ${cols2.monthly} falls outside that instalment range by more than ${aed(DRIFT_AED)} or ${DRIFT_PCT}%. A figure inside the range is not a disagreement.`
-        : 'These rows carry no stored monthly payment — the table has no such column — so there is nothing for the modelled figure to disagree with.',
       'Where one customer appears more than once, these are repeat quotes to the same person and not separate pieces of business. The Customer column marks a row whose customer is filed under more than one name.',
     ];
     return `<div class="list-item" style="cursor:default">
@@ -837,8 +949,14 @@ SCREENS.finance = async host => {
     if (!body) return;
     if (quotesErr) { body.innerHTML = stateError('quote history', quotesErr.message); return; }
     if (!rows.length) {
+      /* The first of the three absences, and the only one that is a whole panel
+         rather than a cell: there is no quote, as opposed to a quote the
+         calculator returned no figure for ("not calculated") or a file it
+         declined to price ("not priced"). finance_quotes is empty today, so
+         this is what the desk actually shows. */
       body.innerHTML = stateEmpty('No quotes recorded yet',
-        'Every calculation from this screen is stored here, with the customer and the rep it belongs to.', 'receipt_long');
+        'finance_quotes holds no row at all, so there is no figure on this desk to show or to withhold. '
+        + 'Every calculation from this screen is stored here, with the customer and the rep it belongs to.', 'receipt_long');
       return;
     }
     const shown = rows.filter(matches);
@@ -862,7 +980,19 @@ SCREENS.finance = async host => {
       { label: 'Equity', align: 'r', render: r => (isNoTradeIn(r.equity_status)
         ? '<span class="t-muted" title="This customer had no trade-in, so there is no equity to have. The blank is the answer, not a missing figure.">no trade-in</span>'
         : `<span class="${eqClass(r.equity_status)}" title="Vehicle value less the outstanding payoff, as the workflow returned it.">${aed(r.equity_aed)}</span>`) },
-      { label: 'LTV', align: 'r', render: r => pct(r.loan_to_value_pct) },
+      /* Headed for what the column IS, not for what its name suggests. The
+         workflow computes loan_to_value_pct as loanPayoffAmount ÷ vehicleValue
+         — the payoff on the TRADE-IN over the trade-in's value — so it says how
+         far underwater the old car is. It is not a loan-to-value on the
+         purchase, and no column anywhere is: that would need financed_aed ÷
+         vehicle_price_aed, and this desk captures no purchase price. Shown
+         under "LTV" with no tooltip it was the one money cell on this screen a
+         rep could read as a lending ratio and repeat as one. */
+      { label: 'Payoff ÷ value', align: 'r', render: r => (n0(r.loan_to_value_pct) == null
+        ? absent('unpriced', 'The workflow recorded no ratio on this quote. With no trade-in there is no payoff and no value to divide, so there is nothing to show.')
+        : `<span title="${esc('The outstanding payoff on the TRADE-IN as a percentage of the trade-in’s value, as the workflow returned it (loan_to_value_pct). '
+            + 'Above 100% the customer owes more than the old car is worth, which is the Negative equity column beside it. '
+            + 'This is NOT a loan to value on the car being bought — that would be financed_aed ÷ vehicle_price_aed, and this desk captures no purchase price.')}">${pct(r.loan_to_value_pct)}</span>`) },
       /* `finance_tier` is the legacy column name — the workflow has written the
          AECB credit band into it since 30 Aug 2026 and the column was never
          renamed, so it is read under the old name and shown under the new one. */
@@ -990,20 +1120,28 @@ SCREENS.finance = async host => {
     const nQ = rows.length, nP = ppl.length;
     const enough = nP >= STAT_MIN_CUSTOMERS;
     const basisLine = `${num(nQ)} ${plural(nQ, 'quote', 'quotes')} belonging to ${num(nP)} ${plural(nP, 'customer', 'customers')}`;
+    /* Counted, not assumed. Whether this screen can answer "what is the monthly
+       payment" is a fact about how many rows carry one, and it moves between
+       the two columns below on its own as the calculator starts writing them. */
+    const priced = rows.filter(r => n0(r.monthly_payment_low_aed) != null).length;
 
     const can = [
       ['What was quoted, to whom, and by whom',
         `Every row of finance_quotes, newest first, with the customer's name, their number from the lead record and the rep in quoted_by. ${basisLine} read here.`],
       ['What the workflow returned on each one',
-        'Equity, equity status, loan to value, the credit band and the indicative APR range are read off the row exactly as Finance Calc returned them, and are never recomputed on this screen. '
+        'Equity, equity status, the payoff-to-value ratio, the credit band and the indicative APR range are read off the row exactly as Finance Calc returned them, and are never recomputed on this screen. '
         + 'The APR is shown as the range it was quoted at, recovered from the row\u2019s disclaimer, because the column beside it stores only the low end.'],
-      ['What a monthly instalment would be, on stated assumptions',
-        `Modelled here, not stored: both ends of the quote's own APR range over ${cols2.term ? 'the term on the row' : `a ${num(TERM_MONTHS)}-month term`}, with the deposit taken from the quote's own loan to value. Every figure carries its rate, term and deposit, and the instalment is a span for the same reason the rate is.`],
+      priced
+        ? ['What the monthly instalment is',
+          `Read off monthly_payment_low_aed and monthly_payment_high_aed on ${num(priced)} of the ${num(nQ)} ${plural(nQ, 'quote', 'quotes')} here, with the tenure, `
+          + 'the amount financed, the deposit and the total cost of credit the calculator stored beside them. Nothing about a payment is worked out in this browser: '
+          + 'until 31 Aug 2026 it was, and what it amortised was the payoff on the trade-in rather than the loan on the car being bought.']
+        : null,
       ['Which quotes have a problem worth a phone call',
         'The checks in the strip above — a quote with no email, a quote whose customer has gone cold, a customer filed under more than one name, a quote old enough to re-run.'],
       ['What the workflow has refused, and why',
         'The REJECTED rows finance-calc wrote to audit_log, with the reason it gave, listed on this screen rather than left in n8n.'],
-    ];
+    ].filter(Boolean);
 
     /* The same reason, phrased for the three cases it actually has: nothing on
        the desk, one customer quoted repeatedly, or a few customers. */
@@ -1016,16 +1154,27 @@ SCREENS.finance = async host => {
         enough
           ? null
           : `Withdrawn. ${smallN} The range in the strip above is shown instead. This becomes a real figure at ${num(STAT_MIN_CUSTOMERS)} customers, not at ${num(STAT_MIN_CUSTOMERS)} quotes.`],
-      ['What is our average APR, and our average loan to value?',
+      ['What is our average APR, and our average payoff-to-value ratio?',
         enough
           ? null
           : `Withdrawn from the strip on 24 Aug for the same reason. ${nQ ? 'Both are still on every row of the table below, where they are what the workflow returned for that one customer — which is all they have ever been.' : 'Both reappear as soon as there are quotes from enough different customers for a mean to describe the desk rather than a person.'}`],
+      ['What is the monthly payment on the rest of these quotes?',
+        priced >= nQ
+          ? null
+          : `${nQ ? `${num(nQ - priced)} of the ${num(nQ)} ${plural(nQ, 'quote', 'quotes')} here ${plural(nQ - priced, 'carries', 'carry')} no monthly_payment_low_aed` : 'No quote on this desk carries a monthly_payment_low_aed'}, so no payment is shown against `
+          + `${nQ - priced === 1 ? 'it' : 'them'} and none is worked out here. The column exists and is empty rather than absent: the deployed calculator writes 13 of the 34 columns on finance_quotes `
+          + 'and none of the instalment ones, and it cannot price a payment at all without the price of the car being BOUGHT — which this desk has no field for. '
+          + 'It would take vehicle_price_aed on the quote request and the newer calculator deployed. Each row says which of the two it is; hover the Monthly cell.'],
+      ['What is our loan to value on a car we are selling?',
+        'Not answerable, and the column named LTV is not it. finance_quotes.loan_to_value_pct is the payoff on the customer’s TRADE-IN over that trade-in’s value — how far underwater the old car is. '
+        + `A real purchase LTV is financed_aed ÷ vehicle_price_aed, and while vehicle_price_aed exists it is never populated from this desk. The ${MAX_LTV_PCT_CBUAE}% CBUAE ceiling therefore has nothing on this screen to be `
+        + 'compared against: max_ltv_pct and ltv_policy_source on the row carry the ceiling the calculator actually enforced, per quote.'],
       ['What share of quotes turns into a sale?',
         'Not answerable at any n. finance_quotes records no outcome — there is no accepted, declined, sold or lapsed column — and purchase_history carries no link back to a quote or to an inventory unit. Nothing in the database joins a quote to what happened next. It would take an outcome column on finance_quotes, written when the deal closes.'],
       ['What is in the finance pipeline?',
         'There is no pipeline here to show. A quote carries no stage, no expected close date and no outcome, so a row in this table is a number that was said out loud once — not a deal in progress. Treating the sum of these values as a pipeline would count the same trade-in three times.'],
       ['Which quotes have expired?',
-        'Not answerable. finance_quotes stores no validity date, no term and no monthly payment. Nothing on the row records when a quote stops standing, so no quote on this screen is ever marked expired; the alerts say "more than ' + num(QUOTE_VALID_DAYS) + ' days old", which is a fact about the row and this desk\u2019s own prompt to re-quote.'],
+        'Not answerable. finance_quotes stores no validity date under any name \u2014 that one absence is real, unlike the two this panel used to bundle with it. Nothing on the row records when a quote stops standing, so no quote on this screen is ever marked expired; the alerts say "more than ' + num(QUOTE_VALID_DAYS) + ' days old", which is a fact about the row and this desk\u2019s own prompt to re-quote.'],
       ['How has quoting changed over time?',
         !nQ
           ? 'There is nothing recorded to plot. finance_quotes keeps created_at, so a series appears here once the desk has quoted enough different customers for the line to mean something.'
@@ -1055,17 +1204,21 @@ SCREENS.finance = async host => {
     </div>`;
   }
 
-  /* ── The six checks this screen makes ────────────────────────────────────
-     All six run on rows already fetched for the table and the lead picker — no
+  /* ── The five checks this screen makes ───────────────────────────────────
+     All five run on rows already fetched for the table and the lead picker — no
      read exists on this screen to feed an alert. Each states the denominator it
      counted against, and each one whose input is missing or truncated is
      withheld and named rather than reported as zero.
 
-     The sixth arrived with round 4 and is the one this dataset made visible:
-     the same email under two different names. It is a data-quality fault, not a
-     desk fault, which is exactly why nothing else on the screen would have
-     shown it — the table renders whatever name each row carries and looks
-     perfectly consistent doing so. */
+     There were six until 31 Aug 2026. The one that went was a CRITICAL claiming
+     a STORED monthly payment disagreed with this browser's own arithmetic — the
+     note above `out2` says why it was removed rather than repaired.
+
+     The last of the five arrived with round 4 and is the one this dataset made
+     visible: the same email under two different names. It is a data-quality
+     fault, not a desk fault, which is exactly why nothing else on the screen
+     would have shown it — the table renders whatever name each row carries and
+     looks perfectly consistent doing so. */
   function buildChecks() {
     const now = Date.now();
     const quotesCapped = rows.length >= HISTORY_LIMIT;
@@ -1090,7 +1243,24 @@ SCREENS.finance = async host => {
     const coldLead = leads
       ? withEmail.filter(q => { const l = leadFor(q); return l && GONE.has(up(l.status)); })
       : [];
-    const drifted = cols2.monthly ? rows.filter(q => basisOf(q).drifted) : [];
+    /* There was a CRITICAL check here reading "N quotes have a stored monthly
+       payment that does not match its own figures", which compared
+       monthly_payment_* against an instalment this browser amortised and told
+       the rep, in the drawer, not to repeat EITHER number. It has been removed
+       rather than repaired. It had no standing: the stored figure is the
+       authoritative one and a browser-side model is not entitled to contradict
+       it. It was also permanently dead — it was gated on a column name that
+       never existed — and had the names been corrected without removing the
+       model, it would have amortised the trade-in payoff and raised CRITICAL on
+       essentially every row, burying the five checks that are real.
+
+       Nothing replaces it here. A cross-check between monthly_payment_low_aed
+       and financed_aed, tenure_months and indicative_apr_*_pct is worth having,
+       but it is a check between four columns the calculator wrote and it
+       belongs inside the calculator, where the rounding and day-count
+       conventions that decide it are known. DRIFT_AED and DRIFT_PCT went with
+       it; they were the tolerance on a comparison that should never have been
+       made in a browser. */
 
     /* One email, more than one spelling of the person behind it. finance_quotes
        stores the name the rep typed at quote time and identifies the customer by
@@ -1103,20 +1273,6 @@ SCREENS.finance = async host => {
     const splitQuotes = splitNames.flatMap(p => p.quotes);
 
     const out2 = [
-      {
-        key: 'drift',
-        sev: 'CRITICAL',
-        icon: 'rule',
-        title: `${num(drifted.length)} ${plural(drifted.length, 'quote has', 'quotes have')} a stored monthly payment that does not match its own figures`,
-        detail: `The monthly payment stored in ${cols2.monthly} disagrees with the same instalment worked out from the row's own `
-          + `vehicle value, APR and loan to value by more than ${aed(DRIFT_AED)} or ${DRIFT_PCT}% on `
-          + `${num(drifted.length)} of the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here. `
-          + 'Either the stored figure was computed on assumptions this screen does not have, or the calculator and the row have drifted apart — '
-          + 'and a customer quoted from the stored number is being told something the rest of the row does not support. '
-          + 'Hover the Monthly cell on each row for the rate, term and down payment used here.',
-        quotes: drifted,
-        skip: !cols2.monthly,
-      },
       {
         key: 'noemail',
         sev: 'CRITICAL',
@@ -1143,7 +1299,7 @@ SCREENS.finance = async host => {
         detail: (cols2.valid
             ? `${num(stale.length)} of the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${plural(stale.length, 'is', 'are')} past the validity date on the row (${cols2.valid}).`
             : `${num(stale.length)} of the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${plural(stale.length, 'was', 'were')} quoted more than ${num(QUOTE_VALID_DAYS)} days ago. `
-              + `No quote here is marked expired and none can be: finance_quotes stores no validity date, no term and no monthly payment, so nothing on the row records when it stops standing. `
+              + `No quote here is marked expired and none can be: finance_quotes stores no validity date under any name, so nothing on the row records when it stops standing. `
               + `${num(QUOTE_VALID_DAYS)} days is this desk's own prompt to re-quote — not a policy, not a status, and not something the database would agree with if asked.`)
           + ` The oldest was quoted ${ago(stale[0]?.created_at)}. `
           + 'The equity, the credit band and the APR range on it were priced against that day\u2019s rate sheet and that day\u2019s vehicle value; re-run it before it is repeated to the customer.',
@@ -1208,11 +1364,15 @@ SCREENS.finance = async host => {
       leadsCapped
         ? `The leads read stopped at the ${num(LEAD_LIMIT)} newest leads. A quote whose customer is older than those would look like it had no lead record, so the missing-lead check is withheld rather than accusing a customer record of not existing.`
         : '',
-      rows.length && !cols2.monthly
-        ? 'None of the quotes read here carries a stored monthly payment, so the stored-versus-calculated check could not run at all. The Monthly column is this desk’s own arithmetic and there is nothing to disagree with it.'
+      /* Counted, not asserted. This used to read "none of the quotes carries a
+         stored monthly payment" on the strength of a probe for column names
+         that were never real, which made a false statement about the schema the
+         justification for computing the figure here instead. */
+      rows.length && rows.every(q => n0(q.monthly_payment_low_aed) == null)
+        ? 'No quote read here carries a monthly_payment_low_aed, so no monthly payment is shown against any of them. The column exists and is empty — it is not missing — and nothing is worked out in its place.'
         : '',
       rows.length && !cols2.valid
-        ? `finance_quotes carries no validity date, no term and no monthly payment. No quote on this screen can be marked expired, and none is: the age check reads "more than ${num(QUOTE_VALID_DAYS)} days old", which is this desk's prompt to re-quote rather than a status the row carries.`
+        ? `finance_quotes carries no validity date under any name. No quote on this screen can be marked expired, and none is: the age check reads "more than ${num(QUOTE_VALID_DAYS)} days old", which is this desk's prompt to re-quote rather than a status the row carries.`
         : '',
       out2.length > 1
         ? 'A quote can satisfy more than one check, so these counts overlap and do not add up to a total.'
@@ -1303,7 +1463,6 @@ SCREENS.finance = async host => {
       'no customer is recorded under more than one name',
       leads && leads.length < LEAD_LIMIT ? 'every quote matches a lead record' : '',
       leads ? 'no quote belongs to a lead that has gone cold' : '',
-      cols2.monthly ? 'no stored monthly payment disagrees with its own figures' : '',
     ].filter(Boolean);
     /* Built as a sentence, not a comma salad: this line is the whole claim the
        panel is making on a day with no alerts, and it has to read like one. */
@@ -1393,13 +1552,7 @@ SCREENS.finance = async host => {
       rows = await db(`finance_quotes?select=*&order=created_at.desc&limit=${HISTORY_LIMIT}`);
       quotesErr = null;
     } catch (e) { rows = []; quotesErr = e; }
-    cols2 = {
-      monthly: pickCol(rows, MONTHLY_COLS),
-      valid: pickCol(rows, VALID_COLS),
-      term: pickCol(rows, TERM_COLS),
-      financed: pickCol(rows, FINANCED_COLS),
-      down: pickCol(rows, DOWN_COLS),
-    };
+    cols2 = { valid: pickCol(rows, VALID_COLS) };
     basisCache.clear();
   }
 
@@ -1562,32 +1715,69 @@ SCREENS.finance = async host => {
                  written the AECB credit band into it since 30 Aug 2026 and the
                  column was never renamed. -->
             <dt>Credit band</dt><dd>${esc(q.finance_tier || '—')}</dd>
-            <dt>Loan to value</dt><dd class="num">${pct(q.loan_to_value_pct)}</dd>
+            <!-- Headed for what the column is, not for its name. See the table
+                 column of the same figure for the full note: this is the payoff
+                 on the TRADE-IN over the trade-in's value, not a loan to value
+                 on the car being bought. It was headed "Loan to value" here and
+                 "LTV" in the table, which is the one reading of it a rep could
+                 repeat to a customer as a lending ratio. -->
+            <dt>Payoff ÷ trade-in value</dt><dd class="num">${n0(q.loan_to_value_pct) == null
+              ? absent('unpriced', 'The workflow recorded no ratio on this quote. With no trade-in there is no payoff and no value to divide.')
+              : `${pct(q.loan_to_value_pct)}<div class="cell-sub">${esc('How much of the old car’s value is still owed on it. Not a loan to value on the purchase — no column anywhere records one.')}</div>`}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
             `These four are what the Finance Calc workflow returned on ${stamp(q.created_at)} and are not recomputed here. `
             + `finance_quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; `
             + `the range above is read back out of the disclaimer, which carries both ends.`)}</div>
         </div>
+        <!-- Every row of this section is one column off finance_quotes. It was
+             headed "this desk's arithmetic" and it was: the Monthly was
+             amortised here, "Down payment" printed the customer's TRADE-IN
+             EQUITY (the same number this drawer already shows correctly two
+             sections above, under Equity), and "Amount financed" printed the
+             PAYOFF on the trade-in. Three wrong nouns over three figures a
+             customer would repeat back. Each field is now blank independently
+             when its own column is null — the three used to be gated together
+             on whether a monthly figure existed, so a missing rate blanked the
+             term and a missing vehicle value blanked the deposit, and nothing
+             on screen said which input was the absent one. -->
         <div class="section">
-          <div class="label-caps">Monthly instalment · this desk's arithmetic</div>
+          <div class="label-caps">Monthly instalment · as the calculator stored it</div>
           <dl class="kv">
-            <dt>Monthly</dt><dd class="num"><strong>${b.monthly == null ? '—' : monthlyRange(b)}</strong>${
-              b.monthly == null || b.ranged ? '' : '<div class="cell-sub t-warm">Best case only — amortised at the low end of the rate.</div>'}</dd>
+            <dt>Monthly</dt><dd class="num">${b.state === 'priced'
+              ? `<strong>${monthlyRange(b)}</strong>${b.monthlyRanged ? '' : '<div class="cell-sub t-warm">One figure, not a span — only monthly_payment_low_aed is stored on this row.</div>'}`
+              : absent(b.state, b.why)}</dd>
             <dt>Rate</dt><dd class="num">${b.apr == null
-              ? '—'
-              : b.ranged
-                ? `${aprRange(b.apr, b.aprHigh)}<div class="cell-sub">${esc(RATE_BASIS + ', from this quote')}</div>`
+              ? absent(b.state === 'declined' ? 'declined' : 'unpriced', b.state === 'declined'
+                ? b.why
+                : 'This quote records no indicative APR at all, under either the column or the disclaimer prefix.')
+              : b.aprRanged
+                ? `${aprRange(b.apr, b.aprHigh)}<div class="cell-sub">${esc(RATE_BASIS + ', from this quote' + (b.aprSource ? ` · ${b.aprSource}` : ''))}</div>`
                 : `${pct(b.apr)}<div class="cell-sub t-warm">${esc('the LOW end of this quote’s range, ' + RATE_BASIS)}</div>`}</dd>
-            <dt>Term</dt><dd>${b.monthly == null ? '—' : `${num(b.term)} months, from ${esc(b.termFrom)}`}</dd>
-            <dt>Down payment</dt><dd class="num">${b.monthly == null ? '—' : `${aed(b.down)}${b.downPct == null ? '' : ` · ${pct(b.downPct)}`}`}</dd>
-            <dt>Amount financed</dt><dd class="num">${b.monthly == null ? '—' : aed(b.principal)}</dd>
-            ${cols2.monthly ? `<dt>Stored on the row</dt><dd class="num ${b.drifted ? 't-hot' : ''}">${aed(b.stored)}</dd>` : ''}
+            <dt>Tenure</dt><dd>${b.tenure == null
+              ? absent(b.state === 'declined' ? 'declined' : 'unpriced', 'tenure_months is empty on this row. No term is assumed in its place — a tenure assumed at the legal maximum flatters every monthly figure behind it.')
+              : `${num(b.tenure)} months, from tenure_months on the quote`}</dd>
+            <dt>Down payment</dt><dd class="num">${b.down == null
+              ? absent(b.state === 'declined' ? 'declined' : 'unpriced', 'down_payment_aed is empty on this row. The deposit is the calculator’s to decide and this screen applies no default to anything.')
+              : `${aed(b.down)}${b.downPct == null ? '' : ` · ${pct(b.downPct)} of the price`}<div class="cell-sub${b.downAssumed ? ' t-warm' : ''}">${esc(b.downAssumed
+                  ? 'ASSUMED by the calculator — the customer did not state a deposit. Confirm it before the payment above is repeated.'
+                  : 'As stated by the customer (down_payment_assumed is false).')}</div>`}</dd>
+            <dt>Amount financed</dt><dd class="num">${b.financed == null
+              ? absent(b.state === 'declined' ? 'declined' : 'unpriced', 'financed_aed is empty on this row. It is the loan on the car being BOUGHT and nothing on this screen can stand in for it.')
+              : aed(b.financed)}</dd>
+            <!-- The distinction the old "Down payment" row destroyed. Equity is
+                 what the trade-in is worth net of its payoff; this is how much
+                 of that equity the calculator actually put toward the new car.
+                 They are different numbers and neither of them is the deposit. -->
+            ${b.equityApplied == null ? '' : `<dt>Trade-in equity applied</dt><dd class="num">${aed(b.equityApplied)}<div class="cell-sub">${esc(
+              'Part of the deposit above, not a separate payment. The Equity figure at the top of this drawer is what the trade-in is worth net of its payoff; this is how much of it went into this purchase.')}</div></dd>`}
+            ${b.creditLow == null ? '' : `<dt>Total cost of credit</dt><dd class="num">${
+              b.creditHigh == null || b.creditHigh === b.creditLow ? aed(b.creditLow) : aedRange(b.creditLow, b.creditHigh)}</dd>`}
+            ${b.price == null ? '' : `<dt>Price of the car bought</dt><dd class="num">${aed(b.price)}</dd>`}
+            ${b.minDown == null ? '' : `<dt>Minimum deposit allowed</dt><dd class="num">${aed(b.minDown)}<div class="cell-sub">${esc(
+              (b.maxLtv == null ? '' : `${pct(b.maxLtv)} maximum LTV. `) + (b.ltvSource || 'The calculator recorded no source for this ceiling.'))}</div></dd>`}
           </dl>
-          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(assumptions(b))}${
-            b.drifted
-              ? `<br><span class="t-hot">The ${esc(cols2.monthly)} stored on this row falls ${esc(aed(b.gap))} outside ${b.ranged ? 'that range' : 'that figure'}. Do not repeat either number to the customer until the two agree.</span>`
-              : ''}</div>
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(instalmentBasis(b))}</div>
         </div>
         <div class="section">
           <div class="label-caps">Inputs</div>
@@ -1801,16 +1991,23 @@ SCREENS.finance = async host => {
 
     const ltv = n0(res.loan_to_value_pct);
     const noTradeIn = res.has_trade_in === false || isNoTradeIn(res.equity_status);
-    /* Same model as the history table, on the response instead of a stored row,
-       so the figure the rep reads out now and the figure in the history a week
-       later are the same arithmetic. The live response carries both ends of the
-       rate as their own fields, so the instalment here is always a range. */
-    const b = basis({
-      vehicle_value_aed: noTradeIn ? null : sent.vehicleValue,
-      indicative_apr_low_pct: res.indicative_apr_low_pct,
-      indicative_apr_high_pct: res.indicative_apr_high_pct,
-      loan_to_value_pct: res.loan_to_value_pct,
-    });
+    /* The same projection as the history table, over the response instead of a
+       stored row — so the figure the rep reads out now and the figure in the
+       history a week later are the same figure, because neither is worked out
+       anywhere.
+
+       This call used to be handed a SYNTHETIC object: the trade-in value under
+       `vehicle_value_aed`, the trade-in's payoff ratio under
+       `loan_to_value_pct`, and nothing else. `basis()` then amortised
+       value × ltv ÷ 100 — the payoff on the old car — at the new car's rate
+       over a 60-month default, and the result was printed under "Indicative
+       monthly instalment" THIRTEEN LINES above where this same card prints the
+       workflow's own instruction: "Do not convert to a monthly payment unless
+       the customer asks and you know the vehicle price and down payment." This
+       desk has never known the vehicle price; there is no field for one on the
+       form above. The response is now passed through whole, so an instalment
+       appears here only when the calculator returned one. */
+    const b = basis(res);
     /* The APR tile is the range and only the range, carrying the band and the
        basis it is on. It used to read `res.indicative_apr_pct` and
        `res.finance_tier`, neither of which the workflow has returned since
@@ -1831,16 +2028,29 @@ SCREENS.finance = async host => {
       ${str(res.equivalent_flat_rate_range_pct) ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
         `The same rate quoted the way UAE banks advertise it is ${str(res.equivalent_flat_rate_range_pct)}% flat. `
         + 'Never say the flat figure on its own — it is roughly half the reducing-balance rate over 60 months and the customer will hear it as the cost.')}</div>` : ''}
+      <!-- Headed "Loan to value" with a bar that turned red above 80 and read
+           "Above 80% — most lenders will want a deposit." That advice was wrong
+           for this number twice over: 80% is the CBUAE cap on a loan against
+           the car being BOUGHT, and this ratio is the payoff on the car being
+           TRADED IN over that car's value. A customer owing more than 80% of
+           the old car's worth has a trade-in equity problem, not a lending-limit
+           breach, and telling them to find a deposit does not address it. The
+           bar keeps the clamp (it is a width, not a finance figure) and takes
+           its colour from the equity status the workflow returned. The real
+           ceiling, per quote, is max_ltv_pct with ltv_policy_source naming the
+           regulation; it is shown in the drawer where the row carries it. -->
       ${ltv == null ? '' : `<div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">Loan to value · ${pct(ltv)}</div>
-        <div class="bar"><i style="width:${Math.min(100, Math.max(0, ltv))}%;background:var(--${ltv > 80 ? 'hot' : 'primary'})"></i></div>
-        ${ltv > 80 ? '<div class="cell-sub t-hot" style="margin-top:6px">Above 80% — most lenders will want a deposit.</div>' : ''}
+        <div class="label-caps" style="margin-bottom:6px">Payoff against trade-in value · ${pct(ltv)}</div>
+        <div class="bar"><i style="width:${Math.min(100, Math.max(0, ltv))}%;background:var(--${lower(res.equity_status) === 'negative' ? 'hot' : 'primary'})"></i></div>
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(
+          'How much of the trade-in’s value is still owed on it, as the workflow returned it. This is not a loan to value on the car being bought — '
+          + 'nothing in this quote records that car’s price. Above 100% the customer is underwater, which is what the Equity tile above says in dirhams.')}</div>
       </div>`}
       <div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">Indicative monthly instalment</div>
-        <div class="kpi-value sm">${b.monthly == null ? '—' : monthlyRange(b)}</div>
-        <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(assumptions(b))}
-          ${b.monthly == null ? '' : esc(' Say it as a span, with the rate, the term and the deposit attached, or do not say it.')}</div>
+        <div class="label-caps" style="margin-bottom:6px">Monthly instalment</div>
+        <div class="kpi-value sm">${b.state === 'priced' ? monthlyRange(b) : absent(b.state, b.why)}</div>
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(instalmentBasis(b))}
+          ${b.state === 'priced' ? esc(' Say it as a span, with the rate, the tenure and the deposit attached, or do not say it.') : ''}</div>
       </div>
       <dl class="kv" style="margin-top:16px">
         <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(sent.lead_email)}</div></dd>

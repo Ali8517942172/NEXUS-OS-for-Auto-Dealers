@@ -3,18 +3,32 @@
 
    Two facts drive every decision on this screen.
 
-   1. The roster and the scoreboard are different tables. `users` owns who exists,
-      what role they hold and whether their account is live; `v_team_performance`
-      owns what they did. They are read separately and joined here, so a rep who
-      has never touched a lead still appears (with an honest "no activity yet"
-      rather than a fabricated zero), and a performance row that matches nobody
-      in the directory is shown as exactly that instead of being dropped.
+   1. The roster and the scoreboard are read separately, but they are not
+      independent sources and this screen no longer implies they are. `users`
+      owns who exists, what role they hold and whether their account is live;
+      `v_team_performance` owns what they did — and its live definition is
+      `FROM users u LEFT JOIN leads l`, so every performance row IS a users row,
+      read through the same policy. Reading both still buys something real: a rep
+      who has never touched a lead still appears (with an honest "no activity
+      yet" rather than a fabricated zero), and the join is written so that if the
+      view is ever rebuilt on another source, a row matching nobody in the
+      directory is shown as exactly that instead of being dropped. What it does
+      not buy is corroboration — the two reads cannot disagree about who exists —
+      so nothing here claims a cross-check between them.
 
-   2. A user is never deletable from this screen. `leads.assigned_to_id`
-      references `users.id`; removing a row silently orphans every lead that
-      person owned, and an orphaned lead has no owner, no escalation path and no
-      one the 5-minute rule applies to. The drawer states the count that would be
-      orphaned instead of offering the button.
+   2. A user is never deletable from this screen, and the reason is not the one
+      this comment used to give. `leads_assigned_to_id_fkey` is ON DELETE SET
+      NULL — read off the live catalogue, not assumed — so deleting a user cannot
+      leave a lead pointing at a row that is gone: Postgres nulls the column and
+      those leads become unassigned, which is a condition this screen already
+      counts and alerts on. The two true reasons are that the browser could not
+      perform the delete at all (`users` carries one policy for `authenticated`,
+      a SELECT with USING (true), and nothing that writes), and that the leads
+      would lose their owner silently — `leads` stores who owns a lead and
+      nothing about how or when the owner got there, so afterwards a lead that
+      was never assigned and a lead whose rep was deleted are the same row. The
+      drawer states the count that would be handed back to the unassigned queue
+      instead of offering the button.
 
    3. Nothing on this screen can show a member of staff's phone number, because
       nothing in the database holds one. `users` has id, name, email, role,
@@ -51,10 +65,52 @@
       all currently empty, and an empty one of them renders as nothing at all
       rather than as a heading with a blank under it. A dealership hires.
 
+   5. TWO COLUMNS ARE NOT WHAT THEIR NAMES SAY, AND NEITHER IS TRUSTED HERE
+      (31 Aug 2026).
+
+      `v_team_performance.pipeline_aed` is `COALESCE(sum(l.budget_aed), 0)` over
+      `users LEFT JOIN leads` with no status filter and no time window, so every
+      lead ever assigned counts towards it forever — disqualified, lost, sold,
+      spam. Two of the three leads in the live table are DISQUALIFIED. Pipeline
+      in a dealership means open, winnable money, so that column is no longer
+      read on this screen. Open pipeline is summed here from the leads this
+      screen already reads, over the leads whose status is not terminal, using
+      the won/dead tones lib/format.js already assigns to a lead status — the
+      same table screens/overview.js reads for the same purpose, so there is no
+      second lifecycle vocabulary. Where it cannot be computed the figure is
+      withheld rather than relabelled. The COALESCE also meant the view could
+      never report a null, so a rep with no leads at all rendered as a factual
+      AED 0; a rep holding no open lead now says that instead.
+
+      `leads.response_time_minutes` is worse, because it is not a wider set than
+      its label — it is a manufactured value. A BEFORE INSERT trigger on `leads`
+      looks for a reply at the instant the lead row is created, and in this
+      system the WhatsApp bot answers the conversation before the router mints
+      the lead, so it measures a reply that predates the row, computes a negative
+      interval, and `greatest(0, …)` turns "I measured the wrong thing" into
+      "answered in 0 minutes". The writer that would be correct — an AFTER INSERT
+      on `communication_logs` — is guarded by `response_time_minutes is null`,
+      and `0 is null` is false, so it is locked out permanently. All three live
+      leads carry 0: one whose first reply came 81 minutes later, and one nobody
+      has ever replied to. `within_sla` is `count(*) FILTER (WHERE
+      response_time_minutes <= 5)`, so it counts every lead; `breached_sla` is
+      always 0; and `v_needs_attention` can never raise an SLA breach.
+
+      The database fix is being made separately. This screen neither waits for it
+      nor hard-codes a date: it asks whether the column, across the leads it
+      read, distinguishes any two states at all — a NULL anywhere, or a value
+      above zero anywhere. All-zero-with-no-nulls is the fingerprint of the
+      clamp, and while that is what it sees, every rate, ranking, verdict and
+      per-lead "answered in" derived from the column is withheld with the reason
+      on it. The counts, the panel and the SLA sort come back on their own on the
+      first lead the fixed writer touches; nothing here is disabled by hand.
+
    There is still no endpoint that can invite anybody — `users` is service-role
    only from the browser and none of the deployed n8n webhooks sends an
    invitation — so the invite control stays built and disabled with the reason on
-   it. Nothing here is estimated: every number comes off a row, and a panel whose
+   it. Nothing here is estimated: every number comes off a row — and where a row
+   holds something other than what its column is named, item 5 says so and the
+   number is withheld rather than printed under the wrong name. A panel whose
    table failed to load says so rather than showing a plausible blank. */
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
@@ -75,7 +131,13 @@ const NO_INVITE =
 const NO_ROLE_WRITE =
   'Changing a role means writing to the users table, which is service-role only — the browser would be rejected by RLS — and no workflow accepts a role change either.';
 const NO_DELETE =
-  'Removing a user is deliberately not offered anywhere on this screen: leads.assigned_to_id points at users.id, so deleting the row would leave their leads with an owner that does not exist.';
+  'Removing a user is deliberately not offered anywhere on this screen — but not because their leads would dangle. leads_assigned_to_id_fkey is ON DELETE SET NULL, so Postgres would null their assigned_to_id and the leads would become unassigned rather than point at a row that no longer exists. It is not offered for two other reasons, both true: the browser could not do it, because users carries a single policy for authenticated, a SELECT, and nothing that writes; and the leads would lose their owner silently, because leads records who owns a lead and nothing about how or when the owner got there — no assigned_by, no assigned_at, no updated_at — so afterwards a lead that was never assigned and a lead whose rep was deleted are indistinguishable.';
+
+/* Said wherever a figure derived from leads.response_time_minutes is withheld.
+   The mechanism is named rather than summarised, because "the data is bad" is
+   the kind of sentence that gets ignored until somebody re-derives the number. */
+const NO_TIMING =
+  'leads.response_time_minutes is not a measured first-response time. A BEFORE INSERT trigger on leads (trg_leads_backfill_response) looks for a reply at the instant the lead row is created; in this system the WhatsApp bot answers the conversation before the router mints the lead, so it finds a reply that predates the row, computes a negative interval, and greatest(0, …) stores 0. The writer that would be correct fires AFTER INSERT on communication_logs and is guarded by "response_time_minutes is null", so that stored 0 locks it out permanently. Every lead in the live table carries 0 — including one whose first reply came 81 minutes later, and one nobody has ever replied to. within_sla in v_team_performance is count(*) FILTER (WHERE response_time_minutes <= 5), so it counts every lead, and breached_sla is always 0. The database fix is being made separately; until the column distinguishes an answered lead from an unanswered one, this screen shows the counts nowhere and scores nobody against the 5-minute rule.';
 
 /* `users` has no phone column. Verified against the live schema on 24 Aug 2026,
    not assumed: asking for one returns PostgREST 42703, and a 42703 does not blank
@@ -100,6 +162,19 @@ const ATTN_LIMIT = 200;
    headline figure and the panel under it can never disagree about what counts. */
 const MIN_RATE_SAMPLE = 2;
 const THIN = 5;
+
+/* Open or finished, taken straight out of the TONE table in lib/format.js so
+   this screen cannot grow a second lead-lifecycle vocabulary — the same two
+   lines screens/overview.js uses, deliberately identical. Three writers fill
+   leads.status (the router writes HOT/WARM/COLD, the Slack Command Center
+   writes CONTACTED/QUALIFIED/WON/LOST through an unconstrained $fromAI, the BDC
+   agent writes DISQUALIFIED) and format.js is where those words are already
+   mapped to 'won', 'dead' and 'open'. A status nobody has taught that table
+   about tones to 'unknown' and is counted as open: a lead is not finished
+   because a word was not recognised. This is what makes "pipeline" on this
+   screen mean open money rather than every lead ever assigned. */
+const TERMINAL_TONES = new Set(['won', 'dead']);
+const isOpenLead = l => !TERMINAL_TONES.has(tone(l && l.status));
 
 /* Pipeline concentration. An even split across the reps who hold any pipeline is
    1/N, so on a small team somebody is always "above average" — the alert needs a
@@ -155,7 +230,6 @@ const hotLeads      = r => perfNum(r, 'hot_leads');
 const avgResponse   = r => perfNum(r, 'avg_response_minutes');
 const withinSla     = r => perfNum(r, 'within_sla');
 const breachedSla   = r => perfNum(r, 'breached_sla');
-const pipelineOf    = r => perfNum(r, 'pipeline_aed');
 /* Measured = the leads this rep was actually timed on. Null when neither
    counter exists, which is not the same as having been timed on none. */
 const measured = r => {
@@ -265,14 +339,67 @@ SCREENS.team = async host => {
   });
   const ownedBy = r => (r.id ? (byOwner.get(low(r.id)) || []) : []);
   const unassigned = (leads || []).filter(l => !l.assigned_to_id);
-  const rosterIds = new Set(roster.map(r => low(r.id)).filter(Boolean));
-  /* An assignment pointing at an id nobody on the roster holds is the exact
-     damage the missing delete button prevents. Only claimed when both sides
-     were readable, otherwise it is an artefact of a failed read. */
-  const orphaned = (leads && users)
-    ? (leads || []).filter(l => l.assigned_to_id && !rosterIds.has(low(l.assigned_to_id)))
-    : [];
   const leadsCapped = !!leads && leads.length >= LEAD_LIMIT;
+  /* There is deliberately no "leads pointing at a user who is not on the roster"
+     check here any more. It read as the damage a delete would do, and it was two
+     things at once that could never happen: leads_assigned_to_id_fkey is
+     ON DELETE SET NULL, so a deleted user leaves unassigned leads rather than a
+     dangling id, and `users` is readable in full by `authenticated`
+     (USING (true)), so the roster this screen holds can never be missing an id
+     that leads.assigned_to_id carries. A permanently unreachable branch that
+     appears in a "checked" list is worse than no check: it is a claim. */
+
+  /* ── Open pipeline, computed here rather than read ───────────────────────
+     v_team_performance.pipeline_aed sums budget_aed over `users LEFT JOIN leads`
+     with no status filter and no time window, so it is every lead ever assigned
+     — two of the three live leads are DISQUALIFIED — and it COALESCEs to 0, so
+     it can never say "no figure". Neither of those is pipeline. What is summed
+     instead is budget_aed over the leads this screen already read that are
+     assigned to the rep and not in a terminal state, which is a narrower and
+     honestly-nameable number: open money inside the LEAD_LIMIT window. It is
+     null, not zero, when there is nothing to add up — a rep holding no open lead
+     and a rep whose open leads carry no budget are both "no figure", and both
+     are different from AED 0. */
+  const openLeadsOf = r => ownedBy(r).filter(isOpenLead);
+  const openPipelineOf = r => ((leads && r.id) ? sumOf(openLeadsOf(r), 'budget_aed') : null);
+  const sumOpen = rows => {
+    let t = null;
+    rows.forEach(r => { const x = openPipelineOf(r); if (x != null) t = (t ?? 0) + x; });
+    return t;
+  };
+
+  /* ── Is leads.response_time_minutes a measurement today? ─────────────────
+     See item 5 in the header. The column is written by a BEFORE INSERT trigger
+     that measures a reply which predates the lead row and clamps the negative
+     result to 0, and the correct writer is locked out by that 0, so every lead
+     carries 0 — the answered, the unanswered and the never-contacted alike.
+     Everything on this screen that scores anybody against the 5-minute rule
+     comes off that column, directly or through within_sla / breached_sla /
+     avg_response_minutes in the view.
+
+     The test is deliberately about the column and not about a date: if the
+     leads read shows the column taking any value other than exactly 0 — a NULL
+     for a lead nobody answered, or a positive number for one somebody did — then
+     something is distinguishing states and the figures can be shown. All-zero
+     with no nulls is the fingerprint of the clamp, and it is the state today.
+     The moment the database fix lands and the first repaired or newly-written
+     row appears, this returns true and every panel below comes back on its own.
+
+     A leads read that failed leaves this false: not because the column is known
+     to be broken, but because it could not be checked, and an unverified SLA
+     figure on the screen whose founding promise is the 5-minute rule is the one
+     number nobody should be shown on trust. */
+  const rtOf = l => n0(l.response_time_minutes);
+  const rtZeros = (leads || []).filter(l => rtOf(l) === 0).length;
+  const rtGraded = (leads || []).filter(l => rtOf(l) == null || rtOf(l) > 0).length;
+  const timingTrusted = !!leads && rtGraded > 0;
+  /* Why it is false, in the words of whichever case applies. */
+  const timingWhy = timingTrusted ? ''
+    : !leads
+      ? `Leads could not be read here (${leadsErr || 'unknown error'}), so nothing could be checked against the response-time column and nothing derived from it is claimed.`
+      : !leads.length
+        ? 'No lead was read here at all, so there was nothing to check the response-time column against.'
+        : `All ${leads.length} leads read here carry exactly 0 minutes and not one carries a null — the fingerprint of the clamp described above, not of a floor full of instant replies.`;
 
   const pending = roster.filter(isPending);
   const withAccount = roster.filter(hasAccount);
@@ -282,6 +409,11 @@ SCREENS.team = async host => {
      each one is null-safe in the same way the rest of this file is: a figure the
      view did not report is not a zero, so it never counts as evidence. */
   const unassignedHot = unassigned.filter(l => up(l.status) === 'HOT');
+  /* The best-scored lead nobody owns, HOT or not. Named in the idle-rep alert so
+     "no HOT lead is unassigned" cannot be read as "nothing is waiting". */
+  const topUnowned = unassigned.slice()
+    .sort((a, b) => (n0(b.ai_score) ?? -1) - (n0(a.ai_score) ?? -1))
+    .find(l => n0(l.ai_score) != null) || null;
 
   /* "Holds nothing" is only claimable about someone who could hold something. A
      pending_invite seat has no account to assign to and is a different alert, and
@@ -304,30 +436,46 @@ SCREENS.team = async host => {
   const stalled = r => (leadsAssigned(r) ?? 0) > 0 && !(measured(r) > 0) && avgResponse(r) == null;
   const stalledReps = roster.filter(stalled);
   /* Their book, as the leads read sees it: a lead with no response_time_minutes
-     has never been answered. Only counted where the leads read succeeded. */
-  const untouchedOf = r => ownedBy(r).filter(l => n0(l.response_time_minutes) == null);
+     has never been answered. Only counted where the leads read succeeded, and
+     only where a null in that column still means something — while the clamp is
+     writing 0 over every row there are no nulls to count and the honest answer
+     is that it is unknown, not that every lead was answered. */
+  const untouchedOf = r => (timingTrusted ? ownedBy(r).filter(l => rtOf(l) == null) : []);
 
-  const breachers = roster.filter(r => (breachedSla(r) ?? 0) > 0)
-    .sort((a, b) => breachedSla(b) - breachedSla(a));
+  /* Breaches are read from the view's breached_sla, which is
+     count(*) FILTER (WHERE response_time_minutes > 5) — so while the column is
+     clamped to 0 this is structurally always empty, and if it were ever not
+     empty the count would still be built on the clamp. No breach is claimed
+     against anybody until the column can be scored. */
+  const breachers = timingTrusted
+    ? roster.filter(r => (breachedSla(r) ?? 0) > 0).sort((a, b) => breachedSla(b) - breachedSla(a))
+    : [];
   const breachTotal = breachers.reduce((a, r) => a + breachedSla(r), 0);
 
-  /* Pipeline concentration. Measured against the reps who hold any pipeline at
-     all, not against the whole roster — including people with none would make
-     every team look concentrated. */
-  const carriers = roster.filter(r => (pipelineOf(r) ?? 0) > 0)
-    .sort((a, b) => pipelineOf(b) - pipelineOf(a));
-  const carriedTot = sumOf(carriers.map(r => r.perf), 'pipeline_aed');
+  /* Pipeline concentration. Measured against the reps who hold any open pipeline
+     at all, not against the whole roster — including people with none would make
+     every team look concentrated — and over open money, so this can no longer be
+     a ranking of who is holding the most dead leads. */
+  const carriers = roster.filter(r => (openPipelineOf(r) ?? 0) > 0)
+    .sort((a, b) => openPipelineOf(b) - openPipelineOf(a));
+  const carriedTot = sumOpen(carriers);
   let concentration = null;
   if (carriers.length >= MIN_CARRIERS && carriedTot) {
     const even = 1 / carriers.length;
-    const share = pipelineOf(carriers[0]) / carriedTot;
+    const share = openPipelineOf(carriers[0]) / carriedTot;
     if (share >= Math.max(CONCENTRATION_FLOOR, even * 2)) {
       concentration = { rep: carriers[0], share, even, total: carriedTot };
     }
   }
 
   /* Rows the performance view has activity for that match nobody in the
-     directory. Only meaningful when the directory actually loaded. */
+     directory. Only meaningful when the directory actually loaded — and, on the
+     view as deployed today, structurally empty: v_team_performance is
+     `FROM users u LEFT JOIN leads l`, so every performance row is a users row
+     and there is nothing for it to fail to match. The branch is kept because it
+     costs nothing and is the correct behaviour the day the view is rebuilt on
+     another source; it is NOT counted as a check that was run, which is what it
+     used to be listed as. */
   const unlinkedReps = users ? roster.filter(r => r.unlinked) : [];
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
@@ -338,8 +486,11 @@ SCREENS.team = async host => {
     const withinTot   = sumOf(roster.map(r => r.perf).filter(Boolean), 'within_sla');
     const breachedTot = sumOf(roster.map(r => r.perf).filter(Boolean), 'breached_sla');
     const measuredTot = (withinTot == null && breachedTot == null) ? null : (withinTot ?? 0) + (breachedTot ?? 0);
-    const pipelineTot = sumOf(roster.map(r => r.perf).filter(Boolean), 'pipeline_aed');
-    const withPipeline = roster.filter(r => (pipelineOf(r) ?? 0) > 0).length;
+    const pipelineTot = sumOpen(roster);
+    const withPipeline = roster.filter(r => (openPipelineOf(r) ?? 0) > 0).length;
+    /* How many open leads are held at all, so "no figure" can say which kind it
+       is: nobody holding an open lead, or open leads that carry no budget. */
+    const openHeld = roster.reduce((a, r) => a + openLeadsOf(r).length, 0);
 
     /* One team-wide response figure, weighted by how many leads each rep was
        actually timed on. An unweighted mean of per-rep means would let someone
@@ -372,24 +523,42 @@ SCREENS.team = async host => {
           : '<span class="t-ok">Nobody is waiting on an invitation</span>'
             + '<div class="t-muted">Sending one is not built either, so the first hire has to be added outside this dashboard</div>',
         pending.length ? 't-warm' : ''),
+      /* The counts here are within_sla / breached_sla straight off the view, and
+         both are count(*) FILTER on response_time_minutes. While that column is
+         the clamp's 0 they are not a measurement of anything, so the figure is
+         withheld rather than printed with a caveat under it: "3 / 3 · 100.0%"
+         with an explanation beside it is still read as 100%. */
       kpi('Within the 5-minute rule',
-        measuredTot ? `${num(withinTot ?? 0)} / ${num(measuredTot)}` : '—',
-        !measuredTot
-          ? '<span class="t-muted">No rep row carries a response measurement</span>'
-          /* One measured lead is an outcome, not a rate. The count stays — it is
-             the fact — and the percentage is withdrawn with the reason on it. */
-          : measuredTot < MIN_RATE_SAMPLE
-            ? `<span class="t-muted">One lead has been timed, so this is that lead's outcome and not a rate</span>`
-              + (teamAvg == null ? '' : `<div class="t-muted">Its ${esc(avgLabel)} ${esc(mins(teamAvg))}</div>`)
-            : `${pct((withinTot ?? 0) / measuredTot * 100)} · ${esc(avgLabel)} ${esc(mins(teamAvg))}`
-              + (measuredTot <= THIN ? `<div><span class="t-warm">Over ${num(measuredTot)} measured leads in total — a proportion this small moves a long way on one reply</span></div>` : ''),
-        measuredTot >= MIN_RATE_SAMPLE && (withinTot ?? 0) / measuredTot < 0.5 ? 't-hot' : ''),
-      kpi('Pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
-        pipelineTot == null
-          ? '<span class="t-muted">The performance view reports no pipeline figure</span>'
-          : roster.length === 1
-            ? 'Held by the only person on the roster'
-            : `Held by ${num(withPipeline)} of ${num(roster.length)} on the roster`),
+        (timingTrusted && measuredTot) ? `${num(withinTot ?? 0)} / ${num(measuredTot)}` : '—',
+        !timingTrusted
+          ? `<span class="t-warm" title="${esc(NO_TIMING)}">Nobody can be scored against the 5-minute rule yet</span>`
+            + `<div class="t-muted">${esc(timingWhy)}</div>`
+          : !measuredTot
+            ? '<span class="t-muted">No rep row carries a response measurement</span>'
+            /* One measured lead is an outcome, not a rate. The count stays — it
+               is the fact — and the percentage is withdrawn with the reason. */
+            : measuredTot < MIN_RATE_SAMPLE
+              ? `<span class="t-muted">One lead has been timed, so this is that lead's outcome and not a rate</span>`
+                + (teamAvg == null ? '' : `<div class="t-muted">Its ${esc(avgLabel)} ${esc(mins(teamAvg))}</div>`)
+              : `${pct((withinTot ?? 0) / measuredTot * 100)} · ${esc(avgLabel)} ${esc(mins(teamAvg))}`
+                + (measuredTot <= THIN ? `<div><span class="t-warm">Over ${num(measuredTot)} measured leads in total — a proportion this small moves a long way on one reply</span></div>` : ''),
+        timingTrusted && measuredTot >= MIN_RATE_SAMPLE && (withinTot ?? 0) / measuredTot < 0.5 ? 't-hot' : ''),
+      /* Open pipeline, not "pipeline". The label names exactly what is summed:
+         budget_aed over the leads read here that are assigned to somebody and
+         are not in a won or dead state. v_team_performance.pipeline_aed is not
+         used and not shown — it counts every lead ever assigned, so on today's
+         table it would be reporting two DISQUALIFIED leads as money in play. */
+      kpi('Open pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
+        !leads
+          ? `<span class="t-muted">Leads could not be read, so open pipeline could not be summed. The performance view's own pipeline_aed is deliberately not shown in its place: it sums every lead ever assigned, disqualified and lost ones included.</span>`
+          : pipelineTot == null
+            ? (openHeld
+                ? `<span class="t-muted">${num(openHeld)} open ${plural(openHeld, 'lead is', 'leads are')} held, and not one of them carries a budget_aed — so there is a book here, but no money to total</span>`
+                : '<span class="t-muted">Nobody on the roster is holding an open lead</span>')
+            : (roster.length === 1
+                ? 'Held by the only person on the roster'
+                : `Held by ${num(withPipeline)} of ${num(roster.length)} on the roster`)
+              + `<div class="t-muted">Open leads only — won and dead ones are excluded${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads read` : ''}</div>`),
       kpi('Unassigned leads', leads ? num(unassigned.length) : '—',
         !leads
           ? `<span class="t-muted">Leads could not be read</span>`
@@ -503,7 +672,17 @@ SCREENS.team = async host => {
       titleHtml: `${num(idle.length)} ${plural(idle.length, 'rep is', 'reps are')} holding no leads at all`,
       detailHtml: `${nameList(idle)} ${plural(idle.length, 'has', 'have')} an active account and no lead against ${plural(idle.length, 'their name', 'their names')} — `
         + `neither in <span class="mono">v_team_performance</span> nor in the ${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here` : 'leads table, which did not load'}. `
-        + (leads ? 'No HOT lead is unassigned right now, so nothing is going unworked because of it. ' : '')
+        /* This branch runs only when no HOT lead is unassigned, and it used to
+           conclude from that alone that "nothing is going unworked". Unowned
+           WARM and COLD leads are also work, and on this table there are three
+           of them, one scored 65 — so the sentence said the opposite of what the
+           KPI two inches above it said. Only what was actually checked is
+           claimed, and the unowned leads are named when there are any. */
+        + (leads
+          ? (unassigned.length
+            ? `No HOT lead is unassigned, but ${num(unassigned.length)} ${plural(unassigned.length, 'lead has', 'leads have')} no owner at all${topUnowned ? ` — the highest-scored of them is ${esc(str(topUnowned.name) || 'an unnamed lead')} at ${num(topUnowned.ai_score)}` : ''}, so there is unowned work on the floor beside an idle rep. `
+            : 'Every lead read here has an owner, so there is no unowned work waiting on them. ')
+          : '')
         + 'A rep with nothing is new, away, or being skipped by the auto-assign trigger, and this screen cannot tell those three apart: the only thing stored is the finished assignment, never who made it.',
       act: () => focusRoster('IDLE'),
       actLabel: 'Show them',
@@ -516,7 +695,7 @@ SCREENS.team = async host => {
   if (stalledReps.length) {
     const worst = stalledReps.slice().sort((a, b) => (leadsAssigned(b) ?? 0) - (leadsAssigned(a) ?? 0));
     const held = worst.reduce((a, r) => a + (leadsAssigned(r) ?? 0), 0);
-    const untouched = leads ? worst.reduce((a, r) => a + untouchedOf(r).length, 0) : null;
+    const untouched = (leads && timingTrusted) ? worst.reduce((a, r) => a + untouchedOf(r).length, 0) : null;
     add({
       sev: 'WARM', icon: 'hourglass_disabled',
       titleHtml: `${num(stalledReps.length)} ${plural(stalledReps.length, 'rep is', 'reps are')} holding ${num(held)} ${plural(held, 'lead', 'leads')} with no response recorded`,
@@ -524,7 +703,9 @@ SCREENS.team = async host => {
         + 'not a slow average, no <span class="mono">within_sla</span> or <span class="mono">breached_sla</span> count at all, which is what the view reports when nobody replied. '
         + (untouched != null
           ? `In the ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here, ${num(untouched)} of their ${plural(untouched, 'leads carries', 'leads carry')} no <span class="mono">response_time_minutes</span>${leadsCapped ? `, and that read is capped at ${num(LEAD_LIMIT)} so there may be more` : ''}.`
-          : 'Leads could not be read, so this cannot be confirmed lead by lead.'),
+          : !leads
+            ? 'Leads could not be read, so this cannot be confirmed lead by lead.'
+            : 'It cannot be confirmed lead by lead either: <span class="mono">response_time_minutes</span> is 0 on every lead read here, so counting the ones with no reply recorded would return nought no matter what happened.'),
       act: () => focusRoster('STALLED'),
       actLabel: 'Show them',
     });
@@ -541,8 +722,8 @@ SCREENS.team = async host => {
         `${esc(str(r.name) || 'Unnamed')} <span class="t-hot">${num(breachedSla(r))}</span>`
         + `${avgResponse(r) == null ? '' : ` <span class="t-muted">(${esc(mins(avgResponse(r)))} average)</span>`}`).join(' · ')
         + `${breachers.length > 5 ? ` and ${num(breachers.length - 5)} more` : ''}. `
-        + 'Each of these is a lead that waited longer than five minutes for a first reply — the window in which the odds of qualifying it drop by about four fifths. '
-        + 'These counts come from the view itself and are all-time, not a window computed here.',
+        + 'Each of these is a lead the view timed at longer than five minutes to a first reply — the window in which the odds of qualifying it drop by about four fifths. '
+        + 'These counts come from the view itself and are all-time, not a window computed here. They are only shown at all because <span class="mono">leads.response_time_minutes</span> is currently telling one lead apart from another; while it is not, no breach is claimed against anybody.',
       act: () => focusRoster('BREACHED'),
       actLabel: 'Show them',
     });
@@ -554,8 +735,9 @@ SCREENS.team = async host => {
     const c = concentration;
     add({
       sev: 'WARM', icon: 'balance',
-      titleHtml: `${esc(str(c.rep.name) || 'One rep')} is holding ${esc(pct(c.share * 100))} of the pipeline`,
-      detailHtml: `${esc(aed(pipelineOf(c.rep)))} of the ${esc(aed(c.total))} held across the ${num(carriers.length)} reps who carry any pipeline at all. `
+      titleHtml: `${esc(str(c.rep.name) || 'One rep')} is holding ${esc(pct(c.share * 100))} of the open pipeline`,
+      detailHtml: `${esc(aed(openPipelineOf(c.rep)))} of the ${esc(aed(c.total))} held across the ${num(carriers.length)} reps who carry any open pipeline at all — `
+        + `budget_aed summed over the leads assigned to them that are not won or dead${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads read` : ''}. `
         + `An even split would be ${esc(pct(c.even * 100))} each. `
         + `${leadsAssigned(c.rep) == null ? '' : `They are credited with ${num(leadsAssigned(c.rep))} ${plural(leadsAssigned(c.rep), 'lead', 'leads')}${hotLeads(c.rep) ? `, ${num(hotLeads(c.rep))} of them HOT` : ''}. `}`
         + 'The imbalance is measured, not inferred. Its <em>cause</em> is not available: the auto-assign trigger is meant to give each HOT lead to the least-loaded rep, and since <span class="mono">leads</span> stores only the finished owner — no assigned_by, no assignment timestamp, not even an updated_at — a lead the trigger placed and a lead a manager placed by hand are indistinguishable on this screen. '
@@ -566,21 +748,6 @@ SCREENS.team = async host => {
             : 'Leads could not be read, so whether any HOT lead is sitting unassigned could not be checked.'),
       act: () => openRep(c.rep),
       actLabel: 'Open rep',
-    });
-  }
-
-  /* The exact damage the missing delete button prevents. */
-  if (orphaned.length) {
-    const shown = orphaned.slice(0, 3).map(l =>
-      `${esc(str(l.name) || 'Unnamed lead')} ${leadPhone(l)}`).join(' · ');
-    add({
-      sev: 'HOT', icon: 'link_off', at: orphaned[0].created_at, atLabel: 'oldest arrived',
-      titleHtml: `${num(orphaned.length)} ${plural(orphaned.length, 'lead points', 'leads point')} at a user who is not on the roster`,
-      detailHtml: `${shown}${orphaned.length > 3 ? ` and ${num(orphaned.length - 3)} more` : ''}. `
-        + 'Their <span class="mono">assigned_to_id</span> matches no row in <span class="mono">users</span>, so nobody is on the hook for them, nobody is alerted about them and the 5-minute rule applies to no one. '
-        + 'This is what deleting a user does, which is why this screen never offers it.',
-      act: () => go('leads'),
-      actLabel: 'Open leads',
     });
   }
 

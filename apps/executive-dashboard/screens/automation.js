@@ -26,17 +26,54 @@
        `audit_aliases`, never on an exact name, because audit_log names drift
        from n8n workflow names and an unmatched alias reads as "never ran".
 
+   Rebuilt a third time on 31 Aug 2026, and this one was not a refinement.
+   Every health figure on this screen — the KPI strip, the banners, the per-row
+   rate, the per-category rate, the drawer — was computed from `runs_30d` and
+   `failures_30d`, and `failures_30d` counted `status = 'FAILED'` and nothing
+   else. The writers also emit PARTIAL, REJECTED, NOT_EXECUTED and ESCALATED, so
+   every one of those scored here as a success: Customer 360 writes a partial
+   every night and this screen showed it clean at 100.0%, and Competitor Price
+   Scraping produced no price on 73 of its 84 runs and showed green. Three other
+   screens had made the same mistake independently, so what a status means now
+   lives in exactly one place — `lib/health.js`, which mirrors
+   `public.nexus_outcome_class()` in Postgres one-for-one — and this screen
+   consumes it. Nothing below decides what a status means; where it needs to
+   know, it asks.
+
+   Two decisions that layer encodes, restated here because they change what
+   every number on this screen means:
+
+     · A refusal by design is not a fault. REJECTED_EXPECTED — an unauthorised
+       call, a quote refused by validation — is left out of the success-rate
+       denominator entirely, so it can neither count as a success nor dilute a
+       real miss rate. Finance Calc has 33 of them in the window; its rate is
+       over the other 27 runs.
+     · A partial is not a success. PARTIAL makes a workflow DEGRADED, because
+       work left the system half-done. Finance Calc holds five rows whose own
+       summary reads "Quote issued | 1 of 1 claimed steps did not land
+       [finance_quotes row …]" — the customer was handed a quote that was never
+       recorded anywhere.
+
    The rules this screen holds itself to:
 
-     · The 30-day success rate is computed here from `runs_30d` and
-       `failures_30d` — the two columns whose window is documented — rather than
-       taken on trust from `success_rate`. The view's own figure is still shown
-       in the detail drawer, and if the two disagree the screen says so instead
-       of silently picking one.
+     · The 30-day success rate is `successes_30d` over `effective_runs_30d` —
+       the runs the workflow was actually expected to deliver on — computed here
+       through `successRate()` rather than read from `success_rate_30d`, so the
+       screen and the view can be compared instead of one being taken on trust.
+       Where they disagree the drawer says so rather than picking one.
+     · A rate with a zero denominator is not 0% and it is not 100%. It is no
+       rate, `successRate()` returns null for it, and every place that would
+       have printed a number prints which absence it is instead.
      · "No failures" and "nothing is being measured" are opposite findings and
        never share a colour. Most of the registered workflows do not write to
        audit_log; they are NOT_INSTRUMENTED, and a blank health record for those
        is reported as a blind spot, not as good news.
+     · Seven health values arrive from the view and each is rendered as itself.
+       PRODUCING_NOTHING is neither healthy nor degraded — it is a workflow that
+       runs without failing and achieves nothing, which is what Competitor Price
+       Scraping has been doing all month — and NO_QUALIFYING_RUNS and
+       UNKNOWN_OUTCOME are the absence of a rate rather than a low one. None of
+       the three is folded into a state it might mean.
      · One exception to that, added 24 Aug 2026: a request/response endpoint the
        dashboard itself calls — whatsapp-send, ask-ai, finance-calc — returns its
        outcome in the HTTP reply and is read by the operator at the moment of the
@@ -52,6 +89,9 @@ import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pct, pill } from '../lib/format.js';
+import {
+  OUTCOME, healthWords, isIncomplete, isSuccess, outcomeOf, outcomeWords, successRate,
+} from '../lib/health.js';
 import { renderIntegrations } from '../lib/integrations.js';
 import { modalError, openModal } from '../lib/modal.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -85,31 +125,61 @@ const low = s => String(s || '').trim().toLowerCase();
 const up  = s => String(s || '').trim().toUpperCase();
 
 /* ── Health vocabulary ─────────────────────────────────────────────────────
+   The label, the tone and the sentence under it all come from lib/health.js,
+   which mirrors nexus_outcome_class() in Postgres. This screen contributes only
+   what is its own business: an icon and a sort order. Until 31 Aug 2026 it held
+   its own four-state table, so the three states the view gained —
+   PRODUCING_NOTHING, UNKNOWN_OUTCOME, NO_QUALIFYING_RUNS — would have arrived
+   here as "Unrecognised" while the workflows inside them ran on.
+
    `rank` orders the list worst-first. NOT_INSTRUMENTED deliberately sorts above
    HEALTHY: an unmeasured workflow is a worse position to be in than a measured
-   clean one, even though it cannot be coloured red. */
-const HEALTH = {
-  DEGRADED: {
-    label: 'Degraded', tone: 'hot', icon: 'error', rank: 0,
-    detail: 'At least one run failed inside the 30-day window. This is the state that needs a human.',
-  },
-  NEVER_RAN: {
-    label: 'No runs yet', tone: '', icon: 'schedule', rank: 1,
-    detail: 'The workflow writes to audit_log but has not logged a single run, so there is nothing to measure yet.',
-  },
-  NOT_INSTRUMENTED: {
-    label: 'Not logged', tone: '', icon: 'visibility_off', rank: 2,
-    detail: 'This workflow has no Audit Log node, so nothing it does reaches audit_log. Its health is unknown rather than good — the dashboard cannot see it succeed or fail.',
-  },
-  HEALTHY: {
-    label: 'Healthy', tone: 'ok', icon: 'check_circle', rank: 3,
-    detail: 'Every logged run inside the 30-day window succeeded.',
-  },
+   clean one, even though it cannot be coloured red. PRODUCING_NOTHING sorts
+   immediately under DEGRADED, because a workflow that runs cleanly and achieves
+   nothing needs a person just as badly as one that is failing — it simply never
+   announces itself. */
+const HEALTH_ICON = {
+  DEGRADED: 'error', PRODUCING_NOTHING: 'do_not_disturb_on', UNKNOWN_OUTCOME: 'help',
+  NEVER_RAN: 'schedule', NO_QUALIFYING_RUNS: 'block', NOT_INSTRUMENTED: 'visibility_off',
+  HEALTHY: 'check_circle',
 };
+const HEALTH_RANK = {
+  DEGRADED: 0, PRODUCING_NOTHING: 0.5, UNKNOWN_OUTCOME: 1, NEVER_RAN: 2,
+  NO_QUALIFYING_RUNS: 2.5, NOT_INSTRUMENTED: 3, HEALTHY: 4,
+};
+const healthState = k => {
+  const w = healthWords(k);
+  return {
+    label: w.label, tone: w.tone, detail: w.blurb,
+    icon: HEALTH_ICON[k] || 'help',
+    rank: HEALTH_RANK[k] == null ? 1 : HEALTH_RANK[k],
+  };
+};
+const HEALTH = Object.fromEntries(Object.keys(HEALTH_RANK).map(k => [k, healthState(k)]));
+/* The states that mean somebody has to look. Kept as one list because the
+   "needs attention" count, the green all-clear banner and the classifications
+   below all have to agree about it: a screen that says "nothing is failing" in
+   green while a workflow produces nothing at all is the exact failure this
+   rebuild removed. */
+const NEEDS_ATTENTION = ['DEGRADED', 'PRODUCING_NOTHING', 'UNKNOWN_OUTCOME'];
+
+/* A health value the view returns that lib/health.js has no entry for. Shown
+   verbatim beside this sentence rather than folded into a state it might mean. */
 const UNKNOWN_HEALTH = {
-  label: 'Unrecognised', tone: 'warm', icon: 'help', rank: 1,
-  detail: 'v_workflow_health returned a health state this screen does not know how to describe. It is shown verbatim rather than folded into one of the states it might mean.',
+  ...healthState('UNKNOWN_OUTCOME'),
+  detail: 'v_workflow_health returned a health state that neither this screen nor lib/health.js knows how to describe. It is shown verbatim rather than folded into one of the states it might mean.',
 };
+
+/* pill() in lib/format.js attaches "This dashboard has no wording for that
+   status" to anything it renders in the unknown tone. On this screen that
+   sentence is false — lib/health.js has wording for every outcome and every
+   health value, including the neutral ones — and the 31 Aug audit caught the
+   result: a grey pill claiming no wording exists, two lines above the sentence
+   that gives it. So a pill whose words come from the canonical layer is built
+   here, in the markup pill() emits, carrying that layer's own sentence as its
+   title. Everything else on the screen still goes through pill(). */
+const wordPill = (label, tone, why) =>
+  `<span class="pill ${esc(tone || '')}"${why ? ` title="${esc(why)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
 
 /* ── Endpoints that answer their caller ────────────────────────────────────
    A workflow with no Audit Log node is normally a blind spot: it may be running
@@ -173,27 +243,29 @@ const isPublicPage = w =>
   || PUBLIC_PAGE_HOOK_RE.test(String(w.trigger_detail || ''));
 
 const PUBLIC_PAGE = {
-  label: 'Public web page', tone: '', icon: 'public', rank: 3.6,
+  label: 'Public web page', tone: '', icon: 'public', rank: 4.6,
   detail: 'This is not an automation. It is one of the three pages n8n serves so that Google\u2019s OAuth consent screen can be published — a home page, a privacy policy and a terms URL are mandatory for production, and vercel.app is rejected as a public suffix, so the pages are served from n8n over nip.io. It logs nothing because a page view is not a workflow run, and that silence is correct rather than a blind spot.',
 };
 
 const RETURNS_RESULT = {
-  label: 'Answers the caller', tone: '', icon: 'sync_alt', rank: 3.5,
+  label: 'Answers the caller', tone: '', icon: 'sync_alt', rank: 4.5,
   detail: 'This endpoint is called by the dashboard and answers in the reply, so the screen that called it shows the outcome immediately. It is registered as writing no audit row, and for a request/response endpoint that is the right design rather than a gap. The trade-off is real and worth knowing: no run history is kept, so nothing here can tell you how it behaved yesterday.',
 };
 
 /* The state a workflow is presented under. Everything except the two
    classifications below is the view's own `health` value, unchanged.
 
-   DEGRADED is checked first and can never be masked by a classification. A
-   request/response endpoint or a public page that is actually failing is still
+   NEEDS_ATTENTION is checked first and can never be masked by a classification.
+   A request/response endpoint or a public page that is actually failing is still
    failing, and the previous version of this line would have quietly relabelled a
    degraded whatsapp-send as "answers the caller" and dropped it out of the
-   degraded banner it belongs in. */
+   degraded banner it belongs in. Since 31 Aug that guard covers all three
+   attention states rather than DEGRADED alone: an endpoint whose every run
+   produces nothing is producing nothing whoever it answers to. */
 const STATES = { ...HEALTH, RETURNS_RESULT, PUBLIC_PAGE };
 const stateKey = w => {
   const h = up(w.health);
-  if (h === 'DEGRADED') return 'DEGRADED';
+  if (NEEDS_ATTENTION.includes(h)) return h;
   if (isPublicPage(w)) return 'PUBLIC_PAGE';
   if (respondsToCaller(w)) return 'RETURNS_RESULT';
   return h;
@@ -201,26 +273,65 @@ const stateKey = w => {
 const healthOf = w => STATES[stateKey(w)] || UNKNOWN_HEALTH;
 const healthLabel = w => (STATES[stateKey(w)] ? STATES[stateKey(w)].label : (w.health || 'Unrecognised'));
 
-/* Rates are computed from the two count columns rather than read from
-   success_rate, because runs_30d / failures_30d are the pair whose window is
-   documented. Both are plain arithmetic over numbers Postgres produced. */
-const rateOf = (runs, failures) => {
-  const r = n0(runs);
-  if (r == null || r <= 0) return null;
-  const f = Math.max(0, Math.min(n0(failures) || 0, r));
-  return ((r - f) / r) * 100;
-};
-const rate30 = w => rateOf(w.runs_30d, w.failures_30d);
-const rateAll = w => rateOf(w.runs, w.failures);
+/* The 30-day rate, and the only definition of one on this screen: successes
+   over effective runs, where effective runs leaves out what was refused by
+   design and what was handed to a person on purpose. It is computed here from
+   the count columns through successRate() rather than read from
+   success_rate_30d, so the screen and the view can be compared instead of one
+   being taken on trust — the drawer says so where they disagree.
 
+   What this replaced was (runs_30d - failures_30d) / runs_30d, which counted
+   every partial, every refusal and every run that produced nothing at all as a
+   success, and printed 100.0% over a workflow that had delivered nothing since
+   the window opened. */
+const rate30 = w => successRate(w.successes_30d, w.effective_runs_30d);
+/* All-time has no successes column in the view, so there is nothing here to
+   compute from: success_rate is the view's own figure over the same definition
+   (successes over effective runs, all-time), and it is reported as the view's
+   rather than recomputed. It is null when nothing qualified, like every other
+   rate on this screen. */
+const rateAll = w => n0(w.success_rate);
+
+/* Failed plus went out half-done. Both are the dealership's problem and both
+   make a workflow DEGRADED, so the two are added wherever one number is wanted
+   and split wherever there is room to name them. */
+const incomplete30 = w => (n0(w.failures_30d) || 0) + (n0(w.partials_30d) || 0);
+
+/* Why there is no rate, in this workflow's own terms. A zero denominator is not
+   0% and not 100%, and the three ways of arriving at one are different findings:
+   nothing is logged at all, nothing ran, or everything that ran was refused by
+   design or escalated and so counted toward nothing. */
+const noRateWhy = w => {
+  if (!w.writes_audit_log) return 'nothing is logged for it, so there is nothing to rate';
+  if (!(n0(w.runs_30d) || 0)) return 'no run was logged inside the window';
+  return 'every run in the window was refused by design or handed to a person, so none of them counted toward a rate';
+};
+
+/* The window as it actually happened, in the view's own outcome columns. The bar
+   this replaced had two segments — ok and failed — so a partial, a refusal and a
+   run that produced nothing were all painted in the same green as a delivered
+   run. Failures and partials share the hot colour because both are the same
+   class of problem; the partial segment is dimmed so the two can still be told
+   apart at a glance, and every segment names its own count on hover. */
+const MIX = [
+  ['successes_30d', 'var(--ok)',      '1',   'succeeded'],
+  ['failures_30d',  'var(--hot)',     '1',   'failed'],
+  ['partials_30d',  'var(--hot)',     '.55', 'went out half-done'],
+  ['no_result_30d', 'var(--unknown)', '1',   'ran and produced nothing usable'],
+  ['rejected_30d',  'var(--cold)',    '1',   'were refused by design, and are left out of the rate'],
+  ['escalated_30d', 'var(--warm)',    '1',   'were handed to a person on purpose, and are left out of the rate'],
+  ['unknown_30d',   'var(--unknown)', '.5',  'logged a status this system does not define'],
+];
 const runBar = w => {
-  const r = n0(w.runs_30d) || 0;
-  if (!r) return '';
-  const f = Math.max(0, Math.min(n0(w.failures_30d) || 0, r));
-  const ok = r - f;
+  const total = MIX.reduce((a, [k]) => a + (n0(w[k]) || 0), 0);
+  if (!total) return '';
   return `<div class="stackbar" style="height:6px;max-width:220px;margin-top:8px">
-    ${ok ? `<i style="width:${(ok / r * 100).toFixed(1)}%;background:var(--ok)"></i>` : ''}
-    ${f ? `<i style="width:${(f / r * 100).toFixed(1)}%;background:var(--hot)"></i>` : ''}
+    ${MIX.map(([k, colour, alpha, why]) => {
+      const c = n0(w[k]) || 0;
+      return c
+        ? `<i style="width:${(c / total * 100).toFixed(1)}%;background:${colour};opacity:${alpha}" title="${esc(`${c} of ${total} logged runs ${why}`)}"></i>`
+        : '';
+    }).join('')}
   </div>`;
 };
 

@@ -4,28 +4,35 @@
    product: every field the auditor extracted is shown, and the retention story
    is stated explicitly rather than implied by an empty cell.
 
-   After the 24 Aug 2026 cleanup this register holds ONE customer's documents and
-   nothing else, and that changes what the screen has to be careful about.
+   `kyc_documents` held nine rows filed by one customer after the 24 Aug 2026
+   cleanup and holds NONE as of 31 Aug 2026 (counted against the live table, not
+   inferred). Both shapes are still shapes this screen has to be right about, and
+   neither is assumed anywhere below — every claim about how many people are in
+   the register is computed from the rows that actually loaded.
 
-   1. NINE ROWS, ONE PERSON, ONE TRAIL. Every count here counts one customer's
-      attempts. Three approvals against four rejections is that man's history,
-      not an approval rate, and this file computes no rate, share, average or
-      trend over it anywhere. A percentage drawn across nine rows filed by one
-      person would read as a fact about the dealership's compliance and it is not
-      one — there is nobody here to compare him with. Where a proportion is drawn
-      at all (the retention bar) the caption says how few rows it rests on and
-      that the shapes are not shares.
+   1. ONE PERSON IS A BIOGRAPHY, NOT A POPULATION. When the register does hold
+      one contact's attempts, three approvals against four rejections is that
+      man's history and not an approval rate, so this file computes no rate,
+      share, average or trend over it anywhere. A percentage drawn across nine
+      rows filed by one person would read as a fact about the dealership's
+      compliance and it is not one — there is nobody there to compare him with.
+      Where a proportion is drawn at all (the retention bar) the caption says how
+      few rows it rests on and that the shapes are not shares.
 
-   2. THE FINDING IS THE ARCHIVE GAP. Exactly one of the nine rows carries a
-      storage_path. The other eight were audited, never written to Storage and
-      never purged, which is the hole `v_needs_attention` files as
-      `kyc_archive_gap`: retention cannot be proven for a document whose file was
-      never stored. That count is taken over `storage_path IS NULL AND purged_at
-      IS NULL`, exactly as the view and the Overview panel take it, so the two
-      screens can never print different numbers for the same rows. And because
-      every one of them belongs to the same submission trail, the screen says so
-      — this is one trail failing repeatedly, not a problem spread across a book
-      of customers.
+   2. THE ARCHIVE GAP IS THE VIEW'S NUMBER, NOT THIS SCREEN'S. Retention cannot
+      be proven for a document whose file was never stored, and the database
+      files exactly that hole as `v_needs_attention.kyc_archive_gap`. This screen
+      used to count it a second time locally, over `storage_path IS NULL AND
+      purged_at IS NULL`, and asserted in four places that its number and the
+      view's could not disagree. They did: the view also requires `void_reason IS
+      NULL` and `created_at > 2026-08-17 16:01:48+00`, so every row audited
+      before archiving shipped sat in this screen's count and not in the view's —
+      and the archive banner printed the size of that discrepancy one line below
+      the claim that there could not be one, on the screen an auditor is handed.
+      The local count is gone. The view is read directly, its `ref` (the
+      kyc_documents id) decides membership row by row, and when that read fails
+      the gap is reported as unknown rather than reconstructed here. One fact,
+      one source, and no second opinion to drift from it.
 
    3. THE VOID PARTITION IS EMPTY, AND THE BRANCH STAYS. Nine rows that were
       never submissions — greeting cards, a religious banner, a Sikh prayer text
@@ -44,15 +51,11 @@
    are joined through the contact directory before anything is matched, exactly
    as the rebuilt `v_conversations` now joins them.
 
-   Retention has four distinct meanings and they must never be conflated:
-     · purged_at set                  → the file was deleted on schedule. Correct.
-     · storage_path set, no purge     → the file is archived and retrievable.
-     · both null, created ON or AFTER the archive feature shipped
-                                      → ARCHIVE FAILURE, and the common case here.
-     · both null, created BEFORE it   → predates archiving. Explained history
-                                        rather than a step that failed, but still
-                                        an unprovable document, so still counted
-                                        in the gap and labelled for what it is.
+   Retention has several distinct meanings and they must never be conflated. The
+   full vocabulary, and where every word in it came from, is the RETENTION table
+   below; it is the only place on this screen that decides what a row's archive,
+   retention or purge state is, and the pill, the filter, the stacked bar, the
+   drawer and the Open-file button all read that one verdict.
    Nothing on this screen is estimated and no row is fabricated: if a table
    cannot be read, the panel that depends on it says so. */
 import { db, signedUrl } from '../lib/data.js';
@@ -62,13 +65,13 @@ import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
 
-/* The moment the archive step went live. A row older than this was written by a
-   build that never stored a file at all, so its missing file is explained
-   history rather than a step that failed, and it is labelled Pre-archive so a
-   reviewer can tell the two apart. It is NOT excluded from the archive gap: the
-   document is unprovable either way, `v_needs_attention` counts it, and a screen
-   that quietly dropped it would print a smaller number than Overview for the
-   very same rows. The label is a nuance inside the count, never a filter on it. */
+/* The moment the archive step went live, matching `v_needs_attention` and the
+   KYC workflow's own archive-gap monitor, both of which carry this same instant.
+   It is used here for exactly one purpose: to EXPLAIN why the view did not file
+   a fileless row as a gap. It is never a predicate on any count — the view
+   decides what is in the gap and this screen does not second-guess it. If a
+   fileless row is absent from the view and this timestamp does not explain the
+   absence, the row says so rather than being folded into either side. */
 const ARCHIVE_EPOCH = '2026-08-17T16:01:48Z';
 const ARCHIVE_EPOCH_MS = Date.parse(ARCHIVE_EPOCH);
 const ARCHIVE_EPOCH_LABEL = '17 Aug 2026 16:01 UTC';
@@ -86,11 +89,13 @@ const NO_DECISION_HOOK =
   'No KYC decision endpoint exists yet. kyc_documents is service-role only, and the audit-kyc webhook audits a document — it does not accept a human verdict — so the browser cannot record an approval or a rejection.';
 const NO_REASK_HOOK =
   'No re-request endpoint exists yet. Asking the customer for another upload needs a KYC re-request webhook, and none is deployed.';
-/* The message on eight of the nine rows in the register as it stands, so it says
-   the whole thing rather than "nothing to open": what is missing, why that is a
-   compliance problem, and why no button here can fix it. */
+/* Said on every row with no file, so it says the whole thing rather than
+   "nothing to open": what is missing and why no button here can fix it. Whether
+   the database files this particular row as an archive gap is NOT stated here —
+   that is the view's verdict, it is carried on the row's retention state, and
+   this constant would be a second, unchecked assertion of the same fact. */
 const NO_FILE_LINK =
-  'This record has no storage_path and no purged_at, so nothing was deleted on schedule — the file was simply never archived, and there is nothing to open. This is the row v_needs_attention files as kyc_archive_gap. Re-running the archive step needs a service-role job and no webhook exists for it, so the browser cannot repair it either.';
+  'This record has no storage_path and no purged_at, so nothing was deleted on schedule — the file was simply never archived, and there is nothing to open. Re-running the archive step needs a service-role job and no webhook exists for it, so the browser cannot repair it either.';
 const PURGED_FILE =
   'This file was deleted on schedule under the retention policy. There is nothing left to open.';
 /* Signing is deliberately short-lived: long enough to click through, short
@@ -104,8 +109,17 @@ const CAN_OPEN_FILE =
 /* Date-only columns (date_of_birth, expiry_date, retain_until) are rendered
    verbatim. Parsing "2026-08-17" into a Date and formatting it locally shifts
    it a day either side of UTC midnight, and a passport expiry that moves by a
-   day depending on who is looking at it is worse than an unformatted one. */
-const todayISO = () => new Date().toISOString().slice(0, 10);
+   day depending on who is looking at it is worse than an unformatted one.
+
+   "Today", though, has to be the showroom's today. Every n8n workflow runs on
+   Asia/Dubai and lib/format.js pins every absolute date on this product to it;
+   a UTC today is Dubai minus four hours, so between 00:00 and 04:00 GST this
+   comparison used yesterday's date and a retain_until that lapsed that morning
+   did not read as due. en-CA is named only because it is the locale that formats
+   as YYYY-MM-DD, which is the shape these DATE columns already hold. */
+const DUBAI_DAY = new Intl.DateTimeFormat('en-CA',
+  { timeZone: 'Asia/Dubai', year: 'numeric', month: '2-digit', day: '2-digit' });
+const todayISO = () => DUBAI_DAY.format(new Date());
 const isPastDate = v => {
   const s = String(v || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) && s < todayISO();

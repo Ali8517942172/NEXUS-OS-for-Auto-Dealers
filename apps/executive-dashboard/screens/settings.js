@@ -32,10 +32,19 @@
        compiled into the bundle; the knowledge-base panel prints the columns
        rag_documents really returned, and where a column it would like does not
        exist it says so rather than showing a plausible zero.
-     · Webhook endpoints are listed but never probed. Firing lead-trigger to see
-       whether it answers would enrol a real customer in a real drip campaign.
-       The connectivity panel probes only what is free and side-effect-free;
-       everything else is named, not called.
+     · Webhook endpoints are listed but never probed, and no workflow is called
+       from this screen at all — not on mount, not on "Re-run checks", not from
+       a button. Firing lead-trigger to see whether it answers would enrol a
+       real customer in a real drip campaign. That rule was written here on
+       20 Aug and broken in the same breath: the shared connectivity panel
+       probed `finance-calc` on every mount and on every re-check, and that
+       workflow writes an audit_log row on every invocation, refusals included.
+       52 of Finance Calc's 60 runs inside the 30-day window were manufactured
+       by people opening this page — written into the very table the Workflows
+       and Credentials cards below read and report on. A monitoring screen may
+       not mutate the state it is monitoring. What is left is a one-row Supabase
+       select and the n8n /healthz endpoint; both are reads, and everything else
+       is named, not called.
      · Two honesty rules added 24 Aug and enforced below. A workflow whose
        health is NOT_INSTRUMENTED has not been proven working — it has merely
        never reported — so it is never coloured green, and the word used for it
@@ -50,7 +59,7 @@ import { HOOK, ME, SESSION, db, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
 import { ago, clock, dubaiTime, esc, n0, num, pct, pill, tone } from '../lib/format.js';
-import { renderIntegrations } from '../lib/integrations.js';
+import { HEALTH_WORDS, healthWords, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { applyDensity } from '../lib/prefs.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -142,60 +151,76 @@ const KIND_ICON = {
   inventory_aging: 'directions_car',
 };
 
-/* ── Health vocabulary ─────────────────────────────────────────────────────
-   Wording, icon and sort rank — and nothing else. The COLOUR is not decided
-   here. This map used to carry a `t` on every entry, which made it a private
-   severity map, and private severity maps disagree: DEGRADED was red on this
-   screen, on Automation, on Ask and on Overview while the shared table said
-   amber, so the same workflow was two colours depending on where you looked at
-   it. tone() in lib/format.js now owns all of it, DEGRADED included, and it is
-   'hot' — a workflow failing in production is not a note to read later.
+/* ── Health vocabulary ─────────────────────────────────────────────
+   The label, the tone and the blurb are no longer written here. They come from
+   lib/health.js, which mirrors public.nexus_outcome_class() and is the only
+   place in this app allowed to decide what an audit_log status means.
 
-   What tone() answers for the rest, and why it matters: NEVER_RAN and
-   NOT_INSTRUMENTED are both 'cold', never 'ok'. Both are the absence of
-   evidence rather than evidence of health, and colouring an unmeasured workflow
-   green is how a dashboard lies without anyone writing a false sentence. Only
-   HEALTHY is green, and it is green about the 30-day window, not about the
-   workflow forever. */
-const HEALTH_WORDS = {
-  DEGRADED: {
-    label: 'Degraded', icon: 'error', rank: 0,
-    blurb: 'At least one run failed inside the 30-day window. This is the state that needs a human.',
-  },
-  NEVER_RAN: {
-    label: 'No runs yet', icon: 'schedule', rank: 1,
-    blurb: 'This workflow is registered as writing to audit_log and has never written a row. That is not evidence of health, it is the absence of evidence: it has never been observed working in this deployment.',
-  },
-  NOT_INSTRUMENTED: {
-    label: 'Not logged', icon: 'visibility_off', rank: 2,
-    blurb: 'This workflow has no Audit Log node, so nothing it does reaches audit_log. Its health is unknown rather than good — from here, running perfectly and failing every time look identical.',
-  },
-  HEALTHY: {
-    label: 'Clean, 30 d', icon: 'check_circle', rank: 3,
-    blurb: 'Every run this workflow logged inside the 30-day window succeeded.',
-  },
+   This file used to carry its own HEALTH_WORDS, and a private vocabulary is a
+   private opinion about production: four screens each had one, each counted
+   only FAILED as a failure, and Competitor Price Scraping therefore read
+   “Clean, 30 d — every run inside the window succeeded” while 73 of its 84 runs
+   produced no price at all. The states the view can now return are seven, not
+   four, and this screen is not entitled to invent wording for any of them.
+
+   What stays local is presentation — an icon and a sort rank per state —
+   because neither is a claim about the data. Worst first: the two states that
+   need a human, then the states that are an absence of evidence, then the one
+   green state last. The tone comes from HEALTH_WORDS rather than from tone() in
+   lib/format.js, because that table has never been taught PRODUCING_NOTHING,
+   NO_QUALIFYING_RUNS or UNKNOWN_OUTCOME and its fallback for a word it does not
+   know is the neutral 'unknown' grey — right for two of those three, and wrong
+   for PRODUCING_NOTHING, which is a fault. */
+const HEALTH_LOOK = {
+  DEGRADED:           { icon: 'error',             rank: 0 },
+  PRODUCING_NOTHING:  { icon: 'block',             rank: 1 },
+  UNKNOWN_OUTCOME:    { icon: 'help',              rank: 2 },
+  NEVER_RAN:          { icon: 'schedule',          rank: 3 },
+  NO_QUALIFYING_RUNS: { icon: 'do_not_disturb_on', rank: 4 },
+  NOT_INSTRUMENTED:   { icon: 'visibility_off',    rank: 5 },
+  HEALTHY:            { icon: 'check_circle',      rank: 6 },
 };
+/* A health string lib/health.js has no entry for is deliberately NOT folded
+   into UNKNOWN_OUTCOME. That is a real state of the view and it means one
+   specific thing — the workflow logged a status the database has no class for.
+   This is the other case: the VIEW returned a word this frontend has never
+   heard. Both are unknowns, and they are unknowns about different things. */
 const UNKNOWN_HEALTH = {
-  label: 'Unrecognised', icon: 'help', rank: 1,
-  blurb: 'v_workflow_health returned a health state this screen has no wording for. It is shown verbatim rather than folded into one of the states it might mean, and tone() gives it the unknown tone — a word nobody taught the shared table is not a pass, and it is not cold either.',
+  label: 'Unrecognised', t: 'unknown', icon: 'help', rank: 2,
+  blurb: 'v_workflow_health returned a health state neither this screen nor lib/health.js has wording for. It is shown verbatim rather than folded into one of the states it might mean — a word nobody taught the shared vocabulary is not a pass, and it is not cold either.',
 };
 const stateKey = w => (Object.prototype.hasOwnProperty.call(HEALTH_WORDS, up(w?.health)) ? up(w.health) : 'UNKNOWN');
 const healthOf = w => {
   const k = stateKey(w);
-  const words = k === 'UNKNOWN' ? UNKNOWN_HEALTH : HEALTH_WORDS[k];
-  /* One call, one source of truth. An unrecognised state is handed to tone()
-     verbatim rather than as the placeholder key, so it lands on the same
-     unknown-word rule as everything else the shared table has never seen. */
-  return { ...words, t: tone(k === 'UNKNOWN' ? str(w?.health) : k) };
+  if (k === 'UNKNOWN') return UNKNOWN_HEALTH;
+  const words = healthWords(k);
+  return { ...words, ...HEALTH_LOOK[k], t: words.tone };
 };
 
-/* 30-day rate computed here from the two columns whose window is documented,
-   rather than taken on trust from `success_rate`, whose window is not. */
-const rate30 = w => {
-  const r = n0(w.runs_30d), f = n0(w.failures_30d);
-  if (r == null || !r) return null;
-  return ((r - (f || 0)) / r) * 100;
+/* The 30-day rate is the view's figure, read rather than recomputed.
+
+   What stood here until 31 Aug 2026 was `(runs_30d - failures_30d) / runs_30d`,
+   and because failures_30d counted only status='FAILED', every REJECTED,
+   PARTIAL and NOT_EXECUTED row scored as a success: Competitor Price Scraping
+   printed 100.0% over 84 runs of which 73 produced no price, and Finance Calc
+   printed 91.7% on three successes in sixty runs. v_workflow_health now
+   classifies every row through nexus_outcome_class() and divides successes_30d
+   by effective_runs_30d, with refusals and deliberate escalations out of the
+   denominator so that an unauthorised call cannot dilute a real miss rate.
+   There is no arithmetic left to do here, and this screen must not invent any.
+
+   null means no qualifying run. That is not 0% and it is not 100%; the caller
+   renders the reason instead of a number. */
+const rate30 = w => n0(w?.success_rate_30d);
+/* Runs that did not deliver: outright failures plus half-landed deliveries. A
+   PARTIAL is not a lesser failure — the customer got the reply and the record
+   of it did not land — so the two are added, and broken apart again wherever
+   there is room to say which was which. */
+const incomplete30 = w => {
+  const f = n0(w?.failures_30d), p = n0(w?.partials_30d);
+  return f == null && p == null ? null : (f || 0) + (p || 0);
 };
+const NO_RATE_WHY = 'No run inside the 30-day window counts toward a rate — either nothing ran, or every run was refused by design, and refusals are excluded from the denominator. There is no percentage to state: it is not 0% and it is not 100%.';
 
 /* ── Credential failures ───────────────────────────────────────────────────
    n8n reports a broken credential in the text of the failure it causes — the

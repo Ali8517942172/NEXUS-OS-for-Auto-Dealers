@@ -67,11 +67,39 @@
    everything this screen knows (an empty knowledge base, a DEGRADED workflow, a
    question that failed in this tab) is invisible to that view anyway, so it is
    stated in the strip below where each row can say where it came from — not
-   compressed into a digit in the sidebar that nothing can explain. */
+   compressed into a digit in the sidebar that nothing can explain.
+
+   ── 31 Aug 2026: the screen started reading the grounding it was already sent ─
+   On 30 Aug the Ask-AI workflow's Format Response node was rewritten to send
+   the evidence behind every answer: which of the model's [S#] markers resolved
+   to a retrieved section and which named nothing (`invalid_refs`), which numbers
+   in the answer appear in none of the text the model was handed
+   (`unsupported_figures`), which retrieved sections never reached the prompt
+   (`dropped_from_prompt`), which were cut before it saw the end of them
+   (`truncated_sources`), and one `state` naming what happened. This screen was
+   written on 24 Aug against the older contract and read none of it. Every turn
+   still got the same green "N sources cited" pill, including a turn whose own
+   payload said a figure in it came from nowhere.
+
+   That is not a hypothetical here. This system has already put a model-invented
+   monthly instalment, 26-44% above the real one, in front of a customer. The
+   lesson recorded from it was that "the model said something plausible" and
+   "the model said something grounded" are different sentences, and only the
+   second one is safe to repeat. `unsupported_figures` is the deterministic
+   check built to tell them apart; it arrived on the wire and was thrown away.
+
+   So the verdict on a turn now has six states instead of two, and green is the
+   narrowest of them: an answer is CLEAN only when the workflow said `cited` and
+   reported no problem of any kind. Anything the workflow flagged downgrades the
+   turn, is named in words, and lists the offending figures or markers so they
+   can be checked rather than merely counted. A missing grounding object is its
+   own state — UNKNOWN, never clean — because a workflow that sent nothing has
+   not told us the answer was fine, it has told us nothing. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
+import { healthWords, isQualifying, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { panel, table } from '../lib/ui.js';

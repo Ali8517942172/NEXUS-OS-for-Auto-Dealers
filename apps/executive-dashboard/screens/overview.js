@@ -76,25 +76,49 @@
    4. A `workflow_failure` item says a run failed inside the window. It does not
       say the workflow is failing now, and on this screen those read identically
       — which is how a fault that was fixed at 19:00 still looks like an
-      emergency at midnight. `v_workflow_health` carries `last_failure` and
-      `last_run`, and `last_run` is the newest run of any status: when it is
-      later than `last_failure`, the workflow has completed a run since that
-      failure and that run did not fail. So the distinction is read off two
-      columns, for every workflow, rather than from a list of which causes
-      somebody believes are fixed — the list would be a hardcoded opinion and
-      would rot within a day.
+      emergency at midnight. So the distinction is read off the view's columns,
+      for every workflow, rather than from a list of which causes somebody
+      believes are fixed — the list would be a hardcoded opinion and would rot
+      within a day.
 
-      It is evidence, not a clean bill of health, and the screen says so: the
-      audit log records only runs that COMPLETED, so a workflow hung right now
-      leaves no row at all and cannot be distinguished from an idle one here.
+      Which columns changed on 31 Aug 2026, and the old ones were wrong. This
+      screen used to compare `last_run` against `last_failure` and print, in
+      green, "has completed a run since, and that run did not fail". `last_run`
+      is `max(logged_at)` over rows of ANY status, and `audit_log.status` is not
+      binary — it holds SUCCESS, FAILED, PARTIAL, NOT_EXECUTED, REJECTED and
+      ESCALATED. So that comparison only ever proved "the newest row is not
+      literally labelled FAILED". Finance Calc rendered here as recovered, in
+      grey, at the bottom of the card, while its six newest rows were all
+      NOT_EXECUTED — "Calculator ran but produced NO calculation" — and it had
+      issued no quote for an hour. Customer 360 rendered as recovered on a
+      PARTIAL row reading "Gmail read failed".
+
+      `v_workflow_health` was rebuilt on public.nexus_outcome_class() and now
+      carries `last_success`, `last_partial` and `last_incomplete` (the newer of
+      the last failure and the last half-done run), plus the counts each outcome
+      class earns. Recovery is now read off `last_success` — the only column
+      that is evidence a run did the job — and only where that success is also
+      the newest run there is. `lib/health.js` mirrors the same function and is
+      the only place allowed to say what a status means; nothing in this file
+      classifies one itself.
+
+      It is still evidence, not a clean bill of health, and the screen says so:
+      the audit log records only runs that COMPLETED, so a workflow hung right
+      now leaves no row at all and cannot be distinguished from an idle one here.
 
    Everything below is a number Postgres produced. Nothing is estimated, and
    where a figure rests on a handful of rows the screen says how few — a single
    test record must not read as a trend. */
-import { LAST as BADGE_SNAPSHOT } from '../lib/badges.js';
+/* COUNTS, not a copy of it. badges.js exports the severity set precisely so
+   this file cannot drift from it — see the note at the foot of badges.js. */
+import { COUNTS as BADGE_SEVERITIES, LAST as BADGE_SNAPSHOT } from '../lib/badges.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, clock, esc, mins, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, clock, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+/* The only place in this app allowed to decide what a run outcome means. This
+   screen reads the columns v_workflow_health already computed from the same
+   rule and does not classify anything itself. */
+import { healthWords, successRate } from '../lib/health.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -130,13 +154,14 @@ const CHAT_WINDOW_DAYS = 7;
    omission the moment an operator reads it as "everything that ever slipped". */
 const SLA_WINDOW_DAYS = 30;
 
-/* The severities `lib/badges.js` counts. COLD is excluded there deliberately —
-   a permanent number over a nav item for something nobody intends to act on
-   today is how a badge stops being read at all — and this file must apply the
-   same rule when it works out the floor it is not allowed to go below. If
-   badges.js ever changes this set, this line has to change with it; the
-   consequence of missing that is a badge that shrinks when Overview renders. */
-const BADGE_SEVERITIES = new Set(['HOT', 'WARM']);
+/* BADGE_SEVERITIES is imported from lib/badges.js above, not restated here.
+   COLD is excluded there deliberately — a permanent number over a nav item for
+   something nobody intends to act on today is how a badge stops being read at
+   all — and this file has to apply the same rule when it works out the floor it
+   is not allowed to go below. It used to be mirrored here as a literal with a
+   comment saying "if badges.js ever changes this set, change this line too",
+   which is a coupling nothing can check: the day one side gained COLD the badge
+   would have silently disagreed with the panel under it. */
 
 /* Below this many source rows a figure is a sample, not a signal, and the KPI
    says so instead of letting the number stand on its own. */
@@ -162,36 +187,81 @@ const IDENT = {
   unidentified: { short: 'Unidentified', note: 'We do not know who this is. The only handle stored is the WhatsApp chat id, which for a LID contains no phone digits, and no lead or contact row matches it.' },
 };
 
-/* Failing now, or failed earlier in the window and quiet since? The two look
+/* Failing now, or fixed earlier in the window and clean since? The two look
    identical on an alert list, and they are not the same call for an owner at
    midnight — one is a workflow to go and fix, the other is a workflow to check
-   in the morning. `v_workflow_health.last_run` is the newest run of any status
-   and `last_failure` the newest failed one, so a `last_run` strictly later than
-   `last_failure` is arithmetic proof that a run completed after that failure
-   and did not itself fail. Equal timestamps mean the failure IS the last run.
+   in the morning.
 
-   Anything less than that — no last_failure, an unparseable date, a last_run at
-   or before it — returns "not known to have recovered". This function never
-   guesses upward: an alert wrongly softened is worse than one left loud. */
+   The evidence is `last_success`, and nothing else will do. This function used
+   to read `last_run > last_failure`, which is only ever proof that the newest
+   row is not literally labelled FAILED: it printed "has completed a run since,
+   and that run did not fail", in green, over Finance Calc's six consecutive
+   NOT_EXECUTED rows and over a Customer 360 PARTIAL that read "Gmail read
+   failed". A run that produced nothing is not a recovery.
+
+   So there are four states and only one of them is green:
+
+     failing    nothing has succeeded since the newest run that failed or went
+                out half-done (`last_incomplete`), or nothing has succeeded at
+                all in the window. Red.
+     stale      a run did succeed after that (`last_success` > `last_incomplete`)
+                but it is NOT the newest run: `last_run` is later, and because
+                `last_success` is the newest success by construction, whatever
+                ran last was not one. Amber, and the sentence says exactly that
+                and no more — this file cannot tell a NOT_EXECUTED from a
+                refusal without reading audit_log itself, so it claims neither.
+     recovered  the newest run there is, is a success. Green.
+     unknown    the view records no time for the last failed-or-half-done run,
+                so nothing can be told from here.
+
+   This function never guesses upward: an alert wrongly softened is worse than
+   one left loud. */
 const failureState = w => {
-  const failedAt = Date.parse(w && w.last_failure);
+  const incompleteAt = Date.parse(w && w.last_incomplete);
+  const partialAt = Date.parse(w && w.last_partial);
+  const successAt = Date.parse(w && w.last_success);
   const ranAt = Date.parse(w && w.last_run);
-  if (Number.isNaN(failedAt)) {
+  if (Number.isNaN(incompleteAt)) {
     return { key: 'unknown',
-      text: '<span class="t-muted">the view records no time for the last failure, so whether anything has run since cannot be told from here</span>' };
+      text: '<span class="t-muted">the view records no time for the last failed or half-done run, so whether anything has succeeded since cannot be told from here</span>' };
   }
-  if (!Number.isNaN(ranAt) && ranAt > failedAt) {
-    return { key: 'recovered',
-      text: `<span class="t-ok">has completed a run since, ${esc(ago(w.last_run))}, and that run did not fail</span>` };
+  /* Which kind of not-clean the newest one was. last_incomplete is the newer of
+     last_failure and last_partial, so an exact match on last_partial names it. */
+  const halfDone = !Number.isNaN(partialAt) && partialAt === incompleteAt;
+  const wording = halfDone ? 'went out half-done' : 'failed';
+  if (Number.isNaN(successAt)) {
+    return { key: 'failing',
+      text: `<span class="t-hot">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
   }
-  return { key: 'failing',
-    text: '<span class="t-hot">its most recent completed run is the failure</span>' };
+  if (successAt <= incompleteAt) {
+    return { key: 'failing',
+      text: `<span class="t-hot">its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}, and nothing has succeeded outright since</span>` };
+  }
+  if (!Number.isNaN(ranAt) && ranAt > successAt) {
+    return { key: 'stale',
+      text: `<span class="t-warm">succeeded since, ${esc(ago(w.last_success))}, but that is not its newest run — something ran ${esc(ago(w.last_run))} and it was not a success</span>` };
+  }
+  return { key: 'recovered',
+    text: `<span class="t-ok">its newest run is a success, ${esc(ago(w.last_success))}</span>` };
 };
 /* Said wherever a row above claims to have recovered. The audit log holds one
-   row per run that COMPLETED, so "it has run since" is evidence about the last
-   run that finished — not proof of health, and a workflow hung right now writes
-   no row at all and is indistinguishable from an idle one from here. */
-const RECOVERY_CAVEAT = 'A workflow marked as having run since its failure is read from v_workflow_health: last_run later than last_failure. That is evidence the most recent completed run did not fail, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen.';
+   row per run that COMPLETED, so "it has succeeded since" is evidence about the
+   last run that finished — not proof of health, and a workflow hung right now
+   writes no row at all and is indistinguishable from an idle one from here. */
+const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from v_workflow_health: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never inferred from last_run any more: that column is the newest row of ANY status, and reading it as a clean run is what printed "that run did not fail" over six consecutive runs that produced nothing.';
+/* Said wherever a row is amber rather than green. */
+const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newest run is stating arithmetic, not a diagnosis: last_success is the newest success by construction, so a later last_run is a run that was not one. What it was instead — half-done, no result, refused by design or escalated to a person — is in the counts beside it and in full on Automation.';
+
+/* Open or finished, taken straight out of the TONE table in lib/format.js so
+   this screen cannot grow a second lead-lifecycle vocabulary. Three writers
+   fill leads.status — the router writes HOT/WARM/COLD, the Slack Command Center
+   writes CONTACTED/QUALIFIED/WON/LOST through an unconstrained $fromAI, the BDC
+   agent writes DISQUALIFIED — and format.js is where those eight words are
+   already mapped to 'won', 'dead' and 'open'. A status nobody has taught that
+   table about tones to 'unknown' and is counted as open here: a lead is not
+   finished because a word was not recognised. */
+const TERMINAL_TONES = new Set(['won', 'dead']);
+const isOpenLead = l => !TERMINAL_TONES.has(tone(l && l.status));
 
 SCREENS.overview = async host => {
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
@@ -258,15 +328,27 @@ SCREENS.overview = async host => {
     + `&storage_path=is.null&purged_at=is.null&order=created_at.desc&limit=${KYC_LIMIT}`));
   /* Workflow health, read once and shared. The Workflows-degraded panel renders
      it, and the Needs-attention panel needs the same rows to tell a workflow
-     that is failing now from one that failed earlier in the window and has run
-     clean since. Two reads could put a row in one state on one panel and the
-     other state three lines below it, which is worse than not distinguishing
-     them at all. `failures_30d=gt.0` is the panel's own filter and it is also
-     exactly the set a workflow_failure item can come from, so one read serves
-     both; a workflow_failure item with no match here is reported as unmatched
-     rather than assumed healthy. */
-  const readHealth = shared(() => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,last_run,last_failure,is_active'
-    + '&failures_30d=gt.0&order=failures_30d.desc,name.asc&limit=50'));
+     that is failing now from one that failed earlier in the window and has
+     succeeded since. Two reads could put a row in one state on one panel and
+     the other state three lines below it, which is worse than not
+     distinguishing them at all.
+
+     The filter is `health`, not `failures_30d=gt.0`, and the difference is not
+     cosmetic. Since v_workflow_health was rebuilt on nexus_outcome_class(), a
+     workflow can be DEGRADED with zero rows labelled FAILED — Finance Calc is
+     DEGRADED tonight on 5 PARTIAL runs and 19 that produced nothing, and
+     `failures_30d=gt.0` would have dropped it out of this panel entirely on the
+     evening its calculator stopped issuing quotes. PRODUCING_NOTHING is here
+     for the same reason: a workflow that runs clean and achieves nothing is not
+     a workflow to leave off a triage card. UNKNOWN_OUTCOME is a workflow
+     logging a status this system does not define, which is also not health.
+
+     A workflow_failure item in v_needs_attention comes from FAILED rows in the
+     last 24 h, so its workflow is DEGRADED and is inside this set; an item with
+     no match here is still reported as unmatched rather than assumed healthy. */
+  const readHealth = shared(() => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,last_run,last_success,last_failure,last_partial,last_incomplete,is_active'
+    + '&health=in.(DEGRADED,PRODUCING_NOTHING,UNKNOWN_OUTCOME)'
+    + '&order=failures_30d.desc,partials_30d.desc,name.asc&limit=50'));
   /* Read for one reason only: to explain an absence. `undercut` is one of the
      kinds the Needs-attention list enumerates, and when `competitors` is empty
      that branch cannot fire at all — so an operator reading "no undercuts"
@@ -347,13 +429,19 @@ SCREENS.overview = async host => {
 
   const setBadge = () => {
     const extra = need.kycExtra || 0;
-    const shared = sharedFloor();
+    /* Named `sharedCount`, not `shared`: the memo helper at the top of this
+       function is called `shared`, and a second `shared` declared here shadows
+       it for the whole of setBadge's body. Nothing above this line calls the
+       memo today, so there is no TDZ error today — which is exactly the shape
+       of the `up is not defined` regression the 31 Aug hoist was written to
+       fix, one added line away from taking the whole screen to the error card. */
+    const sharedCount = sharedFloor();
     const own = need.attention == null ? 0 : ownFloor(need.items);
     /* max(), not a choice between them: whichever snapshot saw more rows is the
        one this badge must not fall below. badges.js reads 500 rows and this
        screen reads 200, so on a busy morning the shared count is the larger. */
-    need.floor = shared == null ? own : Math.max(shared, own);
-    need.floorFrom = shared == null ? 'own' : 'shared';
+    need.floor = sharedCount == null ? own : Math.max(sharedCount, own);
+    need.floorFrom = sharedCount == null ? 'own' : 'shared';
     need.badge = need.floor + extra;
     const badge = $('badge-overview');
     if (!badge) return;
@@ -407,19 +495,55 @@ SCREENS.overview = async host => {
          name in a select is a 42703 that takes the whole query down, while an
          invented name read off a returned row is merely `undefined` — which
          delta() already treats as "no comparison available" and renders as
-         nothing at all. Read defensively, select nothing specific. */
-      db('daily_metrics?select=*&order=snapshot_date.desc&limit=2').catch(() => []),
-      db(`communication_logs?select=lead_email,created_at&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
+         nothing at all. Read defensively, select nothing specific.
+
+         One row, not two. This read asked for two and then compared against the
+         second — the day-before-last — leaving the newest snapshot fetched and
+         unused. Live on 31 Aug that meant reading the 08-29 row, whose
+         avg_response_minutes is null, and printing "the 2026-08-29 snapshot
+         records no comparable figure" directly under a tile whose 08-30
+         snapshot, one row above the one it read, holds 0.00. Every figure on
+         this strip is computed live from the current tables, so the only
+         correct comparison is the most recent snapshot there is. */
+      db('daily_metrics?select=*&order=snapshot_date.desc&limit=1').catch(() => []),
+      /* `channel` is selected because `direction` alone cannot tell a reply to a
+         customer from a marker this system wrote to itself. See the reply
+         analysis below. */
+      db(`communication_logs?select=lead_email,created_at,channel,direction&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
     ]);
 
     const hot = leads.filter(l => up(l.status) === 'HOT').length;
     const warm = leads.filter(l => up(l.status) === 'WARM').length;
     const cold = leads.filter(l => up(l.status) === 'COLD').length;
 
+    /* Open leads are a subset of the table, and until 31 Aug this screen did
+       not draw the distinction anywhere: the first tile on the first screen was
+       labelled "Open leads" and rendered `leads.length`, the unfiltered row
+       count. Live that printed 3 over 1 WARM and 2 DISQUALIFIED — a 3x
+       overstatement of the working pipeline — and once the Slack Command Center
+       starts writing WON and LOST at volume it becomes a lifetime lead counter
+       that never goes down. `leads.length` still means every row and is still
+       used as that below; the open count is its own name. */
+    const openLeads = leads.filter(isOpenLead);
+    const terminal = leads.filter(l => !isOpenLead(l));
+    const terminalNames = [...new Set(terminal.map(l => up(l.status)).filter(Boolean))].sort();
+
+    /* Response time is measured over every lead, terminal ones included: how
+       fast the dealership answered an enquiry is a fact about that enquiry and
+       does not stop being one when the lead is later lost. */
     const withResp = leads.filter(l => n0(l.response_time_minutes) != null);
     const avgResp = withResp.length ? withResp.reduce((a, l) => a + Number(l.response_time_minutes), 0) / withResp.length : null;
-    const withBudget = leads.filter(l => n0(l.budget_aed) != null);
-    const pipeline = withBudget.reduce((a, l) => a + Number(l.budget_aed), 0);
+    /* Pipeline is the opposite case: a WON deal is money already taken and a
+       DISQUALIFIED enquiry is money that was never there, so neither belongs in
+       a forecast. And with nothing to add up the figure is null, not 0 —
+       `reduce(…, 0)` used to render a large "AED 0" directly above a caption
+       saying no pipeline figure exists, which is the number and the caption
+       asserting opposite things with the number winning. Response time two
+       tiles left has always handled this correctly; this is the same shape. */
+    const withBudget = openLeads.filter(l => n0(l.budget_aed) != null);
+    const pipeline = withBudget.length
+      ? withBudget.reduce((a, l) => a + Number(l.budget_aed), 0)
+      : null;
     const risk = inv.filter(i => up(i.aging_alert) === 'CRITICAL');
     const warning = inv.filter(i => up(i.aging_alert) === 'WARNING');
     /* Two different sums. The holding cost of the units actually at risk is the
@@ -434,26 +558,79 @@ SCREENS.overview = async host => {
     const riskList = risk.reduce((a, i) => a + (n0(i.price_aed) || 0), 0);
 
     const sinceMs = Date.parse(since);
-    const answered = new Set(outbound.map(c => norm(c.lead_email)).filter(Boolean));
+    /* ── What counts as a reply ──────────────────────────────────────────
+       Two things were wrong here and they were wrong independently.
+
+       Not every outbound row is a message to a customer. `channel` exists on
+       communication_logs precisely to separate the two, and this filtered on
+       `direction` alone — so the Silence Detector's own markers, written
+       `channel='system'` and reading "[SILENCE-ESCALATED] Silent for 12h
+       since …", counted as proof somebody had replied. Those rows exist
+       BECAUSE nobody replied. The detector already fixed this on its writing
+       side (it now writes direction 'internal'); the two legacy rows still
+       carry direction 'outbound' and are excluded here by channel. Both
+       spellings are excluded, so neither side has to be deployed first.
+
+       And a set of addresses is not an answer. Membership alone marked a lead
+       answered by any message to that address in the window, including one sent
+       before the lead row existed — so a returning customer quoted in August
+       and re-enquiring today is exempted from the five-minute rule on the
+       strength of the earlier quote, silently, for exactly the segment with the
+       highest close rate. The newest reply per address is kept and compared
+       against the lead's own created_at. */
+    const INTERNAL_CHANNELS = new Set(['system', 'internal']);
+    const isInternal = c => INTERNAL_CHANNELS.has(norm(c.channel)) || norm(c.direction) === 'internal';
+    const internalMarkers = outbound.filter(isInternal).length;
+    const replies = outbound.filter(c => !isInternal(c));
+    const lastReply = new Map();
+    replies.forEach(c => {
+      const k = norm(c.lead_email);
+      const t = Date.parse(c.created_at);
+      if (!k || Number.isNaN(t)) return;
+      const seen = lastReply.get(k);
+      if (seen == null || t > seen) lastReply.set(k, t);
+    });
+    /* At or after, not merely present. Equal timestamps are counted as an
+       answer: the router writes the lead and the BDC agent's first message
+       within the same second on a WhatsApp enquiry. */
+    const answeredSince = l => {
+      const t = lastReply.get(norm(l.email));
+      const born = Date.parse(l.created_at);
+      return t != null && !Number.isNaN(born) && t >= born;
+    };
     /* communication_logs.lead_email holds an email when the lead is known and a
        raw WhatsApp handle when it is not, so some outbound messages in this
        window are filed against a handle and can never match a lead row. They
        are counted, not silently dropped: a lead answered on WhatsApp before it
        was identified would still be listed below as unanswered, and an operator
        has to be told that rather than left to discover it. */
-    const outboundHandles = outbound.filter(c => isHandle(c.lead_email)).length;
+    const outboundHandles = replies.filter(c => isHandle(c.lead_email)).length;
     const recent = leads.filter(l => Date.parse(l.created_at) >= sinceMs);
+    /* Terminal leads are not people waiting for a call. A lead the BDC agent
+       disqualified as spam was eligible for this queue, in red, as somebody who
+       needed ringing. */
+    const recentOpen = recent.filter(isOpenLead);
+    const recentTerminal = recent.length - recentOpen.length;
     /* A lead with no email cannot be matched against communication_logs, which
-       keys on lead_email. Counting those as "unanswered" would invent a queue;
-       they are excluded and reported separately so the gap is visible. */
-    const unmatchable = recent.filter(l => !norm(l.email)).length;
-    const waiting = recent
-      .filter(l => norm(l.email) && !answered.has(norm(l.email)))
+       keys on lead_email; one with no readable created_at cannot be compared
+       against a reply time. Neither is counted as unanswered — that would
+       invent a queue — and neither is counted as answered either, which is what
+       the all-clear sentence used to do by printing `recent.length` as its
+       denominator while testing a strictly smaller set. `tested` is the cohort
+       every claim on this strip is now made about, and the untested rows are
+       reported as their own number rather than absorbed into a green line. */
+    const noEmail = recentOpen.filter(l => !norm(l.email)).length;
+    const tested = recentOpen.filter(l => norm(l.email) && !Number.isNaN(Date.parse(l.created_at)));
+    const untestable = recentOpen.length - tested.length;
+    const waiting = tested
+      .filter(l => !answeredSince(l))
       .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 
     core = { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
-             risk, warning, riskHolding, riskList, holding, metrics, waiting, unmatchable,
-             outboundHandles, outboundCount: outbound.length,
+             openCount: openLeads.length, terminalCount: terminal.length, terminalNames,
+             risk, warning, riskHolding, riskList, holding, metrics, waiting,
+             untestable, noEmail, recentTerminal, testedCount: tested.length,
+             outboundHandles, outboundCount: replies.length, internalMarkers,
              recentCount: recent.length,
              leadsCapped: leads.length >= LEAD_LIMIT,
              invCapped: inv.length >= INV_LIMIT,
@@ -471,13 +648,18 @@ SCREENS.overview = async host => {
     pipeCard.innerHTML = stateError('pipeline by stage', coreErr.message);
   } else {
     const { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
+            openCount, terminalCount, terminalNames,
             risk, warning, riskHolding, riskList, holding, metrics, waiting, recentCount,
+            testedCount, untestable, noEmail, recentTerminal,
             leadsCapped, invCapped } = core;
 
     /* Deltas only exist once there are two snapshots. Until then no delta line
        renders at all — an earlier build showed "-18s vs last week" as a
        hardcoded string with nothing behind it. */
-    const prev = metrics.length > 1 ? metrics[1] : null;
+    /* metrics[0], the newest snapshot. This read `metrics[1]` while asking for
+       two rows, so it compared today's live figures against the day before
+       last and left the newest snapshot fetched and unread. */
+    const prev = metrics.length ? metrics[0] : null;
     const delta = (now, before, fmt, lowerIsBetter) => {
       if (!prev || now == null) return '';
       const when = prev.snapshot_date ? `the ${esc(prev.snapshot_date)} snapshot` : 'the previous snapshot';
@@ -511,6 +693,13 @@ SCREENS.overview = async host => {
 
     /* ── Open leads ─────────────────────────────────────────────────────── */
     const leadsSub = `${pill(`${hot} HOT`, 'hot')} ${pill(`${warm} WARM`, 'warm')} ${pill(`${cold} COLD`, 'cold')}`
+      /* What the headline leaves out, named. The tile counts leads still being
+         worked; the table also holds the finished ones, and an owner comparing
+         this number against a row count elsewhere has to be able to see the
+         difference rather than discover it. */
+      + (terminalCount
+          ? `<br>${muted(`${num(terminalCount)} further ${plural(terminalCount, 'lead is', 'leads are')} closed — ${terminalNames.join(', ')} — and ${plural(terminalCount, 'is', 'are')} not counted above. The table holds ${num(leads.length)} ${plural(leads.length, 'row', 'rows')} in total.`)}`
+          : '')
       + (leadsCapped
           ? `<br>${warn(`Capped at ${num(LEAD_LIMIT)} rows — the leads table holds more than this.`)}`
           : leads.length <= THIN
@@ -520,14 +709,37 @@ SCREENS.overview = async host => {
           ? `<br>${warn(`${snapshotWhen} counted ${num(prevOpen)} open leads and the table now holds ${num(leads.length)} in total, so it was counting rows that have since gone. Every comparison against it on this strip inherits that.`)}`
           : '');
 
-    /* ── Awaiting first reply ───────────────────────────────────────────── */
+    /* ── Awaiting first reply ─────────────────────────────────────────────
+       Every sentence here is about `tested` and says so. The green line used to
+       be printed over `recentCount`, which includes the leads the code had
+       explicitly declined to check: live, it read "All 3 leads created in the
+       last 30 days have an outbound message" while one of the three had no
+       email address, was never tested, and was sitting two panels below as a
+       HOT unanswered WhatsApp thread waiting since 26 Aug. A denominator that
+       is larger than the cohort actually examined is an all-clear over rows
+       nobody looked at. */
+    const untestedNote = (untestable || recentTerminal)
+      ? `<br>${warn([
+          untestable
+            ? `${num(untestable)} open ${plural(untestable, 'lead', 'leads')} in this window could not be checked${noEmail ? ` — ${num(noEmail)} ${plural(noEmail, 'has', 'have')} no email address, and communication_logs can only be matched on one` : ''}, so ${plural(untestable, 'it is', 'they are')} not in the figure above either way.`
+            : '',
+          recentTerminal
+            ? `${num(recentTerminal)} further ${plural(recentTerminal, 'lead in this window is', 'leads in this window are')} already closed and ${plural(recentTerminal, 'is', 'are')} not counted as waiting.`
+            : '',
+        ].filter(Boolean).join(' '))}`
+      : '';
     const waitSub = waiting.length
       ? `<span class="t-hot">Oldest arrived ${esc(ago(waiting[0].created_at))}, still unanswered</span>`
-        + `<br>${muted(`Out of ${num(recentCount)} ${plural(recentCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days`)}`
-      : recentCount
-        ? `<span class="t-ok">All ${num(recentCount)} ${plural(recentCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days ${plural(recentCount, 'has', 'have')} an outbound message</span>`
-          + (recentCount <= THIN ? `<br>${warn(`On ${num(recentCount)} ${plural(recentCount, 'lead', 'leads')} this says almost nothing about the reply habit.`)}` : '')
-        : muted(`No lead was created in the last ${WINDOW_DAYS} days, so there is nothing here to be waiting on`);
+        + `<br>${muted(`Out of ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked`)}`
+        + untestedNote
+      : testedCount
+        ? `<span class="t-ok">All ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(testedCount, 'has', 'have')} an outbound message sent after ${plural(testedCount, 'it arrived', 'they arrived')}</span>`
+          + (testedCount <= THIN ? `<br>${warn(`On ${num(testedCount)} ${plural(testedCount, 'lead', 'leads')} this says almost nothing about the reply habit.`)}` : '')
+          + untestedNote
+        : recentCount
+          ? warn(`None of the ${num(recentCount)} ${plural(recentCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days could be checked for a reply, so nothing is claimed about ${plural(recentCount, 'it', 'them')}.`)
+            + untestedNote
+          : muted(`No lead was created in the last ${WINDOW_DAYS} days, so there is nothing here to be waiting on`);
 
     /* ── Response time ──────────────────────────────────────────────────────
        The mean of one number is that number, and calling it an average is the
@@ -559,11 +771,17 @@ SCREENS.overview = async host => {
             : (() => { const d = delta(avgResp, prev?.avg_response_minutes, v => mins(v), true); return d ? `<br>${d}` : ''; })());
 
     /* ── Pipeline value ─────────────────────────────────────────────────── */
-    const noBudget = leads.length - withBudget.length;
+    const noBudget = openCount - withBudget.length;
     const pipeSub = !withBudget.length
-      ? muted(`No lead on file has a budget recorded, so there is no pipeline figure to report`)
-      : muted(`Sum of the budget field on ${num(withBudget.length)} of ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')}`
-              + (noBudget ? ` · ${num(noBudget)} with no budget recorded` : ''))
+      ? muted(openCount
+          ? `No open lead has a budget recorded, so there is no pipeline figure to report`
+          : `No lead on file is still open, so there is no pipeline to report`)
+        + (terminalCount
+            ? `<br>${muted(`${num(terminalCount)} closed ${plural(terminalCount, 'lead is', 'leads are')} excluded: a won deal is money already taken and a lost one is money that was never there.`)}`
+            : '')
+      : muted(`Sum of the budget field on ${num(withBudget.length)} of ${num(openCount)} open ${plural(openCount, 'lead', 'leads')}`
+              + (noBudget ? ` · ${num(noBudget)} with no budget recorded` : '')
+              + (terminalCount ? ` · ${num(terminalCount)} closed ${plural(terminalCount, 'lead', 'leads')} excluded` : ''))
         + (withBudget.length <= THIN
             ? `<br>${warn(`This is ${num(withBudget.length)} ${plural(withBudget.length, 'budget field', 'budget fields')} added up, not a forecast.`)}`
             : '')
@@ -583,7 +801,7 @@ SCREENS.overview = async host => {
       + `<br>${muted('Inventory records no sale date, so this screen cannot show what sold, what it sold for, or how long a sold unit sat on the lot. Days in stock is the only ageing figure the database keeps.')}`;
 
     strip.innerHTML = [
-      kpi('Open leads', num(leads.length), leadsSub),
+      kpi('Open leads', num(openCount), leadsSub),
       /* The one number on this screen that maps to a person waiting. */
       kpi('Awaiting first reply', num(waiting.length), waitSub, waiting.length ? 't-hot' : ''),
       kpi(respLabel, mins(avgResp), respSub),
@@ -726,13 +944,25 @@ SCREENS.overview = async host => {
   /* 1 · Leads nobody has replied to. */
   panels.push(panel(replyHost, {
     title: 'No reply sent',
-    sub: `Leads created in the last ${WINDOW_DAYS} days with no outbound message in communication_logs`,
+    sub: `Open leads created in the last ${WINDOW_DAYS} days with no outbound message in communication_logs sent after they arrived. Internal markers do not count as a reply, and closed leads are not listed`,
     actions: `<button class="btn sm" data-act="leads">Open Leads</button>`,
     load: async () => requireCore(),
     render: d => {
       const noPhone = d.waiting.filter(l => !str(l.phone)).length;
       const notes = [
-        d.unmatchable ? `${num(d.unmatchable)} of the ${num(d.recentCount)} leads in this window have no email address, so communication_logs cannot be matched to them.` : '',
+        d.untestable
+          ? `${num(d.untestable)} of the ${num(d.recentCount)} leads in this window could not be checked at all${d.noEmail ? ` — ${num(d.noEmail)} of them have no email address, and communication_logs keys on one` : ''}. They are neither listed above nor counted as answered.`
+          : '',
+        d.recentTerminal
+          ? `${num(d.recentTerminal)} lead${d.recentTerminal === 1 ? '' : 's'} in this window ${plural(d.recentTerminal, 'is', 'are')} already closed — won, lost or disqualified — and ${plural(d.recentTerminal, 'is', 'are')} not listed as waiting for a reply.`
+          : '',
+        /* The markers exist because nobody replied, and they used to be read as
+           proof that somebody had. Counted rather than silently dropped: two
+           rows disappearing from a join is the kind of thing that should be
+           visible on the screen that depends on it. */
+        d.internalMarkers
+          ? `${num(d.internalMarkers)} outbound row${d.internalMarkers === 1 ? '' : 's'} in this window ${plural(d.internalMarkers, 'is', 'are')} an internal marker rather than a message to a customer (channel 'system' or direction 'internal' — the silence detector writes one when a thread has gone quiet). ${plural(d.internalMarkers, 'It is', 'They are')} not counted as a reply.`
+          : '',
         /* The join this panel rests on is lead.email = communication_logs.lead_email,
            and that column holds a WhatsApp handle whenever the message was sent
            to a thread with no identified lead behind it. Those messages cannot
@@ -742,7 +972,7 @@ SCREENS.overview = async host => {
           ? `${num(d.outboundHandles)} of the ${num(d.outboundCount)} outbound messages read in this window are filed under a WhatsApp handle rather than an email address, because communication_logs.lead_email holds whichever the thread had at the time. They cannot be matched to any lead, so a lead answered on WhatsApp before it was identified would still be listed above as unanswered.`
           : '',
         d.outboundCapped ? `Outbound history was capped at ${num(OUTBOUND_LIMIT)} messages for this window, so this list may be incomplete.` : '',
-        d.recentCount && d.recentCount <= THIN ? `Only ${num(d.recentCount)} ${plural(d.recentCount, 'lead was', 'leads were')} created in this window, so an empty list here is a very small sample.` : '',
+        d.testedCount && d.testedCount <= THIN ? `Only ${num(d.testedCount)} ${plural(d.testedCount, 'lead', 'leads')} in this window could be checked, so an empty list here is a very small sample.` : '',
         noPhone ? `${num(noPhone)} of these ${plural(noPhone, 'lead has', 'leads have')} no phone number on the lead record, so ${plural(noPhone, 'it', 'they')} can only be answered by email.` : '',
         d.waiting.length ? NO_STAFF_PHONE : '',
       ].filter(Boolean);
@@ -751,10 +981,18 @@ SCREENS.overview = async host => {
              <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
         : '';
       if (!d.waiting.length) {
-        return stateEmpty(d.recentCount ? 'Every lead has been answered' : 'No leads in this window',
-          d.recentCount
-            ? `All ${d.recentCount} ${plural(d.recentCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days ${plural(d.recentCount, 'has', 'have')} an outbound message against ${plural(d.recentCount, 'its', 'their')} address.`
-            : `No lead was created in the last ${WINDOW_DAYS} days, so there is nothing to answer.`, 'mark_email_read') + foot;
+        /* The headline names the cohort it is about. "Every lead has been
+           answered" over a set that excluded the untested ones is the same
+           overclaim the KPI strip was making, one panel down. */
+        return stateEmpty(
+          d.testedCount ? 'Every lead we could check has been answered'
+            : d.recentCount ? 'No lead in this window could be checked'
+              : 'No leads in this window',
+          d.testedCount
+            ? `All ${d.testedCount} open ${plural(d.testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(d.testedCount, 'has', 'have')} an outbound message against ${plural(d.testedCount, 'its', 'their')} address, sent after ${plural(d.testedCount, 'it', 'they')} arrived.`
+            : d.recentCount
+              ? `${d.recentCount} ${plural(d.recentCount, 'lead was', 'leads were')} created in the last ${WINDOW_DAYS} days and none of them could be matched to communication_logs, so this list is empty for want of evidence rather than because everyone was answered.`
+              : `No lead was created in the last ${WINDOW_DAYS} days, so there is nothing to answer.`, 'mark_email_read') + foot;
       }
       const shown = d.waiting.slice(0, 8);
       return `<div>${shown.map(l => `
@@ -787,18 +1025,20 @@ SCREENS.overview = async host => {
     wireLeadRows(card);
   }));
 
-  /* 2 · Workflows that actually failed inside the health window. `health` is
-     computed over 30 days, so failures_30d is the column that agrees with it —
-     all-time `failures` would keep a long-fixed workflow red forever. */
+  /* 2 · Workflows that are not delivering inside the health window. Everything
+     here is read off v_workflow_health, which computes it over 30 days from
+     public.nexus_outcome_class() — all-time `failures` would keep a long-fixed
+     workflow red forever, and `status = 'FAILED'` alone would keep a workflow
+     that runs cleanly and produces nothing off the card entirely. */
   panels.push(panel(flowHost, {
     title: 'Workflows degraded',
-    sub: 'Any workflow with at least one failure in the last 30 days, and whether it has run cleanly since',
+    sub: 'Any workflow that failed, went out half-done or produced nothing usable in the last 30 days, and whether it has succeeded since',
     actions: `<button class="btn sm" data-act="automation">Open Automation</button>`,
     load: () => readHealth(),
     render: rows => {
       if (!rows.length) {
-        return stateEmpty('No workflow has failed in 30 days',
-          'Workflows that do not write to the audit log cannot report health — Automation lists those separately.', 'task_alt');
+        return stateEmpty('No workflow is degraded',
+          'Nothing failed, went out half-done or produced nothing usable in the last 30 days. Workflows that do not write to the audit log cannot report health at all — Automation lists those separately.', 'task_alt');
       }
       /* Ordered so the ones still broken sit above the ones that recovered.
          The read is already sorted by failure count, which put a workflow that
@@ -807,44 +1047,75 @@ SCREENS.overview = async host => {
          card. Recovery first, failure count second, so the sort inside each
          group is unchanged. */
       const state = new Map(rows.map(w => [w, failureState(w)]));
-      const ORDER = { failing: 0, unknown: 1, recovered: 2 };
+      const ORDER = { failing: 0, stale: 1, unknown: 2, recovered: 3 };
       const sorted = [...rows].sort((a, b) => ORDER[state.get(a).key] - ORDER[state.get(b).key]);
       const recovered = rows.filter(w => state.get(w).key === 'recovered').length;
+      const stale = rows.filter(w => state.get(w).key === 'stale').length;
       const notes = [
         recovered ? RECOVERY_CAVEAT : '',
-        `A row here means a run failed inside the 30-day window that v_workflow_health.health is computed over. All-time failures are not used: they would keep a workflow that was fixed in June red forever.`,
+        stale ? STALE_CAVEAT : '',
+        `A row here means a run failed, went out half-done or produced nothing usable inside the 30-day window that v_workflow_health.health is computed over. All-time failures are not used: they would keep a workflow that was fixed in June red forever. What each status means is decided in one place — public.nexus_outcome_class(), mirrored in lib/health.js — and never on this screen.`,
+        `The count on the right is runs that did not succeed outright, not runs labelled FAILED. Those are not the same number: tonight Finance Calc has none labelled FAILED and has issued three quotes out of twenty-seven runs that counted.`,
       ].filter(Boolean);
       return `<div>${sorted.map(w => {
-        const runs = n0(w.runs_30d), fails = n0(w.failures_30d);
+        /* The denominator is effective_runs_30d, which excludes runs refused by
+           design and runs escalated to a person on purpose — neither is the
+           workflow failing to deliver, and leaving them in dilutes a real miss
+           rate. The numerator is every qualifying run that was not an outright
+           success: a failure, a half-done run, a run that produced nothing, or
+           a status this system does not recognise. */
+        const eff = n0(w.effective_runs_30d), succ = n0(w.successes_30d);
+        const notClean = (eff != null && succ != null) ? eff - succ : null;
+        const rate = successRate(w.successes_30d, w.effective_runs_30d);
+        const parts = n0(w.partials_30d), nores = n0(w.no_result_30d);
+        const rej = n0(w.rejected_30d), esc30 = n0(w.escalated_30d), unk = n0(w.unknown_30d);
         /* "3 of 3 runs failed" and "124 of 202 runs failed" are different
            claims. A workflow that has barely run in the window is marked as
            such rather than being ranked on a rate nobody can trust. */
-        const scarce = runs != null && runs <= THIN;
+        const scarce = eff != null && eff <= THIN;
         const st = state.get(w);
-        /* A workflow that has run clean since its last failure is not an
+        const hw = healthWords(w.health);
+        /* A workflow that has succeeded since its last bad run is not an
            emergency at midnight, and the icon has to agree with the sentence
            three words to its right or the row is shouting and whispering at
-           once. The health pill is left exactly as the view computed it — that
-           is the view's judgement and this panel does not overrule it. */
-        const icon = st.key === 'recovered'
-          ? { name: 'history', cls: 't-muted' }
-          : { name: 'error', cls: 't-hot' };
+           once. Amber is its own state and is not allowed to borrow either the
+           red or the grey. The health pill is left exactly as the view computed
+           it — that is the view's judgement and this panel does not overrule
+           it, only spells it out. */
+        const ICONS = {
+          failing:   { name: 'error',   cls: 't-hot' },
+          stale:     { name: 'history', cls: 't-warm' },
+          recovered: { name: 'history', cls: 't-muted' },
+          unknown:   { name: 'help',    cls: 't-muted' },
+        };
+        const icon = ICONS[st.key] || ICONS.unknown;
+        const NUM_CLS = { failing: 't-hot', stale: 't-warm', recovered: 't-muted', unknown: 't-muted' };
+        const outcomes = eff == null || eff <= 0
+          ? muted('No run in this window counted toward a rate: every one of them was refused by design or handed to a person on purpose.')
+          : muted(`${num(succ)} of ${num(eff)} qualifying ${plural(eff, 'run', 'runs')} succeeded outright (${pct(rate)})`
+              + (parts ? ` · ${num(parts)} went out half-done` : '')
+              + (nores ? ` · ${num(nores)} produced nothing usable` : '')
+              + (unk ? ` · ${num(unk)} carry a status this system does not define` : '')
+              + (rej ? ` · ${num(rej)} refused by design, not counted` : '')
+              + (esc30 ? ` · ${num(esc30)} escalated to a person, not counted` : ''));
         return `<div class="list-item" role="button" tabindex="0" data-goto="automation"
              title="Open Automation, where this workflow's runs and failures are" style="align-items:flex-start">
           <span class="material-symbols-outlined ${icon.cls}" style="font-size:20px">${icon.name}</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(w.name)}</span>
-              ${pill(w.health === 'DEGRADED' ? 'Degraded' : String(w.health || 'Unknown'), tone(w.health))}
+              <span title="${esc(hw.blurb)}">${pill(hw.label, hw.tone)}</span>
               ${w.is_active === false ? pill('Inactive', 'cold') : ''}
             </div>
-            <div class="cell-sub">${esc(w.category || 'Uncategorised')}${w.last_failure ? ' · last failed ' + esc(ago(w.last_failure)) : ''}${
+            <div class="cell-sub">${esc(w.category || 'Uncategorised')}${w.last_incomplete ? ' · last bad run ' + esc(ago(w.last_incomplete)) : ''}${
               scarce ? ' · <span class="t-warm">too few runs in 30 days to rate</span>' : ''}</div>
             <div class="cell-sub">${st.text}</div>
+            <div class="cell-sub">${outcomes}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="num ${st.key === 'recovered' ? 't-muted' : 't-hot'}" style="font-weight:500">${num(fails)}</div>
-            <div class="cell-sub">${runs == null ? 'failed' : `of ${num(runs)} runs`}</div>
+            <div class="num ${NUM_CLS[st.key] || 't-muted'}" style="font-weight:500"
+                 title="Runs in the last 30 days that did not succeed outright: failures, half-done runs, runs that produced nothing usable, and any status this system does not define. Runs refused by design and runs escalated to a person are excluded from both halves.">${num(notClean)}</div>
+            <div class="cell-sub">${eff == null ? 'did not succeed' : `of ${num(eff)} that counted`}</div>
           </div>
         </div>`;
       }).join('')}<div class="list-item" style="cursor:default">
