@@ -122,8 +122,9 @@
      · **A comparison between campaigns.** `communication_logs` carries no
        workflow id and no campaign id, so a day-3 drip mail and a hand-typed
        reply are the same shape to every query this screen can write. Every drip
-       figure here is therefore "outbound mail on a mail channel at or after the
-       enrolment" — deliberately generous, and impossible to narrow with the
+       figure here is therefore "an outbound message on a mail OR a WhatsApp
+       channel at or after the enrolment" — deliberately generous, and
+       impossible to narrow with the
        columns that exist. And there is one sequence and one audience member to
        compare anyway.
 
@@ -146,6 +147,15 @@
        run of a workflow that uses the same mailbox, completed successfully, is
        evidence the mailbox works again. Evidence, not a guarantee — audit_log
        records only runs that completed — and it is labelled as evidence. */
+/* What a message is, and what an internal marker is. This screen used to decide
+   it here — `message.startsWith('[SILENCE-ESCALATED]')`, the full string, with
+   the channel never tested at all — which was one of the four private copies of
+   the rule the header of lib/comm-events.js lists. That copy matched only the
+   one marker spelling on file today: a `[SILENCE-WARNED]` row would have been
+   drawn on this screen as a message to a customer and counted in no escalation
+   figure. The library is a line-for-line mirror of
+   `public.nexus_is_message(direction, channel, message)`. */
+import { MARKER_PREFIXES, isInboundMessage, isMarkerText, isOutboundMessage, silenceCount, splitEvents } from '../lib/comm-events.js';
 import { HOOK, db, n8n } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
@@ -297,8 +307,13 @@ const MAILER_RE     = /gmail|smtp|e-?mail|sendgrid|mailer/i;
    before the per-lead index was built. Both are counted now, and which channel
    a send was on is printed rather than averaged away.
 
-   The `system` channel stays excluded on purpose: those rows are
-   [SILENCE-ESCALATED] markers, not messages to a customer.
+   Every other channel stays excluded on purpose, `system` among them: by
+   public.nexus_is_message() — mirrored in lib/comm-events.js — a message to a
+   customer is on whatsapp, email or sms, and a row anywhere else is the
+   dealership talking to itself. This is a statement about the two tests below
+   and not about today's rows: `system` happens to carry only silence
+   escalations on 1 Sep 2026, and the tests would still exclude it if it carried
+   something else.
 
    communication_logs still records no workflow id, so a row the drip wrote
    cannot be told apart from one anything else wrote; the panels below say so
@@ -659,8 +674,24 @@ SCREENS.campaigns = async host => {
     const attributableRuns = dripRuns.length - unkeyedIdx.length;
     const runsButNobody    = dripRuns.length > 0 && roster.size === 0;
 
-    const outbound = comms.filter(c => low(c.direction) === 'outbound');
-    const inbound  = comms.filter(c => low(c.direction) === 'inbound');
+    /* Direction ALONE decided these three lists until 1 Sep 2026, which is the
+       same body-blind hole screens/overview.js carried: a `[SILENCE-…]` row
+       logged on channel 'whatsapp' satisfies `direction === 'outbound'` and was
+       counted here as a message the drip had sent, and as a reply if it were
+       ever written inbound. isOutboundMessage/isInboundMessage are
+       lib/comm-events.js's mirror of public.nexus_is_message(), so all three
+       tests — direction, channel and body — are applied once, in one place.
+       On the live table (1 Sep 2026) both marker rows sit on channel 'system'
+       and were already excluded by isMail/isWhatsApp below, so no figure on
+       this screen moves today; the hole was in what would happen next. */
+    const outbound = comms.filter(isOutboundMessage);
+    const inbound  = comms.filter(isInboundMessage);
+    /* isMail and isWhatsApp stay as they are and are deliberately NOT replaced
+       by MESSAGE_CHANNELS. They ask a narrower question — which of the drip's
+       two legs a send went out on — and /mail/i is wider than the library's
+       exact 'email', so swapping them would silently drop a row logged on a
+       channel spelled 'gmail'. isOutboundMessage above has already removed the
+       rows that are not messages at all; these two only sort the rest. */
     const mail     = outbound.filter(isMail).sort((a, b) => ts(b.created_at) - ts(a.created_at));
     /* What the drip actually sends. Five legs, two channels: the day-1/3/7 Gmail
        sends and the day-1/day-5 WhatsApp sends, each with its own Log node
@@ -707,7 +738,47 @@ SCREENS.campaigns = async host => {
     const lastMail = mail[0] || null;
     const lastSend = sends[0] || null;
 
-    const silenced = comms.filter(c => String(c.message || '').startsWith('[SILENCE-ESCALATED]'));
+    /* ── The internal rows, and the silence escalations among them ──────────
+       Two numbers, because they are two facts and this screen used to print one
+       of them under the other's name.
+
+       `internalRows` is everything communication_logs holds that is NOT a
+       message to or from a customer — the taxonomy's own category, decided by
+       lib/comm-events.js and therefore by nexus_is_message(). `silenceN` is how
+       many of those the library can name as silence markers. Where the two
+       differ, the panel is showing a row this screen cannot name, and it says
+       so rather than labelling it an escalation.
+
+       Before 1 Sep 2026 this line was
+         comms.filter(c => String(c.message||'').startsWith('[SILENCE-ESCALATED]'))
+       which tested one exact spelling and never the channel. Measured against
+       the live table on 1 Sep 2026 both forms return 2 — the two escalations on
+       channel 'system' — so nothing on screen moves today; the fix is
+       structural. Add one `[SILENCE-WARNED]` row and the old test returns 2
+       while this one returns 3. */
+    const internalRows = splitEvents(comms).internal;
+    const silenceN     = silenceCount(comms);
+    /* Internal by channel or direction, but carrying no marker this library
+       knows — a `system` row with an ordinary body is the live shape that would
+       land here. Never zero by assumption: it is subtracted, and printed when
+       it is not zero. */
+    const unnamedInternal = internalRows.length - silenceN;
+    /* Strip whichever marker a row actually carries, rather than the one
+       spelling this screen used to hardcode. MARKER_PREFIXES holds the LIKE
+       prefixes the database matches on — '[system]' is a whole token but
+       '[SILENCE-' is deliberately short, so slicing the prefix off would leave
+       "ESCALATED] Silent for 12h …" on screen. What is removed instead is the
+       complete bracketed token the prefix identified, which is the same thing
+       the old hardcoded `.replace('[SILENCE-ESCALATED]', '')` removed and works
+       for a spelling nobody has written yet. A row whose body is only the
+       marker leaves an empty string, and the panel then renders no detail line
+       rather than a blank one. */
+    const stripMarker = m => {
+      const s = String(m || '');
+      if (!MARKER_PREFIXES.some(x => s.startsWith(x))) return s.trim();
+      const close = s.indexOf(']');
+      return (close === -1 ? s : s.slice(close + 1)).trim();
+    };
 
     const leadByEmail = new Map();
     leads.forEach(l => { const k = low(l.email); if (k && !leadByEmail.has(k)) leadByEmail.set(k, l); });
@@ -1177,7 +1248,7 @@ SCREENS.campaigns = async host => {
           + `The oldest has been enrolled since ${esc(ago(zeroSend[0].first.logged_at))} (${esc(stamp(zeroSend[0].first.logged_at))}). `
           + 'The drip sends five steps across two channels — day 1, 3 and 7 by email and day 1 and 5 by WhatsApp — and both are counted. '
           + 'communication_logs records no workflow id, so <em>any</em> outbound row on either channel, filed under any key this person is known by, counts as a send here. '
-          + 'The [SILENCE-ESCALATED] rows on the <span class="mono">system</span> channel are the one thing excluded, because they are markers and not messages to a customer. '
+          + 'Rows on any other channel are excluded — <span class="mono">system</span> is the one in this table — because by <span class="mono">nexus_is_message()</span> a message to a customer is on whatsapp, email or sms, and anything else is the dealership writing about a conversation rather than inside it. '
           + (delivery === 'broken'
             ? 'That is consistent with the credential failure above: the sequence is queueing and the mailbox is dead.'
             : delivery === 'recovered'
@@ -1533,10 +1604,20 @@ SCREENS.campaigns = async host => {
               delivery === 'broken' ? warn('Consistent with the mail credential failure above') : '',
             ].filter(Boolean).join('<br>'),
         lastSend ? '' : 't-hot'),
-      kpi('Silence escalations', num(silenced.length),
-        silenced.length
-          ? warn('Twelve hours with no reply')
-          : muted('No lead has been escalated for going quiet')),
+      /* The headline counts silence escalations specifically, because that is
+         what the label says. Any other internal row in the same read is named
+         on its own line instead of being silently added to this number — the
+         two used to be the same figure only because the one marker spelling on
+         file happened to be the only internal row there was. */
+      kpi('Silence escalations', num(silenceN),
+        [
+          silenceN
+            ? warn('Twelve hours with no reply')
+            : muted('No lead has been escalated for going quiet'),
+          unnamedInternal
+            ? warn(`${num(unnamedInternal)} further internal ${plural(unnamedInternal, 'row is', 'rows are')} in this read that ${plural(unnamedInternal, 'is', 'are')} not a silence escalation — listed in the panel below, not counted here`)
+            : '',
+        ].filter(Boolean).join('<br>')),
     ].join('');
 
     /* ── What this screen can and cannot answer ──────────────────────────────
@@ -1587,7 +1668,7 @@ SCREENS.campaigns = async host => {
       ['How many of the sends actually arrived?',
         'A row in communication_logs is written by the workflow after it hands the message off. There is no provider message id, no bounce and no delivery status on the row, so a row means "the workflow logged a send" and never "it arrived". A delivery status column, written from the provider\u2019s webhook, is what would answer it.'],
       ['Which campaign did this message belong to?',
-        'communication_logs carries no workflow id and no campaign id, so a day-3 drip mail and a hand-typed reply are the same shape to every query this screen can write. Every drip figure here is therefore "outbound mail on a mail channel at or after the enrolment" — deliberately generous, and impossible to narrow with the columns that exist. A workflow_id on communication_logs, written by the sending workflow, would fix it.'],
+        'communication_logs carries no workflow id and no campaign id, so a day-3 drip mail and a hand-typed reply are the same shape to every query this screen can write. Every drip figure here is therefore "an outbound message on a mail OR a WhatsApp channel at or after the enrolment" — both legs of the sequence are counted, which is what the panels above say and what the code does; the wording here said "a mail channel" until 1 Sep 2026 and named half the test its own branch applies. Deliberately generous, and impossible to narrow with the columns that exist. A workflow_id on communication_logs, written by the sending workflow, would fix it.'],
       ['How does this campaign compare with the others?',
         `${dripFlows.length || dripHealth.length ? `There is ${num(Math.max(dripFlows.length, dripHealth.length))} drip ${plural(Math.max(dripFlows.length, dripHealth.length), 'sequence', 'sequences')} registered` : 'No drip sequence is registered'}, and no per-campaign attribution to compare with even if there were more. A comparison would need both: a second campaign, and a column that says which one a message came from.`],
       ['What is the send rate, the reply rate, the conversion rate?',
@@ -1910,25 +1991,36 @@ SCREENS.campaigns = async host => {
     silenceCard.innerHTML = `
       <div class="card-head"><div>
         <div class="card-title">Silence detector</div>
-        <div class="card-sub">A lead that has not replied for twelve hours is escalated once, then never again</div>
+        <div class="card-sub">A lead that has not replied for twelve hours is escalated once, then never again${
+          unnamedInternal
+            ? ` · every internal row in this read is listed, and ${num(unnamedInternal)} of ${num(internalRows.length)} ${plural(unnamedInternal, 'is', 'are')} not an escalation`
+            : ''}</div>
       </div></div>
-      <div style="max-height:40vh;overflow-y:auto">${silenced.length
-        ? silenced.map(c => {
+      <div style="max-height:40vh;overflow-y:auto">${internalRows.length
+        ? internalRows.map(c => {
             const p = personOf(c.lead_email, null);
+            /* Two kinds of row reach this list and they are labelled apart.
+               A marker body is one of ours by its text; a row that is internal
+               only by its channel or direction carries an ordinary body and
+               must not be captioned as an escalation. `isMarkerText` is the
+               library's test, not a second one written here. */
+            const marked = isMarkerText(c.message);
+            const detail = stripMarker(c.message);
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
             <span class="mono t-muted" title="${esc(stamp(c.created_at))}">${clock(c.created_at)}</span>
-            ${pill('Escalated', 'warm')}
+            ${marked ? pill('Internal marker', 'warm') : pill('Internal row', 'warm')}
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">Unknown contact</span>'}</div>
-              <div class="cell-sub">${esc(String(c.message || '').replace('[SILENCE-ESCALATED]', '').trim())}</div>
+              ${detail ? `<div class="cell-sub">${esc(detail)}</div>` : ''}
+              ${marked ? '' : `<div class="cell-sub t-muted">Internal by its channel (<span class="mono">${esc(String(c.channel || 'none recorded'))}</span>) or direction (<span class="mono">${esc(String(c.direction || 'none recorded'))}</span>), not by its text. This screen cannot say what wrote it.</div>`}
             </div>
             <div class="cell-sub">${ago(c.created_at)}</div>
           </div>`;
           }).join('')
         : stateEmpty('Nobody has gone silent',
-            'The detector fires once for a lead that received an outbound message and did not reply within twelve hours, and writes a [SILENCE-ESCALATED] row into communication_logs. '
-            + `None of the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read carries that marker`
-            + (mail.length ? '.' : ', which is consistent with no outbound mail having been logged at all — nothing has been sent for anybody to go quiet after.'),
+            'The detector fires once for a lead that received an outbound message and did not reply within twelve hours, and writes a [SILENCE-…] row into communication_logs. '
+            + `None of the ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} read is an internal row at all — every one of them is a message to or from a customer by public.nexus_is_message()`
+            + (mail.length ? '.' : ', and no outbound mail has been logged either, so nothing has been sent for anybody to go quiet after.'),
             'notifications_off')}</div>`;
 
     /* ── Campaign activity ────────────────────────────────────────────────── */

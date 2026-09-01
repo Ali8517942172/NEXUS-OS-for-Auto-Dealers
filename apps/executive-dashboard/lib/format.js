@@ -200,20 +200,58 @@ const tone = s => {
   return TONE[k] || (k ? 'unknown' : '');
 };
 const UNKNOWN_WHY = 'This dashboard has no wording for that status. It is shown exactly as the database holds it rather than folded into a state it might mean.';
-const pill = (label, t) => {
-  const k = t || tone(label);
-  /* The hover text is the only place an unrecognised status can explain itself,
-     and without it 'unknown' is just another grey pill.
+/* pill(label, tone, opts)
 
-     It is attached only when the label really is unrecognised, which needs the
-     TONE lookup rather than the resulting tone. Since 1 Sep the table maps five
-     values health.js tones neutral on purpose — NO_RESULT, REJECTED_EXPECTED,
-     NO_QUALIFYING_RUNS, NOT_INSTRUMENTED, NEVER_RAN — and hovering any of them
-     would have read "this dashboard has no wording for that status" over a
-     state the dashboard has a whole paragraph of wording for. A grey pill that
-     misexplains itself is worse than one that says nothing. */
+   The hover text above is the only place an unrecognised status can explain
+   itself, and without it 'unknown' is just another grey pill. But it is a claim
+   about PROVENANCE — it says this label is a value the database handed us — and
+   until 1 Sep 2026 evening this helper attached it to any grey pill whose label
+   was not a TONE key. It cannot see provenance, so on a label a caller wrote
+   deliberately both halves of the sentence are false: the dashboard plainly has
+   wording for it (the caller supplied the words), and the database holds no
+   such string. `pill('No status written', 'unknown')` hovered as "shown exactly
+   as the database holds it" over a phrase no row anywhere contains.
+
+   That is not a cosmetic defect, it is a shared module telling a lie on behalf
+   of its callers, and three screens had already fled the helper over it rather
+   than fix it here: automation.js and finance.js each grew a private wordPill(),
+   and compliance.js a private casePill(), all three re-emitting pill()'s own
+   markup by hand purely to be rid of this title. A shared helper that screens
+   route around is worse than no helper.
+
+   So provenance is now the CALLER'S to state, through `opts.verbatim`:
+
+     { verbatim: true }   this label is a status value taken verbatim from the
+                          database. Attach the note if we have no wording for it.
+     { verbatim: false }  these words are mine. Never claim otherwise.
+     omitted              fall back to the one thing this function can actually
+                          observe: whether IT derived the tone. With no `t` the
+                          helper looked `label` up in TONE and failed, which is
+                          the shape a raw status word arrives in and is what the
+                          note was written for. With a `t` the caller had its own
+                          opinion about how to paint this, so the label is not
+                          something this helper can vouch for and it says nothing.
+
+   The default is a fallback, not a proof, and it can be wrong in BOTH
+   directions. A caller that passes no tone and a literal of its own
+   ("Unscored", "Unrated") still gets the note and still should not: pass
+   `{ verbatim: false }`. A caller that renders a RAW column value but computes
+   its tone itself — `pill(sev, sevTone(sev))`, `pill(h, tone(h))`,
+   `pill(a, tone(a))` — takes the explicit path and so loses the note on a value
+   that genuinely came from the database: pass `{ verbatim: true }`. Those two
+   flags are the whole of the fix at a call site; nothing else has to move.
+   The `!named` guard below is unchanged and independent — a label the TONE table
+   knows (NO_RESULT, REJECTED_EXPECTED, NO_QUALIFYING_RUNS, NOT_INSTRUMENTED,
+   NEVER_RAN are all toned neutral on purpose) never carries the note, whatever
+   the caller claims, because "no wording for that status" would be false about
+   a state this file has a whole paragraph of wording for. */
+const pill = (label, t, opts) => {
+  const k = t || tone(label);
   const named = TONE[toneKey(label)] != null;
-  return `<span class="pill ${k}"${k === 'unknown' && !named ? ` title="${esc(UNKNOWN_WHY)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
+  const stated = opts && typeof opts === 'object' && 'verbatim' in opts;
+  const verbatim = stated ? !!opts.verbatim : !t;
+  const why = k === 'unknown' && !named && verbatim;
+  return `<span class="pill ${k}"${why ? ` title="${esc(UNKNOWN_WHY)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
 };
 
 /* ── States. Every panel has all four; a panel without them is not done. ─── */

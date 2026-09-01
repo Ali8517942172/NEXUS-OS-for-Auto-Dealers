@@ -142,6 +142,16 @@
 /* COUNTS, not a copy of it. badges.js exports the severity set precisely so
    this file cannot drift from it — see the note at the foot of badges.js. */
 import { COUNTS as BADGE_SEVERITIES, LAST as BADGE_SNAPSHOT } from '../lib/badges.js';
+/* What counts as a reply. This screen used to decide it here — channel in
+   {system, internal} OR direction === 'internal', with the message body never
+   read at all — which is the mirror image of the copy screens/campaigns.js
+   carried: that one tested only the text, this one tested everything but. A
+   marker body written on channel 'whatsapp' passed this test as a real message
+   to a customer and was counted as somebody having answered the lead.
+   lib/comm-events.js is a line-for-line mirror of
+   `public.nexus_is_message(direction, channel, message)`, which tests all
+   three. */
+import { isInternalRow, isReply } from '../lib/comm-events.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, clock, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
@@ -157,6 +167,12 @@ import { healthWords, successRate } from '../lib/health.js';
 import { expandIdentity, isHandle, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
+/* Open pipeline, defined once. TERMINAL_TONES/isOpenLead and the read ceiling
+   used to be declared here AND verbatim in screens/team.js with a different
+   LEAD_LIMIT (2000 here, 1000 there), so the same rule could report two totals.
+   See the header of lib/pipeline.js for why the database's own pipeline_aed is
+   not the canonical definition and is never substituted for these figures. */
+import { CAP_NOTE, LEAD_LIMIT, isOpenLead, openPipeline } from '../lib/pipeline.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, panel, table, wireRows } from '../lib/ui.js';
 
@@ -175,7 +191,9 @@ import { kpi, panel, table, wireRows } from '../lib/ui.js';
    comparison is done below, against each lead's own created_at. */
 const WINDOW_DAYS = 30;
 const OUTBOUND_LIMIT = 5000;
-const LEAD_LIMIT = 2000;
+/* LEAD_LIMIT now lives in lib/pipeline.js and is imported above: it is 2000 —
+   unchanged for this screen — and screens/team.js, which used to read 1000, now
+   reads the same number so that "open pipeline" cannot mean two windows. */
 /* whatsapp_contacts is the ONLY thing that can attach a `@lid`-keyed message to
    a lead: a LID's digits are a machine id, not a phone number, so the handle can
    never be derived from what the lead row holds and can only be looked up. The
@@ -419,17 +437,10 @@ const collapseSnapshots = rows => {
   return { rows: out, collapsed };
 };
 
-/* Open or finished, taken straight out of the TONE table in lib/format.js so
-   this screen cannot grow a second lead-lifecycle vocabulary. Three writers
-   fill leads.status — the router writes HOT/WARM/COLD, the Slack Command Center
-   writes CONTACTED/QUALIFIED/WON/LOST through an unconstrained $fromAI, the BDC
-   agent writes DISQUALIFIED — and format.js is where those eight words are
-   already mapped to 'won', 'dead' and 'open'. A status nobody has taught that
-   table about tones to 'unknown' and is counted as open here: a lead is not
-   finished because a word was not recognised. */
-const TERMINAL_TONES = new Set(['won', 'dead']);
-const isOpenLead = l => !TERMINAL_TONES.has(tone(l && l.status));
-
+/* Open or finished is lib/pipeline.js's isOpenLead, imported above. The rule —
+   TONE from lib/format.js, with an unrecognised status counted as OPEN — used
+   to be spelled out here and again, word for word, in screens/team.js. The
+   paragraph that explained it now lives with the rule. */
 SCREENS.overview = async host => {
   const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
 
@@ -710,10 +721,14 @@ SCREENS.overview = async host => {
          this strip is computed live from the current tables, so the only
          correct comparison is the most recent snapshot there is. */
       db('daily_metrics?select=*&order=snapshot_date.desc&limit=1').catch(() => []),
-      /* `channel` is selected because `direction` alone cannot tell a reply to a
-         customer from a marker this system wrote to itself. See the reply
-         analysis below. */
-      db(`communication_logs?select=lead_email,created_at,channel,direction&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
+      /* `channel` AND `message` are both selected, because neither one alone can
+         tell a reply to a customer from a marker this system wrote to itself.
+         `message` was added on 1 Sep 2026: without it isReply() below could not
+         run its third test at all, and this screen's private predicate — which
+         read the channel and never the body — passed a `[SILENCE-…]` row logged
+         on channel 'whatsapp' as a message somebody sent a customer. The column
+         is read for that test only; nothing renders it. */
+      db(`communication_logs?select=lead_email,created_at,channel,direction,message&direction=eq.outbound&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=${OUTBOUND_LIMIT}`),
       /* The `@lid` bridge, added 1 Sep 2026. Settled rather than awaited with
          the rest: this read is a precondition of the reply-gap check and not of
          anything else on the strip, so its failure must withhold that one check
@@ -739,7 +754,12 @@ SCREENS.overview = async host => {
        starts writing WON and LOST at volume it becomes a lifetime lead counter
        that never goes down. `leads.length` still means every row and is still
        used as that below; the open count is its own name. */
-    const openLeads = leads.filter(isOpenLead);
+    const leadsCapped = leads.length >= LEAD_LIMIT;
+    /* One derivation, shared with screens/team.js. `openLeads`, the closed
+       count and the pipeline sum all come out of the same call, so the tile
+       cannot say "3 open leads" over a total computed from a different set. */
+    const pipe = openPipeline(leads, leadsCapped);
+    const openLeads = pipe.open;
     const terminal = leads.filter(l => !isOpenLead(l));
     const terminalNames = [...new Set(terminal.map(l => up(l.status)).filter(Boolean))].sort();
 
@@ -754,11 +774,12 @@ SCREENS.overview = async host => {
        `reduce(…, 0)` used to render a large "AED 0" directly above a caption
        saying no pipeline figure exists, which is the number and the caption
        asserting opposite things with the number winning. Response time two
-       tiles left has always handled this correctly; this is the same shape. */
-    const withBudget = openLeads.filter(l => n0(l.budget_aed) != null);
-    const pipeline = withBudget.length
-      ? withBudget.reduce((a, l) => a + Number(l.budget_aed), 0)
-      : null;
+       tiles left has always handled this correctly; this is the same shape.
+       Both the filter and the null-not-zero sum now come from lib/pipeline.js,
+       which screens/team.js reads too; the paragraph stays because it is the
+       reason the shared function is shaped that way. */
+    const withBudget = pipe.withBudget;
+    const pipeline = pipe.value;
     const risk = inv.filter(i => up(i.aging_alert) === 'CRITICAL');
     const warning = inv.filter(i => up(i.aging_alert) === 'WARNING');
     /* Two different sums. The holding cost of the units actually at risk is the
@@ -774,7 +795,7 @@ SCREENS.overview = async host => {
 
     const sinceMs = Date.parse(since);
     /* ── What counts as a reply ──────────────────────────────────────────
-       Two things were wrong here and they were wrong independently.
+       Three things were wrong here and they were wrong independently.
 
        Not every outbound row is a message to a customer. `channel` exists on
        communication_logs precisely to separate the two, and this filtered on
@@ -783,8 +804,33 @@ SCREENS.overview = async host => {
        since …", counted as proof somebody had replied. Those rows exist
        BECAUSE nobody replied. The detector already fixed this on its writing
        side (it now writes direction 'internal'); the two legacy rows still
-       carry direction 'outbound' and are excluded here by channel. Both
-       spellings are excluded, so neither side has to be deployed first.
+       carry direction 'outbound' and are excluded by channel. Both spellings
+       are excluded, so neither side has to be deployed first.
+
+       And then the fix for that grew its own hole, which is the one closed on
+       1 Sep 2026. It read
+
+         channel in {system, internal} || direction === 'internal'
+
+       and never looked at the message body — the exact mirror image of the copy
+       screens/campaigns.js carried, which looked at nothing but the body. A
+       marker written on channel 'whatsapp' satisfies neither half of that test
+       and was drawn on the front page as a reply to a customer; the database's
+       own nexus_is_message() has always excluded it. There is now one rule:
+       lib/comm-events.js, which mirrors that function line for line. Measured
+       against the live table on 1 Sep 2026 the two forms agree exactly — 2
+       internal rows and 19 replies in the 30-day window, by both the old
+       predicate and the new one and by the SQL function — so nothing on this
+       tile moved today. Add one `[SILENCE-…]` row on channel 'whatsapp' and the
+       old test reports 20 replies where this one reports 19.
+
+       `direction === 'internal'` was already unreachable when it was written,
+       and that is worth saying rather than deleting quietly: the query above
+       carries `direction=eq.outbound`, so a row with direction 'internal' never
+       arrives here to be tested. It is excluded by the read, not by the
+       predicate. isReply() below is nexus_is_message() restricted to outbound,
+       which over an outbound-only read is the same set as isMessageRow(), so
+       the two names describe the identical partition here.
 
        And a set of addresses is not an answer. Membership alone marked a lead
        answered by any message to that address in the window, including one sent
@@ -815,10 +861,11 @@ SCREENS.overview = async host => {
        page as awaiting its first reply. The rule is not this screen's to choose:
        lib/identity.js is the same rule the n8n `Resolve Lead Identity` node used
        to WRITE these keys, and eight other consumers now read on it. */
-    const INTERNAL_CHANNELS = new Set(['system', 'internal']);
-    const isInternal = c => INTERNAL_CHANNELS.has(norm(c.channel)) || norm(c.direction) === 'internal';
-    const internalMarkers = outbound.filter(isInternal).length;
-    const replies = outbound.filter(c => !isInternal(c));
+    /* One rule, imported. isInternalRow is the exact complement of the message
+       test inside lib/comm-events.js, so these two lists partition `outbound`
+       by construction and no row can be counted in both or in neither. */
+    const replies = outbound.filter(isReply);
+    const internalMarkers = outbound.filter(isInternalRow).length;
 
     /* ── Who each lead is ────────────────────────────────────────────────
        One expansion per lead, seeded from the row and bridged through
@@ -935,7 +982,7 @@ SCREENS.overview = async host => {
              unmatchedReplies, outboundCount: replies.length, internalMarkers,
              recentCount: recent.length, canonOf,
              bridgeOk, contactsErr, contactsCapped, contactCount: contacts.length,
-             leadsCapped: leads.length >= LEAD_LIMIT,
+             leadsCapped,
              invCapped: inv.length >= INV_LIMIT,
              outboundCapped: outbound.length >= OUTBOUND_LIMIT };
   } catch (e) {
@@ -1115,12 +1162,24 @@ SCREENS.overview = async host => {
         + (terminalCount
             ? `<br>${muted(`${num(terminalCount)} closed ${plural(terminalCount, 'lead is', 'leads are')} excluded: a won deal is money already taken and a lost one is money that was never there.`)}`
             : '')
+        /* "No open lead has a budget recorded" is a claim about the table, and
+           on a truncated read this screen has only seen part of it. The
+           sentence is qualified rather than withdrawn: none of the rows read
+           carries one, which is still true and still worth saying. */
+        + (leadsCapped ? `<br>${warn(CAP_NOTE(num(LEAD_LIMIT)))}` : '')
       : muted(`Sum of the budget field on ${num(withBudget.length)} of ${num(openCount)} open ${plural(openCount, 'lead', 'leads')}`
               + (noBudget ? ` · ${num(noBudget)} with no budget recorded` : '')
               + (terminalCount ? ` · ${num(terminalCount)} closed ${plural(terminalCount, 'lead', 'leads')} excluded` : ''))
         + (withBudget.length <= THIN
             ? `<br>${warn(`This is ${num(withBudget.length)} ${plural(withBudget.length, 'budget field', 'budget fields')} added up, not a forecast.`)}`
             : '')
+        /* The cap was disclosed on the Open-leads tile and nowhere else, so a
+           truncated read printed a partial sum here as though it were the
+           table's total. Same read, same truncation, so the same warning is
+           owed on both tiles. The wording is CAP_NOTE from lib/pipeline.js —
+           shared with Team so the two screens cannot disclose the identical
+           truncation in two different strengths. */
+        + (leadsCapped ? `<br>${warn(CAP_NOTE(num(LEAD_LIMIT)))}` : '')
         /* No delta on this tile, and the reason is not that there is nothing to
            compare against. daily_metrics.pipeline_aed is written by
            capture_daily_metrics() as `coalesce(sum(budget_aed), 0)` over EVERY
@@ -1309,7 +1368,7 @@ SCREENS.overview = async host => {
            rows disappearing from a join is the kind of thing that should be
            visible on the screen that depends on it. */
         d.internalMarkers
-          ? `${num(d.internalMarkers)} outbound row${d.internalMarkers === 1 ? '' : 's'} in this window ${plural(d.internalMarkers, 'is', 'are')} an internal marker rather than a message to a customer (channel 'system' or direction 'internal' — the silence detector writes one when a thread has gone quiet). ${plural(d.internalMarkers, 'It is', 'They are')} not counted as a reply.`
+          ? `${num(d.internalMarkers)} outbound row${d.internalMarkers === 1 ? '' : 's'} in this window ${plural(d.internalMarkers, 'is', 'are')} an internal row rather than a message to a customer. A message is on whatsapp, email or sms and does not begin with one of this system's own markers, [system] or [SILENCE- — which is public.nexus_is_message() in the database, mirrored in lib/comm-events.js and applied here unchanged. The silence detector writes such a row when a thread has gone quiet; it exists because nobody replied, so ${plural(d.internalMarkers, 'it is', 'they are')} not counted as a reply.`
           : '',
         /* How incomplete this panel's join is, measured on the join's own
            output. Until 1 Sep 2026 this counted `isHandle(lead_email)` — a key
