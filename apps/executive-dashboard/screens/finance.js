@@ -52,12 +52,23 @@
       three answers, so none of them is rendered as one.
 
    6. An empty table is not an idle desk, and this screen may not imply that it
-      is. finance_quotes is EMPTY while audit_log holds five runs whose own
-      summary reads "Quote issued | 1 of 1 claimed steps did not land
-      [finance_quotes row ...]" — a customer was given a rate and the record of
-      it never arrived. Those quotes cannot appear in the history below, so the
-      alert strip names them and the empty state refuses to read as "nothing has
-      happened here". What an audit_log status MEANS is decided in one place for
+      is. finance_quotes is EMPTY while audit_log holds EIGHT runs whose summary
+      says "Quote issued" — a customer was given a rate and this desk holds no
+      record of any of them. Five of the eight also carry "| 1 of 1 claimed
+      steps did not land [finance_quotes row ...]", the writer reporting its own
+      insert failing; the other three reported every claimed step landed and are
+      missing anyway. Until 1 Sep 2026 this screen could only see the five,
+      because it looked for the outcome class PARTIAL — which is only reached
+      when the writer NOTICES the write fail — and the three that failed quietly
+      passed as ordinary successes. It now also asks the question the class
+      cannot answer: does audit_log record a quote issued to somebody this desk
+      holds nothing for? See QUOTE_ISSUED_RE. The two are shown apart, because
+      what is known about them differs: for the five the workflow said the row
+      did not land, and for the three all that is known is that no row is here
+      now — which a deleted row would look exactly like, and this screen says so
+      rather than choosing the dramatic reading. Those quotes cannot appear in
+      the history below, so the alert strip names them and the empty state
+      refuses to read as "nothing has happened here". What an audit_log status MEANS is decided in one place for
       the whole dashboard — lib/health.js, mirroring public.nexus_outcome_class()
       — and this file calls it rather than testing the string itself. The status
       on those five rows is FAILED; the module classifies them PARTIAL, because
@@ -304,6 +315,30 @@ const AUDIT_LIMIT = 300;
    the fact that a refusal logged under a name mentioning none of these words
    would not be listed. */
 const FINANCE_FLOW = /financ|quote|trade-?in|calc/i;
+
+/* The phrase Finance Calc's Delivery Report writes at the head of the summary
+   on every run that put a figure in front of a customer — "Quote issued", with
+   or without a "| N of M claimed steps did not land" tail behind it.
+
+   This is NOT a status and is not a second opinion on one: health.js still owns
+   the column, and the PARTIAL split below is still health.js's. This matches on
+   the sentence the writer emits about WHAT IT DID, which is a different
+   question from how the run ended, and it is the only question that can find a
+   quote the desk has no row for.
+
+   Why it was needed. `lost` reads PARTIAL, and PARTIAL is only reached when the
+   writer itself noticed the finance_quotes insert fail and said so. Measured
+   against the live database on 1 Sep 2026, audit_log holds EIGHT Finance Calc
+   rows whose summary begins "Quote issued" — 5 of them PARTIAL and 3 of them
+   SUCCESS, the writer reporting every claimed step landed — while
+   finance_quotes holds ZERO rows. So three customers were quoted on runs that
+   reported themselves complete and this desk has no record of any of them, and
+   the strip above named five of the eight. The three are not claimed to be
+   failed writes: a row that was written and later deleted looks identical from
+   here, and this screen cannot tell those apart and does not try. What it can
+   say, and now does, is that audit_log records a quote issued to a person for
+   whom this desk holds nothing. */
+const QUOTE_ISSUED_RE = /\bquote\s+issued\b/i;
 
 /* Below this many distinct customers, a mean over this table is a mean over one
    negotiation, so the strip prints the range instead and says why. It is a
@@ -720,6 +755,7 @@ SCREENS.finance = async host => {
   /* ── Screen state ──────────────────────────────────────────────────────── */
   let rows = [], quotesErr = null;      // finance_quotes
   let leads = null, leadsErr = null;    // null = the read failed, not "no leads"
+  let leadsCapped = false;              // the read hit LEAD_LIMIT, so "no such lead" is not knowable
   let attn = null, attnErr = null;      // v_needs_attention rows for this screen
   /* Only the validity date is probed by name now; everything else is read off
      the row directly. See the VALID_COLS comment for why this one is different. */
@@ -739,6 +775,12 @@ SCREENS.finance = async host => {
   let refusals = null;   // REJECTED_EXPECTED — declined by design, not counted against the workflow
   let noResult = null;   // NO_RESULT — it ran, produced nothing usable, and IS counted
   let lost = null;       // PARTIAL — a quote reached the customer, its finance_quotes row did not
+  /* Every run whose summary says a quote was issued, whatever outcome class it
+     ended in. Not a fourth class and not a reading of the status column — the
+     writer's own sentence about what the run did. Crossed against the quotes
+     this screen actually holds, it finds the issued quotes `lost` cannot: the
+     ones the writer believed it had stored. */
+  let issued = null;
 
   const keyOf = r => (r && r.id != null ? String(r.id) : 'row-' + rows.indexOf(r));
   const leadByEmail = new Map();
@@ -805,7 +847,9 @@ SCREENS.finance = async host => {
     }
     const lead = leadFor(q);
     if (!lead) {
-      return `<span class="t-muted" title="No lead in the database carries this email address, so there is no phone number to show. finance_quotes stores no phone of its own.">—</span>`;
+      return leadsCapped
+        ? `<span class="t-muted" title="${esc(`The leads read stopped at its ${LEAD_LIMIT}-row ceiling, so whether a lead carries this email is not known — only that none of the ${LEAD_LIMIT} newest does. No phone number is shown and none is claimed absent.`)}">not looked up</span>`
+        : `<span class="t-muted" title="No lead in the database carries this email address, so there is no phone number to show. finance_quotes stores no phone of its own.">—</span>`;
     }
     if (!str(lead.phone)) {
       return '<span class="t-muted" title="This lead has no phone number on file.">—</span>';
@@ -1056,20 +1100,28 @@ SCREENS.finance = async host => {
          calculator returned no figure for ("not calculated") or a file it
          declined to price ("not priced"). finance_quotes is empty today, so
          this is what the desk actually shows. */
+      /* The table is EMPTY, so every quote audit_log says was issued is missing
+         from it — there is no need to ask which of them the writer noticed
+         failing. `issued` is therefore the count here, not `lost`: on 1 Sep 2026
+         those are 8 and 5, and the three-quote difference is three customers who
+         were quoted on runs that reported themselves complete. The strip above
+         splits them by what is known about each; this panel only has to say how
+         many quotes exist that it cannot show. */
+      const nIssued = issued ? issued.length : 0;
       body.innerHTML = stateEmpty(
-        lost && lost.length ? 'No quote recorded here — and some were issued' : 'No quotes recorded yet',
+        nIssued ? 'No quote recorded here — and some were issued' : 'No quotes recorded yet',
         'finance_quotes holds no row at all, so there is no figure on this desk to show or to withhold. '
         + 'Every calculation from this screen is stored here, with the customer and the rep it belongs to. '
         /* An empty table is not the same fact as an idle desk, and until the
            audit_log read existed this panel could not tell them apart. It said
            "no quotes recorded yet" over a month in which the calculator issued
-           three quotes cleanly and lost five more after quoting the customer. */
-        + (lost === null
+           eight quotes to customers and kept none of them. */
+        + (issued === null
           ? 'Whether any quote was issued without being recorded is unknown: the audit_log read failed, so an empty table here is not evidence of an empty desk.'
-          : lost.length
-            ? `It is NOT evidence that nothing has been quoted: ${num(lost.length)} ${plural(lost.length, 'quote', 'quotes')} in audit_log ${plural(lost.length, 'was', 'were')} issued to a customer and never landed here. `
+          : nIssued
+            ? `It is NOT evidence that nothing has been quoted: ${num(nIssued)} ${plural(nIssued, 'run', 'runs')} in audit_log ${plural(nIssued, 'records a quote', 'record quotes')} issued to a customer, and with this table empty not one of them is here. `
               + 'They are named in the strip at the top of this screen and they cannot be listed below, because there is no row to list.'
-            : 'audit_log records no quote issued whose row failed to land, so nothing is missing from this table — it is empty because the desk has not quoted, not because quotes were lost.'),
+            : 'audit_log records no quote issued at all, so nothing is missing from this table — it is empty because the desk has not quoted, not because quotes were lost.'),
         'receipt_long');
       return;
     }
@@ -1310,6 +1362,17 @@ SCREENS.finance = async host => {
         'There is no pipeline here to show. A quote carries no stage, no expected close date and no outcome, so a row in this table is a number that was said out loud once — not a deal in progress. Treating the sum of these values as a pipeline would count the same trade-in three times.'],
       ['Which quotes have expired?',
         'Not answerable. finance_quotes stores no validity date under any name \u2014 that one absence is real, unlike the two this panel used to bundle with it. Nothing on the row records when a quote stops standing, so no quote on this screen is ever marked expired; the alerts say "more than ' + num(QUOTE_VALID_DAYS) + ' days old", which is a fact about the row and this desk\u2019s own prompt to re-quote.'],
+      /* Added 1 Sep 2026, on the back of the strip learning to name quotes that
+         audit_log records and this table does not hold. The obvious next
+         question a rep or an engineer asks is "which run was that, then?", and
+         the honest answer is that this dashboard cannot get there — which is
+         worth stating with the missing column named, because that is what makes
+         it fixable rather than just annoying. */
+      ['Which n8n execution produced a given quote?',
+        'Not answerable from this dashboard. finance_quotes carries calculation_id and execution_id on every row and audit_log carries neither, '
+        + 'so the table that says a quote was ISSUED and the table that would say what it CONTAINED have no key in common. '
+        + 'For a quote that landed the row names its own execution; for one that did not — which is every quote on this desk today — the only route left is matching the run’s logged time against the execution list in n8n by hand. '
+        + 'It would take an execution_id column on audit_log, written by the same Delivery Report that already puts the number in the summary text on newer rows.'],
       ['How has quoting changed over time?',
         !nQ
           ? 'There is nothing recorded to plot. finance_quotes keeps created_at, so a series appears here once the desk has quoted enough different customers for the line to mean something.'
@@ -1357,7 +1420,11 @@ SCREENS.finance = async host => {
   function buildChecks() {
     const now = Date.now();
     const quotesCapped = rows.length >= HISTORY_LIMIT;
-    const leadsCapped = !!leads && leads.length >= LEAD_LIMIT;
+    /* `leadsCapped` is now set once in loadLeads() and read here rather than
+       recomputed. It used to be local to this function, which is why phoneCell
+       — the other place that turns "not in the read" into a statement about the
+       customer — went on asserting the database held no such lead. One flag,
+       one meaning, both call sites. */
     /* A quote whose lead sits outside the newest LEAD_LIMIT leads would look
        orphaned when it is only unread. False accusations of a missing customer
        record are worse than a withheld check, so the check is withheld. */
@@ -1589,6 +1656,63 @@ SCREENS.finance = async host => {
         <span class="material-symbols-outlined t-muted" style="font-size:18px">filter_alt</span>
       </div>`).join('');
 
+    /* ── Quoted, and nothing on this desk to show for it ───────────────────
+       `lostRow` below names the losses the WRITER noticed. This one names the
+       ones it did not. A run whose summary says "Quote issued" and whose
+       customer has no quote in finance_quotes is a figure that was said to a
+       person and is not on this desk, and until 1 Sep 2026 the only such runs
+       this screen could see were the ones that ended PARTIAL — the ones where
+       the insert failed loudly enough for the writer to report it.
+
+       On the live database that day: 8 rows say "Quote issued", 5 of them
+       PARTIAL and 3 SUCCESS, and finance_quotes holds 0 rows. The strip named
+       five of the eight and the other three passed as ordinary successes.
+
+       What this row is careful NOT to say. It does not say the write failed.
+       A row written and later deleted is indistinguishable from a row never
+       written when all you can read is the table it is missing from, and this
+       screen has no way to tell those apart — so it states the two facts it
+       holds (audit_log says a quote was issued; this desk has no quote for that
+       person) and names both readings rather than picking the dramatic one.
+
+       Gated on the quote read having SUCCEEDED. With `rows` empty because the
+       read failed, every issued quote in audit_log would look unrecorded and
+       this row would announce a catastrophe made entirely of its own failure. */
+    const lostSet = new Set(lost || []);
+    const orphanPeople = [];
+    let orphanNoEmail = 0;
+    if (issued && !quotesErr) {
+      const by = new Map();
+      for (const a of issued) {
+        /* Already named above, with the writer's own reason attached. Naming it
+           twice in two severities reads as two separate incidents. */
+        if (lostSet.has(a)) continue;
+        const email = str(a.lead_email);
+        const k = lower(email);
+        /* This desk holds at least one quote for this person. Whether it is
+           THIS quote is not knowable — audit_log carries no calculation_id and
+           no execution_id, so there is nothing to join on — and a person with
+           quotes on the desk is not the alarming case, so it is left alone. */
+        if (k && people.has(k)) continue;
+        const bk = k || `no-email:${lower(str(a.lead_name))}:${by.size}`;
+        if (!k) orphanNoEmail += 1;
+        if (!by.has(bk)) by.set(bk, { name: str(a.lead_name), email, n: 0, last: a.logged_at });
+        const p = by.get(bk);
+        p.n += 1;
+        if (new Date(a.logged_at) > new Date(p.last)) p.last = a.logged_at;
+      }
+      orphanPeople.push(...by.values());
+    }
+    const orphanRuns = orphanPeople.reduce((s, p) => s + p.n, 0);
+    /* Two alert rows about the same man read as two customers, and on the live
+       data that is exactly what they are: all five confirmed losses and all
+       three quiet ones carry lead_email shabbir53ujjainwala@gmail.com under
+       three spellings of his name ("Shabbir Ujjainwala", "ALI ASGHER UJJAIN
+       WALA", "Ali"). Eight quotes, one person, and a strip that let a reader
+       add 5 and 3 and get eight customers would be repeating on this panel the
+       precise error the rest of this screen exists to stop. */
+    const lostEmails = new Set((lost || []).map(a => lower(str(a.lead_email))).filter(Boolean));
+    const sharedWithLost = orphanPeople.filter(p => lostEmails.has(lower(p.email))).length;
     /* The honest empty case, which today is the only case: a sentence naming
        what was checked and what came back, so "no alerts" reads as a result
        rather than as a panel that failed to load. */
@@ -1598,14 +1722,23 @@ SCREENS.finance = async host => {
         : `no quote is more than ${num(QUOTE_VALID_DAYS)} days old`,
       'every quote carries a customer email',
       'no customer is recorded under more than one name',
-      leads && leads.length < LEAD_LIMIT ? 'every quote matches a lead record' : '',
+      leads && !leadsCapped ? 'every quote matches a lead record' : '',
       leads ? 'no quote belongs to a lead that has gone cold' : '',
       /* The only entry here drawn from something other than finance_quotes, and
          the only one that stays true when the table is empty. Gated on the read
          having returned NONE, not merely on it having succeeded: this list is
          the all-clear's evidence, and an entry that would be false the moment a
-         quote went missing does not belong in it. */
-      lost && !lost.length ? 'no quote was issued to a customer without its record landing' : '',
+         quote went missing does not belong in it.
+
+         Both halves of the question, because until 1 Sep 2026 it only asked the
+         easier one. `lost` is the workflow reporting its own write failing;
+         `orphanRuns` is a run that claimed a quote and reported everything
+         landed, for a customer this desk holds no quote for. On the live data
+         that day the first was 5 and the second 3, and this sentence would have
+         been printed over the three. */
+      lost && !lost.length && issued && !orphanRuns
+        ? 'no quote was issued to a customer this desk holds no record for'
+        : '',
     ].filter(Boolean);
     /* Built as a sentence, not a comma salad: this line is the whole claim the
        panel is making on a day with no alerts, and it has to read like one. */
@@ -1682,6 +1815,40 @@ SCREENS.finance = async host => {
       </div>
     </div>` : '';
 
+    const orphanRow = orphanRuns ? `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-hot" style="font-size:20px">receipt_long</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${pill('HIGH', sevTone('HIGH'))}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
+            orphanPeople.length === 1 ? 'one customer' : `${num(orphanPeople.length)} customers`}`)}
+        </div>
+        <div class="cell-sub">${esc(
+          `Finance Calc's own summary on ${plural(orphanRuns, 'this run', 'these runs')} says a quote was issued, and the run reported every step it claimed as landed — `
+          + `it is not among the ${plural((lost || []).length, 'loss', 'losses')} named above, where the workflow itself reported the record failing to save. `
+          + `finance_quotes carries no quote for ${plural(orphanPeople.length, 'this person', 'these people')} at all.`
+          + (sharedWithLost
+            ? ` ${sharedWithLost === orphanPeople.length && orphanPeople.length === 1
+                ? 'This is the SAME customer as the row above, not another one'
+                : `${num(sharedWithLost)} of ${plural(orphanPeople.length, 'this person', 'these people')} also ${plural(sharedWithLost, 'appears', 'appear')} in the row above`} — `
+              + `add the two counts for a total of quotes, never for a count of customers.`
+            : ''))}</div>
+        <div class="cell-sub" style="margin-top:4px">${orphanPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
+          personName(p.name, esc(p.email || 'Unnamed customer'))}${
+          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(p.email)}` : ''} <span class="t-muted">·</span> ${
+          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${
+          esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
+          orphanPeople.length > PREVIEW ? ` <span class="t-muted">+${num(orphanPeople.length - PREVIEW)} more</span>` : ''}</div>
+        <div class="cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
+          'Two readings fit this equally and this screen cannot choose between them, so it states both: the row never landed and nothing noticed, or it landed and was deleted afterwards. '
+          + 'audit_log carries no calculation_id and no execution_id, and finance_quotes carries both — so there is nothing to join the two tables on and no way to settle it from this dashboard. '
+          + 'The n8n execution for the run holds the answer; matching it by timestamp against the logged time on these rows is currently the only route to it. '
+          + (orphanNoEmail
+            ? `${num(orphanNoEmail)} of ${plural(orphanRuns, 'this run', 'these runs')} recorded no lead_email, so ${plural(orphanNoEmail, 'it', 'they')} could not be matched to a quote either way and ${plural(orphanNoEmail, 'is', 'are')} counted here for that reason rather than on evidence of a loss. `
+            : '')
+          + 'Either way a rate was said out loud to the customer and this desk does not hold it, which is the same next action: read the conversation before quoting again.')}</div>
+      </div>
+    </div>` : '';
+
     /* "Nothing needs attention" is a claim, and it may only be made when both
        halves of the strip actually reported. A failed read is not an all-clear,
        and the panel that says otherwise is worse than no panel: it is the one
@@ -1724,7 +1891,14 @@ SCREENS.finance = async host => {
                that has something to say about an empty table, because it reads
                what the workflow did rather than what it managed to store. */
             : 'v_needs_attention returned no row for this screen, and there is no quote on the desk for this screen’s own checks to judge.'
-              + (lost ? ' audit_log records no quote issued whose finance_quotes row failed to land, so the empty table is an empty desk and not a lost one.' : ''))
+              /* Reached only when BOTH halves came back empty — the strip
+                 prints a row instead of this sentence otherwise — so it is
+                 allowed to say the stronger thing: not merely that no write was
+                 reported failing, but that no run claims to have quoted anybody
+                 this desk cannot show. */
+              + (lost && issued
+                ? ` audit_log records no quote issued that this desk holds no record for, across ${num((audit || []).length)} ${plural((audit || []).length, 'run', 'runs')} read under this workflow — so the empty table is an empty desk and not a lost one.`
+                : ''))
           : esc(cannotSay)}</div>
       </div>
     </div>`;
@@ -1734,11 +1908,12 @@ SCREENS.finance = async host => {
       <div class="cell-sub" style="white-space:normal">${built.notes.map(esc).join('<br>')}</div>
     </div>` : '';
 
-    /* `lostRow` counts as an item, so a strip carrying one never also prints
-       the all-clear beneath it. It leads, because it is the only row here about
-       a quote that is not in the table below. */
-    body.innerHTML = (viewItems.length || checks.length || lostRow
-      ? lostRow + viewRows + checkRows
+    /* `lostRow` and `orphanRow` each count as an item, so a strip carrying
+       either never also prints the all-clear beneath it. They lead, because
+       they are the only rows here about a quote that is not in the table below.
+       lostRow first: it is the case the workflow itself confirmed. */
+    body.innerHTML = (viewItems.length || checks.length || lostRow || orphanRow
+      ? lostRow + orphanRow + viewRows + checkRows
       : nothing) + notesRow;
 
     /* Every alert row is the only route from the alert to the quotes it is
@@ -1797,6 +1972,13 @@ SCREENS.finance = async host => {
         + `&order=created_at.desc&limit=${LEAD_LIMIT}`);
       leadsErr = null;
     } catch (e) { leads = null; leadsErr = e; }
+    /* A truncated leads read cannot support the sentence "no lead carries this
+       email" — it can only support "no lead in the newest LEAD_LIMIT does". The
+       checks list already refused to claim the first from the second; phoneCell
+       did not, and said "—" under a tooltip asserting the database held nobody.
+       3 leads exist today so the cap is nowhere near, which is exactly when a
+       claim like that gets written and then stays wrong quietly. */
+    leadsCapped = !!leads && leads.length >= LEAD_LIMIT;
     leadByEmail.clear();
     (leads || []).forEach(l => { const k = lower(str(l.email)); if (k) leadByEmail.set(k, l); });
   }
@@ -1865,6 +2047,10 @@ SCREENS.finance = async host => {
     refusals = audit && audit.filter(isRefusal);
     noResult = audit && audit.filter(a => outcomeOf(a) === OUTCOME.NO_RESULT);
     lost     = audit && audit.filter(a => outcomeOf(a) === OUTCOME.PARTIAL);
+    /* Not a class — see QUOTE_ISSUED_RE. Kept beside the three that are, so the
+       one place that reads audit_log is also the one place that says which rows
+       claimed to have quoted somebody. */
+    issued   = audit && audit.filter(a => QUOTE_ISSUED_RE.test(str(a.summary)));
   }
 
   /* ── The two ways a run can end with no quote, kept apart ─────────────────

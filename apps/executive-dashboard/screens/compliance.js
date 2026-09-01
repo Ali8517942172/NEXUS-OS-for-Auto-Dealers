@@ -44,15 +44,30 @@
       KPI tiles whose zeroes it explains point at that one sentence rather than
       restating it, so there is no second wording for the first to drift from.
 
+      A sentence was not enough on its own, though, because the screen had no
+      WORD for the position a case is in — so a case with no register row had
+      only silence to be rendered as, and silence reads as denial. That is what
+      the six-state vocabulary further down (`CASE_STATE`) exists for, and the
+      invariant it enforces is UNKNOWN IS NOT ABSENCE: a missing register row
+      renders as `Unknown · not recorded` everywhere it appears, and nowhere on
+      this screen as "no document exists" or "never audited". It is stated on
+      two axes — what the auditor did, and what the register holds — because on
+      the live data those differ, and it is said in three places that read one
+      memoised computation: the escalation banner, the case ledger in the
+      retention panel, and the row for the run itself in the activity trail.
+
       What this screen must NOT say is WHY the register row is missing. The
       auditor's escalation path fans out to `Record KYC (Rejected)` as well as to
       `Log KYC Escalation` — the connections in
       n8n-workflows/kyc_aml_document_auditor_re_upload_loop_phase_5.json — so an
       escalation is supposed to leave a register row behind. Whether that row was
       never written or was written and later removed is in nothing the browser
-      can read; no deletion appears in `audit_log`. The panel says that it does
-      not know, because both answers are compliance findings and picking one
-      would be inventing the record this screen exists to protect.
+      can read; no deletion appears in `audit_log`, and — checked against
+      information_schema on 1 Sep 2026 — no table in `public` records a deletion
+      at all, so there is no deletion log for anything to appear in. The panel
+      says that it does not know, because both answers are compliance findings
+      and picking one would be inventing the record this screen exists to
+      protect.
 
    1. ONE PERSON IS A BIOGRAPHY, NOT A POPULATION. When the register does hold
       one contact's attempts, three approvals against four rejections is that
@@ -106,12 +121,29 @@
    column literally contains the `@whatsapp.lead` string, and a real address
    there would have dropped it to 5.
 
-   None of that reached the screen, because `kyc_documents` is empty and no
-   message begins `[KYC-`, so the rule had no live surface at all. That is why it
-   was worth replacing and not why it could be kept: a register that splits one
-   customer's document trail in two, or shows a rejection history with a third of
-   it missing, is wrong in the exact direction this screen exists to prevent, and
-   it would be wrong from the first document filed.
+   None of that reached the REGISTER, because `kyc_documents` is empty and no
+   message begins `[KYC-` — counted live on 1 Sep 2026: 0 register rows, and 0
+   of the 99 message-log rows carry the prefix. That is why it was worth
+   replacing and not why it could be kept: a register that splits one customer's
+   document trail in two, or shows a rejection history with a third of it
+   missing, is wrong in the exact direction this screen exists to prevent, and it
+   would be wrong from the first document filed.
+
+   It does reach the screen elsewhere, though, and that correction belongs here
+   rather than being left implied. The two escalated cases in `audit_log` are
+   resolved by name, phone and lead through this same resolver — in the
+   escalation banner, in the case ledger and in the activity trail — so identity
+   has a live surface on this screen today even with an empty register.
+
+   Which is how a second false absence came to light on 1 Sep 2026 and was fixed
+   with it. The `leads` read selected `name,email,phone` and NOT `id`, while
+   lib/identity.js populates `leadIds` only from `l.id` and both `who()` and
+   `nameFor()` report a lead only through `leadIds`. So the pool could never
+   absorb anybody: every contact on this screen resolved to "No lead row" / "no
+   lead record", including the customer behind both escalations, whose address
+   `shabbir53ujjainwala@gmail.com` is lead 38 in the live database. The screen
+   was asserting that a customer did not exist. `id` is now selected and the
+   claim is only made when the resolver actually reports no lead.
 
    Every key question here now goes through `personOf()`, which is
    `expandIdentity` from lib/identity.js (305 assertions, re-run against this
@@ -344,6 +376,145 @@ const verdictTone = d => {
   const m = VERDICTS[verdictKey(d)];
   return m ? m.tone : 'unknown';
 };
+
+/* ── The case-state vocabulary ───────────────────────────────────────────────
+   SIX STATES, AND THE INVARIANT THAT UNKNOWN IS NOT ABSENCE.
+
+   Until 1 Sep 2026 this screen had no word for the position a KYC CASE is in.
+   It had a verdict vocabulary for register rows and a retention vocabulary for
+   their files, and for a case with no register row at all it had only silence —
+   which it printed as "No KYC document has been audited yet" beside two
+   ESCALATED cases whose own audit rows quote the auditor's findings on the
+   documents it read. Turning "I hold no row" into "it never happened" is the
+   one mistake a compliance register may not make, and it needed a vocabulary to
+   stop making it rather than a better sentence.
+
+   These six are the whole of it and nothing here invents a seventh. Every one
+   is a positive statement backed by a row somebody wrote; none is inferred from
+   the absence of one, and `unknown` exists precisely so that an absence has
+   somewhere to go that is not a denial.
+
+     not_registered     No document was ever due in the register — read from the
+                        AUDIT LOG's own record that the run stopped before it
+                        reached one, never from the register being empty.
+     pending            A register row exists and carries no decision yet.
+     audited            A document was read and judged: a register row with a
+                        decided verdict, or an auditor run that reached one.
+     escalated          Handed to a person on purpose.
+     deleted_or_purged  The file was deleted under the retention policy and
+                        `purged_at` records it. This is the ONLY deletion this
+                        system writes down anywhere.
+     unknown            The position cannot be established. A document that WAS
+                        audited and has no register row lands here, and so does
+                        a read that failed. It is not a claim that nothing
+                        exists — it is the refusal to make one.
+
+   Applied on TWO axes, both out of this one vocabulary, because the data has
+   two. The AUDIT side answers "what did the auditor do"; the REGISTER side
+   answers "what survives of it". For the two live escalations those differ —
+   escalated on one side, unknown on the other — and collapsing them to a single
+   verdict would have to throw one away. They are stated together instead.
+
+   THE MAPPING. Every value either column actually holds has exactly one
+   destination, and there is no residual bucket:
+
+     audit_log.status → lib/health.js outcome → audit-side state
+       ESCALATED      → ESCALATED             → escalated
+       SUCCESS        → SUCCESS               → audited
+       PARTIAL        → PARTIAL               → audited
+       FAILED         → FAILURE               → not_registered
+       NOT_EXECUTED   → NO_RESULT             → not_registered
+       REJECTED       → REJECTED_EXPECTED
+                        or NO_RESULT          → not_registered
+       anything else  → UNKNOWN               → unknown, and rendered as
+                                                unrecognised rather than filed
+                                                quietly under the same word
+
+     kyc_documents.verdict → register-side state
+       purged_at set  → deleted_or_purged, whatever the verdict says
+       PENDING        → pending
+       APPROVED       → audited
+       REJECTED       → audited
+       ESCALATED      → escalated
+       anything else  → unknown. kyc_documents_verdict_check permits no fifth
+                        value, so a row reaching that branch is itself a finding
+                        and the pill says the state is unrecognised.
+
+   Counted against the live database on 1 Sep 2026, `audit_log` holds FAILED,
+   SUCCESS, REJECTED, PARTIAL, NOT_EXECUTED and ESCALATED and nothing else — six
+   values, all six mapped above. The nine rows in KYC scope are seven FAILED and
+   two ESCALATED. `kyc_documents` holds no row at all, so its verdict column
+   contributes no live value and the mapping above is drawn over the CHECK
+   constraint instead, which is complete. None of those counts is hard-coded
+   below: every figure this screen prints is counted from the rows that loaded. */
+const CASE_STATE = {
+  not_registered:    { label: 'Not registered',        tone: 'cold',    icon: 'do_not_disturb_on',
+    why: 'The audit log records that this run stopped before the auditor read a document, so no register row was ever due for it. Read from the run, not from the register being empty.' },
+  pending:           { label: 'Pending',               tone: 'warm',    icon: 'hourglass_empty',
+    why: 'A register row exists and carries no decision yet. PENDING is the column default, so this is also what a half-written or backfilled row looks like.' },
+  audited:           { label: 'Audited',               tone: 'ok',      icon: 'fact_check',
+    why: 'A document was read and judged — either a register row with a decided verdict, or an auditor run that reached one.' },
+  escalated:         { label: 'Escalated',             tone: 'warm',    icon: 'front_hand',
+    why: 'Handed to a person on purpose: the re-upload loop was exhausted, or the auditor could not run at all.' },
+  deleted_or_purged: { label: 'Deleted or purged',     tone: 'cold',    icon: 'delete_sweep',
+    why: 'purged_at is set, so the file was deleted under the retention policy and the deletion is recorded. This is the only kind of deletion this system writes down anywhere.' },
+  unknown:           { label: 'Unknown · not recorded', tone: 'unknown', icon: 'help',
+    why: 'The position could not be established. This is the refusal to make a claim, not a claim that nothing exists — a document that was audited and has no register row lands here, and so does a read that failed.' },
+};
+/* Rendered here rather than through lib/format.js `pill()`, and the reason is
+   the exact failure this screen keeps finding in itself. `pill()` attaches
+   "This dashboard has no wording for that status. It is shown exactly as the
+   database holds it" to any grey pill whose LABEL is not a TONE key — which
+   `Unknown · not recorded` is not. Both halves of that sentence would be false
+   here: the dashboard has a whole vocabulary block for this state, and the
+   database holds nothing at all, which is the entire point of the state. So
+   each of the six carries its own hover text and explains itself correctly. */
+const casePill = k => {
+  const m = CASE_STATE[k];
+  return `<span class="pill ${m.tone}" title="${esc(m.label)} — ${esc(m.why)}"><span class="dot"></span>${esc(m.label)}</span>`;
+};
+
+/* The sentence this vocabulary exists to make sayable. Checked against
+   information_schema on 1 Sep 2026: no table in `public` records a deletion —
+   there is no tombstone table, no row history, nothing. So the two explanations
+   for a missing register row cannot be told apart from the browser or from the
+   database, and neither may be printed as the answer. */
+const NOT_RECORDED =
+  'The register holds no row for this case. Nothing this page can read says whether a row was never written or was written and later removed: no deletion appears in audit_log, and the schema carries no deletion log at all. That is unknown — which is not the same as nothing having happened, because the auditor’s own run for this case is on file.';
+
+/* Audit-side. `outcomeOf` is lib/health.js's call and no status string is
+   compared here; this table only decides what its answer means for a DOCUMENT.
+   SUCCESS and PARTIAL reached a verdict on one. FAILURE, NO_RESULT and
+   REJECTED_EXPECTED stopped before there was one to reach, so nothing was ever
+   due in the register — a reading of the RUN, not of the register. */
+const RUN_TO_CASE = {
+  [OUTCOME.ESCALATED]:         'escalated',
+  [OUTCOME.SUCCESS]:           'audited',
+  [OUTCOME.PARTIAL]:           'audited',
+  [OUTCOME.FAILURE]:           'not_registered',
+  [OUTCOME.NO_RESULT]:         'not_registered',
+  [OUTCOME.REJECTED_EXPECTED]: 'not_registered',
+  [OUTCOME.UNKNOWN]:           'unknown',
+};
+const auditCaseState = a => RUN_TO_CASE[outcomeOf(a)] || 'unknown';
+
+/* Register-side, off one row. The purge outranks the verdict because the file
+   is gone either way and that is the fact a retention reviewer is reading for;
+   the verdict is still shown beside it in its own column. */
+const rowCaseState = d => {
+  if (d.purged_at) return 'deleted_or_purged';
+  const v = verdictKey(d);
+  if (v === 'ESCALATED') return 'escalated';
+  if (v === 'PENDING') return 'pending';
+  if (v === 'APPROVED' || v === 'REJECTED') return 'audited';
+  return 'unknown';
+};
+/* Worst-first, so a contact holding one purged row and one escalated row is
+   reported as escalated rather than as the tidy half of itself. */
+const CASE_SEVERITY = ['unknown', 'escalated', 'pending', 'audited', 'deleted_or_purged'];
+/* Display order, worst-first, and it is the whole vocabulary — a state with a
+   word but no place in this order would be counted and then not drawn. */
+const CASE_ORDER = ['unknown', 'escalated', 'pending', 'audited', 'deleted_or_purged', 'not_registered'];
 
 /* ── The retention vocabulary ────────────────────────────────────────────────
    WHERE THIS CAME FROM. `kyc_documents` is empty as of 1 Sep 2026, so the words
@@ -624,7 +795,17 @@ SCREENS.compliance = async host => {
     /* Read to answer two questions per row: is there a lead behind this at all,
        and what number would a reviewer ring. `leads.phone` exists; `users.phone`
        does not, which is why no staff number appears anywhere on this screen. */
-    db('leads?select=name,email,phone&limit=2000'),
+    /* `id` is not optional here and its absence was a false-absence bug. The
+       shared resolver reports an absorbed lead ONLY through `leadIds`, which
+       lib/identity.js fills from `l.id` — so a pool selected without that column
+       yields an empty `leadIds` for everybody, and both `who()` and `nameFor()`
+       then printed "No lead row" / "no lead record" about customers who have
+       one. Verified against the live database on 1 Sep 2026: the two escalated
+       KYC cases carry shabbir53ujjainwala@gmail.com, which is lead 38, and the
+       screen was calling that contact a WhatsApp profile with no lead behind
+       it. Asserting a customer does not exist is the exact class of claim this
+       screen is not allowed to make. */
+    db('leads?select=id,name,email,phone&limit=2000'),
     /* ilike rather than one exact workflow name, so a renamed or versioned KYC
        workflow keeps appearing here instead of silently dropping out. */
     db(`audit_log?select=*&workflow=ilike.*KYC*&order=logged_at.desc&limit=${AUDIT_LIMIT}`),
@@ -862,6 +1043,81 @@ SCREENS.compliance = async host => {
   const auditCapNote = auditCapped
     ? ` Counted within the ${num(AUDIT_LIMIT)} most recent auditor runs; older ones are not on this page.`
     : '';
+
+  /* ── The six-state position of every auditor run ─────────────────────────
+     One entry per run, carrying BOTH axes of the vocabulary at the top of this
+     file: what the auditor did, and what the register holds of it. They are
+     computed separately because on the live data they disagree — two runs that
+     reached a document and escalated it, against a register that holds neither
+     — and a screen with only one of them has to either invent a deletion or
+     deny the audit. It does neither; it says both and names what is unknowable.
+
+     The register side is looked up through the SHARED resolver, so a run logged
+     under an address and a row filed under that same customer's @lid land on
+     one another. A raw string compare here would report "no register row" for a
+     case whose row is sitting in the table above, which is the same false
+     absence this whole block exists to stop. */
+  const caseOf = a => {
+    const audit = auditCaseState(a);
+    const ks = canonSet(resolvePerson([a.lead_email]));
+    /* `docs`, not `live`. A voided row is still a row, and reporting "no row"
+       while one sits in the voided table below would be the same false absence
+       wearing a different hat. Which rows those are is said in the note. */
+    const rows = ks.size && docs
+      ? docs.filter(d => [...canonOf(d)].some(k => ks.has(k)))
+      : [];
+    if (!docs) {
+      return { audit, register: 'unknown', rows,
+        note: `The register could not be read on this page load (${docsErr || 'unknown error'}), so where this case stands in it is unknown here. That is not a claim that it holds nothing.` };
+    }
+    if (rows.length) {
+      const states = rows.map(rowCaseState);
+      const k = CASE_SEVERITY.find(s => states.includes(s)) || 'unknown';
+      const voidedHere = rows.filter(isVoid).length;
+      return { audit, register: k, rows,
+        note: `${num(rows.length)} register row${rows.length === 1 ? '' : 's'} ${plural(rows.length, 'belongs', 'belong')} to this contact${
+          voidedHere ? `, ${num(voidedHere)} of ${plural(rows.length, 'which is', 'them')} voided as a non-submission` : ''}.` };
+    }
+    if (audit === 'unknown') {
+      return { audit, register: 'unknown', rows,
+        note: 'This run carries a status lib/health.js does not define, so what it reached is unrecognised — and with it unknown whether anything was ever due in the register. Nothing is claimed either way.' };
+    }
+    /* The ONLY branch allowed to say a document is not in the register, and it
+       says it from the run rather than from the register's silence: the audit
+       log records that this run stopped before the auditor read a document, so
+       there was never a row to write. It is tested BEFORE the missing-key check
+       below, because whether a contact key resolves is irrelevant to a run that
+       was never going to file anything — reporting those as unknown made the
+       trail print "Unknown · not recorded" against seven auth-gate and vision
+       failures, which overstates a plain outage as a possible lost record. */
+    if (audit === 'not_registered') {
+      return { audit, register: 'not_registered', rows,
+        note: 'No document was ever due in the register for this run: the audit log records that it stopped before the auditor reached one. That is read from the run itself, not from the register being empty.' };
+    }
+    /* From here the run DID reach a document, so a register row was owed and
+       its absence is a finding. Without a resolvable key we cannot even look,
+       which is a weaker position again and is said as one. */
+    if (!ks.size) {
+      return { audit, register: 'unknown', rows,
+        note: 'This run reached a document but carries no contact key that resolves to anybody, so no register row can be looked up for it at all. Its position in the register is unknown, not empty.' };
+    }
+    return { audit, register: 'unknown', rows, note: NOT_RECORDED };
+  };
+  /* Memoised per row object — the banner, the reconciliation list and the trail
+     all ask about the same runs, and resolving identity three times is three
+     chances to answer differently. */
+  const CASES = new Map();
+  const caseFor = a => {
+    if (!CASES.has(a)) CASES.set(a, caseOf(a));
+    return CASES.get(a);
+  };
+  /* Cases the auditor got as far as a document on, whose register position this
+     page cannot establish. This is the set the old "No KYC document has been
+     audited yet" sentence was silently reporting as zero. */
+  /* Cases the auditor got as far as a document on whose register position this
+     page cannot establish — the set the old "No KYC document has been audited
+     yet" sentence was silently reporting as nothing at all. */
+  const unrecorded = reachedVerdict.filter(a => caseFor(a).register === 'unknown');
   /* Plain text, not markup: stateEmpty escapes its body, and this sentence has
      to read identically wherever it is shown. */
   function registerVsAudit() {
@@ -1080,7 +1336,7 @@ SCREENS.compliance = async host => {
       kpi('Escalated to a human', num(verdictCounts.ESCALATED),
         escalations.length
           ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor workflow${
-              verdictCounts.ESCALATED ? '' : ', and this register holds no escalated document at all'}.</span> <span class="t-muted">This tile counts rows in <span class="mono">kyc_documents</span>; the escalations are rows in <span class="mono">audit_log</span>. Reconciled in the retention panel below.</span>`
+              verdictCounts.ESCALATED ? '' : `, and no escalated document appears among the ${num(docs.length)} register row${docs.length === 1 ? '' : 's'} loaded here`}.</span> <span class="t-muted">This tile counts rows in <span class="mono">kyc_documents</span>; the escalations are rows in <span class="mono">audit_log</span>. Where a case is escalated and this register holds no row for it, its register position is <strong>${esc(CASE_STATE.unknown.label)}</strong> — not proof the document does not exist. Set out case by case in the retention panel below.</span>`
           : (auditErr ? '<span class="t-muted">Audit log could not be read</span>' : '')),
       /* One number, one source. This tile, the banner below it, the nav badge
          and the Overview panel all count the rows v_needs_attention files as
@@ -1229,10 +1485,6 @@ SCREENS.compliance = async host => {
        counts something and then leaves the reviewer to find it by hand is how
        these end up ignored. */
     const first = escalations[0];
-    /* Matched through the contact alias graph: audit_log records whichever key
-       the workflow had, and the register may hold the other one for the same
-       person. A bare string compare here would send the reviewer to the trail
-       for an escalation whose document is sitting in the table above. */
     /* Matched through the shared resolver: audit_log records whichever key the
        workflow had, and the register may hold another of that same person's
        keys. A raw string compare here would send the reviewer to the trail for
@@ -1242,6 +1494,17 @@ SCREENS.compliance = async host => {
       ? live.find(d => [...canonOf(d)].some(k => fks.has(k))) || null
       : null;
     const n = nameFor(first.lead_email || first.lead_name, first.lead_name);
+    /* THE reconciliation, said where the escalation is named rather than 400px
+       below it. Every one of these cases is `escalated` on the audit side by
+       construction — that is what put them in this list. What differs is what
+       the register holds of them, and that second axis is the fact this banner
+       used to leave unsaid while a panel further down printed its absence as
+       "no document has been audited yet". Counted from the rows that loaded. */
+    const escCases = escalations.map(caseFor);
+    const escReg = {};
+    escCases.forEach(c => { escReg[c.register] = (escReg[c.register] || 0) + 1; });
+    const escRegKeys = CASE_ORDER.filter(k => escReg[k]);
+    const escUnknown = escReg.unknown || 0;
     const b = el('div', 'banner warm');
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">block</span>
@@ -1263,6 +1526,22 @@ SCREENS.compliance = async host => {
             : ''}.
         ${esc(first.summary || 'The retry loop gave up.')}
         ${escalations.length > 1 ? `The other ${num(escalations.length - 1)} ${escalations.length - 1 === 1 ? 'is' : 'are'} in the activity trail at the foot of this screen.` : ''}
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <span class="t-muted">Where ${plural(escalations.length, 'this case sits', 'these cases sit')} in the register:</span>
+          ${escRegKeys.map(k => `<span style="display:inline-flex;gap:6px;align-items:center">${casePill(k)}<span class="num">${num(escReg[k])}</span></span>`).join('')}
+        </div>
+        ${escUnknown
+          /* Two different reasons land on `unknown` and they may not share a
+             sentence. With the register READ, the row is genuinely not there
+             and NOT_RECORDED is the right words. With the register UNREADABLE
+             we do not even know that much, and printing "the register holds no
+             row" would be the same false absence one layer up — so the cases'
+             own notes are quoted instead of the constant. */
+          ? `<div style="margin-top:6px">${num(escUnknown)} of ${plural(escalations.length, 'it', 'them')} ${plural(escUnknown, 'is', 'are')} <strong>unknown, not absent</strong>. ${
+              docs
+                ? `${esc(NOT_RECORDED)} ${plural(escUnknown, 'That document was', 'Those documents were')} read and judged — the auditor\u2019s finding is quoted above — so this is a compliance finding in its own right and not an absence of activity.`
+                : `${esc([...new Set(escCases.filter(c => c.register === 'unknown').map(c => c.note))].join(' '))}`}</div>`
+          : ''}
         ${voidFilterKnown
           ? ''
           : '<span class="t-warm">The register could not be read, so escalations logged against voided rows could not be excluded from this count.</span>'}
@@ -1287,6 +1566,48 @@ SCREENS.compliance = async host => {
      person's history rather than left to read as the dealership's compliance
      record. The moment a second contact appears the card falls back to the plain
      retention breakdown, because then the proportions mean something again. */
+  /* ── Case by case, in the two-axis vocabulary ────────────────────────────
+     The reconciliation sentence says HOW MANY; this says WHICH, by the id an
+     auditor can look the row up under. It is built for every run that got as
+     far as a document, because those are the only runs for which the register
+     was ever owed a row — a run that died at the auth gate is reported in the
+     trail and is deliberately not accused of a missing row here.
+
+     Nothing in this block infers a cause. Where the register holds no row the
+     cell says unknown and quotes the reason it cannot say more, and the ids of
+     both sides are printed so the finding can be carried off this screen. */
+  const caseLedger = () => {
+    if (auditErr) {
+      return `<div class="cell-sub t-warm" style="white-space:normal;margin-top:12px">The audit log could not be read (${esc(auditErr)}), so no case can be listed here. That is not a claim that there are none.</div>`;
+    }
+    if (!reachedVerdict.length) return '';
+    const rows = reachedVerdict.map(a => {
+      const c = caseFor(a);
+      const n = nameFor(a.lead_email || a.lead_name, a.lead_name);
+      return `<div class="list-item" style="cursor:default;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-weight:500">${n.name ? esc(n.name) : `<span class="mono t-muted">${esc(n.note)}</span>`}</span>
+            ${n.recorded && n.recorded !== n.name ? `<span class="t-warm">recorded on the case as ${esc(n.recorded)}</span>` : ''}
+            <span class="t-muted">audited</span> ${casePill(c.audit)}
+            <span class="t-muted">register</span> ${casePill(c.register)}
+          </div>
+          <div class="cell-sub" style="white-space:normal">${esc(String(a.summary || 'No summary on the run.').slice(0, 240))}</div>
+          <div class="cell-sub" style="white-space:normal">${esc(c.note)}</div>
+          <div class="cell-sub mono" style="word-break:break-all">audit_log ${esc(a.id ?? 'no id')}${
+            c.rows.length ? ` · kyc_documents ${c.rows.map(r => esc(String(r.id ?? ''))).join(', ')}` : ''}</div>
+        </div>
+        <div class="cell-sub">${esc(ago(a.logged_at))}</div>
+      </div>`;
+    }).join('');
+    return `<div class="label-caps" style="margin-top:24px">Every case the auditor reached a document on</div>
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">One line per auditor run that got as far as reading a document, with what the auditor did and what the register holds of it. Those are two different questions and they are answered separately: a case can be <strong>${esc(CASE_STATE.escalated.label)}</strong> on the left and <strong>${esc(CASE_STATE.unknown.label)}</strong> on the right, and that combination is a finding rather than a contradiction. Runs that stopped before reading a document are not listed — nothing was due in the register for them — and they are in the activity trail at the foot of this screen.${auditCapNote}
+        ${unrecorded.length
+          ? ` <strong>${num(unrecorded.length)} of the ${num(reachedVerdict.length)} listed here ${plural(unrecorded.length, 'has', 'have')} a register position this page cannot establish.</strong> That is unknown, not absent, and the line for each says how far the evidence goes.`
+          : ` Every case listed here has a register position this page could establish from a row it actually read.`}</div>
+      <div style="margin-top:8px">${rows}</div>`;
+  };
+
   const retCard = el('div', 'card'); body.appendChild(retCard);
   if (!docs) {
     retCard.innerHTML = stateError('the retention breakdown', docsErr);
@@ -1306,7 +1627,8 @@ SCREENS.compliance = async host => {
         The two workflows that fill and empty this register are reported here from their own record rather than inferred from the absence of rows.
         <div style="margin-top:6px">${wfLine(kycWf, 'the KYC auditor')}</div>
         <div style="margin-top:6px">${wfLine(purgeWf, 'NEXUS Retention Purge')}</div>
-      </div>`;
+      </div>
+      ${caseLedger()}`;
   } else {
     /* Ordered worst-last so the bar reads from provable to unprovable, and every
        key in RETENTION appears — a state with a colour but no place in this
@@ -1360,7 +1682,8 @@ SCREENS.compliance = async host => {
     if (!oneTrail) {
       retCard.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Retention position · ${num(total)} genuine ${plural(total, 'document', 'documents')}${
         liveContacts.size ? ` from ${num(liveContacts.size)} ${plural(liveContacts.size, 'contact', 'contacts')}` : ''}</div>
-        ${bar}${barNote}`;
+        ${bar}${barNote}
+        ${caseLedger()}`;
     } else {
       const w0 = whoOf(live[0]);
       /* Read off the one tally, not counted again here. The three panels that
@@ -1431,7 +1754,8 @@ SCREENS.compliance = async host => {
               <div class="tl-meta">${x.document_type ? esc(x.document_type) : 'No document type recorded'}
                 · audited ${esc(ago(x.created_at))}${conf == null ? '' : ` · ${num(conf)}% confidence`}</div>
             </div></div>`;
-        }).join('')}</div>`;
+        }).join('')}</div>
+        ${caseLedger()}`;
 
       /* The rows are the same objects the table below opens, so the drawer that
          appears is byte-for-byte the same record either way. */
@@ -1947,6 +2271,23 @@ SCREENS.compliance = async host => {
             ${d.tampering ? pill('Tampering detected', 'hot') : ''}
             ${d.is_valid === false ? pill('Not valid', 'hot') : d.is_valid === true ? pill('Valid', 'ok') : ''}
           </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <span class="t-muted">Register position</span>${casePill(rowCaseState(d))}
+          </div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">${
+            /* Said from THIS row and nothing else. The state is the six-word
+               vocabulary at the top of this file; the sentence under it names
+               the column the state was read off, so a reviewer can check it
+               against the record rather than take the pill on trust. */
+            d.purged_at
+              ? 'purged_at is set on this row, so the file was deleted under the retention policy and the deletion is recorded. This is the only kind of deletion this system writes down.'
+              : verdictKey(d) === 'ESCALATED'
+                ? 'This row is in the register and carries an ESCALATED verdict: the case was handed to a person, and unlike an escalation that left no row behind, this one is on file.'
+                : verdictKey(d) === 'PENDING'
+                  ? 'This row is in the register with the column default still on it. No decision has been recorded against it — which is not the same as a decision to hold it.'
+                  : VERDICTS[verdictKey(d)]
+                    ? 'This row is in the register and carries a decided verdict, so what the auditor did with this document is on file.'
+                    : `This row carries a verdict the CHECK constraint on kyc_documents does not permit, so this screen has no wording for its position and claims none.`}</div>
           <dl class="kv" style="margin-top:12px">
             <dt>Confidence</dt><dd class="num">${conf == null ? '<span class="t-muted">Not scored</span>' : num(conf) + '%'}</dd>
             <dt>Attempt</dt><dd class="num">${a == null ? '<span class="t-muted">—</span>' : num(a) + (mx != null ? ` of ${num(mx)}` : '')}</dd>
@@ -2070,8 +2411,13 @@ SCREENS.compliance = async host => {
   const events = [
     ...kycComms.map(c => {
       const k = commKind(c.message);
+      /* A message carries no register position of its own: communication_logs
+         holds no document id, so which row a `[KYC-…]` line belongs to is
+         unknowable and no state is claimed for it. Null, not 'unknown' — the
+         renderer prints nothing rather than a pill saying we looked. */
       return { at: c.created_at, who: c.lead_email, text: c.message,
         label: k, tone: COMM_KIND_TONE[k] || 'cold', blurb: '',
+        register: null, registerNote: '',
         voided: owns(voidCanon, c.lead_email), source: 'message' };
     }),
     ...(audit || []).map(a => {
@@ -2094,10 +2440,18 @@ SCREENS.compliance = async host => {
          format.js's own neutral and the "grey rather than red" middle
          lib/health.js asks for; only OUTCOME.UNKNOWN keeps the grey pill and
          its hover text. */
+      /* The second axis, on the row where the run itself is. A trail entry that
+         says only "Escalated" leaves the reader to assume the register caught
+         it; one that says "Escalated · register Unknown · not recorded" is the
+         whole of what is known, and the note underneath says why no more can
+         be said. Computed by the same memoised `caseFor` the banner and the
+         ledger read, so the three cannot disagree about one run. */
+      const c = caseFor(a);
       return { at: a.logged_at, who: a.lead_email || a.lead_name, text: a.summary,
         label: ow.label, tone: o === OUTCOME.UNKNOWN ? 'unknown' : (ow.tone === 'unknown' ? 'cold' : ow.tone),
         blurb: ow.blurb,
         recorded: String(a.lead_name || '').trim(),
+        register: c.register, registerNote: c.note,
         voided: owns(voidCanon, a.lead_email), source: 'audit' };
     }),
   ].sort((a, b) => new Date(b.at) - new Date(a.at));
@@ -2111,6 +2465,7 @@ SCREENS.compliance = async host => {
         <div class="list-item" style="cursor:default">
           <span class="mono t-muted">${esc(clock(e.at))}</span>
           ${e.voided ? `<span class="chip">${esc(e.label)} · void</span>` : pill(e.label, e.tone)}
+          ${e.register ? `<span class="t-muted" style="font-size:12px">register</span>${casePill(e.register)}` : ''}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${n.name
               ? esc(n.name)
@@ -2122,13 +2477,14 @@ SCREENS.compliance = async host => {
             <div class="cell-sub" style="white-space:normal">${n.name ? esc(n.note) + ' · ' : ''}${
               n.phone ? '' : 'no phone stored · '}${esc(String(e.text || '').slice(0, 180))}</div>
             ${e.blurb ? `<div class="cell-sub t-muted">${esc(e.blurb)}</div>` : ''}
+            ${e.registerNote ? `<div class="cell-sub ${e.register === 'unknown' ? 't-warm' : 't-muted'}" style="white-space:normal">${esc(e.registerNote)}</div>` : ''}
             ${e.voided ? '<div class="cell-sub t-hot">Sent about a voided row — this was not a compliance decision, and the recipient was never a customer.</div>' : ''}
           </div>
           <div class="cell-sub">${esc(ago(e.at))}</div>
         </div>`;
         }).join('')
-      : stateEmpty('No KYC activity recorded',
-          'No run by the KYC auditor appears in audit_log and no [KYC-…] message appears in the message log. Both fill the moment a customer sends an identity document on WhatsApp and the audit-kyc workflow runs.',
+      : stateEmpty('No KYC activity on this page',
+          `No run by the KYC auditor appears in the ${num(AUDIT_LIMIT)} most recent audit_log rows read here, and no [KYC-…] line appears in the ${num(COMM_LIMIT)} most recent message-log rows. That is what these two reads found; it is not a statement that nothing has ever run, because anything older than those windows is not on this page. Both lists fill the moment a customer sends an identity document on WhatsApp and the audit-kyc workflow runs.`,
           'history');
 
   hist.innerHTML = `<div class="card-head"><div><div class="card-title">KYC activity</div>

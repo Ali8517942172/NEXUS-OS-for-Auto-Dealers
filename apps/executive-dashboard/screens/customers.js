@@ -127,6 +127,7 @@ import { $, el } from '../lib/dom.js';
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
 import { aed, ago, dubaiDate, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { SILENCE_MARKER, isInternalRow, isMessageRow, silenceCount } from '../lib/comm-events.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -141,40 +142,33 @@ const CONTACT_LIMIT = 2000;
 const SOURCE_LIMIT = 2000;
 const MSG_LIMIT = 50;
 
-/* THE SILENCE MARKER, AND WHY IT MAY NOT DATE A CONTACT (1 Sep 2026)
+/* WHAT COUNTS AS A CONTACT, AND WHY THE NEWEST ROW OFTEN IS NOT ONE
    -------------------------------------------------------------------------
-   The 12-hour silence detector writes a communication_logs row whose message
-   begins `[SILENCE-ESCALATED]` when a lead has stopped answering. It writes that
-   row BECAUSE nobody was in touch. This screen took "last contact" from the
-   newest row it had read, marker included, so Siva Thangavelu's pane dated his
-   last contact from the 26 Aug 19:03 marker while the newest thing actually said
-   to or by him was 26 Aug 06:12 — the moment the system recorded that he had NOT
-   been contacted, printed as the moment he was. Found by the journey regression
-   on 1 Sep 2026; live on shabbir53ujjainwala@gmail.com too (marker 31 Aug 17:00,
-   newest message 31 Aug 04:37) and invisible there only because ago() rounded
-   both to "1 d ago" — and, read again at 19:20 UTC the same evening, invisible on
-   Siva as well, because by then both of his rounded to "6 d ago". A defect that
-   hides itself for most of every day is still the defect.
+   `communication_logs` is an event log, not a message log. The 12-hour silence
+   detector writes a row into it when a lead has stopped answering — it writes
+   that row BECAUSE nobody was in touch. This screen took "last contact" from
+   the newest row it had read, marker included, so Siva Thangavelu's pane dated
+   his last contact from the 26 Aug 19:03 marker while the newest thing actually
+   said to or by him was 26 Aug 06:12 — the moment the system recorded that he
+   had NOT been contacted, printed as the moment he was. Found by the journey
+   regression on 1 Sep 2026; live on shabbir53ujjainwala@gmail.com too (marker
+   31 Aug 17:00, newest message 31 Aug 04:37) and invisible there only because
+   ago() rounded both to "1 d ago" — and, read again at 19:20 UTC the same
+   evening, invisible on Siva as well, because by then both of his rounded to
+   "6 d ago". A defect that hides itself for most of every day is still the
+   defect.
 
-   The prefix tested is `[SILENCE-` and not the full `[SILENCE-ESCALATED]`, and it
-   is tested WITHOUT trimming, because v_customer_360 excludes these rows with
-   `message !~~ '[SILENCE-%'` and the point of this predicate is that the two
-   sides select the same rows. Trimming here would disagree with the view on a row
-   with leading whitespace, and the caption below would then claim an agreement
-   that did not hold. Read 1 Sep 2026: 99 communication_logs rows, 2 markers, 0
-   with leading whitespace and 0 with a NULL message, so the two predicates do
-   select identically today — but the caption states what it measured against the
-   view's own last_contact_at rather than assuming it.
-
-   conversations.js:325 tests the same rows with the full marker string and a
-   trimStart(). It is answering a different question — is THIS row a message —
-   and it is not this file's to change. */
-const SILENCE_PREFIX = '[SILENCE-';
-const isMarkerRow = r => {
-  const m = r && r.message;
-  return typeof m === 'string' && m.startsWith(SILENCE_PREFIX);
-};
-
+   The test itself no longer lives in this file. It used to be a local
+   `'[SILENCE-'` prefix check, which is one of the three marks an internal row
+   can carry and was chosen to line up with the single predicate v_customer_360
+   happened to use at the time. Both sides have moved: lib/comm-events.js holds
+   the whole taxonomy for the browser, `public.nexus_is_message()` holds it for
+   the database, and v_customer_360's message_count and last_contact_at are
+   computed with that function as of migration `comm_taxonomy_views_own_the_rule`
+   — so the agreement the caption below reports is now an agreement between two
+   spellings of one rule rather than between two independent guesses. The
+   caption still MEASURES it rather than assuming it, for the same reason it
+   always did. */
 /* v_customer_directory is read with select=* on purpose, and its columns are now
    known rather than guessed: id, name, email, phone, source_records,
    last_seen_at, read off the live database on 24 Aug 2026. They are still not
@@ -1360,17 +1354,20 @@ SCREENS.customers = async host => {
        key shapes itself — pg_get_viewdef read 1 Sep 2026 19:0x UTC shows the
        `@c.us`, `+digits@whatsapp.lead` and whatsapp_contacts.chat_id expansion —
        and it now reports 28 and 7 against this screen's 29 and 8. The whole of
-       what is left is the two `[SILENCE-` markers it excludes and this screen
-       counts. The figure printed is still the widened read's rather than the
+       what is left is the two internal rows it excludes and this screen counts —
+       and since `comm_taxonomy_views_own_the_rule` the view excludes them with
+       public.nexus_is_message(), which is the same test lib/comm-events.js
+       applies here, rather than the narrower `[SILENCE-` prefix it used before. The figure printed is still the widened read's rather than the
        view's, because these are the rows the Recent messages section below
        lists, and a total that does not match the list under it cannot be checked
        by the person reading it; the view's figure is now a check on it and no
        longer a correction to it.
 
        The last-contact time is a DIFFERENT question and no longer follows the
-       count. The view's max() excludes the markers; this screen's was the newest
-       row of any kind, which is how a marker came to date a contact. See
-       SILENCE_PREFIX at the top of this file. */
+       count. The view's max() runs over messages only; this screen's was the
+       newest row of any kind, which is how a marker came to date a contact. Both
+       sides now spell the same rule — public.nexus_is_message() in the database,
+       lib/comm-events.js in the browser. See the note at the top of this file. */
     const viewMsgs = n0(v.message_count);
     const commCount = comms.rows ? comms.rows.length : null;
     /* The cap is on what the DATABASE returned, not on what survived the
@@ -1408,14 +1405,21 @@ SCREENS.customers = async host => {
        last contact from and is kept only so the caption can name what it is not
        using. Dropping a day off a figure a rep read yesterday without saying so
        would be its own small dishonesty. */
-    const markerRows  = (comms.rows || []).filter(isMarkerRow);
-    const contactRows = (comms.rows || []).filter(r => !isMarkerRow(r));
+    const markerRows  = (comms.rows || []).filter(isInternalRow);
+    const contactRows = (comms.rows || []).filter(isMessageRow);
     const lastContact = (contactRows.length && contactRows[0].created_at) || null;
     const newestRow   = (comms.rows && comms.rows.length && comms.rows[0].created_at) || null;
-    const datedFromMarker = !!(newestRow && lastContact !== newestRow);
-    /* Checked, not assumed. Both sides now exclude the markers, so they ought to
-       agree — and "ought to" is exactly the kind of claim this file is not
-       allowed to print. The two timestamps are compared and whichever answer
+    const datedFromInternal = !!(newestRow && lastContact !== newestRow);
+    /* How many of the excluded rows are silence escalations specifically. A row
+       can be internal by its channel or its direction with an ordinary body —
+       nothing on file is today, and the caption below has to be able to say so
+       rather than calling every excluded row a silence marker, which is the
+       claim that would be false the first time one is not. */
+    const silenceRows = silenceCount(markerRows);
+    const otherInternal = markerRows.length - silenceRows;
+    /* Checked, not assumed. Both sides now apply the same predicate, so they
+       ought to agree — and "ought to" is exactly the kind of claim this file is
+       not allowed to print. The two timestamps are compared and whichever answer
        comes back is what the caption says. */
     const viewLast  = str(v.last_contact_at) || null;
     const lastAgree = !!(lastContact && viewLast
@@ -1431,25 +1435,35 @@ SCREENS.customers = async host => {
     const contactNote = (() => {
       const bits = [];
       if (markerRows.length) {
-        bits.push(`${esc(String(markerRows.length))} of those ${markerRows.length === 1 ? 'rows is' : 'rows are'} the 12-hour silence detector’s own ${esc(SILENCE_PREFIX)}…] marker, written because nobody was in touch`
-          + (datedFromMarker
-              ? `, and the newest row here is one of them — so the last contact above is dated ${esc(dubaiStamp(lastContact))}, the newest row that is a message, and not ${esc(dubaiStamp(newestRow))}, the marker, which this screen printed until 1 Sep 2026 and which would read ${esc(ago(newestRow))}`
+        /* Named by what they actually are. `silenceRows` are the detector's
+           escalations; anything left over is internal by its channel or its
+           direction and this screen does not know what wrote it, so it says
+           that instead of guessing. */
+        const what = otherInternal === 0
+          ? `the 12-hour silence detector’s own ${esc(SILENCE_MARKER)} ${markerRows.length === 1 ? 'marker' : 'markers'}, written because nobody was in touch`
+          : silenceRows === 0
+            ? 'the dealership’s own internal notes — written on the system channel or with direction ‘internal’, never sent to anybody'
+            : `internal — ${esc(String(silenceRows))} the silence detector’s ${esc(SILENCE_MARKER)} ${silenceRows === 1 ? 'marker' : 'markers'}, written because nobody was in touch, and ${esc(String(otherInternal))} on the system channel or with direction ‘internal’`;
+        bits.push(`${esc(String(markerRows.length))} of those ${markerRows.length === 1 ? 'rows is' : 'rows are'} ${what}`
+          + (datedFromInternal
+              ? `, and the newest row here is one of them — so the last contact above is dated ${esc(dubaiStamp(lastContact))}, the newest row that is a message, and not ${esc(dubaiStamp(newestRow))}, the internal row, which this screen printed until 1 Sep 2026 and which would read ${esc(ago(newestRow))}`
               : '')
           + '.');
-      } else if (datedFromMarker) {
-        /* Cannot happen while the only thing filtered out is a marker. Reported
-           rather than assumed away, for the same reason commsForeign is. */
-        bits.push(`The newest row read is not the row this contact time is taken from, and it is not a ${esc(SILENCE_PREFIX)}…] marker — something else is being excluded and this screen cannot say what.`);
+      } else if (datedFromInternal) {
+        /* Cannot happen while the only thing filtered out is an internal row.
+           Reported rather than assumed away, for the same reason commsForeign
+           is. */
+        bits.push('The newest row read is not the row this contact time is taken from, and nothing about it reads as one of the dealership’s internal notes — something else is being excluded and this screen cannot say what.');
       }
       if (lastContact && viewLast) {
         bits.push(lastAgree
           ? 'v_customer_360.last_contact_at is the same moment, so Customer 360 and this screen date the last contact identically.'
-          : `v_customer_360.last_contact_at is ${esc(dubaiStamp(viewLast))}, a different moment. Both sides exclude the ${esc(SILENCE_PREFIX)} rows, so the markers are not the reason for this one and this screen cannot say what is.`);
+          : `v_customer_360.last_contact_at is ${esc(dubaiStamp(viewLast))}, a different moment. Since the comm_taxonomy migration of 1 Sep 2026 both sides run the same test — public.nexus_is_message() there, lib/comm-events.js here — so the internal rows cannot be the reason for this one, and this screen cannot say what is.`);
       } else if (lastContact && c.view && viewLast == null) {
         bits.push('v_customer_360 has a row for this customer but no last_contact_at on it, so there is nothing to check this time against.');
       }
       if (!bits.length) return '';
-      const bad = !!(lastContact && viewLast && !lastAgree) || (!markerRows.length && datedFromMarker);
+      const bad = !!(lastContact && viewLast && !lastAgree) || (!markerRows.length && datedFromInternal);
       return `<div><span class="${bad ? 't-warm' : 't-muted'}">${bits.join(' ')}</span></div>`;
     })();
     const msgSub = commCount == null
@@ -1467,7 +1481,7 @@ SCREENS.customers = async host => {
             lastContact
               ? ` · last contact ${esc(ago(lastContact))}`
               : markerRows.length
-                ? ` · no contact on record — every row read is a ${esc(SILENCE_PREFIX)}…] marker, and those are written because nobody was in touch`
+                ? ` · no contact on record — every row read is one of the dealership’s own internal notes${silenceRows === markerRows.length ? ` (${esc(SILENCE_MARKER)}), written because nobody was in touch` : ', never sent to or received from this customer'}`
                 : ''}</span>`
         + contactNote
         + commsForeign
@@ -1475,7 +1489,7 @@ SCREENS.customers = async host => {
             ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
             : msgCapped || viewMsgs === commCount
               ? ''
-              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}, ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'below' : 'above'} the figure above. Since 1 Sep 2026 the view expands the same key shapes this screen does, so the remaining gap is the internal markers: it excludes rows whose message begins [SILENCE-, which are written because nobody was in touch and are not messages to or from the customer. This screen counts them, because they are rows the Recent messages section below lists — but it no longer dates the last contact from one. Neither number is wrong; they are answering different questions.</span></div>`);
+              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}, ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'below' : 'above'} the figure above.${markerRows.length && commCount - viewMsgs === markerRows.length ? ` That difference is exactly the ${esc(String(markerRows.length))} internal ${markerRows.length === 1 ? 'row' : 'rows'} named above:` : ' Since 1 Sep 2026 the view expands the same key shapes this screen does, so the gap should be the internal rows —'} the view counts messages only, using public.nexus_is_message(), and an internal note is not a message to or from the customer. This screen counts every row it read, because those are the rows the Recent messages section below lists — but it no longer dates the last contact from one. Neither number is wrong; they are answering different questions.</span></div>`);
 
     /* LIFETIME VALUE, and what the view's figure actually is.
 

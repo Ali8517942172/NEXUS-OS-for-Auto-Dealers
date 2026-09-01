@@ -122,7 +122,7 @@ import { aed, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
    v_needs_attention.ref. The rule is not ours — the n8n node `Resolve Lead
    Identity` joins on the last nine digits of the phone number, so anything
    written by a workflow must be read back the same way. */
-import { describeKey, expandIdentity, isHandle, normalizeKey } from '../lib/identity.js';
+import { KEY_SHAPE, describeKey, expandIdentity, isHandle, keyShape, normalizeKey } from '../lib/identity.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -442,6 +442,33 @@ SCREENS.deals = async host => {
     return `<span class="mono">${esc(p.value)}</span>${
       p.from === 'lead' ? ` <span class="t-muted" title="${esc(`purchase_history has no phone for this deal. This number comes from a leads row matched on ${p.basis || 'a shared key'}.`)}">from the lead record</span>` : ''}`;
   };
+
+  /* The EMAIL column, told apart from a WhatsApp address — the same problem as
+     phoneLine and settled by the same rule.
+
+     `purchase_history.email` is the four-shape column family, and the deal form
+     posts whatever `leads.email` held: lead 34 is stored as
+     `+971547484167@whatsapp.lead` in that column today, so a value arriving
+     here is not necessarily an address. Printing one under the label "Email"
+     asserts something the database never said, and an operator who copies it
+     into a mail client gets a bounce with no idea why.
+
+     The positive test is identity.js's own classifier and NOT isHandle(), which
+     is deliberately narrow: it covers `@lid`, `@c.us`, `@s.whatsapp.net` and
+     `@g.us` and returns false for `@whatsapp.lead`. Verified today —
+     isHandle('+971547484167@whatsapp.lead') is false while
+     keyShape(...) is 'whatsapp.lead'. Asking "is this shaped like an email"
+     is the question with one right answer here; asking "is this a handle"
+     would have let the very value that motivated this through. */
+  const contactValue = v => {
+    const raw = str(v);
+    if (!raw) return '';
+    if (keyShape(raw) === KEY_SHAPE.EMAIL) return esc(raw);
+    return `<span class="mono" title="${esc(describeKey(raw))}">${esc(raw)}</span>`
+      + ' <span class="t-warm">contact handle, not an email address</span>';
+  };
+  const contactLine = (row, empty) => contactValue(emailOf(row))
+    || `<span class="t-muted">${esc(empty)}</span>`;
 
   /* Margin is taken from a margin column when the table has one. Otherwise it
      is amount − cost, and only when BOTH sides are present on that row —
@@ -1184,10 +1211,16 @@ SCREENS.deals = async host => {
             <div class="list-item" style="cursor:default">
               <span class="pill vip"><span class="dot"></span>${num(g.n)} deals</span>
               <div style="flex:1;min-width:0">
-                <div style="font-weight:500">${esc(g.name || g.email || 'Unnamed customer')}</div>
-                <div class="cell-sub">${esc(g.email || (g.byName
+                <div style="font-weight:500">${esc(g.name
+                  /* A WhatsApp address is not a person's name. identity.js keeps
+                     handles out of the name slot everywhere else in the product
+                     and the same classifier does it here: only an email-shaped
+                     value may stand in for a missing name. */
+                  || (keyShape(g.email) === KEY_SHAPE.EMAIL ? g.email : '')
+                  || 'Unnamed customer')}</div>
+                <div class="cell-sub">${contactValue(g.email) || esc(g.byName
                   ? 'No email, phone or WhatsApp key on these rows — grouped by customer name, which two people can share'
-                  : 'No email on these rows — grouped on the phone or WhatsApp key they share'))}${
+                  : 'No email on these rows — grouped on the phone or WhatsApp key they share')}${
                   g.last != null ? ` · last deal ${esc(ago(g.last))}` : ''}</div>
                 <div class="cell-sub">${phoneLine(g.phoneRow)}</div>
               </div>
@@ -1222,12 +1255,114 @@ SCREENS.deals = async host => {
       ${caveatLine}`;
   }
 
+  /* ── The lead picker on the deal form ────────────────────────────────────
+     1 Sep 2026. Two defects, both counted against the live database BEFORE this
+     block was written, not inferred from reading the code.
+
+     ONE — the picker was a truthy test on a text column.
+
+     lib/deal-form.js builds its <select> from `leads.filter(l => l.email)`.
+     That asks whether a column is non-empty, which is not the same question as
+     whether we know who somebody is. Counted live today:
+
+       select count(*) from leads                        ->  3
+       select count(*) from leads where email is null    ->  0
+       select count(*) from leads where email = ''       ->  1     (lead 35)
+
+     Lead 35 — Effco Contracting llc, +971505433953 — holds the EMPTY STRING,
+     not null. `''` is falsy, so he was dropped from the picker with nothing on
+     screen to say a lead had been withheld. He is not a stub: whatsapp_contacts
+     ties chat `111948809162873@lid` to phone 971505433953 under his own push
+     name, and communication_logs holds 10 messages under that chat. A real lead
+     with a real conversation, and the form could not offer him.
+
+     The list is built here now and the test is the one shared rule — does
+     lib/identity.js identify this row. Run against all three leads today it
+     returned ok:true, identified:'lead' for every one, so all three are offered.
+
+     TWO — what the chosen option is worth as an anchor.
+
+     dealForm posts the option's value as `lead_email`, and the Closed-Won
+     workflow derives the deal id from it. `leads.email` is the same four-shape
+     column family as communication_logs.lead_email, so the value being handed
+     over is not necessarily an email address: lead 34 is stored as
+     `+971547484167@whatsapp.lead`, a WhatsApp address, and the picker was
+     already posting it as though it were one. identity.js is explicit that such
+     a value is not an address — it returns email:'' for that row — so the
+     anchor is taken from identity.js instead of from the raw column: the real
+     address where there is one, otherwise the `@whatsapp.lead` form of the
+     known phone number, which is the shape the WORKFLOWS synthesise and which
+     identity.js resolves back to the same person by the last-nine-digits rule.
+
+     Nothing here invents a key. For lead 34 the value is unchanged. For lead 35
+     it is the shape his own workflows would have written, and the round trip
+     was checked before shipping: a deal recorded under it — with the deal
+     form's optional Phone box filled in and also with it left empty — resolves
+     back through identity.js to lead 35 and to no other lead.
+
+     What this CANNOT do is give the deal a RELATIONAL anchor, and the note
+     below says so rather than letting a handle pass for one. Re-probed live
+     today, purchase_history has nine columns — id, customer_name, email, phone,
+     vehicle, purchase_date, amount_aed, created_at, deal_id — and not one of
+     customer_id, lead_id, vehicle_id or conversation_id. There is no customers
+     table and no deals table in this database at all, and the only two foreign
+     keys in the entire public schema are leads.assigned_to_id and
+     kyc_documents.reviewed_by, neither of which touches a purchase. So a deal
+     recorded from this form is anchored on a contact key by construction, and
+     lead 35's row id — the one canonical customer id this database actually
+     has — cannot travel with it. That is a schema gap and a write-path gap; it
+     is stated on screen as the gap it is, and it is not closed from here. */
+  const pickerRefused = [];
+  let pickerByHandle = 0;
+  const pickerLeads = (leads || []).map(l => {
+    const id = expandIdentity({ leadId: l.id, email: l.email, keys: [l.phone].filter(Boolean) });
+    /* `id.email` rather than `l.email`: the raw column can hold a handle and
+       identity.js is what knows the difference. The WhatsApp form is taken from
+       the keys identity.js expanded, never assembled here. */
+    const wa = (id.keys || []).find(k => keyShape(k) === KEY_SHAPE.WA_LEAD) || '';
+    const anchor = id.ok ? (id.email || wa) : '';
+    if (!anchor) { pickerRefused.push(l); return null; }
+    if (!id.email) pickerByHandle += 1;
+    /* A COPY. `leads` is read by leadsByKey and the phone fallback above and
+       must keep the values the database returned. */
+    return { ...l, email: anchor };
+  }).filter(Boolean);
+
+  /* The old rule kept alongside the new one, so the note states a delta it
+     actually measured rather than asserting an improvement. */
+  const pickerWasOffering = (leads || []).filter(l => l.email).length;
+  const offeredIds = new Set(pickerLeads.map(l => l.id));
+  const pickerRecovered = pickerLeads.filter(l => !(leads || []).some(o => o.id === l.id && o.email)).length;
+  const pickerDropped = (leads || []).filter(l => l.email && !offeredIds.has(l.id)).length;
+
+  const pickerNote = leadsErr
+    ? `<span class="t-warm">The leads read failed (${esc(leadsErr)}), so the picker on that form has no lead to offer and every field has to be typed by hand. That is a failed read, not an empty lead table.</span>`
+    : !leads.length
+      ? 'There are no leads to offer, so every field on that form has to be typed by hand.'
+      : [
+        `Its lead picker offers ${num(pickerLeads.length)} of ${num(leads.length)} lead${plural(leads.length, '', 's')}, chosen by whether <span class="mono">lib/identity.js</span> can identify the row rather than by whether the email column happens to be non-empty.`,
+        pickerRecovered
+          ? `A truthy test on that column — which is what this picker used until today — offered ${num(pickerWasOffering)}: ${num(pickerRecovered)} lead${plural(pickerRecovered, ' whose email column holds the empty string was', 's whose email column holds the empty string were')} dropped from it silently, though identity.js identifies ${plural(pickerRecovered, 'that lead', 'those leads')} from the phone number.`
+          : '',
+        pickerDropped
+          ? `<span class="t-warm">${num(pickerDropped)} lead${plural(pickerDropped, ' carries a non-empty email column that identifies nobody and is', 's carry a non-empty email column that identifies nobody and are')} not offered.</span>`
+          : '',
+        pickerRefused.length
+          ? `${num(pickerRefused.length)} lead${plural(pickerRefused.length, ' carries', 's carry')} no email, phone or WhatsApp key at all, so ${plural(pickerRefused.length, 'it is', 'they are')} not offered — there would be nothing to file the deal under.`
+          : '',
+        pickerByHandle
+          ? `${num(pickerByHandle)} of the ${num(pickerLeads.length)} offered ${plural(pickerByHandle, 'has', 'have')} no email address on file and ${plural(pickerByHandle, 'is', 'are')} anchored on the WhatsApp address the workflows synthesise from the phone number.`
+          : '',
+        'A deal recorded here is anchored on a contact key either way: <span class="mono">purchase_history</span> carries no customer_id, lead_id, vehicle_id or conversation_id column, and this database has no customers table and no deals table, so the lead\'s own row id cannot travel with the sale. That is a schema gap, not a setting on this form.',
+      ].filter(Boolean).join(' ');
+
   /* ── The deal list ─────────────────────────────────────────────────────── */
   const actions = `<button class="btn primary" id="newDeal">
     <span class="material-symbols-outlined">add</span> Record a deal</button>`;
 
   if (!deals) {
-    listCard.innerHTML = `<div class="card-head"><div><div class="card-title">Closed-won deals</div></div>
+    listCard.innerHTML = `<div class="card-head"><div><div class="card-title">Closed-won deals</div>
+        <div class="card-sub">${pickerNote}</div></div>
       <div style="flex:1"></div>${actions}</div>${stateError('closed-won deals', dealsErr)}`;
   } else {
     const f = { q: '', memory: 'ALL', period: 'ALL', sort: 'new', only: null };
@@ -1240,6 +1375,7 @@ SCREENS.deals = async host => {
           /* Said once, under the column it is about, rather than as a repeated
              sub-line on every row: it is one fact about the table. */
           col.unit ? '' : ' <span class="t-muted">The vehicle column is free text captured on the deal form, not a reference to a unit — purchase_history has no inventory column, so no row here can say which car was sold.</span>'}</div>
+        <div class="card-sub">${pickerNote}</div>
       </div><div style="flex:1"></div>${actions}</div>
       <div class="toolbar">
         <div class="grow"><input type="search" id="dq" aria-label="Search closed-won deals"
@@ -1272,7 +1408,7 @@ SCREENS.deals = async host => {
          line an operator reads before picking up the handset, and splitting the
          two apart is how a number gets dialled against the wrong customer. */
       { label: 'Customer', strong: true, render: d => `${esc(nameOf(d) || 'Unnamed customer')}
-          <div class="cell-sub">${esc(emailOf(d) || 'No email on this row')}</div>
+          <div class="cell-sub">${contactLine(d, 'No email on this row')}</div>
           <div class="cell-sub">${phoneLine(d)}</div>` },
       { label: 'Vehicle', render: d => {
           const v = esc(get(d, 'vehicle') || '—');
@@ -1419,7 +1555,11 @@ SCREENS.deals = async host => {
     draw();
   }
 
-  $('newDeal')?.addEventListener('click', () => dealForm(leads || [], () => go('deals')));
+  /* pickerLeads, not `leads`: see the block above. The list is chosen and
+     anchored by lib/identity.js, and the raw `leads` array is left untouched
+     for the phone fallback and leadsByKey, which need what the database
+     actually returned. */
+  $('newDeal')?.addEventListener('click', () => dealForm(pickerLeads, () => go('deals')));
 
   /* ── Vector memory ─────────────────────────────────────────────────────── */
   if (vecErr) {
@@ -1707,7 +1847,7 @@ SCREENS.deals = async host => {
           <dl class="kv" style="margin-top:8px">
             <dt>Customer</dt><dd>${esc(nameOf(d) || '—')}</dd>
             <dt>Phone</dt><dd>${phoneLine(d)}</dd>
-            <dt>Email</dt><dd>${esc(emailOf(d) || '—')}</dd>
+            <dt>Email</dt><dd>${contactLine(d, '—')}</dd>
             <dt>Vehicle</dt><dd>${esc(get(d, 'vehicle') || '—')}</dd>
             <dt>Inventory unit</dt><dd>${unitBlock}</dd>
             <dt>Amount</dt><dd class="num">${a == null ? '<span class="t-muted">Not recorded</span>' : esc(aed(a))}</dd>

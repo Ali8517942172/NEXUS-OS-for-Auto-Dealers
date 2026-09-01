@@ -251,6 +251,7 @@
    communication_logs has no read state and no delivery state, so "Reply due" is
    `awaiting_reply` from the view — newest message inbound, nothing sent after —
    and never claims to be an unread flag. */
+import { SILENCE_MARKER, isInternalRow, isMarkerText, silenceCount } from '../lib/comm-events.js';
 import { db, n8n, HOOK } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
@@ -321,17 +322,23 @@ const SPLIT_MIN = 2;
    the row itself, and a row that is internal by only one of the three marks
    would be drawn here as a message to a customer. No line numbers are cited:
    those two files are being edited alongside this one and a line number is a
-   claim that goes stale without anybody touching this file. */
-const SILENCE_MARKER = '[SILENCE-ESCALATED]';
-const INTERNAL_CHANNELS = new Set(['system', 'internal']);
-const isMarkerText = v => String(v == null ? '' : v).trimStart().startsWith(SILENCE_MARKER);
-/* A whole communication_logs row. The view does not expose a per-thread
-   `last_channel`, so at thread level only the message text is available and
-   `isMarkerText` is used on `last_message`; here, where the row itself is in
-   hand, channel and direction are checked too. */
-const isInternalRow = r => INTERNAL_CHANNELS.has(String(r && r.channel || '').trim().toLowerCase())
-  || String(r && r.direction || '').trim().toLowerCase() === 'internal'
-  || isMarkerText(r && r.message);
+   claim that goes stale without anybody touching this file.
+
+   All three spellings, and the whole taxonomy around them, now live in
+   lib/comm-events.js — imported at the top of this file — and mirror
+   public.nexus_is_message() in the database line for line. Two things changed
+   when they moved out of here on 1 Sep 2026, and both were disagreements:
+
+     · the text test was `trimStart().startsWith('[SILENCE-ESCALATED]')`. SQL
+       LIKE does not trim, and the database has always matched the shorter
+       prefix `[SILENCE-`, so this file was the one out of step. The shared
+       version matches untrimmed on the prefix, exactly as the SQL does. Live
+       1 Sep 2026: 0 rows carry leading whitespace and 0 carry a second marker
+       kind, so no row changes verdict today.
+     · nothing here tested `[system]%`, which nexus_is_reply() has excluded from
+       the reply meter since it was written. The shared test excludes it too, so
+       a `[system]` note can no longer be drawn as a chat bubble here while the
+       response-time trigger correctly ignores it. */
 
 /* The two registry rows this screen depends on, named exactly as
    workflow_registry.name so v_workflow_health can be filtered on them. */
@@ -342,9 +349,22 @@ const HEALTH_COLS = 'name,is_active,writes_audit_log,health,runs_30d,failures_30
 
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
+/* The view's own columns, and then the same questions asked of MESSAGES only.
+   `message_count`, `inbound_count`, `outbound_count`, `last_message_at`,
+   `last_message`, `last_direction` and `awaiting_reply` count and date EVERY row
+   in communication_logs, markers included — that is what they have always meant
+   and other screens sort and alert on them, so they are untouched. The
+   `msg_*` / `last_msg_*` columns were appended by migration
+   `comm_taxonomy_views_own_the_rule` and are the same aggregates restricted to
+   rows public.nexus_is_message() accepts. Where this screen speaks about a
+   message it reads the second set; where it speaks about the newest ROW —
+   "the detector escalated this thread", "the newest row is not a message" — it
+   reads the first, because that is the row it means. */
 const VIEW_COLS = 'thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_status,'
   + 'display_name,identified,message_count,inbound_count,outbound_count,'
-  + 'last_message_at,last_message,last_direction,awaiting_reply';
+  + 'last_message_at,last_message,last_direction,awaiting_reply,'
+  + 'msg_count,internal_count,msg_inbound_count,msg_outbound_count,'
+  + 'last_msg_at,last_msg,last_msg_direction,awaiting_msg_reply';
 
 const low = s => String(s == null ? '' : s).trim().toLowerCase();
 const str = v => String(v == null ? '' : v).trim();
@@ -646,18 +666,45 @@ function normalise(r) {
     /* Filled by linkThreads(): other rows in this same list that are the same
        person. Never a name, always the sibling rows themselves. */
     siblings: [],
+    /* EVERY row the view filed under this person, markers included. `count` is
+       what loadMessages() checks its own read against, and that read is over
+       every row too, so the two have to be counted the same way. */
     count: Number(r.message_count) || 0,
     inbound: Number(r.inbound_count) || 0,
     outbound: Number(r.outbound_count) || 0,
     last_at: r.last_message_at || null,
     last_message: r.last_message == null ? '' : String(r.last_message),
     last_direction: low(r.last_direction),
-    /* The newest row in this thread is the silence detector's own marker, not a
-       message anybody sent or received. The view has no last_channel, so this is
-       decided on the text — the marker is a literal prefix the detector writes.
-       Everywhere `last_message`, `last_direction` or `outbound` would otherwise
-       be spoken about as a message, this flag is consulted first. */
-    lastIsMarker: isMarkerText(r.last_message),
+    /* MESSAGES only, straight from the view. Until 1 Sep 2026 this screen had no
+       such figures: it subtracted one marker back out of outbound_count and
+       called the answer a floor, because v_conversations exposed no per-row
+       channel and only the NEWEST row could be tested from a thread row.
+       `comm_taxonomy_views_own_the_rule` moved the test into the view, where
+       every row can be tested, so these are exact. `msgCount == null` means the
+       column did not come back — an older view, or a select that lost it — and
+       every caller falls back to the old floor and says which it used, rather
+       than printing an exact-looking number it did not get. */
+    msgCount: r.msg_count == null ? null : Number(r.msg_count) || 0,
+    msgInbound: r.msg_inbound_count == null ? null : Number(r.msg_inbound_count) || 0,
+    msgOutbound: r.msg_outbound_count == null ? null : Number(r.msg_outbound_count) || 0,
+    internalCount: r.internal_count == null ? null : Number(r.internal_count) || 0,
+    /* The newest thing anybody actually said, either direction. NOT last_at: on
+       a thread the silence detector has escalated they are different moments,
+       and the gap between them is the twelve hours of silence that made it fire.
+       null when this thread holds no message at all. */
+    last_msg_at: r.last_msg_at || null,
+    last_msg: r.last_msg == null ? '' : String(r.last_msg),
+    last_msg_direction: low(r.last_msg_direction),
+    /* The newest row in this thread is one of the dealership's own internal
+       notes, not a message anybody sent or received. The view now answers this
+       directly with `internal_count` and `last_msg_at`; the text test is kept as
+       the fallback for the same reason the counts have one, and both spellings
+       agree on every row on file. Everywhere `last_message`, `last_direction` or
+       `outbound` would otherwise be spoken about as a message, this flag is
+       consulted first. */
+    lastIsMarker: r.last_msg_at != null && r.last_message_at != null
+      ? Date.parse(r.last_msg_at) !== Date.parse(r.last_message_at)
+      : isMarkerText(r.last_message),
     awaiting: r.awaiting_reply === true,
   };
 }
@@ -733,23 +780,38 @@ const groupIdentity = (t, pool) => expandIdentity(
 const namedSibling = t => (t.siblings || []).find(x => x.name) || null;
 const groupCount = t => groupOf(t).reduce((s, x) => s + x.count, 0);
 
-/* The view's outbound_count with the one marker this screen can see taken out.
+/* How many messages were actually SENT to this contact.
 
-   `outbound_count` is `count(*) FILTER (WHERE direction = 'outbound')`, and the
-   two [SILENCE-ESCALATED] rows written before the detector was fixed carry
-   direction 'outbound'. So the view counts each of them as a message sent to the
-   customer: live 1 Sep 2026 Ali's thread reports 9 outbound when eight messages
-   were sent to him and the ninth is the dealership's note that he went quiet.
+   `outbound_count` is `count(*) FILTER (WHERE direction = 'outbound')` over every
+   row, and the two [SILENCE-ESCALATED] rows written before the detector was
+   fixed carry direction 'outbound'. So the view counted each of them as a
+   message sent to the customer: on 1 Sep 2026 Ali's thread reported 9 outbound
+   when eight messages were sent to him and the ninth is the dealership's note
+   that he went quiet, and Siva's reported 3 against 2.
 
-   v_conversations exposes no per-row channel, so only the NEWEST row can be
-   tested from a thread row. This therefore discounts at most one marker and is a
-   FLOOR, not a corrected total — `outboundIsFloor` is what says so wherever the
-   number is printed. The exact count, with every marker in the history removed,
-   is only available once loadMessages() has the rows, and that is where it is
-   given. A marker written the new way (direction 'internal') was never in
-   outbound_count to begin with and is not discounted twice. */
-const outboundIsFloor = t => t.lastIsMarker && t.last_direction === 'outbound';
-const realOutbound = t => Math.max(0, t.outbound - (outboundIsFloor(t) ? 1 : 0));
+   Until that day this screen subtracted the ONE marker it could see — the newest
+   row — and printed the result as a floor, because v_conversations exposed no
+   per-row channel and an older marker in the same history was invisible from a
+   thread row. `comm_taxonomy_views_own_the_rule` put nexus_is_message() inside
+   the view, so `msg_outbound_count` is the exact figure over every row, and the
+   floor is now only the fallback for a view that has not been migrated.
+   `outboundIsFloor` says which of the two a number is, wherever it is printed,
+   and it is false whenever the exact column came back. */
+const outboundIsFloor = t => t.msgOutbound == null
+  && t.lastIsMarker && t.last_direction === 'outbound';
+const realOutbound = t => (t.msgOutbound != null
+  ? t.msgOutbound
+  : Math.max(0, t.outbound - (t.lastIsMarker && t.last_direction === 'outbound' ? 1 : 0)));
+/* The same two answers for the other three figures. Each returns the view's
+   message-only column when it is there and the all-rows column when it is not,
+   and `figuresAreExact` is what a caption consults before calling any of them a
+   message count. */
+const realInbound  = t => (t.msgInbound != null ? t.msgInbound : t.inbound);
+const realCount    = t => (t.msgCount   != null ? t.msgCount   : t.count);
+const figuresAreExact = t => t.msgCount != null;
+/* The newest thing anybody said in this thread, as opposed to the newest row in
+   it. They differ only on a thread the silence detector has escalated. */
+const lastSaidAt = t => (t.last_msg_at != null ? t.last_msg_at : (t.lastIsMarker ? null : t.last_at));
 
 /* Three states, and they are three different sentences. We know their name; we
    know their number but not their name; we know neither. The middle one is now
@@ -1212,12 +1274,19 @@ SCREENS.conversations = async host => {
         out.push({
           kind: 'silence_escalated', severity: 'WARM', ref: t.chat_id || t.key, thread: t,
           title: titleOf(t), at: t.last_at, derived: true,
-          detail: `The 12-hour silence detector escalated this thread ${ago(t.last_at)} and wrote its `
-            + `${SILENCE_MARKER} marker as the newest row${d != null ? `, ${Math.floor(d)} day${Math.floor(d) === 1 ? '' : 's'} ago` : ''}. `
-            + 'Nothing has been logged on the thread since. The marker is the dealership’s own note that the '
-            + 'customer went quiet — it is not a message to them and not a reply — but because it sits in the '
-            + 'direction column as an outbound, v_conversations reads this thread as answered and '
-            + 'v_needs_attention.unanswered_chat, which keys on that, cannot list it at all.',
+          detail: (isMarkerText(t.last_message)
+              ? `The 12-hour silence detector escalated this thread ${ago(t.last_at)} and wrote its `
+                + `${SILENCE_MARKER} marker as the newest row${d != null ? `, ${Math.floor(d)} day${Math.floor(d) === 1 ? '' : 's'} ago` : ''}. `
+                + 'Nothing has been logged on the thread since. The marker is the dealership’s own note that the '
+                + 'customer went quiet — it is not a message to them and not a reply'
+              : `The newest row on this thread, written ${ago(t.last_at)}, is one of the dealership’s own internal `
+                + 'rows rather than a message. Its body is not the silence detector’s, so what wrote it is not '
+                + 'named here — it is not a message to the customer and not a reply')
+            + (t.last_direction === 'outbound'
+                ? ' — but because it sits in the direction column as an outbound, v_conversations reads this thread '
+                  + 'as answered and v_needs_attention.unanswered_chat, which keys on that, cannot list it at all.'
+                : `. The last thing anybody actually said on it was ${lastSaidAt(t) ? ago(lastSaidAt(t)) : 'never — no row on this thread is a message'}, `
+                  + 'and v_needs_attention.unanswered_chat keys on awaiting_reply, which this row makes false.'),
         });
         return;
       }
@@ -1603,7 +1672,16 @@ SCREENS.conversations = async host => {
   function renderStrip() {
     const awaiting = threads.filter(t => t.awaiting);
     const oldest = oldestWaiting();
-    const msgs = threads.reduce((s, t) => s + t.count, 0);
+    /* MESSAGES across the whole inbox, not rows. `t.count` is every row the view
+       filed under each person and it includes the silence detector's own notes,
+       so the headline read "N messages" over a total that had internal
+       bookkeeping in it. `realCount` is the view's message-only column where it
+       came back. `msgsExact` is false if any thread fell back, and the caption
+       says so rather than printing a total that is exact for some rows and not
+       others without distinguishing them. */
+    const msgs = threads.reduce((s, t) => s + realCount(t), 0);
+    const msgsExact = threads.every(figuresAreExact);
+    const internalTotal = threads.reduce((s, t) => s + (t.internalCount || 0), 0);
     const capNote = capped
       ? `<span class="t-warm">Only the newest ${num(THREAD_LIMIT)} threads were read, so this is not the whole inbox.</span>`
       : '';
@@ -1657,9 +1735,17 @@ SCREENS.conversations = async host => {
       const reply = t.awaiting
         ? `<span class="t-hot">Reply due.</span> The newest message is theirs, logged ${esc(ago(t.last_at))}, and nothing has gone back.`
         : t.lastIsMarker
-          ? `<span class="t-warm">Escalated for silence ${esc(ago(t.last_at))}.</span> The newest row in this thread `
-            + `is the detector’s own ${esc(SILENCE_MARKER)} note, not a message. The last real message was ours and `
-            + 'the customer has not answered it.'
+          ? `<span class="t-warm">${isMarkerText(t.last_message) ? `Escalated for silence ${esc(ago(t.last_at))}` : `An internal note was logged ${esc(ago(t.last_at))}`}.</span> The newest row in this thread `
+            + `is ${isMarkerText(t.last_message) ? `the detector’s own ${esc(SILENCE_MARKER)} note` : 'one of the dealership’s own internal rows'}, not a message. `
+            /* Was "The last real message was ours and the customer has not
+               answered it" — asserted flat, on every marker thread, with nothing
+               behind it. It is true of both live ones, and it is a claim about a
+               row this screen can now actually read: `last_msg_direction`. */
+            + (t.last_msg_direction === 'outbound'
+                ? `The last real message was ours, ${esc(ago(lastSaidAt(t)))}, and the customer has not answered it.`
+                : t.last_msg_direction === 'inbound'
+                  ? `The last real message was theirs, ${esc(ago(lastSaidAt(t)))}, and nothing has gone back.`
+                  : 'v_conversations returned no direction for the last message on this thread, so which side spoke last is not stated here.')
           : (realOutbound(t)
               ? '<span class="t-ok">No reply due.</span> The newest message in the thread is one the dealership sent.'
               : '<span class="t-muted">No reply due, and nothing has ever been sent to this contact either.</span>');
@@ -1685,9 +1771,13 @@ SCREENS.conversations = async host => {
                   did not come back rather than either word. */''}
             <div class="kpi-value sm" style="white-space:normal">${num(msgs)} ${plural(msgs, 'message', 'messages')}, <span title="${esc(leadWhy(t))}">${leadOf(t).state === 'matched' ? 'one customer' : 'one contact'}</span></div>
             <div class="kpi-sub" style="white-space:normal">
-              ${num(t.inbound)} from ${esc(who)}, ${num(realOutbound(t))} sent back${outboundIsFloor(t)
-                ? ` <span class="t-muted" title="${esc('v_conversations.outbound_count is ' + t.outbound + ' because it counts every row with direction \'outbound\', and the newest row here is the silence detector\'s ' + SILENCE_MARKER + ' marker, written with that direction before the detector was fixed. One marker is visible from the thread row and has been taken out; any older marker in this history is not, so this figure is a floor. Open the thread for the exact count.')}">(v_conversations says ${num(t.outbound)}; one of those is a silence marker, not a message)</span>`
-                : ''}, newest ${esc(ago(t.last_at))}.
+              ${num(realInbound(t))} from ${esc(who)}, ${num(realOutbound(t))} sent back${outboundIsFloor(t)
+                ? ` <span class="t-warm" title="${esc('v_conversations.outbound_count is ' + t.outbound + ' because it counts every row with direction \'outbound\', and the newest row here is the silence detector\'s ' + SILENCE_MARKER + ' marker, written with that direction before the detector was fixed. The view\'s msg_outbound_count column, which counts messages only, did not come back on this read — so one marker has been taken out here and any older marker in this history has not. This figure is a floor. Open the thread for the exact count.')}">(a floor — v_conversations says ${num(t.outbound)} and its message-only count did not load)</span>`
+                : (t.internalCount
+                    ? ` <span class="t-muted" title="${esc('v_conversations counts ' + t.count + ' rows for this contact and ' + t.internalCount + ' of them are the dealership\'s own internal notes — the silence detector\'s ' + SILENCE_MARKER + ' marker and rows like it. The figures here are msg_inbound_count and msg_outbound_count, which count only rows public.nexus_is_message() accepts.')}">(${num(t.internalCount)} further ${plural(t.internalCount, 'row is', 'rows are')} an internal note, not a message)</span>`
+                    : '')}${lastSaidAt(t)
+                ? `, newest ${esc(ago(lastSaidAt(t)))}`
+                : ', and nothing in it is a message'}.
               ${whole}One thread is not a sample, so nothing on this screen is averaged, ranked or shown as a share.
               ${capNote}${capNote && dropNote ? ' ' : ''}${dropNote}
               ${healthLine()}
@@ -1752,7 +1842,10 @@ SCREENS.conversations = async host => {
          that disagreed with the nav badge would be a worse problem than the one
          it fixed. */
       kpi('Conversations', num(threads.length),
-        `${num(msgs)} ${plural(msgs, 'message', 'messages')} logged`
+        `<span title="${esc(msgsExact
+            ? `Summed from v_conversations.msg_count, which counts only rows public.nexus_is_message() accepts.${internalTotal ? ` A further ${internalTotal} row${internalTotal === 1 ? '' : 's'} across this inbox ${internalTotal === 1 ? 'is' : 'are'} the dealership's own internal notes — the 12-hour silence detector's markers and rows like them — and ${internalTotal === 1 ? 'is' : 'are'} not counted here.` : ''}`
+            : 'At least one thread fell back to v_conversations.message_count, which counts every row filed under a contact including the dealership\'s own internal notes, because the message-only column did not come back on this read. This total therefore mixes two populations.')}">${num(msgs)} ${plural(msgs, 'message', 'messages')} logged</span>`
+        + (msgsExact ? '' : ' <span class="t-warm">(not all message-only)</span>')
         + (linked.length
           ? ` · <span class="t-warm" title="${esc(sameAsWhy(linked[0]))}">${num(threads.length)} rows, ${num(people)} people — `
             + `${num(linked.length / 2)} ${plural(linked.length / 2, 'pair is', 'pairs are')} one customer filed under two keys</span>`
@@ -2094,9 +2187,21 @@ SCREENS.conversations = async host => {
                      open the thread. It is now labelled as what it is, and the
                      marker's boilerplate is not repeated as message text. */
                   ? `<span class="material-symbols-outlined t-warm" style="font-size:14px;vertical-align:-2px" aria-hidden="true"
-                           title="${esc('The newest row on this thread is the 12-hour silence detector’s own ' + SILENCE_MARKER + ' marker on the system channel. It is not a message to or from the customer.')}">notifications_paused</span>
-                     <span class="t-warm">Escalated for silence</span>
-                     <span class="t-muted">— no message either way since ${esc(ago(t.last_at))}</span>`
+                           title="${esc(isMarkerText(t.last_message)
+                             ? 'The newest row on this thread is the 12-hour silence detector’s own ' + SILENCE_MARKER + ' marker. It is not a message to or from the customer, and public.nexus_is_message() rejects it.'
+                             : 'The newest row on this thread is one of the dealership’s own internal rows — public.nexus_is_message() rejects it, so v_conversations.last_msg_at skips past it. Its body is not the silence detector’s, so what wrote it is not named here.')}">notifications_paused</span>
+                     <span class="t-warm">${isMarkerText(t.last_message) ? 'Escalated for silence' : 'Newest row is an internal note'}</span>
+                     ${/* `t.last_at` is the MARKER's own timestamp, and this
+                          sentence is about the last MESSAGE — two moments the
+                          detector's twelve hours apart. Printing the marker time
+                          here understated Siva Thangavelu's silence by half a
+                          day: "no message either way since 5 d ago" under a
+                          thread whose last real message was 6 d ago. It reads
+                          `last_msg_at` from the view now, and where that is null
+                          the thread holds no message at all and says so. */''}
+                     <span class="t-muted">— ${lastSaidAt(t)
+                       ? `no message either way since <span title="${esc(stamp(lastSaidAt(t)))}">${esc(ago(lastSaidAt(t)))}</span>`
+                       : 'and nothing in this thread is a message — every row in it is an internal note'}</span>`
                   : `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px"
                       aria-hidden="true"
                       title="${esc(t.last_direction === 'inbound' ? 'Newest message came from them' : (t.last_direction === 'outbound' ? 'Newest message was sent by us' : 'communication_logs recorded no direction on the newest message'))}"
@@ -2106,7 +2211,14 @@ SCREENS.conversations = async host => {
             </div>
             <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
               <span class="cell-sub" title="${esc(stamp(t.last_at))}">${esc(ago(t.last_at))}</span>
-              ${t.awaiting ? pill('Reply due', 'hot') : `<span class="cell-sub">${num(t.count)} msg</span>`}
+              ${/* "msg" was v_conversations.message_count, which counts every
+                    row including the detector's notes — so a thread the badge
+                    called 17 msg sat directly under a line saying the newest row
+                    was not a message. It is the message-only count now, with the
+                    rows it leaves out named in the title. */''}
+              ${t.awaiting ? pill('Reply due', 'hot') : `<span class="cell-sub" title="${esc(figuresAreExact(t)
+                  ? `v_conversations.msg_count — rows public.nexus_is_message() accepts.${t.internalCount ? ` ${t.internalCount} further row${t.internalCount === 1 ? '' : 's'} on this thread ${t.internalCount === 1 ? 'is' : 'are'} an internal note and ${t.internalCount === 1 ? 'is' : 'are'} not counted here.` : ''}`
+                  : 'v_conversations.message_count. That column counts every row filed under this contact, internal notes included; the message-only count did not come back on this read.')}">${num(realCount(t))} msg</span>`}
               ${t.identified === 'lead' ? '' : `<span class="chip" title="${esc(id.label)} — ${esc(identNote(t))}">${esc(id.short)}</span>`}
               ${t.siblings.length ? `<span class="chip" title="${esc(sameAsWhy(t))}">Linked thread</span>` : ''}
             </div>
@@ -2219,30 +2331,48 @@ SCREENS.conversations = async host => {
     if (t.lastIsMarker) {
       out.push(`<div class="banner warm">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">notifications_paused</span>
-        <div>The newest row on this thread is not a message. The 12-hour silence detector wrote its
-        ${esc(SILENCE_MARKER)} marker at ${esc(stamp(t.last_at))} because the customer had not answered our last
-        message, and escalated the thread to a person on Slack at the same time. It is on the
-        <span class="mono">system</span> channel and is shown below as an internal note, never as an outbound
-        bubble.${outboundIsFloor(t)
+        ${/* Every clause here used to be asserted flat. `lastIsMarker` is now
+              true of ANY internal row — the view answers it with
+              last_msg_at ≠ last_message_at — so naming the silence detector, its
+              reason, its Slack escalation and its channel on every one of them
+              would be four guesses about a row this screen has only the text of.
+              They are stated where the text is the detector's and withheld where
+              it is not. */''}
+        <div>The newest row on this thread is not a message. ${isMarkerText(t.last_message)
+          ? `The 12-hour silence detector wrote its ${esc(SILENCE_MARKER)} marker at ${esc(stamp(t.last_at))} because the customer had not answered our last
+             message, and escalated the thread to a person on Slack at the same time. It is on the
+             <span class="mono">system</span> channel and is shown below as an internal note, never as an outbound bubble.`
+          : `One of the dealership’s own internal rows was written at ${esc(stamp(t.last_at))} — v_conversations counts it in
+             message_count and dates last_message_at from it, and public.nexus_is_message() does not accept it as a message.
+             Its body is not the silence detector’s, so what wrote it is not named here; it is shown below as an internal
+             note rather than as a bubble.`}${t.last_direction === 'outbound'
           ? ' It was written with direction ‘outbound’, which is why v_conversations counts it in outbound_count and reads this thread as answered.'
           : ''}
         Nothing in v_needs_attention covers this thread — unanswered_chat requires awaiting_reply, and this row
         makes that false — so this screen and the strip above it are the only things reporting it.</div>
       </div>`);
     }
-    /* Both branches below read v_conversations' inbound_count and outbound_count,
-       and outbound_count includes the marker. `realOutbound` takes out the one
-       marker visible from the thread row, so a thread whose ONLY outbound row is
-       a silence marker now correctly says nothing was ever sent to the contact
-       rather than suppressing that banner on the strength of a note we wrote to
-       ourselves. Corrected 1 Sep 2026. */
+    /* Both branches below are statements about MESSAGES, and v_conversations'
+       inbound_count / outbound_count are counts of rows — outbound_count has the
+       silence markers in it. `realOutbound` and `realInbound` read the view's
+       message-only columns, so a thread whose ONLY outbound row is a silence
+       marker correctly says nothing was ever sent to the contact rather than
+       suppressing that banner on the strength of a note we wrote to ourselves.
+       Corrected 1 Sep 2026; made exact rather than a floor the same evening,
+       when nexus_is_message() moved into the view.
+
+       `inbound` was still the raw column until then, which was the same defect
+       standing on the other foot: nothing on file is an inbound marker today,
+       but the test that decides whether to tell a rep "every message here came
+       from them" should not depend on that staying true. */
     const outReal = realOutbound(t);
-    if (t.inbound === 0 && outReal > 0) {
+    const inReal = realInbound(t);
+    if (inReal === 0 && outReal > 0) {
       out.push(`<div class="banner info">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">send</span>
         <div>Only outbound messages are logged for this contact, so this thread shows one side of the conversation.</div>
       </div>`);
-    } else if (outReal === 0 && t.inbound > 0) {
+    } else if (outReal === 0 && inReal > 0) {
       /* This was a red banner reading like a broken workflow. It is usually the
          opposite. The bot answers automatically only when the number is already
          in `leads` or the message carries a dealership keyword; everything else
@@ -2595,11 +2725,26 @@ SCREENS.conversations = async host => {
         + 'exact keys were matched. Merging on those digits would have put two customers’ histories in this '
         + 'pane.</span></div>'
       : '';
+    /* Counted from the rows in hand rather than described from memory. Until
+       1 Sep 2026 this sentence called every excluded row "the silence detector's
+       own marker on the system channel" — two claims about rows it had not
+       looked at. A row is internal by its channel, its direction OR its body,
+       and only the body says which workflow wrote it. */
+    const silenceN = silenceCount(markers);
+    const otherN = markers.length - silenceN;
+    const markerChannels = [...new Set(markers.map(m => str(m.channel) || 'no channel recorded'))];
     const markerNote = markers.length
       ? `<div style="margin-top:6px"><span class="t-muted">${num(markers.length)} of these `
-        + `${plural(markers.length, 'row is', 'rows are')} the silence detector’s own ${esc(SILENCE_MARKER)} `
-        + `${plural(markers.length, 'marker', 'markers')} on the <span class="mono">system</span> channel, shown as `
-        + 'internal notes. They are not messages to or from the customer and are not counted in the inbound and '
+        + `${plural(markers.length, 'row is', 'rows are')} the dealership’s own internal `
+        + `${plural(markers.length, 'note', 'notes')}`
+        + (silenceN === markers.length
+            ? ` — the silence detector’s ${esc(SILENCE_MARKER)} ${plural(markers.length, 'marker', 'markers')}`
+            : silenceN
+              ? ` — ${num(silenceN)} the silence detector’s ${esc(SILENCE_MARKER)} ${plural(silenceN, 'marker', 'markers')} and ${num(otherN)} written by something this screen cannot name from the row`
+              : ' — written by something this screen cannot name from the row')
+        + `, on the <span class="mono">${esc(markerChannels.join('</span>, <span class="mono">'))}</span> `
+        + `${plural(markerChannels.length, 'channel', 'channels')}, shown as internal notes. `
+        + 'They are not messages to or from the customer and are not counted in the inbound and '
         + 'outbound figures above.</span></div>'
       : '';
 
@@ -2623,11 +2768,11 @@ SCREENS.conversations = async host => {
              prefix stripped off the front of the text: keeping it would repeat
              in the note what the note already says. */
           if (isInternalRow(m)) {
-            const note = text.replace(SILENCE_MARKER, '').trim();
+            const note = text.startsWith(SILENCE_MARKER) ? text.replace(SILENCE_MARKER, '').trim() : text;
             return `${sep}<div class="cell-sub" style="text-align:center;margin:8px 20px;white-space:normal">
               <span class="material-symbols-outlined t-warm" style="font-size:14px;vertical-align:-2px" aria-hidden="true">notifications_paused</span>
               <span class="t-warm">Internal note</span>
-              <span class="t-muted">— ${note ? esc(note) : esc('the silence detector logged an escalation and recorded no detail')}.
+              <span class="t-muted">— ${note ? esc(note) : esc(text.startsWith(SILENCE_MARKER) ? 'the silence detector logged an escalation and recorded no detail' : 'this row carries no text at all')}.
               Written by the dealership’s own workflow on the <span class="mono">${esc(str(m.channel) || 'unrecorded channel')}</span>
               channel with direction <span class="mono">${esc(low(m.direction) || 'not recorded')}</span>; it was never sent to the customer.</span>
               <span class="t-muted" title="${esc(stamp(m.created_at))}"> ${esc(ago(m.created_at))}</span>

@@ -52,7 +52,27 @@
       06:40:38 on 26 Aug and its lead row was minted 74 seconds later at 06:41:52
       with eight inbound messages already on file, so the trigger correctly
       declined to call that a response time. What a null rules out is a MEASURED
-      wait. It never means fast. */
+      wait. It never means fast.
+
+   4. THE TIMELINE DREW INTERNAL ROWS AS MESSAGES (added 1 Sep 2026). Every row
+      the message read returned went into the timeline as an event coloured by
+      `tone(c.direction)` and chipped with `c.channel`. A silence marker carries
+      direction 'outbound', so the newest thing a rep saw before phoning a
+      customer was a green outbound event reading "[SILENCE-ESCALATED] Silent for
+      12h since …" — the dealership's own note that nobody was in touch, drawn in
+      the same shape and colour as the messages we actually sent. It is the same
+      defect screens/customers.js had in its last-contact figure and
+      screens/conversations.js had in its chat bubbles, arriving in the third
+      place none of the three shared a definition.
+
+      They share one now: `lib/comm-events.js`, which mirrors
+      `public.nexus_is_message()` — the database function `nexus_is_reply` is a
+      restriction of, so the row this drawer refuses to call a message is exactly
+      the row the response-time trigger above refuses to call a reply. Internal
+      rows are still SHOWN, because they are part of what happened to this lead
+      and hiding them would be a different lie; they are labelled and they are
+      not coloured by direction. */
+import { SILENCE_MARKER, isInternalRow, isMessageRow } from './comm-events.js';
 import { db, dbWrite } from './data.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
@@ -313,11 +333,28 @@ async function leadDrawer(lead) {
      FAILED or SUCCESS according to which writer produced it, and in both cases
      the work went out half-done. lib/health.js decides that, and its wording
      goes on the row so a rep can see which. */
+  /* A communication_logs row is a message to or from this customer, or it is one
+     of the dealership's own internal notes written ABOUT them — see §4 above and
+     lib/comm-events.js. Only the first kind may be coloured by its direction or
+     called a message; the second is labelled as what it is and left neutral, so
+     an escalation the dealership wrote to itself never reads as something the
+     dealership said to the customer. */
   const events = [
-    ...comms.map(c => ({
+    ...comms.map(c => (isMessageRow(c) ? {
       at: c.created_at, kind: c.channel || 'message',
       tone: tone(c.direction) || 'neutral',
       note: '', title: `communication_logs.direction on this row reads ${String(c.direction || '(empty)')}.`,
+      text: c.message,
+    } : {
+      at: c.created_at, kind: String(c.channel || 'internal'),
+      tone: 'neutral',
+      note: 'Internal note',
+      title: 'Not a message to or from this customer. public.nexus_is_message() rejects this row — it is on '
+        + `channel ${String(c.channel || '(empty)')} with direction ${String(c.direction || '(empty)')}`
+        + `${String(c.message || '').startsWith(SILENCE_MARKER) ? `, and its body is the 12-hour silence detector's ${SILENCE_MARKER} marker, written because nobody was in touch` : ''}`
+        + '. The same predicate is why nexus_is_reply() does not count it as a reply, so it never set this '
+        + 'lead\'s response time either. It is shown because it is part of what happened to this lead, not '
+        + 'because anybody said it.',
       text: c.message,
     })),
     ...audit.map(a => {
@@ -362,8 +399,18 @@ async function leadDrawer(lead) {
        person is filed under — the rep sees messages and concludes that is
        everything. Each of those is a different sentence because each leads
        somewhere different. */
+    /* Counted once, used twice below. A history made entirely of internal notes
+       is not an empty history and it is not a conversation either, and the
+       timeline alone cannot say which — every row in it is labelled, but a rep
+       scanning a populated-looking pane reads "we have been in touch". */
+    const commInternal = comms.filter(isInternalRow).length;
     const gaps = [
       !comm.ok ? `messages ${comm.skipped ? 'were not read at all' : `could not be read (${comm.err})`}` : '',
+      (comm.ok && comms.length && commInternal === comms.length)
+        ? `nothing logged under this lead is a message — all ${comms.length} ${comms.length === 1 ? 'row is one of' : 'rows are'} the dealership's own internal ${comms.length === 1 ? 'note' : 'notes'}, written about this customer rather than to or from them`
+        : (commInternal
+            ? `${commInternal} of the ${comms.length} logged ${comms.length === 1 ? 'row' : 'rows'} ${commInternal === 1 ? 'is an internal note' : 'are internal notes'} rather than a message, and ${commInternal === 1 ? 'is' : 'are'} labelled as such below`
+            : ''),
       !aud.ok ? `workflow activity ${aud.skipped ? 'was not read at all' : `could not be read (${aud.err})`}` : '',
       commCapped ? `the message read stopped at its ${EVENT_LIMIT}-row ceiling, so older messages are missing` : '',
       auditCapped ? `the workflow-activity read stopped at its ${EVENT_LIMIT}-row ceiling` : '',
