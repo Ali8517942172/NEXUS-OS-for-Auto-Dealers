@@ -126,7 +126,7 @@ import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
-import { aed, ago, dubaiDate, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiDate, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -140,6 +140,40 @@ const PROFILE_LIMIT = 1000;
 const CONTACT_LIMIT = 2000;
 const SOURCE_LIMIT = 2000;
 const MSG_LIMIT = 50;
+
+/* THE SILENCE MARKER, AND WHY IT MAY NOT DATE A CONTACT (1 Sep 2026)
+   -------------------------------------------------------------------------
+   The 12-hour silence detector writes a communication_logs row whose message
+   begins `[SILENCE-ESCALATED]` when a lead has stopped answering. It writes that
+   row BECAUSE nobody was in touch. This screen took "last contact" from the
+   newest row it had read, marker included, so Siva Thangavelu's pane dated his
+   last contact from the 26 Aug 19:03 marker while the newest thing actually said
+   to or by him was 26 Aug 06:12 — the moment the system recorded that he had NOT
+   been contacted, printed as the moment he was. Found by the journey regression
+   on 1 Sep 2026; live on shabbir53ujjainwala@gmail.com too (marker 31 Aug 17:00,
+   newest message 31 Aug 04:37) and invisible there only because ago() rounded
+   both to "1 d ago" — and, read again at 19:20 UTC the same evening, invisible on
+   Siva as well, because by then both of his rounded to "6 d ago". A defect that
+   hides itself for most of every day is still the defect.
+
+   The prefix tested is `[SILENCE-` and not the full `[SILENCE-ESCALATED]`, and it
+   is tested WITHOUT trimming, because v_customer_360 excludes these rows with
+   `message !~~ '[SILENCE-%'` and the point of this predicate is that the two
+   sides select the same rows. Trimming here would disagree with the view on a row
+   with leading whitespace, and the caption below would then claim an agreement
+   that did not hold. Read 1 Sep 2026: 99 communication_logs rows, 2 markers, 0
+   with leading whitespace and 0 with a NULL message, so the two predicates do
+   select identically today — but the caption states what it measured against the
+   view's own last_contact_at rather than assuming it.
+
+   conversations.js:325 tests the same rows with the full marker string and a
+   trimStart(). It is answering a different question — is THIS row a message —
+   and it is not this file's to change. */
+const SILENCE_PREFIX = '[SILENCE-';
+const isMarkerRow = r => {
+  const m = r && r.message;
+  return typeof m === 'string' && m.startsWith(SILENCE_PREFIX);
+};
 
 /* v_customer_directory is read with select=* on purpose, and its columns are now
    known rather than guessed: id, name, email, phone, source_records,
@@ -503,7 +537,7 @@ SCREENS.customers = async host => {
     db(`v_customer_360?select=*&order=lifetime_value_aed.desc,lead_count.desc&limit=${VIEW_LIMIT}`),
     db(`customer_360_profiles?select=${PROFILE_COLS}&order=last_synced_at.desc.nullslast&limit=${PROFILE_LIMIT}`),
     db(`whatsapp_contacts?select=${CONTACT_COLS}&limit=${CONTACT_LIMIT}`),
-    db(`leads?select=name,email,phone,created_at&limit=${SOURCE_LIMIT}`),
+    db(`leads?select=id,name,email,phone,created_at&limit=${SOURCE_LIMIT}`),
     db(`purchase_history?select=*&limit=${SOURCE_LIMIT}`),
     db(`workflow_registry?select=id,name,audit_name,audit_aliases,writes_audit_log&name=ilike.${AGG_MATCH}`),
     db(`v_workflow_health?select=${HEALTH_COLS}&name=ilike.${AGG_MATCH}`),
@@ -642,6 +676,51 @@ SCREENS.customers = async host => {
     if (!o.basis) o.basis = 'The nightly aggregation wrote a profile for this address, but there is no lead and no purchase behind it.';
   });
 
+  /* WHETHER A CONTACT IN THE LIST BELOW IS ACTUALLY A LEAD — and lead 35 is why
+     this check exists. v_customer_directory and v_customer_360 both start from
+     `WHERE email IS NOT NULL AND email <> ''` (pg_get_viewdef, read 1 Sep 2026),
+     so a lead whose email column holds the empty string is in neither view and
+     this screen's spine cannot carry them. Lead 35, Effco Contracting llc
+     (+971505433953), is that row: DISQUALIFIED in `leads`, ten messages in
+     communication_logs under 111948809162873@lid, rendered on Leads in the same
+     session, and absent from Customers altogether — the KPI reads "Customers 2"
+     where three people exist.
+
+     Repairing that means changing the views, which is not this file's to do.
+     What IS this file's is what it says meanwhile. His whatsapp_contacts row
+     falls through to the list below, which gave as its reason "There is no lead
+     and no purchase for them, so they are not a customer" under a column headed
+     "Why this is not a customer" — a flat assertion about somebody the Leads
+     screen calls a lead four clicks away. A screen may be missing a customer; it
+     may not deny that they are one. The leads read is already on this page, so
+     the claim is checked before it is made.
+
+     Matched on the same last-nine-digit rule the rest of the screen uses. Where
+     two leads answer to the same nine digits the row says that instead of naming
+     one: a suffix collision is what lib/identity.js refuses for, and it is not
+     going to be settled here. */
+  const leadByKey = new Map();
+  const leadClash = new Set();
+  (leadRows || []).forEach(l => {
+    [l.email, l.phone].forEach(val => {
+      const n = normalizeKey(val);
+      if (!n.usable || n.weak) return;
+      const seen = leadByKey.get(n.canonical);
+      if (!seen) leadByKey.set(n.canonical, l);
+      else if (str(seen.id) !== str(l.id)) leadClash.add(n.canonical);
+    });
+  });
+  const leadFor = (...vals) => {
+    for (const val of vals) {
+      const n = normalizeKey(val);
+      if (!n.usable || n.weak) continue;
+      if (leadClash.has(n.canonical)) return { ambiguous: true };
+      const l = leadByKey.get(n.canonical);
+      if (l) return { lead: l };
+    }
+    return null;
+  };
+
   contacts.forEach((w, i) => {
     const linked = norm(w.lead_email);
     const hit = linked && spine ? spine.get(linked) : null;
@@ -650,7 +729,21 @@ SCREENS.customers = async host => {
     const lab = contactLabel(w);
     const o = other(key, { name: lab.name, email: str(w.lead_email), phone: str(w.phone), chatId: str(w.chat_id) });
     o.sources.add('whatsapp_contacts');
-    o.basis = 'Messaged this WhatsApp number. There is no lead and no purchase for them, so they are not a customer.';
+    const asLead = leadRows ? leadFor(w.lead_email, w.phone, w.chat_id) : null;
+    const leadEmail = asLead && asLead.lead ? norm(asLead.lead.email) : '';
+    const leadInList = !!(leadEmail && spine && spine.get(leadEmail));
+    o.leadRef = asLead || null;
+    o.basis = !leadRows
+      ? 'Messaged this WhatsApp number. The leads table could not be read here, so whether a lead exists for them is not known and nothing is claimed about it.'
+      : asLead && asLead.ambiguous
+        ? 'Messaged this WhatsApp number. More than one lead answers to the last nine digits of this number, so which lead this is — or whether it is any of them — cannot be told from here, and no claim either way is made.'
+        : !asLead
+          ? 'Messaged this WhatsApp number. There is no lead and no purchase for them, so they are not a customer.'
+          : !leadEmail
+            ? `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'}${str(asLead.lead.name) ? ', ' + str(asLead.lead.name) : ''}, whose email column is empty. v_customer_directory and v_customer_360 both require leads.email <> '', so the customer list cannot carry them and they arrive here instead. They are not on this list because they are not a customer; they are on it because a view drops a lead with no email address.`
+            : leadInList
+              ? `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'} under ${leadEmail} — and that address is a customer in the list above. This messaging row carries no lead_email of its own, so it could not be attached to them; it is the same person's WhatsApp channel, shown here only because the link is missing on the row.`
+              : `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'} under ${leadEmail} — and that address is not in the customer list above. Why it is not is not answerable from this screen, and no claim is made that this person is not a customer.`;
     o.idBasis = lab.basis;
     const m = n0(w.message_count);
     if (m != null) o.messages = (o.messages || 0) + m;
@@ -668,11 +761,21 @@ SCREENS.customers = async host => {
     return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
   })();
   const withProfile = customers.filter(c => c.profile).length;
+  /* Leads the spine is structurally unable to carry: `leads.email` empty or
+     null, which both v_customer_directory and v_customer_360 filter out. Counted
+     from the leads read this screen already issues, so the KPI can say how many
+     people it is not showing instead of presenting its total as everybody. */
+  const emailLessLeads = leadRows ? leadRows.filter(l => !str(l.email)).length : 0;
   /* A profile row that belongs to nobody in the directory is the aggregation
      having built a "customer" out of somebody who never was one. Counted and
      stated next to the total rather than quietly averaged away. */
   const orphanProfiles = spine ? profiles.filter(p => !spine.get(norm(p.email))).length : null;
   const otherList = [...others.values()];
+  /* Not a stranger. A row in the list below whose number IS a lead is a customer
+     the two views dropped on the `email <> ''` guard — lead 35 tonight — and the
+     count is stated on the card rather than left for a reader to find one row at
+     a time. */
+  const otherWithLead = otherList.filter(o => o.leadRef && o.leadRef.lead).length;
   const linkedContacts = customers.reduce((a, c) => a + c.contacts.length, 0);
   const collapsed = customers.reduce((a, c) => a + c.dupes, 0);
   /* Counted after every source has been hung off the spine, so it is the number
@@ -760,6 +863,15 @@ SCREENS.customers = async host => {
            by a screen whose whole argument is that provenance travels with the
            figure. It travels here. */
         `<span class="t-muted" title="${esc(spineNote)}">${esc(spineSource)} · a lead or a purchase on file</span>
+         ${emailLessLeads
+            /* The sub-line read "a lead or a purchase on file" flat, and it is
+               not: both views the spine is built from require
+               `email IS NOT NULL AND email <> ''`, so a lead with no email
+               address is on file and not on this screen. Live 1 Sep 2026 that is
+               lead 35, and this figure is the count that stops "Customers 2"
+               being read as "two people have ever enquired". */
+            ? `<div><span class="t-warm">${num(emailLessLeads)} lead${emailLessLeads === 1 ? '' : 's'} on file ${emailLessLeads === 1 ? 'is' : 'are'} not counted here — ${emailLessLeads === 1 ? 'its' : 'their'} email column is empty and both views require <span class="mono">email &lt;&gt; ''</span>. ${emailLessLeads === 1 ? 'It is' : 'They are'} listed at the foot of this page instead.</span></div>`
+            : ''}
          <div>${noPhone
             ? `<span class="t-warm">${num(noPhone)} with no phone number on any source</span>`
             : customers.length === 1
@@ -778,6 +890,13 @@ SCREENS.customers = async host => {
         waErr
           ? '<span class="t-warm">whatsapp_contacts could not be read, so this is incomplete</span>'
           : `<span class="t-muted">${num(contacts.length)} whatsapp_contacts row${contacts.length === 1 ? '' : 's'} read · ${num(linkedContacts)} linked to a customer</span>`
+            /* The tile's own label is a claim about every row it counts, and on
+               1 Sep 2026 one of them is lead 35. The count that contradicts the
+               label travels with it rather than being left in the table below
+               for whoever scrolls that far. */
+            + (otherWithLead
+                ? `<div><span class="t-warm">${num(otherWithLead)} of ${otherList.length === 1 ? 'it' : 'them'} ${otherWithLead === 1 ? 'has' : 'have'} a lead on file and ${otherWithLead === 1 ? 'is' : 'are'} here only because both customer views require <span class="mono">leads.email &lt;&gt; ''</span></span></div>`
+                : '')
             + (otherList.length
                 ? ''
                 /* Worth saying out loud rather than leaving as a bare 0: the 136
@@ -1023,10 +1142,13 @@ SCREENS.customers = async host => {
     $('custList').innerHTML = (rows.length
       ? rows.map(c => {
           const ltv = n0(c.view && c.view.lifetime_value_aed);
-          /* v_customer_360 COALESCEs its sum to 0, so an enquiry-only customer
-             arrived in this money column as "AED 0" — indistinguishable from a
-             real sale at no charge. On 1 Sep 2026 that was every row on the
-             screen: purchase_history holds no rows at all. */
+          /* Until 1 Sep 2026 v_customer_360 COALESCE’d its sum to 0, so an
+             enquiry-only customer arrived in this money column as "AED 0" —
+             indistinguishable from a real sale at no charge, and on that morning
+             that was every row on the screen. The view now returns null instead,
+             so the coercion is gone at source; the hasPurchase guard stays,
+             because a 0 arriving here again from any source must still not be
+             printed as money somebody spent. */
           const ltvCount = n0(c.view && c.view.purchase_count);
           const hasPurchase = ltvCount != null ? ltvCount > 0 : c.purchases.length > 0;
           const basis = buyErr
@@ -1109,7 +1231,8 @@ SCREENS.customers = async host => {
        therefore sent to PostgREST as a LIKE pattern, and a near-neighbour's
        messages come back inside their history — the same defect as F4 on the
        leads read, which likePattern() and grabExact() already close. The module
-       is not mine to change and its 247 assertions pass; the read is defended
+       is not mine to change and its assertions pass — 305 of them as of 1 Sep
+       2026, after this afternoon's suffix-collision fix; the read is defended
        here instead, by re-testing every row against the same canonical rule the
        filter was built from, and by saying on screen when a row had to be
        dropped rather than assuming none ever will be. */
@@ -1224,19 +1347,30 @@ SCREENS.customers = async host => {
     /* MESSAGES. v_customer_360.message_count is deliberately NOT preferred here,
        and this is the half of the identity fix that had not landed: the widened
        read was already in place below while the number printed above it still
-       came from the view. The view counts
-       `WHERE lower(c.lead_email) = i.email` (architecture/schema.sql:1147-1152) —
-       the single key shape whose insufficiency is the reason lib/identity.js
-       exists. Read on 1 Sep 2026 it reports 15 for shabbir53ujjainwala@gmail.com
-       while communication_logs holds 29 rows for him across three keys (15 under
-       the address, 12 under +918517942172@whatsapp.lead, 2 under his LID), and 3
-       for +971547484167@whatsapp.lead against 8. The screen showed the 15 over a
+       came from the view, which then counted `WHERE lower(c.lead_email) = i.email`
+       — the single key shape whose insufficiency is the reason lib/identity.js
+       exists. Read that way earlier on 1 Sep 2026 it reported 15 for
+       shabbir53ujjainwala@gmail.com while communication_logs holds 29 rows for
+       him across three keys (15 under the address, 12 under
+       +918517942172@whatsapp.lead, 2 under his LID), and 3 for
+       +971547484167@whatsapp.lead against 8. The screen showed the 15 over a
        section listing all of them.
 
-       So the figure is the one the widened read returned, and the view's is kept
-       only to say by how much it is behind. Same for the last-contact time: the
-       view's max() is over the same email-only subquery, so it is taken from the
-       newest row actually read whenever there is one. */
+       That gap is closed. The view was rebuilt later the same day and expands the
+       key shapes itself — pg_get_viewdef read 1 Sep 2026 19:0x UTC shows the
+       `@c.us`, `+digits@whatsapp.lead` and whatsapp_contacts.chat_id expansion —
+       and it now reports 28 and 7 against this screen's 29 and 8. The whole of
+       what is left is the two `[SILENCE-` markers it excludes and this screen
+       counts. The figure printed is still the widened read's rather than the
+       view's, because these are the rows the Recent messages section below
+       lists, and a total that does not match the list under it cannot be checked
+       by the person reading it; the view's figure is now a check on it and no
+       longer a correction to it.
+
+       The last-contact time is a DIFFERENT question and no longer follows the
+       count. The view's max() excludes the markers; this screen's was the newest
+       row of any kind, which is how a marker came to date a contact. See
+       SILENCE_PREFIX at the top of this file. */
     const viewMsgs = n0(v.message_count);
     const commCount = comms.rows ? comms.rows.length : null;
     /* The cap is on what the DATABASE returned, not on what survived the
@@ -1267,7 +1401,57 @@ SCREENS.customers = async host => {
           ? ` — and any WhatsApp address whose number ends ${ident.suffix}`
           : ''}.`
       : '';
-    const lastContact = (comms.rows && comms.rows.length && comms.rows[0].created_at) || null;
+    /* The rows are ordered created_at.desc by the read and the ownership
+       re-check preserves that order, so [0] of each list is the newest of its
+       kind. `lastContact` is the newest row that is a MESSAGE; `newestRow` is
+       the newest row of any kind, which is what this screen used to date the
+       last contact from and is kept only so the caption can name what it is not
+       using. Dropping a day off a figure a rep read yesterday without saying so
+       would be its own small dishonesty. */
+    const markerRows  = (comms.rows || []).filter(isMarkerRow);
+    const contactRows = (comms.rows || []).filter(r => !isMarkerRow(r));
+    const lastContact = (contactRows.length && contactRows[0].created_at) || null;
+    const newestRow   = (comms.rows && comms.rows.length && comms.rows[0].created_at) || null;
+    const datedFromMarker = !!(newestRow && lastContact !== newestRow);
+    /* Checked, not assumed. Both sides now exclude the markers, so they ought to
+       agree — and "ought to" is exactly the kind of claim this file is not
+       allowed to print. The two timestamps are compared and whichever answer
+       comes back is what the caption says. */
+    const viewLast  = str(v.last_contact_at) || null;
+    const lastAgree = !!(lastContact && viewLast
+      && Date.parse(lastContact) === Date.parse(viewLast));
+    /* Two figures over two populations, and the difference stated on the one
+       that has it. The count includes the markers because the Recent messages
+       section below lists them; the timestamp excludes them because a marker is
+       not contact. Until 1 Sep 2026 the caption disclosed the first difference
+       and not the second, so "Messages logged 8 · last contact 5 d ago" drew its
+       two halves from two different populations with one explanation between
+       them, and the half that was wrong was the half nobody had been told
+       about. */
+    const contactNote = (() => {
+      const bits = [];
+      if (markerRows.length) {
+        bits.push(`${esc(String(markerRows.length))} of those ${markerRows.length === 1 ? 'rows is' : 'rows are'} the 12-hour silence detector’s own ${esc(SILENCE_PREFIX)}…] marker, written because nobody was in touch`
+          + (datedFromMarker
+              ? `, and the newest row here is one of them — so the last contact above is dated ${esc(dubaiStamp(lastContact))}, the newest row that is a message, and not ${esc(dubaiStamp(newestRow))}, the marker, which this screen printed until 1 Sep 2026 and which would read ${esc(ago(newestRow))}`
+              : '')
+          + '.');
+      } else if (datedFromMarker) {
+        /* Cannot happen while the only thing filtered out is a marker. Reported
+           rather than assumed away, for the same reason commsForeign is. */
+        bits.push(`The newest row read is not the row this contact time is taken from, and it is not a ${esc(SILENCE_PREFIX)}…] marker — something else is being excluded and this screen cannot say what.`);
+      }
+      if (lastContact && viewLast) {
+        bits.push(lastAgree
+          ? 'v_customer_360.last_contact_at is the same moment, so Customer 360 and this screen date the last contact identically.'
+          : `v_customer_360.last_contact_at is ${esc(dubaiStamp(viewLast))}, a different moment. Both sides exclude the ${esc(SILENCE_PREFIX)} rows, so the markers are not the reason for this one and this screen cannot say what is.`);
+      } else if (lastContact && c.view && viewLast == null) {
+        bits.push('v_customer_360 has a row for this customer but no last_contact_at on it, so there is nothing to check this time against.');
+      }
+      if (!bits.length) return '';
+      const bad = !!(lastContact && viewLast && !lastAgree) || (!markerRows.length && datedFromMarker);
+      return `<div><span class="${bad ? 't-warm' : 't-muted'}">${bits.join(' ')}</span></div>`;
+    })();
     const msgSub = commCount == null
       ? (comms.err
           ? `<span class="t-warm">communication_logs could not be read — ${esc(comms.err)}</span>`
@@ -1280,35 +1464,45 @@ SCREENS.customers = async host => {
       : `<span class="t-muted">${msgCapped
             ? `At least ${esc(String(MSG_LIMIT))} — the read is capped there, so this is a floor`
             : `Counted from communication_logs across ${esc(String(commsFilter.keys.length))} recorded key${commsFilter.keys.length === 1 ? '' : 's'}${commsFilter.patterns.length ? ' and the last-nine-digit rule the backend matches on' : ''}`}${
-            lastContact ? ` · last contact ${esc(ago(lastContact))}` : ''}</span>`
+            lastContact
+              ? ` · last contact ${esc(ago(lastContact))}`
+              : markerRows.length
+                ? ` · no contact on record — every row read is a ${esc(SILENCE_PREFIX)}…] marker, and those are written because nobody was in touch`
+                : ''}</span>`
+        + contactNote
         + commsForeign
         + (viewMsgs == null
             ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
             : msgCapped || viewMsgs === commCount
               ? ''
-              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}, ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'below' : 'above'} the figure above. Since 1 Sep 2026 the view expands the same key shapes this screen does, so the remaining gap is the internal markers: it excludes rows whose message begins [SILENCE-, which are written because nobody was in touch and are not messages to or from the customer. This screen counts them. Neither number is wrong; they are answering different questions.</span></div>`);
+              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}, ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'below' : 'above'} the figure above. Since 1 Sep 2026 the view expands the same key shapes this screen does, so the remaining gap is the internal markers: it excludes rows whose message begins [SILENCE-, which are written because nobody was in touch and are not messages to or from the customer. This screen counts them, because they are rows the Recent messages section below lists — but it no longer dates the last contact from one. Neither number is wrong; they are answering different questions.</span></div>`);
 
     /* LIFETIME VALUE, and what the view's figure actually is.
 
-       v_customer_360 computes it as `COALESCE(sum(DISTINCT p.amount_aed), 0)`
-       over a join that fans out across leads as well as purchases
-       (architecture/schema.sql:1143-1144). The DISTINCT is not gratuitous — it
-       is what stops a customer with three leads having each purchase counted
-       three times — but it de-duplicates by AMOUNT rather than by purchase, so
-       two purchases at the same price collapse into one while the
-       `count(DISTINCT p.id)` printed beside it counts both. The figure is
-       therefore the sum of a customer's DISTINCT purchase amounts, and that is
-       what it is labelled when it has to be used. It is no longer preferred over
-       the row-level sum this screen can compute for itself from the purchase
-       rows it just read, which is the honest total and was being computed and
-       then thrown away.
+       Until the 1 Sep 2026 rebuild, v_customer_360 computed it as
+       `COALESCE(sum(DISTINCT p.amount_aed), 0)` over a join that fans out across
+       leads as well as purchases. The DISTINCT was not gratuitous — it stopped a
+       customer with three leads having each purchase counted three times — but it
+       de-duplicated by AMOUNT rather than by purchase, so two purchases at the
+       same price collapsed into one while the `count(DISTINCT p.id)` printed
+       beside it counted both. And the COALESCE mattered as much: a customer with
+       no purchase at all came back as 0, not null, so "has never bought" and
+       "bought and it came to nothing" arrived here as the same AED 0 in a
+       currency column.
 
-       The COALESCE matters as much as the DISTINCT. A customer with no purchase
-       at all comes back as 0, not null, so "has never bought" and "bought and it
-       came to nothing" arrived here as the same AED 0 in a currency column. Read
-       on 1 Sep 2026 that was every customer on this screen: purchase_history
-       holds no rows at all, and both v_customer_360 rows report
-       lifetime_value_aed 0 with purchase_count 0. */
+       Neither is true any more, and this file said both until tonight.
+       pg_get_viewdef read 1 Sep 2026 19:0x UTC: lifetime_value_aed is now a
+       correlated subquery, `(SELECT sum(p2.amount_aed) FROM purchase_history p2
+       WHERE lower(btrim(p2.email)) = i.email)` — outside the fan-out entirely, a
+       plain sum over every purchase row filed under the address, and null rather
+       than 0 when there are none. `purchase_count` is still
+       `count(DISTINCT p.id)` off the fanned-out join. Live on 1 Sep 2026 both
+       v_customer_360 rows report lifetime_value_aed **null** with purchase_count
+       0, because purchase_history holds no rows at all — the old comment here
+       said they reported 0.
+
+       The row-level sum this screen computes for itself is still preferred over
+       the view's, because it is the sum of rows this pane can also show. */
     const purchAmounts = (purch.rows || []).map(x => n0(x.amount_aed));
     const withAmount = purchAmounts.filter(x => x != null);
     const purchTotal = withAmount.length ? withAmount.reduce((a, b) => a + b, 0) : null;
@@ -1317,21 +1511,34 @@ SCREENS.customers = async host => {
     const viewPurchases = n0(v.purchase_count);
     /* Until 1 Sep 2026 v_customer_360 summed DISTINCT amount_aed, so two
        purchases at the same price counted once and the view reported the sum of
-       a customer's distinct PRICES rather than what they had spent. It now sums
-       over distinct purchase rows, so a disagreement no longer has that
-       explanation and this screen must not offer it. What is left is the read
-       window: this screen sums the rows it fetched, the view sums all of them. */
+       a customer's distinct PRICES rather than what they had spent. Since the
+       rebuild it sums every purchase row on file in a correlated subquery — no
+       DISTINCT, no join fan-out — so a disagreement no longer has that
+       explanation and this screen must not offer it. The wording below said
+       "distinct purchase rows", which was a third thing the view has never done.
+       What is left is the read window: this screen sums the rows it fetched, the
+       view sums all of them. */
     const DISTINCT_CAVEAT =
-      'Both sides now sum over distinct purchase rows, so this gap is not the old DISTINCT-amount defect. '
+      'The view now sums every purchase row filed under this address, with no DISTINCT and no join fan-out, so this gap is not the old DISTINCT-amount defect. '
       + 'The likeliest cause is the read: this screen sums only the purchase rows it fetched, while the view sums every row on file.';
 
     let ltvValue, ltvSub;
     if (purch.rows && !purch.rows.length) {
       ltvValue = '—';
       ltvSub = `<span class="t-muted">No purchase recorded for this customer, so there is no lifetime value to state.</span>`
-        + (ltvFromView == null
-            ? ''
-            : `<div><span class="t-muted">v_customer_360 also reports ${esc(aed(ltvFromView))} here. Until 1 Sep 2026 it COALESCE’d its sum to zero, so a customer who had never bought and one who bought at no charge were the same 0 to it; it now returns null for the first, which is why both sides agree.</span></div>`);
+        /* The branches were the wrong way round. This one runs when purchase_history
+           returned NO row for the address and the view reports a figure anyway —
+           which is a disagreement, and was captioned "which is why both sides
+           agree". Since the 1 Sep 2026 rebuild the view sums purchase_history
+           directly, so a number here means it matched rows this read did not
+           (`lower(btrim(email))` against this screen's escaped ilike), and the
+           honest statement is that the two are not over the same set. The
+           agreement is the null case, and it is now the one that says so. */
+        + (ltvFromView != null
+            ? `<div><span class="t-warm">v_customer_360 reports ${esc(aed(ltvFromView))} for this customer and purchase_history returned no row for the address this screen read, so the two are not over the same set of rows and this screen cannot say which set is right.</span></div>`
+            : c.view
+              ? `<div><span class="t-muted">v_customer_360 leaves lifetime_value_aed null for this customer too. Until 1 Sep 2026 it COALESCE’d its sum to zero, so somebody who had never bought and somebody who bought at no charge were the same AED 0 to it; the two sides agree here because it no longer does that.</span></div>`
+              : '');
     } else if (purchTotal != null) {
       ltvValue = aed(purchTotal);
       ltvSub = `<span class="t-muted">Summed from the ${esc(String(withAmount.length))} purchase row${withAmount.length === 1 ? '' : 's'} read here${noAmount ? `, ${esc(String(noAmount))} more carrying no amount_aed` : ''}</span>`
@@ -1345,7 +1552,7 @@ SCREENS.customers = async host => {
       ltvSub = `<span class="t-warm">${esc(String(purch.rows.length))} purchase row${purch.rows.length === 1 ? '' : 's'} on file, none carrying an amount_aed, so there is nothing to sum</span>`;
     } else if (ltvFromView != null) {
       ltvValue = aed(ltvFromView);
-      ltvSub = `<span class="t-warm">Distinct purchase amounts, summed · v_customer_360${viewPurchases == null ? '' : ` · ${num(viewPurchases)} purchase${viewPurchases === 1 ? '' : 's'}`} — purchase_history could not be read here, so it could not be checked against the rows themselves</span>`
+      ltvSub = `<span class="t-warm">Every purchase amount on file, summed · v_customer_360${viewPurchases == null ? '' : ` · ${num(viewPurchases)} purchase${viewPurchases === 1 ? '' : 's'}`} — purchase_history could not be read here, so it could not be checked against the rows themselves</span>`
         + `<div class="cell-sub" style="white-space:normal">${esc(DISTINCT_CAVEAT)}</div>`;
     } else {
       ltvValue = '—';
@@ -1604,7 +1811,11 @@ SCREENS.customers = async host => {
       ? `${esc(o.name)}<div class="cell-sub" style="white-space:normal">${esc(o.idBasis || 'Name as recorded by the source table')}</div>`
       : `<span class="mono t-muted" style="word-break:break-all">${esc(o.chatId || o.email || o.key)}</span>
          <div class="cell-sub t-warm" style="white-space:normal">${esc(o.idBasis || 'No name on record — this is an identifier, not a person’s name')}</div>` },
-    { label: 'Why this is not a customer', render: o => `<span class="cell-sub" style="white-space:normal">${esc(o.basis)}</span>` },
+    /* Headed for what the column can actually establish. "Why this is not a
+       customer" asserted the conclusion in the heading, so a row whose reason is
+       "a view dropped a lead with no email address" was filed under a title that
+       contradicted it. */
+    { label: 'Why this row is not in the customer list', render: o => `<span class="cell-sub" style="white-space:normal">${esc(o.basis)}</span>` },
     { label: 'Phone', render: o => o.phone
       ? `<span class="mono">${esc(o.phone)}</span>`
       : '<span class="t-muted">Not stored on any row for this contact</span>' },
@@ -1629,9 +1840,14 @@ SCREENS.customers = async host => {
       <div>
         <div class="card-title">Contacts who are not customers</div>
         <div class="card-sub">Everyone who appears in whatsapp_contacts, customer_360_profiles or v_customer_360
-        without a lead or a purchase behind them. Most are people who messaged the owner's WhatsApp number.
-        They are listed so nobody has to guess where a name came from — none of them is a customer, none has a
-        lifetime value, and none can be actioned from here. Rows open Conversations.</div>
+        and not in the customer list above. Most are people who messaged the owner's WhatsApp number and have
+        neither a lead nor a purchase. They are listed so nobody has to guess where a name came from, and none
+        of them has a lifetime value or can be actioned from here. Read the reason on each row before treating
+        it as a stranger: ${otherWithLead
+          ? `<strong>${esc(String(otherWithLead))} of these ${otherWithLead === 1 ? 'rows has' : 'rows have'} a lead on file</strong> and ${otherWithLead === 1 ? 'is' : 'are'} here because
+             v_customer_directory and v_customer_360 require <span class="mono">leads.email &lt;&gt; ''</span> — a
+             database defect that loses a real customer from this screen, not a finding about the person`
+          : 'tonight every one of them is a contact with no lead and no purchase behind it'}. Rows open Conversations.</div>
       </div>
     </div>
     <div class="pbody">${allOtherSourcesDown
