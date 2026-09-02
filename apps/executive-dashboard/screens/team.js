@@ -147,6 +147,13 @@ import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
+/* Open pipeline, defined once. TERMINAL_TONES and isOpenLead used to be
+   declared here AND word for word in screens/overview.js, and the read ceiling
+   differed between the two (1000 here, 2000 there) — so the same rule could
+   report two totals on a table big enough to truncate. Both now come from
+   lib/pipeline.js. The database's own pipeline_aed is still not used and still
+   not shown; see DB_PIPELINE_NOTE for the sentence that says why. */
+import { CAP_NOTE, DB_PIPELINE_NOTE, LEAD_LIMIT, isOpenLead, sumBudget } from '../lib/pipeline.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
 
@@ -158,8 +165,11 @@ import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
    the FK is ON DELETE SET NULL and `users` is fully readable by `authenticated`,
    so that condition cannot arise. The read is capped, and where a count depends
    on the cap the screen says the cap was hit rather than letting a windowed
-   number read as a total. */
-const LEAD_LIMIT = 1000;
+   number read as a total. That cap is LEAD_LIMIT, imported from
+   lib/pipeline.js: it was 1000 here and 2000 on Overview until 1 Sep 2026, and
+   the two screens now read the same window because they publish the same
+   figure. Live 1 Sep 2026 `leads` holds 3 rows, so raising it changes nothing
+   on screen today. */
 
 const NO_INVITE =
   'No invite endpoint exists yet. The users table is service-role only from the browser, so RLS would reject the write, and none of the deployed n8n webhooks (ask-ai, finance-calc, lead-trigger, deals/closed-won, audit-kyc, erp-sync, lead-escalation) sends an invitation. Creating the account and emailing the link has to be built before this button can do anything.';
@@ -209,18 +219,11 @@ const ATTN_LIMIT = 200;
 const MIN_RATE_SAMPLE = 2;
 const THIN = 5;
 
-/* Open or finished, taken straight out of the TONE table in lib/format.js so
-   this screen cannot grow a second lead-lifecycle vocabulary — the same two
-   lines screens/overview.js uses, deliberately identical. Three writers fill
-   leads.status (the router writes HOT/WARM/COLD, the Slack Command Center
-   writes CONTACTED/QUALIFIED/WON/LOST through an unconstrained $fromAI, the BDC
-   agent writes DISQUALIFIED) and format.js is where those words are already
-   mapped to 'won', 'dead' and 'open'. A status nobody has taught that table
-   about tones to 'unknown' and is counted as open: a lead is not finished
-   because a word was not recognised. This is what makes "pipeline" on this
-   screen mean open money rather than every lead ever assigned. */
-const TERMINAL_TONES = new Set(['won', 'dead']);
-const isOpenLead = l => !TERMINAL_TONES.has(tone(l && l.status));
+/* Open or finished is lib/pipeline.js's isOpenLead, imported above. "Deliberately
+   identical to the two lines screens/overview.js uses" is what the comment here
+   used to say, and two files agreeing by inspection is not the same as one
+   rule: it is what makes "pipeline" mean open money on this screen and
+   something else on the next one the moment somebody edits one copy. */
 
 /* Pipeline concentration. An even split across the reps who hold any pipeline is
    1/N, so on a small team somebody is always "above average" — the alert needs a
@@ -407,7 +410,11 @@ SCREENS.team = async host => {
      and a rep whose open leads carry no budget are both "no figure", and both
      are different from AED 0. */
   const openLeadsOf = r => ownedBy(r).filter(isOpenLead);
-  const openPipelineOf = r => ((leads && r.id) ? sumOf(openLeadsOf(r), 'budget_aed') : null);
+  /* sumBudget, not the local sumOf: the null-not-zero convention and the column
+     it sums are part of the shared definition, so Overview and this screen
+     cannot end up disagreeing about what an empty book totals. sumOf stays for
+     within_sla and breached_sla, which are this screen's own columns. */
+  const openPipelineOf = r => ((leads && r.id) ? sumBudget(openLeadsOf(r)) : null);
   const sumOpen = rows => {
     let t = null;
     rows.forEach(r => { const x = openPipelineOf(r); if (x != null) t = (t ?? 0) + x; });
@@ -614,7 +621,7 @@ SCREENS.team = async host => {
          table it would be reporting two DISQUALIFIED leads as money in play. */
       kpi('Open pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
         !leads
-          ? `<span class="t-muted">Leads could not be read, so open pipeline could not be summed. The performance view's own pipeline_aed is deliberately not shown in its place: it sums every lead ever assigned, disqualified and lost ones included.</span>`
+          ? `<span class="t-muted">Leads could not be read, so open pipeline could not be summed. ${esc(DB_PIPELINE_NOTE)}</span>`
           : pipelineTot == null
             ? (openHeld
                 ? `<span class="t-muted">${num(openHeld)} open ${plural(openHeld, 'lead is', 'leads are')} held, and not one of them carries a budget_aed — so there is a book here, but no money to total</span>`
@@ -622,7 +629,11 @@ SCREENS.team = async host => {
             : (roster.length === 1
                 ? 'Held by the only person on the roster'
                 : `Held by ${num(withPipeline)} of ${num(roster.length)} on the roster`)
-              + `<div class="t-muted">Open leads only — won and dead ones are excluded${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads read` : ''}</div>`),
+              + `<div class="t-muted">Open leads only — won and dead ones are excluded</div>`
+              /* Same wording Overview prints on its own pipeline tile, from
+                 lib/pipeline.js, so one truncation cannot be disclosed in two
+                 strengths on two screens showing the same rule. */
+              + (leadsCapped ? `<div class="t-warm">${esc(CAP_NOTE(num(LEAD_LIMIT)))}</div>` : '')),
       kpi('Unassigned leads', leads ? num(unassigned.length) : '—',
         !leads
           ? `<span class="t-muted">Leads could not be read</span>`

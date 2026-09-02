@@ -52,17 +52,45 @@
       three answers, so none of them is rendered as one.
 
    6. An empty table is not an idle desk, and this screen may not imply that it
-      is. finance_quotes is EMPTY while audit_log holds five runs whose own
-      summary reads "Quote issued | 1 of 1 claimed steps did not land
-      [finance_quotes row ...]" — a customer was given a rate and the record of
-      it never arrived. Those quotes cannot appear in the history below, so the
-      alert strip names them and the empty state refuses to read as "nothing has
-      happened here". What an audit_log status MEANS is decided in one place for
+      is. finance_quotes is EMPTY while audit_log holds EIGHT runs whose summary
+      says "Quote issued" — a customer was given a rate and this desk holds no
+      record of any of them. Five of the eight also carry "| 1 of 1 claimed
+      steps did not land [finance_quotes row ...]", the writer reporting its own
+      insert failing; the other three reported every claimed step landed and are
+      missing anyway. Until 1 Sep 2026 this screen could only see the five,
+      because it looked for the outcome class PARTIAL — which is only reached
+      when the writer NOTICES the write fail — and the three that failed quietly
+      passed as ordinary successes. It now also asks the question the class
+      cannot answer: does audit_log record a quote issued to somebody this desk
+      holds nothing for? See QUOTE_ISSUED_RE. The two are shown apart, because
+      what is known about them differs: for the five the workflow said the row
+      did not land, and for the three all that is known is that no row is here
+      now — which a deleted row would look exactly like, and this screen says so
+      rather than choosing the dramatic reading. Those quotes cannot appear in
+      the history below, so the alert strip names them and the empty state
+      refuses to read as "nothing has happened here". What an audit_log status MEANS is decided in one place for
       the whole dashboard — lib/health.js, mirroring public.nexus_outcome_class()
       — and this file calls it rather than testing the string itself. The status
       on those five rows is FAILED; the module classifies them PARTIAL, because
       a run that quoted a customer and lost the record went out half-done rather
-      than failing. Nothing in this file reads `status === 'FAILED'`.
+      than failing. As of 1 Sep 2026 no `audit_log.status` literal survives
+      anywhere in this file's logic at all — not in a comparison, not in a
+      colour, and not in a PostgREST filter. The last one was a
+      `status=ilike.rejected` on the read behind the refusal panel, which is
+      described at AUDIT_LIMIT and is gone. Statuses are still named in prose
+      where the prose is about what the writers emit; nothing acts on them.
+
+      Two things this file does NOT claim, because it does not know them and
+      does not need to. It does not claim those five rows are all there will
+      ever be: health.js reclassifies on the summary phrase, so a row spelled
+      PARTIAL reaches the same panel by the same route. And it does not claim
+      whether the two Delivery Report writers still emit FAILED for half-landed
+      work — on 1 Sep 2026 two audits run the same day disagree, one having read
+      the published node bodies off the n8n box and found the rung gone, the
+      other having read the repo JSON and found it intact. health.js's rule 1 is
+      a writer correction with a stated retirement condition; this screen renders
+      identically before and after it is retired, which is the only property it
+      is entitled to rely on.
 
    The workflow's own limits, mirrored below so the rep sees them before the
    round trip rather than after it: `vehicleValue` must be at least AED 5,000,
@@ -73,7 +101,14 @@
 
    ── Round 4, 24 Aug 2026. Three quotes, one customer. ────────────────────────
 
-   `finance_quotes` holds three rows and all three carry the same lead_email.
+   Read this section as the dated history it is. The three rows it describes are
+   GONE: `finance_quotes` held 0 rows when this file was last measured against
+   the live database, on 1 Sep 2026. What survives is the rule the three rows
+   taught, and the rule is what the code below implements — every count on this
+   screen counts people as well as quotes, and no mean is printed until enough
+   different people are behind it. Nothing here reads as a live figure.
+
+   `finance_quotes` held three rows and all three carried the same lead_email.
    The vehicle value on them is 152,000, then 280,000, then 100,000. That is one
    negotiation being re-priced, not a book of business, and the difference
    decides what this screen is allowed to say out loud.
@@ -124,13 +159,27 @@
    And a rejection from the workflow is an outcome, not a fault. finance-calc is
    live and JWT-guarded and it validates hard: `audit_log` carries real REJECTED
    rows reading "vehicleValue must be a realistic vehicle valuation of at least
-   AED 5000" and "lead_email is required". Every one of those is a bad quote that
-   never reached a customer. So a refusal renders as the workflow declining the
-   input with its reason attached — amber, not red, never the word error, and
-   never a "Couldn't load" that sends a rep hunting for a bug in a dashboard
-   that is working exactly as designed. The same rendering is reached whether the
-   workflow refuses with a 200 or a guard in front of it refuses with a 4xx, and
-   the refusals it has actually recorded are listed on the screen.
+   AED 5000" and "lead_email is required". So a refusal renders as the workflow
+   declining the input with its reason attached — never red, never the word
+   error, and never a "Couldn't load" that sends a rep hunting for a bug in a
+   dashboard that is working exactly as designed. The same rendering is reached
+   whether the workflow refuses with a 200 or a guard in front of it refuses with
+   a 4xx, and the outcomes it has actually recorded are listed on the screen.
+
+   This paragraph used to end "every one of those is a bad quote that never
+   reached a customer", and the panel below it acted on that sentence: it
+   selected on the raw status, painted every row with one red pill and printed
+   one verdict over all of them. Not every one of those is the same event.
+   lib/health.js — which mirrors public.nexus_outcome_class() and is the only
+   module in this dashboard allowed to read that column — splits Finance Calc's
+   46 REJECTED rows 33 / 13 (measured against the live database on 1 Sep 2026):
+   33 REFUSED BY DESIGN, excluded from every success denominator, and 13 with no
+   refusal marker on them at all, which it calls NO RESULT and counts. The panel
+   now shows the two apart, in the module's words and the module's colours, and
+   the word "amber" has left this paragraph because neither of them is amber:
+   health.js tones both neutral, and a red pill over the sentence "it is not an
+   error" was the exact contradiction this file's whole status policy exists to
+   remove.
 
    ── 30 Aug 2026. The workflow changed and this screen had not. ──────────────
 
@@ -173,7 +222,7 @@ import { HOOK, ME, SESSION, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
-import { OUTCOME, outcomeOf } from '../lib/health.js';
+import { OUTCOME, isQualifying, isRefusal, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -238,10 +287,27 @@ const MAX_TENURE_MONTHS_CBUAE = 60;
    filters the history to the full set, so this is a glance, not the list. */
 const PREVIEW = 3;
 
-/* Rows read for the refusal panel. A refusal is not an error, so the workflow's
-   own REJECTED rows are shown as the outcomes they are rather than being left
-   to be discovered in n8n. */
-const REJECT_LIMIT = 100;
+/* Rows read from audit_log for this screen, in ONE request. There were two
+   until 1 Sep 2026, and the first of them — `status=ilike.rejected` — was the
+   last status literal left in this file's logic. It was wrong twice over.
+
+   Wrong on meaning: REJECTED is not one outcome. lib/health.js splits the 46
+   REJECTED rows Finance Calc has written into 33 REFUSED-BY-DESIGN and 13
+   NO-RESULT (measured against the live database on 1 Sep 2026), and the panel
+   was giving all 46 the single verdict "a refusal, not an error".
+
+   Wrong on scope: the limit was applied to EVERY workflow's rejections, newest
+   first, and the finance filter ran in the browser afterwards. On 1 Sep 2026
+   that read returned 100 rows of which only 29 were Finance Calc's — 17 of its
+   46 cut by the cap, and ALL 13 of the no-result rows outside the window. A
+   busy hour on another workflow was silently deciding what this desk could see.
+   The lost-quote read had already been given a server-side workflow filter for
+   exactly that reason; this is the same fix applied to the same table.
+
+   62 rows match the workflow filter today (1 Sep 2026), so the ceiling is not
+   close — and it is stated on screen when it is reached rather than left to be
+   inferred from a shorter list. */
+const AUDIT_LIMIT = 300;
 
 /* Which audit_log rows this screen claims as its own. workflow_registry is not
    read here — that is one more request for a panel that can say how it matched
@@ -249,6 +315,30 @@ const REJECT_LIMIT = 100;
    the fact that a refusal logged under a name mentioning none of these words
    would not be listed. */
 const FINANCE_FLOW = /financ|quote|trade-?in|calc/i;
+
+/* The phrase Finance Calc's Delivery Report writes at the head of the summary
+   on every run that put a figure in front of a customer — "Quote issued", with
+   or without a "| N of M claimed steps did not land" tail behind it.
+
+   This is NOT a status and is not a second opinion on one: health.js still owns
+   the column, and the PARTIAL split below is still health.js's. This matches on
+   the sentence the writer emits about WHAT IT DID, which is a different
+   question from how the run ended, and it is the only question that can find a
+   quote the desk has no row for.
+
+   Why it was needed. `lost` reads PARTIAL, and PARTIAL is only reached when the
+   writer itself noticed the finance_quotes insert fail and said so. Measured
+   against the live database on 1 Sep 2026, audit_log holds EIGHT Finance Calc
+   rows whose summary begins "Quote issued" — 5 of them PARTIAL and 3 of them
+   SUCCESS, the writer reporting every claimed step landed — while
+   finance_quotes holds ZERO rows. So three customers were quoted on runs that
+   reported themselves complete and this desk has no record of any of them, and
+   the strip above named five of the eight. The three are not claimed to be
+   failed writes: a row that was written and later deleted looks identical from
+   here, and this screen cannot tell those apart and does not try. What it can
+   say, and now does, is that audit_log records a quote issued to a person for
+   whom this desk holds nothing. */
+const QUOTE_ISSUED_RE = /\bquote\s+issued\b/i;
 
 /* Below this many distinct customers, a mean over this table is a mean over one
    negotiation, so the strip prints the range instead and says why. It is a
@@ -571,9 +661,10 @@ SCREENS.finance = async host => {
   const refuseCard = el('div', 'card flush');
   refuseCard.style.marginTop = '16px';
   refuseCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Inputs the workflow refused</div>
-      <div class="card-sub">REJECTED rows the Finance Calc workflow wrote to <span class="mono">audit_log</span>.
-        A refusal is the workflow declining a figure before it can be quoted to anybody — not a failure of this dashboard</div>
+      <div class="card-title">Runs that produced no quote</div>
+      <div class="card-sub">What Finance Calc recorded in <span class="mono">audit_log</span> on the runs that priced nothing,
+        split the way <span class="mono">lib/health.js</span> splits them: a figure the workflow declined by design, and a run that
+        went through and produced nothing usable. They are not the same event and are not counted the same way</div>
     </div></div><div class="pbody" id="fxBody">${stateLoading(3)}</div>`;
   leftCol.appendChild(refuseCard);
 
@@ -664,6 +755,7 @@ SCREENS.finance = async host => {
   /* ── Screen state ──────────────────────────────────────────────────────── */
   let rows = [], quotesErr = null;      // finance_quotes
   let leads = null, leadsErr = null;    // null = the read failed, not "no leads"
+  let leadsCapped = false;              // the read hit LEAD_LIMIT, so "no such lead" is not knowable
   let attn = null, attnErr = null;      // v_needs_attention rows for this screen
   /* Only the validity date is probed by name now; everything else is read off
      the row directly. See the VALID_COLS comment for why this one is different. */
@@ -674,11 +766,21 @@ SCREENS.finance = async host => {
   let checks = [];
   const checkByKey = new Map();
   let people = new Map();               // lead_email -> the quotes filed under it
-  let refusals = null, refusalsErr = null, refusalOther = 0;
-  /* audit_log rows for this workflow that lib/health.js classifies as PARTIAL:
-     a quote that reached a customer whose finance_quotes row did not. null =
-     the read failed, which is not the same as "none". */
-  let lost = null, lostErr = null;
+  /* One read of audit_log serves this whole screen, and lib/health.js is the
+     only thing allowed to say what any row in it means. `audit` is every row
+     the workflow-name filter matched; the three lists below are that set split
+     by OUTCOME CLASS, never by status. null on any of them means the read
+     failed, which is not the same as "none" and is never rendered as one. */
+  let audit = null, auditErr = null, auditCapped = false;
+  let refusals = null;   // REJECTED_EXPECTED — declined by design, not counted against the workflow
+  let noResult = null;   // NO_RESULT — it ran, produced nothing usable, and IS counted
+  let lost = null;       // PARTIAL — a quote reached the customer, its finance_quotes row did not
+  /* Every run whose summary says a quote was issued, whatever outcome class it
+     ended in. Not a fourth class and not a reading of the status column — the
+     writer's own sentence about what the run did. Crossed against the quotes
+     this screen actually holds, it finds the issued quotes `lost` cannot: the
+     ones the writer believed it had stored. */
+  let issued = null;
 
   const keyOf = r => (r && r.id != null ? String(r.id) : 'row-' + rows.indexOf(r));
   const leadByEmail = new Map();
@@ -745,7 +847,9 @@ SCREENS.finance = async host => {
     }
     const lead = leadFor(q);
     if (!lead) {
-      return `<span class="t-muted" title="No lead in the database carries this email address, so there is no phone number to show. finance_quotes stores no phone of its own.">—</span>`;
+      return leadsCapped
+        ? `<span class="t-muted" title="${esc(`The leads read stopped at its ${LEAD_LIMIT}-row ceiling, so whether a lead carries this email is not known — only that none of the ${LEAD_LIMIT} newest does. No phone number is shown and none is claimed absent.`)}">not looked up</span>`
+        : `<span class="t-muted" title="No lead in the database carries this email address, so there is no phone number to show. finance_quotes stores no phone of its own.">—</span>`;
     }
     if (!str(lead.phone)) {
       return '<span class="t-muted" title="This lead has no phone number on file.">—</span>';
@@ -996,20 +1100,28 @@ SCREENS.finance = async host => {
          calculator returned no figure for ("not calculated") or a file it
          declined to price ("not priced"). finance_quotes is empty today, so
          this is what the desk actually shows. */
+      /* The table is EMPTY, so every quote audit_log says was issued is missing
+         from it — there is no need to ask which of them the writer noticed
+         failing. `issued` is therefore the count here, not `lost`: on 1 Sep 2026
+         those are 8 and 5, and the three-quote difference is three customers who
+         were quoted on runs that reported themselves complete. The strip above
+         splits them by what is known about each; this panel only has to say how
+         many quotes exist that it cannot show. */
+      const nIssued = issued ? issued.length : 0;
       body.innerHTML = stateEmpty(
-        lost && lost.length ? 'No quote recorded here — and some were issued' : 'No quotes recorded yet',
+        nIssued ? 'No quote recorded here — and some were issued' : 'No quotes recorded yet',
         'finance_quotes holds no row at all, so there is no figure on this desk to show or to withhold. '
         + 'Every calculation from this screen is stored here, with the customer and the rep it belongs to. '
         /* An empty table is not the same fact as an idle desk, and until the
            audit_log read existed this panel could not tell them apart. It said
            "no quotes recorded yet" over a month in which the calculator issued
-           three quotes cleanly and lost five more after quoting the customer. */
-        + (lost === null
+           eight quotes to customers and kept none of them. */
+        + (issued === null
           ? 'Whether any quote was issued without being recorded is unknown: the audit_log read failed, so an empty table here is not evidence of an empty desk.'
-          : lost.length
-            ? `It is NOT evidence that nothing has been quoted: ${num(lost.length)} ${plural(lost.length, 'quote', 'quotes')} in audit_log ${plural(lost.length, 'was', 'were')} issued to a customer and never landed here. `
+          : nIssued
+            ? `It is NOT evidence that nothing has been quoted: ${num(nIssued)} ${plural(nIssued, 'run', 'runs')} in audit_log ${plural(nIssued, 'records a quote', 'record quotes')} issued to a customer, and with this table empty not one of them is here. `
               + 'They are named in the strip at the top of this screen and they cannot be listed below, because there is no row to list.'
-            : 'audit_log records no quote issued whose row failed to land, so nothing is missing from this table — it is empty because the desk has not quoted, not because quotes were lost.'),
+            : 'audit_log records no quote issued at all, so nothing is missing from this table — it is empty because the desk has not quoted, not because quotes were lost.'),
         'receipt_long');
       return;
     }
@@ -1215,7 +1327,7 @@ SCREENS.finance = async host => {
       ['Which quotes have a problem worth a phone call',
         'The checks in the strip above — a quote with no email, a quote whose customer has gone cold, a customer filed under more than one name, a quote old enough to re-run.'],
       ['What the workflow has refused, and why',
-        'The REJECTED rows finance-calc wrote to audit_log, with the reason it gave, listed on this screen rather than left in n8n.'],
+        'The runs finance-calc recorded in audit_log that left no quote behind, each with the reason it gave, split by lib/health.js into a figure the validator declined by design and a run that went through and produced nothing usable. Listed on this screen rather than left in n8n.'],
     ].filter(Boolean);
 
     /* The same reason, phrased for the three cases it actually has: nothing on
@@ -1250,6 +1362,17 @@ SCREENS.finance = async host => {
         'There is no pipeline here to show. A quote carries no stage, no expected close date and no outcome, so a row in this table is a number that was said out loud once — not a deal in progress. Treating the sum of these values as a pipeline would count the same trade-in three times.'],
       ['Which quotes have expired?',
         'Not answerable. finance_quotes stores no validity date under any name \u2014 that one absence is real, unlike the two this panel used to bundle with it. Nothing on the row records when a quote stops standing, so no quote on this screen is ever marked expired; the alerts say "more than ' + num(QUOTE_VALID_DAYS) + ' days old", which is a fact about the row and this desk\u2019s own prompt to re-quote.'],
+      /* Added 1 Sep 2026, on the back of the strip learning to name quotes that
+         audit_log records and this table does not hold. The obvious next
+         question a rep or an engineer asks is "which run was that, then?", and
+         the honest answer is that this dashboard cannot get there — which is
+         worth stating with the missing column named, because that is what makes
+         it fixable rather than just annoying. */
+      ['Which n8n execution produced a given quote?',
+        'Not answerable from this dashboard. finance_quotes carries calculation_id and execution_id on every row and audit_log carries neither, '
+        + 'so the table that says a quote was ISSUED and the table that would say what it CONTAINED have no key in common. '
+        + 'For a quote that landed the row names its own execution; for one that did not — which is every quote on this desk today — the only route left is matching the run’s logged time against the execution list in n8n by hand. '
+        + 'It would take an execution_id column on audit_log, written by the same Delivery Report that already puts the number in the summary text on newer rows.'],
       ['How has quoting changed over time?',
         !nQ
           ? 'There is nothing recorded to plot. finance_quotes keeps created_at, so a series appears here once the desk has quoted enough different customers for the line to mean something.'
@@ -1297,7 +1420,11 @@ SCREENS.finance = async host => {
   function buildChecks() {
     const now = Date.now();
     const quotesCapped = rows.length >= HISTORY_LIMIT;
-    const leadsCapped = !!leads && leads.length >= LEAD_LIMIT;
+    /* `leadsCapped` is now set once in loadLeads() and read here rather than
+       recomputed. It used to be local to this function, which is why phoneCell
+       — the other place that turns "not in the read" into a statement about the
+       customer — went on asserting the database held no such lead. One flag,
+       one meaning, both call sites. */
     /* A quote whose lead sits outside the newest LEAD_LIMIT leads would look
        orphaned when it is only unread. False accusations of a missing customer
        record are worse than a withheld check, so the check is withheld. */
@@ -1529,6 +1656,63 @@ SCREENS.finance = async host => {
         <span class="material-symbols-outlined t-muted" style="font-size:18px">filter_alt</span>
       </div>`).join('');
 
+    /* ── Quoted, and nothing on this desk to show for it ───────────────────
+       `lostRow` below names the losses the WRITER noticed. This one names the
+       ones it did not. A run whose summary says "Quote issued" and whose
+       customer has no quote in finance_quotes is a figure that was said to a
+       person and is not on this desk, and until 1 Sep 2026 the only such runs
+       this screen could see were the ones that ended PARTIAL — the ones where
+       the insert failed loudly enough for the writer to report it.
+
+       On the live database that day: 8 rows say "Quote issued", 5 of them
+       PARTIAL and 3 SUCCESS, and finance_quotes holds 0 rows. The strip named
+       five of the eight and the other three passed as ordinary successes.
+
+       What this row is careful NOT to say. It does not say the write failed.
+       A row written and later deleted is indistinguishable from a row never
+       written when all you can read is the table it is missing from, and this
+       screen has no way to tell those apart — so it states the two facts it
+       holds (audit_log says a quote was issued; this desk has no quote for that
+       person) and names both readings rather than picking the dramatic one.
+
+       Gated on the quote read having SUCCEEDED. With `rows` empty because the
+       read failed, every issued quote in audit_log would look unrecorded and
+       this row would announce a catastrophe made entirely of its own failure. */
+    const lostSet = new Set(lost || []);
+    const orphanPeople = [];
+    let orphanNoEmail = 0;
+    if (issued && !quotesErr) {
+      const by = new Map();
+      for (const a of issued) {
+        /* Already named above, with the writer's own reason attached. Naming it
+           twice in two severities reads as two separate incidents. */
+        if (lostSet.has(a)) continue;
+        const email = str(a.lead_email);
+        const k = lower(email);
+        /* This desk holds at least one quote for this person. Whether it is
+           THIS quote is not knowable — audit_log carries no calculation_id and
+           no execution_id, so there is nothing to join on — and a person with
+           quotes on the desk is not the alarming case, so it is left alone. */
+        if (k && people.has(k)) continue;
+        const bk = k || `no-email:${lower(str(a.lead_name))}:${by.size}`;
+        if (!k) orphanNoEmail += 1;
+        if (!by.has(bk)) by.set(bk, { name: str(a.lead_name), email, n: 0, last: a.logged_at });
+        const p = by.get(bk);
+        p.n += 1;
+        if (new Date(a.logged_at) > new Date(p.last)) p.last = a.logged_at;
+      }
+      orphanPeople.push(...by.values());
+    }
+    const orphanRuns = orphanPeople.reduce((s, p) => s + p.n, 0);
+    /* Two alert rows about the same man read as two customers, and on the live
+       data that is exactly what they are: all five confirmed losses and all
+       three quiet ones carry lead_email shabbir53ujjainwala@gmail.com under
+       three spellings of his name ("Shabbir Ujjainwala", "ALI ASGHER UJJAIN
+       WALA", "Ali"). Eight quotes, one person, and a strip that let a reader
+       add 5 and 3 and get eight customers would be repeating on this panel the
+       precise error the rest of this screen exists to stop. */
+    const lostEmails = new Set((lost || []).map(a => lower(str(a.lead_email))).filter(Boolean));
+    const sharedWithLost = orphanPeople.filter(p => lostEmails.has(lower(p.email))).length;
     /* The honest empty case, which today is the only case: a sentence naming
        what was checked and what came back, so "no alerts" reads as a result
        rather than as a panel that failed to load. */
@@ -1538,14 +1722,23 @@ SCREENS.finance = async host => {
         : `no quote is more than ${num(QUOTE_VALID_DAYS)} days old`,
       'every quote carries a customer email',
       'no customer is recorded under more than one name',
-      leads && leads.length < LEAD_LIMIT ? 'every quote matches a lead record' : '',
+      leads && !leadsCapped ? 'every quote matches a lead record' : '',
       leads ? 'no quote belongs to a lead that has gone cold' : '',
       /* The only entry here drawn from something other than finance_quotes, and
          the only one that stays true when the table is empty. Gated on the read
          having returned NONE, not merely on it having succeeded: this list is
          the all-clear's evidence, and an entry that would be false the moment a
-         quote went missing does not belong in it. */
-      lost && !lost.length ? 'no quote was issued to a customer without its record landing' : '',
+         quote went missing does not belong in it.
+
+         Both halves of the question, because until 1 Sep 2026 it only asked the
+         easier one. `lost` is the workflow reporting its own write failing;
+         `orphanRuns` is a run that claimed a quote and reported everything
+         landed, for a customer this desk holds no quote for. On the live data
+         that day the first was 5 and the second 3, and this sentence would have
+         been printed over the three. */
+      lost && !lost.length && issued && !orphanRuns
+        ? 'no quote was issued to a customer this desk holds no record for'
+        : '',
     ].filter(Boolean);
     /* Built as a sentence, not a comma salad: this line is the whole claim the
        panel is making on a day with no alerts, and it has to read like one. */
@@ -1562,25 +1755,97 @@ SCREENS.finance = async host => {
        Severity is stated as CRITICAL and meant as it: a rep who does not know a
        figure was already given to this customer will either quote a second one
        or start the conversation from nothing, and the customer heard the first. */
+    /* One person, five times — not five customers, and the difference decides
+       what this row is allowed to look like. All five rows carry lead_email
+       shabbir53ujjainwala@gmail.com and lead_name "Ali" (measured 1 Sep 2026),
+       and three name chips followed by "+2 more" reads at a glance as five
+       different people with five lost quotes. It is one man with five, which is
+       a smaller problem for the dealership and a bigger one for him.
+
+       So the identities are counted before anything is printed, the headline
+       counts PEOPLE as well as quotes, and each chip carries how many runs sit
+       behind it. Grouped by email, because that is what finance_quotes
+       identifies a customer by and what the rest of this screen groups on; a
+       row with no email is its own bucket rather than being folded into
+       somebody else's, which would undercount the people. */
+    const lostPeople = [];
+    if (lost && lost.length) {
+      const by = new Map();
+      for (const a of lost) {
+        const email = str(a.lead_email);
+        const k = lower(email) || `no-email:${lower(str(a.lead_name))}:${by.size}`;
+        if (!by.has(k)) by.set(k, { name: str(a.lead_name), email, n: 0, last: a.logged_at });
+        const p = by.get(k);
+        p.n += 1;
+        if (new Date(a.logged_at) > new Date(p.last)) p.last = a.logged_at;
+      }
+      lostPeople.push(...by.values());
+    }
     const lostRow = (lost && lost.length) ? `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-hot" style="font-size:20px">report</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill('CRITICAL', sevTone('CRITICAL'))}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued to a customer and never recorded`)}
+          ${pill('CRITICAL', sevTone('CRITICAL'))}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued and never recorded, to ${
+            lostPeople.length === 1 ? 'one customer' : `${num(lostPeople.length)} customers`}`)}
         </div>
         <div class="cell-sub">${esc(
           `Finance Calc logged ${plural(lost.length, 'this run', 'these runs')} as having quoted the customer while the finance_quotes row it claimed to write did not land. `
           + `The ${plural(lost.length, 'quote is', 'quotes are')} therefore NOT in the history below and cannot be — that absence is the fault itself, not a filter. `
-          + 'A rate was said out loud to the person named here and this desk has no record of what it was. Read the conversation before quoting them again: '
-          + 'a second, different figure is how one lost row becomes a dispute.')}</div>
-        <div class="cell-sub" style="margin-top:4px">${lost.slice(0, PREVIEW).map(a => `<span class="chip">${
-          personName(a.lead_name, esc(str(a.lead_email) || 'Unnamed customer'))}${
-          str(a.lead_email) && str(a.lead_name) ? ` <span class="t-muted">·</span> ${esc(str(a.lead_email))}` : ''} <span class="t-muted">·</span> ${esc(ago(a.logged_at))}</span>`).join(' ')}${
-          lost.length > PREVIEW ? ` <span class="t-muted">+${num(lost.length - PREVIEW)} more</span>` : ''}</div>
+          + `A rate was said out loud to the ${plural(lostPeople.length, 'person', 'people')} named here and this desk has no record of what it was. `
+          + (lostPeople.length === 1 && lost.length > 1
+            ? `All ${num(lost.length)} belong to the same customer, so this is one conversation that has been re-priced ${num(lost.length)} times with nothing kept — not ${num(lost.length)} customers each missing one. `
+            : '')
+          + 'Read the conversation before quoting them again: a second, different figure is how one lost row becomes a dispute.')}</div>
+        <div class="cell-sub" style="margin-top:4px">${lostPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
+          personName(p.name, esc(p.email || 'Unnamed customer'))}${
+          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(p.email)}` : ''} <span class="t-muted">·</span> ${
+          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
+          lostPeople.length > PREVIEW ? ` <span class="t-muted">+${num(lostPeople.length - PREVIEW)} more</span>` : ''}</div>
         <div class="cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
-          'Classified by lib/health.js, which mirrors nexus_outcome_class() in the database. The status on these rows reads FAILED and this screen does not read it: '
+          /* This sentence used to state what the status on these rows is. It no
+             longer does, and not for tidiness: the row spelling is the writers’
+             to change, health.js already reads PARTIAL and FAILED-with-the-phrase
+             to the same verdict, and a caption that named the spelling would go
+             stale the first time a writer was corrected without a soul noticing.
+             What the reader needs is which module decided, not which word the
+             row happened to carry. */
+          'Classified by lib/health.js, which mirrors nexus_outcome_class() in the database, and not by the status on the row — this screen never reads that column itself: '
           + 'a run that quoted a customer and lost the record went out half-done rather than failing, and one module decides that for the whole dashboard. '
           + 'These are what make Finance Calc DEGRADED on the automation screen — the same rows, counted rather than named.')}</div>
+      </div>
+    </div>` : '';
+
+    const orphanRow = orphanRuns ? `<div class="list-item" style="cursor:default">
+      <span class="material-symbols-outlined t-hot" style="font-size:20px">receipt_long</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${pill('HIGH', sevTone('HIGH'))}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
+            orphanPeople.length === 1 ? 'one customer' : `${num(orphanPeople.length)} customers`}`)}
+        </div>
+        <div class="cell-sub">${esc(
+          `Finance Calc's own summary on ${plural(orphanRuns, 'this run', 'these runs')} says a quote was issued, and the run reported every step it claimed as landed — `
+          + `it is not among the ${plural((lost || []).length, 'loss', 'losses')} named above, where the workflow itself reported the record failing to save. `
+          + `finance_quotes carries no quote for ${plural(orphanPeople.length, 'this person', 'these people')} at all.`
+          + (sharedWithLost
+            ? ` ${sharedWithLost === orphanPeople.length && orphanPeople.length === 1
+                ? 'This is the SAME customer as the row above, not another one'
+                : `${num(sharedWithLost)} of ${plural(orphanPeople.length, 'this person', 'these people')} also ${plural(sharedWithLost, 'appears', 'appear')} in the row above`} — `
+              + `add the two counts for a total of quotes, never for a count of customers.`
+            : ''))}</div>
+        <div class="cell-sub" style="margin-top:4px">${orphanPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
+          personName(p.name, esc(p.email || 'Unnamed customer'))}${
+          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(p.email)}` : ''} <span class="t-muted">·</span> ${
+          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${
+          esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
+          orphanPeople.length > PREVIEW ? ` <span class="t-muted">+${num(orphanPeople.length - PREVIEW)} more</span>` : ''}</div>
+        <div class="cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
+          'Two readings fit this equally and this screen cannot choose between them, so it states both: the row never landed and nothing noticed, or it landed and was deleted afterwards. '
+          + 'audit_log carries no calculation_id and no execution_id, and finance_quotes carries both — so there is nothing to join the two tables on and no way to settle it from this dashboard. '
+          + 'The n8n execution for the run holds the answer; matching it by timestamp against the logged time on these rows is currently the only route to it. '
+          + (orphanNoEmail
+            ? `${num(orphanNoEmail)} of ${plural(orphanRuns, 'this run', 'these runs')} recorded no lead_email, so ${plural(orphanNoEmail, 'it', 'they')} could not be matched to a quote either way and ${plural(orphanNoEmail, 'is', 'are')} counted here for that reason rather than on evidence of a loss. `
+            : '')
+          + 'Either way a rate was said out loud to the customer and this desk does not hold it, which is the same next action: read the conversation before quoting again.')}</div>
       </div>
     </div>` : '';
 
@@ -1595,7 +1860,7 @@ SCREENS.finance = async host => {
        audit_log as issued-and-unrecorded, and a strip reading only its own
        table would have announced all-clear over the worst state this desk has
        ever been in. */
-    const clear = !attnErr && !quotesErr && !lostErr;
+    const clear = !attnErr && !quotesErr && !auditErr;
     const cannotSay = attnErr && quotesErr
       ? 'v_needs_attention could not be read and the quote read failed, so neither the database’s list nor this screen’s own checks could be produced. Nothing is being claimed here.'
       : attnErr
@@ -1608,7 +1873,7 @@ SCREENS.finance = async host => {
           /* The audit_log read is the only one of the three that can tell this
              screen a quote exists which its own table does not contain, so its
              failure is never quietly absorbed into an all-clear. */
-          : `audit_log could not be read (${lostErr?.message}), so whether any quote was issued to a customer without its finance_quotes row landing is unknown. `
+          : `audit_log could not be read (${auditErr?.message}), so whether any quote was issued to a customer without its finance_quotes row landing is unknown. `
             + 'Everything else this screen checks did run; that is not the same as nothing being wrong.';
     const nothing = `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-${clear ? 'ok' : 'warm'}" style="font-size:20px">${clear ? 'task_alt' : 'help'}</span>
@@ -1626,7 +1891,14 @@ SCREENS.finance = async host => {
                that has something to say about an empty table, because it reads
                what the workflow did rather than what it managed to store. */
             : 'v_needs_attention returned no row for this screen, and there is no quote on the desk for this screen’s own checks to judge.'
-              + (lost ? ' audit_log records no quote issued whose finance_quotes row failed to land, so the empty table is an empty desk and not a lost one.' : ''))
+              /* Reached only when BOTH halves came back empty — the strip
+                 prints a row instead of this sentence otherwise — so it is
+                 allowed to say the stronger thing: not merely that no write was
+                 reported failing, but that no run claims to have quoted anybody
+                 this desk cannot show. */
+              + (lost && issued
+                ? ` audit_log records no quote issued that this desk holds no record for, across ${num((audit || []).length)} ${plural((audit || []).length, 'run', 'runs')} read under this workflow — so the empty table is an empty desk and not a lost one.`
+                : ''))
           : esc(cannotSay)}</div>
       </div>
     </div>`;
@@ -1636,11 +1908,12 @@ SCREENS.finance = async host => {
       <div class="cell-sub" style="white-space:normal">${built.notes.map(esc).join('<br>')}</div>
     </div>` : '';
 
-    /* `lostRow` counts as an item, so a strip carrying one never also prints
-       the all-clear beneath it. It leads, because it is the only row here about
-       a quote that is not in the table below. */
-    body.innerHTML = (viewItems.length || checks.length || lostRow
-      ? lostRow + viewRows + checkRows
+    /* `lostRow` and `orphanRow` each count as an item, so a strip carrying
+       either never also prints the all-clear beneath it. They lead, because
+       they are the only rows here about a quote that is not in the table below.
+       lostRow first: it is the case the workflow itself confirmed. */
+    body.innerHTML = (viewItems.length || checks.length || lostRow || orphanRow
+      ? lostRow + orphanRow + viewRows + checkRows
       : nothing) + notesRow;
 
     /* Every alert row is the only route from the alert to the quotes it is
@@ -1699,111 +1972,213 @@ SCREENS.finance = async host => {
         + `&order=created_at.desc&limit=${LEAD_LIMIT}`);
       leadsErr = null;
     } catch (e) { leads = null; leadsErr = e; }
+    /* A truncated leads read cannot support the sentence "no lead carries this
+       email" — it can only support "no lead in the newest LEAD_LIMIT does". The
+       checks list already refused to claim the first from the second; phoneCell
+       did not, and said "—" under a tooltip asserting the database held nobody.
+       3 leads exist today so the cap is nowhere near, which is exactly when a
+       claim like that gets written and then stays wrong quietly. */
+    leadsCapped = !!leads && leads.length >= LEAD_LIMIT;
     leadByEmail.clear();
     (leads || []).forEach(l => { const k = lower(str(l.email)); if (k) leadByEmail.set(k, l); });
   }
 
-  /* The refusals the workflow actually recorded. Read with an ilike on status
-     rather than eq, because a vocabulary that is REJECTED in one workflow and
-     rejected in another would otherwise come back empty and be rendered as
-     "nothing has ever been refused" — a reassuring sentence produced by a
-     case-sensitive filter. The workflow is matched by name here, and the panel
-     says so along with how many REJECTED rows belong to other workflows. */
-  async function loadRefusals() {
-    try {
-      const all = await db('audit_log?select=workflow,status,lead_name,lead_email,summary,logged_at'
-        + `&status=ilike.rejected&order=logged_at.desc&limit=${REJECT_LIMIT}`);
-      refusals = all.filter(a => FINANCE_FLOW.test(str(a.workflow)));
-      refusalOther = all.length - refusals.length;
-      refusalsErr = null;
-    } catch (e) { refusals = null; refusalsErr = e; refusalOther = 0; }
-  }
-
-  /* ── Quotes that were issued and never recorded ──────────────────────────
-     The worst thing this screen can be asked about, and until 31 Aug 2026 it
-     could not be asked at all: a customer was given an APR and the record of it
-     never reached the table below. Finance Calc logs each run against the steps
-     it claimed to complete, and on five of them the summary reads
-     "Quote issued | 1 of 1 claimed steps did not land [finance_quotes row (the
-     quote the Finance Desk reads) — Bad request…]". The history cannot show
-     these — their absence from it IS the fault — so the strip above says they
-     exist and names the customer, because a rep who reopens that conversation
-     needs to know a figure was already said out loud.
-
-     THE STATUS ON THOSE ROWS IS `FAILED` AND THIS SCREEN DOES NOT READ IT.
-     What an audit_log status means is lib/health.js's to decide and nothing
-     else's — it mirrors public.nexus_outcome_class() one for one, and it
-     reclassifies exactly this case as PARTIAL on the structured phrase the
-     writer already emits, because a workflow that quoted a customer and lost
-     the record did not fail: it went out half-done. Four screens each invented
-     their own reading of that column and each got a different answer, which is
-     why there is now one module and why this file calls it rather than testing
-     a string.
-
-     v_workflow_health COUNTS these (5 partials in 30 days, which is most of why
-     Finance Calc reads DEGRADED at 11.1%) but a count cannot say whose quote
-     was lost. That is the one question worth asking here, so the rows are read
-     directly and classified through the module — the case the module's own
-     header names as the right reason to do so.
+  /* ── One read of audit_log, one interpreter ──────────────────────────────
+     Everything this screen says about a workflow run comes from here, and what
+     each row MEANS is lib/health.js's to decide and nothing else's — it mirrors
+     public.nexus_outcome_class() one for one and is the only module in the
+     dashboard permitted to read that column. Nothing below tests a status
+     string, and nothing below takes a colour from one.
 
      The workflow filter is server-side and mirrors FINANCE_FLOW word for word,
      so this read cannot be crowded out of its limit by a busy hour on another
-     workflow — which client-side filtering after a bare `limit` would allow,
-     and which would show an empty panel as though nothing had been lost. */
-  async function loadLost() {
+     workflow — which is exactly what client-side filtering after a bare `limit`
+     did to the refusal panel until 1 Sep 2026 (see AUDIT_LIMIT), and which
+     would show an empty panel as though nothing had been refused or lost.
+
+     ── The quotes that were issued and never recorded ───────────────────────
+     The worst thing this screen can be asked about, and until 31 Aug 2026 it
+     could not be asked at all: a customer was given an APR and the record of it
+     never reached the table below. Finance Calc logs each run against the steps
+     it claimed to complete, and on five of them the summary reads "Quote issued
+     | 1 of 1 claimed steps did not land [finance_quotes row (the quote the
+     Finance Desk reads) — Bad request…]". The history cannot show these — their
+     absence from it IS the fault — so the strip above says they exist and names
+     the customer, because a rep who reopens that conversation needs to know a
+     figure was already said out loud.
+
+     THE STATUS ON THOSE ROWS IS `FAILED` AND THIS SCREEN DOES NOT READ IT.
+     health.js reclassifies exactly this case as PARTIAL on the structured
+     phrase the writer already emits, because a workflow that quoted a customer
+     and lost the record did not fail: it went out half-done. Four screens each
+     invented their own reading of that column and each got a different answer,
+     which is why there is now one module and why this file calls it.
+
+     That reclassification is a WRITER CORRECTION and health.js says so —
+     "when the writers are fixed, delete rule 1 here and in the SQL together".
+     Whether they are fixed is, on 1 Sep 2026, genuinely disputed between two
+     audits run the same day: one read the published node bodies off the n8n box
+     and found no FAILED rung left in either Delivery Report, the other read the
+     repo JSON (last touched 30 Aug) and found the rung intact. This screen does
+     not need the answer and must not assert one. outcomeOf() returns PARTIAL
+     for a row spelled FAILED with the "did not land" phrase AND for a row
+     spelled PARTIAL, so the panel below reads the same either way, and the day
+     the correction is retired nothing here changes.
+
+     v_workflow_health COUNTS these rows but a count cannot say whose quote was
+     lost. On 1 Sep 2026 Finance Calc reads 62 runs / 5 partials / 0 failures /
+     21 no-result / 33 refused, 3 successes out of 29 qualifying runs — 10.3%,
+     DEGRADED. Whose five is the one question worth asking here, so the rows are
+     read directly and classified through the module: the case the module's own
+     header names as the right reason to do so. */
+  async function loadAudit() {
     try {
       const all = await db('audit_log?select=workflow,status,lead_name,lead_email,summary,logged_at'
         + '&or=(workflow.ilike.*financ*,workflow.ilike.*quote*,workflow.ilike.*trade-in*,workflow.ilike.*calc*)'
-        + `&order=logged_at.desc&limit=${REJECT_LIMIT}`);
-      lost = all.filter(a => FINANCE_FLOW.test(str(a.workflow)) && outcomeOf(a) === OUTCOME.PARTIAL);
-      lostErr = null;
-    } catch (e) { lost = null; lostErr = e; }
+        + `&order=logged_at.desc&limit=${AUDIT_LIMIT}`);
+      audit = all.filter(a => FINANCE_FLOW.test(str(a.workflow)));
+      auditCapped = all.length >= AUDIT_LIMIT;
+      auditErr = null;
+    } catch (e) { audit = null; auditErr = e; auditCapped = false; }
+    /* Split by class, never by status. isRefusal() is health.js's own predicate
+       for REJECTED_EXPECTED; NO_RESULT and PARTIAL have no predicate of their
+       own because nothing else asks for them by name, so they are compared
+       against the OUTCOME vocabulary rather than against a string. */
+    refusals = audit && audit.filter(isRefusal);
+    noResult = audit && audit.filter(a => outcomeOf(a) === OUTCOME.NO_RESULT);
+    lost     = audit && audit.filter(a => outcomeOf(a) === OUTCOME.PARTIAL);
+    /* Not a class — see QUOTE_ISSUED_RE. Kept beside the three that are, so the
+       one place that reads audit_log is also the one place that says which rows
+       claimed to have quoted somebody. */
+    issued   = audit && audit.filter(a => QUOTE_ISSUED_RE.test(str(a.summary)));
   }
 
+  /* ── The two ways a run can end with no quote, kept apart ─────────────────
+     They used to be one row type on this panel with one red pill and one
+     sentence saying "it is not an error", and on 1 Sep 2026 that sentence sat
+     over 29 rows in a colour that flatly contradicted it. health.js draws the
+     line and this panel draws it too, because the two mean different things to
+     the rep and carry different weight against the workflow:
+
+       REFUSED (REJECTED_EXPECTED) — the workflow declined the input by design.
+       Nothing was priced, nothing was written, and health.js excludes it from
+       every success denominator, so it cannot dilute a real miss rate. Neutral,
+       and genuinely not an error. 33 rows on 1 Sep 2026.
+
+       NO RESULT (NO_RESULT) — it ran and produced nothing usable. Not a crash,
+       not a success, and NOT excused: isQualifying() is true for these, so each
+       one is in the denominator behind Finance Calc's 10.3%. 21 rows on 1 Sep
+       2026 — the 13 REJECTED rows whose summary carries no refusal marker, plus
+       8 NOT_EXECUTED. Neutral as well, because grey is the honest colour for a
+       run that achieved nothing without breaking.
+
+     Both are neutral and that is the point: the difference between them is a
+     difference in WORDS and in WEIGHT, not in alarm. Neither is red, because
+     neither is a fault the rep can act on by ringing somebody; a refusal is the
+     validator working, and a no-result is a run to count, not to panic about.
+     The two groups are therefore separated, headed, and counted separately,
+     with the no-result group saying out loud that it is in the rate.
+
+     Why 13 REJECTED rows land in the second group and 33 in the first is worth
+     knowing and is NOT re-decided here: health.js promotes a REJECTED row to
+     REFUSED only when the summary says so ("refused by validation",
+     "unauthorized", and so on). Finance Calc only began emitting that phrase on
+     30 Aug 2026 — measured on the live rows, every no-result REJECTED row falls
+     between 16 and 28 Aug and every refused-by-validation row on or after
+     30 Aug. So the older rows are almost certainly the same kind of event
+     wearing less evidence, and the canonical layer declines to guess. This
+     screen says what is known and does not upgrade them behind its back. */
   function drawRefusals() {
     const body = $('fxBody');
     if (!body) return;
-    if (refusalsErr) { body.innerHTML = stateError('the refusals the workflow recorded', refusalsErr.message); return; }
-    if (!refusals) { body.innerHTML = stateLoading(3); return; }
+    if (auditErr) { body.innerHTML = stateError('what the workflow recorded', auditErr.message); return; }
+    if (!refusals || !noResult) { body.innerHTML = stateLoading(3); return; }
 
-    const capped = (refusals.length + refusalOther) >= REJECT_LIMIT;
     const foot = `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
       <div class="cell-sub" style="white-space:normal">${[
-        'A refusal is the workflow declining a figure before it is priced, and the row above is the record it kept of doing so. It is not an error and nothing was written to finance_quotes.',
-        `Matched on the workflow name, not through workflow_registry, so a refusal logged under a name mentioning none of finance, quote, trade-in or calc would not be listed here.`,
-        refusalOther
-          ? `${num(refusalOther)} further REJECTED ${plural(refusalOther, 'row belongs', 'rows belong')} to other workflows and ${plural(refusalOther, 'is', 'are')} not shown.`
-          : '',
-        capped ? `The read stopped at ${num(REJECT_LIMIT)} rows, so older refusals are not counted.` : '',
+        'Every verdict and every colour above comes from lib/health.js, which mirrors nexus_outcome_class() in the database. Neither is taken from the status the row carries.',
+        `Matched on the workflow name, not through workflow_registry, so a run logged under a name mentioning none of finance, quote, trade-in or calc would not be listed here. Rejections belonging to other workflows are not read at all, so no count of them is offered.`,
+        auditCapped ? `The read stopped at ${num(AUDIT_LIMIT)} rows, so older runs are not counted.` : '',
       ].filter(Boolean).map(esc).join('<br>')}</div></div>`;
 
-    if (!refusals.length) {
-      /* Not "no data". The two rules the workflow enforces are named, so an
-         empty panel is a statement about what has happened rather than about
-         what this screen managed to fetch. */
-      body.innerHTML = stateEmpty('The workflow has refused nothing it recorded',
-        `No REJECTED row in audit_log names a workflow this screen recognises as the finance calculator. `
-        + `A row appears here when Finance Calc declines an input — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)}, or a quote sent with no customer email — `
-        + `and it is written whether the request came from this desk or from anywhere else.`,
-        'gpp_good') + foot;
-      return;
-    }
+    /* pill() in lib/format.js attaches "This dashboard has no wording for that
+       status" to anything it renders in the unknown tone, unless the LABEL it
+       is handed is itself a key in that file's TONE table. The canonical layer's
+       labels are human words — "Refused", "No result" — and "REFUSED" is not a
+       TONE key, so pill('Refused', 'unknown') produces a grey pill whose hover
+       reads "this dashboard has no wording for that status" directly above two
+       paragraphs of wording for it. That is the same defect the 31 Aug audit
+       caught on the automation screen, which is why automation.js grows its own
+       wordPill(); this is that helper, in the markup pill() emits, carrying
+       health.js's own sentence as the title instead. Every other pill on this
+       screen still goes through pill(), because every other pill on this screen
+       is labelled with a value TONE actually knows. */
+    const wordPill = (label, tone, why) =>
+      `<span class="pill ${esc(tone || '')}"${why ? ` title="${esc(why)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
 
-    body.innerHTML = refusals.map(a => {
+    const head = (title, blurb) => `<div class="toolbar" style="background:var(--surface-sunken)">
+      <div class="cell-sub" style="white-space:normal;flex:1"><strong>${esc(title)}</strong> ${esc(blurb)}</div></div>`;
+
+    const row = a => {
+      const w = outcomeWords(outcomeOf(a));
       const who = str(a.lead_name) || str(a.lead_email);
       return `<div class="list-item" style="cursor:default;align-items:flex-start">
-        <span class="material-symbols-outlined t-warm" style="font-size:20px" aria-hidden="true">gpp_maybe</span>
+        <span class="material-symbols-outlined t-muted" style="font-size:20px" aria-hidden="true">${isRefusal(a) ? 'gpp_maybe' : 'do_not_disturb_on'}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill('REJECTED')}<span class="chip mono">${esc(str(a.workflow) || 'unnamed workflow')}</span>
+            ${wordPill(w.label, w.tone, w.blurb)}<span class="chip mono">${esc(str(a.workflow) || 'unnamed workflow')}</span>
             ${who ? `<span class="cell-sub">${personName(who, '')}</span>` : ''}
           </div>
           <div class="cell-sub" style="white-space:normal">${esc(str(a.summary) || 'The workflow recorded no reason on this row.')}</div>
           <div class="cell-sub t-muted">${esc(stamp(a.logged_at))} — ${esc(ago(a.logged_at))}</div>
         </div>
       </div>`;
-    }).join('') + foot;
+    };
+
+    if (!refusals.length && !noResult.length) {
+      /* Not "no data", and the two cases underneath it are not the same claim.
+         Zero rows of this kind out of a set that HAS rows says the workflow
+         priced everything it was asked to. Zero rows out of an empty set says
+         nothing at all about the workflow, and the panel must not borrow the
+         first sentence to describe the second — an empty read wearing a
+         reassuring title is how a panel starts lying quietly. */
+      const ran = (audit || []).length;
+      body.innerHTML = stateEmpty(
+        ran ? 'Every run this workflow recorded produced a quote' : 'This workflow has recorded no run here',
+        (ran
+          ? `All ${num(ran)} ${plural(ran, 'run', 'runs')} read under a workflow name this screen recognises as the finance calculator produced a figure: none was declined by the validator, and none ran through leaving nothing usable behind. `
+          : `No row in audit_log carries a workflow name this screen recognises as the finance calculator, so there is nothing here to judge and nothing is being claimed about the calculator either way. `)
+        + `A row appears here when Finance Calc declines an input — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)}, or a quote sent with no customer email — `
+        + `and it is written whether the request came from this desk or from anywhere else.`,
+        'gpp_good') + foot;
+      return;
+    }
+
+    /* Refusals first: the panel sits under the form, and a rep who has just
+       been declined is looking for their own reason, not for a rate statistic. */
+    const refusedBlock = refusals.length
+      ? head(`Declined by the workflow — ${num(refusals.length)} ${plural(refusals.length, 'run', 'runs')}.`,
+          'The validator refused the figure before anything could be quoted to anybody. Nothing was priced and nothing was written to finance_quotes. '
+          + 'This is the workflow working, not a failure of this dashboard, and health.js keeps these out of the workflow’s success rate entirely so a refusal cannot dilute a real miss.')
+        + refusals.map(row).join('')
+      : head('Nothing was declined by the workflow.',
+          'No run in this read was refused by the validator. The runs below went through and produced nothing usable, which is a different thing.');
+
+    const noResultBlock = noResult.length
+      ? head(`Ran and produced nothing usable — ${num(noResult.length)} ${plural(noResult.length, 'run', 'runs')}.`,
+          'Not a crash and not a refusal: the workflow completed without leaving a quote behind. '
+          /* Counted, not asserted. isQualifying() is health.js's own test for
+             "belongs in a rate", so the number below is the module's answer
+             rather than this screen's opinion about it — and if the module ever
+             stops counting one of these, the sentence stops claiming it does. */
+          + `Unlike the refusals above these ARE counted against Finance Calc: ${num(noResult.filter(isQualifying).length)} of them sit in the denominator behind its success rate on the automation screen. `
+          + 'Each row carries the reason the workflow gave, where it gave one.')
+        + noResult.map(row).join('')
+      : head('Nothing ran through without producing a quote.',
+          'Every run in this read either produced a figure or was refused outright by the validator. Nothing was left in between.');
+
+    body.innerHTML = refusedBlock + noResultBlock + foot;
   }
 
   async function loadAttention() {
@@ -1837,7 +2212,7 @@ SCREENS.finance = async host => {
   $('fqRecheck').addEventListener('click', async () => {
     alertCard.querySelector('.pbody').innerHTML = stateLoading(2);
     $('fxBody').innerHTML = stateLoading(3);
-    await Promise.all([loadAttention(), loadQuotes(), loadLeads(), loadRefusals(), loadLost()]);
+    await Promise.all([loadAttention(), loadQuotes(), loadLeads(), loadAudit()]);
     focusKey = null;
     fillLeadPicker();
     renderAll();
@@ -2091,7 +2466,7 @@ SCREENS.finance = async host => {
         <div style="margin-top:6px">${body}</div>
         <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(
           `This is the workflow checking its inputs before it prices anything — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)} or a quote with no customer email is refused rather than stored. `
-          + 'Nothing was written to finance_quotes, so the history below is unchanged, and the workflow keeps its own REJECTED row in audit_log — it is listed under the form as soon as this screen is re-checked. '
+          + 'Nothing was written to finance_quotes, so the history below is unchanged, and the workflow keeps its own record of the refusal in audit_log — it is listed under the form as soon as this screen is re-checked. '
           + 'Correct the field the message names and calculate again. '
           + 'The wording above is the workflow’s own: it is written for the WhatsApp agent that also calls this calculator, so it names the argument rather than the field on this form. '
           + 'vehicleValue is the trade-in value, loanPayoffAmount is the payoff, creditScore is the AECB score.'
@@ -2308,7 +2683,7 @@ SCREENS.finance = async host => {
     };
   }
 
-  await Promise.all([loadQuotes(), loadLeads(), loadAttention(), loadRefusals(), loadLost()]);
+  await Promise.all([loadQuotes(), loadLeads(), loadAttention(), loadAudit()]);
   fillLeadPicker();
   renderAll();
 
