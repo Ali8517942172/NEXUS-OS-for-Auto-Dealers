@@ -136,6 +136,74 @@
    this screen attach 8 of 19 replies while its own disclosure sentence claimed
    it had missed only 5. The measurements are in the notes at each site.
 
+   ── 2 Sep 2026 · Revenue Command Center ────────────────────────────────────
+
+   PRODUCT.md gives this screen one commercial job — "where is this dealership
+   losing money today, and what should I do about it?" in under thirty seconds —
+   and until tonight it answered a different question: how much activity was
+   there. Activity is not leakage. The leak panel added below is the answer, and
+   three rules shaped every line of it.
+
+   1. THE SENTINEL OWNS INVENTORY ECONOMICS AND THIS SCREEN NOW READS IT.
+      Overview used to select `inventory.holding_cost_accrued` and
+      `inventory.aging_alert` straight off the table — a second source for two
+      figures `public.v_inventory_profit_sentinel` computes and states the
+      provenance of. That is the "one figure, one derivation" rule in
+      NEXUS_INVARIANTS.md broken in the open, and it is what let this screen sum
+      a NULL column with `|| 0` and print "AED 0 holding cost" across twelve
+      cars. The inventory read is now `rpc/sentinel_inventory_actions()`, the
+      same worst-first read path screens/inventory.js and screens/actions.js
+      use, and nothing here re-derives ageing, margin or holding cost. The
+      `inventory` table is not read by this file at all any more.
+
+   2. AN AGGREGATE OVER AN UNKNOWN MUST SAY WHAT IT COULD NOT INCLUDE.
+      Every money figure on the leak panel goes through `expose()`, which
+      returns the total, the rows that carried a figure, and the rows that did
+      not — and returns null rather than zero when none did. It also refuses to
+      total across two different `impact_kind` values, because "margin exposed"
+      and any future kind are not the same currency of claim and adding them
+      would produce a number nothing in the database holds.
+
+   3. ESTIMATED, ATTRIBUTED AND CONFIRMED ARE THREE DIFFERENT WORDS.
+      `impact_aed` / `engine_impact_aed` are EXPOSURE in the engine's own sense:
+      gross margin (list minus acquisition cost) sitting in a unit that has not
+      sold. The panel says "exposed" and never loss, revenue, saved or
+      recovered. `recovered_value_aed` is null on every action on this box and
+      renders as "not recorded", never as AED 0 — the column comment is explicit
+      that a missing outcome is a state with a reason, not a zero.
+
+   What the data actually looked like when this was written, read live at
+   18:45 UTC on 2 Sep 2026 — recorded as a dated observation, exactly like the
+   bullets above, and NOT encoded anywhere in the code below:
+
+     · 12 units. overall_risk 1 SEVERE / 2 HIGH / 9 LOW; aging_band 1 CRITICAL /
+       2 WARNING / 9 HEALTHY; recommendation 3 REPRICE / 9 HOLD. AED 82,000 of
+       gross margin exposed across the three, all three carrying an impact
+       figure, none omitted.
+     · holding_cost_state NOT_COMPUTABLE on all 12 — no sourced holding rate on
+       record — so net margin is withheld on all 12 too. market_position UNKNOWN
+       on 12 of 12; demand_signal UNKNOWN_LOW_COVERAGE on 12 of 12 (86 enquiry
+       rows in the window, 2 of which resolve to a unit, against a floor of 50).
+     · 3 action records: one APPROVED and not carried out, one PROPOSED and
+       waiting, one REJECTED with a reason. None escalated, none executed,
+       recovered_value_aed null on all three.
+     · 3 lead rows: 1 open (WARM, unassigned) and 2 closed DISQUALIFIED.
+     · 9 WhatsApp threads awaiting a reply, 7 of them inside the view's 7-day
+       window, and `identified` is `whatsapp_profile` on all nine — not one has
+       a lead record behind it.
+
+   THE NUMBER THIS SCREEN DELIBERATELY DOES NOT PRINT is "3 leads". It is
+   arithmetically true and commercially false: two of the three are wrong
+   numbers the WhatsApp router auto-created from uncaptioned images, and the
+   rows themselves carry that diagnosis in `vehicle_interest`. A tile reading 3
+   invites an owner — or a buyer being shown this screen — to read lead flow
+   into a table that has one open enquiry in it. So the leak panel counts OPEN
+   enquiries, names the closed ones and the reason they are closed, and says in
+   words that one enquiry is a record and not a rate. The same refusal applies
+   to the nine waiting threads: nine is the honest count of threads, and "nine
+   customers are waiting" is not a claim this database supports, because not one
+   of them resolves to a lead.
+
    Everything below is a number Postgres produced. Nothing is estimated, and
    where a figure rests on a handful of rows the screen says how few — a single
    test record must not read as a trend. */
@@ -154,7 +222,7 @@ import { COUNTS as BADGE_SEVERITIES, LAST as BADGE_SNAPSHOT } from '../lib/badge
 import { isInternalRow, isReply } from '../lib/comm-events.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, clock, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, clock, dubaiStamp, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
 /* The only place in this app allowed to decide what a run outcome means. This
    screen reads the columns v_workflow_health already computed from the same
    rule and does not classify anything itself. */
@@ -204,7 +272,31 @@ const OUTBOUND_LIMIT = 5000;
    this ceiling is a guard, not a window. Same value as screens/leads.js:152,
    deliberately, so the two screens cannot read different slices of it. */
 const CONTACT_LIMIT = 2000;
-const INV_LIMIT = 2000;
+/* The Inventory Profit Sentinel, read through the function rather than the view
+   — the same call screens/inventory.js and screens/actions.js make, for the same
+   reasons its header gives: the function orders worst-first and it holds the
+   "unknown is not low" rule that a client-side filter would quietly drop.
+   `authenticated` holds EXECUTE on it and `anon` does not (checked live 2 Sep
+   2026), and it is STABLE, which is what makes it reachable over the GET that
+   lib/data.js db() speaks.
+
+   No `select` is passed. inventory.js does not pass one either, and matching it
+   exactly matters more here than trimming a twelve-row payload: two spellings of
+   the same read are two things that can drift. */
+const SENTINEL_RPC = 'rpc/sentinel_inventory_actions';
+const QUEUE_LIMIT = 200;
+/* Every column the leak panel reads off v_inventory_action_queue, named rather
+   than `*`. screens/actions.js selects `*` because it renders the whole record;
+   this screen reads a summary and a named list is the only form in which a
+   stale column shows up as a 42703 at the gate instead of as `undefined` on a
+   card. All 27 were confirmed against the live catalogue on 2 Sep 2026. */
+const QUEUE_COLS = ['id', 'unit_id', 'unit_model', 'status', 'is_live', 'awaiting_decision',
+  'deferral_now_due', 'recommendation', 'engine_impact_aed', 'engine_impact_kind',
+  'engine_days_in_stock', 'engine_still_agrees', 'engine_now_recommendation',
+  'proposed_at', 'decided_at', 'decided_by_name', 'decision_reason_label',
+  'escalated_at', 'escalation_reason', 'executed_at', 'assigned_role', 'assigned_to_name',
+  'outcome_state', 'recovered_value_aed', 'outcome_sentence', 'cost_of_doing_nothing',
+  'days_open'].join(',');
 const ATTN_LIMIT = 200;
 const AWAITING_LIMIT = 200;
 const KYC_LIMIT = 200;
@@ -264,6 +356,79 @@ const bridgeWhy = (err, capped) => (err
    to print a machine handle where a person's name goes.
    A LID contains no phone digits at all, so it identifies nobody. */
 const str = v => String(v == null ? '' : v).trim();
+
+/* ── Adding up money the engine emitted ─────────────────────────────────────
+   The single most expensive habit this screen has ever had is
+   `rows.reduce((a, r) => a + (n0(r.x) || 0), 0)`. It turns a column nobody has
+   filled in into a confident zero, and it did exactly that to holding cost on
+   2 September: twelve cars, a NULL rate withdrawn for having no source, and a
+   headline reading "AED 0 holding cost accrued in total". Nil and not-known are
+   opposite claims about a dealership's money.
+
+   So money is never reduced on this screen. It is TALLIED, and a tally carries
+   its own denominator:
+
+     total    the sum of the rows that actually carried a figure, or NULL when
+              none did — never 0. aed(null) renders an em dash, and the caption
+              beside it states the absence in words.
+     n / of   how many rows were included, out of how many were considered.
+     missing  the rows that could not be included, so any tile aggregating an
+              unknown can say how many it left out. That sentence is mandatory,
+              not decorative: an aggregate whose denominator is hidden is the
+              same lie as a coalesced null, one level up.
+     kinds    the distinct impact_kind values seen. `impact_kind` exists because
+              the engine's figures are not all the same claim, and two different
+              kinds added together produce a number nothing in the database
+              holds. Where more than one kind is present NO TOTAL IS SHOWN —
+              the caller renders the kinds instead. NONE is not a kind: it is
+              the engine saying it claims no impact for that row, so it is not
+              collected and the row simply has no figure to include.
+
+   This is the whole of the arithmetic this screen performs on money. Every
+   figure inside it — margin, exposure, the impact of an action — was computed
+   by public.v_inventory_profit_sentinel and is copied, never recomputed. */
+const expose = (rows, getValue, getKind) => {
+  let total = 0, n = 0;
+  const kinds = new Set();
+  for (const r of rows) {
+    const k = str(getKind ? getKind(r) : '').toUpperCase();
+    if (k && k !== 'NONE') kinds.add(k);
+    const v = n0(getValue(r));
+    if (v == null) continue;
+    total += v; n += 1;
+  }
+  return { total: n ? total : null, n, of: rows.length, missing: rows.length - n, kinds: [...kinds] };
+};
+/* The engine's impact vocabulary, in the operator's words. MARGIN_EXPOSED is
+   the only kind the Sentinel emits today and it is deliberately not shortened
+   to "at risk" here — the whole point of the phrase is that it names what the
+   money IS (gross margin that has not been realised) rather than what might
+   happen to it. A kind this file has not been taught is printed as the engine
+   spelled it, with the absence of wording stated, rather than folded into the
+   one phrase we do have. */
+const IMPACT_WORDS = {
+  MARGIN_EXPOSED: 'of gross margin exposed',
+};
+const impactPhrase = kind => IMPACT_WORDS[str(kind).toUpperCase()]
+  || `of impact the engine labels ${str(kind) || 'nothing recognisable'}, which this dashboard has no wording for`;
+/* One tally, rendered. Every branch names its denominator. */
+const exposureLine = (t, what) => {
+  if (t.kinds.length > 1) {
+    return `No total is shown across ${what}: they do not carry one kind of impact — ${t.kinds.join(', ')} — and figures of different kinds are not added together. The per-unit figures are on Inventory.`;
+  }
+  if (t.total == null) {
+    return `No monetary figure is attached to ${what}. ${num(t.of)} ${plural(t.of, 'row', 'rows')} ${plural(t.of, 'was', 'were')} considered and none carried an impact figure, so this is unknown rather than nil.`;
+  }
+  /* The denominator is printed the same way whether or not anything was left
+     out — "3 of 3 included, none omitted" — because a disclosure that only
+     appears when there is bad news is a disclosure nobody learns to look for. */
+  return `${aed(t.total)} ${impactPhrase(t.kinds[0])} across ${what} · ${num(t.n)} of ${num(t.of)} included`
+    + (t.missing
+        ? `, ${num(t.missing)} ${plural(t.missing, 'carries', 'carry')} no impact figure and ${plural(t.missing, 'is', 'are')} not in that total`
+        : ', none omitted');
+};
+/* Said once wherever an exposure figure appears, and never abbreviated. */
+const EXPOSURE_CAVEAT = 'Exposure is gross margin — list price minus what the dealership paid — sitting in a unit that has not sold. It is the amount AT RISK. It is not an expected loss, not revenue, not money saved and not money recovered, and it is never added to anything that is.';
 
 /* What `identified` means, in the operator's words. `lead` is the only value
    that means "we know who this is"; the rest are named as the weaker thing they
@@ -445,7 +610,13 @@ const collapseSnapshots = rows => {
    to be spelled out here and again, word for word, in screens/team.js. The
    paragraph that explained it now lives with the rule. */
 SCREENS.overview = async host => {
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
+  /* First on the page, above the activity strip, because the order of a screen
+     is an argument about what matters. Leads, messages and pipeline are what
+     happened; this is what is costing money and who has to answer for it. */
+  const leakHost = el('div'); host.appendChild(leakHost);
+
+  const strip = el('div', 'grid g5'); strip.style.marginTop = '16px';
+  strip.innerHTML = stateLoading(2); host.appendChild(strip);
 
   const triage = el('div', 'grid g3 top'); triage.style.marginTop = '16px'; host.appendChild(triage);
   const replyHost = el('div'); const flowHost = el('div'); const kycHost = el('div');
@@ -550,11 +721,24 @@ SCREENS.overview = async host => {
      would be reading a silence as an all-clear. One row is enough to tell the
      two apart, which is all this asks for. */
   const readRivals = shared(() => db('competitors?select=id&limit=1'));
+  /* Every recorded decision about a unit, open and closed. The leak panel is
+     the only consumer today, but it is shared for the same reason the others
+     are: `v_inventory_action_queue` is what makes "approved but not carried
+     out" distinguishable from "waiting on a person", and two reads of it could
+     put one action in two states on the same screen.
+
+     Closed rows are read too, deliberately. A REJECTED action is not noise —
+     it is the record that a human answered the engine and said no, which is the
+     single most valuable row in the table (see the column comment on
+     decision_reason_code), and a panel that filtered to is_live would show an
+     owner an empty queue while reporting the unit under it as undecided. */
+  const readQueue = shared(() => db(`v_inventory_action_queue?select=${QUEUE_COLS}`
+    + `&order=proposed_at.desc&limit=${QUEUE_LIMIT}`));
   /* Started here, not at first use. The core read below is awaited before any
      panel exists, so a read that waits for its panel would queue behind it
-     instead of running alongside it — four round trips in series on the screen
+     instead of running alongside it — five round trips in series on the screen
      an owner opens first. */
-  readAttention(); readKycGaps(); readHealth(); readRivals();
+  readAttention(); readKycGaps(); readHealth(); readRivals(); readQueue();
 
   /* A row is an audit gap only if it was a real submission. `void_reason` marks
      the rows that were never KYC at all, and they are excluded here exactly as
@@ -585,15 +769,21 @@ SCREENS.overview = async host => {
      On 24 Aug that refinement was the larger half of the badge: the view
      returned three items and there were eight unarchived submissions it said
      nothing about. It adds nothing today, and the sentence claiming those eight
-     was still here a week after they stopped existing. `kyc_documents` holds
-     0 rows — counted live 1 Sep 2026, 14:18 UTC — so there is no gap to find,
-     the view lists none, `need.kycExtra` is 0 and rule 2 below leaves the badge
-     exactly as badges.js painted it. The mechanism stays, because the table
-     refills the first time the KYC auditor writes to it again. An empty table is
-     also not an all-clear: KYC/AML Document Auditor (Phase 5) reads DEGRADED in
-     v_workflow_health with 0 successes in 9 runs and nothing logged since
-     17 Aug (same read), so what this panel is looking at is a stopped pipeline,
-     not a clean book.
+     was still here a week after they stopped existing. It adds nothing today,
+     and the REASON it adds nothing has already changed once since that sentence
+     was written, which is why it is dated rather than stated as a fact about
+     the table. On 1 Sep 2026 `kyc_documents` was empty. Re-counted live on
+     2 Sep 2026 it holds three rows, all three written that morning, all three
+     carrying a `void_reason` — the vision auditor classified the image as not
+     an identity document — and all three with their file archived. So the gap
+     read (`storage_path is null`) still returns nothing, `need.kycExtra` is
+     still 0, and rule 2 below still leaves the badge exactly as badges.js
+     painted it; the table being empty is no longer the reason and has not been
+     for a day. The mechanism stays either way, because the next real submission
+     that fails to archive is the case it exists for. An absence of gaps is also
+     not an all-clear about KYC itself: what those three rows record is the
+     auditor rejecting three non-documents, which is the pipeline working on
+     input that was never KYC.
 
      Two rules make that refinement safe rather than a second opinion:
 
@@ -693,17 +883,51 @@ SCREENS.overview = async host => {
   const up = s => String(s || '').toUpperCase();
   const norm = v => String(v || '').trim().toLowerCase();
   try {
-    const [leads, inv, metrics, outbound, contactsRes] = await Promise.all([
+    const [leads, sentinelRes, metrics, outbound, contactsRes] = await Promise.all([
       /* `phone` and `assigned_to` are real columns on leads (probed 24 Aug) and
          both are read below: a lead waiting for a reply is a person somebody has
          to ring, and the rep's name is what makes "unanswered" somebody's job.
          There is no `lead_score` and no `updated_at` on this table — the score
          is `ai_score`, and nothing records when a lead was last modified. */
       db(`leads?select=id,name,email,phone,status,ai_score,vehicle_interest,source,budget_aed,response_time_minutes,created_at,assigned_to,assigned_to_id&order=created_at.desc&limit=${LEAD_LIMIT}`),
-      /* `id` is the stock number ("NX-1010"); money on this table is
-         `price_aed` / `cost_aed`, and there is no `sold_at`, `make` or `year`.
-         Nothing below reads a sale date, because none is recorded. */
-      db(`inventory?select=id,model,days_in_stock,price_aed,holding_cost_accrued,aging_alert&limit=${INV_LIMIT}`),
+      /* THE SENTINEL, NOT THE TABLE. Until 2 Sep 2026 this line read
+         `inventory?select=id,model,days_in_stock,price_aed,holding_cost_accrued,aging_alert`
+         — a second source for two figures public.v_inventory_profit_sentinel
+         already owns, computes and states the provenance of.
+
+         Both stored columns are what a second source looks like when it goes
+         wrong. `holding_cost_accrued` was written by recompute_inventory_derived()
+         from an AED 50/day rate that cites no source; Lane A withdrew the rate
+         on 2 September, so the column is NULL on all twelve rows and the sum
+         this screen printed over it — with `|| 0` — read "AED 0". The Sentinel
+         answers the same question with holding_cost_state NOT_COMPUTABLE and a
+         sentence saying why, which is the true answer and the one Inventory
+         shows. `aging_alert` is the other half: the Sentinel's `aging_band` is
+         computed from the same 90/120-day thresholds, but it also carries
+         `overall_risk`, which is what an owner is actually asking about — a
+         WARNING car with 65% of its margin intact is not the same problem as a
+         CRITICAL one, and the table cannot tell them apart.
+
+         `inventory` is now read nowhere in this file. Every ageing, margin,
+         exposure and recommendation figure below is copied out of the engine's
+         own columns; none is recomputed here.
+
+         The function is not given p_min_risk_rank. It must not be: filtering to
+         the risky units would leave this screen unable to say what the healthy
+         ones are, and "9 of 12 are LOW and the engine says do nothing" is half
+         the honest answer to "where am I losing money".
+
+         SETTLED, NOT AWAITED WITH THE REST, and that is a deliberate change of
+         behaviour rather than defensive noise. The `inventory` read this line
+         replaced sat inside this Promise.all and took the WHOLE screen to the
+         error card if it failed — the KPI strip, the reply-gap panel and the
+         stage bar with it. That was tolerable for a plain table read; it is
+         not for a function call, and it would mean an owner who cannot reach
+         the Sentinel also cannot see who is waiting for a reply. The rejection
+         becomes a value here, exactly as the whatsapp_contacts bridge does, so
+         a Sentinel failure withholds the stock figures and NOTHING ELSE — and
+         it is rendered as a withheld figure rather than as an empty lot. */
+      db(SENTINEL_RPC).then(rows => ({ rows, err: null }), e => ({ rows: null, err: e })),
       /* daily_metrics is the snapshot table the deltas below are read from. It
          is optional — where it has not been provisioned no delta line renders
          at all, which is the correct outcome. It is never substituted for.
@@ -741,6 +965,12 @@ SCREENS.overview = async host => {
       db(`whatsapp_contacts?select=chat_id,phone,push_name,lead_email&limit=${CONTACT_LIMIT}`)
         .then(rows => ({ rows, err: null }), e => ({ rows: [], err: e })),
     ]);
+    /* Empty on failure so every partition below is empty too — and NOTHING
+       below may present that emptiness as an answer. `sentinelErr` is what
+       separates "the engine says there is nothing to do" from "the engine did
+       not answer", and every caption about stock tests it first. */
+    const sentinel = sentinelRes.rows || [];
+    const sentinelErr = sentinelRes.err;
     const contacts = contactsRes.rows || [];
     const contactsErr = contactsRes.err;
     const contactsCapped = !contactsErr && contacts.length >= CONTACT_LIMIT;
@@ -783,40 +1013,68 @@ SCREENS.overview = async host => {
        reason the shared function is shaped that way. */
     const withBudget = pipe.withBudget;
     const pipeline = pipe.value;
-    const risk = inv.filter(i => up(i.aging_alert) === 'CRITICAL');
-    const warning = inv.filter(i => up(i.aging_alert) === 'WARNING');
-    /* Two different sums. The holding cost of the units actually at risk is the
-       number the "units at risk" KPI is about; the total across the lot is a
-       different figure and used to be printed beside it as though it were the
-       same one.
+    /* ── What the Sentinel says about the lot ────────────────────────────
+       Every line below is a partition of the engine's own columns. Nothing is
+       recomputed and nothing is inferred; where the engine says UNKNOWN or
+       NOT_COMPUTABLE that word is carried through to the screen.
 
-       2 Sep 2026 — AND NEITHER OF THEM MAY TURN AN UNKNOWN INTO A ZERO. Both
-       reduced with `(n0(i.holding_cost_accrued) || 0)`, which is the plausible
-       zero this codebase keeps re-learning: a null column added as 0, and the
-       total then printed as a confident figure. Lane A removed the un-sourced
-       AED 50/day rate from the database on 2 September, so
-       `inventory.holding_cost_accrued` is now NULL on all twelve rows — and
-       this line answered that with "AED 0 holding cost accrued in total"
-       across twelve cars, in the same strip as a caption calling it a total.
-       Nil and not-known are opposite claims about the dealership's money.
+       A DECISION IS ASKED FOR WHEN THE RECOMMENDATION IS NOT `HOLD`. That is
+       the engine's own convention, stated in the column comment on
+       inventory_actions.recommendation: "HOLD is never proposed — it is the
+       engine saying there is nothing to do". So this is not a severity filter
+       and must not become one. A unit can sit at LOW risk and still be asked
+       about, and — the case that matters more — nine LOW/HOLD units are nine
+       cars with nothing wrong with them, which this screen has to be able to
+       say without dressing them as a problem.
 
-       A tally, not a reduce: the sum of the rows that carry the figure, how
-       many did, and how many did not. `total` is null when none did, which
-       aed() renders as an em dash — so the caption below states the absence in
-       words instead of letting a dash stand in for a number. Overview reads the
-       stored column and does not import deriveUnit(); the Inventory screen
-       reads the Sentinel, which says NOT_COMPUTABLE with the same reason. */
-    const holdTally = (units) => {
-      let total = 0, n = 0;
-      for (const i of units) { const v = n0(i.holding_cost_accrued); if (v != null) { total += v; n += 1; } }
-      return { total: n ? total : null, n, of: units.length, missing: units.length - n };
-    };
-    const riskHolding = holdTally(risk);
-    const holding = holdTally(inv);
-    /* Asking price, not capital and not realised revenue: `price_aed` is what
-       the unit is listed at. `cost_aed` would be the money actually tied up and
-       is not read here; nothing on this table records what a unit sold for. */
-    const riskList = risk.reduce((a, i) => a + (n0(i.price_aed) || 0), 0);
+       `needsDecision` is therefore keyed on recommendation, and the risk split
+       under it is descriptive of that set rather than the thing that selected
+       it. Units the engine cannot classify arrive with overall_risk UNKNOWN;
+       they are counted separately, because unknown is not low. */
+    const HOLD = 'HOLD';
+    const needsDecision = sentinel.filter(u => up(u.recommendation) && up(u.recommendation) !== HOLD);
+    const holdUnits = sentinel.filter(u => up(u.recommendation) === HOLD);
+    const unRecommended = sentinel.length - needsDecision.length - holdUnits.length;
+    const byRisk = k => needsDecision.filter(u => up(u.overall_risk) === k).length;
+    const riskSplit = ['SEVERE', 'HIGH', 'ELEVATED', 'LOW'].map(k => [k, byRisk(k)]).filter(([, n]) => n);
+    const riskUnknown = needsDecision.filter(u => {
+      const r = up(u.overall_risk);
+      return !r || !['SEVERE', 'HIGH', 'ELEVATED', 'LOW'].includes(r);
+    }).length;
+    /* Worst risk present among the units being asked about, for the tone of the
+       tile. Read off the engine's own rank column, never off the order of the
+       words above — the engine ranks them and this screen does not get a vote. */
+    const worstRank = needsDecision.reduce((a, u) => {
+      const r = n0(u.overall_risk_rank);
+      return r != null && (a == null || r > a) ? r : a;
+    }, null);
+    const worstRisk = worstRank == null ? '' :
+      up((needsDecision.find(u => n0(u.overall_risk_rank) === worstRank) || {}).overall_risk);
+    /* The exposure. See expose() above for why this is not a reduce. */
+    const exposed = expose(needsDecision, u => u.impact_aed, u => u.impact_kind);
+    /* Ageing, from the engine's band rather than inventory.aging_alert. Counted
+       across the WHOLE lot, not just the units being asked about, because the
+       band and the recommendation answer different questions and an owner reads
+       both — a CRITICAL car the engine says HOLD on would otherwise vanish. */
+    const band = k => sentinel.filter(u => up(u.aging_band) === k).length;
+    const bandSplit = { critical: band('CRITICAL'), warning: band('WARNING'), healthy: band('HEALTHY') };
+    const oldestDays = sentinel.reduce((a, u) => {
+      const d = n0(u.days_in_stock);
+      return d != null && (a == null || d > a) ? d : a;
+    }, null);
+    /* The three unknowns, counted rather than described, so every sentence
+       about them carries its own denominator. `holding_cost_state` is the one
+       that used to be printed as AED 0; the other two decide what a REPRICE is
+       allowed to mean on this screen. */
+    const stateCount = (rows, col, ok) => rows.filter(u => up(u[col]) !== ok).length;
+    const noHolding = stateCount(sentinel, 'holding_cost_state', 'COMPUTED');
+    const noNetMargin = stateCount(sentinel, 'net_margin_state', 'COMPUTED');
+    const noMarket = sentinel.filter(u => up(u.market_position).startsWith('UNKNOWN')).length;
+    const noDemand = sentinel.filter(u => up(u.demand_signal).startsWith('UNKNOWN')).length;
+    /* One computed_at for the whole set — the function computes them in one
+       pass, so they agree; taken off the first row and shown, not assumed. */
+    const computedAt = sentinel.length ? sentinel[0].computed_at : null;
+    const defaultSettings = sentinel.some(u => u.settings_are_defaults === true);
 
     const sinceMs = Date.parse(since);
     /* ── What counts as a reply ──────────────────────────────────────────
@@ -1000,15 +1258,41 @@ SCREENS.overview = async host => {
         .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
       : [];
 
-    core = { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
+    /* An open enquiry nobody owns. This is a leak with a name on it and it is
+       counted off the same column v_needs_attention's own lead_unassigned
+       branch uses — `assigned_to_id IS NULL` — with the free-text `assigned_to`
+       tested as well, because a row carrying a rep's name and no id is a lead
+       somebody has claimed and the id is the thing that is missing. Terminal
+       leads are excluded: a DISQUALIFIED enquiry with no owner is not work.
+
+       Note the view's branch fires only for HOT leads. This one does not filter
+       by grade, so it can be LARGER than the view's count and is never
+       presented as the same number. */
+    const openUnassigned = openLeads.filter(l => !str(l.assigned_to_id) && !str(l.assigned_to));
+    /* Response time, partitioned rather than averaged, for the leak panel. The
+       KPI two tiles over reports the mean; this reports how many were measured
+       at all, because a lead with no recorded response time is UNMEASURED, not
+       compliant, and folding it into either side of the five-minute rule is the
+       lie the whole strip is written to avoid. */
+    const slaBreached = withResp.filter(l => Number(l.response_time_minutes) > 5).length;
+    const noResponseTime = leads.length - withResp.length;
+
+    core = { leads, sentinel, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
              openCount: openLeads.length, terminalCount: terminal.length, terminalNames,
-             risk, warning, riskHolding, riskList, holding, metrics, waiting,
+             metrics, waiting,
              untestable, unkeyed, recentTerminal, testedCount: tested.length,
              unmatchedReplies, outboundCount: replies.length, internalMarkers,
              recentCount: recent.length, canonOf,
              bridgeOk, contactsErr, contactsCapped, contactCount: contacts.length,
              leadsCapped,
-             invCapped: inv.length >= INV_LIMIT,
+             /* The Sentinel summary, derived once and read by both the KPI strip
+                and the leak panel, so the tile and the panel under it cannot
+                report two different counts of the same twelve cars. */
+             sentinelErr,
+             needsDecision, holdUnits, unRecommended, riskSplit, riskUnknown,
+             worstRisk, exposed, bandSplit, oldestDays,
+             noHolding, noNetMargin, noMarket, noDemand, computedAt, defaultSettings,
+             openUnassignedCount: openUnassigned.length, slaBreached, noResponseTime,
              outboundCapped: outbound.length >= OUTBOUND_LIMIT };
   } catch (e) {
     coreErr = e;
@@ -1022,11 +1306,13 @@ SCREENS.overview = async host => {
     strip.innerHTML = stateError('the overview', coreErr.message);
     pipeCard.innerHTML = stateError('pipeline by stage', coreErr.message);
   } else {
-    const { leads, inv, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
+    const { leads, sentinel, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
             openCount, terminalCount, terminalNames,
-            risk, warning, riskHolding, riskList, holding, metrics, waiting, recentCount,
+            metrics, waiting, recentCount,
             testedCount, untestable, unkeyed, recentTerminal, bridgeOk,
-            contactsErr, contactsCapped, leadsCapped, invCapped } = core;
+            contactsErr, contactsCapped, leadsCapped, sentinelErr,
+            needsDecision, holdUnits, unRecommended, riskSplit, riskUnknown, worstRisk,
+            exposed, bandSplit, oldestDays, noHolding, computedAt } = core;
 
     /* Deltas only exist once there are two snapshots. Until then no delta line
        renders at all — an earlier build showed "-18s vs last week" as a
@@ -1049,8 +1335,6 @@ SCREENS.overview = async host => {
       const good = lowerIsBetter ? d < 0 : d > 0;
       return `<span class="${good ? 't-ok' : 't-hot'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}</span> <span class="t-muted">against ${when}</span>`;
     };
-
-    const oldestRisk = risk.length ? Math.max(...risk.map(r => n0(r.days_in_stock) || 0)) : null;
 
     /* A snapshot that counted more open leads than the table now holds in total
        is, by arithmetic, counting rows that are no longer there — open leads are
@@ -1248,26 +1532,65 @@ SCREENS.overview = async host => {
             ? `<br>${muted(`No comparison is drawn against ${snapshotWhen.replace(/^The/, 'the')}. Snapshots taken before 2 Sep 2026 summed every lead with a budget, closed ones included, and recorded zero where none was recorded; snapshots taken since count open leads only, on the same rule as the figure above. This screen does not check which of the two wrote the row it read, so subtracting them could be subtracting two different definitions rather than showing a change.`)}`
             : '');
 
-    /* ── Units at risk ──────────────────────────────────────────────────── */
-    /* Says what the tally found, including when it found nothing. "No figure is
-       on record" and "AED 0" are different sentences and only one of them is
-       true today: `inventory.holding_cost_accrued` is NULL on every row because
-       the rate behind it had no source and was withdrawn, not because these
-       cars cost nothing to keep. */
-    const holdText = (t, what) => (t.total == null
-      ? `No holding cost is on record for ${what} — what a day of floor costs this dealership has not been recorded, so it is unknown rather than nil`
-      : `${aed(t.total)} holding cost across ${what}${t.missing
-        ? ` · ${num(t.missing)} of ${num(t.of)} ${plural(t.of, 'carries', 'carry')} no figure and ${plural(t.missing, 'is', 'are')} not in that total` : ''}`);
-    const riskSub = (risk.length
-        ? `<span class="t-hot">Oldest ${num(oldestRisk)} days in stock</span> ${muted(`· ${num(risk.length)} of ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read`)}`
-          + `<br>${muted(`${holdText(riskHolding, plural(risk.length, 'that unit', 'those units'))} · ${holdText(holding, `all ${num(inv.length)} ${plural(inv.length, 'unit', 'units')}`)}`)}`
-          + `<br>${muted(`${plural(risk.length, 'It is', 'They are')} listed at ${aed(riskList)} in total`)}`
-        : muted(`No unit is flagged CRITICAL across the ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read · ${holdText(holding, `all ${num(inv.length)} ${plural(inv.length, 'unit', 'units')}`)}`))
-      + (warning.length ? `<br>${warn(`${num(warning.length)} further ${plural(warning.length, 'unit is', 'units are')} flagged WARNING and not counted above.`)}` : '')
-      + (invCapped ? `<br>${warn(`Inventory read was capped at ${num(INV_LIMIT)} rows.`)}` : '')
-      /* The absence an owner will look for first on this strip, said in words.
-         Ageing is measured from `days_in_stock`, which the nightly job keeps;
-         there is no counterpart for the other end of the unit's life. */
+    /* ── Units needing a decision ────────────────────────────────────────
+       This tile was "Units at risk" and counted `inventory.aging_alert =
+       'CRITICAL'`. Two things were wrong with that and only one of them was the
+       second source.
+
+       The label was the other. "At risk" is a severity word, and the number
+       under it was a count of cars that had crossed a date threshold — which is
+       not the same question an owner is asking, and not the question the engine
+       answers. A car can be CRITICAL on age and still be the right car to keep;
+       a car can be inside every threshold and still need a price looked at. The
+       engine emits a RECOMMENDATION per unit and says HOLD when there is
+       nothing to do, so what this tile counts now is the units where the engine
+       is asking for a person, and the risk words appear underneath as a
+       description of that set rather than as its definition.
+
+       The healthy majority is stated in the same breath and in the engine's own
+       words. Nine cars the engine says HOLD on are nine cars with nothing wrong
+       with them, and a front page that leaves them out of the sentence makes a
+       twelve-car lot look like a crisis. */
+    const holdWords = holdUnits.length
+      ? `${num(holdUnits.length)} further ${plural(holdUnits.length, 'unit is', 'units are')} on HOLD — the engine's word for nothing to do`
+      : '';
+    const riskWords = riskSplit.length
+      ? riskSplit.map(([k, n]) => `${num(n)} ${k}`).join(' · ')
+        + (riskUnknown ? ` · ${num(riskUnknown)} at a risk the engine could not classify` : '')
+      : '';
+    const decisionSub = (sentinelErr
+        /* Withheld, not zero. A "0" over "the Sentinel could not be read" is
+           the same class of lie as the AED 0 this tile used to print: it turns
+           an unanswered question into a clean answer, and it is the one thing
+           this tile is not allowed to do. */
+        ? warn(`The Profit Sentinel could not be read (${sentinelErr.message}), so nothing is claimed about stock, margin or ageing. No figure is shown rather than a zero — this is a question that went unanswered, not a lot with nothing wrong with it.`)
+      : needsDecision.length
+        ? `<span class="${worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 't-hot' : 't-warm'}">${esc(riskWords)}</span>`
+          + `<br>${muted(exposureLine(exposed, plural(needsDecision.length, 'that unit', 'those units')))}`
+        : sentinel.length
+          ? muted(`The engine recommends HOLD on every one of the ${num(sentinel.length)} ${plural(sentinel.length, 'unit', 'units')} it scored, so it is not asking for a decision on any of them`)
+          : muted('The Profit Sentinel returned no units to score'))
+      + (holdWords ? `<br>${muted(holdWords + '.')}` : '')
+      + (unRecommended ? `<br>${warn(`${num(unRecommended)} ${plural(unRecommended, 'unit carries', 'units carry')} no recommendation at all and ${plural(unRecommended, 'is', 'are')} in neither figure.`)}` : '')
+      /* The unknown that used to be printed as AED 0. It is the first thing an
+         owner will try to work out from this tile — "how fast is that costing
+         me" — and the answer is that nobody knows, because nobody has told the
+         system what a day of floor costs. Said as a count over a denominator,
+         because "holding cost is unknown" without one is not checkable. */
+      + (noHolding
+          ? `<br>${warn(`Holding cost is NOT COMPUTABLE on ${num(noHolding)} of ${num(sentinel.length)} ${plural(sentinel.length, 'unit', 'units')}: this dealership has never recorded what a day of floor costs, so how fast that margin is being eaten is unknown, not nil. Net margin is withheld for the same reason.`)}`
+          : '')
+      + (bandSplit.critical || bandSplit.warning
+          ? `<br>${muted(`On age alone the engine bands the lot ${num(bandSplit.critical)} CRITICAL · ${num(bandSplit.warning)} WARNING · ${num(bandSplit.healthy)} HEALTHY${
+              oldestDays != null ? `, oldest ${num(oldestDays)} days in stock` : ''}. Ageing and the recommendation are different questions and this tile counts the second.`)}`
+          : oldestDays != null
+            ? `<br>${muted(`No unit is banded WARNING or CRITICAL on age; the oldest has been in stock ${num(oldestDays)} days.`)}`
+            : '')
+      + (computedAt ? `<br>${muted(`Computed by the Sentinel at ${dubaiStamp(computedAt)}.`)}` : '')
+      /* The absence an owner will look for next, said in words. Ageing is
+         measured from `days_in_stock`, which the nightly job keeps; there is no
+         counterpart for the other end of the unit's life, on the table or in
+         the engine. */
       + `<br>${muted('Inventory records no sale date, so this screen cannot show what sold, what it sold for, or how long a sold unit sat on the lot. Days in stock is the only ageing figure the database keeps.')}`;
 
     strip.innerHTML = [
@@ -1276,7 +1599,12 @@ SCREENS.overview = async host => {
       kpi('Awaiting first reply', num(waiting.length), waitSub, waiting.length ? 't-hot' : ''),
       kpi(respLabel, mins(avgResp), respSub),
       kpi('Pipeline value', aed(pipeline), pipeSub),
-      kpi('Units at risk', num(risk.length), riskSub, risk.length ? 't-hot' : ''),
+      /* `num(null)` is an em dash, and that is the whole point on the error
+         branch: the value slot says "not known", the subtitle says why, and
+         neither of them says nought. */
+      kpi('Units needing a decision', sentinelErr ? num(null) : num(needsDecision.length), decisionSub,
+          sentinelErr || !needsDecision.length ? ''
+            : (worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 't-hot' : 't-warm')),
     ].join('');
 
     const seg = [['HOT', hot, 'var(--hot)'], ['WARM', warm, 'var(--warm)'], ['COLD', cold, 'var(--cold)']];
@@ -1410,6 +1738,425 @@ SCREENS.overview = async host => {
   /* ── Triage row ─────────────────────────────────────────────────────────── */
 
   const panels = [];
+
+  /* ── 0 · Where money is leaking ─────────────────────────────────────────
+     The Revenue Command Center, and the reason PRODUCT.md gives this screen a
+     commercial role rather than a description. Everything on it is a leak with
+     a figure, an owner and a link into the screen that can close it.
+
+     FOUR RULES, ALL OF THEM LEARNED FROM SOMETHING THIS FILE GOT WRONG.
+
+     1. A ZERO CHECK IS NOT AN OMITTED CHECK. Every leak this panel knows how to
+        find is either a row or a named line in the all-clear sentence at the
+        bottom. A check that finds nothing and then says nothing is
+        indistinguishable from a check that never ran, and this screen has
+        shipped that confusion in six places.
+
+     2. NO HEADLINE TOTAL ACROSS THE WHOLE PANEL. There is no "AED X leaking
+        today" number here and there must not be. Margin exposed in a car,
+        margin frozen behind an unanswered approval and a lead nobody owns are
+        not the same quantity and cannot be added; a single confident figure
+        made of the three would be the most sellable sentence on this screen and
+        the least true. Each leak carries its own figure, in the engine's own
+        units, and the arithmetic stops there.
+
+     3. THE HEALTHY MAJORITY IS PART OF THE ANSWER. Nine of twelve units are LOW
+        risk with a HOLD recommendation. A leak panel that lists three cars and
+        says nothing about the other nine is technically complete and reads as
+        an emergency.
+
+     4. A PARTIAL READ DEGRADES, IT DOES NOT BLANK. The three sections come from
+        three independent reads. One failing withholds its own section and says
+        so; only losing all three raises to panel()'s error card, where the
+        Retry button is. A section that quietly renders nothing would be read as
+        "no leaks here". */
+  panels.push(panel(leakHost, {
+    title: 'Where money is leaking',
+    sub: 'Every figure here is one the engine produced, next to the screen that can act on it. '
+       + 'Exposure is margin at risk in a car that has not sold — never loss, revenue, savings or recovery',
+    actions: `<button class="btn sm" data-act="actions">Open Action Center</button>`,
+    load: async () => {
+      const readAt = new Date().toISOString();
+      /* Settled, not awaited together: each of these answers a different
+         section and one failing must not withhold the other two. */
+      const [q, att] = await Promise.all([
+        readQueue().then(rows => ({ rows, err: null }), e => ({ rows: null, err: e })),
+        readAttention().then(v => ({ v, err: null }), e => ({ v: null, err: e })),
+      ]);
+      /* `core` and `coreErr` are settled before any panel is constructed — the
+         core read is awaited above — so reading them here is reading a value,
+         not racing one. */
+      if (coreErr && q.err && att.err) throw coreErr;
+      return { readAt, queue: q.rows, queueErr: q.err,
+               threads: att.v ? att.v.threads : null, attItems: att.v ? att.v.items : null,
+               attErr: att.err };
+    },
+    render: ({ readAt, queue, queueErr, threads, attItems, attErr }) => {
+      const rows = [];
+      /* Checks that came back empty, named one by one. See rule 1. */
+      const clear = [];
+      const notes = [];
+
+      const row = ({ icon, iconTone, head, badge, lines, right, rightNote, target }) => `
+        <div class="list-item" role="button" tabindex="0" data-goto="${esc(target)}"
+             title="Open ${esc(target)}" style="align-items:flex-start">
+          <span class="material-symbols-outlined t-${esc(iconTone)}" style="font-size:20px">${esc(icon)}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${badge || ''}</div>
+            ${lines.filter(Boolean).map(l => `<div class="cell-sub">${l}</div>`).join('')}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div class="num t-${esc(iconTone)}" style="font-weight:600;font-size:18px">${right}</div>
+            ${rightNote ? `<div class="cell-sub">${esc(rightNote)}</div>` : ''}
+          </div>
+          <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
+        </div>`;
+
+      /* ── Inventory ─────────────────────────────────────────────────────
+         Straight off rpc/sentinel_inventory_actions(), partitioned in the core
+         read. The KPI strip above renders the same object, so the tile and this
+         row cannot report two counts of the same twelve cars. */
+      if (coreErr) {
+        notes.push(`The core read failed (${coreErr.message}), so nothing is claimed here about stock, margin or ageing — not that there is nothing wrong with it.`);
+      } else if (core.sentinelErr) {
+        notes.push(`The Profit Sentinel could not be read (${core.sentinelErr.message}), so no stock leak is listed above and none is ruled out. This is a question that went unanswered, not a lot with nothing wrong with it.`);
+      } else if (!core.sentinel.length) {
+        notes.push('The Profit Sentinel returned no units, so there is no stock for it to score. That is an empty lot or a read that matched nothing, and this screen cannot tell those apart.');
+      } else if (core.needsDecision.length) {
+        const worst = core.worstRisk === 'SEVERE' || core.worstRisk === 'HIGH' ? 'hot' : 'warm';
+        rows.push(row({
+          icon: 'directions_car', iconTone: worst,
+          head: `${num(core.needsDecision.length)} of ${num(core.sentinel.length)} ${plural(core.sentinel.length, 'unit', 'units')} ${plural(core.needsDecision.length, 'needs', 'need')} a pricing or stock decision`,
+          badge: core.riskSplit.map(([k, n]) => pill(`${n} ${k}`, tone(k), { verbatim: false })).join(' '),
+          lines: [
+            esc(exposureLine(core.exposed, plural(core.needsDecision.length, 'that unit', 'those units'))),
+            muted(EXPOSURE_CAVEAT),
+            core.noHolding
+              ? warn(`How fast it is being eaten is NOT COMPUTABLE on ${num(core.noHolding)} of ${num(core.sentinel.length)} ${plural(core.sentinel.length, 'unit', 'units')} — no holding rate is on record for this dealership, so holding cost and net margin are unknown rather than nil. Enter a sourced rate in Settings and both become figures.`)
+              : '',
+            /* Why a REPRICE here is a request for a person and not a price. Both
+               halves are counted, because "we have no market data" without a
+               denominator is a claim nobody can check. */
+            (core.noMarket || core.noDemand)
+              ? muted(`Market position is UNKNOWN on ${num(core.noMarket)} of ${num(core.sentinel.length)} and demand on ${num(core.noDemand)} of ${num(core.sentinel.length)}. NEXUS therefore names no new price and cannot: a recommendation to reprice is a request for a person to look at the price, not a figure it computed.`)
+              : '',
+            core.holdUnits.length
+              ? muted(`${num(core.holdUnits.length)} further ${plural(core.holdUnits.length, 'unit is', 'units are')} on HOLD — the engine's own word for nothing to do — and ${plural(core.holdUnits.length, 'is', 'are')} not a problem waiting to be found.`)
+              : '',
+          ],
+          right: num(core.needsDecision.length),
+          rightNote: `of ${num(core.sentinel.length)} scored`,
+          target: 'inventory',
+        }));
+      } else {
+        clear.push(`the engine recommends HOLD on all ${num(core.sentinel.length)} scored ${plural(core.sentinel.length, 'unit', 'units')}, so it is asking for no stock decision today`);
+      }
+
+      /* ── Actions outstanding ───────────────────────────────────────────
+         v_inventory_action_queue. `is_live`, `awaiting_decision` and
+         `deferral_now_due` are the view's own booleans and are read, never
+         re-derived from `status` — the view is where that rule lives. */
+      if (queueErr) {
+        notes.push(`The action queue could not be read (${queueErr.message}), so nothing is claimed about what is waiting on a person. An empty queue and an unread one are not the same thing.`);
+      } else {
+        const q = queue || [];
+        const capped = q.length >= QUEUE_LIMIT;
+        const awaiting = q.filter(a => a.awaiting_decision === true);
+        /* Approved and not carried out. This is the leak an owner most often
+           does not know they have: the decision was made, the money is still
+           sitting in the car, and nothing in the building is chasing it. The
+           view says it in its own words and they are quoted rather than
+           paraphrased — "an approval is a decision, not money". */
+        const approvedOpen = q.filter(a => up(a.status) === 'APPROVED' && !a.executed_at);
+        const dueAgain = q.filter(a => a.deferral_now_due === true);
+        /* Escalated because nobody at this dealership may approve. The column
+           comment is explicit that the action stays PROPOSED — an escalation is
+           a request for a person, not a decision — so these are counted as
+           their own leak and are NOT subtracted from `awaiting`. */
+        const escalated = q.filter(a => a.escalated_at);
+        const closed = q.filter(a => a.is_live === false);
+        const executed = q.filter(a => a.executed_at);
+        const attributed = q.filter(a => n0(a.recovered_value_aed) != null);
+        const disagreed = q.filter(a => a.engine_still_agrees === false);
+
+        if (awaiting.length) {
+          const t = expose(awaiting, a => a.engine_impact_aed, a => a.engine_impact_kind);
+          const oldest = awaiting.reduce((a, b) => (Date.parse(b.proposed_at) < Date.parse(a.proposed_at) ? b : a), awaiting[0]);
+          rows.push(row({
+            icon: 'pending_actions', iconTone: 'warm',
+            head: `${num(awaiting.length)} ${plural(awaiting.length, 'action is', 'actions are')} waiting on a decision`,
+            badge: pill('Nobody has answered', 'warm', { verbatim: false }),
+            lines: [
+              esc(exposureLine(t, plural(awaiting.length, 'that action', 'those actions'))
+                + `. ${plural(awaiting.length, 'That figure is', 'Those figures are')} frozen at what the engine said when ${plural(awaiting.length, 'it was', 'each was')} raised, not recomputed tonight.`),
+              /* The engine's own sentence about the cost of waiting, rendered
+                 verbatim. It already carries the NOT COMPUTABLE caveat, so
+                 restating it here would be this screen writing its own version
+                 of a sentence the database owns. */
+              str(oldest.cost_of_doing_nothing) ? muted(str(oldest.cost_of_doing_nothing)) : '',
+              muted(`Oldest raised ${ago(oldest.proposed_at)}${str(oldest.unit_model) ? ` on the ${str(oldest.unit_model)}` : ''}.`),
+            ],
+            right: num(awaiting.length),
+            rightNote: 'awaiting a person',
+            target: 'actions',
+          }));
+        } else {
+          clear.push('no action is waiting on a decision');
+        }
+
+        if (approvedOpen.length) {
+          const t = expose(approvedOpen, a => a.engine_impact_aed, a => a.engine_impact_kind);
+          const oldest = approvedOpen.reduce((a, b) => (Date.parse(b.decided_at || b.proposed_at) < Date.parse(a.decided_at || a.proposed_at) ? b : a), approvedOpen[0]);
+          rows.push(row({
+            icon: 'task_alt', iconTone: 'hot',
+            head: `${num(approvedOpen.length)} approved ${plural(approvedOpen.length, 'action has', 'actions have')} not been carried out`,
+            badge: pill('Decided, not done', 'hot', { verbatim: false }),
+            lines: [
+              esc(exposureLine(t, plural(approvedOpen.length, 'that unit', 'those units'))),
+              str(oldest.outcome_sentence) ? muted(str(oldest.outcome_sentence)) : '',
+              muted(`Approved ${ago(oldest.decided_at || oldest.proposed_at)}${str(oldest.decided_by_name) ? ` by ${str(oldest.decided_by_name)}` : ''}${
+                str(oldest.assigned_to_name) ? `, assigned to ${str(oldest.assigned_to_name)}`
+                : str(oldest.assigned_role) ? `, assigned to the ${str(oldest.assigned_role)} role and to nobody by name`
+                : ', and assigned to nobody'}.`),
+            ],
+            right: num(approvedOpen.length),
+            rightNote: 'not yet done',
+            target: 'actions',
+          }));
+        } else {
+          clear.push('no approved action is sitting uncarried-out');
+        }
+
+        if (escalated.length) {
+          rows.push(row({
+            icon: 'escalator_warning', iconTone: 'hot',
+            head: `${num(escalated.length)} ${plural(escalated.length, 'action was', 'actions were')} escalated because nobody here may approve ${plural(escalated.length, 'it', 'them')}`,
+            badge: pill('No approver', 'hot', { verbatim: false }),
+            lines: [
+              muted(str(escalated[0].escalation_reason) || 'The database recorded no reason on this escalation.'),
+              muted('An escalation is a request for a person, not a decision: these stay PROPOSED and nothing about the unit has changed.'),
+            ],
+            right: num(escalated.length),
+            rightNote: 'need an approver',
+            target: 'actions',
+          }));
+        } else {
+          clear.push('nothing has been escalated for want of somebody able to approve it');
+        }
+
+        if (dueAgain.length) {
+          rows.push(row({
+            icon: 'event_repeat', iconTone: 'warm',
+            head: `${num(dueAgain.length)} deferred ${plural(dueAgain.length, 'action is', 'actions are')} due again`,
+            badge: pill('Deferral expired', 'warm', { verbatim: false }),
+            lines: [muted('Somebody chose to wait and the date they chose has passed. The decision is open again.')],
+            right: num(dueAgain.length),
+            rightNote: 'due again',
+            target: 'actions',
+          }));
+        } else {
+          clear.push('no deferred action has come due');
+        }
+
+        /* A unit the engine is asking about that nobody has even been asked
+           about. Distinct from "waiting on a decision": there is no record at
+           all, so it appears on no queue and nobody is late. This is the leak
+           that is invisible everywhere else in the product. */
+        if (!coreErr && !core.sentinelErr) {
+          const hasAction = new Set(q.map(a => str(a.unit_id)));
+          const liveOn = new Set(q.filter(a => a.is_live === true).map(a => str(a.unit_id)));
+          const unraised = core.needsDecision.filter(u => !hasAction.has(str(u.id)));
+          const answeredStill = core.needsDecision.filter(u => !liveOn.has(str(u.id)) && hasAction.has(str(u.id)));
+          if (unraised.length) {
+            const t = expose(unraised, u => u.impact_aed, u => u.impact_kind);
+            rows.push(row({
+              icon: 'help', iconTone: 'warm',
+              head: `${num(unraised.length)} ${plural(unraised.length, 'unit the engine is asking about has', 'units the engine is asking about have')} never been put to a person`,
+              badge: pill('No record', 'warm', { verbatim: false }),
+              lines: [
+                esc(exposureLine(t, plural(unraised.length, 'that unit', 'those units'))),
+                muted(`There is no action record for ${plural(unraised.length, 'it', 'them')}, so ${plural(unraised.length, 'it appears', 'they appear')} on no queue and nobody is late answering. Raising one freezes what the engine says today onto a record somebody then answers.`),
+              ],
+              right: num(unraised.length),
+              rightNote: 'never raised',
+              target: 'actions',
+            }));
+          } else if (core.needsDecision.length) {
+            clear.push(`every unit the engine is asking about has an action record against it`);
+          }
+          if (answeredStill.length) {
+            notes.push(`${num(answeredStill.length)} ${plural(answeredStill.length, 'unit', 'units')} the engine still recommends acting on ${plural(answeredStill.length, 'has', 'have')} already been answered and closed — a person decided, and that decision is the record. It is not counted as outstanding above.`);
+          }
+        }
+
+        /* Recovery. Rendered every time, whether or not anything is attributed,
+           because this is the sentence the whole product is most tempted to
+           get wrong. `recovered_value_aed` is null on every row on this box and
+           null is not zero: the column comment says a missing outcome is a
+           state with a reason, and the view spells that reason out per row. */
+        if (attributed.length) {
+          const t = expose(attributed, a => a.recovered_value_aed, () => 'ATTRIBUTED_MARGIN');
+          notes.push(`${num(attributed.length)} of ${num(q.length)} ${plural(q.length, 'action', 'actions')} ${plural(attributed.length, 'has', 'have')} a recorded sale tied to ${plural(attributed.length, 'it', 'them')} by a person: ${aed(t.total)} of realised gross margin, ATTRIBUTED and not confirmed as caused. NEXUS does not claim the action produced the sale.`);
+        } else if (q.length) {
+          notes.push(`No action has an attributed outcome. Recovered value is not zero on ${num(q.length)} ${plural(q.length, 'action', 'actions')} — it is not recorded, and it stays that way until a person ties a real recorded sale to a unit, which today they must do by hand because purchase_history carries no reference to an inventory unit at all.`);
+        }
+        if (executed.length) {
+          notes.push(`${num(executed.length)} ${plural(executed.length, 'action has', 'actions have')} been marked carried out. Whether ${plural(executed.length, 'it', 'they')} produced anything is the separate question above.`);
+        }
+        if (closed.length) {
+          notes.push(`${num(closed.length)} ${plural(closed.length, 'action is', 'actions are')} closed — rejected, withdrawn or already carried out — and ${plural(closed.length, 'is', 'are')} not counted as outstanding.`);
+        }
+        if (disagreed.length) {
+          notes.push(`${num(disagreed.length)} open ${plural(disagreed.length, 'action no longer matches', 'actions no longer match')} what the engine recommends for that unit today. The figures above are the ones frozen when each was raised; Action Center shows both side by side.`);
+        }
+        if (!q.length) {
+          notes.push('No action has ever been recorded against a unit. The engine has been recommending and nobody has answered it yet — which is a state, not a clean sheet.');
+        }
+        if (capped) {
+          notes.push(`The action queue read was capped at ${num(QUEUE_LIMIT)} rows, so the counts above are a floor.`);
+        }
+      }
+
+      /* ── Leads and silence ─────────────────────────────────────────────
+         THE COUNT THIS SECTION REFUSES TO PRINT is the row count of the leads
+         table. See the header of this file: two of the three rows on this box
+         are wrong numbers the router auto-created from uncaptioned WhatsApp
+         images, and they carry that diagnosis on the row. "3 leads" is true and
+         sells a lead flow that does not exist. What is counted here is OPEN
+         enquiries, with the closed ones named and the reason given, and the
+         sample size stated in words wherever a rate could be read into it. */
+      if (coreErr) {
+        notes.push('The leads read failed, so nothing is claimed here about response, ownership or reply gaps.');
+      } else {
+        if (core.openUnassignedCount) {
+          rows.push(row({
+            icon: 'person_alert', iconTone: 'warm',
+            head: `${num(core.openUnassignedCount)} open ${plural(core.openUnassignedCount, 'enquiry has', 'enquiries have')} no rep on the record`,
+            badge: pill('Unowned', 'warm', { verbatim: false }),
+            lines: [
+              muted(`Of ${num(core.openCount)} open ${plural(core.openCount, 'enquiry', 'enquiries')} in the table. An enquiry with no owner is nobody's to follow up, whatever its grade — this is not the view's HOT-only unassigned check and the two counts are not the same number.`),
+              core.terminalCount
+                ? muted(`${num(core.terminalCount)} further ${plural(core.terminalCount, 'row is', 'rows are')} closed (${core.terminalNames.join(', ')}) and ${plural(core.terminalCount, 'is', 'are')} not counted: a closed enquiry needs no owner.`)
+                : '',
+              core.openCount <= THIN
+                ? warn(`${num(core.openCount)} open ${plural(core.openCount, 'enquiry is a record', 'enquiries are records')}, not a pipeline. Nothing on this line is a rate and none of it says anything about how this dealership performs.`)
+                : '',
+            ],
+            right: num(core.openUnassignedCount),
+            rightNote: `of ${num(core.openCount)} open`,
+            target: 'leads',
+          }));
+        } else if (core.openCount) {
+          clear.push(`all ${num(core.openCount)} open ${plural(core.openCount, 'enquiry has', 'enquiries have')} a rep on the record`);
+        } else {
+          clear.push('no enquiry in the table is still open, so none is waiting on an owner');
+        }
+
+        if (core.bridgeOk && core.waiting.length) {
+          rows.push(row({
+            icon: 'mark_email_unread', iconTone: 'hot',
+            head: `${num(core.waiting.length)} open ${plural(core.waiting.length, 'enquiry has', 'enquiries have')} had no reply since ${plural(core.waiting.length, 'it', 'they')} arrived`,
+            badge: pill('No reply sent', 'hot', { verbatim: false }),
+            lines: [
+              muted(`Out of ${num(core.testedCount)} open ${plural(core.testedCount, 'enquiry', 'enquiries')} from the last ${WINDOW_DAYS} days that could be checked against communication_logs. The oldest arrived ${ago(core.waiting[0].created_at)}.`),
+              core.untestable ? warn(`${num(core.untestable)} could not be checked at all and ${plural(core.untestable, 'is', 'are')} in neither figure.`) : '',
+            ],
+            right: num(core.waiting.length),
+            rightNote: `of ${num(core.testedCount)} checked`,
+            target: 'leads',
+          }));
+        } else if (!core.bridgeOk) {
+          notes.push(`The reply-gap check did not run. ${bridgeWhy(core.contactsErr, core.contactsCapped)} No enquiry is being claimed as answered or unanswered.`);
+        } else if (core.testedCount) {
+          clear.push(`all ${num(core.testedCount)} open ${plural(core.testedCount, 'enquiry', 'enquiries')} from the last ${WINDOW_DAYS} days that could be checked ${plural(core.testedCount, 'has', 'have')} a reply after ${plural(core.testedCount, 'it', 'they')} arrived`);
+        }
+
+        /* SLA, stated as a partition and never as a percentage. Two measured
+           leads is not a response-time record, and the unmeasured ones are
+           reported as unmeasured — a null response_time_minutes means nobody
+           timed that enquiry, NOT that nobody answered it. */
+        if (core.slaBreached) {
+          rows.push(row({
+            icon: 'timer', iconTone: 'hot',
+            head: `${num(core.slaBreached)} of ${num(core.withResp.length)} timed ${plural(core.withResp.length, 'enquiry', 'enquiries')} ${plural(core.slaBreached, 'breached', 'breached')} the five-minute rule`,
+            badge: pill('SLA breach', 'hot', { verbatim: false }),
+            lines: [
+              core.noResponseTime ? warn(`${num(core.noResponseTime)} further ${plural(core.noResponseTime, 'enquiry has', 'enquiries have')} no recorded response time. That is unmeasured, not compliant, and ${plural(core.noResponseTime, 'it is', 'they are')} in neither figure.`) : '',
+              core.withResp.length <= THIN ? warn(`${num(core.withResp.length)} ${plural(core.withResp.length, 'measurement is', 'measurements are')} not a response-time record.`) : '',
+            ],
+            right: num(core.slaBreached),
+            rightNote: `of ${num(core.withResp.length)} timed`,
+            target: 'leads',
+          }));
+        } else if (core.withResp.length) {
+          clear.push(`none of the ${num(core.withResp.length)} timed ${plural(core.withResp.length, 'enquiry', 'enquiries')} breached the five-minute rule`
+            + (core.noResponseTime ? ` — though ${num(core.noResponseTime)} further ${plural(core.noResponseTime, 'row carries', 'rows carry')} no recorded response time and ${plural(core.noResponseTime, 'is', 'are')} unmeasured rather than compliant` : ''));
+        } else if (core.leads.length) {
+          notes.push(`No enquiry on file carries a recorded response time, so nothing is claimed about the five-minute rule in either direction.`);
+        }
+      }
+
+      /* ── Silence ───────────────────────────────────────────────────────
+         v_conversations, via the shared attention read. `identified` is what
+         decides whether a waiting thread is a person we know: 'lead' is the
+         only value that means we hold a record for them, and the rest are the
+         weaker thing they are. A count of waiting threads is honest; calling
+         them customers is not, and on this box not one of them resolves to a
+         lead. That distinction is the whole of this row. */
+      if (attErr || !threads) {
+        notes.push('v_conversations did not load, so waiting WhatsApp threads could not be counted. That is a missing read, not a quiet inbox.');
+      } else if (threads.length) {
+        const known = threads.filter(t => str(t.identified) === 'lead').length;
+        const inWindow = (attItems || []).filter(i => i.kind === 'unanswered_chat').length;
+        rows.push(row({
+          icon: 'mark_chat_unread', iconTone: 'hot',
+          head: `${num(threads.length)} WhatsApp ${plural(threads.length, 'thread is', 'threads are')} waiting on a reply`,
+          badge: known ? pill(`${known} identified`, 'ok', { verbatim: false }) : pill('None identified', 'warm', { verbatim: false }),
+          lines: [
+            attItems
+              ? muted(`${num(inWindow)} of them fall inside the ${CHAT_WINDOW_DAYS}-day window Needs attention uses; the rest are older and appear only on Conversations.`)
+              : '',
+            known === 0
+              ? warn(`Not one of these threads resolves to a lead record — every one is identified only by the name its owner typed into their own WhatsApp profile. So this is ${num(threads.length)} ${plural(threads.length, 'conversation', 'conversations')} nobody has answered, and NEXUS cannot say which of them, if any, is a customer enquiry.`)
+              : muted(`${num(known)} of ${num(threads.length)} ${plural(known, 'resolves', 'resolve')} to a lead record; the rest are identified only by a WhatsApp profile name, so nothing is claimed about who they are.`),
+          ],
+          right: num(threads.length),
+          rightNote: 'awaiting a reply',
+          target: 'conversations',
+        }));
+      } else {
+        clear.push('no WhatsApp thread is waiting on a reply');
+      }
+
+      /* Read once, said first, because it governs everything above it. */
+      notes.unshift(`Read once at ${clock(readAt)}, when this screen opened. Nothing on this screen refreshes on a timer, so a leak closed since then is still listed and one opened since then is not — reopen Overview for a fresh read.`);
+      if (!coreErr && !core.sentinelErr && core.defaultSettings) {
+        notes.push('The Sentinel is running on its default thresholds for this dealership, not on figures they supplied. The ageing bands come from the nightly job the database already runs; the promote, wholesale and margin-floor days are chosen defaults and are marked as chosen, not measured, in the database.');
+      }
+      notes.push('There is no single "total leaking" figure on this panel and there will not be one. Margin exposed in a car, an approval nobody has acted on and an enquiry nobody owns are three different quantities; adding them would produce a number that is nowhere in the database.');
+
+      const clearLine = clear.length
+        ? `<div class="list-item" style="cursor:default;align-items:flex-start">
+             <span class="material-symbols-outlined t-ok" style="font-size:20px">check_circle</span>
+             <div class="cell-sub" style="white-space:normal">${esc(`Checked and clear right now: ${clear.join('; ')}.`)} ${
+               esc('Each of these ran and found nothing — that is not the same as a check this panel does not make.')}</div>
+           </div>`
+        : '';
+      const foot = `<div class="list-item" style="cursor:default">
+        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
+        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+
+      if (!rows.length) {
+        return stateEmpty('No leak this screen can measure is open',
+          'Every check this panel makes came back empty. It measures inventory decisions, the action queue, lead ownership, reply gaps, response time and waiting WhatsApp threads — and nothing else, so this is not a statement about the parts of the business NEXUS cannot see.',
+          'savings') + clearLine + foot;
+      }
+      return `<div>${rows.join('')}${clearLine}${foot}</div>`;
+    },
+  }).then(card => {
+    card.querySelector('[data-act]')?.addEventListener('click', () => go('actions'));
+    wireGoto(card);
+  }));
 
   /* 1 · Leads nobody has replied to. */
   panels.push(panel(replyHost, {
@@ -1802,7 +2549,17 @@ SCREENS.overview = async host => {
     kyc_archive_gap:  { verb: 'waiting' },
     workflow_failure: { verb: 'last did not deliver' },
     undercut:         { verb: 'price last seen' },
-    inventory_aging:  { none: true, blank: 'the view timestamps this kind with the moment the query ran, not a waiting time — the age is in the detail above' },
+    /* The `blank` sentence used to end "— the age is in the detail above", and
+       on 2 Sep 2026 that became a caption asserting the opposite of its own
+       branch. The view builds this item's detail as
+       `days_in_stock || ' days in stock · AED ' || to_char(holding_cost_accrued, …)`,
+       and Postgres concatenation with NULL yields NULL — so the moment
+       `inventory.holding_cost_accrued` was nulled (the un-sourced AED 50/day
+       rate was withdrawn), the whole detail string went null and the row
+       rendered an empty detail under a sentence pointing at it. The pointer is
+       gone; what replaces the detail is the Sentinel's own figures, and the row
+       says which of the two it is showing. */
+    inventory_aging:  { none: true, blank: 'the view timestamps this kind with the moment the query ran, so there is no waiting time here to show' },
     _default:         { verb: 'recorded' },
   };
   /* Severity alone put four parked cars above a person who had already written
@@ -1887,6 +2644,16 @@ SCREENS.overview = async host => {
 
       const byChat = new Map();
       (threads || []).forEach(t => { const k = str(t.chat_id); if (k) byChat.set(k, t); });
+
+      /* The Sentinel, indexed by stock number, for the one kind whose detail
+         string the view can no longer build. `inventory_aging` keys its `ref`
+         on `inventory.id` and the Sentinel keys on the same column, so this is
+         an exact join and not a heuristic. It is used for one purpose — to say
+         how old a unit is when the view's own sentence came back empty — and
+         it never overrules a detail the view did produce. */
+      const unitById = new Map();
+      (core?.sentinel || []).forEach(u => { const k = str(u.id); if (k) unitById.set(k, u); });
+      let unmatchedUnits = 0, agedFromEngine = 0;
 
       /* Workflow health, indexed by both of the things the view's `ref` could
          be. `v_needs_attention` documents `ref` only as an opaque reference, so
@@ -1990,9 +2757,41 @@ SCREENS.overview = async host => {
           }${fc && fc.notClean != null
             ? ` <span class="t-muted">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
             : ''}</div>`;
+        } else if (it.kind === 'inventory_aging') {
+          /* The view's detail for this kind is
+             `days_in_stock || ' days in stock · AED ' || to_char(holding_cost_accrued, …)`
+             and concatenating with NULL in Postgres yields NULL. The holding
+             rate was withdrawn on 2 Sep 2026 for having no source, so the
+             column is null on every unit and this item now arrives with NO
+             DETAIL AT ALL — an empty line where the car's age used to be, and
+             a caption beside it that used to point at it.
+
+             The age is not lost, it is in the engine: the Sentinel keys on the
+             same `inventory.id` this item's ref carries. So where the view's
+             sentence is empty the row shows the engine's own days in stock and
+             ageing band and SAYS it came from there, and where the view does
+             produce a detail that detail is shown unchanged. Neither case
+             invents a holding cost, because there is not one to state. */
+          const unit = unitById.get(str(it.ref)) || null;
+          const detail = str(it.detail);
+          head = esc(it.title);
+          if (detail) {
+            sub = `${esc(detail)} · ${waited}`;
+          } else if (unit) {
+            agedFromEngine += 1;
+            const days = n0(unit.days_in_stock);
+            sub = `${esc(days == null ? 'Days in stock are not recorded for this unit' : `${num(days)} days in stock`)}`
+              + `${str(unit.aging_band) ? ` · ${pill(str(unit.aging_band), undefined, { verbatim: true })}` : ''} · ${waited}`
+              + `<div class="cell-sub">${muted('The view could not build a sentence for this item: it prints the unit’s accrued holding cost, and there is none on record. The age beside the name is the Profit Sentinel’s, read from the same unit.')}</div>`;
+          } else {
+            unmatchedUnits += 1;
+            sub = `<span class="t-warm">${esc(core?.sentinelErr
+              ? 'This item arrived with no detail and the Profit Sentinel could not be read, so nothing is claimed about how old this unit is.'
+              : 'This item arrived with no detail and its unit is not in the Sentinel read, so nothing is claimed about how old it is.')}</span> · ${waited}`;
+          }
         } else {
           head = esc(it.title);
-          sub = `${esc(it.detail)} · ${waited}`;
+          sub = `${str(it.detail) ? `${esc(str(it.detail))} · ` : `<span class="t-muted">${esc('The view recorded no detail for this item.')}</span> · `}${waited}`;
         }
         /* A matched lead opens that lead. Everything else goes to the screen the
            view named, which is as close to the row as this app can get from
@@ -2065,6 +2864,18 @@ SCREENS.overview = async host => {
            is a different thing from our prices being competitive. */
         rivals && rivals.length === 0
           ? 'No undercut item can appear on this list at present: the competitors table is empty, so the view has nothing to compare our prices against. That is a silent scraper, not a clean sheet — the rows return when the price scrape next runs.'
+          : '',
+        /* Where a row above is showing the engine's age rather than the view's
+           own sentence, and why. Reported rather than done silently: a figure
+           that came from somewhere other than the row's stated source has to be
+           labelled, or the next person to read this list cannot reconcile it
+           against v_needs_attention. */
+        agedFromEngine
+          ? `${num(agedFromEngine)} aging-stock ${plural(agedFromEngine, 'item', 'items')} above arrived from v_needs_attention with an empty detail: its branch prints the unit's accrued holding cost and there is none on record, so the whole sentence came back null. The days in stock shown ${plural(agedFromEngine, 'is', 'are')} the Profit Sentinel's, joined on the same unit id. No holding cost is stated, because none exists.`
+          : '',
+        unmatchedUnits
+          ? `${num(unmatchedUnits)} aging-stock ${plural(unmatchedUnits, 'item', 'items')} above arrived with no detail and could not be matched to a unit${
+              core?.sentinelErr ? ' because the Profit Sentinel could not be read' : ' in the Sentinel read'}, so nothing is claimed about ${plural(unmatchedUnits, 'its', 'their')} age.`
           : '',
         /* Badge arithmetic, in words, every time — a badge nobody can reproduce
            from the screen under it is a number people learn to ignore. */

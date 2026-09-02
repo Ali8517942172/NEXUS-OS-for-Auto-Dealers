@@ -132,6 +132,14 @@ path should not go live.
 - **One figure, one derivation.** See `NEXUS_INVARIANTS.md`.
 - **Check captions against the branch they sit in.** Sentences asserting the
   opposite of their own code have been found seven times here.
+- **After creating ANY function, check `anon` and `authenticated` grants.**
+  Supabase's default privileges grant EXECUTE **directly to those roles**, and
+  `REVOKE ... FROM PUBLIC` does not touch a direct grant. This exact shape has
+  opened a hole three times: the RAG search functions, the tenancy helpers, and
+  `action_write_audit` — which takes a tenant as an argument and runs as
+  definer, so any signed-in user could have forged audit rows against another
+  dealership. Revoke explicitly from `anon` and `authenticated`, then re-check
+  with `get_advisors`.
 - **Every public view needs `security_invoker`.** A database event trigger now
   fails the deploy without it; `CREATE OR REPLACE VIEW` silently drops the
   option and did so three times.
