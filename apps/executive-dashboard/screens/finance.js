@@ -1620,7 +1620,7 @@ SCREENS.finance = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px">warning</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${sev ? pill(sev, sevTone(sev)) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+            ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
           </div>
           <div class="cell-sub">${esc(str(it.detail))}</div>
@@ -1648,7 +1648,7 @@ SCREENS.finance = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(c.sev))}" style="font-size:20px">${c.icon}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(c.sev, sevTone(c.sev))}${esc(c.title)}
+            ${pill(c.sev, sevTone(c.sev), { verbatim: false })}${esc(c.title)}
           </div>
           <div class="cell-sub">${esc(c.detail)}</div>
           <div class="cell-sub" style="margin-top:4px">${previewOf(c.quotes)}</div>
@@ -1785,7 +1785,7 @@ SCREENS.finance = async host => {
       <span class="material-symbols-outlined t-hot" style="font-size:20px">report</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill('CRITICAL', sevTone('CRITICAL'))}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued and never recorded, to ${
+          ${pill('CRITICAL', sevTone('CRITICAL'), { verbatim: false })}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued and never recorded, to ${
             lostPeople.length === 1 ? 'one customer' : `${num(lostPeople.length)} customers`}`)}
         </div>
         <div class="cell-sub">${esc(
@@ -1819,7 +1819,7 @@ SCREENS.finance = async host => {
       <span class="material-symbols-outlined t-hot" style="font-size:20px">receipt_long</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill('HIGH', sevTone('HIGH'))}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
+          ${pill('HIGH', sevTone('HIGH'), { verbatim: false })}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
             orphanPeople.length === 1 ? 'one customer' : `${num(orphanPeople.length)} customers`}`)}
         </div>
         <div class="cell-sub">${esc(
@@ -2102,20 +2102,19 @@ SCREENS.finance = async host => {
         auditCapped ? `The read stopped at ${num(AUDIT_LIMIT)} rows, so older runs are not counted.` : '',
       ].filter(Boolean).map(esc).join('<br>')}</div></div>`;
 
-    /* pill() in lib/format.js attaches "This dashboard has no wording for that
-       status" to anything it renders in the unknown tone, unless the LABEL it
-       is handed is itself a key in that file's TONE table. The canonical layer's
-       labels are human words — "Refused", "No result" — and "REFUSED" is not a
-       TONE key, so pill('Refused', 'unknown') produces a grey pill whose hover
-       reads "this dashboard has no wording for that status" directly above two
-       paragraphs of wording for it. That is the same defect the 31 Aug audit
-       caught on the automation screen, which is why automation.js grows its own
-       wordPill(); this is that helper, in the markup pill() emits, carrying
-       health.js's own sentence as the title instead. Every other pill on this
-       screen still goes through pill(), because every other pill on this screen
-       is labelled with a value TONE actually knows. */
+    /* The canonical layer's labels are human words — "Refused", "No result" —
+       and "REFUSED" is not a TONE key, so pill('Refused', 'unknown') used to
+       produce a grey pill whose hover read "this dashboard has no wording for
+       that status" directly above two paragraphs of wording for it. That is why
+       this helper re-emitted pill()'s markup by hand.
+
+       pill() now takes `{ verbatim: false }` for that, so the markup comes from
+       the shared helper again and only the difference is left here: pill()
+       attaches no title but its own, and these need health.js's sentence. It
+       goes on a wrapper, as it already does on overview, settings and ask. */
     const wordPill = (label, tone, why) =>
-      `<span class="pill ${esc(tone || '')}"${why ? ` title="${esc(why)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
+      (why ? `<span title="${esc(why)}">${pill(label, tone, { verbatim: false })}</span>`
+           : pill(label, tone, { verbatim: false }));
 
     const head = (title, blurb) => `<div class="toolbar" style="background:var(--surface-sunken)">
       <div class="cell-sub" style="white-space:normal;flex:1"><strong>${esc(title)}</strong> ${esc(blurb)}</div></div>`;
@@ -2242,11 +2241,11 @@ SCREENS.finance = async host => {
           <h2 style="font-size:18px">${personName(q.lead_name, personName(lead?.name, 'Unnamed customer'))}</h2>
           <div class="cell-sub" style="margin-top:4px">${phoneCell(q)}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-            ${q.equity_status ? pill(q.equity_status, eqTone(q.equity_status)) : ''}
+            ${q.equity_status ? pill(q.equity_status, eqTone(q.equity_status), { verbatim: true }) : ''}
             <!-- legacy column name; the workflow writes the credit band into it -->
             ${q.finance_tier ? `<span class="chip">${esc(q.finance_tier)}</span>` : ''}
             ${q.source ? `<span class="chip">${esc(q.source)}</span>` : ''}
-            ${lead?.status ? pill(lead.status) : ''}
+            ${lead?.status ? pill(lead.status, undefined, { verbatim: true }) : ''}
           </div>
         </div>
         <button class="btn ghost sm" id="fqClose" aria-label="Close quote">
@@ -2577,7 +2576,7 @@ SCREENS.finance = async host => {
             : `<span class="${eqClass(res.equity_status)}">${aed(res.equity_aed)}</span>`,
           noTradeIn
             ? muted('This customer has nothing to trade in, so there is no equity to have. The rate below is priced off the credit score alone.')
-            : (res.equity_status ? pill(res.equity_status, eqTone(res.equity_status)) : ''))}
+            : (res.equity_status ? pill(res.equity_status, eqTone(res.equity_status), { verbatim: true }) : ''))}
         ${kpi('Indicative APR', aprRange(res.indicative_apr_low_pct, res.indicative_apr_high_pct),
           `${res.credit_band ? `<span class="chip">${esc(str(res.credit_band))}</span> ` : ''}`
           + muted(str(res.rate_basis) || RATE_BASIS))}
@@ -2672,7 +2671,7 @@ SCREENS.finance = async host => {
          next car — it is not the trade-in's value, so it is never written
          into the value field. */
       ctx.innerHTML = `<div class="quote">
-          ${o.dataset.status ? pill(o.dataset.status) + ' ' : ''}
+          ${o.dataset.status ? pill(o.dataset.status, undefined, { verbatim: true }) + ' ' : ''}
           ${o.dataset.phone
             ? `<span class="mono">${esc(o.dataset.phone)}</span>. `
             : '<span class="t-muted">No phone number on this lead.</span> '}
@@ -2707,7 +2706,7 @@ SCREENS.finance = async host => {
         const u = units[Number(sel.value)] || units[0];
         $('cOut').innerHTML = `
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-            ${u.aging_alert ? pill(u.aging_alert) : ''}
+            ${u.aging_alert ? pill(u.aging_alert, undefined, { verbatim: true }) : ''}
             <span class="chip">${esc(u.id || '—')}</span>
             <span class="chip">${num(u.days_in_stock)} days in stock</span>
           </div>

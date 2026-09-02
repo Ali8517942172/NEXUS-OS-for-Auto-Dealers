@@ -326,9 +326,17 @@ function unitForm(existing, inv, onDone) {
 
   const paint = () => {
     const d = deriveUnit(read());
+    /* The aging band below passes verbatim: false, deliberately. The word is
+       deriveUnit()'s and not the column's — this file raises WARNING at 75 days
+       and recompute_inventory_derived() raises it at 90, so between 75 and 89
+       the band shown here is a word inventory.aging_alert does not hold, and
+       "shown exactly as the database holds it" would be the wrong claim about
+       the one figure on this panel the two rules disagree on. It is
+       HEALTHY | WARNING | CRITICAL either way and TONE knows all three, so the
+       note could not have fired regardless; the flag says which rule wrote it. */
     $('uCalc').innerHTML = `
       <dt>Days in stock</dt><dd class="num">${d.days_in_stock == null ? NO_DATE : num(d.days_in_stock)}</dd>
-      <dt>Aging alert</dt><dd>${d.aging_alert ? pill(d.aging_alert) : NO_DATE}</dd>
+      <dt>Aging alert</dt><dd>${d.aging_alert ? pill(d.aging_alert, undefined, { verbatim: false }) : NO_DATE}</dd>
       <dt>Gross margin</dt><dd class="num ${d.gross_margin < 0 ? 't-hot' : ''}">${aed(d.gross_margin)}</dd>
       <dt>Holding cost</dt><dd class="num">${aed(d.holding_cost_accrued)}</dd>
       <dt>Net margin</dt><dd class="num"><strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong></dd>

@@ -541,6 +541,8 @@ function deriveAlerts(inv, raw, recon, salesErr, job) {
     const dates = (units || []).map(u => str(u.acquired_at)).filter(Boolean).sort();
     alerts.push({
       key, severity, icon, title, detail, noFocus: opts.noFocus,
+      /* Derived here, so the severity word is this file's, not a column's. */
+      sevFromRow: false,
       ids: (units || []).map(u => u.id),
       /* Most of these conditions carry no timestamp of their own — nothing
          records when a VIN went missing. The oldest acquisition date in the
@@ -1121,9 +1123,9 @@ SCREENS.inventory = async host => {
   const statusPill = r => {
     const s = String(r.status || '').trim();
     if (!s) return '<span class="t-muted">—</span>';
-    if (isSold(r)) return pill(s, 'ok');
-    if (low(s) === 'reserved') return pill(s, 'cold');
-    if (low(s) === 'available') return pill(s);   // neutral, as it was
+    if (isSold(r)) return pill(s, 'ok', { verbatim: true });
+    if (low(s) === 'reserved') return pill(s, 'cold', { verbatim: true });
+    if (low(s) === 'available') return pill(s, undefined, { verbatim: true });   // neutral, as it was
     return `<span class="chip">${esc(s)}</span>`;
   };
   const alertPill = r => {
@@ -1132,7 +1134,7 @@ SCREENS.inventory = async host => {
     }
     const a = bandOf(r);
     return ALERTS.includes(a)
-      ? `<span title="${esc(ALERT_WHY[a])}">${pill(a, tone(a))}</span>`
+      ? `<span title="${esc(ALERT_WHY[a])}">${pill(a, tone(a), { verbatim: true })}</span>`
       : '<span class="t-muted">—</span>';
   };
   /* Gross margin is price minus cost and needs no date. Net margin is gross
@@ -1589,7 +1591,7 @@ SCREENS.inventory = async host => {
         <span class="material-symbols-outlined t-${t}" style="font-size:20px" aria-hidden="true">${esc(a.icon || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(str(a.severity) || 'ALERT', t)}<span>${esc(a.title)}</span>
+            ${pill(str(a.severity) || 'ALERT', t, { verbatim: a.sevFromRow === true && str(a.severity) !== '' })}<span>${esc(a.title)}</span>
           </div>
           <div class="cell-sub" style="white-space:normal">${esc(a.detail)}</div>
         </div>
@@ -1615,6 +1617,8 @@ SCREENS.inventory = async host => {
       const queryTime = AT_IS_QUERY_TIME.has(kind);
       return {
         severity: r.severity,
+        /* Straight off v_needs_attention.severity, so pill() may say so. */
+        sevFromRow: str(r.severity) !== '',
         icon: KIND_ICON[kind] || 'warning',
         title: str(r.title) || ref || 'Needs attention',
         detail: [

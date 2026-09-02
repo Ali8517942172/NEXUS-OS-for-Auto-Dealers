@@ -74,16 +74,17 @@ function dealForm(leads, onDone) {
       ? `${refused.length} lead${refused.length === 1 ? ' has' : 's have'} no email, no phone and no WhatsApp address on file, so ${
           refused.length === 1 ? 'it is' : 'they are'} not offered here — there is no key to record a deal against.`
       : '',
-    /* The deal carries a contact key and nothing else. See the write-path note
-       on the save handler below: leads.id cannot travel with it. */
-    'Picking a lead does not link the deal to that lead’s row — nothing in a recorded sale can hold a lead id.',
+    /* INV-002 closed 2 Sep 2026. The deal now carries the lead's row id as well
+       as the contact key. See the write-path note on the save handler below for
+       what carries it and the one case that drops it. */
+    'Picking a lead links the deal to that lead’s row. Editing the Email field afterwards drops the link — the deal is then recorded against the contact key alone.',
   ].filter(Boolean).join(' ');
 
   const m = openModal('Record a closed-won deal', `
     ${f('dLead', 'Lead', `<select id="dLead">
         <option value="">— pick a lead, or type the details below —</option>
         ${offered.map(({ lead: l, anchor }) =>
-          `<option value="${esc(anchor)}" data-name="${esc(l.name || '')}" data-veh="${esc(l.vehicle_interest || '')}"
+          `<option value="${esc(anchor)}" data-lead-id="${esc(l.id)}" data-name="${esc(l.name || '')}" data-veh="${esc(l.vehicle_interest || '')}"
             data-budget="${esc(l.budget_aed || '')}">${esc(l.name || anchor)} — ${esc(l.vehicle_interest || 'no vehicle noted')}</option>`).join('')}
       </select>`, pickerHint)}
     <div class="grid g2">
@@ -102,9 +103,18 @@ function dealForm(leads, onDone) {
     `<button class="btn primary" id="dSave">Record deal</button>
      <button class="btn" id="dCancel">Cancel</button>`);
 
+  /* The lead the form was filled from, and the anchor it was filled with. Not
+     read off the <select> at save time: the operator may retype the Email box
+     after picking, and a lead id is only worth writing while it still agrees
+     with the contact key being recorded. Cleared back to null when they pick
+     the blank option. */
+  let picked = null;
+
   $('dLead').addEventListener('change', e => {
     const o = e.target.selectedOptions[0];
-    if (!o || !o.value) return;
+    if (!o || !o.value) { picked = null; return; }
+    const leadId = Number(o.dataset.leadId);
+    picked = Number.isInteger(leadId) ? { id: leadId, anchor: o.value } : null;
     $('dEmail').value = o.value;
     $('dName').value = o.dataset.name || '';
     $('dVeh').value = o.dataset.veh || '';
@@ -113,60 +123,48 @@ function dealForm(leads, onDone) {
 
   m.wrap.querySelector('#dCancel').addEventListener('click', m.close);
   m.wrap.querySelector('#dSave').addEventListener('click', async () => {
-    /* ── What a recorded sale cannot carry: leads.id ────────────────────────
-       Asked and answered against the live write path on 1 Sep 2026. It is
-       BLOCKED, and nothing is smuggled through to pretend otherwise.
+    /* ── What a recorded sale carries: leads.id ────────────────────────────
+       INV-002. Until 2 Sep 2026 this was BLOCKED and the comment here said so.
+       Three things had to change together, and all three now have. Verified
+       against the live database and the live workflow on 2 Sep 2026, not
+       against the repo copy:
 
-       The path is: this POST -> n8n webhook `deals/closed-won` (workflow
-       "Sync Closed-Won Deals to Supabase pgvector", id dhy2DDjWUqwuzHLW,
-       read live, not from the repo copy) -> `Verify JWT` -> `Format Deal Text`
-       -> two branches, `Record Purchase` (POST /rest/v1/purchase_history) and
-       the embedding chain (POST /rest/v1/deals_embeddings).
+       1. purchase_history.lead_id — migration inv002_purchase_history_lead_id.
+          `integer` (matching leads.id, which is integer/serial — NOT bigint),
+          NULLABLE, no default, FK purchase_history_lead_id_fkey -> leads(id)
+          ON DELETE SET NULL, index purchase_history_lead_id_idx. Confirmed by
+          reading information_schema and pg_constraint back after applying.
+       2. `Format Deal Text` (workflow dhy2DDjWUqwuzHLW, node id 2) now reads a
+          posted lead_id and copies it into its returned object. It coerces to
+          an integer and yields null on anything else, so a junk value becomes
+          "not recorded" rather than a failed insert.
+       3. `Record Purchase` (node 263e6e0c) now names lead_id in the body it
+          POSTs to /rest/v1/purchase_history.
 
-       Three walls, any one of which is enough:
+       The link is only as good as the agreement between the id and the contact
+       key, so it is posted only while `picked.anchor` still equals the Email
+       box. If the operator picks Ali and then retypes the address, the id is
+       dropped rather than filed against a key it no longer matches — NULL there
+       means "provenance not recorded", which is the column's documented
+       meaning, and is honest. A hand-typed deal posts no lead_id at all.
 
-       1. `Format Deal Text` is a Code node that ends in a CLOSED object
-          literal: { dealId, dealText, customer_name, email, phone, vehicle,
-          amount_aed, purchase_date }. It reads the posted body into `d` and
-          copies those fields out by name. A `lead_id` added to the payload
-          below would be read into `d` and then simply not copied — it dies in
-          that node, silently, having reached no storage at all.
-       2. `Record Purchase` posts an explicitly enumerated body —
-          JSON.stringify({ deal_id, customer_name, email, phone, vehicle,
-          amount_aed, purchase_date }) — so even a field that survived step 1
-          would have to be named there too.
-       3. There is nowhere to put it. Re-probed live: purchase_history has nine
-          columns (id, customer_name, email, phone, vehicle, purchase_date,
-          amount_aed, created_at, deal_id) and deals_embeddings has four
-          (id, deal_id, content, embedding, created_at). Neither holds a
-          lead_id, customer_id or any foreign key; the only two foreign keys in
-          the whole public schema are leads.assigned_to_id and
-          kyc_documents.reviewed_by, and neither touches a purchase.
-
-       To carry it, THREE things must change together and none of them is this
-       file: a `lead_id` column on purchase_history (a migration), the
-       `Format Deal Text` node (add lead_id to its returned object), and the
-       `Record Purchase` node (add lead_id to its JSON body).
-
-       The one channel that does reach storage without a workflow edit is
-       `deal_id` — `Format Deal Text` accepts a supplied `d.deal_id` verbatim
-       instead of deriving one. Encoding the lead id into it is REFUSED here,
-       and deliberately: deal_id is the pgvector dedupe key (upsert
-       on_conflict=deal_id) and the purchase_history de-duplication key, and its
-       derived shape is `auto:<contact key>|<close date>`. Changing the shape
-       means the same sale recorded before and after this change gets two
-       different ids and therefore two vector rows, which breaks the exact
-       promise the Email hint on this form makes to the operator. That is not
-       carrying an id, it is overloading a key nothing joins on with a value
-       nothing can read back. `notes` is likewise refused: it reaches only the
-       embedded TEXT of the deal, so it would put "lead 35" into the RAG corpus
-       and into no column at all.
-
-       So: a sale recorded here is anchored on a contact key by construction,
-       and loses the lead row it came from. The form says so under the picker
-       rather than letting the operator assume the link was made. */
+       What is still REFUSED, unchanged: encoding anything into `deal_id`. Its
+       derived shape is `auto:<contact key>|<close date>` and it is the dedupe
+       key on both sides — pgvector upserts on_conflict=deal_id, and
+       purchase_history has a partial unique index purchase_history_deal_id_key
+       on it which is what makes the `Prefer: resolution=ignore-duplicates` on
+       Record Purchase idempotent. Changing its shape would give the same sale
+       two different ids before and after this change, so two vector rows, and
+       would break the exact promise the Email hint on this form makes to the
+       operator. `notes` is likewise still refused: it reaches only the embedded
+       TEXT of the deal, so it would put "lead 35" into the RAG corpus and into
+       no column at all. The relational join is the column, not the key. */
     const v = {
       lead_email: $('dEmail').value.trim(),
+      /* Only while the picked lead still agrees with the contact key on screen.
+         Omitted entirely otherwise, so the workflow's own null-coercion never
+         has to guess. */
+      ...(picked && picked.anchor === $('dEmail').value.trim() ? { lead_id: picked.id } : {}),
       lead_name: $('dName').value.trim(),
       phone: $('dPhone').value.trim(),
       vehicle: $('dVeh').value.trim(),

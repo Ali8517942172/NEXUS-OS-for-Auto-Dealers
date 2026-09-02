@@ -601,11 +601,11 @@ function entryBody(e) {
      who cannot tell the amber from the green. */
   const nWarn = g.reasons.length;
   const verdict = {
-    clean:    () => pill(`${num(g.cited)} source${plural(g.cited, '', 's')} cited, no problems found`, 'ok'),
-    declined: () => pill('Answered nothing — the documents do not cover this', 'cold'),
-    degraded: () => pill(`Partly grounded — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'warm'),
-    severe:   () => pill(`Not safe to repeat — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'hot'),
-    unknown:  () => pill('Grounding not reported', 'unknown'),
+    clean:    () => pill(`${num(g.cited)} source${plural(g.cited, '', 's')} cited, no problems found`, 'ok', { verbatim: false }),
+    declined: () => pill('Answered nothing — the documents do not cover this', 'cold', { verbatim: false }),
+    degraded: () => pill(`Partly grounded — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'warm', { verbatim: false }),
+    severe:   () => pill(`Not safe to repeat — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'hot', { verbatim: false }),
+    unknown:  () => pill('Grounding not reported', 'unknown', { verbatim: false }),
   }[g.verdict]();
 
   /* "N sections consulted" was the old wording and it overclaimed: the number
@@ -1537,7 +1537,7 @@ SCREENS.ask = async host => {
         const hw = healthWords(h);
         const bits = [
           `<span class="mono">${esc(HOOK.askAi)}</span>`,
-          h ? pill(h, Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? hw.tone : tone(h)) : pill('UNREPORTED', tone('')),
+          h ? pill(h, Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? hw.tone : tone(h), { verbatim: true }) : pill('UNREPORTED', tone(''), { verbatim: false }),
           w.is_active === false ? '<span class="t-hot">registered inactive</span>' : '',
           eff != null && succ != null
             ? `${esc(num(succ))} of ${esc(num(eff))} rated run${plural(eff, '', 's')} succeeded in 30 d`
@@ -1706,7 +1706,7 @@ SCREENS.ask = async host => {
            in the hover so nothing is hidden by the translation. */
         { label: 'Outcome', render: r => {
             const w = outcomeWords(outcomeOf(r));
-            return `<span title="${esc(`audit_log.status is ${str(r.status) || 'empty'}. ${w.blurb}`)}">${pill(w.label, w.tone)}</span>`;
+            return `<span title="${esc(`audit_log.status is ${str(r.status) || 'empty'}. ${w.blurb}`)}">${pill(w.label, w.tone, { verbatim: false })}</span>`;
           } },
         { label: 'Workflow', render: r => esc(str(r.workflow) || '—') },
         { label: 'Lead', render: who },

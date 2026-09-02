@@ -743,7 +743,7 @@ SCREENS.leads = async host => {
       <span class="material-symbols-outlined t-${esc(tone(sev) || 'muted')}" style="font-size:20px">${icon}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${sev ? pill(sev) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+          ${sev ? pill(sev, undefined, { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
           <span class="chip">${esc(str(it.kind) || 'item')}</span>
         </div>
         <div class="cell-sub">${esc(str(it.detail))}</div>
@@ -762,7 +762,7 @@ SCREENS.leads = async host => {
       <span class="material-symbols-outlined t-${esc(tone(c.sev))}" style="font-size:20px">${c.icon}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill(c.sev)}${esc(c.title)}
+          ${pill(c.sev, undefined, { verbatim: false })}${esc(c.title)}
         </div>
         <div class="cell-sub">${esc(c.detail)}</div>
         <div class="cell-sub" style="margin-top:4px">${previewOf(c.leads)}</div>
@@ -1039,7 +1039,7 @@ SCREENS.leads = async host => {
   }
 
   const cols = [
-    { label:'Status', render: r => pill(r.status || 'NEW') },
+    { label:'Status', render: r => pill(r.status || 'NEW', undefined, { verbatim: !!r.status }) },
     /* Name and phone in one cell, because every alert on this screen resolves to
        somebody picking up a phone, and a number two columns away is a number
        nobody reads out. */
@@ -1047,7 +1047,7 @@ SCREENS.leads = async host => {
         /* Matched on a real address only. purchase_history is keyed on one, so a
            `+digits@whatsapp.lead` or an empty string can never be a buyer there,
            and asking is how a blank comes to equal a blank. */
-        `${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ' <span class="pill vip"><span class="dot"></span>VIP</span>' : ''}
+        `${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ' ' + pill('VIP', 'vip', { verbatim: false }) : ''}
          <div class="cell-sub">${phoneText(r)}</div>` },
     /* `leads.email` is not always an email. Live on 1 Sep 2026 lead 34's holds
        `+971547484167@whatsapp.lead`, a key the Master Router synthesises for a
@@ -1091,9 +1091,9 @@ SCREENS.leads = async host => {
             /* An id that the users(id,name) embed did not resolve is not the
                same fact as no owner at all, and the operator can act on the
                difference: one needs assigning, the other needs a users row. */
-            ? `<span class="pill unknown"><span class="dot"></span>Owner not resolved</span>
+            ? `${pill('Owner not resolved', 'unknown', { verbatim: false })}
                <div class="cell-sub">assigned_to_id ${esc(str(r.assigned_to_id))} is set, but no users row came back for it and assigned_to is empty.</div>`
-            : '<span class="pill warm"><span class="dot"></span>Unassigned</span>';
+            : pill('Unassigned', 'warm', { verbatim: false });
         }
         return `${esc(name)}${r.users?.name || r.assigned_to_id ? '' : '<div class="cell-sub">Named on the lead\'s assigned_to column; there is no rep id on the row.</div>'}`;
       }},
@@ -1143,7 +1143,7 @@ SCREENS.leads = async host => {
             + `<div class="cell-sub">Not an address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under.</div>`;
         })()}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
-        <dt>Status</dt><dd>${pill(lead.status || 'NEW')}</dd>
+        <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
         <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
       </dl>`,
       `<button class="btn primary" id="actGo">${esc(a.confirm)}</button>

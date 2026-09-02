@@ -370,7 +370,7 @@ const verdictPill = d => {
   const k = verdictKey(d);
   if (!k) return '<span class="t-muted">No verdict recorded</span>';
   const m = VERDICTS[k];
-  return m ? pill(m.label, m.tone) : pill(k);
+  return m ? pill(m.label, m.tone, { verbatim: false }) : pill(k, undefined, { verbatim: true });
 };
 const verdictTone = d => {
   const m = VERDICTS[verdictKey(d)];
@@ -461,17 +461,20 @@ const CASE_STATE = {
   unknown:           { label: 'Unknown · not recorded', tone: 'unknown', icon: 'help',
     why: 'The position could not be established. This is the refusal to make a claim, not a claim that nothing exists — a document that was audited and has no register row lands here, and so does a read that failed.' },
 };
-/* Rendered here rather than through lib/format.js `pill()`, and the reason is
-   the exact failure this screen keeps finding in itself. `pill()` attaches
-   "This dashboard has no wording for that status. It is shown exactly as the
-   database holds it" to any grey pill whose LABEL is not a TONE key — which
-   `Unknown · not recorded` is not. Both halves of that sentence would be false
-   here: the dashboard has a whole vocabulary block for this state, and the
-   database holds nothing at all, which is the entire point of the state. So
-   each of the six carries its own hover text and explains itself correctly. */
+/* This re-emitted `pill()`'s markup by hand, because pill() attached "This
+   dashboard has no wording for that status. It is shown exactly as the database
+   holds it" to any grey pill whose LABEL is not a TONE key — which
+   `Unknown · not recorded` is not. Both halves of that sentence are false here:
+   the dashboard has a whole vocabulary block for this state, and the database
+   holds nothing at all, which is the entire point of the state.
+
+   `{ verbatim: false }` says that to pill() directly, so the markup is shared
+   again. What stays is the only thing pill() cannot do: give each of the six
+   its own hover text. That sits on a wrapper, the same shape overview.js,
+   settings.js and ask.js already use to hang a blurb on a shared pill. */
 const casePill = k => {
   const m = CASE_STATE[k];
-  return `<span class="pill ${m.tone}" title="${esc(m.label)} — ${esc(m.why)}"><span class="dot"></span>${esc(m.label)}</span>`;
+  return `<span title="${esc(m.label)} — ${esc(m.why)}">${pill(m.label, m.tone, { verbatim: false })}</span>`;
 };
 
 /* The sentence this vocabulary exists to make sayable. Checked against
@@ -571,7 +574,7 @@ const RETENTION = {
   unknown:     { label: 'Unrecognised retention state', tone: 'unknown', icon: 'help' },
 };
 
-const retentionPill = r => pill(RETENTION[r.key].label, RETENTION[r.key].tone);
+const retentionPill = r => pill(RETENTION[r.key].label, RETENTION[r.key].tone, { verbatim: false });
 
 /* ONE verdict per row, and the only place on this screen that decides one.
    `gapRefs` is the set of kyc_documents ids `v_needs_attention` files as
@@ -1717,7 +1720,7 @@ SCREENS.compliance = async host => {
           <div><span class="num" style="font-size:22px;font-weight:600">${num(total)}</span>
             <span class="t-muted"> ${esc(plural(total, 'document on file', 'documents on file'))}</span></div>
           ${vCounts.map(([v, c]) => `<div style="display:flex;gap:8px;align-items:center">
-            ${pill(VERDICTS[v].label, VERDICTS[v].tone)}<span class="num" style="font-weight:600">${num(c)}</span></div>`).join('')}
+            ${pill(VERDICTS[v].label, VERDICTS[v].tone, { verbatim: false })}<span class="num" style="font-weight:600">${num(c)}</span></div>`).join('')}
           ${verdictOther ? `<div class="t-warm">${num(verdictOther)} ${plural(verdictOther, 'row carries', 'rows carry')} a verdict this screen has no wording for</div>` : ''}
         </div>
         <div class="cell-sub" style="white-space:normal;margin-top:10px">
@@ -1852,11 +1855,11 @@ SCREENS.compliance = async host => {
               ${d.expiry_date ? `<span class="${cls}">${esc(d.expiry_date)}${note}</span>` : '—'}</div>`;
         } },
       { label: 'Checks', render: d => {
-          const bits = [d.tampering ? pill('Tampering', 'hot') : '<span class="t-muted">No tampering</span>'];
-          if (d.is_valid === false) bits.push(pill('Not valid', 'hot'));
-          else if (d.is_valid === true) bits.push(pill('Valid', 'ok'));
-          if (expiredAtAudit(d)) bits.push(pill('Expired when audited', 'hot'));
-          if (finalAttempt(d) && verdictKey(d) !== 'APPROVED') bits.push(pill('Retries exhausted', 'warm'));
+          const bits = [d.tampering ? pill('Tampering', 'hot', { verbatim: false }) : '<span class="t-muted">No tampering</span>'];
+          if (d.is_valid === false) bits.push(pill('Not valid', 'hot', { verbatim: false }));
+          else if (d.is_valid === true) bits.push(pill('Valid', 'ok', { verbatim: false }));
+          if (expiredAtAudit(d)) bits.push(pill('Expired when audited', 'hot', { verbatim: false }));
+          if (finalAttempt(d) && verdictKey(d) !== 'APPROVED') bits.push(pill('Retries exhausted', 'warm', { verbatim: false }));
           return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${bits.join('')}</div>`;
         } },
       { label: 'Confidence', align: 'r', render: d => {
@@ -2268,8 +2271,8 @@ SCREENS.compliance = async host => {
           <div class="label-caps">Verdict</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${verdictPill(d)}
-            ${d.tampering ? pill('Tampering detected', 'hot') : ''}
-            ${d.is_valid === false ? pill('Not valid', 'hot') : d.is_valid === true ? pill('Valid', 'ok') : ''}
+            ${d.tampering ? pill('Tampering detected', 'hot', { verbatim: false }) : ''}
+            ${d.is_valid === false ? pill('Not valid', 'hot', { verbatim: false }) : d.is_valid === true ? pill('Valid', 'ok', { verbatim: false }) : ''}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             <span class="t-muted">Register position</span>${casePill(rowCaseState(d))}
@@ -2464,7 +2467,7 @@ SCREENS.compliance = async host => {
           return `
         <div class="list-item" style="cursor:default">
           <span class="mono t-muted">${esc(clock(e.at))}</span>
-          ${e.voided ? `<span class="chip">${esc(e.label)} · void</span>` : pill(e.label, e.tone)}
+          ${e.voided ? `<span class="chip">${esc(e.label)} · void</span>` : pill(e.label, e.tone, { verbatim: false })}
           ${e.register ? `<span class="t-muted" style="font-size:12px">register</span>${casePill(e.register)}` : ''}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${n.name

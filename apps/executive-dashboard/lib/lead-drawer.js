@@ -122,7 +122,7 @@ async function leadDrawer(lead) {
       <div class="avatar">${esc(initials(lead.name))}</div>
       <div style="flex:1;min-width:0">
         <h2 style="font-size:18px">${esc(lead.name)}</h2>
-        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${pill(lead.status || 'NEW')}
+        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}
           ${n0(lead.ai_score) != null ? `<span class="chip">AI score ${lead.ai_score}</span>` : ''}</div>
       </div>
       <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>

@@ -170,8 +170,11 @@ import { SCREENS, go } from '../lib/nav.js';
 /* Open pipeline, defined once. TERMINAL_TONES/isOpenLead and the read ceiling
    used to be declared here AND verbatim in screens/team.js with a different
    LEAD_LIMIT (2000 here, 1000 there), so the same rule could report two totals.
-   See the header of lib/pipeline.js for why the database's own pipeline_aed is
-   not the canonical definition and is never substituted for these figures. */
+   See the header of lib/pipeline.js for what the database's own pipeline_aed
+   is. As of 2 Sep 2026 it is on the same open-lead rule as these figures and no
+   longer answers a different question; it is still never substituted for them,
+   because these are the ones this screen can attribute row by row and disclose a
+   truncation on. */
 import { CAP_NOTE, LEAD_LIMIT, isOpenLead, openPipeline } from '../lib/pipeline.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, panel, table, wireRows } from '../lib/ui.js';
@@ -1042,7 +1045,7 @@ SCREENS.overview = async host => {
     const snapshotWhen = prev && prev.snapshot_date ? `The ${prev.snapshot_date} snapshot` : 'The previous snapshot';
 
     /* ── Open leads ─────────────────────────────────────────────────────── */
-    const leadsSub = `${pill(`${hot} HOT`, 'hot')} ${pill(`${warm} WARM`, 'warm')} ${pill(`${cold} COLD`, 'cold')}`
+    const leadsSub = `${pill(`${hot} HOT`, 'hot', { verbatim: false })} ${pill(`${warm} WARM`, 'warm', { verbatim: false })} ${pill(`${cold} COLD`, 'cold', { verbatim: false })}`
       /* What the headline leaves out, named. The tile counts leads still being
          worked; the table also holds the finished ones, and an owner comparing
          this number against a row count elsewhere has to be able to see the
@@ -1180,18 +1183,47 @@ SCREENS.overview = async host => {
            shared with Team so the two screens cannot disclose the identical
            truncation in two different strengths. */
         + (leadsCapped ? `<br>${warn(CAP_NOTE(num(LEAD_LIMIT)))}` : '')
-        /* No delta on this tile, and the reason is not that there is nothing to
-           compare against. daily_metrics.pipeline_aed is written by
-           capture_daily_metrics() as `coalesce(sum(budget_aed), 0)` over EVERY
-           lead with a budget — no status filter, and zero where the answer is
-           "none recorded". Those are precisely the two defects the headline
-           above no longer has. Subtracting the two produces a number that moves
-           when the cohort changes and not when the pipeline does, so the
-           comparison is refused and the reason is printed instead of it. The
-           response-time tile still carries its delta because the snapshot and
-           the live figure there really are the same population. */
+        /* No delta on this tile. THE REASON CHANGED ON 2 Sep 2026 AND THIS
+           COMMENT ASSERTED THE OLD ONE. It said daily_metrics.pipeline_aed is
+           written as `coalesce(sum(budget_aed), 0)` over EVERY lead with a
+           budget, no status filter, zero where the answer is "none recorded" —
+           "precisely the two defects the headline above no longer has". Read off
+           the live function body today, capture_daily_metrics() writes
+           `(SELECT sum(budget_aed) FROM leads WHERE nexus_lead_is_open(status))`:
+           open leads only, no coalesce. Both defects are gone, and the 2026-09-02
+           row live records pipeline_aed as NULL where 09-01 recorded 0.
+
+           THE REFUSAL IS KEPT ANYWAY, on a reason that is true rather than the
+           one that has expired, and it is deliberately not narrowed here.
+           The snapshot HISTORY is mixed-rule: every row before 2026-09-02 was
+           written under the old definition, and the function stamps which one it
+           used into `pipeline_aed_rule` ('all_leads_coalesce_0' then,
+           'open_leads_null_when_unknown' now), backfilled across the old rows.
+           This read takes the newest row and does not look at that column, so it
+           cannot tell a post-migration snapshot from a pre-migration one — and
+           the newest row is only post-migration for as long as the nightly
+           capture keeps running. Subtracting across that boundary is subtracting
+           two different definitions, which is the same failure as before for a
+           different reason. Gating the delta on pipeline_aed_rule would fix it
+           and is a behaviour change, not a comment: it is not made here.
+
+           WITHIN one post-migration row the rules now agree, and that changed
+           while this file was being edited on 2 Sep 2026 — an earlier draft of
+           this comment said `open_leads` in the same row still counted
+           `status <> 'CLOSED'` and so disagreed with pipeline_aed. Re-read off
+           the live function body afterwards: `open_leads` is now
+           `count(*) FROM leads WHERE nexus_lead_is_open(status)`, stamped into a
+           new `open_leads_rule` column ('nexus_lead_is_open' today,
+           'status_not_closed' on the backfilled older rows). Live, the 09-02 row
+           records open_leads 1 against the 09-01 row's 3 — the same three leads
+           either way, counted by two different rules on two different days.
+           So a snapshot row is internally consistent from 2026-09-02 onward, and
+           the mixed history is the whole of the remaining problem.
+
+           The response-time tile still carries its delta because the snapshot
+           and the live figure there really are the same population. */
         + (prev
-            ? `<br>${muted(`No comparison is drawn against ${snapshotWhen.replace(/^The/, 'the')}: its pipeline figure sums every lead with a budget, closed ones included, and records zero where none is recorded — a different figure from the one above, not an earlier value of it.`)}`
+            ? `<br>${muted(`No comparison is drawn against ${snapshotWhen.replace(/^The/, 'the')}. Snapshots taken before 2 Sep 2026 summed every lead with a budget, closed ones included, and recorded zero where none was recorded; snapshots taken since count open leads only, on the same rule as the figure above. This screen does not check which of the two wrote the row it read, so subtracting them could be subtracting two different definitions rather than showing a change.`)}`
             : '');
 
     /* ── Units at risk ──────────────────────────────────────────────────── */
@@ -1252,7 +1284,7 @@ SCREENS.overview = async host => {
     pipeCard.innerHTML = single
       ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          ${onlyStage ? pill(onlyStage) : ''}
+          ${onlyStage ? pill(onlyStage, undefined, { verbatim: false }) : ''}
           <span>Exactly one lead has been scored${onlyStage ? `, and it is ${esc(onlyStage)}` : ''}.</span>
         </div>
         <div class="cell-sub" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
@@ -1413,7 +1445,7 @@ SCREENS.overview = async host => {
       return `<div>${shown.map(l => `
         <div class="list-item" role="button" tabindex="0" data-lead="${esc(l.id)}"
              title="Open this lead" style="align-items:flex-start">
-          ${pill(l.status || 'Unscored')}
+          ${pill(l.status || 'Unscored', undefined, { verbatim: !!l.status })}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
               <span>${esc(str(l.name) || 'Unnamed lead')}</span>
@@ -1531,8 +1563,8 @@ SCREENS.overview = async host => {
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(w.name)}</span>
-              <span title="${esc(hw.blurb)}">${pill(hw.label, hw.tone)}</span>
-              ${w.is_active === false ? pill('Inactive', 'cold') : ''}
+              <span title="${esc(hw.blurb)}">${pill(hw.label, hw.tone, { verbatim: false })}</span>
+              ${w.is_active === false ? pill('Inactive', 'cold', { verbatim: false }) : ''}
             </div>
             <div class="cell-sub">${esc(w.category || 'Uncategorised')}${w.last_incomplete ? ' · last bad run ' + esc(ago(w.last_incomplete)) : ''}${
               scarce ? ' · <span class="t-warm">too few runs in 30 days to rate</span>' : ''}</div>
@@ -1670,7 +1702,7 @@ SCREENS.overview = async host => {
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(str(d.lead_name) || str(d.full_name) || str(d.lead_email) || 'Unknown contact')}</span>
-              ${d.verdict ? pill(d.verdict) : ''}
+              ${d.verdict ? pill(d.verdict, undefined, { verbatim: true }) : ''}
             </div>
             <div class="cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
               attempt != null ? ' · attempt ' + esc(num(attempt)) + (maxAttempt != null ? ' of ' + esc(num(maxAttempt)) : '') : ''}${
@@ -1947,7 +1979,7 @@ SCREENS.overview = async host => {
           <span class="material-symbols-outlined t-${iconTone}" style="font-size:20px">${icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${
-              pill(str(it.severity) || 'Unrated')}</div>
+              pill(str(it.severity) || 'Unrated', undefined, { verbatim: !!str(it.severity) })}</div>
             <div class="cell-sub">${sub}</div>
             ${lead ? '<div class="cell-sub" aria-live="polite" data-leadmsg></div>' : ''}
           </div>
@@ -2092,7 +2124,7 @@ SCREENS.overview = async host => {
                <div aria-live="polite" data-feedmsg></div></div></div>`;
       return table([
         { label:'When', render: r => `<div class="t-muted">${esc(ago(r.created_at))}</div><div class="cell-sub mono">${esc(clock(r.created_at))}</div>` },
-        { label:'Status',  render: r => pill(str(r.status) || 'Unscored') },
+        { label:'Status',  render: r => pill(str(r.status) || 'Unscored', undefined, { verbatim: !!str(r.status) }) },
         { label:'Name',    strong: true, render: r => esc(str(r.name) || 'Unnamed lead') },
         { label:'Phone',   render: r => str(r.phone)
             ? `<span class="mono">${esc(str(r.phone))}</span>`

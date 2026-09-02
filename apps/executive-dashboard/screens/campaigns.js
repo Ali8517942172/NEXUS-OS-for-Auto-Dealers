@@ -1439,7 +1439,7 @@ SCREENS.campaigns = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px" aria-hidden="true">${esc(KIND_ICON[low(it.kind)] || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${sev ? pill(sev, sevTone(sev)) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+            ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
             <span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>
           </div>
@@ -1458,7 +1458,7 @@ SCREENS.campaigns = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(a.sev) || 'muted')}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(a.sev, sevTone(a.sev))}${esc(a.title)}
+            ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
             ${a.chip ? `<span class="chip">${esc(a.chip)}</span>` : ''}
           </div>
           <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
@@ -1732,7 +1732,7 @@ SCREENS.campaigns = async host => {
          operator go and look the number up somewhere else. */
       { label:'Lead', strong:true, render: l => `${nameHtml(l.name)} <span class="t-muted">·</span> ${phoneHtml(l.phone, l)}
           <div class="cell-sub">${esc(str(l.email))}</div>` },
-      { label:'Status', render: l => pill(l.status || 'NEW') },
+      { label:'Status', render: l => pill(l.status || 'NEW', undefined, { verbatim: !!l.status }) },
       { label:'Interest', render: l => `<span class="t-2">${esc(l.vehicle_interest || '—')}</span>` },
       /* budget_aed is NULL for router-created leads. A zero here would understate
          the value of the people being nurtured, so it stays a dash. */
@@ -1743,7 +1743,7 @@ SCREENS.campaigns = async host => {
           const mine = sent.get(low(l.email));
           const bits = [];
           if (r) {
-            bits.push(`${pill('Enrolled', 'ok')} <span class="cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
+            bits.push(`${pill('Enrolled', 'ok', { verbatim: false })} <span class="cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
             if (r.replies.length) bits.push(`<div class="cell-sub t-warm">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
             if (r.judgeable && !r.sends.length) bits.push('<div class="cell-sub t-hot">Nothing sent on either channel since enrolment</div>');
             else if (r.judgeable && !r.mails.length) bits.push(`<div class="cell-sub t-warm">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
@@ -1842,7 +1842,7 @@ SCREENS.campaigns = async host => {
           <dt>Phone</dt><dd>${phoneHtml(lead.phone, lead)}</dd>
           <dt>Email</dt><dd>${esc(str(lead.email))}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
-          <dt>Status</dt><dd>${pill(lead.status || 'NEW')}</dd>
+          <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
           <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
         </dl>`,
         `<button class="btn primary" id="cpGo">${existing ? 'Enrol again' : 'Enrol this lead'}</button>
@@ -1901,7 +1901,7 @@ SCREENS.campaigns = async host => {
               <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-weight:500">${personLine(p)}</span>
-                  ${pill(r.last.status || 'Unknown')}
+                  ${pill(r.last.status || 'Unknown', undefined, { verbatim: !!r.last.status })}
                   ${r.replies.length ? `<span class="chip t-warm" title="This contact wrote back after being enrolled. The workflow's day-1/3/5/7 gates stop the sequence at its next step; what is outstanding is a reply from a person.">replied ${esc(ago(r.replies[0].created_at))}</span>` : ''}
                   ${r.failures ? `<span class="chip t-hot" title="Runs that failed outright or went out half-done, classified by lib/health.js. Sequences that stopped because the customer replied are excluded.">${num(r.failures)} failed</span>` : ''}
                   ${r.stops ? `<span class="chip" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
@@ -2008,7 +2008,7 @@ SCREENS.campaigns = async host => {
             const detail = stripMarker(c.message);
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
             <span class="mono t-muted" title="${esc(stamp(c.created_at))}">${clock(c.created_at)}</span>
-            ${marked ? pill('Internal marker', 'warm') : pill('Internal row', 'warm')}
+            ${marked ? pill('Internal marker', 'warm', { verbatim: false }) : pill('Internal row', 'warm', { verbatim: false })}
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">Unknown contact</span>'}</div>
               ${detail ? `<div class="cell-sub">${esc(detail)}</div>` : ''}
@@ -2035,7 +2035,7 @@ SCREENS.campaigns = async host => {
             const keyed = low(x.lead_email);
             return `<div class="list-item" data-key="run-${i}" style="cursor:default;align-items:flex-start">
             <span class="mono t-muted" title="${esc(stamp(x.logged_at))}">${clock(x.logged_at)}</span>
-            ${pill(x.status || 'Unknown')}
+            ${pill(x.status || 'Unknown', undefined, { verbatim: !!x.status })}
             ${(() => {
               /* The raw status stays, because it is what the row literally says.
                  Beside it, what lib/health.js makes of it — the two differ, and
