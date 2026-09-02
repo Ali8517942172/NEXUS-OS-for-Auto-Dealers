@@ -1,19 +1,126 @@
 /* NEXUS OS — lib/unit-form.js
    Split out of the original monolithic app.js on 17 Aug 2026. The body below is
    the original code, moved not rewritten. */
-import { dbWrite } from './data.js';
+import { db, dbWrite, onIdentityChange } from './data.js';
 import { $ } from './dom.js';
 import { TZ, aed, esc, n0, num, pill } from './format.js';
 import { modalError, openModal } from './modal.js';
 
+/* 2 Sep 2026 — HOLDING_PER_DAY: 50 IS GONE, AND IT WAS THE LARGEST FABRICATION
+   IN THIS PRODUCT.
+
+   It sat here as `HOLDING_PER_DAY: 50, // AED per unit per day` with no source
+   and no dealership behind it, and deriveUnit() multiplied it by the day count
+   on every render. Twelve units on this lot, 677 days between them: the browser
+   was printing AED 33,850 of holding cost across the lot and AED 7,450 against
+   NX-1010 alone, subtracting both from margin, and taking 5% of the remainder
+   as a recommended commission — four figures deep off one number nobody had
+   ever quoted. `recompute_inventory_derived()` asserted the same 50 in the
+   database and Lane A removed it there on 2 Sep 2026: `holding_cost_accrued`
+   and `net_margin` are NULL on all twelve `inventory` rows, and
+   `inventory_profit_settings.holding_cost_per_day_aed` is NULL with a column
+   comment saying so deliberately — "NOT seeded to the AED 50/day asserted by
+   recompute_inventory_derived() and lib/unit-form.js INV.HOLDING_PER_DAY:
+   neither cites a source, so neither is evidence."
+
+   Removing the key rather than zeroing it is the point. A zero would have been
+   the same lie with a smaller number, and a null left under this name invites
+   the next reader to write `|| 50`. The rate is now DATA — one row per
+   dealership in `inventory_profit_settings`, with a source, a person and a
+   confirmation date the table's own constraint requires — and it is read
+   through holdingSettings() below.
+
+   What still lives here and why: VAT_RATE and COMMISSION_RATE are the same
+   shape of un-sourced constant and are NOT fixed by this pass; they belong in
+   the Policy Engine (PRODUCT.md) and moving them is a decision about
+   jurisdiction data, not a display fix. WARN_DAYS 75 stays as the FALLBACK band
+   only — screens/competitors.js and screens/finance.js call deriveUnit() with
+   no settings and have banded at 75 for weeks, so changing what they see is not
+   this pass's to do. The Sentinel and the settings row both say 90; a caller
+   that passes settings gets 90. That disagreement is now visible at the call
+   site rather than hidden in a constant.
+
+   Two files outside this one read `INV.HOLDING_PER_DAY` and will now read
+   `undefined`: screens/finance.js:3194 prints it into a sentence, so that
+   sentence needs its own pass. Named, not touched. */
 const INV = {
-  HOLDING_PER_DAY: 50,      // AED per unit per day
-  VAT_RATE: 0.05,           // UAE VAT on the list price
-  COMMISSION_RATE: 0.05,    // of net margin
-  WARN_DAYS: 75,
-  CRITICAL_DAYS: 120,
+  VAT_RATE: 0.05,           // of the list price. Un-sourced; see the note above.
+  COMMISSION_RATE: 0.05,    // of net margin. Un-sourced; see the note above.
+  WARN_DAYS: 75,            // FALLBACK only. inventory_profit_settings says 90.
+  CRITICAL_DAYS: 120,       // agreed by every definition in the product.
   STATUSES: ['Available', 'Reserved', 'Sold'],
 };
+
+/* ── The holding rate, read rather than asserted ──────────────────────────
+   One row per dealership, RLS-scoped, so this returns THIS dealership's rate or
+   nothing. The three states it can come back in are kept apart, because they
+   are three different sentences on screen:
+
+     DEALERSHIP_SUPPLIED  the dealership stated the rate and stands behind it.
+                          Figures derived from it are figures.
+     PLACEHOLDER          a working assumption. Every figure derived from it is
+                          an assumption and must be labelled as one AT THE POINT
+                          THE FIGURE IS SHOWN — not in a footnote under it.
+     absent               no rate on record. Holding cost and net margin are
+                          NOT COMPUTABLE and the inputs are shown instead.
+
+   `limit=2` on purpose: a second row means this browser cannot tell which
+   dealership's rate it is holding, and the honest answer to that is the absent
+   state, not the first row that happened to sort first.
+
+   Memoised per signed-in identity. lib/data.js fires onIdentityChange when the
+   signed-in user actually changes, which is the one path in this app where a
+   second dealership's session can inherit the first one's memory without a page
+   reload — a stale holding rate crossing that boundary would put one
+   dealership's floorplan cost against another's cars. */
+const SETTINGS_COLS = 'holding_cost_per_day_aed,holding_cost_basis,holding_cost_source,'
+  + 'holding_cost_set_by,holding_cost_verified_at,aging_warn_days,aging_critical_days';
+
+const NO_RATE = Object.freeze({
+  rate: null, basis: null, source: null, setBy: null, verifiedAt: null,
+  warnDays: INV.WARN_DAYS, critDays: INV.CRITICAL_DAYS,
+  state: 'NO_RATE',
+  why: 'This dealership has not recorded what a day of floor costs, so holding cost and net margin cannot be worked out for any unit.',
+});
+
+let RATE_PROMISE = null;
+onIdentityChange(() => { RATE_PROMISE = null; });
+
+function holdingSettings() {
+  if (!RATE_PROMISE) {
+    RATE_PROMISE = db(`inventory_profit_settings?select=${SETTINGS_COLS}&limit=2`)
+      .then((rows) => {
+        const list = Array.isArray(rows) ? rows : [];
+        if (list.length > 1) {
+          return { ...NO_RATE, state: 'AMBIGUOUS',
+            why: 'More than one configuration row came back, so which dealership\'s holding rate this is cannot be told from here. No holding figure is derived from any of them.' };
+        }
+        const r = list[0];
+        if (!r) {
+          return { ...NO_RATE, state: 'NO_SETTINGS_ROW',
+            why: 'No configuration row exists for this dealership yet, so there is no holding rate, and none of the Sentinel\'s thresholds shown elsewhere came from here.' };
+        }
+        const warn = n0(r.aging_warn_days);
+        const crit = n0(r.aging_critical_days);
+        const rate = n0(r.holding_cost_per_day_aed);
+        const basis = String(r.holding_cost_basis || '').trim().toUpperCase() || null;
+        return {
+          rate: rate == null ? null : rate,
+          basis,
+          source: r.holding_cost_source || null,
+          setBy: r.holding_cost_set_by || null,
+          verifiedAt: r.holding_cost_verified_at || null,
+          warnDays: warn == null ? INV.WARN_DAYS : warn,
+          critDays: crit == null ? INV.CRITICAL_DAYS : crit,
+          state: rate == null ? 'NO_RATE' : (basis === 'PLACEHOLDER' ? 'PLACEHOLDER' : 'DEALERSHIP_SUPPLIED'),
+          why: rate == null ? NO_RATE.why : null,
+        };
+      })
+      .catch(e => ({ ...NO_RATE, state: 'UNREADABLE',
+        why: `The configuration row could not be read (${e && e.message ? e.message : 'no reason given'}), so whether a holding rate exists is unknown here. That is not the same as there being none.` }));
+  }
+  return RATE_PROMISE;
+}
 
 const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 
@@ -100,7 +207,21 @@ const daysInStock = (acquired) => {
    date. (A unit with neither price nor cost is a separate plausible zero and is
    deliberately left alone here; screens/inventory.js priced() guards it and is
    load-bearing today.) */
-function deriveUnit(u) {
+/* `cfg` is the settings row from holdingSettings(), or nothing.
+
+   Nothing is the SAFE argument, not the convenient one: with no settings the
+   holding rate is unknown, so holding cost, net margin and the recommended
+   commission all come back null with a state saying why. That is the answer
+   screens/competitors.js and screens/finance.js now get — they call
+   `inv.map(deriveUnit)`, and Array#map passes (value, index, array), so the
+   second argument they hand this function is a NUMBER. `typeof cfg === 'object'`
+   is what stops index 1 being read as a configuration whose `.rate` is
+   undefined and whose `.warnDays` is undefined; without that guard the first
+   unit in every list would band correctly and every unit after it would not.
+   Both files keep the 75-day fallback band they have always had, and both stop
+   printing a holding cost nobody quoted. */
+function deriveUnit(u, cfg) {
+  const c = (cfg && typeof cfg === 'object') ? { ...NO_RATE, ...cfg } : NO_RATE;
   const price = n0(u.price_aed) || 0;
   const cost = n0(u.cost_aed) || 0;
   const sold = String(u.status || '').toLowerCase() === 'sold';
@@ -114,37 +235,71 @@ function deriveUnit(u) {
      says sold: the last figure written while it was still on the lot is the
      closest thing to a true days-to-sale this schema can hold.
 
-     Two things about that freeze are now said out loud. It is a DISPLAY freeze
-     only: recompute_inventory_derived() sets `days_in_stock = d.days` for sold
-     and unsold rows alike, so whatever this froze into the column was re-counted
-     from acquisition the same night. Since unitRow() stopped writing derived
-     columns that is no longer a fight, but it does mean the frozen figure a sold
-     unit reads back is the nightly job's running count, not a days-to-sale.
-     And it is gated on having a date: on an undated unit it would hand the
-     stored column back under a live label, which is the fabrication three lines
-     of comment above exist to end. */
+     It is a DISPLAY freeze only: recompute_inventory_derived() sets
+     `days_in_stock = d.days` for sold and unsold rows alike, so whatever this
+     froze into the column was re-counted from acquisition the same night. And
+     it is gated on having a date: on an undated unit it would hand the stored
+     column back under a live label. */
   if (days != null && sold && storedDays != null) days = storedDays;
-  /* No date, no holding cost. On a sold unit the stored figure is the record,
-     and where that column is empty too the answer is still not zero — an empty
-     accrual column is a figure nobody has written, not a car that cost nothing
-     to keep. */
-  const holding = days == null ? null
-    : sold ? n0(u.holding_cost_accrued)
-      : days * INV.HOLDING_PER_DAY;
+
+  /* ── Holding cost. THE FIX. ────────────────────────────────────────────
+     This line used to read `days * INV.HOLDING_PER_DAY`, and because every
+     consumer spreads `...u` and then overwrites, that product replaced whatever
+     `inventory.holding_cost_accrued` actually held on every render. Lane A has
+     since set that column to NULL on all twelve rows precisely BECAUSE the rate
+     behind it was invented — so the browser was reinstating, in front of the
+     operator, the exact figure the database had just retracted.
+
+     Two inputs, both required, neither guessable: a rate on record and a day
+     count. Missing either is NOT_COMPUTABLE — never zero, and never the gross
+     margin wearing a holding cost of nothing. The states and the arithmetic
+     mirror public.v_inventory_profit_sentinel, which is the engine that owns
+     this figure; this function exists only so the Add/Edit form can show an
+     operator what the engine will say about what they are typing before they
+     save it.
+
+     The sold-unit branch is gone with the rate. It used to hand back
+     `holding_cost_accrued` for a sold unit — a stored figure that was itself
+     written from the 50/day assertion, so "the record" was the same invention
+     one hop away. A sold unit is now computed on the same two inputs as any
+     other, or is not computed at all. */
+  const holdingState = (c.rate == null || days == null) ? 'NOT_COMPUTABLE'
+    : c.basis === 'PLACEHOLDER' ? 'PLACEHOLDER' : 'COMPUTED';
+  const holding = holdingState === 'NOT_COMPUTABLE' ? null : Math.round(c.rate * days);
+  const holdingWhy = holdingState !== 'NOT_COMPUTABLE' ? null
+    : c.rate == null
+      ? (c.why || NO_RATE.why)
+      : 'No acquisition date on record, so there is no day count to charge a holding rate against.';
+
   const gross = price - cost;
   const net = holding == null ? null : gross - holding;
   return {
     ...u,
     days_in_stock: days,
+    /* Null, with the reason beside it. Every caller must render the reason
+       rather than the null: aed(null) prints an em dash, and an em dash where a
+       cost belongs reads as nothing owed. */
     holding_cost_accrued: holding,
+    holding_cost_state: holdingState,
+    holding_cost_note: holdingWhy,
+    holding_cost_basis: c.basis,
+    holding_cost_per_day_aed: c.rate,
+    /* Price minus cost. Neither input has anything to do with the date or the
+       rate, so this stays a number whatever the two above say. */
     gross_margin: gross,
     net_margin: net,
+    net_margin_state: holdingState,
+    net_margin_note: holdingState === 'NOT_COMPUTABLE'
+      ? `Net margin is gross margin less holding cost. ${holdingWhy} Gross is shown; net is withheld rather than guessed.`
+      : null,
     vat_amount: Math.round(price * INV.VAT_RATE),
     recommended_commission: net == null ? null : Math.round(net * INV.COMMISSION_RATE),
     aging_alert: days == null ? null
       : sold ? 'HEALTHY'
-        : days >= INV.CRITICAL_DAYS ? 'CRITICAL'
-          : days >= INV.WARN_DAYS ? 'WARNING' : 'HEALTHY',
+        : days >= c.critDays ? 'CRITICAL'
+          : days >= c.warnDays ? 'WARNING' : 'HEALTHY',
+    aging_warn_days: c.warnDays,
+    aging_critical_days: c.critDays,
   };
 }
 
@@ -284,17 +439,12 @@ function unitForm(existing, inv, onDone) {
     <div class="card" style="background:var(--sunken);margin-top:4px">
       <div class="label-caps" style="margin-bottom:10px">Calculated</div>
       <dl class="kv" id="uCalc"></dl>
-      <div class="cell-sub" style="margin-top:10px">
-        Holding cost accrues at ${aed(INV.HOLDING_PER_DAY)} a day and stops when a unit is marked Sold.
-        VAT is ${(INV.VAT_RATE * 100)}% of list; commission is ${(INV.COMMISSION_RATE * 100)}% of net margin.
-        Days are counted on the Dubai calendar, the same one the database counts on.
-      </div>
+      <div class="cell-sub" style="margin-top:10px" id="uRateNote"></div>
       <div class="cell-sub" style="margin-top:8px">
         These are worked out here for you and are not what gets saved. Saving stores the
         stock number, model, VIN, status, acquisition date, price, cost and recommendation;
-        every figure above is recomputed from those by the nightly ageing job, which owns
-        those columns. Until it next runs, Overview and the Finance Desk may still show this
-        unit's previous figures, or none at all if it is new.
+        the figures above are the Inventory Profit Sentinel's, recomputed from those inputs
+        the moment this screen next reads it.
       </div>
     </div>`,
     `<button class="btn primary" id="uSave">${isNew ? 'Add vehicle' : 'Save changes'}</button>
@@ -324,25 +474,84 @@ function unitForm(existing, inv, onDone) {
     + 'The nightly recompute skips rows with no acquired_at, so nothing will fill this in either.',
   )}">—</span>`;
 
+  /* A figure that cannot be worked out is shown as words plus its inputs, never
+     as an em dash. aed(null) prints "—", and an em dash in a money row reads as
+     nothing owed — which for a holding cost is exactly the zero this pass
+     exists to stop printing. */
+  const notComputable = (why, inputs) =>
+    `<span class="t-warm" title="${esc(why)}">Not computable</span>`
+    + `<div class="cell-sub" style="white-space:normal;text-align:right">${esc(why)}${
+      inputs ? `<br>${esc(inputs)}` : ''}</div>`;
+
+  /* PLACEHOLDER is marked on the figure itself and not underneath it. A rate the
+     dealership has not stood behind produces a number that looks exactly like a
+     real one, and a caveat two rows below is a caveat nobody screenshots. */
+  const assumed = (html, why) =>
+    `${html} <span class="pill warm" title="${esc(why)}"><span class="dot"></span>assumed</span>`;
+
+  /* CFG is null until the settings read lands, and null means "no rate", which
+     is the state that shows the inputs instead of a figure. So the panel is
+     correct before the read returns and correct after it — it never shows a
+     number that later turns out to have been derived from nothing. */
+  let CFG = null;
+
   const paint = () => {
-    const d = deriveUnit(read());
-    /* The aging band below passes verbatim: false, deliberately. The word is
-       deriveUnit()'s and not the column's — this file raises WARNING at 75 days
-       and recompute_inventory_derived() raises it at 90, so between 75 and 89
-       the band shown here is a word inventory.aging_alert does not hold, and
-       "shown exactly as the database holds it" would be the wrong claim about
-       the one figure on this panel the two rules disagree on. It is
-       HEALTHY | WARNING | CRITICAL either way and TONE knows all three, so the
-       note could not have fired regardless; the flag says which rule wrote it. */
+    const d = deriveUnit(read(), CFG);
+    const placeholder = d.holding_cost_state === 'PLACEHOLDER';
+    const rateWhy = CFG && CFG.rate != null
+      ? `Rate ${aed(CFG.rate)} a day${CFG.setBy ? `, put on record by ${CFG.setBy}` : ''}${CFG.source ? `, source: ${CFG.source}` : ''}.`
+        + (placeholder ? ' Recorded as a PLACEHOLDER — a working assumption, not a figure this dealership has stood behind.' : '')
+      : (d.holding_cost_note || NO_RATE.why);
+    const inputs = `Capital tied up ${aed(n0(read().cost_aed))}`
+      + (d.days_in_stock == null ? ', no day count' : `, ${num(d.days_in_stock)} days on the lot`)
+      + '.';
+
+    /* The aging band passes verbatim: false, deliberately. The word is
+       deriveUnit()'s, and which threshold produced it depends on whether the
+       settings row was read — 90 when it was, the 75-day fallback when it was
+       not — so it is not a value any column is holding, and the band is printed
+       with the two numbers that made it. */
+    const bandWhy = `WARNING at ${num(d.aging_warn_days)} days, CRITICAL at ${num(d.aging_critical_days)}`
+      + (CFG ? ', from this dealership\'s Sentinel settings.' : ', the built-in fallback — the settings row has not been read.');
+
     $('uCalc').innerHTML = `
       <dt>Days in stock</dt><dd class="num">${d.days_in_stock == null ? NO_DATE : num(d.days_in_stock)}</dd>
-      <dt>Aging alert</dt><dd>${d.aging_alert ? pill(d.aging_alert, undefined, { verbatim: false }) : NO_DATE}</dd>
+      <dt>Aging alert</dt><dd>${d.aging_alert
+        ? `<span title="${esc(bandWhy)}">${pill(d.aging_alert, undefined, { verbatim: false })}</span>`
+        : NO_DATE}</dd>
       <dt>Gross margin</dt><dd class="num ${d.gross_margin < 0 ? 't-hot' : ''}">${aed(d.gross_margin)}</dd>
-      <dt>Holding cost</dt><dd class="num">${aed(d.holding_cost_accrued)}</dd>
-      <dt>Net margin</dt><dd class="num"><strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong></dd>
+      <dt>Holding cost</dt><dd class="num">${d.holding_cost_state === 'NOT_COMPUTABLE'
+        ? notComputable(rateWhy, inputs)
+        : placeholder ? assumed(aed(d.holding_cost_accrued), rateWhy) : aed(d.holding_cost_accrued)}</dd>
+      <dt>Net margin</dt><dd class="num">${d.net_margin_state === 'NOT_COMPUTABLE'
+        ? notComputable(`Gross margin of ${aed(d.gross_margin)} is real; the holding cost that would be subtracted from it is not on record.`, inputs)
+        : placeholder
+          ? assumed(`<strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong>`, rateWhy)
+          : `<strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong>`}</dd>
       <dt>VAT</dt><dd class="num">${aed(d.vat_amount)}</dd>
-      <dt>Recommended commission</dt><dd class="num">${aed(d.recommended_commission)}</dd>`;
+      <dt>Recommended commission</dt><dd class="num">${d.recommended_commission == null
+        ? notComputable('Commission is a share of net margin, and net margin is not computable for this unit.', '')
+        : placeholder ? assumed(aed(d.recommended_commission), rateWhy) : aed(d.recommended_commission)}</dd>`;
+
+    const note = $('uRateNote');
+    if (note) {
+      note.innerHTML = esc(
+        (CFG && CFG.rate != null
+          ? `Holding cost is ${aed(CFG.rate)} a day from this dealership's Sentinel settings`
+            + `${CFG.setBy ? `, on record from ${CFG.setBy}` : ''}${CFG.source ? ` (${CFG.source})` : ''}`
+            + `${placeholder ? '. That rate is a PLACEHOLDER, so every figure derived from it above is marked as an assumption.' : '.'}`
+          : `No holding rate is on record for this dealership, so holding cost, net margin and the commission are not computable and this form will not invent them. `
+            + `${CFG ? (CFG.why || NO_RATE.why) : 'The settings row has not come back yet.'}`)
+        + ` VAT is ${INV.VAT_RATE * 100}% of list and commission is ${INV.COMMISSION_RATE * 100}% of net margin; neither of those two rates is sourced from this dealership.`
+        + ' Days are counted on the Dubai calendar, the same one the database counts on.',
+      );
+    }
   };
+
+  /* Fire-and-forget: paint() is already correct without it, and this repaints
+     with the rate once it lands. A failure resolves to the no-rate state rather
+     than rejecting, so there is nothing here that can throw into the modal. */
+  holdingSettings().then((cfg) => { CFG = cfg; if ($('uCalc')) paint(); });
   ['uStatus', 'uAcq', 'uPrice', 'uCost'].forEach(id =>
     $(id).addEventListener('input', paint));
   paint();
@@ -405,4 +614,7 @@ function unitForm(existing, inv, onDone) {
   });
 }
 
-export { INV, today0, deriveUnit, unitRow, nextStockId, isoDate, unitForm };
+/* holdingSettings is exported so screens/inventory.js reads the holding rate
+   through the same memoised call this form uses. One read, one answer: the
+   form and the table beside it cannot disagree about whether a rate exists. */
+export { INV, NO_RATE, holdingSettings, today0, deriveUnit, unitRow, nextStockId, isoDate, unitForm };

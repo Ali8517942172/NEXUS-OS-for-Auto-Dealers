@@ -788,9 +788,31 @@ SCREENS.overview = async host => {
     /* Two different sums. The holding cost of the units actually at risk is the
        number the "units at risk" KPI is about; the total across the lot is a
        different figure and used to be printed beside it as though it were the
-       same one. */
-    const riskHolding = risk.reduce((a, i) => a + (n0(i.holding_cost_accrued) || 0), 0);
-    const holding = inv.reduce((a, i) => a + (n0(i.holding_cost_accrued) || 0), 0);
+       same one.
+
+       2 Sep 2026 — AND NEITHER OF THEM MAY TURN AN UNKNOWN INTO A ZERO. Both
+       reduced with `(n0(i.holding_cost_accrued) || 0)`, which is the plausible
+       zero this codebase keeps re-learning: a null column added as 0, and the
+       total then printed as a confident figure. Lane A removed the un-sourced
+       AED 50/day rate from the database on 2 September, so
+       `inventory.holding_cost_accrued` is now NULL on all twelve rows — and
+       this line answered that with "AED 0 holding cost accrued in total"
+       across twelve cars, in the same strip as a caption calling it a total.
+       Nil and not-known are opposite claims about the dealership's money.
+
+       A tally, not a reduce: the sum of the rows that carry the figure, how
+       many did, and how many did not. `total` is null when none did, which
+       aed() renders as an em dash — so the caption below states the absence in
+       words instead of letting a dash stand in for a number. Overview reads the
+       stored column and does not import deriveUnit(); the Inventory screen
+       reads the Sentinel, which says NOT_COMPUTABLE with the same reason. */
+    const holdTally = (units) => {
+      let total = 0, n = 0;
+      for (const i of units) { const v = n0(i.holding_cost_accrued); if (v != null) { total += v; n += 1; } }
+      return { total: n ? total : null, n, of: units.length, missing: units.length - n };
+    };
+    const riskHolding = holdTally(risk);
+    const holding = holdTally(inv);
     /* Asking price, not capital and not realised revenue: `price_aed` is what
        the unit is listed at. `cost_aed` would be the money actually tied up and
        is not read here; nothing on this table records what a unit sold for. */
@@ -1227,11 +1249,20 @@ SCREENS.overview = async host => {
             : '');
 
     /* ── Units at risk ──────────────────────────────────────────────────── */
+    /* Says what the tally found, including when it found nothing. "No figure is
+       on record" and "AED 0" are different sentences and only one of them is
+       true today: `inventory.holding_cost_accrued` is NULL on every row because
+       the rate behind it had no source and was withdrawn, not because these
+       cars cost nothing to keep. */
+    const holdText = (t, what) => (t.total == null
+      ? `No holding cost is on record for ${what} — what a day of floor costs this dealership has not been recorded, so it is unknown rather than nil`
+      : `${aed(t.total)} holding cost across ${what}${t.missing
+        ? ` · ${num(t.missing)} of ${num(t.of)} ${plural(t.of, 'carries', 'carry')} no figure and ${plural(t.missing, 'is', 'are')} not in that total` : ''}`);
     const riskSub = (risk.length
         ? `<span class="t-hot">Oldest ${num(oldestRisk)} days in stock</span> ${muted(`· ${num(risk.length)} of ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read`)}`
-          + `<br>${muted(`${aed(riskHolding)} holding cost on ${plural(risk.length, 'that unit', 'those units')} · ${aed(holding)} across all ${num(inv.length)}`)}`
+          + `<br>${muted(`${holdText(riskHolding, plural(risk.length, 'that unit', 'those units'))} · ${holdText(holding, `all ${num(inv.length)} ${plural(inv.length, 'unit', 'units')}`)}`)}`
           + `<br>${muted(`${plural(risk.length, 'It is', 'They are')} listed at ${aed(riskList)} in total`)}`
-        : muted(`No unit is flagged CRITICAL across the ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read · ${aed(holding)} holding cost accrued in total`))
+        : muted(`No unit is flagged CRITICAL across the ${num(inv.length)} ${plural(inv.length, 'unit', 'units')} read · ${holdText(holding, `all ${num(inv.length)} ${plural(inv.length, 'unit', 'units')}`)}`))
       + (warning.length ? `<br>${warn(`${num(warning.length)} further ${plural(warning.length, 'unit is', 'units are')} flagged WARNING and not counted above.`)}` : '')
       + (invCapped ? `<br>${warn(`Inventory read was capped at ${num(INV_LIMIT)} rows.`)}` : '')
       /* The absence an owner will look for first on this strip, said in words.

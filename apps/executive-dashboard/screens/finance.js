@@ -3184,16 +3184,21 @@ SCREENS.finance = async host => {
             <dt>List price</dt><dd class="num">${aed(u.price_aed)}</dd>
             <dt>Cost</dt><dd class="num">${aed(u.cost_aed)}</dd>
             <dt>Gross margin</dt><dd class="num ${(n0(u.gross_margin) || 0) < 0 ? 't-hot' : ''}">${aed(u.gross_margin)}</dd>
-            <dt>Holding cost</dt><dd class="num ${(n0(u.holding_cost_accrued) || 0) > 5000 ? 't-hot' : 't-muted'}">${aed(u.holding_cost_accrued)}</dd>
-            <dt>Net margin</dt><dd class="num"><strong class="${(n0(u.net_margin) || 0) < 0 ? 't-hot' : ''}">${aed(u.net_margin)}</strong></dd>
+            <dt>Holding cost</dt><dd class="num ${n0(u.holding_cost_accrued) == null ? 't-warm' : (n0(u.holding_cost_accrued) > 5000 ? 't-hot' : 't-muted')}">${n0(u.holding_cost_accrued) == null ? 'Not computable' : aed(u.holding_cost_accrued)}</dd>
+            <dt>Net margin</dt><dd class="num">${n0(u.net_margin) == null ? '<span class="t-warm">Not computable</span>' : `<strong class="${n0(u.net_margin) < 0 ? 't-hot' : ''}">${aed(u.net_margin)}</strong>`}</dd>
             <dt>VAT</dt><dd class="num">${aed(u.vat_amount)}</dd>
             <dt>Commission</dt><dd class="num" style="font-size:18px;font-weight:600">${aed(u.recommended_commission)}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:10px;white-space:normal">
-            ${esc(`List price and cost are the figures on the unit. Everything under them is worked out here on stated rates, not read off the row: `
-              + `holding cost at ${aed(INV.HOLDING_PER_DAY)} per day since acquisition (a sold unit stops accruing), `
-              + `VAT at ${INV.VAT_RATE * 100}% of the list price, and commission at ${INV.COMMISSION_RATE * 100}% of net margin. `
-              + `Recomputed from the unit's acquisition date each time this is opened, so it matches Inventory even between nightly recomputes.`)}</div>`;
+            ${esc(`List price and cost are the figures on the unit. VAT is ${INV.VAT_RATE * 100}% of the list price and commission is `
+              + `${INV.COMMISSION_RATE * 100}% of net margin — both stated rates, not read off the row.`
+              + (n0(u.holding_cost_accrued) == null
+                  ? ` Holding cost and net margin are NOT COMPUTABLE: this dealership has not recorded what a day of floor costs it, so the daily`
+                    + ` rate is unknown rather than nil. Until 2 Sep 2026 this panel multiplied the day count by an assumed AED 50 that came from a`
+                    + ` browser constant, not from any dealership. What is real is on the row: ${aed(u.cost_aed)} of capital tied up`
+                    + ` for ${n0(u.days_in_stock) == null ? 'an unrecorded number of' : num(u.days_in_stock)} days. Set the floor-plan rate in`
+                    + ` inventory_profit_settings and both figures return.`
+                  : ` Holding cost accrues from the acquisition date at the rate on record for this dealership (a sold unit stops accruing).`))}</div>`;
       };
       sel.addEventListener('change', draw);
       draw();

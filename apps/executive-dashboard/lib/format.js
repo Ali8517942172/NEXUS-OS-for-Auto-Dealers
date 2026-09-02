@@ -118,6 +118,15 @@ const TONE = {
   HOT:'hot', WARM:'warm', COLD:'cold',
   GOOD:'ok', OK:'ok', SUCCESS:'ok', APPROVED:'ok', HEALTHY:'ok', ACTIVE:'ok', SENT:'ok',
   FAILED:'hot', REJECTED:'hot', CRITICAL:'hot', ERROR:'hot', BREACHED:'hot',
+  /* SEVERE and ELEVATED are the Inventory Profit Sentinel's risk words
+     (v_inventory_profit_sentinel.overall_risk: SEVERE > HIGH > ELEVATED > LOW).
+     Added 2 Sep 2026 because SEVERE — the WORST rank the engine emits — was
+     falling through to neutral grey and sitting next to a red HIGH, so the most
+     urgent unit on the screen looked calmer than the one below it. SEVERE is
+     'hot' alongside CRITICAL; ELEVATED is 'warm' alongside WARNING, one step
+     below HIGH. screens/inventory.js carried a private five-word map as a
+     workaround; it agrees with this table on the three words they share. */
+  SEVERE:'hot', ELEVATED:'warm',
   ESCALATED:'warm', PENDING:'warm', WARNING:'warm', PENDING_INVITE:'warm',
   /* DEGRADED is 'hot', not 'warm', and the disagreement is worth settling here
      rather than in five private maps. Automation, Settings, Ask and Overview had
