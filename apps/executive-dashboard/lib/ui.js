@@ -1,6 +1,7 @@
 /* NEXUS OS — lib/ui.js
    Split out of the original monolithic app.js on 17 Aug 2026. The body below is
    the original code, moved not rewritten. */
+import { onIdentityChange } from './data.js';
 import { $, el } from './dom.js';
 import { esc } from './format.js';
 import { stateEmpty, stateError, stateLoading } from './states.js';
@@ -14,6 +15,31 @@ function closeDrawer() {
   $('drawer').classList.remove('open');
   $('scrim').classList.remove('open');
 }
+
+/* Closing the drawer hides it; it does not empty it. That is deliberate — the
+   panel slides out over a transition and blanking it mid-slide looks broken —
+   but it means the last customer record opened stays in the document for as
+   long as the tab is open: a name, a phone number, an email address and a
+   message history, sitting in `#drawer` behind a class.
+
+   With one dealership that was merely untidy. This app re-authenticates without
+   discarding the document (see lib/data.js), so with two it is one dealership's
+   customer left inside another dealership's session. Emptied on a change of
+   signed-in identity, which is not during a transition and cannot look broken.
+
+   Clearing it on every close would be stronger and is the obvious next step;
+   it is left alone here because it changes what the panel looks like on the way
+   out, and this change is meant to be invisible except in the case it fixes. */
+onIdentityChange(() => {
+  const d = $('drawer'); if (d) { d.classList.remove('open'); d.innerHTML = ''; }
+  /* `#screen` for the same reason and in the same breath. lib/nav.js clears it
+     when it renders the next screen, but the login card is painted OVER the
+     running app — `#app` is hidden, not emptied — so between a token expiring
+     and the next person's first render the previous dealership's screen is
+     still in the document. This closes that window rather than relying on the
+     render that comes after it. */
+  const sc = $('screen'); if (sc) sc.innerHTML = '';
+});
 
 /* ── Reusable renderers ──────────────────────────────────────────────────── */
 function kpi(label, value, sub, cls = '') {

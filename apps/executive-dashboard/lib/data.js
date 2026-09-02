@@ -50,8 +50,44 @@ function isAuthFailure(status, body) {
    module already depends on this one. */
 let onSessionEnded = () => {};
 function setSessionEndedHandler(fn) { onSessionEnded = fn; }
-/* A live session clears the latch below, so signing back in re-arms it. */
-function setSession(s) { SESSION = s; if (s) ENDED = false; }
+/* ── Whose data is in memory ────────────────────────────────────────────────
+   Multi-tenancy landed in the database on 2 Sep 2026. RLS is the security
+   boundary and it is enforced per request, so nothing here is a second lock.
+   What RLS cannot reach is memory: this app re-authenticates WITHOUT a page
+   reload on one path — a token expires, lib/data.js calls sessionEnded(),
+   app.js paints the login card over the running app, and a successful sign-in
+   from that card calls boot() again. The document is never discarded, so every
+   module-level array, snapshot and memo from the PREVIOUS session is still
+   there, and on a showroom floor machine the next person to sign in is
+   routinely not the previous one. With one dealership that only meant stale;
+   with two it means one dealership's rows rendered inside another's session.
+
+   So: any module holding data across renders registers a reset here, and
+   setSession() fires them the moment the signed-in identity changes. Sign-out
+   still reloads the page (app.js) and is unaffected — this covers the path
+   that does not.
+
+   Registered, not automatic: a module that keeps nothing needs nothing, and a
+   list of resets that can be read in one place is the only way to answer "what
+   survives a tenant switch" without re-reading every screen. */
+const RESETTERS = new Set();
+let IDENTITY = null;
+function onIdentityChange(fn) { RESETTERS.add(fn); return fn; }
+function fireIdentityChange() {
+  RESETTERS.forEach(fn => { try { fn(); } catch { /* a reset must never break sign-in */ } });
+}
+
+/* A live session clears the latch below, so signing back in re-arms it.
+
+   The identity check compares auth user ids, so the background token refresh
+   (same user, new token, fired every hour by supabase-js) does NOT clear
+   anything — only an actual change of who is signed in does, including the
+   transition to signed-out. */
+function setSession(s) {
+  const next = s?.user?.id || null;
+  if (next !== IDENTITY) { IDENTITY = next; fireIdentityChange(); }
+  SESSION = s; if (s) ENDED = false;
+}
 function setMe(m) { ME = m; }
 function setMeReadFailed(e) { ME_READ_FAILED = e; }
 function meReadFailed() { return ME_READ_FAILED; }
@@ -165,4 +201,4 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe };
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange };

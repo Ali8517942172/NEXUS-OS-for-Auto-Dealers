@@ -28,7 +28,7 @@
        strip. Promoting those to the sidebar would make the badge a number no
        single query can reproduce.
      · Overview is the exception and says so below. */
-import { db } from './data.js';
+import { db, onIdentityChange } from './data.js';
 import { $ } from './dom.js';
 
 /* Cold items are things to know, not things to do. A permanent "5" over
@@ -95,7 +95,22 @@ function collapseAttention(rows) {
   return { rows: out, collapsed };
 }
 
-let LAST = { at: null, rows: null, error: null, homeless: 0, distinct: null, collapsed: 0 };
+const NO_SNAPSHOT = { at: null, rows: null, error: null, homeless: 0, distinct: null, collapsed: 0 };
+let LAST = { ...NO_SNAPSHOT };
+
+/* LAST is a live binding and screens/overview.js imports it: its badge is a
+   refinement of this snapshot, so whatever is in here is a number Overview will
+   paint. It is therefore one dealership's attention items held in memory, and
+   the app re-authenticates without discarding memory (see lib/data.js).
+
+   Signing in as somebody else empties it rather than leaving the previous
+   dealership's count sitting over the nav until the first poll returns. Emptied,
+   not marked stale: `rows: null` with `error: null` is the state this module
+   already uses for "nothing has been read yet", and every reader already knows
+   it. The badges themselves are wiped for the same reason a failed read wipes
+   them — a count that is silently four hours and one dealership old is worse
+   than no count. */
+onIdentityChange(() => { LAST = { ...NO_SNAPSHOT }; try { clearAll(); } catch { /* no DOM yet at boot */ } });
 
 function paintOne(screen, n, title) {
   const badge = $(`badge-${screen}`);

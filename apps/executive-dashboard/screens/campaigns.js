@@ -464,12 +464,24 @@ const SELF_STOPPING_NOTE =
    only: this screen can see a reply the gate cannot. That is the case where the
    sequence does NOT stop itself and SELF_STOPPING_NOTE would be wrong about it,
    which is why the divergence is printed rather than quietly enjoyed. */
+/* The worked example that used to close this sentence — "on 01 Sep 2026 that
+   bridge is the only thing attaching 17 of the 95 messages in
+   communication_logs to a lead at all — 2 of Ali's 29, 5 of Siva's 8, and all
+   10 of Effco's 10" — was three of THIS dealership's customers, by name, and
+   three counts of their messages, frozen into a string literal. It rendered on
+   every load of this screen for every signed-in user.
+
+   Multi-tenancy landed on 2 Sep 2026, and a hard-coded sentence is the one
+   thing RLS cannot scope: the second dealership on this database would read
+   the first one's customer names in their own alert strip, above counts of
+   messages that are not theirs and do not match anything they can open. The
+   names are gone and the numbers with them — the divergence they illustrated
+   is a property of the two lookup rules and is true without them. */
 const GATE_BLIND_SPOT =
   'The gate builds its lookup from the lead\u2019s email plus the two WhatsApp key shapes it can derive from the phone number on '
   + 'the leads row, so a reply filed only under a @lid handle, or a lead with no phone number on it, is invisible to it. This screen '
   + 'is no longer blind to those rows: lib/identity.js bridges a @lid through the whatsapp_contacts / v_conversations row that ties '
-  + 'the handle to a phone number, and on 01 Sep 2026 that bridge is the only thing attaching 17 of the 95 messages in '
-  + 'communication_logs to a lead at all — 2 of Ali\u2019s 29, 5 of Siva\u2019s 8, and all 10 of Effco\u2019s 10. The two therefore '
+  + 'the handle to a phone number, and the gate has no step that does. The two therefore '
   + 'disagree in one direction: a reply counted here may be one the gate cannot see, and a sequence the gate will not stop.';
 
 /* n8n does not expose credential state to the browser directly. What the
@@ -1543,16 +1555,16 @@ SCREENS.campaigns = async host => {
       kpi('Campaign audience', num(eligible.length),
         [
           muted(eligible.length
-            ? `${num(eligible.length)} of ${num(nLeads)} ${plural(nLeads, 'lead', 'leads')} in the database ${plural(eligible.length, 'is', 'are')} warm or cold with an email address`
+            ? `${num(eligible.length)} of ${num(nLeads)} ${plural(nLeads, 'lead', 'leads')} on this dealership\u2019s books ${plural(eligible.length, 'is', 'are')} warm or cold with an email address`
             : nLeads
-              ? `No lead in the database is warm or cold with an email address. By status the database holds ${statusMix}`
-              : 'There is no lead in the database at all'),
+              ? `No lead on this dealership\u2019s books is warm or cold with an email address. By status they are ${statusMix}`
+              : 'This dealership has no lead on its books at all'),
           unreachable.length
             ? warn(`${num(unreachable.length)} further warm or cold ${plural(unreachable.length, 'lead has', 'leads have')} no address the drip can send to`
                 + (synthEmailLeads.length ? `, ${num(synthEmailLeads.length)} of ${plural(synthEmailLeads.length, 'which carries', 'which carry')} a WhatsApp key in the email column` : ''))
             : '',
           nLeads === 1
-            ? warn('One lead in the database. A campaign audience of one person carries no rate, no segment and no comparison — see the panel below for what that rules out.')
+            ? warn('One lead on this dealership\u2019s books. A campaign audience of one person carries no rate, no segment and no comparison — see the panel below for what that rules out.')
             : '',
         ].filter(Boolean).join('<br>'),
         nLeads === 1 ? 't-warm' : ''),
@@ -1788,11 +1800,11 @@ SCREENS.campaigns = async host => {
            condition a lead has to meet before it appears here. */
         : stateEmpty('No lead can be enrolled in the drip right now',
             nLeads
-              ? `The drip is addressed by email and nurtures warm and cold leads only. By status the database holds `
+              ? `The drip is addressed by email and nurtures warm and cold leads only. By status this dealership\u2019s leads are `
                 + `${statusMix}${unreachable.length ? `, and ${num(unreachable.length)} of the warm or cold ones ${plural(unreachable.length, 'has', 'have')} no address the drip can send to` : ''}. `
                 + 'A lead appears in this table when the router scores it WARM or COLD and carries a real email address — a synthesised '
                 + '+digits@whatsapp.lead key is not one, and a lead holding one is listed in the alert strip above rather than offered here.'
-              : 'There is no lead in the database at all. Leads arrive from the WhatsApp router and the web form; this table fills as soon as one is scored warm or cold with an email address on it.',
+              : 'This dealership has no lead on its books at all. Leads arrive from the WhatsApp router and the web form; this table fills as soon as one is scored warm or cold with an email address on it.',
             'campaign');
       wireRows(tableHost, rows, leadDrawer);
       tableHost.querySelectorAll('button[data-enrol]').forEach(b => b.addEventListener('click', ev => {

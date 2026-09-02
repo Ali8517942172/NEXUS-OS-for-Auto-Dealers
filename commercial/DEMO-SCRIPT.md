@@ -1,7 +1,11 @@
 # NEXUS OS — Demo Script
 
-**Version 1.0 · 2 September 2026**
+**Version 2.0 · 2 September 2026**
 **Runs in 12 minutes. Do not run long.**
+
+**Two changes from version 1.0, and they are not cosmetic.** The "17.8 seconds" line is
+gone — you no longer quote a response time at all, and the replacement wording is below.
+And the price you close on is now a setup fee plus a monthly band, not a flat monthly fee.
 
 Read this whole document before your first demo, including the DO NOT SHOW list. The list
 has a reason beside every entry, because a salesperson who does not know *why* a screen is
@@ -11,9 +15,8 @@ off-limits will open it anyway when a buyer pushes.
 
 ## The one thing this demo proves
 
-A customer messages your WhatsApp about a car. Nobody at the dealership touches it. Within
-seconds they get back the right car, the right asking price, and no hint of what you paid
-for it. It lands on the right customer record without creating a duplicate. You can read the
+A customer messages your WhatsApp about a car. Nobody at the dealership touches it. They get
+back the right car, the right asking price, and no hint of what you paid for it. It lands on the right customer record without creating a duplicate. You can read the
 whole exchange afterwards.
 
 That is the whole demo. It is one path. It is real, it is repeatable, and it is the only
@@ -32,14 +35,18 @@ the correct answer.
    asking prices and real cost prices. The demo dies if you quote a Fortuner to a Nissan
    dealer. If you cannot get their stock, say up front that the stock on screen is a sample
    and show the ageing flags instead.
-2. **Send yourself a test message on the demo number and confirm you get a reply.** Do this
+2. **Demo on the dedicated NEXUS demo number. Never on a personal number.** A buyer's phone
+   showing a personal WhatsApp profile, or a stray family message appearing in the
+   Conversations screen, ends the meeting. If the demo number is not ready, postpone the
+   demo.
+3. **Send yourself a test message on the demo number and confirm you get a reply.** Do this
    within the hour before the meeting, not the night before. The WhatsApp connection uses an
    unofficial client and it drops.
-3. **Open the dashboard, sign in, and leave it on Overview.** Signing in live wastes a
+4. **Open the dashboard, sign in, and leave it on Overview.** Signing in live wastes a
    minute and can fail.
-4. **Have a second phone ready** — ideally the buyer's own phone, which is far more
+5. **Have a second phone ready** — ideally the buyer's own phone, which is far more
    convincing than yours.
-5. **Check the Fortuner (or their equivalent) price is what you are going to say.** Read it
+6. **Check the Fortuner (or their equivalent) price is what you are going to say.** Read it
    off the Inventory screen with your own eyes.
 
 ---
@@ -82,8 +89,7 @@ Then **stop talking and let the phone sit there.** The silence is the demo. Do n
 
 ### Beat 3 — The reply (30 seconds). Read it out loud.
 
-The reply that came back on 2 September 2026 at 06:07:30, **17.8 seconds** after the
-question:
+The reply that came back on 2 September 2026:
 
 > "The Toyota Fortuner 2.7 VXR 2024 we have in stock is AED 152,000. Let me know if you'd
 > like more details or a test drive!"
@@ -93,13 +99,23 @@ question:
 > it looked it up. And it did not mention AED 133,000. It knows your cost price and it will
 > not say it. That is not the model being polite; it is a rule in the system."
 
-**On timing, say this and nothing more than this:**
-> "That one took 17.8 seconds. Across every automated reply since 31 August, the fastest was
-> 13 seconds and the slowest was three and a half minutes — median 42 seconds. It is seconds
-> to a couple of minutes, not instant. I am not going to tell you it is always 17."
+**The one approved sentence for what the product does. Use these words:**
+> "Nexus automatically responds to inbound dealership enquiries and routes high-intent
+> opportunities to the right team."
 
-**Do not promise "under 20 seconds".** You cannot hold it. The measured range is 13.3s to
-219.4s across 19 replies.
+**On timing — do not attach a number to that sentence.** If the buyer asks how fast, and only
+if they ask:
+> "Seconds to a couple of minutes. I am not going to give you a number I can hold to, because
+> I do not have enough production traffic yet to promise one. When I do, I will put the
+> measurement in writing."
+
+If they push for the actual spread, you may give the measured range and you must give all of
+it, not the good end: **fastest 13 seconds, median 39 seconds, slowest 3 minutes 38 seconds,
+across 18 automated replies. Four of the eighteen took over 100 seconds.**
+
+**Banned, permanently: "17.8 seconds", "under 20 seconds", "instant", "real time",
+"immediately".** One fast measurement is not a rate. A buyer who is told 17 seconds and
+watches 90 will not believe the rest of the demo, and he will be right not to.
 
 ---
 
@@ -131,10 +147,11 @@ Then the harder half, and say it plainly:
 > problem you can fix in ten seconds. A message filed against the wrong customer is a problem
 > you find out about when the wrong person gets a call."
 
-**A live figure you can quote:** of 108 logged messages, 47 resolve to a named customer and
-the rest sit unresolved. Say that number out loud if asked. It is not a failure — most of
-those are non-customer traffic on a shared number, which is exactly why a dedicated
-dealership number is step one of onboarding.
+**A live figure you can quote:** of the logged messages, only a minority resolve to a named
+customer record and the rest sit unresolved — count it before the meeting rather than
+quoting this document, because it moves. Say it out loud if asked. It is not a failure: most
+of the rest is non-customer traffic on a shared personal number, which is exactly why a
+dedicated dealership number is step one of onboarding.
 
 ---
 
@@ -168,13 +185,21 @@ Shut the laptop.
 
 **Say:**
 > "What you saw is one path, and it is the only path I will sell you today: a WhatsApp
-> message becomes an answered customer with a correct price, on the record, in seconds.
-> Everything else in this system is built and unproven, and I have written down which is
-> which — I will send you that document, not a brochure.
+> message becomes an answered customer with a correct price, on the record. Everything else
+> in this system is built and unproven, and I have written down which is which — I will send
+> you that document, not a brochure.
 >
-> Three months. AED 3,500 a month plus AED 5,000 to set it up. One dealership, one number,
-> running on my infrastructure with me watching it every day. If it is not working by day
-> 30, you tell me and we stop."
+> It is a managed pilot, not a software subscription. AED 5,000 to set it up, then AED 2,500
+> to AED 3,500 a month, three months minimum. Where you land in that band is a rule, not a
+> negotiation: you start at 2,500 and you add 250 for each of four things — stock over 50
+> cars, more than 400 customer messages a month, more than five people needing a login, and
+> whether you want me running the WhatsApp number for you. On what you have told me that is
+> AED X a month. One dealership, one number, on my infrastructure with me watching it every
+> day. If it is not working by day 30, you tell me and we stop."
+
+**Work out the band figure before the meeting and say the number, not the rule and then a
+pause.** The rule is there so you can defend the number when they push, not so you can
+compute it in front of them.
 
 Hand over `PILOT-OFFER.md` and `WHAT-WE-CLAIM.md`. Handing over the claims register is the
 strongest move in this meeting. Do it.
@@ -190,7 +215,7 @@ just the list.
 |---|---|
 | **Intelligence → Finance Desk** | The quotes table holds **zero rows**. The screen is honest and will render as empty, which looks broken. Worse: on 31 August an earlier build quoted a real person a monthly payment of **AED 11,200** when the true figure was nearer **AED 7,800**, and sent it. That is a number a dealership could be held to. The path is gated off and stays off. |
 | **Work → Compliance** | The KYC register holds **3 rows and zero verified customers** — all three submissions were correctly rejected as "not an identity document". The auditor workflow has 9 logged runs, 7 failures, 0 successes. A buyer who sees a compliance screen assumes compliance. You have none to sell. |
-| **Operations → Deals** | The sales table holds **zero rows**. No deal has ever been recorded through this system. An empty pipeline screen in a sales meeting is the worst possible frame. |
+| **Operations → Deals** | No dealership customer has ever bought a car through this system. The sales table held zero rows until 09:59 on 2 September, when a repair test wrote one row against Ali's own lead — a Lexus at AED 585,000 that nobody bought. The sync job is 13 runs, 11 failures, graded DEGRADED. A pipeline screen showing one deal that is not a deal is worse than an empty one. |
 | **Assets → Competitors** | 14 usable prices out of 120 attempts. The system classifies it as "producing nothing" in those words. Do not open a screen that argues against you. |
 | **Operations → Campaigns** | The drip campaign has run 5 times and failed 5 times. 0% success. |
 | **Operations → Team** | There is **one user** in the system. A team screen showing one person undercuts everything you just said about a dealership floor. |
@@ -231,12 +256,32 @@ months.
 
 ### "How many dealerships are using this?"
 
-> "None. You would be the first, and that is why it is a supervised pilot at pilot money and
-> not a subscription at software money. I run it, I watch it daily, and there is only one
-> dealership on the system — because the database does not yet separate one dealership's data
-> from another's. That is the next thing I build, and until it is built I physically cannot
-> put a second customer on the same instance. I would rather tell you that than have you find
-> out when a competitor of yours signs up."
+> "None. You would be the first, and that is why it is a managed pilot at pilot money and not
+> a subscription at software money. I run it and I watch it daily.
+>
+> On your data being separated from another dealership's: the database side of that was built
+> and tested on 2 September. Every table carries a dealership id, every access rule checks it,
+> and I tested it with two dealerships across every table and every screen — each one saw its
+> own rows and none of the other's, and I could not write across the line or fake the
+> dealership id in a login token.
+>
+> The automation is not there yet. The workflows that write your messages into the database
+> run as a system account with no dealership attached, so a second dealership's traffic would
+> file under the first. That is why I still run one dealership per system, and it is why you
+> are getting a dedicated system rather than a seat on someone else's."
+
+**Do not compress this into "we are multi-tenant now".** Half of it is proven and half of it
+is not, and the half that is not is the half a buyer would care about.
+
+### "How fast does it reply?"
+
+> "Seconds to a couple of minutes. I could give you the best number I have ever measured, but
+> it would be one measurement rather than a promise, and you would hold me to it. When there
+> is enough of your traffic through it to state a real figure, I will state it and show you
+> the measurement."
+
+If they press, give the full measured spread — fastest, median **and** slowest. Never the
+fast end alone.
 
 ---
 
@@ -244,16 +289,35 @@ months.
 
 1. **Never quote a monthly payment, APR or EMI.** Not verbally, not "roughly", not
    "indicative". The system has produced a wrong one and sent it to a real person.
-2. **Never say "real time".** Say "seconds to a couple of minutes". The measured range is
-   13.3s to 219.4s.
-3. **Never say "enterprise", "compliant", "SOC 2", "multi-tenant" or "99.9%".** None is true.
-   Note that the repository's own README describes a multi-tenant architecture — that
-   describes an intention, not the database. Do not read from it.
-4. **Never show a second dealership's data, or claim you could.** You cannot; every access
-   policy in the database is unrestricted.
+2. **Never quote a response time, in any form.** Not "17.8 seconds", not "under 20 seconds",
+   not "instant", not "real time". If asked, say "seconds to a couple of minutes" and, if
+   pushed, give the whole measured range including the slowest. A response-time promise is
+   the easiest claim in this pack to disprove in front of the buyer.
+3. **Never say "enterprise", "compliant", "SOC 2" or "99.9%".** None is true.
+4. **On "multi-tenant", say only what was tested.** The database now separates dealerships
+   and that was proven on 2 September with two test dealerships. The workflows do not — they
+   write as a system account with no dealership attached. So: "your data is separated at the
+   database level, tested; the automation is not there yet, so I still run one dealership per
+   system." Do not shorten that to "we are multi-tenant". The repository's own README claims
+   a multi-tenant architecture and describes an intention — do not read from it.
 5. **If the live demo fails, do not fake it.** Say: "That is the unofficial WhatsApp client
    dropping — it is exactly why moving to the official API is week one of your onboarding."
    Then walk the Conversations screen showing the 2 September exchange that did work. A
    recovered failure demonstrates the honesty you have been claiming for ten minutes.
 6. **If you do not know, say you will check and then actually check.** Every figure in this
    pack came from a query against the live database. You can always get the real answer.
+
+
+---
+
+## Figures in this script
+
+Checked against Supabase project `dsvuoovivysszdoiorch` at **10:04:17 UTC, 2 September 2026**,
+scoped to the one real dealership. Another workstream was writing synthetic QA dealerships
+into the same tables at the time; none of that is counted here, and anyone re-running these
+counts must scope them to `tenants.slug = 'alba-cars'` or the numbers will flatter you.
+
+108 messages, 24 resolving to a named customer · 3 leads · 12 vehicles · 0 customer sales
+(1 `purchase_history` row exists, written 09:59:53 by a repair test) · 0 finance quotes ·
+3 KYC submissions, 0 verified · 1 login · 600 run records ·
+18 automated replies at 13.3s fastest, 38.8s median, 218.3s slowest.

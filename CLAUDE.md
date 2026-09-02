@@ -27,15 +27,33 @@ the software says to a customer. It means:
 - Prefer finishing one path a buyer can see end to end over improving five they
   will never open.
 
-## The one thing standing between this and subscription revenue
+## Tenancy: done in the database, NOT done in the workflows
 
-**The system is single-tenant.** There are no tenant columns, and every RLS
-policy is `USING (true)`. Any signed-in user reads every lead, every message,
-every customer. Selling a second dealership onto this database means the second
-one can read the first one's customers.
+As of 2 September the database is multi-tenant: `tenant_id` on 15 tables,
+tenant-scoped RLS, and the five SECURITY DEFINER functions that were
+cross-tenant bypasses are scoped. Proven adversarially with two synthetic
+dealerships as real roles with JWT claims — reads, writes, updates, deletes,
+tenant-hopping, a forged `tenant_id` claim, membership self-grant, all ten
+views, hot-lead routing, phone-tail identity collision and the whole `anon`
+surface all returned zero. That work is real; do not redo it.
 
-Everything else on the roadmap is smaller than this. Do not design new features
-that deepen the single-tenant assumption.
+**It is still not safe to put a second paying dealership on this database**,
+and the reason is not in the database:
+
+- n8n writes as `service_role`, which is `BYPASSRLS`, and sends no `tenant_id`.
+  Every inbound lead, message, KYC row and audit row would be created **inside
+  the first dealership's tenant** and shown to their staff, while being
+  invisible to the dealership it belongs to. No RLS policy can fix that — the
+  rows are genuinely stamped with the wrong owner.
+- The Ask-AI node must call `search_rag_documents(q, limit, p_tenant)`, and the
+  Master Router must pass a tenant to `nexus_lead_for_comm_key`. Until they do,
+  retrieval and identity resolution **fail closed** for dealership two — correct,
+  but an outage rather than a feature.
+- `leads.email` and `customer_360_profiles.customer_id` are still globally
+  unique, so two dealerships sharing one customer's email overwrite each other.
+
+`select * from public.nexus_tenancy_readiness();` is the live gate. Run it
+before onboarding anyone; do not trust this file, which goes stale.
 
 ## What is actually proven
 
@@ -44,10 +62,22 @@ identity resolved to an existing lead without creating a duplicate; an
 inventory-grounded reply in 17.8 seconds quoting a real price with the vehicle's
 cost withheld; a SUCCESS audit row. That path is demoable and honest.
 
-Never exercised, all time — `finance_quotes`, `kyc_documents` and
-`purchase_history` all hold **zero rows**. Finance quoting, KYC and closed-won
-deals have never completed once. Do not describe them as working. `Customer 360`
-is a once-daily batch, not live.
+Deals now works end to end. On 2 September a real closed-won deal was recorded
+through the live dashboard UI: `purchase_history` row with the correct
+`amount_aed`, `purchase_date`, `lead_id` and `tenant_id`, a `deals_embeddings`
+row, an audit row, and the Deals screen showing it. Submitted four times, one
+row — idempotency is proven, not assumed.
+
+Finance is subtler than "never exercised", and the earlier claim in this file
+was wrong. `finance_quotes` shows 16 inserts and 13 deletes in
+`pg_stat_all_tables` — the insert path has worked repeatedly and a journey
+teardown script deletes the rows after every test. "Empty" means cleared, not
+never. What is genuinely unproven is whether it works *today*: the fix to the
+constraint that broke it is nine minutes younger than the last failure and has
+not been exercised since.
+
+KYC has 3 rows and 0 verified. A row appearing is not the capability working —
+check the outcome, not the count. `Customer 360` is a once-daily batch, not live.
 
 On 31 Aug the WhatsApp agent invented an EMI of AED 11,200 (the true figure was
 nearer 7,800) and sent it to a real person, and a separate reply leaked the

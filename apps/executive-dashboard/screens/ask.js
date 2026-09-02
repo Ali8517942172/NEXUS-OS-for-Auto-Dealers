@@ -133,7 +133,7 @@
    fallback. `model` names whichever model replied and is printed; a silent
    drop to the backup tier is invisible from here and is stated as unknown
    rather than guessed at from a hard-coded ladder that would drift. */
-import { HOOK, db, n8n } from '../lib/data.js';
+import { HOOK, db, n8n, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
@@ -184,6 +184,7 @@ const PHONE_LOOKUPS = 6;
 const HISTORY = [];
 let SEQ = 0;
 
+
 /* ── Which render owns the screen ─────────────────────────────────────────
    HISTORY and SEQ are module state, which is the whole point: a question still
    in flight when the operator navigates away lands later, and turn ids stay
@@ -213,6 +214,29 @@ let ACTIVE = null;
 const repaint = e => { if (ACTIVE) ACTIVE.paint(e); };
 const rethread = () => { if (ACTIVE) ACTIVE.thread(); };
 const resync = () => { if (ACTIVE) { ACTIVE.sync(); ACTIVE.alerts(); } };
+
+/* None of the three may survive a change of who is signed in, and until
+   2 Sep 2026 all three did. Sign-out reloads the page, but an EXPIRED token
+   does not: lib/data.js paints the login card over the running app and a
+   successful sign-in from there re-boots in the same document, so HISTORY —
+   questions, and the RAG answers to them — was still here for whoever signed
+   in next.
+
+   That is the worst thing on this screen to leave behind. An Ask AI answer is
+   retrieved from `rag_documents` and quotes the dealership's own policy
+   material; carried into another dealership's session it is one dealership's
+   documents rendered inside another's, in a panel that looks exactly like their
+   own history. RLS never sees it, because nothing is read — it is already in
+   the page.
+
+   SEQ and ACTIVE go with it for the reasons the block above gives: a turn
+   counter left running has a new session's first question land in `#askE7`,
+   and an ACTIVE left pointing at the previous session's render hands it a late
+   answer to paint into a document it no longer owns.
+
+   Registered after the three are declared, not beside HISTORY, so the reset can
+   never read one of them before its initialiser has run. */
+onIdentityChange(() => { HISTORY.length = 0; SEQ = 0; ACTIVE = null; });
 
 const TIMED_OUT = { timedOut: true };
 const wait = ms => new Promise(r => setTimeout(r, ms));

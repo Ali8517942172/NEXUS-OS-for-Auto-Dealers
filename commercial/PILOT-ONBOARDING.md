@@ -1,14 +1,20 @@
 # NEXUS OS — Pilot Onboarding
 
-**Version 1.0 · 2 September 2026**
+**Version 2.0 · 2 September 2026**
 **How to put one dealership live, in order, with honest timings.**
 
 This is the document that turns a signature into a working deployment, and turns a working
 deployment into one you can repeat for the next dealership. Follow it in order. The steps
-are sequenced because some of them block others, and the one that blocks the most is the
-WhatsApp migration — start it on day one.
+are sequenced because some of them block others.
 
-**Realistic total: 3 to 5 working days of Ali's time, spread across 1 to 3 calendar weeks.**
+**Step 1 is the number separation, and it comes before everything — before the first demo,
+not just before go-live.** The system today runs on Ali's personal WhatsApp number and the
+database holds private conversations belonging to people who have nothing to do with any
+dealership. That has to be undone before a buyer ever sees a screen. It is Step 1 for that
+reason, and it is not a footnote.
+
+**Realistic total: 3 to 5 working days of Ali's time, spread across 1 to 3 calendar weeks**,
+including the 2 to 3 hours for Step 1.
 The calendar spread is not Ali's speed. It is Meta's business verification and the
 dealership's speed at sending an inventory file.
 
@@ -43,7 +49,10 @@ one.
 ### 2. The WhatsApp number
 
 A number the dealership is willing to dedicate to customer enquiries. **Not a salesperson's
-personal phone, and not a number already in someone's WhatsApp Business app on a handset.**
+personal phone, not the owner's phone, and not a number already in someone's WhatsApp
+Business app on a handset.** A brand-new SIM is the right answer. A number with personal
+history on it will bring that history into the database on first sync, and there is no clean
+way to take it back out afterwards.
 
 You need from them:
 - The number itself
@@ -74,7 +83,64 @@ workflows. Budget the time; do not promise them a toggle.
 
 ## What Ali configures, step by step
 
-### Step 1 — Start the WhatsApp Cloud API migration. Day one, before anything else.
+### Step 1 — Separate the number. Before the first demo, not just before go-live.
+
+**Nothing else in this document starts until this is done.**
+
+Today NEXUS OS sends and receives on **Ali's personal WhatsApp number**. Every proven result
+in the sales pack went through it. It cannot stay that way for one commercial reason and one
+ethical one: a dealership will not put its customers on a channel that is also somebody's
+family chat, and the people already on that channel never agreed to have their messages
+stored in a product database.
+
+**Three numbers, and they never merge again:**
+
+| Number | What it is for | When it is needed |
+|---|---|---|
+| **The personal number** | Ali's own life. It is disconnected from NEXUS OS and never reconnected. | Immediately. |
+| **The NEXUS demo number** | A dedicated number owned by NEXUS, used only for demos and internal testing. Every buyer demo runs on this. It has no personal history and never will. | Before the first buyer demo. |
+| **The client business number** | The dealership's own number, on the dealership's own Meta Business account, carrying only their customers. | Before the pilot's first real customer message. |
+
+**A personal number and the product never share a channel again.** Not for a quick test, not
+for a weekend, not "just to check something". If a test needs a real handset, it goes on the
+demo number.
+
+#### What happens to the private data already in the database
+
+The database currently holds WhatsApp contacts and conversations that belong to no
+dealership — a contracting company, a perfumer, family members, and discussions about cheques
+and payments. They were captured because the product was listening to a personal number.
+
+**They are deleted, not hidden, and it happens before any dealership data arrives.**
+
+1. **List them.** Go through `whatsapp_contacts` and identify every contact that is not a
+   vehicle enquiry. Everything else on that list is out.
+2. **Delete their messages and their contact rows** from `communication_logs` and
+   `whatsapp_contacts`, and delete the lead records created from non-customer traffic — there
+   are disqualified rows in `leads` that are a contracting company and a wrong number.
+3. **Do it by hand and verify the counts afterwards.** The retention purge workflow is
+   registered, is marked active, and **has never run once**. There is no automatic purge to
+   rely on and there is no scheduled job that will do this for you.
+4. **Then take the counts again** and record them, so the pilot starts from a database whose
+   contents you can account for line by line.
+
+**Why this cannot wait for the tenant separation work.** The database now separates
+dealerships, but the workflows do not — every n8n workflow writes as a system account with no
+dealership attached, so its rows land under the one default dealership. That means the
+pilot's customer conversations and these private conversations would land in the same place
+and a dealership login would see both. Separation at the database layer does not clean up
+data that is already inside the tenant. Deletion does.
+
+**Say it to the buyer in plain words, before they ask:** *"Until today this ran on my own
+number, so it picked up messages that had nothing to do with cars — including my family's.
+Those are deleted, and your pilot starts on a number that has never been used for anything
+else. That is why the number is step one and not step five."*
+
+**Ali's time: 2–3 hours, plus the cost of a new SIM.**
+
+---
+
+### Step 2 — Start the WhatsApp Cloud API migration. Day one, alongside Step 1.
 
 **This is the long pole. Nothing about the pilot is safe until it is done.**
 
@@ -98,7 +164,7 @@ complete.**
 **Already done and worth knowing:** the privacy policy and terms pages Meta requires are
 live and reachable. That approval blocker is cleared.
 
-### Step 2 — Load the inventory
+### Step 3 — Load the inventory
 
 Import the file into the `inventory` table. Then verify, by eye, on the Inventory screen:
 
@@ -113,7 +179,7 @@ the data. A wrong price is the fastest way to lose the pilot.
 
 **Ali's time: 1 hour, plus 30 minutes of price spot-checks.**
 
-### Step 3 — Add the staff
+### Step 4 — Add the staff
 
 Add each person to the `users` table with name, email, role, status and Slack id. Create
 their dashboard logins.
@@ -126,7 +192,7 @@ in the claims register, and it should be said out loud rather than discovered.
 
 **Ali's time: 30 minutes.**
 
-### Step 4 — Working hours, escalation and the finance handoff
+### Step 5 — Working hours, escalation and the finance handoff
 
 Configured by hand in the n8n workflows:
 
@@ -139,7 +205,7 @@ Configured by hand in the n8n workflows:
 
 **Ali's time: 2–3 hours, including testing.**
 
-### Step 5 — Load their documents into Ask AI
+### Step 6 — Load their documents into Ask AI
 
 Warranty terms, service policy, trade-in policy, finance partners, whatever staff ask about.
 The system currently holds 15 sample documents; theirs replace them.
@@ -149,7 +215,7 @@ without it and keep Ask AI switched off rather than let it answer from sample da
 
 **Ali's time: 1–2 hours if the documents arrive clean.**
 
-### Step 6 — Move the infrastructure off free tiers
+### Step 7 — Move the infrastructure off free tiers
 
 Free tiers are fine for building and wrong for a paying customer.
 
@@ -163,7 +229,7 @@ Free tiers are fine for building and wrong for a paying customer.
 
 **Ali's time: 2 hours. Cost: roughly AED 400–600 a month, which the pilot price covers.**
 
-### Step 7 — Shadow run. Two days. Do not skip this.
+### Step 8 — Shadow run. Two days. Do not skip this.
 
 **Before any real customer gets an automated reply**, run the system in shadow: it drafts,
 Ali reads every draft, Ali sends. Two working days minimum.
@@ -178,7 +244,7 @@ You are checking three things:
 
 **Ali's time: 2–4 hours across two days.**
 
-### Step 8 — Go live, and watch it daily
+### Step 9 — Go live, and watch it daily
 
 Switch on automated replies. Then, **every working day for the first two weeks**:
 
@@ -197,17 +263,17 @@ Ranked by how much damage it does, not by how likely it is.
 
 | Risk | What actually happens | What to do |
 |---|---|---|
-| **The WhatsApp number gets banned** | The dealership loses the number printed on its cars. Immediate, total, and your fault in their eyes. | The only real mitigation is Step 1. Never go live on real customers over the unofficial client. If you demo on it, say so. |
-| **The bot quotes a wrong price** | A customer holds a screenshot of a price the dealership must either honour or refuse. Either outcome damages the pilot. | Prices come from their file; verify by hand at Step 2 and re-verify whenever stock changes. Agree a stock-refresh cadence in writing. |
-| **A finance number reaches a customer** | This has already happened once: on 31 August an earlier build sent a real person a monthly payment of AED 11,200 when the true figure was nearer AED 7,800. | The path is gated. Test it at Step 4, read drafts at Step 7, and never re-enable it during a pilot. |
+| **Personal or unrelated conversations get captured** | Currently real: 12 WhatsApp contacts on file and one of them is a car enquiry. The rest are family and unrelated businesses — a contracting company, a perfumer — whose private messages, including cheque and payment discussions, are sitting in the database. | Step 1, in full: a dedicated number that has never been used personally, and the existing private rows deleted by hand before the pilot starts. Ranked here as the highest-damage risk on the list, because it is the one that is already true rather than merely possible. |
+| **The WhatsApp number gets banned** | The dealership loses the number printed on its cars. Immediate, total, and your fault in their eyes. | The only real mitigation is Step 2. Never go live on real customers over the unofficial client, and never demo on a personal number at all. |
+| **The bot quotes a wrong price** | A customer holds a screenshot of a price the dealership must either honour or refuse. Either outcome damages the pilot. | Prices come from their file; verify by hand at Step 3 and re-verify whenever stock changes. Agree a stock-refresh cadence in writing. |
+| **A finance number reaches a customer** | This has already happened once: on 31 August an earlier build sent a real person a monthly payment of AED 11,200 when the true figure was nearer AED 7,800. | The path is gated. Test it at Step 5, read drafts at Step 8, and never re-enable it during a pilot. |
 | **Meta business verification stalls** | Go-live slips by a week or more and it looks like your delay. | Submit on day one. Tell the dealership at signature that Meta takes 2–10 days and it is not your clock. |
 | **The inventory file never arrives, or arrives stale** | The bot quotes cars that are sold. | Do not start the three-month clock until stock is loaded. Agree who sends updates and how often. |
-| **The VM falls over** | Messages stop being answered and nobody notices, because the infra health probe has never run. | Move off the free VM at Step 6. Check the Automation screen daily. Consider this the pilot's weakest point. |
-| **The dealership asks for a second branch on the same system** | You cannot. There is no tenant separation; branch two would read branch one's customers. | Say no. Say why. It is a genuine engineering limit, not a pricing tactic. |
-| **A staff member sees cost prices they should not** | There are no per-role permissions. | Restrict who gets a login, at Step 3, in writing. |
+| **The VM falls over** | Messages stop being answered and nobody notices, because the infra health probe has never run. | Move off the free VM at Step 7. Check the Automation screen daily. Consider this the pilot's weakest point. |
+| **The dealership asks for a second branch on the same system** | You cannot yet. The database separates dealerships as of 2 September and was tested with two, but the workflows all write as a system account with no dealership attached — branch two's messages would file under branch one. | Say no, and say exactly which half is done. It is a genuine engineering limit, not a pricing tactic. A second branch is a separate quote, not a band adjustment. |
+| **A staff member sees cost prices they should not** | There are no per-role permissions. | Restrict who gets a login, at Step 4, in writing. |
 | **The dealership asks about data retention or deletion** | The retention purge workflow is registered, is marked active, and **has never run once**. Nothing enforces a retention window today. | Do not claim automatic purging. Offer manual deletion on request and put it in the pilot agreement. |
-| **Messages land unassigned** | Of 108 logged messages, 47 resolve to a named customer. Most of the rest are non-customer traffic on a shared number. | A dedicated number fixes most of it. Explain that an unassigned message is the system refusing to guess, and show them where to find them. |
-| **Personal or unrelated conversations get captured** | Currently real: 12 WhatsApp contacts on file, of which one is a car enquiry. The rest are personal and business contacts whose private messages are stored. | A dedicated number that has never been used personally. Non-negotiable, and it is Step 1. |
+| **Messages land unassigned** | Measured 2 Sep 2026 at 09:58 UTC: of 108 logged messages, **24** resolve to a named customer record. Most of the rest is non-customer traffic on the shared personal number. | Step 1 fixes most of it. Explain that an unassigned message is the system refusing to guess, and show them where to find them. |
 
 ---
 
@@ -228,7 +294,32 @@ After each onboarding, record:
 **Then update this document.** The second pilot should be quicker to deliver and better
 argued. That is the whole point of writing it down.
 
-**And the hard limit, again:** one dealership per instance until the database separates
-tenants. If a second pilot sells before that work is done, it needs its own separate
-Supabase project and its own VM — which roughly doubles the infrastructure cost and all of
-the supervision. Price the second pilot with that in mind, or build tenant separation first.
+**And the hard limit, again:** one dealership per instance. The database half of tenant
+separation was built and tested on 2 September; the automation half was not. Until the n8n
+workflows send a dealership id with every write — and until `leads.email` and
+`customer_360_profiles.customer_id` are made unique per dealership rather than globally — a
+second dealership needs its own Supabase project and its own VM. That roughly doubles the
+infrastructure cost and all of the supervision. Price the second pilot with that in mind, or
+finish the automation half first. The system will tell you where it stands:
+`select * from public.nexus_tenancy_readiness();`
+
+**Also add to the checklist above:** how long the number separation in Step 1 actually took,
+and how many private rows had to be deleted. The second dealership will not have that
+problem, and the record of it is what proves the personal number never comes back.
+
+
+---
+
+## Figures in this document
+
+Checked against Supabase project `dsvuoovivysszdoiorch` at **10:04:17 UTC, 2 September 2026**,
+scoped to the one real dealership (`tenants.slug = 'alba-cars'`). Another workstream was
+writing synthetic QA dealerships into the same tables at the time; none of that is counted
+here, and anyone re-running these counts must scope them the same way — a raw `count(*)` at
+09:57 showed 2 sales and 2 finance quotes, and every one of them was test data.
+
+12 WhatsApp contacts, 1 of them a car enquiry · 108 messages, 24 resolving to a named
+customer · 3 leads · 12 vehicles · **0 customer sales** (one `purchase_history` row appeared
+at 09:59:53 from a repair test against the owner's own lead — not a sale) · 0 finance quotes ·
+3 KYC submissions and 0 verified · 15 sample Ask-AI documents · 1 dashboard login ·
+600 run records · retention purge workflow: 0 runs, ever.
