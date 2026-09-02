@@ -179,14 +179,108 @@ function dealForm(leads, onDone) {
     if (!v.closed_at)  return m.msg('<span class="t-hot">A close date is required.</span>');
 
     const btn = m.wrap.querySelector('#dSave');
+    const reset = () => { btn.disabled = false; btn.textContent = 'Record deal'; };
     btn.disabled = true; btn.textContent = 'Recording…';
+
+    let res;
     try {
-      await n8n(HOOK.closedWon, v);
-      m.close(); onDone();
+      res = await n8n(HOOK.closedWon, v);
     } catch (e) {
-      btn.disabled = false; btn.textContent = 'Record deal';
+      /* The transport failed or the workflow answered a non-2xx. n8n() throws on
+         both, and neither is an outcome this form has to interpret. */
+      reset();
       modalError(m, e);
+      return;
     }
+
+    /* ── The body decides, never the status code ──────────────────────────
+       2 Sep 2026. Until now this was `await n8n(...); m.close(); onDone();` —
+       any 2xx closed the modal and reloaded the screen, and the response was
+       read by nothing. screens/conversations.js states the rule this broke, for
+       the sibling whatsapp-send webhook: "The workflow answers 200 for its own
+       failures too, so the body decides the outcome — never the status code, and
+       never optimism." A rep therefore saw a clean success followed by an empty
+       Deals table, with nothing on screen connecting the two.
+
+       WHAT SHAPE IS ASSUMED, AND WHY. This webhook has never completed a run —
+       `purchase_history` holds ZERO rows and there is no recorded execution — so
+       the shape is taken from the workflow's OWN last node rather than from an
+       observed response. `Delivery Report` (the last Code node in
+       n8n-workflows/sync_closed_won_deals_to_supabase_pgvector.json, the
+       workflow serving path `deals/closed-won`) returns:
+
+         { dealId, customer_name, email, …,
+           delivery: { status: 'SUCCESS' | 'PARTIAL' | 'FAILED',
+                       verified: [], dropped: [], not_verified: [], note } }
+
+       `delivery.status` is therefore the only field in any known body that
+       asserts an outcome, and it is the only field trusted here.
+
+       WHY EVERYTHING ELSE IS "UNKNOWN" AND NOT "SUCCESS". The repo copy of that
+       workflow's Webhook node carries NO `responseMode`, which in n8n means
+       `onReceived`: it answers 200 with `{"message":"Workflow was started"}`
+       BEFORE a single node runs. That body is a receipt for the request, not a
+       report on the deal, and it is the most likely thing this handler will
+       actually be handed on the first real close. The live workflow was edited
+       on 2 Sep and may or may not still be configured that way — which cannot be
+       checked from here — so an unrecognised body is reported as unknown and
+       NEVER closed on. Optimism is what this fix removes; it is not reintroduced
+       as a fallback.
+
+       WHAT EVEN 'SUCCESS' DOES NOT PROVE, stated because the workflow states it:
+       `Delivery Report` runs on the pgvector branch and lists the
+       `purchase_history` write under `not_verified` ("parallel branch, not yet
+       run at this point"). So SUCCESS means the vector upsert landed, not that
+       the deal row did. `onDone()` re-reads the Deals screen, and that read —
+       not this response — is what actually shows the deal.
+
+       RETRYING IS SAFE, so the button is re-enabled on every non-success branch.
+       `deal_id` is derived deterministically as `auto:<contact key>|<close date>`
+       and both writes are keyed on it: `Record Purchase` POSTs with
+       `Prefer: resolution=ignore-duplicates` against the partial unique index
+       purchase_history_deal_id_key, and the vector write uses
+       `on_conflict=deal_id` with `resolution=merge-duplicates`. Re-posting the
+       same deal updates or ignores; it does not duplicate. */
+    const body = Array.isArray(res) ? res[0] : res;
+    const delivery = (body && typeof body === 'object') ? body.delivery : null;
+    const status = String((delivery && delivery.status) || '').trim().toUpperCase();
+    const dropped = (delivery && Array.isArray(delivery.dropped))
+      ? delivery.dropped.map(d => String(d)).filter(Boolean) : [];
+    const reasons = dropped.length
+      ? `<ul style="margin:6px 0 0;padding-left:18px">${dropped.map(d => `<li>${esc(d)}</li>`).join('')}</ul>`
+      : '';
+
+    if (status === 'SUCCESS') {
+      m.close(); onDone();
+      return;
+    }
+
+    if (status === 'PARTIAL' || status === 'FAILED') {
+      /* The workflow reporting its own failure, in its own words. The modal
+         stays open so the figures the operator typed are still on screen and the
+         deal is not silently lost between a closed dialog and an empty table. */
+      reset();
+      m.msg(`<span class="t-hot">The deal was NOT recorded${status === 'PARTIAL' ? ' in full' : ''} — the closed-won workflow reported `
+        + `<span class="mono">${esc(status)}</span>.</span>${reasons}`
+        + `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(
+          (delivery && delivery.note ? delivery.note + '. ' : '')
+          + 'Nothing here is retried automatically. Recording the same deal again is safe — the deal id is derived from the email and close date, so a repeat updates that deal rather than adding a second one.')}</div>`);
+      return;
+    }
+
+    /* Unknown. It may or may not have been recorded, and guessing either way is
+       how a real sale gets typed in twice or lost entirely. The body is shown
+       verbatim (truncated) because it is the only evidence there is. */
+    reset();
+    const ack = body && typeof body === 'object' && /workflow was started/i.test(String(body.message || ''));
+    let raw;
+    try { raw = JSON.stringify(res); } catch { raw = String(res); }
+    m.msg(`<span class="t-warm">${esc(ack
+      ? 'The workflow accepted the request and answered before doing any of the work, so whether the deal was recorded cannot be told from here.'
+      : 'The closed-won workflow answered without a delivery status, so whether the deal was recorded cannot be told from here.')}</span>`
+      + `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(
+        'Check the Deals screen — the deal is recorded only if it appears there. Recording it again is safe: the deal id is derived from the email and close date, so a repeat updates that deal rather than adding a second one.')}`
+      + ` It answered: <span class="mono">${esc(String(raw).slice(0, 200))}</span></div>`);
   });
 }
 
