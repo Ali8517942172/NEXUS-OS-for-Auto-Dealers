@@ -105,9 +105,12 @@ was true when written and is not true now. Regenerate before relying on the file
   current ones.
 - `/home/claude/verify/health_parity.mjs` — imports the real
   `apps/executive-dashboard/lib/health.js` and runs it over live `audit_log`
-  data. **Its data file `/home/claude/verify/audit_pairs.json` is stale** (288
-  pairs / 570 rows, taken 20:47 on 2026-09-01). Re-run for this revision against
-  a refreshed copy holding all 289 pairs / 584 rows: **exit 0**.
+  data. **Its data file `/home/claude/verify/audit_pairs.json` was refreshed
+  from the live catalogue on 2026-09-02** and now holds all 311 pairs / 634
+  rows; the copy it replaced was stale (288 pairs / 570 rows, taken 20:47 on
+  2026-09-01). Re-run against the refreshed file for this revision: **exit 0**.
+  The copy it replaced is kept beside it at
+  `/home/claude/verify/audit_pairs.2026-09-01.json` (288 pairs / 570 rows).
 - `/home/claude/verify/extract_audit.mjs` — builds that data file.
 
 ---
@@ -153,25 +156,35 @@ reading that tile had no way to know the scraper had found nothing all month.
 1. `node health_parity.mjs` — runs the real `lib/health.js` over every distinct
    `(status, summary)` pair in `audit_log`, weighted by row count, and compares
    against `nexus_outcome_class`.
-   **Result 2026-09-02: 584 rows compared, 584 in agreement, 0 disagreements**
-   (289 distinct pairs). No class outside the declared vocabulary. Exit 0.
-   Distribution, identical on both sides:
+   **Result 2026-09-02, re-run live: 634 rows compared, 634 in agreement,
+   0 disagreements** (311 distinct pairs). No class outside the declared
+   vocabulary. Exit 0. Distribution, identical on both sides:
 
-   | class | n |
-   |---|---|
-   | FAILURE | 199 |
-   | SUCCESS | 199 |
-   | NO_RESULT | **127** *(was 115)* |
-   | REJECTED_EXPECTED | 36 |
-   | PARTIAL | **21** *(was 19)* |
-   | ESCALATED | 2 |
+   | class | n | change since the previous revision |
+   |---|---|---|
+   | SUCCESS | **212** | *(was 199)* |
+   | FAILURE | **211** | *(was 199)* |
+   | NO_RESULT | **152** | *(was 127)* |
+   | REJECTED_EXPECTED | 36 | unchanged |
+   | PARTIAL | 21 | unchanged |
+   | ESCALATED | 2 | unchanged |
 
-   `audit_log` holds **584 rows**, up from 570 at the previous revision. The
-   refreshed pair file adds exactly **one new distinct pair**; the other 13 new
-   rows fell into pairs that already existed. **All 14 new rows are Competitor
-   Price Scraping or the customer-profile upsert failing in the ways they were
-   already failing** — twelve `REJECTED` scrapes that found no price (classed
-   NO_RESULT) and two `PARTIAL` profile upserts whose Slack read was refused.
+   `audit_log` holds **634 rows**, up from 584 at the previous revision, across
+   **311** distinct pairs, up from 289. The growth is **+13 SUCCESS, +12 FAILURE
+   and +25 NO_RESULT**; nothing entered a class that did not already exist, and
+   the parity harness was genuinely re-run against a pair file refreshed from
+   the live catalogue rather than the figures being transcribed.
+
+   Six of the new rows are the **Inventory Action Center**, which is the first
+   writer to `audit_log` that is not an n8n workflow — they are decisions people
+   took in the dashboard. Five class SUCCESS and one classes **NO_RESULT**: the
+   row recording that a second decision arrived for an action already approved
+   and was refused so the first decision stood. That is a control working, and
+   an automation vocabulary has no word for it. It is why the Action Center is
+   deliberately not in `workflow_registry` and reports through
+   `v_action_center_health` instead — registering it would have published
+   `DEGRADED, 83.3%` for a desk that is working correctly (measured 2026-09-02
+   by inserting the registry row inside a transaction and rolling it back).
 2. Grep for screens classifying status themselves — comments stripped,
    pattern `(status|st)\s*===?\s*['"](FAILED|SUCCESS|PARTIAL|NOT_EXECUTED|REJECTED|ESCALATED)['"]`.
    **Result 2026-09-02: 8 matches on 7 lines, all in `lib/health.js`. Zero in
@@ -712,14 +725,15 @@ pipeline closure leaves.
 `capture_daily_metrics()` counts
 `WHERE nexus_outcome_class(workflow, status, summary) = 'FAILURE'` and stamps
 `workflow_failures_rule`. Today's row, captured 05:17:00, is the **first
-snapshot written under the new rule**: `workflow_runs = 584`,
-`workflow_failures = 199`, `rule = 'nexus_outcome_class'`,
-`workflow_failures_canonical = 199` — the two now agree because they are the
-same query. The 2026-09-01 row still reads `205 / 'raw_status' / 199`, and the
-14 historical rows still carry their original values, which is the point of
-keeping the rule column. The current gap between the rules is **6 rows** (205
-raw against 199 canonical over 584 `audit_log` rows) — the six rows that spell
-`FAILED` but mean PARTIAL.
+snapshot written under the new rule**. Recaptured at 19:59 the same day it
+reads `workflow_runs = 634`, `workflow_failures = 211`,
+`rule = 'nexus_outcome_class'`, `workflow_failures_canonical = 211` — the two
+agree because they are the same query. The 2026-09-01 row still reads
+`205 / 'raw_status' / 199`, and the 14 historical rows still carry their
+original values, which is the point of keeping the rule column. The current gap
+between the rules is still **6 rows** (217 raw `FAILED` against 211 canonical
+FAILURE over 634 `audit_log` rows) — the same six rows that spell `FAILED` but
+mean PARTIAL.
 
 No screen renders any of this: `workflow_failures` has **zero references**
 across `screens/*.js` and `lib/*.js`, re-grepped 2026-09-02.
