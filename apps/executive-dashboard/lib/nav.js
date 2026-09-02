@@ -24,6 +24,10 @@ const NAV = [
     { id:'customers',title:'Customer 360',  icon:'contacts' },
   ]},
   { group: 'Operations', items: [
+    /* The Action Center. It sits at the top of Operations because it is the only
+       screen in the app where a person is expected to answer something rather
+       than read something: everything on it is waiting on a decision. */
+    { id:'actions',    title:'Action Center', icon:'task_alt' },
     { id:'campaigns',  title:'Campaigns', icon:'campaign' },
     { id:'deals',      title:'Deals',     icon:'handshake' },
     { id:'automation', title:'Automation', icon:'account_tree' },

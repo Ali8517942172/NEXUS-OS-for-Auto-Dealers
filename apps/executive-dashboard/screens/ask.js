@@ -1579,7 +1579,13 @@ SCREENS.ask = async host => {
   });
 
   /* ── This workflow's own track record ───────────────────────────────────
-     Only n8n writes audit_log. The earlier version of this panel filtered on
+     Only n8n writes the Ask-AI rows in audit_log. (That used to read "only n8n
+     writes audit_log" full stop, and stopped being true on 2 Sep 2026: the
+     Action Center's action_* functions write rows under the workflow name
+     'Inventory Action Center'. They are not registered in workflow_registry and
+     never match an Ask-AI name, so they cannot reach this panel — but the
+     sentence was a claim about the whole table and the whole table changed.)
+     The earlier version of this panel filtered on
      `workflow=ilike.*ask*ai*`, which quietly assumed the workflow logs under a
      name containing both words: if it logs as "RAG Query" that filter returns
      nothing and the panel reports "no runs" for a workflow that runs fine. The
@@ -1595,7 +1601,7 @@ SCREENS.ask = async host => {
   let runsAttempt = 0;
   panel($('askRuns'), {
     title: 'Ask-AI run history',
-    sub: 'Rows the workflow itself wrote to audit_log — the dashboard cannot write these',
+    sub: 'Rows the workflow itself wrote to audit_log — no screen in this dashboard writes an Ask-AI row',
     load: async () => {
       const first = runsAttempt++ === 0;
       const [audit, reg, health] = first

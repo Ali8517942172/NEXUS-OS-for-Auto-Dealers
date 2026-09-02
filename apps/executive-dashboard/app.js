@@ -34,6 +34,7 @@ import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
 
 /* Screen modules, imported for their registration side effect only. Removing
    one of these lines silently removes that screen from the app. */
+import './screens/actions.js';
 import './screens/ask.js';
 import './screens/automation.js';
 import './screens/campaigns.js';
