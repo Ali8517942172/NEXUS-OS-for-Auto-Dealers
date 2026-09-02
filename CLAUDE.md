@@ -27,6 +27,28 @@ the software says to a customer. It means:
 - Prefer finishing one path a buyer can see end to end over improving five they
   will never open.
 
+## What the product is
+
+**NEXUS is a Revenue Recovery & Action OS for dealerships**, not an AI chatbot,
+not a CRM, not an automation platform. It sits *above* the dealership's
+existing DMS, CRM, inventory and accounting systems, finds where money is
+leaking, decides the next best action, and executes it with the team in
+control. It replaces none of those systems. `PRODUCT.md` holds the full thesis,
+the commercial role of each of the 14 modules, the engines, and the roadmap —
+read it before proposing any feature.
+
+The sequencing rule that matters more than the strategy: **build the engine
+whose data already exists.** An engine that renders "no data" to a paying
+dealership is worse than one that does not exist. Measured 2 Sep — inventory
+has cost and days-in-stock on all 12 units, so Profit Sentinel is buildable
+now; there is **no service table, no appointment table and no recon-cost
+column**, so Service Retention and most of Deal Rescue are blocked on
+integrations, not on code. Sell those as roadmap, never as capability.
+
+Never fabricate a monetary impact. Estimated, attributed and confirmed are
+three different words; do not call an estimate revenue, and do not claim
+recovered revenue until a real business outcome occurs.
+
 ## Tenancy: the database is finished. The workflows are most of the way.
 
 As of 2 September the database side is **complete**. `tenant_id` on every

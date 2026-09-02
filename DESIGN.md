@@ -1,5 +1,9 @@
 <!-- BUSINESS CONTEXT — added 2026-09-02 -->
-> **This is a commercial product, not a demo.** Ali owns NEXUS OS and is selling it
+> **This is a commercial product, not a demo.** NEXUS is a **Revenue Recovery &
+> Action OS for dealerships** — it sits above the dealership's existing DMS, CRM
+> and inventory systems, finds revenue leaks, decides the next best action and
+> executes it. It replaces none of them. See `PRODUCT.md` for the thesis and
+> `CLAUDE.md` for how to work here. Ali owns NEXUS OS and is selling it
 > to real dealerships on a subscription. Judge changes by whether they make it
 > sellable and keep it sellable. The honest commercial position today is a
 > **controlled dealership pilot** — not "enterprise-ready", not "compliant".
