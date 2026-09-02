@@ -63,6 +63,12 @@ writes, updates, deletes, tenant-hopping, a forged `tenant_id` claim, membership
 self-grant, all ten views, hot-lead routing, phone-tail identity collision and
 the whole `anon` surface all returned zero. Do not redo this work.
 
+Read "returned zero" narrowly: it meant **zero rows**, and for `anon` that was
+evidence about RLS only. The grants underneath were still wide open and were not
+closed until 2 Sep (views, then all 16 base tables and the sequences). Row counts
+never proved the `anon` surface shut, and no future claim about it should rest on
+them.
+
 17 of 21 n8n workflows now resolve a tenant from something real — the WAHA
 session for WhatsApp, the authenticated user via `tenant_members` for
 JWT-guarded webhooks, the calling workflow for sub-workflow hops — and stamp it
@@ -143,6 +149,77 @@ path should not go live.
 - **Every public view needs `security_invoker`.** A database event trigger now
   fails the deploy without it; `CREATE OR REPLACE VIEW` silently drops the
   option and did so three times.
+
+## The `anon` grant check (the shape that has opened five holes)
+
+Supabase ships default privileges that grant **directly to `anon` and
+`authenticated`** on everything created in `public` — `EXECUTE` on every new
+function, and *all* privileges (`arwdDxtm` — SELECT **and INSERT/UPDATE/DELETE**,
+not just SELECT) on every new table and view. Nobody writes those grants; they
+arrive on their own, so nothing in the migration diff shows them.
+
+Three things follow, and each has already cost this project:
+
+- **`REVOKE ... FROM PUBLIC` does not remove a direct grant.** A direct
+  `anon=X` entry and a PUBLIC `=X` entry are separate ACL rows. Revoke from
+  **both** (`REVOKE ... FROM anon, public`), every time — revoking only PUBLIC
+  is what left one of these open after it was believed closed.
+- **The check belongs on every new function AND every new view**, not just the
+  ones a linter flags. The linter only flags what reads a tenant-owned table, so
+  a helper that merely *encodes a business rule* passes it while still carrying
+  an anon grant. The danger is not the body today: a later
+  `CREATE OR REPLACE FUNCTION` adding `SECURITY DEFINER`, or a view widened to
+  read a new table, opens a live hole with **no grant-shaped diff to review**,
+  because the grant was already sitting there.
+- **RLS is one lock, not two.** A `<table>_deny_anon` RESTRICTIVE policy makes an
+  anon read return 0 rows, which looks identical to having no privilege — so
+  "returns 0 rows" is evidence about RLS, never evidence the grant is absent.
+  Measured 2 Sep 2026 on the 10 views *and* on all 16 tenant-owned base tables:
+  as `anon`, SELECT, UPDATE and DELETE all **parsed and executed** against every
+  one of them, and were stopped only by the row filter. Check `relacl`/`proacl`,
+  not row counts.
+- **An incidental lock is not a designed lock, and it will not hold.** On the
+  same measurement, anon INSERT was refused on all 16 tables — but not by RLS and
+  not by any privilege. It failed on `permission denied for function
+  nexus_default_tenant_id`, because the `tenant_id` column DEFAULT called a
+  function anon could not execute. Supplying `tenant_id` explicitly skipped the
+  default, and the INSERT then reached RLS. Had that column default ever changed,
+  the only thing standing between an anonymous caller and a write would have
+  disappeared with no grant-shaped and no policy-shaped diff to review. When you
+  record *which* lock stopped a verb, name the real one — and if it is
+  incidental, treat the object as open.
+
+Default privileges for `anon` in `public` are now revoked on tables, functions
+**and sequences** for objects created by `postgres` (`ALTER DEFAULT PRIVILEGES
+FOR ROLE postgres IN SCHEMA public REVOKE ...`), which is the role migrations
+run as. Sequences mattered: `anon` held `rwU`, and `UPDATE` on a sequence is
+`setval()` — an anonymous caller could have rewound the id counter behind
+`leads` and caused primary-key collisions on the dealership's next real insert.
+
+That backstop is still partial, and the remaining hole **cannot be closed from
+this project**. A separate `supabase_admin` default ACL on `public` still grants
+`anon` on tables, functions and sequences, so anything created by that role — an
+extension, a Supabase-managed object — is still born open. `ALTER DEFAULT
+PRIVILEGES FOR ROLE supabase_admin` was attempted 2 Sep 2026 and returns
+`42501 permission denied to change default privileges`: `postgres` is not a
+member of `supabase_admin` and Supabase grants no route to it. Residual risk:
+any object a future extension or Supabase platform upgrade creates in `public`
+arrives with a full `anon` grant and nothing will revoke it automatically.
+**So the per-object check below is load-bearing, not belt-and-braces — after
+installing an extension or taking a platform upgrade, re-run it.** Check the
+object you just made.
+
+**Before revoking, establish the reader — do not revoke reflexively.** The role
+per request is in the edge logs at
+`request.sb.jwt.authorization.payload.role`; the dashboard signs in and reads as
+`authenticated` (`app.js` `boot()` returns at the login card before any screen
+fetches), and n8n reads as `service_role` (user agent `n8n`, `sb_secret_` key).
+If a view or function has no anon reader, revoking costs nothing. If it has one,
+say so and leave it. `authenticated` and `service_role` keep what they need.
+
+Then re-check with `get_advisors`, and prove the callers still work — for a
+`security_invoker` view that means reading it as `authenticated` *and* as
+`service_role`, not just inspecting the ACL.
 
 ## Where the record lives
 
