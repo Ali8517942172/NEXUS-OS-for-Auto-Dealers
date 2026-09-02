@@ -27,33 +27,45 @@ the software says to a customer. It means:
 - Prefer finishing one path a buyer can see end to end over improving five they
   will never open.
 
-## Tenancy: done in the database, NOT done in the workflows
+## Tenancy: the database is finished. The workflows are most of the way.
 
-As of 2 September the database is multi-tenant: `tenant_id` on 15 tables,
-tenant-scoped RLS, and the five SECURITY DEFINER functions that were
-cross-tenant bypasses are scoped. Proven adversarially with two synthetic
-dealerships as real roles with JWT claims — reads, writes, updates, deletes,
-tenant-hopping, a forged `tenant_id` claim, membership self-grant, all ten
-views, hot-lead routing, phone-tail identity collision and the whole `anon`
-surface all returned zero. That work is real; do not redo it.
+As of 2 September the database side is **complete**. `tenant_id` on every
+tenant-scoped table and NOT NULL on all of them; every natural business key
+scoped per dealership (`leads.email`, `customer_360_profiles.customer_id`,
+`deals_embeddings.deal_id`, `inventory.id`, `whatsapp_contacts.chat_id`,
+`processed_messages.message_id`, `purchase_history.deal_id`, `users.email`);
+tenant-scoped RLS; the five SECURITY DEFINER functions that were cross-tenant
+bypasses scoped; `v_inventory_sales` and `v_customer_directory` scoped. Proven
+adversarially with two synthetic tenants as real roles with JWT claims — reads,
+writes, updates, deletes, tenant-hopping, a forged `tenant_id` claim, membership
+self-grant, all ten views, hot-lead routing, phone-tail identity collision and
+the whole `anon` surface all returned zero. Do not redo this work.
 
-**It is still not safe to put a second paying dealership on this database**,
-and the reason is not in the database:
+17 of 21 n8n workflows now resolve a tenant from something real — the WAHA
+session for WhatsApp, the authenticated user via `tenant_members` for
+JWT-guarded webhooks, the calling workflow for sub-workflow hops — and stamp it
+explicitly rather than relying on the column default.
 
-- n8n writes as `service_role`, which is `BYPASSRLS`, and sends no `tenant_id`.
-  Every inbound lead, message, KYC row and audit row would be created **inside
-  the first dealership's tenant** and shown to their staff, while being
-  invisible to the dealership it belongs to. No RLS policy can fix that — the
-  rows are genuinely stamped with the wrong owner.
-- The Ask-AI node must call `search_rag_documents(q, limit, p_tenant)`, and the
-  Master Router must pass a tenant to `nexus_lead_for_comm_key`. Until they do,
-  retrieval and identity resolution **fail closed** for dealership two — correct,
-  but an outage rather than a feature.
-- `leads.email` and `customer_360_profiles.customer_id` are still globally
-  unique, so two dealerships sharing one customer's email overwrite each other.
+**It is still not safe to onboard a second dealership**, and what remains is
+operational rather than structural:
 
-`select * from public.nexus_tenancy_readiness();` is the live gate. Run it
-before onboarding anyone; do not trust this file, which goes stale.
+- `NEXUS_TENANT_MAP` is not set on the box. Every resolver falls through to its
+  built-in single-tenant map. The moment that env var holds two keys, roughly
+  fifteen code paths switch from "the only dealership" to "unresolved" at once.
+  **Rehearse that switch on a staging box before it happens in production.**
+- Customer 360 goes *silent* at two dealerships — `nexus_scoped_tenant_id()`
+  returns null for a `service_role` caller once more than one tenant is active,
+  so the nightly batch syncs nobody and writes no audit row. Silent, not wrong,
+  but it must iterate tenants before anyone is onboarded.
+- `tenants.is_unattributed_default` means an omitted `tenant_id` lands in
+  whichever dealership holds the flag. Harmless with one; wrong with two. Either
+  point it at a quarantine tenant or convert the remaining omissions to explicit
+  nulls.
+
+`select * from public.nexus_tenancy_readiness();` is the live gate — but note
+its remaining BLOCKER fires whenever any tenant holds the default flag and
+cannot see n8n at all, so it will not clear from workflow work. Read it with
+that in mind.
 
 ## What is actually proven
 
