@@ -69,6 +69,14 @@ closed until 2 Sep (views, then all 16 base tables and the sequences). Row count
 never proved the `anon` surface shut, and no future claim about it should rest on
 them.
 
+That 2 Sep pass closed **`anon` only**. It left `authenticated=arwdDxtm` — full
+INSERT/UPDATE/DELETE/TRUNCATE — on 32 objects, and the wording above was read by
+the next three agents as "grants: done". Narrowed 3 Sep 2026 (migration
+`authgrant_narrow_authenticated_to_actual_consumers`): every table and view in
+`public` is now `authenticated=r`, except `inventory` (`arwd`) and `leads` (`rw`),
+which are live dashboard write paths, and `processed_messages` plus the three
+sequences, where `authenticated` now holds nothing. `service_role` unchanged.
+
 17 of 21 n8n workflows now resolve a tenant from something real — the WAHA
 session for WhatsApp, the authenticated user via `tenant_members` for
 JWT-guarded webhooks, the calling workflow for sub-workflow hops — and stamp it
@@ -138,7 +146,7 @@ path should not go live.
 - **One figure, one derivation.** See `NEXUS_INVARIANTS.md`.
 - **Check captions against the branch they sit in.** Sentences asserting the
   opposite of their own code have been found seven times here.
-- **After creating ANY function, check `anon` and `authenticated` grants.**
+- **After creating ANY function, table, view or sequence, read its ACL.**
   Supabase's default privileges grant EXECUTE **directly to those roles**, and
   `REVOKE ... FROM PUBLIC` does not touch a direct grant. This exact shape has
   opened a hole three times: the RAG search functions, the tenancy helpers, and
@@ -150,7 +158,15 @@ path should not go live.
   fails the deploy without it; `CREATE OR REPLACE VIEW` silently drops the
   option and did so three times.
 
-## The `anon` grant check (the shape that has opened five holes)
+## The default-grant check: `anon` **and** `authenticated` (six holes)
+
+> Read the heading. This section used to be called "the `anon` grant check", and
+> that title is the direct cause of failure number four. `anon` was closed on
+> 2 Sep 2026 and everyone who opened this file afterwards read the section as
+> *done* — while **32 objects sat wide open to `authenticated`**, including
+> `leads`, `inventory`, `users`, `audit_log`, `finance_quotes` and
+> `purchase_history`. The default grant lands on **both roles**. Closing one says
+> nothing about the other.
 
 Supabase ships default privileges that grant **directly to `anon` and
 `authenticated`** on everything created in `public` — `EXECUTE` on every new
@@ -158,7 +174,52 @@ function, and *all* privileges (`arwdDxtm` — SELECT **and INSERT/UPDATE/DELETE
 not just SELECT) on every new table and view. Nobody writes those grants; they
 arrive on their own, so nothing in the migration diff shows them.
 
-Three things follow, and each has already cost this project:
+**Read the ACL, and know what the letters mean.** `authenticated=arwdDxtm` is
+not "read access". It is:
+
+| letter | verb | filtered by RLS? |
+|---|---|---|
+| `r` | SELECT | yes |
+| `a` | INSERT | yes |
+| `w` | UPDATE | yes |
+| `d` | DELETE | yes |
+| `D` | **TRUNCATE** | **NO** |
+| `x` | REFERENCES | n/a |
+| `t` | TRIGGER | n/a |
+| `m` | MAINTAIN | n/a |
+
+**`D` is the one that matters most, and this file missed it for four rounds.**
+RLS does not apply to TRUNCATE. So on every object carrying `D`, the reassuring
+sentence "RLS is the remaining lock" was simply **false — there was no lock at
+all**. Measured 3 Sep 2026 in a rolled-back transaction: as `authenticated`,
+`TRUNCATE public.competitors` took the table from 13 rows to 0. The same grant
+sat on `audit_log`, `purchase_history` and `finance_quotes` — a signed-in user
+could have erased the audit trail and the sales record across **every** tenant,
+and no policy in this database would have filtered a single row of it.
+
+**`get_advisors` does not catch this.** It returned zero grant-related lints on
+the same day all 32 objects were open. It flags missing RLS and definer
+functions, not over-wide table privileges. Treat a clean advisors run as
+evidence about RLS and nothing else; the ACL query below is the only check that
+answers this question.
+
+**The one query. Run it; do not reason about it.**
+
+```sql
+select c.relkind, c.relname, coalesce(array_to_string(c.relacl, E'\n'), '(owner-only)') acl
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind in ('r','v','m','p','S')
+  and (has_table_privilege('authenticated', c.oid, 'UPDATE')
+    or has_table_privilege('anon',          c.oid, 'UPDATE'))
+order by 1, 2;
+```
+
+Anything it returns that is not a deliberate, named write path is a hole. Note
+it covers **sequences** too: `authenticated` held `rwU` on `leads_id_seq`, and
+UPDATE on a sequence is `setval()` — rewinding the counter to collide primary
+keys on the dealership's next real insert.
+
+Three more things follow, and each has already cost this project:
 
 - **`REVOKE ... FROM PUBLIC` does not remove a direct grant.** A direct
   `anon=X` entry and a PUBLIC `=X` entry are separate ACL rows. Revoke from
@@ -209,17 +270,44 @@ arrives with a full `anon` grant and nothing will revoke it automatically.
 installing an extension or taking a platform upgrade, re-run it.** Check the
 object you just made.
 
-**Before revoking, establish the reader — do not revoke reflexively.** The role
-per request is in the edge logs at
-`request.sb.jwt.authorization.payload.role`; the dashboard signs in and reads as
-`authenticated` (`app.js` `boot()` returns at the login card before any screen
-fetches), and n8n reads as `service_role` (user agent `n8n`, `sb_secret_` key).
-If a view or function has no anon reader, revoking costs nothing. If it has one,
-say so and leave it. `authenticated` and `service_role` keep what they need.
+**Before revoking, establish the reader *and the writer* — do not revoke
+reflexively, and do not trust what this file says the writers are.** The role per
+request is in the edge logs at `request.sb.jwt.authorization.payload.role`; the
+dashboard signs in and reads as `authenticated` (`app.js` `boot()` returns at the
+login card before any screen fetches), and n8n reads and writes as `service_role`
+(user agent `n8n`, `sb_secret_` key). Filter the logs to
+`method in ('POST','PATCH','PUT','DELETE')` and look at who is actually writing.
+If an object has no reader for a role, revoking costs nothing. If it has one, say
+so and leave it.
 
-Then re-check with `get_advisors`, and prove the callers still work — for a
-`security_invoker` view that means reading it as `authenticated` *and* as
-`service_role`, not just inspecting the ACL.
+**Establish the writers from the shipped bundle, not from belief.** Going into the
+3 Sep pass the working assumption — written down and inherited — was that *every*
+dashboard write goes through a `SECURITY DEFINER` function. That was **false**.
+`grep -rn "dbWrite" apps/executive-dashboard/lib apps/executive-dashboard/screens`
+finds two direct table writes, both live and both confirmed in
+`dist/assets/main-*.js`, which is the deployed truth rather than the source:
+
+- `lib/unit-form.js` → `inventory` POST / PATCH / DELETE (the unit form)
+- `lib/lead-drawer.js` → `leads` PATCH (owner assignment)
+
+Those two are why `inventory` keeps `arwd` and `leads` keeps `rw`. Revoking them
+would have broken two working screens to close a lock nothing was exploiting —
+a bad trade. Everything else routes through `rpc/*`, and because those functions
+are `SECURITY DEFINER` **owned by `postgres`**, they touch their tables as
+`postgres` and are completely unaffected by the caller's table grants. That is
+what makes narrowing safe: check `prosecdef` and `proowner` before relying on it,
+because `sentinel_inventory_actions` and `search_rag_documents` are
+`SECURITY INVOKER` and *do* read as the caller.
+
+Then prove it **per object, not once at the end**, in transactions you roll back
+(a prior agent ran a live DELETE outside one and had to disclose it). A
+`DO $$ ... $$` block that ends in `RAISE EXCEPTION` aborts unconditionally, so
+nothing can persist even if a probe misbehaves. Prove three things each time: the
+consumer still does what it needs, the verb you closed now fails with `42501`
+(*blocked by GRANT* — not "0 rows", which only ever proves RLS filtered it), and
+`service_role` is untouched. Re-check `get_advisors` at the end knowing it will
+not see grants, and for a `security_invoker` view read it as `authenticated`
+*and* as `service_role`, not just inspecting the ACL.
 
 ## Where the record lives
 
