@@ -1,6 +1,6 @@
 # NEXUS OS — Pilot Onboarding
 
-**Version 2.0 · 2 September 2026**
+**Version 2.1 · 3 September 2026**
 **How to put one dealership live, in order, with honest timings.**
 
 This is the document that turns a signature into a working deployment, and turns a working
@@ -186,9 +186,20 @@ their dashboard logins.
 
 **Tell them, in writing, what this means today:** every person you give a login to can see
 every lead, every customer, every message and every cost price. **There are no per-role
-permissions.** If the dealership does not want a junior salesperson seeing what they paid
-for each car, give that person no login during the pilot. This is a real limitation, it is
-in the claims register, and it should be said out loud rather than discovered.
+permissions.**
+
+**And say the second half, which is worse than the first.** A login is not read-only. Measured
+3 September 2026: any signed-in user can change a vehicle's asking price and cost price,
+**delete a vehicle record outright**, and reassign any lead. There is no role check in the
+database and none in the interface, so nothing stops it and nothing warns first. The Action
+Centre — the one screen that does have an approval model — gates *approving a recommendation
+to reprice a car* while the unit form does not gate *deleting the car*. That inconsistency is
+real, it is written up in `SECURITY_REGRESSION_REPORT.md` as SEC-05, and until it is closed the
+only control is who holds a login.
+
+If the dealership does not want a junior salesperson seeing what they paid for each car — or
+able to delete a car from the stock list — give that person no login during the pilot. Put
+that sentence in the email, not just in the conversation.
 
 **Ali's time: 30 minutes.**
 
@@ -226,8 +237,20 @@ Free tiers are fine for building and wrong for a paying customer.
 - **AI models.** Currently OpenRouter and Groq free tiers, which are rate-limited with no
   availability guarantee. Put paid keys in. The fallback model ladder exists precisely
   because free capacity disappears.
+- **Close the inbound webhook.** `POST /webhook/whatsapp-inbound` accepts unauthenticated
+  requests today. The check is written into the workflow but it is **dormant**, because
+  `WAHA_WEBHOOK_SECRET` is unset on the box — so it passes everything through. What is
+  actually holding the door is a second control downstream, an allowlist on the WhatsApp
+  session name, which refuses an unknown session and writes nothing; that was proven live on
+  3 September. Close it properly in this order: set `WAHA_WEBHOOK_SECRET`, make WAHA send the
+  `x-nexus-webhook-secret` header, confirm in MONITOR mode that **real** messages are passing
+  the gate, and only then set `WAHA_WEBHOOK_ENFORCE=true`. **Do not set the secret first.**
+  WAHA is not sending that header yet, so enforcing before it does would silently drop every
+  real customer message. Send yourself one WhatsApp before touching anything, because the
+  session allowlist is already live.
 
-**Ali's time: 2 hours. Cost: roughly AED 400–600 a month, which the pilot price covers.**
+**Ali's time: 2 hours, plus 1 hour for the webhook rollout. Cost: roughly AED 400–600 a
+month, which the pilot price covers.**
 
 ### Step 8 — Shadow run. Two days. Do not skip this.
 
@@ -270,8 +293,9 @@ Ranked by how much damage it does, not by how likely it is.
 | **Meta business verification stalls** | Go-live slips by a week or more and it looks like your delay. | Submit on day one. Tell the dealership at signature that Meta takes 2–10 days and it is not your clock. |
 | **The inventory file never arrives, or arrives stale** | The bot quotes cars that are sold. | Do not start the three-month clock until stock is loaded. Agree who sends updates and how often. |
 | **The VM falls over** | Messages stop being answered and nobody notices, because the infra health probe has never run. | Move off the free VM at Step 7. Check the Automation screen daily. Consider this the pilot's weakest point. |
-| **The dealership asks for a second branch on the same system** | You cannot yet. The database separates dealerships as of 2 September and was tested with two, but the workflows all write as a system account with no dealership attached — branch two's messages would file under branch one. | Say no, and say exactly which half is done. It is a genuine engineering limit, not a pricing tactic. A second branch is a separate quote, not a band adjustment. |
-| **A staff member sees cost prices they should not** | There are no per-role permissions. | Restrict who gets a login, at Step 4, in writing. |
+| **The dealership asks for a second branch on the same system** | You cannot yet. The database separates dealerships as of 2 September, was tested with two, and was re-tested harder on 3 September — but the workflows all write as a system account with no dealership attached, so branch two's messages would file under branch one. Three further defects fire on that same day: unclaimed ID document files fall to the default branch, a lead can be assigned to the other branch's staff, and two reports go silently empty. | Say no, and say exactly which half is done and what the other half costs. It is a genuine engineering limit, not a pricing tactic. A second branch is a separate quote, not a band adjustment. |
+| **A staff member deletes a car, or changes a price** | There are no per-role permissions **and a login is not read-only**: any signed-in user can edit a vehicle's asking and cost price, delete the vehicle record, and reassign any lead. Nothing in the database or the interface stops it. | Restrict who gets a login, at Step 4, in writing. Treat a dashboard login as equivalent to write access to the stock file. |
+| **Someone posts to the inbound webhook directly** | `POST /webhook/whatsapp-inbound` accepts unauthenticated requests; its secret check is dormant because the secret is unset on the box. The session allowlist behind it refuses an unknown session and writes nothing — that is the only control standing there today. | Step 7's webhook rollout, before the dealership's customers are on it. Do not describe the perimeter as closed until `WAHA_WEBHOOK_ENFORCE=true` and a real message has passed the gate. |
 | **The dealership asks about data retention or deletion** | The retention purge workflow is registered, is marked active, and **has never run once**. Nothing enforces a retention window today. | Do not claim automatic purging. Offer manual deletion on request and put it in the pilot agreement. |
 | **Messages land unassigned** | Measured 2 Sep 2026 at 09:58 UTC: of 108 logged messages, **24** resolve to a named customer record. Most of the rest is non-customer traffic on the shared personal number. | Step 1 fixes most of it. Explain that an unassigned message is the system refusing to guess, and show them where to find them. |
 
@@ -295,12 +319,31 @@ After each onboarding, record:
 argued. That is the whole point of writing it down.
 
 **And the hard limit, again:** one dealership per instance. The database half of tenant
-separation was built and tested on 2 September; the automation half was not. Until the n8n
-workflows send a dealership id with every write — and until `leads.email` and
-`customer_360_profiles.customer_id` are made unique per dealership rather than globally — a
-second dealership needs its own Supabase project and its own VM. That roughly doubles the
-infrastructure cost and all of the supervision. Price the second pilot with that in mind, or
-finish the automation half first. The system will tell you where it stands:
+separation was built and tested on 2 September and re-tested harder on 3 September; the
+automation half was not started. The globally unique keys that used to be part of this
+blocker — `leads.email` and `customer_360_profiles.customer_id` — **are now scoped per
+dealership**, and the readiness report says so; do not keep quoting them as open.
+
+What is actually left before a second dealership shares an instance:
+
+1. The n8n workflows must send a dealership id with every write. They still write as a system
+   account, and this is the one BLOCKER the readiness report shows.
+2. Unclaimed ID document files in storage must stop falling through to whichever dealership
+   holds the default flag. They are passports and Emirates IDs.
+3. `leads.assigned_to_id` must stop pointing at any dealership's staff.
+4. `nexus_scoped_tenant_id()` must stop returning null for the system account once a second
+   dealership exists — today two reports and the nightly Customer 360 batch go **silent**
+   rather than wrong, which is harder to notice.
+5. Four launch-critical checks — a non-approver being refused, a repeated decision staying
+   idempotent, one dealership being denied another's rows through the real signed-in path, and
+   the rendered figures matching the live rows — have **never been run**, because production
+   has one dealership and one user and that user is an approver. They need a staging project
+   restored from a production snapshot. They are not passes today; they are unknowns.
+
+Until those are done, a second dealership needs its own Supabase project and its own VM. That
+roughly doubles the infrastructure cost and all of the supervision. Price the second pilot with
+that in mind, or finish the list first. The system will tell you where it stands, with the
+caveat that it only sees items 1–4's database half:
 `select * from public.nexus_tenancy_readiness();`
 
 **Also add to the checklist above:** how long the number separation in Step 1 actually took,
@@ -312,14 +355,15 @@ problem, and the record of it is what proves the personal number never comes bac
 
 ## Figures in this document
 
-Checked against Supabase project `dsvuoovivysszdoiorch` at **10:04:17 UTC, 2 September 2026**,
-scoped to the one real dealership (`tenants.slug = 'alba-cars'`). Another workstream was
-writing synthetic QA dealerships into the same tables at the time; none of that is counted
-here, and anyone re-running these counts must scope them the same way — a raw `count(*)` at
-09:57 showed 2 sales and 2 finance quotes, and every one of them was test data.
+Checked against Supabase project `dsvuoovivysszdoiorch` on **3 September 2026**, scoped to the
+one real dealership (`tenants.slug = 'alba-cars'`). Anyone re-running these counts must scope
+them the same way. On 2 September a raw `count(*)` at 09:57 showed 2 sales and 2 finance
+quotes, and every one of them was another workstream's test data — a raw count will lie to you
+in exactly the direction you want to be lied to.
 
 12 WhatsApp contacts, 1 of them a car enquiry · 108 messages, 24 resolving to a named
-customer · 3 leads · 12 vehicles · **0 customer sales** (one `purchase_history` row appeared
-at 09:59:53 from a repair test against the owner's own lead — not a sale) · 0 finance quotes ·
-3 KYC submissions and 0 verified · 15 sample Ask-AI documents · 1 dashboard login ·
-600 run records · retention purge workflow: 0 runs, ever.
+customer · 3 leads · 12 vehicles, **0 with a reconditioning cost** · **0 customer sales** (one
+`purchase_history` row appeared at 09:59:53 on 2 Sep from a repair test against the owner's own
+lead — not a sale) · 0 finance quotes · 3 KYC submissions and 0 verified · 15 sample Ask-AI
+documents · 1 dashboard login · 687 run records · retention purge workflow: 0 runs, ever ·
+infrastructure health probe: 0 runs, ever.

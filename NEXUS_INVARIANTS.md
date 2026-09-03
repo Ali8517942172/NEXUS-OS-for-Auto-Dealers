@@ -1,4 +1,4 @@
-<!-- BUSINESS CONTEXT — added 2026-09-02 -->
+<!-- BUSINESS CONTEXT — added 2026-09-02, corrected 2026-09-03 -->
 > **This is a commercial product, not a demo.** NEXUS is a **Revenue Recovery &
 > Action OS for dealerships** — it sits above the dealership's existing DMS, CRM
 > and inventory systems, finds revenue leaks, decides the next best action and
@@ -8,34 +8,160 @@
 > sellable and keep it sellable. The honest commercial position today is a
 > **controlled dealership pilot** — not "enterprise-ready", not "compliant".
 > Never state more than the evidence supports; "wired but never fired" is a real
-> answer. The blocker before a second paying dealership is that the system is
-> **single-tenant**: every RLS policy is `USING (true)`, so tenant two would read
-> tenant one's customers. See `CLAUDE.md` for how to work here.
+> answer.
+>
+> **Correction, 2026-09-03.** This block used to end: *"The blocker before a
+> second paying dealership is that the system is single-tenant: every RLS policy
+> is `USING (true)`, so tenant two would read tenant one's customers."* That was
+> true when written and is **no longer true**. Measured today: `public` holds
+> **120 policies, 25 of them tenant-scoped**, and `CLAUDE.md` records the
+> tenancy build as complete at the database layer and proven adversarially
+> against two synthetic tenants. The blocker before a second dealership is now
+> **operational, not structural**: `NEXUS_TENANT_MAP` is unset on the box, and
+> `POST /webhook/whatsapp-inbound` lets the caller choose the dealership. Read
+> `CLAUDE.md` for the current position; do not carry the old claim forward.
 
 # NEXUS OS — Invariants
 
-Eight rules the system is not allowed to break. Each was checked against the live
-Supabase project `dsvuoovivysszdoiorch` on **2026-09-02**, as role `postgres`
-with `rolbypassrls = true` — so no count below is a row-level-security artefact.
+Eight rules the system is not allowed to break. The body of this file was
+measured against the live Supabase project `dsvuoovivysszdoiorch` on
+**2026-09-02**, as role `postgres` with `rolbypassrls = true` — so no count below
+is a row-level-security artefact.
+
+> **Re-checked 2026-09-03 18:3x–18:5x UTC. All eight rules still hold. Several
+> figures have moved and three claims had gone stale; the section immediately
+> below records what changed and every stale claim is corrected in place.**
+> Where an invariant is now held up by a *mechanism* rather than by vigilance,
+> that mechanism is named — the mechanisms are new since 2 September and are the
+> most important change in this revision.
 
 Every "verified" line names the query or script that produced it. Where the data
 contradicts the rule, the contradiction is recorded as an **OPEN VIOLATION**
 rather than smoothed over.
 
-**Every figure in this file was re-measured between 05:15 and 05:25 UTC on
-2026-09-02. None was carried forward from the previous revision, and several
-had moved.** The previous revision was written at 21:2x on 2026-09-01 and is
-stale wherever it disagrees with this one.
+**Every figure in the 2026-09-02 body of this file was re-measured between 05:15
+and 05:25 UTC on that day. None was carried forward from the revision before it,
+and several had moved.** That revision was written at 21:2x on 2026-09-01 and is
+stale wherever it disagrees. Figures added on 2026-09-03 are dated inline as
+such; where a 2 September figure and a 3 September figure sit side by side, both
+are kept and the newer one is marked, so the movement is auditable.
 
-## What changed since the previous revision
+## Re-check 2026-09-03 — what moved, and what is now held up by a mechanism
+
+Measured 18:3x–18:5x UTC on 2026-09-03 against the same project, through the
+read-only SQL channel. **All eight invariants still hold.** Nothing below is a
+new violation. Three claims in this file had gone stale and are corrected in
+place under their own invariants; they are listed here so the correction is
+findable.
+
+### Figures that moved
+
+| figure | 2026-09-02 | 2026-09-03 |
+|---|---|---|
+| `audit_log` rows / distinct `(status, summary)` pairs | 634 / 311 | **687 / 340** |
+| SUCCESS / FAILURE / NO_RESULT / REJECTED_EXPECTED / PARTIAL / ESCALATED | 212 / 211 / 152 / 36 / 21 / 2 | **216 / 231 / 173 / 42 / 23 / 2** |
+| `communication_logs` rows / messages / internal / replies | 99 / 97 / 2 / 19 | **108 / 106 / 2 / 23** |
+| `v_lead_messages` resolution rows | 47 | **53** |
+| `v_needs_attention` rows | 13 | **14** |
+| `purchase_history` | **0 rows** | **1 row — the path has fired** |
+| `kyc_documents` | **0 rows** | **3 rows, 0 verified** |
+| `finance_quotes` live rows / inserts / deletes | 0 / — / — | 0 / **25** / **15** |
+| `competitors` | 11 | **14** |
+| tables / views in `public` | — | **40 / 33** |
+| applied migrations | 81 | **181**, max `20260903180749` |
+| screens | 14 | **20** on this branch, **14** on `origin/main` |
+
+### Three stale claims, corrected in place
+
+1. **INV-002 said `purchase_history` holds 0 rows and "no sale has ever been
+   written through this path".** It now holds **one real closed-won deal**,
+   recorded 2026-09-02 through the dashboard, and it carries `lead_id = 38`.
+   The invariant moved from *wired, not fired* to **fired and proven**. See
+   INV-002.
+2. **INV-007 said `kyc_documents` holds 0 rows.** It holds **3**, and
+   `pg_class.reltuples` now agrees at 3. **The invariant's finding is unchanged
+   and arguably sharper**: 3 rows, **0 verified**, against a `DEGRADED` auditor
+   at 0.0% success over 10 effective runs. A row appearing is not the capability
+   working. See INV-007.
+3. **The `security_invoker` section said "Nothing structural stops the fourth
+   regression."** Something does now. See that section.
+
+### The mechanisms — new since 2 September
+
+This file used to record rules that held because somebody kept checking. Several
+are now enforced by something that fails on its own. Naming them matters,
+because an invariant backed by a mechanism and an invariant backed by vigilance
+are different products.
+
+| what is enforced | mechanism | kind |
+|---|---|---|
+| Every view in `public` carries `security_invoker` | **event trigger `nexus_guard_security_invoker_views`** on `ddl_command_end`, running `nexus_require_security_invoker_views()` — a `CREATE OR REPLACE VIEW` that drops the option now fails the statement | database, blocking |
+| the same, at release | gate check **`L3`** — verified 2026-09-03: **0 of 33 views** lack the option | gate |
+| No recovered revenue without a real sale behind it | CHECK **`inventory_actions_recovered_needs_real_sale`** and **`lead_recovery_actions_recovered_needs_real_sale`**: `recovered_value_aed IS NULL OR (outcome_state = 'ATTRIBUTED' AND outcome_purchase_id IS NOT NULL AND attribution_basis IS NOT NULL AND recovered_value_basis IS NOT NULL)`. Postgres refuses the row. | database, blocking |
+| the same, at the screen | gate checks **`R5`**, **`S9`**, **`L10`** — `R5` serves a fabricated `recovered_value_aed` of 250 000 with all four evidence columns absent and fails if it renders as a figure | gate |
+| An action decision is stamped, reasoned and its execution timestamped | CHECKs `*_decision_stamped`, `*_rejection_needs_reason`, `*_deferral_needs_reason`, `*_execution_stamped` on both action tables | database, blocking |
+| One outcome vocabulary, never mixed with the action lifecycle | gate check **`S10`** | gate |
+| An uncomputable figure never becomes a zero | gate checks **`R4`**, **`S5`**, **`L6`**, **`L7`** | gate |
+| No finance figure computed by the browser or by a model | gate check **`S8`** | gate |
+| Every `audit_log` writer is a registered workflow | view **`v_audit_unregistered_writers`** + gate check **`L9`** — **currently FAILING**, see below | database view + gate |
+| `audit_log.status` is upper case | CHECK `audit_log_status_check` | database, blocking |
+| Deal Rescue says *why* it is empty rather than showing a blank table | view **`v_deal_rescue_readiness`** — nine named prerequisites, each with `met_now`, `measured_now` and `measured_at`, recomputed on read | database view |
+
+### Still aspirational — held by nothing but review
+
+Say these are conventions, not controls, whenever they are quoted:
+
+- **INV-001's read path.** "A screen reading raw `audit_log` rows must classify
+  them through `lib/health.js`" is enforced by gate check `S10` in CI and by
+  nothing at runtime. A screen that classified `status` itself would render
+  wrongly and only the gate would object.
+- **INV-003's single writer.** One trigger writes `response_time_minutes` today.
+  Nothing prevents a second being added; the invariant is checked by a query,
+  not held by a constraint. This is exactly how it broke on 31 August.
+- **INV-004's marker rule.** `nexus_is_message` is the definition, but nothing
+  stops a consumer counting rows without it. `v_lead_messages.is_message` and
+  `v_conversations.msg_count` make the right thing easy; they do not make the
+  wrong thing impossible.
+- **INV-005.** `finance_quotes` still holds **0 live rows**, so this remains a
+  source-level guarantee. It is no longer accurate to call the write path
+  unexercised: `pg_stat_all_tables` shows **25 inserts and 15 deletes**, so the
+  insert path has worked repeatedly and a teardown script clears the rows after
+  each test. What is genuinely unproven is whether it works *today*.
+- **INV-008's `pill()` provenance.** Still narrowed, not closed. No mechanism.
+
+### Two gate checks are FAILING, and neither is fixed by this file
+
+Latest gate run 2026-09-03T11:45Z: **PASS 26 · FAIL 2 · WARN 2 · NOT RUN 4,
+exit 1.** J1's verdict is **NOT_READY**. The two failures are open findings, not
+paperwork:
+
+- **`L2`** — ten policies are `SELECT USING(true)` for `authenticated` on tables
+  carrying no `tenant_id` column, all of them reference or lookup tables added
+  with the engines (`deal_rescue_states`, `attribution_edge_type`,
+  `policy_rule_type`, and seven more). Whether a shared vocabulary table should
+  be tenant-scoped is a real decision and it has not been made.
+- **`L9`** — a writer calling itself `"Example Workflow"` put one `FAILED` row
+  into `audit_log` and resolves to no `workflow_registry` entry, so its runs sit
+  on no health surface. **Do not invent a registry row to clear this.**
+
+Four checks report **NOT RUN** (`B1`–`B4`) because they need a second dealership
+or a writable session against production. **A NOT RUN is not a PASS**, and the
+2 September adversarial two-tenant evidence in `CLAUDE.md` is not carried forward
+as one.
+
+---
+
+## What changed since the previous revision (in the 2026-09-02 pass)
 
 The previous revision recorded **two open violations under INV-002 and INV-008,
-plus three sub-violations under INV-008**. Measured today:
+plus three sub-violations under INV-008**. Measured 2026-09-02:
 
 - **Closed** — `purchase_history` now carries `lead_id`, with the frontend and
   the two n8n nodes to match. Closed at the schema and code layer and **not
   proven at runtime**; see INV-002, which says so at length rather than letting
-  the word "closed" imply more than was tested.
+  the word "closed" imply more than was tested. *(Superseded 2026-09-03: it is
+  now proven at runtime — one real sale, `lead_id = 38`. See the correction
+  under INV-002.)*
 - **Closed** — the third and fourth definitions of "open pipeline" in the
   database. `v_team_performance.pipeline_aed` and `capture_daily_metrics()`
   both now sum over `public.nexus_lead_is_open(status)` and neither coalesces an
@@ -80,9 +206,23 @@ findings are all WARN: mutable `search_path` on `nexus_is_message`,
 `nexus_is_reply` and `nexus_outcome_class`; `vector` and `pg_trgm` installed in
 `public`; leaked-password protection disabled.
 
-**This has now been fixed three times.** Nothing structural stops the fourth
-regression: the option is not asserted by any test, and any future
-`CREATE OR REPLACE VIEW` on these five will drop it again without an error.
+**This had been fixed three times, and this section used to end "Nothing
+structural stops the fourth regression."** That is no longer true, and it is the
+most useful change since.
+
+**Enforced 2026-09-03 by two mechanisms, both verified live:**
+
+- **Event trigger `nexus_guard_security_invoker_views`**, on `ddl_command_end`,
+  running `nexus_require_security_invoker_views()`. Confirmed present and
+  enabled in `pg_event_trigger` (`evtenabled = 'O'`). A `CREATE OR REPLACE VIEW`
+  that silently drops `reloptions` now **fails the statement** rather than
+  succeeding quietly.
+- **Gate check `L3`**, "Every public view carries `security_invoker`", in the
+  live lane of `QUALITY_GATE.mjs`.
+
+Re-measured 2026-09-03: **0 of the 33 views in `public`** lack the option. The
+count is 33 now, not nine — twenty-four views arrived with the engine work since
+this section was written, and every one of them carries it.
 
 ## Currency of the generated schema
 
@@ -94,7 +234,24 @@ therefore **two migrations behind again**, and both of them matter: they are the
 `open_leads` repoint (`20260902051636 inv008_open_leads_one_rule_per_row`, which
 adds a `daily_metrics.open_leads_rule` column) and the `security_invoker`
 restore. The previous revision's claim that the stale-schema violation is closed
-was true when written and is not true now. Regenerate before relying on the file.
+was true when written and is not true now.
+
+**Re-measured 2026-09-03, and it is far worse than "two behind".**
+`select max(version), count(*) from supabase_migrations.schema_migrations`
+returns **`20260903180749`, 181 applied**. `architecture/schema.sql` is
+**one hundred migrations behind** and predates the entire tenancy build and
+every engine. Grepped 2026-09-03, it contains **zero** occurrences of `tenants`,
+`tenant_members`, `policy_rule`, `inventory_actions`, `lead_recovery_actions`,
+`deal_rescue_states`, `v_attribution_edges` or
+`nexus_require_security_invoker_views`, and it describes **16 tables and 9
+views** against **40 and 33** live.
+
+Its own header still reads "THIS FILE IS AUTHORITATIVE". **It is not, and
+running it against production would replay a much older database over a much
+newer one.** `architecture/README.md` was corrected on 2026-09-03 to say so, and
+to say that the authoritative schema is the live catalogue and nothing in this
+repository. Do not regenerate-and-trust either: regenerate only if you need a
+snapshot, and date it.
 
 ## Runnable evidence
 
@@ -168,6 +325,14 @@ reading that tile had no way to know the scraper had found nothing all month.
    | REJECTED_EXPECTED | 36 | unchanged |
    | PARTIAL | 21 | unchanged |
    | ESCALATED | 2 | unchanged |
+
+   **Re-measured 2026-09-03: `audit_log` holds 687 rows across 340 distinct
+   pairs, and the class distribution is SUCCESS 216 · FAILURE 231 · NO_RESULT
+   173 · REJECTED_EXPECTED 42 · PARTIAL 23 · ESCALATED 2. Nothing entered a
+   class outside the declared vocabulary; FAILURE has overtaken SUCCESS.** The
+   parity harness was not re-run on 2026-09-03 — the classification was
+   re-measured in the database only — so treat the 634/634 agreement below as a
+   2026-09-02 result and re-run `health_parity.mjs` before quoting parity.
 
    `audit_log` holds **634 rows**, up from 584 at the previous revision, across
    **311** distinct pairs, up from 289. The growth is **+13 SUCCESS, +12 FAILURE
@@ -257,7 +422,15 @@ Resolution coverage: **99 rows in `communication_logs`, 47 resolved by
 2026-09-02 by comparing `nexus_lead_for_comm_key(text)` against `v_lead_messages`
 over **all 14 distinct `communication_logs.lead_email` keys**: **14 agree, 0
 disagree** — 6 keys resolve to the same lead on both paths, 8 resolve to NULL on
-both. The ambiguity guard is still untested by live data, because no collision
+both.
+
+**Re-verified 2026-09-03 over all 15 distinct keys: 15 agree, 0 disagree** — **6
+resolve identically and 9 resolve to NULL on both paths.** The six:
+`+918517942172@whatsapp.lead`, `shabbir53ujjainwala@gmail.com` and
+`158510264357112@lid` → lead 38; `+971547484167@whatsapp.lead` and
+`155315328786434@lid` → lead 34; `111948809162873@lid` → lead 35, reached through
+the `whatsapp_contacts` bridge. Collision probe re-run: **3 distinct 9-digit tails
+across 3 leads, maximum 1 person per tail.** The ambiguity guard is still untested by live data, because no collision
 exists to trigger it; what is guaranteed is that when one appears, both paths
 refuse it.
 
@@ -301,7 +474,10 @@ Deals to Supabase pgvector", `versionId` = `activeVersionId` =
 **`563d0df3-368c-4543-9b85-ab5e907cb976`**, updated `2026-09-02T05:00:48Z`. Both
 nodes carry `lead_id` in the published version.
 
-**WIRED, NOT FIRED — and this path was already unproven before the change.**
+**WIRED, NOT FIRED — as measured on 2026-09-02. Superseded 2026-09-03: it has
+now fired.** The paragraphs immediately below are kept as they were written,
+because a register that quietly rewrites its own past cannot be audited. Read
+the correction that follows them.
 
 - `purchase_history` holds **0 rows**. It held 0 before this migration and holds
   0 now. **No sale has ever been written through this path**, with or without a
@@ -326,12 +502,47 @@ So: closed in the schema, closed in the dashboard, closed in the published
 workflow, and **untested end to end**. The first real closed-won deal is the
 test. Until one lands, this invariant holds by construction only.
 
+#### CORRECTION 2026-09-03 — the deal landed. FIRED and PROVEN.
+
+The test above happened. Measured 2026-09-03 through the read-only SQL channel,
+`purchase_history` holds **one row**:
+
+| column | value |
+|---|---|
+| `id` | `2f04d2c4-4cd2-424c-aa34-6cc2a0c20b86` |
+| `lead_id` | **`38`** — populated, not null |
+| `deal_id` | `auto:shabbir53ujjainwala@gmail.com|2026-09-02` |
+| `amount_aed` | `585000` |
+| `purchase_date` | `2026-09-02` |
+| `tenant_id` | `fff6a2b5-cfd5-4460-8383-875bc5826de0` |
+
+`lead_id = 38` is the lead the sale came from, and lead 38 is the same person the
+identity rule resolves those 28 messages to. **A sale can now name the lead it
+came from, and one does.** `pg_stat_all_tables` shows 35 inserts and 13 deletes
+against the table, so the path has been exercised repeatedly and a teardown
+script clears the test rows; the one surviving row is the real deal. `CLAUDE.md`
+records it as submitted four times through the live dashboard producing one row,
+so idempotency is proven rather than assumed.
+
+Two things this does **not** prove, and neither should be claimed:
+
+- The `deal_id` is **synthesised at the moment of sale** as
+  `auto:<email>|<date>`. There is no deal record created at first commitment,
+  which is why `v_deal_rescue` is structurally empty — see
+  `v_deal_rescue_readiness`, prerequisite `DEAL_RECORD`.
+- **Nothing links the sale to a unit.** `v_attribution_sale_chain` grades the
+  VEHICLE hop `UNKNOWN_TEXT_ONLY` and its margin `NOT_COMPUTABLE` on this exact
+  row. The chain refuses to invent the link rather than guessing it, which is
+  this invariant working; it is not the same as the link existing.
+
 **Note, not a violation.** `screens/finance.js` does not import `lib/identity.js`
 and joins on the raw `lead_email` string — **30 code references, comments
 stripped, unchanged from the previous revision**. That is narrower than the
 identity rule, not in conflict with it: it will miss a customer whose quote
 carries a different key shape rather than misattribute one. Unobservable now —
-`finance_quotes` holds **0 rows**.
+`finance_quotes` holds **0 live rows** (re-checked 2026-09-03; 25 inserts and 15
+deletes on the table, so rows have existed and were cleared by a teardown, and
+the shape is still untested against live data).
 
 ---
 
@@ -428,6 +639,14 @@ thread's last-contact date was taken from the marker — so a customer nobody ha
 spoken to in days looked freshly contacted.
 
 **Regression test.**
+**Re-measured 2026-09-03: `communication_logs` holds 108 rows — 106 messages,
+2 internal, 23 replies by `nexus_is_reply`. Both system rows are still the only
+silence markers and no marker exists on any other channel. The delegation
+identity `nexus_is_reply = nexus_is_message AND direction = 'outbound'` still
+returns `true` over all 108 rows, and 0 rows carry a padded direction or
+channel.** `v_lead_messages` now resolves **53** rows, up from 47. The
+2026-09-02 figures follow, unchanged as written.
+
 **Result 2026-09-02, every figure unchanged from the previous revision:**
 `communication_logs` holds **99 rows** — whatsapp/inbound **78**,
 whatsapp/outbound **19**, **system/outbound 2, and both system rows are silence
@@ -458,6 +677,25 @@ they still differ on 0 threads. Current `v_needs_attention` totals, **13 rows**:
 All 13 rows carry a non-blank `severity`; **0 are blank**. That matters to the
 `pill()` discussion under INV-008 and is measured here because this is where the
 view is measured.
+
+**Re-measured 2026-09-03 — the mix has moved sharply and the total has not.**
+`v_needs_attention` holds **14 rows**, and **all 14 still carry a non-blank
+severity (0 blank)**, so the `pill()` fallback under INV-008 remains latent
+rather than live:
+
+| kind | 2026-09-02 | 2026-09-03 |
+|---|---|---|
+| unanswered_chat | 9 | **3** |
+| workflow_failure | 1 | **8** |
+| undercut | 2 | 2 |
+| inventory_aging | 1 | 1 |
+| lead_unassigned | 0 | 0 |
+| sla_breach | 0 | 0 |
+
+`v_conversations` now holds **13 threads**, of which `awaiting_msg_reply`
+selects **9**. The attention list has gone from mostly "a customer is waiting"
+to mostly "a workflow is broken", which is a real change in what the dealership
+would be shown and is recorded here rather than smoothed over.
 
 ---
 
@@ -545,8 +783,18 @@ pricing; it had none.
 | Finance Calc | NO_RESULT | 21 | 21 |
 | Ask-AI RAG Query | REJECTED_EXPECTED | 3 | 3 |
 
-**This is the figure that got worse.** Competitor Price Scraping's no-price
-count has gone **84 → 94 → 106** across three measurements. All twelve new
+**This is the figure that got worse, and on 2026-09-03 it got worse again:
+Competitor Price Scraping's no-price count reads 151, and the workflow's live
+health is `PRODUCING_NOTHING` at 17 successes over 168 effective runs —
+10.1%.** Finance Calc's `REJECTED_EXPECTED` is 36 and its `NO_RESULT` 21;
+Ask-AI's `REJECTED_EXPECTED` is 6. One new `NO_RESULT` belongs to the Inventory
+Action Center, which is the refusal-of-a-second-decision row described under
+INV-001 and is a control working, not a fault. The split still holds: every one
+of these is classified from the summary on read, and no writer distinguishes
+them.
+
+The 2026-09-02 reading follows as written. Competitor Price Scraping's no-price
+count had gone **84 → 94 → 106** across three measurements. All twelve new
 `audit_log` rows carry one of four complaints: no price could be extracted from
 the page; the source was the placeholder `"null"`; `"google.com"` is a search or
 social site, not a seller; the page carried no identifiable source.
@@ -595,19 +843,35 @@ compliant and is not non-compliant; they are unaudited.
 
 **Frontend consumers.** `screens/compliance.js`, `screens/customers.js`.
 
-**Failure mode.** The observed case is live right now. **`kyc_documents` holds 0
-rows while the auditor has 9 logged runs** — 7 failures and 2 escalations in the
-last 30 days, 0 successes. Nine documents entered the process and the register
-records nothing about any of them. A compliance view that reported "no problems
-found" here would be reporting the auditor's own failure as a clean result.
+**Failure mode.** The observed case is live right now, and 2026-09-03 sharpened
+it rather than closing it. **On 2026-09-02: `kyc_documents` held 0 rows while the
+auditor had 9 logged runs** — 7 failures and 2 escalations in 30 days, 0
+successes. Nine documents entered the process and the register recorded nothing
+about any of them.
+
+**Re-measured 2026-09-03: `kyc_documents` holds 3 rows, and 0 of them are
+verified.** The auditor now shows **12 runs in 30 days, 10 failures, 2
+escalations, 0 successes, `effective_runs_30d = 10`, `success_rate_30d = 0.0`,
+`health = DEGRADED`**. So the register has gone from empty to *populated and
+still uninformative*, which is the more dangerous shape: a screen counting rows
+would now find three and could be read as three checks having happened.
+**A row appearing is not the capability working — check the outcome, not the
+count.** Three documents were examined, none was verified, and the auditor has
+not succeeded once. A compliance view reporting "no problems found" here would
+still be reporting the auditor's own failure as a clean result.
 
 **Regression test.**
-**Result 2026-09-02, unchanged from the previous revision: `kyc_documents` = 0
-rows; auditor runs_30d = 9; failures_30d = 7; escalated_30d = 2;
-successes_30d = 0; effective_runs_30d = 7; success_rate_30d = 0.0;
-health = DEGRADED.** The planner's stale estimate for the table
-(`pg_class.reltuples`) is **9**, which is the fingerprint of rows that once
-existed and are gone. Measured as `postgres` with `rolbypassrls = true`, so the
+**Result 2026-09-02: `kyc_documents` = 0 rows; auditor runs_30d = 9;
+failures_30d = 7; escalated_30d = 2; successes_30d = 0; effective_runs_30d = 7;
+success_rate_30d = 0.0; health = DEGRADED.** The planner's stale estimate for
+the table (`pg_class.reltuples`) was **9**, which is the fingerprint of rows
+that once existed and are gone.
+
+**Result 2026-09-03: `kyc_documents` = 3 rows, 0 verified; runs_30d = 12;
+failures_30d = 10; escalated_30d = 2; successes_30d = 0; effective_runs_30d = 10;
+success_rate_30d = 0.0; health = DEGRADED.** `pg_class.reltuples` now reads 3 and
+agrees with the count. Lifetime table activity is 36 inserts and 37 deletes, so
+the churn behind that "9" is confirmed rather than inferred. Measured as `postgres` with `rolbypassrls = true`, so the
 zero is real and not RLS hiding rows from this connection — and it stays real
 now that the five views carry `security_invoker`, because this count is taken
 against the table, not through a view.
@@ -629,7 +893,9 @@ invariant is about there being only one.
 recomputed, by the frontend. A figure computed in the frontend has no database
 twin.
 
-**Frontend consumers.** All fourteen screens.
+**Frontend consumers.** All twenty screens on this branch (fourteen on
+`origin/main`, which is what production builds — see
+`apps/executive-dashboard/README.md`).
 
 **Regression test.** SQL probes plus greps for the same business number computed
 twice. **Three of the previous revision's four violations are now closed. One is
@@ -920,3 +1186,33 @@ frontend grep quoted above was re-taken at 05:29 against the current files. The
 re-take.
 
 Re-run the currency check before trusting any figure above.
+
+---
+
+## Last check — 2026-09-03
+
+Re-read through the read-only SQL channel between **18:35 and 18:55 UTC on
+2026-09-03**. No writes were made; no migration was applied.
+
+| object | state at last check |
+|---|---|
+| all 33 views in `public` | `security_invoker` present on every one — 0 exceptions |
+| `nexus_guard_security_invoker_views` | present in `pg_event_trigger`, `ddl_command_end`, enabled |
+| `purchase_history` | **1 row**, `lead_id = 38`, `tenant_id` set — INV-002 has fired |
+| `kyc_documents` | **3 rows, 0 verified**; auditor `DEGRADED` at 0.0% |
+| `finance_quotes` | 0 live rows; 25 inserts / 15 deletes lifetime |
+| `communication_logs` | 108 rows; delegation identity holds on all 108; 0 padded |
+| `audit_log` | 687 rows / 340 pairs; no class outside the vocabulary |
+| `v_needs_attention` | 14 rows, 0 with a blank severity |
+| `nexus_lead_for_comm_key` / `v_lead_messages` | **15 of 15** distinct `communication_logs.lead_email` keys agree (6 resolve, 9 NULL on both paths). 3 leads, 3 distinct 9-digit tails, **max 1 person per tail** — no collision exists to trigger the ambiguity guard |
+| RLS policies in `public` | 120 total, **25 tenant-scoped** — the "every policy is `USING (true)`" claim in this file's own header was false and is corrected |
+| `max(schema_migrations.version)` | `20260903180749`, **181 applied** |
+| `architecture/schema.sql` | generated 05:01 on 2026-09-02 — **100 migrations behind. Do not run it.** |
+| quality gate | PASS 26 · FAIL 2 (`L2`, `L9`) · WARN 2 · NOT RUN 4, exit 1 |
+
+**What was NOT re-run on 2026-09-03, and must not be quoted as if it were:**
+`health_parity.mjs` (the 634/634 agreement is a 2 September result), every
+frontend grep and every `pill()` call-site count under INV-008, and the
+`nexus_lead_is_open` 25-value parity comparison. Those are source-level
+measurements over files this pass did not re-read. The database figures above
+are current; the frontend figures are 2 September.

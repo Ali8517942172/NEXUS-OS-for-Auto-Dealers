@@ -48,6 +48,14 @@ Four questions the product must answer, in this order:
 
 Nothing gets thrown away. The screens change what they are *for*.
 
+**Measured 2026-09-03: the branch now carries 20 screens, not 14.** The six
+added are `revenue` (Revenue Recovery), `leadrecovery`, `dealrescue`,
+`attribution`, `policy` and `actions` (the Action Center). The fourteen
+commercial roles above are unchanged — the new screens are the engines below
+given a surface of their own rather than new modules. **`origin/main`, which is
+what production builds, still carries the original 14**; the six are on
+`wip/platform-truth-2026-09-01` only.
+
 ---
 
 # The sequencing decision, and why it is not the same as the strategy
@@ -59,42 +67,92 @@ year, so it is set by one test only:
 
 An engine that renders "no data" in front of a paying dealership is worse
 than an engine that does not exist, because it teaches them the product is
-empty. Measured on 2 September:
+empty. **Re-measured 2026-09-03 against the live database** (the previous
+edition of this table was measured 2 September; the figures that moved are
+marked):
 
-| Data | State | What it unlocks |
+| Data | State 2026-09-03 | What it unlocks |
 |---|---|---|
-| `inventory` — 12 units, **12 with `cost_aed`, 12 with `days_in_stock`** | complete | **Profit Sentinel — buildable now** |
-| `competitors` — 11 rows | present, thin | market position, with caveats |
-| `leads.response_time_minutes` — 2 of 3 | works, no volume | Lead Recovery mechanics |
-| `communication_logs` — 108 | real | AI BDC, silence detection |
-| `purchase_history` — 1 | one real sale | attribution starts here |
-| **service records** | **no table exists** | Service Retention — blocked |
+| `inventory` — 12 units, **12 with `cost_aed`, 12 with `days_in_stock`** | complete, unchanged | **Profit Sentinel — built and shipped** |
+| `competitors` — **14 rows** *(was 11)*, all priced, but `v_competitor_latest` resolves only **6** | present, thin, and **not refreshing** | market position, with caveats |
+| `leads` — **3**, of which **1 assigned**; `response_time_minutes` on 2 of 3 | works, no volume | Lead Recovery mechanics |
+| `communication_logs` — **108** | real | AI BDC, silence detection |
+| `purchase_history` — **1** *(a real closed-won deal, recorded 2 Sep through the dashboard)* | one real sale | attribution starts here |
+| `finance_quotes` — **0 live rows**, but **25 inserts / 15 deletes** in `pg_stat_all_tables` | the insert path has worked repeatedly; a teardown script clears it | Deal Finance |
+| `policy_rule` — **7 rows, 0 `VERIFIED`**; 21 constants still unmigrated | shipped, **unverified** | see the Policy Engine caveat below |
+| `deal_rescue_states` — 7 state definitions, **`v_deal_rescue` = 0 rows** | **structurally empty by design** | Deal Rescue — blocked on a deal record |
+| **service records** | **no table exists** *(re-checked: 0 tables matching service/appointment)* | Service Retention — blocked |
 | **appointments** | **no table exists** | no-show recovery, Deal Rescue stages — blocked |
-| **`recon_cost`** | **no column exists** | true margin — blocked |
+| **`recon_cost`** | **no column exists** *(re-checked: 0 columns matching recon)* | true margin — blocked |
 | **DMS / accounting integration** | **does not exist** | most of the Leak Radar — blocked |
+
+**The competitor feed is the figure that got worse and should not be sold.**
+`v_workflow_health` reads Competitor Price Scraping as `PRODUCING_NOTHING`:
+**151 no-result runs out of 168 in 30 days, 10.1% success rate.** There are 14
+rows on file and they are stale. Market Intelligence is a screen, not a
+capability, until that scraper produces prices.
 
 So the roadmap is not "ten engines this sprint". It is:
 
-### Now — the engines whose data is already here
+### Now — SHIPPED as screens, 2026-09-03. Shipped is not proven.
 
-1. **Inventory Profit Sentinel.** Every unit has acquisition cost and days in
-   stock. Margin at risk, ageing, and a reprice/promote/hold recommendation are
-   computable today, per VIN, with real numbers. This is the single most
-   sellable thing that can be built this week, and no integration is required.
-2. **Lead Recovery.** SLA, silence, ownership and next action — the mechanics
-   exist; only volume is missing, and volume arrives with the first dealership.
-3. **AI BDC.** Already live and proven end to end.
-4. **Executive Copilot.** "What needs my attention today?" over the three above.
-   It must show only what it can evidence — an honest three-item list beats a
-   fabricated seven-item one.
-5. **Revenue attribution, started small.** One real sale exists. Build the
-   chain from campaign → lead → conversation → vehicle → deal now, while it is
-   one row and cheap to get right.
+Five engines have landed as screens since this table was written, and the gate
+renders all of them. **Shipped-as-a-screen means a dealership can open it and it
+draws real rows or says honestly why it cannot. It does not mean the engine has
+been exercised by a dealership, and none of these has.** Read each line for
+which of the two it is.
+
+1. **Inventory Profit Sentinel** — `screens/inventory.js`, `screens/revenue.js`,
+   `screens/actions.js` over `rpc/sentinel_inventory_actions` and
+   `v_inventory_profit_sentinel`: **12 of 12 units**, real cost and days in
+   stock. The Action Center holds **3 real `inventory_actions` rows** with a
+   propose / decide / execute lane behind `SECURITY DEFINER` functions. This is
+   the strongest thing in the product. Its economics are gated: with no
+   configured holding rate the screen renders `NOT_COMPUTABLE`, never zero
+   (gate checks `L6`, `R4`, `S5`).
+2. **Lead Recovery** — `screens/lead-recovery.js` over `v_lead_recovery`:
+   **3 leads, queue = 0**. The mechanics render; there is nothing to recover.
+   Volume still arrives with the first dealership. One dependency is *broken,
+   not missing*: the 12-Hour Silence Detector last succeeded **26 Aug**, so
+   `silence_detector_state` reads `STALE` for every lead.
+3. **AI BDC** — live and proven end to end on a real inbound WhatsApp message
+   (2 Sep). Still the one demoable path. `v_workflow_health` rates the workflow
+   `DEGRADED` at 42.4% over 290 runs; the successful path is real, the failure
+   rate is also real, and both should be said.
+4. **Revenue Attribution** — `screens/attribution.js` over
+   `v_attribution_edges`: **115 edges, 114 events** from the one real sale
+   forward. The chain grades its own hops rather than asserting them — the
+   VEHICLE hop on the single sale reads `UNKNOWN_TEXT_ONLY` and its margin
+   `NOT_COMPUTABLE`, because nothing links `purchase_history` to a unit. That
+   refusal is the feature.
+5. **Policy Engine** — `screens/policy.js` over `v_policy_rule`: **7 rules, and
+   `0` of them `VERIFIED`**, with 21 hard-coded constants still unmigrated.
+   **So the rule this document sets — "a customer-facing regulatory claim
+   requires a verified policy row" — currently forbids every regulatory claim.**
+   The engine is built; the evidence is not in it yet.
+6. **Deal Rescue** — `screens/deal-rescue.js`. **`v_deal_rescue` returns 0 rows
+   and always will until a deal record exists.** This is deliberate and it is
+   handled honestly rather than hidden: the screen reads
+   `v_deal_rescue_readiness`, nine named prerequisites each carrying what it
+   unlocks, why it is not merely code, and what was measured — six of them
+   schema or integration gaps, one (`SILENCE_DETECTOR_RESUMED`) a paused
+   workflow, one deliberately not built. **Do not demo Deal Rescue as a working
+   engine. Demo it as the product refusing to invent a pipeline**, which is a
+   different and more sellable thing.
+7. **Executive Copilot.** Still to do. "What needs my attention today?" over the
+   above. It must show only what it can evidence — an honest three-item list
+   beats a fabricated seven-item one.
 
 ### Next — needs one integration each, not a rebuild
 
-Deal Rescue (needs deal stages and appointments), Trade-In Mining (needs
-ownership duration and finance maturity), Competitor pricing depth.
+**A deal record written at first commitment**, which is the single unlock for
+Deal Rescue and is named as `DEAL_RECORD` in `v_deal_rescue_readiness`;
+appointments (one integration, two engines — it also unlocks Lead Recovery's
+`APPOINTMENT_PENDING`); a lender decision on `finance_quotes`; a hard
+unit/VIN link from `purchase_history` to `inventory`, which turns "a deal is at
+risk" into "AED N of margin is at risk". Then Trade-In Mining (needs ownership
+duration and finance maturity) and competitor pricing that actually returns a
+price.
 
 ### Later — needs a system NEXUS does not talk to yet
 
