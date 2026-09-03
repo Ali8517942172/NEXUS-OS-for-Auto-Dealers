@@ -29,6 +29,15 @@
  *      rewrites *in place* under `--refresh-schema`. Nothing in this file is a
  *      hand-maintained list of what the database contains.
  *
+ *      There is exactly one hand-written list left, `L2_EXEMPT_TABLES`, and it
+ *      is not a counter-example: it does not describe what the database
+ *      contains, it records which deliberate deviations the owner has accepted.
+ *      That is a decision, and a decision must not be derived from the database
+ *      because the database is the thing under audit — derive it and anyone
+ *      with DDL can make a new open policy exempt itself. Read the note above
+ *      that map before touching it; each name is conjoined with a property
+ *      re-measured from the live catalogue on every run.
+ *
  *   2. It asserted `r.nav === 14`. lib/nav.js has fifteen entries since the
  *      Action Center landed. The screen list was a second hand-typed constant
  *      with the same problem and it was missing `actions`. Both are now parsed
@@ -779,11 +788,40 @@ select json_build_object(
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname='public' and c.relkind='v'
        and coalesce(array_to_string(c.reloptions,','),'') not ilike '%security_invoker%'),
+  /* Every fact L2's exemption conjunction reads is selected HERE, in the same
+     statement, from the catalogue. The exemption is a decision (a name in a map
+     in this file); the property that decision is conditional on is a
+     measurement, and a measurement must come from the database or it is a
+     belief. Drop one of these keys and L2 fails the named table rather than
+     passing it — an exemption that cannot be re-checked is not an exemption. */
   'open_policies', (select coalesce(json_agg(json_build_object(
-       'table', tablename, 'policy', policyname, 'roles', roles, 'cmd', cmd)),'[]'::json)
-     from pg_policies where schemaname='public'
-       and (coalesce(qual,'')='true' or coalesce(with_check,'')='true')
-       and array_to_string(roles,',') <> 'service_role'),
+       'table', p.tablename, 'policy', p.policyname, 'roles', p.roles, 'cmd', p.cmd,
+       'qual', p.qual, 'with_check', p.with_check,
+       'table_acl', coalesce(array_to_string(c.relacl, E'\\n'), '(owner-only)'),
+       'has_tenant_id', exists (select 1 from pg_attribute a
+            where a.attrelid = c.oid and a.attname = 'tenant_id'
+              and a.attnum > 0 and not a.attisdropped),
+       /* Is this table the tenant dimension itself? public.tenants has no
+          tenant_id column of its own, so "no tenant_id column" does NOT make a
+          table tenant-neutral. Measured 3 Sep 2026: 26 tenant_id foreign keys
+          point at public.tenants. Without this clause the shape test would call
+          the dealership register tenant-neutral. */
+       'tenant_fk_referent', exists (
+            select 1 from pg_constraint con
+              join pg_class lc on lc.oid = con.conrelid
+              join pg_namespace ln on ln.oid = lc.relnamespace and ln.nspname = 'public'
+             where con.contype = 'f' and con.confrelid = c.oid
+               and exists (select 1 from pg_attribute a2
+                            where a2.attrelid = con.conrelid
+                              and a2.attnum = any(con.conkey)
+                              and a2.attname = 'tenant_id'))
+     )),'[]'::json)
+     from pg_policies p
+     join pg_class c on c.relname = p.tablename
+     join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
+     where p.schemaname='public'
+       and (coalesce(p.qual,'')='true' or coalesce(p.with_check,'')='true')
+       and array_to_string(p.roles,',') <> 'service_role'),
   'sentinel', (select json_build_object(
        'units', count(*),
        'holding_cost_state', json_object_agg_unique_state(null)) from (select 1) z),
@@ -1876,6 +1914,182 @@ if (render.failed) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   L2's EXEMPTION MAP — twelve named deviations, each conditional on a property
+   ──────────────────────────────────────────────────────────────────────────
+   THIS IS THE ONE HAND-MAINTAINED LIST IN THIS FILE, AND IT IS DELIBERATE.
+   Everything else here is derived because everything else here DESCRIBES WHAT
+   THE DATABASE CONTAINS, and a hand-typed description of contents goes stale —
+   that is the defect this gate was rebuilt to end.
+
+   This list describes something else. It is not a description of contents; it
+   is a POLICY DECISION about which deliberate deviations from "no policy is
+   open to authenticated" the owner accepts. A policy decision must NOT be
+   derived from the database, because the database is the thing under audit.
+   Derive it and you get a check that cannot fail: anyone holding DDL writes
+   `USING (true)` on a new table and the table exempts itself, silently, with no
+   diff that mentions a grant or a policy. That is precisely the shape CLAUDE.md
+   records as having opened a hole three times.
+
+   So the exemption is a CONJUNCTION, and both halves must hold:
+
+       exempt  ⟺  the table is named below, WITH a written reason
+              ∧  the policy is SELECT only
+              ∧  neither anon nor PUBLIC is in its roles
+              ∧  the table has no tenant_id column
+              ∧  no tenant_id foreign key points AT the table
+              ∧  authenticated holds no write letter (a/w/d/D) on the table
+
+   The name is the decision. The five properties are the measurement, taken
+   from the live catalogue in the same statement that found the policy. A named
+   table that stops satisfying the property is a HARD FAILURE with its own
+   sentence saying what changed — never a silent pass. A table that satisfies
+   every property but is not named is a HARD FAILURE too: shape does not confer
+   exemption, only a person does.
+
+   Why the tenant_id-foreign-key clause is not redundant with the column clause:
+   public.tenants — the register of dealerships — has no tenant_id column of its
+   own. Measured 3 Sep 2026: 26 tenant_id foreign keys point at it. A property
+   rule built on "no tenant_id column" alone would call the dealership register
+   tenant-neutral and exempt it the day anyone widens its policy. Today
+   `tenants` never reaches this code because its policy is
+   `USING (id IN (nexus_current_tenant_ids()))`, which is not `true` — that is a
+   fact about the database this week, not a property of the check.
+
+   Matching is by EXACT NAME. The regex this replaced was
+   /reason_codes|workflow_registry/, a substring test, which would have silently
+   exempted a future `customer_reason_codes_pii`.
+
+   Each entry says what the table holds and why every signed-in member of every
+   dealership may read all of it. A reason that restates the table name is not a
+   reason and does not belong here.
+   ══════════════════════════════════════════════════════════════════════════ */
+const L2_EXEMPT_TABLES = {
+  attribution_edge_type:
+    'The revenue-attribution graph\'s own edge vocabulary: which node kind may link to which, in what state, on what basis, and which finding unlocks it. It is the engine\'s definition of its graph, shipped by migration and byte-identical at every dealership; no row names a customer, a unit or a price.',
+  attribution_event_type:
+    'The closed set of attribution events and the graph state each one implies. Shipped rows describing how NEXUS reasons, not anything a dealership did — reading all of it tells you about the product, not about a business.',
+  attribution_link_basis:
+    'The ranked evidence bases an attribution link may rest on, with each one\'s default confidence and label. This is the rule the engine applies before it will call money attributed; the Attribution screen has to read it to explain a link to an operator, and it is the same rule for everyone.',
+  deal_rescue_evidence_sources:
+    'What Deal Rescue is permitted to treat as evidence, and the tier each source carries. A statement of what the engine is allowed to believe — a product decision, not dealership data.',
+  deal_rescue_prerequisites:
+    'The integrations Deal Rescue is blocked on, what each would unlock, and why the gap is not a coding problem. The screen renders this so it says "blocked on a service feed" instead of showing an empty engine and implying a capability that does not exist. Identical for every dealership because it describes NEXUS.',
+  deal_rescue_states:
+    'The Deal Rescue state machine: each state, what it means, whether the engine can produce it today, and what blocks it. Publishing it to signed-in staff is the point — it is how an operator learns a state is unreachable rather than merely empty.',
+  inventory_action_reason_codes:
+    'The closed set of reason codes an operator must pick from when approving, rejecting or deferring an inventory action, including whether each one means the engine was wrong. The decision form cannot be drawn without reading it, and the set is enumerated by migration, never entered by a dealership.',
+  lead_recovery_reason_codes:
+    'The same closed decision vocabulary for lead-recovery actions. Enumerated by migration; a dealership cannot add to it, so there is no per-dealership version of it to leak.',
+  lead_recovery_states:
+    'The Lead Recovery state machine and what each state requires before the engine may produce it. Read by the screen to explain why a state is unavailable; shipped rows, same everywhere.',
+  policy_rule_type:
+    'The enumerated kinds of policy rule the policy engine understands (APR ceiling, LTV cap and so on) with their labels. It is the engine\'s vocabulary. A dealership\'s actual rule VALUES live in policy_rule, which carries tenant_id, is tenant-scoped, and is not exempt here.',
+  policy_unit:
+    'The units a policy rule value may be expressed in — percent, months, AED — and the value kind each implies. A measurement vocabulary; there is no dealership-specific version of a percent.',
+  policy_unmigrated_constant:
+    'The register of finance constants still hard-coded in the codebase and not yet governed by policy_rule, with the file and snippet each was found in and whether it can reach a customer. It is an honesty list about NEXUS\'s own unfinished migration — source-code facts, not dealership facts — and it is deliberately visible to staff so nobody reports a governed number that is not.',
+};
+
+/* Tables that LOOK exempt and are not. A failure line for one of these carries
+   the reason, so the next reader closes L2 by fixing the database rather than
+   by adding a name to the map above. */
+const L2_NOT_EXEMPT_NOTES = {
+  workflow_registry:
+    'deliberately NOT exempt. It holds this box\'s real n8n workflow ids, names, trigger detail and is_active flags — which automations a dealership runs, and which are switched off, is that dealership\'s operational configuration, not shipped vocabulary. It passes the shape test only because it lacks tenant_id, and it lacks tenant_id only because there is exactly one dealership. Giving it a tenant_id and a scoped policy is a BLOCKER for onboarding a second dealership; leaving L2 red is how that stays visible instead of being quietly absorbed into an exemption list.',
+};
+
+/* Write letters, per the table in CLAUDE.md. `D` is TRUNCATE and RLS does not
+   filter it, so a policy is irrelevant to it — which is exactly why the grant,
+   not the policy, decides whether a USING(true) read policy is survivable. */
+const L2_WRITE_LETTERS = { a: 'INSERT', w: 'UPDATE', d: 'DELETE', D: 'TRUNCATE (which no policy filters)' };
+
+/* Privileges an authenticated caller actually holds on a table, read from its
+   relacl. The union of the `authenticated=` entry AND the PUBLIC entry — whose
+   grantee is the empty string, and which every signed-in role inherits. A check
+   that greps only for the role name reports "no write grant" on a table carrying
+   `=arwd/postgres`. Returns null when there is no ACL evidence at all, which is
+   not the same as "no privileges" and must not be read as one. */
+function l2AuthenticatedAclLetters(acl) {
+  if (typeof acl !== 'string' || !acl.trim()) return null;
+  let letters = '';
+  for (const raw of acl.split(/[\n|]/)) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    const eq = entry.indexOf('=');
+    if (eq < 0) continue;                       // e.g. the "(owner-only)" placeholder
+    const grantee = entry.slice(0, eq).trim();
+    if (grantee !== '' && grantee !== 'authenticated') continue;
+    letters += entry.slice(eq + 1).split('/')[0];
+  }
+  return letters;
+}
+
+/* Decide one open policy. Returns {exempt:true} only when the table is named
+   AND every property still holds on evidence present in this catalogue.
+   Otherwise returns the sentence L2 fails on. */
+function l2PolicyVerdict(p, relations) {
+  const table = String(p && p.table || '');
+  const policy = String(p && p.policy || '(unnamed policy)');
+  const named = Object.prototype.hasOwnProperty.call(L2_EXEMPT_TABLES, table);
+
+  const cmd = p && p.cmd != null ? String(p.cmd).toUpperCase() : null;
+  const roles = p && p.roles != null
+    ? (Array.isArray(p.roles) ? p.roles : String(p.roles).replace(/^\{|\}$/g, '').split(','))
+        .map(r => String(r).trim()).filter(Boolean)
+    : null;
+  const cols = relations && typeof relations[table] === 'string' ? String(relations[table]).split(',') : null;
+  const hasTenantId = typeof (p && p.has_tenant_id) === 'boolean' ? p.has_tenant_id
+    : (cols ? cols.includes('tenant_id') : null);
+  const fkReferent = typeof (p && p.tenant_fk_referent) === 'boolean' ? p.tenant_fk_referent : null;
+  const aclLetters = l2AuthenticatedAclLetters(p && p.table_acl);
+  const wideRoles = roles ? roles.filter(r => r === 'anon' || r.toLowerCase() === 'public') : [];
+  const writes = aclLetters === null ? [] : [...aclLetters].filter(ch => L2_WRITE_LETTERS[ch]);
+
+  if (!named) {
+    /* The ordinary failure: an open policy nobody has accepted. Say what is
+       true about the table so the reader can judge the severity, and say
+       plainly that having the right shape is not an exemption. */
+    let line = `${table}/${policy}: ${cmd || '(cmd unknown)'} USING(true) for ${roles ? roles.join(',') : '(roles unknown)'}`;
+    line += hasTenantId === true
+      ? ' — and this table HAS a tenant_id column, so a USING(true) policy on it crosses dealerships'
+      : hasTenantId === false ? ' — the table carries no tenant_id column' : ' — whether it has a tenant_id column is not in this catalogue';
+    if (fkReferent === true) line += ' — AND a tenant_id foreign key points at it, so it is the tenant dimension itself';
+    if (wideRoles.length) line += ` — AND ${wideRoles.join(' and ')} is in its roles`;
+    if (writes.length) line += ` — AND authenticated holds ${writes.map(ch => L2_WRITE_LETTERS[ch]).join(', ')} on the table`;
+    if (L2_NOT_EXEMPT_NOTES[table]) line += ` — ${L2_NOT_EXEMPT_NOTES[table]}`;
+    else if (cmd === 'SELECT' && !wideRoles.length && hasTenantId === false && fkReferent === false && !writes.length)
+      line += ' — it satisfies every property an exemption requires, and it is still a failure: the exemption map is a decision a person makes, not a shape a table can adopt. If this deviation is accepted, add it BY NAME with a written reason; if it is not, scope the policy.';
+    return { exempt: false, line };
+  }
+
+  /* Named. The decision stands only while the measurement does. */
+  const unknown = [];
+  if (cmd === null) unknown.push('this catalogue carries no cmd for the policy');
+  if (roles === null) unknown.push('this catalogue carries no roles for the policy');
+  if (hasTenantId === null) unknown.push('nothing in this catalogue says whether the table has a tenant_id column');
+  if (fkReferent === null) unknown.push('nothing in this catalogue says whether a tenant_id foreign key points at the table');
+  if (aclLetters === null) unknown.push('this catalogue carries no ACL for the table, so what authenticated may write to it is unknown');
+  if (unknown.length) return { exempt: false, line:
+    `${table}/${policy}: exempt by name, but this catalogue cannot show the exemption still holds — ${unknown.join('; ')}. An exemption that cannot be re-checked is not an exemption, and a P0 must not pass on absent evidence. Re-dump the catalogue with the SQL --print-sql emits.` };
+
+  const broke = [];
+  if (cmd !== 'SELECT') broke.push(
+    `exempt by name, but its policy is now FOR ${cmd} — the exemption was granted to a read-only policy, and USING(true) FOR ${cmd} lets any signed-in user of any dealership ${cmd === 'ALL' ? 'INSERT, UPDATE and DELETE these rows' : `run ${cmd} against every row`}`);
+  if (wideRoles.length) broke.push(
+    `exempt by name, but ${wideRoles.join(' and ')} is now in its roles — the exemption was granted to a policy only signed-in staff could use, and ${wideRoles.includes('anon') ? 'anon is the unauthenticated public internet' : 'PUBLIC includes anon'}`);
+  if (hasTenantId) broke.push(
+    'exempt by name, but the table now HAS a tenant_id column — it holds per-dealership rows, and USING(true) hands every dealership\'s rows to every signed-in user of every other dealership');
+  if (fkReferent) broke.push(
+    'exempt by name, but a tenant_id foreign key now points AT this table — it has become the tenant dimension, and reading all of it is reading the list of dealerships');
+  if (writes.length) broke.push(
+    `exempt by name, but authenticated now holds ${writes.map(ch => L2_WRITE_LETTERS[ch]).join(', ')} on the table (ACL "${String(p.table_acl).replace(/\n/g, ' | ')}") — the exemption was granted to a read-only grant`);
+
+  if (broke.length) return { exempt: false, line:
+    `${table}/${policy}: ${broke.join('; AND ')}. The name stays in L2_EXEMPT_TABLES only while the property holds. It no longer does, so this is a failure, not a pass — either restore the property or delete the name and accept the finding.` };
+  return { exempt: true, line: null };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    LANE 3 — LIVE DATABASE
    These are the checks a stubbed browser structurally cannot make. Tenant
    isolation, EXECUTE grants and the state machine live in Postgres; a stub
@@ -1910,17 +2124,32 @@ if (!live.cat) {
     verdict('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1], bad.length ? bad.concat(['run --refresh-schema; a snapshot that drifts is how this gate started producing false failures']) : [],
       [`${Object.keys(c.relations).length} relations, identical to the snapshot taken ${SNAPSHOT.takenAt}`]);
   }
-  /* L2 */ verdict('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1],
-    (c.tables_no_rls || []).map(t => `${t}: RLS is off`).concat(
-      (c.open_policies || []).filter(p => !/reason_codes|workflow_registry/.test(p.table))
-        .map(p => `${p.table}/${p.policy}: ${p.cmd} USING(true) for ${p.roles}`
-          + ((RELATIONS[p.table] || []).includes('tenant_id')
-             ? ' — and this table HAS a tenant_id column, so a USING(true) policy on it crosses dealerships'
-             : ' — the table carries no tenant_id column')
-          + (String(p.roles || '').includes('anon') ? ' — AND anon is in its roles' : ''))),
-    [`${(c.tables_no_rls || []).length} tables without RLS`,
-     `${(c.open_policies || []).length} USING(true) policies exist in public; the ones this check does not fail on are exempted by NAME (/reason_codes|workflow_registry/), not by any property of the table`,
-     'That name list is the last hand-maintained list of database contents left in this file, and it is the shape this gate was rebuilt to end. It went stale the day the lead-recovery, deal-rescue, attribution and policy engines shipped their vocabulary tables. Replacing it with the property that actually makes such a policy safe — SELECT only, anon not in roles, no tenant_id column on the table, and no write letters in the role grant — is a decision for the owner, not a change to slip in beside a failing run.']);
+  /* L2 · arm 1 is RLS presence, arm 2 is open policies. Arm 2 exempts only
+     what is NAMED in L2_EXEMPT_TABLES and still MEASURES as safe; see the long
+     note beside that map for why the name is hand-written on purpose and the
+     property is not. */
+  {
+    const pols = c.open_policies || [];
+    const failures = [];
+    const exempted = [];
+    for (const p of pols) {
+      const v = l2PolicyVerdict(p, c.relations);
+      if (v.exempt) exempted.push(String(p.table));
+      else failures.push(v.line);
+    }
+    const stale = Object.keys(L2_EXEMPT_TABLES).filter(n => !pols.some(p => String(p.table) === n));
+    verdict('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1],
+      (c.tables_no_rls || []).map(t => `${t}: RLS is off`).concat(failures),
+      [`${(c.tables_no_rls || []).length} tables without RLS`,
+       `${pols.length} policies in public are USING(true) or WITH CHECK(true) for a role other than service_role; ${exempted.length} are exempt and ${failures.length} are not`,
+       exempted.length
+         ? `exempt, each by NAME and each re-measured against this catalogue as SELECT-only, no anon or PUBLIC in its roles, no tenant_id column, not the referent of any tenant_id foreign key, and no INSERT/UPDATE/DELETE/TRUNCATE letter for authenticated: ${exempted.sort().join(', ')}`
+         : 'no policy was exempted',
+       'The exemption list is hand-written in this file ON PURPOSE, and it is the one list here that should be. Every other list in this gate describes what the database CONTAINS, which goes stale and must be derived. This one records which deliberate deviations the owner accepts — a decision, not a description — and a decision must not be derived from the database, because the database is the thing under audit. Derive it and the check cannot fail: anyone with DDL writes USING(true) on a new table and it exempts itself, with no diff that mentions a grant or a policy. So the name is written down, matched exactly rather than by substring, and it only counts while the five properties above still measure true; when one stops, the table fails with a sentence naming what changed.']);
+    if (stale.length) WARN('L2b', LANE.LIVE, 'P1', 'A name in the L2 exemption map no longer matches any open policy',
+      stale.map(n => `${n}: named as an accepted deviation, but no USING(true) policy on it exists in this catalogue — either its policy was scoped (good: delete the name) or the table is gone`).concat([
+        'Not exposure — an exemption that exempts nothing cannot open anything. It is rot, and rot in this map is how the old regex came to exempt three tables nobody had thought about since the engines shipped.']));
+  }
   /* L3 */ verdict('L3', LANE.LIVE, 'P0', LIVE_CHECKS[2][1],
     (c.views_no_invoker || []).map(v => `${v}: no security_invoker — RLS on its base tables is evaluated as the view owner`),
     ['every view in public carries security_invoker']);

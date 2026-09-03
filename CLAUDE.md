@@ -97,6 +97,17 @@ operational rather than structural:
   whichever dealership holds the flag. Harmless with one; wrong with two. Either
   point it at a quarantine tenant or convert the remaining omissions to explicit
   nulls.
+- **`workflow_registry` is readable by every signed-in user and is not
+  tenant-scoped.** Its policy is `SELECT USING (true)` for `authenticated`, and
+  the table has no `tenant_id` column — which is survivable only because there
+  is one dealership. It holds the real n8n workflow ids, names, trigger detail
+  and `is_active` flags, i.e. which automations a dealership runs and which are
+  switched off: operational configuration, not shipped vocabulary. Give it a
+  `tenant_id` and a scoped policy before onboarding a second dealership.
+  Measured and left failing on purpose: `QUALITY_GATE.mjs` check **L2** is red
+  on exactly this row, and `workflow_registry` is deliberately excluded from
+  `L2_EXEMPT_TABLES` so the finding stays visible instead of being absorbed
+  into an exemption list.
 
 `select * from public.nexus_tenancy_readiness();` is the live gate — but note
 its remaining BLOCKER fires whenever any tenant holds the default flag and
