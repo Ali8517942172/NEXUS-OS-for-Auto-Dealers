@@ -357,3 +357,47 @@ not see grants, and for a `security_invoker` view read it as `authenticated`
 - `architecture/schema.sql` — regenerated from the live catalogue; a
   transcription, not a replay, and it goes stale within days.
 - `DESIGN.md`, `README.md` — product and setup.
+
+## Across a patch transfer, compare trees — not commit ids
+
+3 Sep 2026. J1 reported that PR #5 and the container's branch "share no
+commits" — it had run `git cat-file -t` on all thirteen of PR #5's commit ids
+and found none locally. That reading nearly caused an unnecessary branch
+surgery, and it was wrong.
+
+`git am` writes new commit objects for identical content: new author date, new
+parent, therefore a new SHA. Across a patch-transfer boundary a SHA comparison
+can only ever report "no shared commits", whatever the contents are. It is
+evidence of nothing.
+
+The test that settles it is `git rev-parse <ref>^{tree}`. Container `0905195`
+and Ali's `cef1bf0` both hashed to `91eb1463…` — the same work, transferred by
+patch. After applying the five missing commits, container `cfa679a` and clone
+`e907338` both hashed to `8519be3a…`.
+
+So: **a SHA mismatch across a patch transfer is the expected outcome. Compare
+`^{tree}` before concluding two chains diverged.**
+
+## Ali's clone, and why the push cannot happen from here
+
+The working copy is `C:\Users\user\Desktop\MY RESUMES\nexus-os`. It is inside a
+connected folder, so `device_bash` can run git in it directly — no staging.
+
+Two things block pushing from this session, and neither is fixable from here:
+
+- The cloud container is not in the session's authorized repository set. The
+  git proxy refuses to inject a credential (HTTP 403).
+- The clone's `credential.helper` is `manager` — Windows Credential Manager,
+  which does not exist in the Linux VM the device shell runs in.
+
+So the pattern is: apply and verify in the clone via `device_bash`, then hand
+Ali one `git push` to run in PowerShell. Give him the real path — a literal
+`<your repo>` placeholder is a PowerShell parse error, and he has hit it.
+
+**`git am` stalling in the device shell is a permissions symptom, not a
+conflict.** git cannot unlink its own `.git/*.lock` files there, so the apply
+dies halfway and leaves the repository mid-`am`. Call
+`device_request_delete_permission` on the Desktop folder, `git am --abort`,
+then re-run clean. Do not try to nurse a half-applied `am` forward with `mv`
+tricks — the counter in `.git/rebase-apply` stops advancing and it re-applies
+the same commit forever.
