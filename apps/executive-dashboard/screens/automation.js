@@ -199,16 +199,26 @@ const UNKNOWN_HEALTH = {
   detail: 'v_workflow_health returned a health state that neither this screen nor lib/health.js knows how to describe. It is shown verbatim rather than folded into one of the states it might mean.',
 };
 
-/* pill() in lib/format.js attaches "This dashboard has no wording for that
-   status" to anything it renders in the unknown tone. On this screen that
-   sentence is false — lib/health.js has wording for every outcome and every
-   health value, including the neutral ones — and the 31 Aug audit caught the
-   result: a grey pill claiming no wording exists, two lines above the sentence
-   that gives it. So a pill whose words come from the canonical layer is built
-   here, in the markup pill() emits, carrying that layer's own sentence as its
-   title. Everything else on the screen still goes through pill(). */
+/* A pill whose words come from the canonical layer (lib/health.js), carrying
+   that layer's own sentence as its hover text.
+
+   This used to re-emit pill()'s markup by hand, for one reason: pill() attached
+   "This dashboard has no wording for that status" to anything it rendered in
+   the unknown tone, and on these labels that sentence is false — lib/health.js
+   has wording for every outcome and every health value, including the neutral
+   ones. The 31 Aug audit caught the result: a grey pill claiming no wording
+   exists, two lines above the sentence that gives it.
+
+   pill() now takes `{ verbatim: false }` for exactly that, so the markup is the
+   shared helper's again and only the difference is left here: pill() can attach
+   no title but its own, and these need the canonical blurb. That is carried on
+   a wrapper, which is how overview.js, settings.js and ask.js already do it.
+   `verbatim: false` is right even where `label` is a health word straight off
+   the view: the wrapper is already saying where it came from, in words written
+   for this case, and pill()'s generic sentence would only cover that up. */
 const wordPill = (label, tone, why) =>
-  `<span class="pill ${esc(tone || '')}"${why ? ` title="${esc(why)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
+  (why ? `<span title="${esc(why)}">${pill(label, tone, { verbatim: false })}</span>`
+       : pill(label, tone, { verbatim: false }));
 
 /* One logged run's outcome, in the canonical layer's words, with the raw status
    the writer actually wrote kept beside it rather than replaced by it. Both
@@ -1306,8 +1316,8 @@ SCREENS.automation = async host => {
         <div style="flex:1;min-width:0">
           <div class="wf-head">
             <span style="font-weight:500">${esc(w.name || 'Unnamed workflow')}</span>
-            ${pill(v.label, v.tone || undefined)}
-            ${w.is_active === false ? pill('Inactive', 'warm') : ''}
+            ${pill(v.label, v.tone || undefined, { verbatim: false })}
+            ${w.is_active === false ? pill('Inactive', 'warm', { verbatim: false }) : ''}
             ${(() => {
               const chg = scheduleChange(w);
               /* Three different things the chip can be saying, and the stale one
@@ -1408,7 +1418,7 @@ SCREENS.automation = async host => {
 
     healthCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Workflow health by category</div>
-        <div class="card-sub">This list is <span class="mono">workflow_registry</span>, which records the dealership's automations; the n8n instance also carries the three published workflows that only serve NEXUS's public home, privacy and terms pages, so a count taken in n8n is larger than the count here and is labelled where those pages are registered. Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
+        <div class="card-sub">This list is <span class="mono">workflow_registry</span>, which records the automations NEXUS runs — the register is the platform's and is the same catalogue for every dealership on it, because one n8n instance serves them all. The run figures beside each row are not: every one of them is counted from <span class="mono">audit_log</span>, which is scoped to this dealership, so a workflow reading “never logged a run” here has never run <em>for this dealership</em> and may be busy for another. The n8n instance also carries the three published workflows that only serve NEXUS's public home, privacy and terms pages, so a count taken in n8n is larger than the count here and is labelled where those pages are registered. Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
@@ -1471,7 +1481,7 @@ SCREENS.automation = async host => {
           <div class="wf-head">
             <span style="font-weight:500">${esc(w.name || 'Unnamed workflow')}</span>
             ${wordPill(healthLabel(w), h.tone, h.detail)}
-            ${w.is_active === false ? pill('Inactive', 'warm') : ''}
+            ${w.is_active === false ? pill('Inactive', 'warm', { verbatim: false }) : ''}
             <span class="chip">${esc(w.trigger_type || 'trigger not recorded')}${w.trigger_detail ? ' · ' + esc(w.trigger_detail) : ''}</span>
             ${ceilingChip(w)}
           </div>
@@ -1562,7 +1572,7 @@ SCREENS.automation = async host => {
         const cr = successRate(catSum('successes_30d'), catEff);
         return `<div class="toolbar" style="background:var(--surface-sunken)">
             <div class="label-caps" style="flex:1">${esc(cat)}</div>
-            ${catBad.length ? pill(`${catBad.length} need${catBad.length === 1 ? 's' : ''} attention`, 'hot') : ''}
+            ${catBad.length ? pill(`${catBad.length} need${catBad.length === 1 ? 's' : ''} attention`, 'hot', { verbatim: false }) : ''}
             <span class="cell-sub">${list.length} workflow${list.length === 1 ? '' : 's'}${
               catRuns
                 ? ` · ${num(catRuns)} run${catRuns === 1 ? '' : 's'} in 30 days · ${
@@ -1660,8 +1670,8 @@ SCREENS.automation = async host => {
           <div class="label-caps">Health</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${wordPill(healthLabel(w), h.tone, h.detail)}
-            ${w.is_active === false ? pill('Inactive', 'warm') : pill('Active', 'ok')}
-            ${w.writes_audit_log ? '' : (answers ? pill('Answers the caller', 'cold') : pill('No audit node', 'warm'))}
+            ${w.is_active === false ? pill('Inactive', 'warm', { verbatim: false }) : pill('Active', 'ok', { verbatim: false })}
+            ${w.writes_audit_log ? '' : (answers ? pill('Answers the caller', 'cold', { verbatim: false }) : pill('No audit node', 'warm', { verbatim: false }))}
           </div>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(h.detail)}</div>
           ${answers ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">It replies with <span class="mono">${esc(answers.answer)}</span>. ${esc(answers.line)}</div>` : ''}
@@ -1673,7 +1683,7 @@ SCREENS.automation = async host => {
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
             ${/* Neither of these is a fault, so neither is coloured as one — the
                  words carry the difference. */ ''}
-            ${exempt ? pill(exempt.chip, 'cold') : pill(`${CEILING_SECONDS / 60} minutes`, 'cold')}
+            ${exempt ? pill(exempt.chip, 'cold', { verbatim: false }) : pill(`${CEILING_SECONDS / 60} minutes`, 'cold', { verbatim: false })}
           </div>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(exempt ? exempt.why : CEILING.why)}</div>
           ${exempt ? '' : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(CEILING.onTimeout)}</div>`}
@@ -1683,7 +1693,7 @@ SCREENS.automation = async host => {
         ${sched ? `<div class="section">
           <div class="label-caps">Schedule</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            ${pill(SCHED[sched.state].label, SCHED[sched.state].tone || undefined)}
+            ${pill(SCHED[sched.state].label, SCHED[sched.state].tone || undefined, { verbatim: false })}
             <span class="chip">${esc(sched.c.kind === 'cron' ? `cron ${sched.c.expr}` : sched.c.expr)}</span>
             <span class="chip">every ${esc(fmtHours(sched.c.hours))}</span>
             <span class="chip">late after ${esc(fmtHours(sched.c.allowance))}</span>
@@ -1779,7 +1789,7 @@ SCREENS.automation = async host => {
                     <span class="tl-dot" style="background:var(--${runDot(a)})"></span>
                     <div class="tl-body">
                       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                        ${a.status ? outcomePill(a) : pill('No status written', 'unknown')}
+                        ${a.status ? outcomePill(a) : pill('No status written', 'unknown', { verbatim: false })}
                         <span class="cell-sub">${esc(ago(a.logged_at))}</span>
                         ${a.lead_name ? `<span class="chip">${esc(a.lead_name)}</span>` : ''}
                       </div>
@@ -2125,7 +2135,7 @@ SCREENS.automation = async host => {
         <div class="section">
           <div class="label-caps">Outcome</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            ${a.status ? outcomePill(a) : pill('No status written', 'unknown')}
+            ${a.status ? outcomePill(a) : pill('No status written', 'unknown', { verbatim: false })}
             ${a.intent ? `<span class="chip">${esc(a.intent)}</span>` : ''}
           </div>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${

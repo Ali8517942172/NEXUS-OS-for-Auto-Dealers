@@ -1171,8 +1171,8 @@ SCREENS.settings = async host => {
     if (tally) {
       const n = durable.length + mine.length;
       tally.innerHTML = n
-        ? pill(`${n} need${n === 1 ? 's' : ''} attention`, durable.some(a => a.sev === 'CRITICAL') ? 'hot' : 'warm')
-        : (s ? pill('clear', 'ok') : '');
+        ? pill(`${n} need${n === 1 ? 's' : ''} attention`, durable.some(a => a.sev === 'CRITICAL') ? 'hot' : 'warm', { verbatim: false })
+        : (s ? pill('clear', 'ok', { verbatim: false }) : '');
     }
 
     const viewRows = mine.map(it => {
@@ -1181,7 +1181,7 @@ SCREENS.settings = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px">${esc(KIND_ICON[it.kind] || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${sev ? pill(sev, sevTone(sev)) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+            ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
           </div>
           <div class="cell-sub">${esc(str(it.detail))}</div>
@@ -1197,7 +1197,7 @@ SCREENS.settings = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(a.sev) || 'muted')}" style="font-size:20px">${esc(a.icon)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(a.sev, sevTone(a.sev))}${esc(a.title)}
+            ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
           </div>
           <div class="cell-sub">${a.detail}</div>
           ${a.foot ? `<div class="cell-sub t-muted">${a.foot}</div>` : ''}
@@ -1399,7 +1399,7 @@ SCREENS.settings = async host => {
           'No output is not Degraded and is not a milder version of it. Those workflows are not failing: n8n completes the run, no error is raised, and every screen that counted only failures called them clean. They simply produce nothing — Competitor Price Scraping held a green “Clean, 30 d · 100.0%” pill for a month while 84 of its 96 runs returned no price.',
           'Not logged is not a pass. Those workflows have no Audit Log node, so nothing they do reaches audit_log; they are left uncoloured because this dashboard has no evidence either way, and colouring them green would manufacture some.',
           'No runs yet is the same kind of absence: registered to log, never logged, never observed working.',
-          'This list is the automation register. The n8n instance also carries the three published workflows that serve NEXUS’s public home, privacy and terms pages — Google requires all three before an OAuth consent screen can go to production, and it rejects vercel.app as a public suffix — so a count taken in n8n is larger than the count here. Where one of those pages is registered it is labelled "web page" and left out of the not-logged count: a page that logs nothing is not a blind spot.',
+          'This list is the automation register, and the register is the platform’s: one n8n instance serves every dealership, so the same workflows are listed for all of them. Every count beside them is this dealership’s alone, read from audit_log — “no runs yet” means none for this dealership. The n8n instance also carries the three published workflows that serve NEXUS’s public home, privacy and terms pages — Google requires all three before an OAuth consent screen can go to production, and it rejects vercel.app as a public suffix — so a count taken in n8n is larger than the count here. Where one of those pages is registered it is labelled "web page" and left out of the not-logged count: a page that logs nothing is not a blind spot.',
           rows.length >= HEALTH_LIMIT ? `The read is capped at ${num(HEALTH_LIMIT)} workflows and hit the cap, so this is a window rather than the whole register.` : '',
           s.failsErr ? `Failure detail is unavailable (${s.failsErr}), so a workflow's drawer shows its counts but not the text of what went wrong.` : '',
         ].filter(Boolean).map(esc).join('<br>')}</div>
@@ -1428,7 +1428,7 @@ SCREENS.settings = async host => {
               : ' · <span class="t-muted" title="n8n will run this workflow. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
         { label: 'State', render: w => {
           const h = healthOf(w);
-          return `<span title="${esc(h.blurb)}">${pill(h.label, h.t)}</span>${
+          return `<span title="${esc(h.blurb)}">${pill(h.label, h.t, { verbatim: false })}</span>${
             stateKey(w) === 'UNKNOWN' ? `<div class="cell-sub mono">${esc(str(w.health) || 'null')}</div>` : ''}`;
         } },
         { label: 'Runs 30 d', align: 'r', render: w => {
@@ -1498,7 +1498,7 @@ SCREENS.settings = async host => {
         </div>
         <div class="drawer-body">
           <div class="section">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${pill(h.label, h.t)}
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${pill(h.label, h.t, { verbatim: false })}
               ${w.is_active === false
                 ? '<span class="chip" title="No live webhook in n8n. Anything posting to it gets a 404.">Inactive</span>'
                 : '<span class="chip" title="n8n will run this workflow. It is not a statement about whether the run succeeds.">Active in n8n</span>'}
@@ -1555,7 +1555,7 @@ SCREENS.settings = async host => {
                        place allowed to make that call. */
                     const o = outcomeWords(outcomeOf(f));
                     return `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span title="${esc(o.blurb)}">${pill(o.label, o.tone)}</span>
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span title="${esc(o.blurb)}">${pill(o.label, o.tone, { verbatim: false })}</span>
                       <span class="cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</span></div>
                     <div class="cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The run logged no summary text.')}</div>
                   </div>`;
@@ -1607,7 +1607,7 @@ SCREENS.settings = async host => {
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%">
           <span class="material-symbols-outlined t-hot" style="font-size:20px">key_off</span>
           <span style="font-weight:500">${esc(g.display)}</span>
-          ${pill('CRITICAL', 'hot')}
+          ${pill('CRITICAL', 'hot', { verbatim: false })}
           <div style="flex:1"></div>
           <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
         </div>

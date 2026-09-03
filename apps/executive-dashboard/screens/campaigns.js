@@ -464,12 +464,24 @@ const SELF_STOPPING_NOTE =
    only: this screen can see a reply the gate cannot. That is the case where the
    sequence does NOT stop itself and SELF_STOPPING_NOTE would be wrong about it,
    which is why the divergence is printed rather than quietly enjoyed. */
+/* The worked example that used to close this sentence — "on 01 Sep 2026 that
+   bridge is the only thing attaching 17 of the 95 messages in
+   communication_logs to a lead at all — 2 of Ali's 29, 5 of Siva's 8, and all
+   10 of Effco's 10" — was three of THIS dealership's customers, by name, and
+   three counts of their messages, frozen into a string literal. It rendered on
+   every load of this screen for every signed-in user.
+
+   Multi-tenancy landed on 2 Sep 2026, and a hard-coded sentence is the one
+   thing RLS cannot scope: the second dealership on this database would read
+   the first one's customer names in their own alert strip, above counts of
+   messages that are not theirs and do not match anything they can open. The
+   names are gone and the numbers with them — the divergence they illustrated
+   is a property of the two lookup rules and is true without them. */
 const GATE_BLIND_SPOT =
   'The gate builds its lookup from the lead\u2019s email plus the two WhatsApp key shapes it can derive from the phone number on '
   + 'the leads row, so a reply filed only under a @lid handle, or a lead with no phone number on it, is invisible to it. This screen '
   + 'is no longer blind to those rows: lib/identity.js bridges a @lid through the whatsapp_contacts / v_conversations row that ties '
-  + 'the handle to a phone number, and on 01 Sep 2026 that bridge is the only thing attaching 17 of the 95 messages in '
-  + 'communication_logs to a lead at all — 2 of Ali\u2019s 29, 5 of Siva\u2019s 8, and all 10 of Effco\u2019s 10. The two therefore '
+  + 'the handle to a phone number, and the gate has no step that does. The two therefore '
   + 'disagree in one direction: a reply counted here may be one the gate cannot see, and a sequence the gate will not stop.';
 
 /* n8n does not expose credential state to the browser directly. What the
@@ -1439,7 +1451,7 @@ SCREENS.campaigns = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px" aria-hidden="true">${esc(KIND_ICON[low(it.kind)] || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${sev ? pill(sev, sevTone(sev)) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+            ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
             <span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>
           </div>
@@ -1458,7 +1470,7 @@ SCREENS.campaigns = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(a.sev) || 'muted')}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(a.sev, sevTone(a.sev))}${esc(a.title)}
+            ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
             ${a.chip ? `<span class="chip">${esc(a.chip)}</span>` : ''}
           </div>
           <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
@@ -1543,16 +1555,16 @@ SCREENS.campaigns = async host => {
       kpi('Campaign audience', num(eligible.length),
         [
           muted(eligible.length
-            ? `${num(eligible.length)} of ${num(nLeads)} ${plural(nLeads, 'lead', 'leads')} in the database ${plural(eligible.length, 'is', 'are')} warm or cold with an email address`
+            ? `${num(eligible.length)} of ${num(nLeads)} ${plural(nLeads, 'lead', 'leads')} on this dealership\u2019s books ${plural(eligible.length, 'is', 'are')} warm or cold with an email address`
             : nLeads
-              ? `No lead in the database is warm or cold with an email address. By status the database holds ${statusMix}`
-              : 'There is no lead in the database at all'),
+              ? `No lead on this dealership\u2019s books is warm or cold with an email address. By status they are ${statusMix}`
+              : 'This dealership has no lead on its books at all'),
           unreachable.length
             ? warn(`${num(unreachable.length)} further warm or cold ${plural(unreachable.length, 'lead has', 'leads have')} no address the drip can send to`
                 + (synthEmailLeads.length ? `, ${num(synthEmailLeads.length)} of ${plural(synthEmailLeads.length, 'which carries', 'which carry')} a WhatsApp key in the email column` : ''))
             : '',
           nLeads === 1
-            ? warn('One lead in the database. A campaign audience of one person carries no rate, no segment and no comparison — see the panel below for what that rules out.')
+            ? warn('One lead on this dealership\u2019s books. A campaign audience of one person carries no rate, no segment and no comparison — see the panel below for what that rules out.')
             : '',
         ].filter(Boolean).join('<br>'),
         nLeads === 1 ? 't-warm' : ''),
@@ -1732,7 +1744,7 @@ SCREENS.campaigns = async host => {
          operator go and look the number up somewhere else. */
       { label:'Lead', strong:true, render: l => `${nameHtml(l.name)} <span class="t-muted">·</span> ${phoneHtml(l.phone, l)}
           <div class="cell-sub">${esc(str(l.email))}</div>` },
-      { label:'Status', render: l => pill(l.status || 'NEW') },
+      { label:'Status', render: l => pill(l.status || 'NEW', undefined, { verbatim: !!l.status }) },
       { label:'Interest', render: l => `<span class="t-2">${esc(l.vehicle_interest || '—')}</span>` },
       /* budget_aed is NULL for router-created leads. A zero here would understate
          the value of the people being nurtured, so it stays a dash. */
@@ -1743,7 +1755,7 @@ SCREENS.campaigns = async host => {
           const mine = sent.get(low(l.email));
           const bits = [];
           if (r) {
-            bits.push(`${pill('Enrolled', 'ok')} <span class="cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
+            bits.push(`${pill('Enrolled', 'ok', { verbatim: false })} <span class="cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
             if (r.replies.length) bits.push(`<div class="cell-sub t-warm">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
             if (r.judgeable && !r.sends.length) bits.push('<div class="cell-sub t-hot">Nothing sent on either channel since enrolment</div>');
             else if (r.judgeable && !r.mails.length) bits.push(`<div class="cell-sub t-warm">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
@@ -1788,11 +1800,11 @@ SCREENS.campaigns = async host => {
            condition a lead has to meet before it appears here. */
         : stateEmpty('No lead can be enrolled in the drip right now',
             nLeads
-              ? `The drip is addressed by email and nurtures warm and cold leads only. By status the database holds `
+              ? `The drip is addressed by email and nurtures warm and cold leads only. By status this dealership\u2019s leads are `
                 + `${statusMix}${unreachable.length ? `, and ${num(unreachable.length)} of the warm or cold ones ${plural(unreachable.length, 'has', 'have')} no address the drip can send to` : ''}. `
                 + 'A lead appears in this table when the router scores it WARM or COLD and carries a real email address — a synthesised '
                 + '+digits@whatsapp.lead key is not one, and a lead holding one is listed in the alert strip above rather than offered here.'
-              : 'There is no lead in the database at all. Leads arrive from the WhatsApp router and the web form; this table fills as soon as one is scored warm or cold with an email address on it.',
+              : 'This dealership has no lead on its books at all. Leads arrive from the WhatsApp router and the web form; this table fills as soon as one is scored warm or cold with an email address on it.',
             'campaign');
       wireRows(tableHost, rows, leadDrawer);
       tableHost.querySelectorAll('button[data-enrol]').forEach(b => b.addEventListener('click', ev => {
@@ -1842,7 +1854,7 @@ SCREENS.campaigns = async host => {
           <dt>Phone</dt><dd>${phoneHtml(lead.phone, lead)}</dd>
           <dt>Email</dt><dd>${esc(str(lead.email))}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
-          <dt>Status</dt><dd>${pill(lead.status || 'NEW')}</dd>
+          <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
           <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
         </dl>`,
         `<button class="btn primary" id="cpGo">${existing ? 'Enrol again' : 'Enrol this lead'}</button>
@@ -1901,7 +1913,7 @@ SCREENS.campaigns = async host => {
               <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-weight:500">${personLine(p)}</span>
-                  ${pill(r.last.status || 'Unknown')}
+                  ${pill(r.last.status || 'Unknown', undefined, { verbatim: !!r.last.status })}
                   ${r.replies.length ? `<span class="chip t-warm" title="This contact wrote back after being enrolled. The workflow's day-1/3/5/7 gates stop the sequence at its next step; what is outstanding is a reply from a person.">replied ${esc(ago(r.replies[0].created_at))}</span>` : ''}
                   ${r.failures ? `<span class="chip t-hot" title="Runs that failed outright or went out half-done, classified by lib/health.js. Sequences that stopped because the customer replied are excluded.">${num(r.failures)} failed</span>` : ''}
                   ${r.stops ? `<span class="chip" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
@@ -2008,7 +2020,7 @@ SCREENS.campaigns = async host => {
             const detail = stripMarker(c.message);
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
             <span class="mono t-muted" title="${esc(stamp(c.created_at))}">${clock(c.created_at)}</span>
-            ${marked ? pill('Internal marker', 'warm') : pill('Internal row', 'warm')}
+            ${marked ? pill('Internal marker', 'warm', { verbatim: false }) : pill('Internal row', 'warm', { verbatim: false })}
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">Unknown contact</span>'}</div>
               ${detail ? `<div class="cell-sub">${esc(detail)}</div>` : ''}
@@ -2035,7 +2047,7 @@ SCREENS.campaigns = async host => {
             const keyed = low(x.lead_email);
             return `<div class="list-item" data-key="run-${i}" style="cursor:default;align-items:flex-start">
             <span class="mono t-muted" title="${esc(stamp(x.logged_at))}">${clock(x.logged_at)}</span>
-            ${pill(x.status || 'Unknown')}
+            ${pill(x.status || 'Unknown', undefined, { verbatim: !!x.status })}
             ${(() => {
               /* The raw status stays, because it is what the row literally says.
                  Beside it, what lib/health.js makes of it — the two differ, and

@@ -73,8 +73,11 @@
 
      · purchase_history has NO column linking a deal to an inventory unit. Its
        columns are id, deal_id, customer_name, email, phone, vehicle, amount_aed,
-       purchase_date, created_at. `vehicle` is free text typed into the deal
-       form, so which unit was sold is unanswerable from this side.
+       purchase_date, created_at and — since 2 Sep 2026 — lead_id. `vehicle` is
+       free text typed into the deal form, so which unit was sold is
+       unanswerable from this side. lead_id links a deal to the PERSON, not to
+       the car, and closes none of this: it is a foreign key to leads(id), and
+       leads carries no inventory reference either.
      · inventory records NO sale date, and no reciprocal deal reference, so it is
        unanswerable from that side too.
 
@@ -1209,7 +1212,7 @@ SCREENS.deals = async host => {
       ${repeat.length
         ? `<div style="max-height:340px;overflow-y:auto">${repeat.slice(0, 25).map(g => `
             <div class="list-item" style="cursor:default">
-              <span class="pill vip"><span class="dot"></span>${num(g.n)} deals</span>
+              ${pill(num(g.n) + ' deals', 'vip', { verbatim: false })}
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500">${esc(g.name
                   /* A WhatsApp address is not a person's name. identity.js keeps
@@ -1300,18 +1303,41 @@ SCREENS.deals = async host => {
      form's optional Phone box filled in and also with it left empty — resolves
      back through identity.js to lead 35 and to no other lead.
 
-     What this CANNOT do is give the deal a RELATIONAL anchor, and the note
-     below says so rather than letting a handle pass for one. Re-probed live
-     today, purchase_history has nine columns — id, customer_name, email, phone,
-     vehicle, purchase_date, amount_aed, created_at, deal_id — and not one of
-     customer_id, lead_id, vehicle_id or conversation_id. There is no customers
-     table and no deals table in this database at all, and the only two foreign
-     keys in the entire public schema are leads.assigned_to_id and
-     kyc_documents.reviewed_by, neither of which touches a purchase. So a deal
-     recorded from this form is anchored on a contact key by construction, and
-     lead 35's row id — the one canonical customer id this database actually
-     has — cannot travel with it. That is a schema gap and a write-path gap; it
-     is stated on screen as the gap it is, and it is not closed from here. */
+     THE RELATIONAL ANCHOR NOW EXISTS, AND THIS PARAGRAPH SAID THE OPPOSITE
+     UNTIL 2 SEP 2026. What stood here — that purchase_history has nine columns
+     and "not one of customer_id, lead_id, vehicle_id or conversation_id", that
+     the lead's row id "cannot travel with" a sale, and that the gap "is not
+     closed from here" — is false as of migration inv002_purchase_history_lead_id.
+
+     Re-probed live today, against information_schema and pg_constraint rather
+     than against the repo: purchase_history has TEN columns — id, customer_name,
+     email, phone, vehicle, purchase_date, amount_aed, created_at, deal_id and
+     lead_id. lead_id is `integer` (matching leads.id, which is integer/serial,
+     not bigint), nullable, no default. It carries a real foreign key,
+     purchase_history_lead_id_fkey -> leads(id) ON DELETE SET NULL, which is now
+     the third FK in the public schema alongside leads.assigned_to_id and
+     kyc_documents.reviewed_by, and it is indexed by purchase_history_lead_id_idx.
+     lib/deal-form.js posts lead_id, and the two Closed-Won nodes carry it
+     through: `Format Deal Text` coerces it to an integer or null, and
+     `Record Purchase` names it in the body it POSTs.
+
+     WHAT IS STILL TRUE, and is the reason the contact-key work above is not
+     redundant. The id travels only when the picked lead's anchor still equals
+     the contact key in the Email box at save time: pick Ali, retype the
+     address, and deal-form drops the id rather than file it against a key it no
+     longer matches. A hand-typed deal — no lead picked — files no lead_id at
+     all. So NULL in that column means "provenance not recorded"; it never means
+     "no lead exists", and nothing on this screen may read it as an absence of a
+     customer. The contact key remains the anchor every deal carries, and the
+     lead id is the stronger link laid on top of it where it is known to agree.
+
+     STILL TRUE ALSO: there is no customers table and no deals table in this
+     database, so leads.id remains the one canonical customer id there is.
+
+     NOT PROVEN AT RUNTIME. This path is wired, not fired. purchase_history holds
+     0 rows live today and the Closed-Won workflow has zero executions ever
+     recorded, so no lead_id has ever actually been written by it. Nothing here
+     or on screen may describe the link as demonstrated. */
   const pickerRefused = [];
   let pickerByHandle = 0;
   const pickerLeads = (leads || []).map(l => {
@@ -1353,7 +1379,7 @@ SCREENS.deals = async host => {
         pickerByHandle
           ? `${num(pickerByHandle)} of the ${num(pickerLeads.length)} offered ${plural(pickerByHandle, 'has', 'have')} no email address on file and ${plural(pickerByHandle, 'is', 'are')} anchored on the WhatsApp address the workflows synthesise from the phone number.`
           : '',
-        'A deal recorded here is anchored on a contact key either way: <span class="mono">purchase_history</span> carries no customer_id, lead_id, vehicle_id or conversation_id column, and this database has no customers table and no deals table, so the lead\'s own row id cannot travel with the sale. That is a schema gap, not a setting on this form.',
+        'A deal recorded here is anchored on a contact key either way, and since 2 Sep 2026 it can also carry the lead\'s own row id: <span class="mono">purchase_history.lead_id</span> exists, with a foreign key to <span class="mono">leads(id)</span>. It is filed only while the lead you picked still matches the address in the Email box — retype that address and the id is dropped rather than attached to a key it no longer matches, and a deal typed in by hand files none at all. A blank <span class="mono">lead_id</span> therefore means the origin was not recorded; it never means no lead exists. No deal has been recorded through this path yet, so it is wired rather than proven.',
       ].filter(Boolean).join(' ');
 
   /* ── The deal list ─────────────────────────────────────────────────────── */
@@ -1450,7 +1476,7 @@ SCREENS.deals = async host => {
         } },
       { label: 'Vector memory', render: d => {
           if (vecErr) return `<span class="t-muted" title="deals_embeddings could not be read">Unknown</span>`;
-          if (vectorFor(d)) return pill('Embedded', 'ok');
+          if (vectorFor(d)) return pill('Embedded', 'ok', { verbatim: false });
           return `<span class="t-muted">${vecCapped ? 'Not in the rows read' : 'Not embedded'}</span>`;
         } },
     );
@@ -1621,11 +1647,21 @@ SCREENS.deals = async host => {
       const attrs = idx >= 0
         ? ` role="button" tabindex="0" data-jump="${idx}"`
         : ` style="cursor:default" title="${esc(a.noFocus || 'This alert is not about one row on this screen, so there is nothing here to open.')}"`;
+      /* The flag has to follow the `||`, because the two sides of it have
+         different provenance and pill()'s default gets both wrong here. With no
+         severity the label is ALERT — a word this file wrote, nowhere in any
+         column — and `t` is '' , so the default (`!t`) turned true and hung
+         "shown exactly as the database holds it" on our own noun. With a
+         severity the view invented, `t` is 'unknown' and truthy, so the default
+         turned false and dropped the note from the one label it was written
+         for. Every derived alert below is CRITICAL or WARNING and every one of
+         those is in TONE, so the note can only ever appear on a genuinely
+         unrecognised v_needs_attention.severity, which is exactly right. */
       return `<div class="list-item"${attrs}>
         <span class="material-symbols-outlined t-${t}" style="font-size:20px" aria-hidden="true">${esc(a.icon || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(str(a.severity) || 'ALERT', t)}<span>${esc(a.title)}</span>
+            ${pill(str(a.severity) || 'ALERT', t, { verbatim: !!str(a.severity) })}<span>${esc(a.title)}</span>
           </div>
           <div class="cell-sub" style="white-space:normal">${esc(a.detail)}</div>
           ${a.fix ? `<div class="cell-sub t-muted" style="white-space:normal;margin-top:4px">${esc(a.fix)}</div>` : ''}
@@ -1807,7 +1843,7 @@ SCREENS.deals = async host => {
           ? `<span class="mono">${esc(ref)}</span> <span class="t-muted">— inventory could not be read (${esc(invErr)}), so this reference could not be resolved.</span>`
           : !u
             ? `<span class="mono">${esc(ref)}</span> <span class="t-warm">— no inventory row has this id (the stock number) or VIN among the ${num(inv.length)} read${invCapped ? `, and that read was capped at ${num(INV_LIMIT)}` : ''}.</span>`
-            : `<span class="mono">${esc(unitLabel(u))}</span> ${pill(str(u.status) || 'No status', lower(u.status) === 'available' ? 'hot' : lower(u.status) === 'sold' ? 'ok' : 'warm')}
+            : `<span class="mono">${esc(unitLabel(u))}</span> ${pill(str(u.status) || 'No status', lower(u.status) === 'available' ? 'hot' : lower(u.status) === 'sold' ? 'ok' : 'warm', { verbatim: !!str(u.status) })}
                <div class="cell-sub">${lower(u.status) === 'available'
                  ? '<span class="t-hot">Still marked Available — it can be sold again.</span> '
                  : ''}<span class="t-muted">inventory records no sale date, so this car\'s time on the lot cannot be measured against the deal above. ${
@@ -1866,7 +1902,7 @@ SCREENS.deals = async host => {
           ${vecErr
             ? `<div class="cell-sub" style="margin-top:8px">deals_embeddings could not be read (${esc(vecErr)}), so whether this deal is embedded is unknown.</div>`
             : v
-              ? `<div style="margin-top:8px">${pill('Embedded', 'ok')}</div>
+              ? `<div style="margin-top:8px">${pill('Embedded', 'ok', { verbatim: false })}</div>
                  <div class="cell-sub mono" style="margin-top:8px">${esc(v.deal_id || 'no deal_id')}</div>
                  <div class="quote" style="margin-top:8px;white-space:pre-wrap">${esc(String(v.content || 'The vector row carries no content.'))}</div>
                  <div class="cell-sub" style="margin-top:8px">Embedded ${esc(ago(v.created_at))}</div>`

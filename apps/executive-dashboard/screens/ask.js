@@ -133,7 +133,7 @@
    fallback. `model` names whichever model replied and is printed; a silent
    drop to the backup tier is invisible from here and is stated as unknown
    rather than guessed at from a hard-coded ladder that would drift. */
-import { HOOK, db, n8n } from '../lib/data.js';
+import { HOOK, db, n8n, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
@@ -184,6 +184,7 @@ const PHONE_LOOKUPS = 6;
 const HISTORY = [];
 let SEQ = 0;
 
+
 /* ── Which render owns the screen ─────────────────────────────────────────
    HISTORY and SEQ are module state, which is the whole point: a question still
    in flight when the operator navigates away lands later, and turn ids stay
@@ -213,6 +214,29 @@ let ACTIVE = null;
 const repaint = e => { if (ACTIVE) ACTIVE.paint(e); };
 const rethread = () => { if (ACTIVE) ACTIVE.thread(); };
 const resync = () => { if (ACTIVE) { ACTIVE.sync(); ACTIVE.alerts(); } };
+
+/* None of the three may survive a change of who is signed in, and until
+   2 Sep 2026 all three did. Sign-out reloads the page, but an EXPIRED token
+   does not: lib/data.js paints the login card over the running app and a
+   successful sign-in from there re-boots in the same document, so HISTORY —
+   questions, and the RAG answers to them — was still here for whoever signed
+   in next.
+
+   That is the worst thing on this screen to leave behind. An Ask AI answer is
+   retrieved from `rag_documents` and quotes the dealership's own policy
+   material; carried into another dealership's session it is one dealership's
+   documents rendered inside another's, in a panel that looks exactly like their
+   own history. RLS never sees it, because nothing is read — it is already in
+   the page.
+
+   SEQ and ACTIVE go with it for the reasons the block above gives: a turn
+   counter left running has a new session's first question land in `#askE7`,
+   and an ACTIVE left pointing at the previous session's render hands it a late
+   answer to paint into a document it no longer owns.
+
+   Registered after the three are declared, not beside HISTORY, so the reset can
+   never read one of them before its initialiser has run. */
+onIdentityChange(() => { HISTORY.length = 0; SEQ = 0; ACTIVE = null; });
 
 const TIMED_OUT = { timedOut: true };
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -601,11 +625,11 @@ function entryBody(e) {
      who cannot tell the amber from the green. */
   const nWarn = g.reasons.length;
   const verdict = {
-    clean:    () => pill(`${num(g.cited)} source${plural(g.cited, '', 's')} cited, no problems found`, 'ok'),
-    declined: () => pill('Answered nothing — the documents do not cover this', 'cold'),
-    degraded: () => pill(`Partly grounded — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'warm'),
-    severe:   () => pill(`Not safe to repeat — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'hot'),
-    unknown:  () => pill('Grounding not reported', 'unknown'),
+    clean:    () => pill(`${num(g.cited)} source${plural(g.cited, '', 's')} cited, no problems found`, 'ok', { verbatim: false }),
+    declined: () => pill('Answered nothing — the documents do not cover this', 'cold', { verbatim: false }),
+    degraded: () => pill(`Partly grounded — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'warm', { verbatim: false }),
+    severe:   () => pill(`Not safe to repeat — ${num(nWarn)} problem${plural(nWarn, '', 's')} found`, 'hot', { verbatim: false }),
+    unknown:  () => pill('Grounding not reported', 'unknown', { verbatim: false }),
   }[g.verdict]();
 
   /* "N sections consulted" was the old wording and it overclaimed: the number
@@ -1537,7 +1561,7 @@ SCREENS.ask = async host => {
         const hw = healthWords(h);
         const bits = [
           `<span class="mono">${esc(HOOK.askAi)}</span>`,
-          h ? pill(h, Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? hw.tone : tone(h)) : pill('UNREPORTED', tone('')),
+          h ? pill(h, Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? hw.tone : tone(h), { verbatim: true }) : pill('UNREPORTED', tone(''), { verbatim: false }),
           w.is_active === false ? '<span class="t-hot">registered inactive</span>' : '',
           eff != null && succ != null
             ? `${esc(num(succ))} of ${esc(num(eff))} rated run${plural(eff, '', 's')} succeeded in 30 d`
@@ -1555,7 +1579,13 @@ SCREENS.ask = async host => {
   });
 
   /* ── This workflow's own track record ───────────────────────────────────
-     Only n8n writes audit_log. The earlier version of this panel filtered on
+     Only n8n writes the Ask-AI rows in audit_log. (That used to read "only n8n
+     writes audit_log" full stop, and stopped being true on 2 Sep 2026: the
+     Action Center's action_* functions write rows under the workflow name
+     'Inventory Action Center'. They are not registered in workflow_registry and
+     never match an Ask-AI name, so they cannot reach this panel — but the
+     sentence was a claim about the whole table and the whole table changed.)
+     The earlier version of this panel filtered on
      `workflow=ilike.*ask*ai*`, which quietly assumed the workflow logs under a
      name containing both words: if it logs as "RAG Query" that filter returns
      nothing and the panel reports "no runs" for a workflow that runs fine. The
@@ -1571,7 +1601,7 @@ SCREENS.ask = async host => {
   let runsAttempt = 0;
   panel($('askRuns'), {
     title: 'Ask-AI run history',
-    sub: 'Rows the workflow itself wrote to audit_log — the dashboard cannot write these',
+    sub: 'Rows the workflow itself wrote to audit_log — no screen in this dashboard writes an Ask-AI row',
     load: async () => {
       const first = runsAttempt++ === 0;
       const [audit, reg, health] = first
@@ -1706,7 +1736,7 @@ SCREENS.ask = async host => {
            in the hover so nothing is hidden by the translation. */
         { label: 'Outcome', render: r => {
             const w = outcomeWords(outcomeOf(r));
-            return `<span title="${esc(`audit_log.status is ${str(r.status) || 'empty'}. ${w.blurb}`)}">${pill(w.label, w.tone)}</span>`;
+            return `<span title="${esc(`audit_log.status is ${str(r.status) || 'empty'}. ${w.blurb}`)}">${pill(w.label, w.tone, { verbatim: false })}</span>`;
           } },
         { label: 'Workflow', render: r => esc(str(r.workflow) || '—') },
         { label: 'Lead', render: who },

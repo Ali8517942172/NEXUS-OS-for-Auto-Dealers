@@ -65,22 +65,39 @@
       all currently empty, and an empty one of them renders as nothing at all
       rather than as a heading with a blank under it. A dealership hires.
 
-   5. TWO COLUMNS ARE NOT WHAT THEIR NAMES SAY, AND NEITHER IS TRUSTED HERE
-      (31 Aug 2026).
+   5. ONE COLUMN IS NOT WHAT ITS NAME SAYS. THE OTHER ONE WAS, AND HAS BEEN
+      FIXED IN THE DATABASE (2 Sep 2026).
 
-      `v_team_performance.pipeline_aed` is `COALESCE(sum(l.budget_aed), 0)` over
-      `users LEFT JOIN leads` with no status filter and no time window, so every
-      lead ever assigned counts towards it forever — disqualified, lost, sold,
-      spam. Two of the three leads in the live table are DISQUALIFIED. Pipeline
-      in a dealership means open, winnable money, so that column is no longer
-      read on this screen. Open pipeline is summed here from the leads this
-      screen already reads, over the leads whose status is not terminal, using
-      the won/dead tones lib/format.js already assigns to a lead status — the
-      same table screens/overview.js reads for the same purpose, so there is no
-      second lifecycle vocabulary. Where it cannot be computed the figure is
-      withheld rather than relabelled. The COALESCE also meant the view could
-      never report a null, so a rep with no leads at all rendered as a factual
-      AED 0; a rep holding no open lead now says that instead.
+      `v_team_performance.pipeline_aed` WAS `COALESCE(sum(l.budget_aed), 0)` over
+      `users LEFT JOIN leads` with no status filter and no time window — every
+      lead ever assigned counting towards it forever, disqualified, lost, sold,
+      spam, floored at 0 so it could never report an absence. That is what this
+      paragraph described, and it stopped being true on 2 Sep 2026. Read off the
+      live view definition today, the column is
+      `sum(l.budget_aed) FILTER (WHERE nexus_lead_is_open(l.status))`: open leads
+      only, no coalesce, and live it reads NULL rather than the 0 it reported
+      yesterday. `nexus_lead_is_open` is the database's mirror of the rule
+      lib/pipeline.js uses, and it was probed against every status either side
+      knows before this paragraph was rewritten — it agreed on all of them.
+
+      The column is nonetheless STILL NOT READ ON THIS SCREEN, and the reason is
+      no longer that it answers a different question, because it no longer does.
+      Open pipeline is summed here from the leads this screen already reads, over
+      the leads whose status is not terminal, using the won/dead tones
+      lib/format.js assigns — the same table screens/overview.js reads, so there
+      is no second lifecycle vocabulary. What that buys is attribution and
+      disclosure: this screen can name the leads behind the figure, and can say
+      when its own read was truncated. The view can do neither, and it sums the
+      whole table rather than the read window — so where the read truncates, the
+      view's figure is the more complete one, not the less. Where the figure
+      cannot be computed here it is withheld rather than relabelled: a rep
+      holding no open lead says that, rather than reporting AED 0.
+
+      NOT CHANGED HERE: when the leads read fails outright this screen shows no
+      pipeline figure at all, even though `perf` may have loaded and now carries
+      one on the same rule. That refusal predates the migration and is left
+      standing deliberately rather than quietly reversed; it is flagged for
+      whoever owns this screen's behaviour, not settled in a comment.
 
       `leads.response_time_minutes` WAS a manufactured value and is now a
       measurement, and this paragraph said the opposite until the afternoon of
@@ -152,15 +169,19 @@ import { SCREENS, go } from '../lib/nav.js';
    differed between the two (1000 here, 2000 there) — so the same rule could
    report two totals on a table big enough to truncate. Both now come from
    lib/pipeline.js. The database's own pipeline_aed is still not used and still
-   not shown; see DB_PIPELINE_NOTE for the sentence that says why. */
+   not shown — but as of 2 Sep 2026 it is on the same open-lead rule, so the
+   reason is attribution and cap disclosure rather than a disagreement about
+   what pipeline means; see DB_PIPELINE_NOTE for the sentence that says so. */
 import { CAP_NOTE, DB_PIPELINE_NOTE, LEAD_LIMIT, isOpenLead, sumBudget } from '../lib/pipeline.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
 
 /* Leads are read to answer three questions the view cannot: which leads have no
    owner at all, what a given rep is actually holding, and how much of that is
-   still open money — the last of these because the view's own pipeline_aed
-   answers a different question under the same name (item 5 above). It is no
+   still open money — the last of these because a figure summed from the rows
+   read here can be attributed lead by lead and can carry its own cap warning,
+   which the view's pipeline_aed cannot. It is no longer because the view
+   answers a different question: since 2 Sep 2026 it does not (item 5 above). It is no
    longer read to look for assignments pointing at a user who no longer exists:
    the FK is ON DELETE SET NULL and `users` is fully readable by `authenticated`,
    so that condition cannot arise. The read is capped, and where a count depends
@@ -299,8 +320,8 @@ const statusLabel  = r => {
 };
 const statusPill = r => {
   if (!r.status) return `<span class="t-muted">No status on file</span>`;
-  if (isPending(r)) return pill('Pending invite', 'warm');
-  return pill(statusLabel(r), hasAccount(r) ? 'ok' : undefined);
+  if (isPending(r)) return pill('Pending invite', 'warm', { verbatim: false });
+  return pill(statusLabel(r), hasAccount(r) ? 'ok' : undefined, { verbatim: true });
 };
 
 /* ── Screen ──────────────────────────────────────────────────────────────── */
@@ -399,16 +420,19 @@ SCREENS.team = async host => {
      appears in a "checked" list is worse than no check: it is a claim. */
 
   /* ── Open pipeline, computed here rather than read ───────────────────────
-     v_team_performance.pipeline_aed sums budget_aed over `users LEFT JOIN leads`
-     with no status filter and no time window, so it is every lead ever assigned
-     — two of the three live leads are DISQUALIFIED — and it COALESCEs to 0, so
-     it can never say "no figure". Neither of those is pipeline. What is summed
-     instead is budget_aed over the leads this screen already read that are
-     assigned to the rep and not in a terminal state, which is a narrower and
-     honestly-nameable number: open money inside the LEAD_LIMIT window. It is
-     null, not zero, when there is nothing to add up — a rep holding no open lead
-     and a rep whose open leads carry no budget are both "no figure", and both
-     are different from AED 0. */
+     v_team_performance.pipeline_aed USED TO sum budget_aed over
+     `users LEFT JOIN leads` with no status filter and no time window, COALESCEd
+     to 0 so it could never say "no figure". As of 2 Sep 2026 it is
+     `sum(l.budget_aed) FILTER (WHERE nexus_lead_is_open(l.status))` with no
+     coalesce — the same open-lead rule as the sum below, and NULL where nothing
+     carries a budget. What is summed here instead is budget_aed over the leads
+     this screen already read that are assigned to the rep and not in a terminal
+     state. That is now the same DEFINITION as the view's, over a narrower
+     population: open money inside the LEAD_LIMIT window, which this screen can
+     name row by row and can warn about when the read truncates. It is null, not
+     zero, when there is nothing to add up — a rep holding no open lead and a rep
+     whose open leads carry no budget are both "no figure", and both are
+     different from AED 0. */
   const openLeadsOf = r => ownedBy(r).filter(isOpenLead);
   /* sumBudget, not the local sumOf: the null-not-zero convention and the column
      it sums are part of the shared definition, so Overview and this screen
@@ -617,8 +641,11 @@ SCREENS.team = async host => {
       /* Open pipeline, not "pipeline". The label names exactly what is summed:
          budget_aed over the leads read here that are assigned to somebody and
          are not in a won or dead state. v_team_performance.pipeline_aed is not
-         used and not shown — it counts every lead ever assigned, so on today's
-         table it would be reporting two DISQUALIFIED leads as money in play. */
+         used and not shown. Until 2 Sep 2026 the reason was that it counted
+         every lead ever assigned, and on today's table would have reported two
+         DISQUALIFIED leads as money in play; it no longer does, and the reason
+         now is that this figure can be attributed to named leads and can
+         disclose its own truncation. */
       kpi('Open pipeline in rep hands', pipelineTot == null ? '—' : aed(pipelineTot),
         !leads
           ? `<span class="t-muted">Leads could not be read, so open pipeline could not be summed. ${esc(DB_PIPELINE_NOTE)}</span>`
@@ -695,6 +722,8 @@ SCREENS.team = async host => {
     alerts.push({
       source: 'view',
       sev: str(it.severity) || 'WARM',
+      /* True only when the word really is the view's; 'WARM' below is ours. */
+      sevFromRow: str(it.severity) !== '',
       icon: KIND_ICON[low(it.kind)] || 'rule',
       at: it.at,
       titleHtml,
@@ -972,7 +1001,7 @@ SCREENS.team = async host => {
       <span class="material-symbols-outlined t-${esc(tone(a.sev))}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev))}
+          ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev), { verbatim: a.sevFromRow === true })}
           ${a.source === 'view' ? '<span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
         <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
@@ -1171,12 +1200,14 @@ SCREENS.team = async host => {
         return `${num(w ?? 0)} / ${num(m)}<div class="cell-sub ${rate != null && rate < 50 ? 't-hot' : ''}">${pct(rate)}</div>`;
       } },
     /* Open pipeline, summed here from the leads read on this screen — not
-       v_team_performance.pipeline_aed, which sums budget_aed over every lead
-       ever assigned with no status filter and no window, and COALESCEs to 0 so
-       it can never report an absence. The header explains it; the label names
-       what is actually added up. */
+       v_team_performance.pipeline_aed. That column summed every lead ever
+       assigned and COALESCEd to 0 until 2 Sep 2026; it is now filtered to open
+       leads on the database's own mirror of this rule and returns NULL for an
+       absence. It is still not read here, because this figure can be attributed
+       to the leads listed below it and can say when its read was capped. The
+       header explains it; the label names what is actually added up. */
     { label: 'Open pipeline', align: 'r', sort: 'pipeline', render: r => {
-        if (!leads) return `<span class="t-muted" title="Leads could not be read on this page load, and the performance view's pipeline_aed is deliberately not shown in its place: it counts every lead ever assigned, disqualified and lost ones included.">Not summable</span>`;
+        if (!leads) return `<span class="t-muted" title="Leads could not be read on this page load, so there is nothing here to add up. The performance view's own pipeline_aed is not shown in its place: since 2 Sep 2026 it counts open leads only, on the same rule as this column, but it cannot be attributed to the leads this screen would list, so it is not substituted for a figure this screen could not compute.">Not summable</span>`;
         const p = openPipelineOf(r);
         if (p != null) return aed(p);
         const open = openLeadsOf(r).length;
@@ -1362,8 +1393,10 @@ SCREENS.team = async host => {
             ? 'No single rep holds twice an even share of the open pipeline. '
             /* Not "the pipeline is evenly held" — nothing was measured. A share
                needs somebody to hold the other part of it. Open pipeline is
-               budget_aed over the non-terminal leads read here, never
-               v_team_performance.pipeline_aed — see item 5 in the header. */
+               budget_aed over the non-terminal leads read here, not
+               v_team_performance.pipeline_aed — which is on the same rule since
+               2 Sep 2026 but is not what this share is computed from. See item 5
+               in the header. */
             : `Concentration is not measured here: ${num(carriers.length)} ${plural(carriers.length, 'rep carries', 'reps carry')} any open pipeline, and one person holding all of the money is a roster of one rather than a concentration. `}
         ${spread
           ? `A HOT lead is supposed to be auto-assigned to the least-loaded rep, so an uneven bar chart is either that trigger not firing or assignments made by hand around it —
@@ -1511,7 +1544,7 @@ SCREENS.team = async host => {
                       : ` · answered in ${esc(mins(l.response_time_minutes))}`}
                   ${l.escalated_at ? ` · <span class="t-warm">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
               </div>
-              ${l.status ? pill(l.status) : ''}
+              ${l.status ? pill(l.status, undefined, { verbatim: true }) : ''}
               <div class="num cell-sub">${n0(l.budget_aed) == null ? '' : aed(l.budget_aed)}</div>
             </div>`).join('')}
             ${owned.length > 10 ? `<div class="cell-sub" style="padding:8px 0">and ${num(owned.length - 10)} more.</div>` : ''}</div>`;
@@ -1543,7 +1576,7 @@ SCREENS.team = async host => {
         <div class="section">
           <div class="label-caps">Account</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            ${statusPill(r)}${r.unlinked ? pill('Not in the user directory', 'warm') : ''}
+            ${statusPill(r)}${r.unlinked ? pill('Not in the user directory', 'warm', { verbatim: false }) : ''}
           </div>
           ${isPending(r) ? `<div class="banner warm" style="margin-top:12px">
             <span class="material-symbols-outlined">mark_email_unread</span>
@@ -1586,8 +1619,9 @@ SCREENS.team = async host => {
                 manager checks one person's number against what they believe. */''}
           <div class="cell-sub" style="margin-top:12px;white-space:normal">Open pipeline is <span class="mono">budget_aed</span> summed over the
             leads read on this screen that are assigned to this person and are not in a won or dead state${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads` : ''}.
-            <span class="mono">v_team_performance.pipeline_aed</span> is not shown: it sums every lead ever assigned, with no status filter and no
-            time window, so disqualified and lost leads count towards it forever.</div>
+            <span class="mono">v_team_performance.pipeline_aed</span> is not shown in its place. Until 2 Sep 2026 it summed every lead ever assigned,
+            disqualified and lost ones included; it now counts open leads only, on the same rule as the figure above. It is still not the number shown
+            here, because this one can be traced to the leads listed below and says when its read was capped.</div>
           ${!r.perf ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">
             ${perfErr ? `The performance view could not be read (${esc(perfErr)}).`
                       : 'The performance view has no row for this person, so nothing has been recorded against them yet.'}</div>` : ''}

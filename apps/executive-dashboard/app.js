@@ -34,6 +34,7 @@ import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
 
 /* Screen modules, imported for their registration side effect only. Removing
    one of these lines silently removes that screen from the app. */
+import './screens/actions.js';
 import './screens/ask.js';
 import './screens/automation.js';
 import './screens/campaigns.js';
@@ -46,8 +47,39 @@ import './screens/finance.js';
 import './screens/inventory.js';
 import './screens/leads.js';
 import './screens/overview.js';
+import './screens/revenue.js';
 import './screens/settings.js';
 import './screens/team.js';
+
+/* ── The Revenue Recovery engine screens ────────────────────────────────────
+   Lead Recovery, Deal Rescue, Attribution and Policy are being built as four
+   separate modules. lib/nav.js offers all four ids whether or not every module
+   has landed yet, and a plain `import './screens/policy.js'` for a file that
+   does not exist is not a missing screen — it is a build failure that takes the
+   ENTIRE dashboard down, every one of the sixteen screens with it. Trading
+   fifteen working screens for one that is not written yet is never the right
+   trade.
+
+   import.meta.glob resolves at build time against the files that are actually
+   on disk, so a module that has not landed is simply absent from the bundle and
+   the build succeeds; `eager: true` makes each match a static import, which is
+   exactly what the fifteen lines above are, so a screen that IS present
+   registers itself identically and at the same moment.
+
+   The patterns are listed one per screen rather than as a wildcard on purpose:
+   a wildcard would silently pick up anything dropped into screens/, and this
+   file is meant to be the readable list of what the app contains. Removing a
+   line here removes that screen from the app, exactly as above.
+
+   The value is deliberately unused — like the imports above, this is for the
+   registration side effect only. lib/nav.js renders an explicit "not part of
+   this build" state for an id whose module never arrived. */
+import.meta.glob([
+  './screens/attribution.js',
+  './screens/lead-recovery.js',
+  './screens/deal-rescue.js',
+  './screens/policy.js',
+], { eager: true });
 
 /* ==========================================================================
    Auth + boot

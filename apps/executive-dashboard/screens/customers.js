@@ -127,7 +127,7 @@ import { $, el } from '../lib/dom.js';
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
 import { aed, ago, dubaiDate, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
-import { SILENCE_MARKER, isInternalRow, isMessageRow, silenceCount } from '../lib/comm-events.js';
+import { SILENCE_MARKER, silenceCount, splitEvents } from '../lib/comm-events.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { noSource, stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -168,7 +168,13 @@ const MSG_LIMIT = 50;
    — so the agreement the caption below reports is now an agreement between two
    spellings of one rule rather than between two independent guesses. The
    caption still MEASURES it rather than assuming it, for the same reason it
-   always did. */
+   always did.
+
+   And since 2 Sep 2026 the count and the timestamp are no longer two answers
+   sitting side by side. One source owns both — v_customer_360 where it has the
+   customer, this screen's own read of communication_logs where it does not —
+   and whichever did not answer is used as a check on the one that did, never
+   printed as a rival number. See the MESSAGES block in open(). */
 /* v_customer_directory is read with select=* on purpose, and its columns are now
    known rather than guessed: id, name, email, phone, source_records,
    last_seen_at, read off the live database on 24 Aug 2026. They are still not
@@ -236,7 +242,7 @@ const AGG_ZERO_CAUSE =
   'Forbidden - perhaps check your credentials?”. So a figure here is whatever the last run managed to write, a 0 ' +
   'is not evidence that the customer never wrote to us, and the only thing that says which is the run’s own ' +
   'audit_log row, quoted beside each figure. The message counts elsewhere on this screen come from ' +
-  'communication_logs and were never affected.';
+  'communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
 
 /* The paragraph for a run that logged no step it failed to land. This is the
    only wording on the screen that is allowed to call a zero an answer, and it is
@@ -248,7 +254,7 @@ const AGG_ZERO_CAUSE =
 const AGG_ZERO_SUCCESS =
   'This is an answer, not a gap. The run that wrote these figures logged no step that failed to land, so the job ' +
   'reached its sources and found nothing for this address. A 0 here means no mail, not no count. The message ' +
-  'counts elsewhere on this screen come from communication_logs and were never affected.';
+  'counts elsewhere on this screen come from communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
 
 /* And the case that is actually live: the run finished, wrote a profile row, and
    said in its own summary that part of what it claimed did not happen. */
@@ -257,7 +263,7 @@ const AGG_ZERO_HALF =
   'Where that row says a count is UNKNOWN, or that a step did not land, the number stored here is whatever an ' +
   'earlier run left behind rather than something this run counted — the workflow says so itself: “previous ' +
   'stored value left intact”. A 0 under those words is a read that failed, not a customer with no mail. The ' +
-  'message counts elsewhere on this screen come from communication_logs and were never affected.';
+  'message counts elsewhere on this screen come from communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
 
 /* No audit row sits beside this write, so the only evidence is the timestamp —
    and a timestamp is not a record of what a run collected. Said as the inference
@@ -275,7 +281,7 @@ const AGG_ZERO_UNRECORDED =
   'timestamp, not a record: the aggregation logged no audit row beside it, so what that run reached is written ' +
   'down nowhere this screen can read, and comparable runs on other customers were still logging “Gmail read ' +
   'failed” four days after that re-authorisation. Nothing here is therefore being called counted, a 0 included. ' +
-  'The message counts elsewhere on this screen come from communication_logs and were never affected.';
+  'The message counts elsewhere on this screen come from communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
 
 /* When the Gmail credential was re-authorised, in UTC. This constant used to
    decide every touch count on the screen: written before it meant "not counted",
@@ -1315,7 +1321,7 @@ SCREENS.customers = async host => {
        3" directly above "Leads on file 1" and say nothing about it. Which of the
        two is right is not knowable from here, and the screen does not pick. */
     const leadSub = viewLeads != null
-      ? (v.latest_status ? pill(v.latest_status) : '<span class="t-muted">No status on the latest lead</span>')
+      ? (v.latest_status ? pill(v.latest_status, undefined, { verbatim: true }) : '<span class="t-muted">No status on the latest lead</span>')
         + (leads.rows && leads.rows.length !== viewLeads
             ? `<div><span class="t-warm">v_customer_360 counts ${esc(String(viewLeads))}; the leads table returned ${esc(String(leads.rows.length))} for this address. The two disagree and this screen cannot say which is right.</span></div>`
             : '')
@@ -1338,43 +1344,94 @@ SCREENS.customers = async host => {
         ? `<span class="t-warm">${leadScores.length === 1 ? 'The ai_score on the one lead read here' : 'Highest ai_score on the leads read here'} — ${esc(viewGap)}</span>`
         : '<span class="t-muted">No lead of this customer’s carries an ai_score</span>';
 
-    /* MESSAGES. v_customer_360.message_count is deliberately NOT preferred here,
-       and this is the half of the identity fix that had not landed: the widened
-       read was already in place below while the number printed above it still
-       came from the view, which then counted `WHERE lower(c.lead_email) = i.email`
-       — the single key shape whose insufficiency is the reason lib/identity.js
-       exists. Read that way earlier on 1 Sep 2026 it reported 15 for
-       shabbir53ujjainwala@gmail.com while communication_logs holds 29 rows for
-       him across three keys (15 under the address, 12 under
-       +918517942172@whatsapp.lead, 2 under his LID), and 3 for
-       +971547484167@whatsapp.lead against 8. The screen showed the 15 over a
-       section listing all of them.
+    /* MESSAGES — ONE FIGURE, ONE DERIVATION (INV-008, closed 2 Sep 2026)
+       ---------------------------------------------------------------------
+       Until tonight this pane derived a customer's message count TWICE and
+       printed both. The KPI was `comms.rows.length` — every row the widened read
+       returned, internal notes included — and the sub-line under it then printed
+       v_customer_360.message_count as a second number with a paragraph
+       explaining why the two differed. Read live on 2 Sep 2026 that gave Ali
+       (shabbir53ujjainwala@gmail.com) "Messages logged 29" over "v_customer_360
+       reports 28, 1 below the figure above", and Siva Thangavelu
+       (+971547484167@whatsapp.lead) "8" over "reports 7". Disclosing a gap is
+       better than hiding it, but a caption is not an invariant: one figure has
+       one derivation, and a reader handed two numbers for "how many messages"
+       has been handed the reconciliation to do themselves.
 
-       That gap is closed. The view was rebuilt later the same day and expands the
-       key shapes itself — pg_get_viewdef read 1 Sep 2026 19:0x UTC shows the
-       `@c.us`, `+digits@whatsapp.lead` and whatsapp_contacts.chat_id expansion —
-       and it now reports 28 and 7 against this screen's 29 and 8. The whole of
-       what is left is the two internal rows it excludes and this screen counts —
-       and since `comm_taxonomy_views_own_the_rule` the view excludes them with
-       public.nexus_is_message(), which is the same test lib/comm-events.js
-       applies here, rather than the narrower `[SILENCE-` prefix it used before. The figure printed is still the widened read's rather than the
-       view's, because these are the rows the Recent messages section below
-       lists, and a total that does not match the list under it cannot be checked
-       by the person reading it; the view's figure is now a check on it and no
-       longer a correction to it.
+       The gap was never a disagreement about the RULE. Both sides spell one
+       predicate — public.nexus_is_message() in the database, lib/comm-events.js
+       here, mirrored line for line. The count simply was not being taken over
+       the messages: it was taken over the EVENTS, markers included, on the
+       grounds that those are the rows the Recent messages section below lists.
+       So the message figure was already derivable here; it was just not the one
+       being printed. splitEvents() returns both halves in one pass and the count
+       now comes off `.count`, which is the messages.
 
-       The last-contact time is a DIFFERENT question and no longer follows the
-       count. The view's max() runs over messages only; this screen's was the
-       newest row of any kind, which is how a marker came to date a contact. Both
-       sides now spell the same rule — public.nexus_is_message() in the database,
-       lib/comm-events.js in the browser. See the note at the top of this file. */
+       WHICH SOURCE OWNS THE FIGURE: v_customer_360, wherever it has a count for
+       this customer. It counts across the whole table while this read stops at
+       MSG_LIMIT, and since `comm_taxonomy_views_own_the_rule` it expands the
+       same key shapes and applies the same predicate — the two reasons it used
+       to be the worse answer are both gone.
+
+       IT DOES NOT HAVE EVERY CUSTOMER, so the fallback is not optional. The
+       view's spine is `leads UNION purchase_history WHERE email <> ''`, keyed on
+       lower(btrim(email)) where v_customer_directory keys on lower(email); this
+       screen's read of it is capped at VIEW_LIMIT where the directory read is
+       capped at DIR_LIMIT; and it can fail on its own. Where there is no row, or
+       a row carrying no message_count, the figure is counted here from the rows
+       that were read, under the same predicate — and the sub-line names which of
+       the two answered, every time. It is never both.
+
+       THE LAST-CONTACT TIME TRAVELS WITH THE COUNT, from the same source. A
+       total and a timestamp drawn from two different populations is precisely
+       the defect the other half of this pane carried until 1 Sep 2026, and
+       taking the count from the view while dating the contact from the read
+       would rebuild it in a new place.
+
+       The derivation that does not own the figure becomes a CHECK. Two spellings
+       of one rule over two key expansions ought to agree, and a disagreement is
+       reported as the fault it would be rather than explained away as a
+       population difference — that explanation was the old caption and it is
+       gone with the gap. Live 2 Sep 2026 there is nothing to report: the view
+       says 28 and 7, this read counts 28 messages out of 29 rows and 7 out of 8.
+
+       LEAD 35 IS WHY THE FALLBACK CANNOT BE DROPPED, and also why the database
+       was NOT changed to close this. Effco Contracting llc's email column holds
+       the empty string, so he is in neither view, and communication_logs holds
+       10 messages for him under 111948809162873@lid. But he does not reach this
+       pane at all: the spine is v_customer_directory, which excludes him for the
+       same reason, so widening v_customer_360 to cover empty-email leads would
+       not give him a customer pane — it would only add a row to the "not a
+       customer" list at the foot of this screen carrying the basis line "In
+       v_customer_360 but with no lead and no purchase behind the address", which
+       is false about him. Whether an email-less lead is a customer is a question
+       about the SPINE, it changes the Customers count on every screen that reads
+       these views, and it is not settled inside a message-count fix. See the
+       leadByKey block above, which already refuses to call him a non-customer. */
     const viewMsgs = n0(v.message_count);
-    const commCount = comms.rows ? comms.rows.length : null;
+    const viewLast = str(v.last_contact_at) || null;
+    /* One pass over the rows that were read, split by the browser's mirror of
+       nexus_is_message(). `.count` is the messages; `.internal` is the
+       dealership's own bookkeeping, which the section below lists and which is
+       not a message, not a reply, and never a contact. */
+    const events = comms.rows ? splitEvents(comms.rows) : null;
+    const readMsgs = events ? events.count : null;
+    const readLast = events ? events.lastContactAt : null;
+    const markerRows = events ? events.internal : [];
+    const rowsRead = comms.rows ? comms.rows.length : null;
     /* The cap is on what the DATABASE returned, not on what survived the
        ownership re-check. Testing the kept count would under-report the cap on
        any read where a foreign row was dropped, and a capped read presented as a
        total is the failure this flag exists to prevent. */
     const msgCapped = comms.raw != null && comms.raw >= MSG_LIMIT;
+
+    /* THE RULE, in one place. The view answers when it has a count for this
+       customer; otherwise the read does. Nothing else on this pane prints a
+       message count, and the timestamp comes from whichever answered. */
+    const msgSource = viewMsgs != null ? 'view' : readMsgs != null ? 'read' : null;
+    const msgCount    = msgSource === 'view' ? viewMsgs : msgSource === 'read' ? readMsgs : null;
+    const lastContact = msgSource === 'view' ? viewLast : msgSource === 'read' ? readLast : null;
+    const msgDisplay  = num(msgCount);
     /* Never expected to fire, and reported rather than assumed to be 0 for the
        same reason foreignNote() is: a silent wildcard match putting somebody
        else's messages into this history is the failure the re-check exists to
@@ -1382,13 +1439,6 @@ SCREENS.customers = async host => {
     const commsForeign = comms.foreign
       ? `<div><span class="t-warm">${esc(String(comms.foreign))} row${comms.foreign === 1 ? '' : 's'} returned by the database ${comms.foreign === 1 ? 'is' : 'are'} filed under a key that is not this person's and ${comms.foreign === 1 ? 'was' : 'were'} dropped — the message filter is matching more than this customer.</span></div>`
       : '';
-    /* A failed read may not borrow the view's number and show it as the answer.
-       The old code fell back to v_customer_360 whenever the direct read produced
-       nothing, so a 500 on communication_logs rendered as a confident count from
-       a source that is truncated by construction. An unread history is an em
-       dash, and the view's figure is demoted into the sub-line where it can be
-       labelled for what it is. */
-    const msgDisplay = commCount != null ? num(commCount) : '—';
     /* Printed in full rather than summarised as a count. An operator who is told
        "matched on 4 keys" cannot check it; one who is shown the four keys can
        see at a glance whether a handle belonging to somebody else has been swept
@@ -1399,17 +1449,15 @@ SCREENS.customers = async host => {
           : ''}.`
       : '';
     /* The rows are ordered created_at.desc by the read and the ownership
-       re-check preserves that order, so [0] of each list is the newest of its
-       kind. `lastContact` is the newest row that is a MESSAGE; `newestRow` is
-       the newest row of any kind, which is what this screen used to date the
-       last contact from and is kept only so the caption can name what it is not
-       using. Dropping a day off a figure a rep read yesterday without saying so
-       would be its own small dishonesty. */
-    const markerRows  = (comms.rows || []).filter(isInternalRow);
-    const contactRows = (comms.rows || []).filter(isMessageRow);
-    const lastContact = (contactRows.length && contactRows[0].created_at) || null;
-    const newestRow   = (comms.rows && comms.rows.length && comms.rows[0].created_at) || null;
-    const datedFromInternal = !!(newestRow && lastContact !== newestRow);
+       re-check preserves that order, so [0] is the newest row of ANY kind. It is
+       kept only so the caption can name the row it is not dating the contact
+       from — dropping a day off a figure a rep read yesterday without saying so
+       would be its own small dishonesty. Compared against `readLast`, the newest
+       MESSAGE among the same rows, because this sentence is about the list below
+       and not about whichever source owns the figure. */
+    const newestRow = (comms.rows && comms.rows.length && comms.rows[0].created_at) || null;
+    const datedFromInternal = !!(newestRow
+      && (readLast == null || Date.parse(readLast) !== Date.parse(newestRow)));
     /* How many of the excluded rows are silence escalations specifically. A row
        can be internal by its channel or its direction with an ordinary body —
        nothing on file is today, and the caption below has to be able to say so
@@ -1417,23 +1465,9 @@ SCREENS.customers = async host => {
        claim that would be false the first time one is not. */
     const silenceRows = silenceCount(markerRows);
     const otherInternal = markerRows.length - silenceRows;
-    /* Checked, not assumed. Both sides now apply the same predicate, so they
-       ought to agree — and "ought to" is exactly the kind of claim this file is
-       not allowed to print. The two timestamps are compared and whichever answer
-       comes back is what the caption says. */
-    const viewLast  = str(v.last_contact_at) || null;
-    const lastAgree = !!(lastContact && viewLast
-      && Date.parse(lastContact) === Date.parse(viewLast));
-    /* Two figures over two populations, and the difference stated on the one
-       that has it. The count includes the markers because the Recent messages
-       section below lists them; the timestamp excludes them because a marker is
-       not contact. Until 1 Sep 2026 the caption disclosed the first difference
-       and not the second, so "Messages logged 8 · last contact 5 d ago" drew its
-       two halves from two different populations with one explanation between
-       them, and the half that was wrong was the half nobody had been told
-       about. */
     const contactNote = (() => {
       const bits = [];
+      let bad = false;
       if (markerRows.length) {
         /* Named by what they actually are. `silenceRows` are the detector's
            escalations; anything left over is internal by its channel or its
@@ -1444,52 +1478,71 @@ SCREENS.customers = async host => {
           : silenceRows === 0
             ? 'the dealership’s own internal notes — written on the system channel or with direction ‘internal’, never sent to anybody'
             : `internal — ${esc(String(silenceRows))} the silence detector’s ${esc(SILENCE_MARKER)} ${silenceRows === 1 ? 'marker' : 'markers'}, written because nobody was in touch, and ${esc(String(otherInternal))} on the system channel or with direction ‘internal’`;
-        bits.push(`${esc(String(markerRows.length))} of those ${markerRows.length === 1 ? 'rows is' : 'rows are'} ${what}`
+        bits.push(`${esc(String(markerRows.length))} of the ${esc(String(rowsRead))} rows read here ${markerRows.length === 1 ? 'is' : 'are'} ${what}. `
+          + `${markerRows.length === 1 ? 'It is' : 'They are'} listed below but ${markerRows.length === 1 ? 'is' : 'are'} not counted in the figure above and ${markerRows.length === 1 ? 'does' : 'do'} not date the last contact`
           + (datedFromInternal
-              ? `, and the newest row here is one of them — so the last contact above is dated ${esc(dubaiStamp(lastContact))}, the newest row that is a message, and not ${esc(dubaiStamp(newestRow))}, the internal row, which this screen printed until 1 Sep 2026 and which would read ${esc(ago(newestRow))}`
+              ? `: the newest row read is one of them, stamped ${esc(dubaiStamp(newestRow))}, which would read ${esc(ago(newestRow))}`
               : '')
           + '.');
       } else if (datedFromInternal) {
         /* Cannot happen while the only thing filtered out is an internal row.
            Reported rather than assumed away, for the same reason commsForeign
            is. */
-        bits.push('The newest row read is not the row this contact time is taken from, and nothing about it reads as one of the dealership’s internal notes — something else is being excluded and this screen cannot say what.');
+        bad = true;
+        bits.push('The newest row read is not a message, and nothing about it reads as one of the dealership’s internal notes — something else is being excluded and this screen cannot say what.');
       }
-      if (lastContact && viewLast) {
-        bits.push(lastAgree
-          ? 'v_customer_360.last_contact_at is the same moment, so Customer 360 and this screen date the last contact identically.'
-          : `v_customer_360.last_contact_at is ${esc(dubaiStamp(viewLast))}, a different moment. Since the comm_taxonomy migration of 1 Sep 2026 both sides run the same test — public.nexus_is_message() there, lib/comm-events.js here — so the internal rows cannot be the reason for this one, and this screen cannot say what is.`);
-      } else if (lastContact && c.view && viewLast == null) {
-        bits.push('v_customer_360 has a row for this customer but no last_contact_at on it, so there is nothing to check this time against.');
+      /* THE CHECK. The derivation that did not answer is compared against the
+         one that did, and only ever as a check: the number it produces is never
+         offered as a rival figure. */
+      if (viewMsgs != null && readMsgs != null) {
+        if (msgCapped) {
+          bits.push(`The history read here stopped at its ${esc(String(MSG_LIMIT))}-row cap, so the ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} in it are a floor and cannot be checked against the figure above.`);
+        } else if (viewMsgs === readMsgs) {
+          bits.push(`The ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} read here under lib/comm-events.js — this browser’s mirror of public.nexus_is_message() — come to the same number, so both spellings of the rule select the same rows.`);
+        } else {
+          bad = true;
+          bits.push(`The history read here counts ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} under the same predicate, ${esc(String(Math.abs(readMsgs - viewMsgs)))} ${readMsgs > viewMsgs ? 'more' : 'fewer'} than the figure above. One rule, two key expansions, and they are not selecting the same rows — this screen cannot say which set is right.`);
+        }
+      }
+      /* The timestamp gets its own check, because two sets can be the same size
+         and still not be the same rows. */
+      if (msgSource === 'view' && readLast && viewLast
+          && Date.parse(readLast) !== Date.parse(viewLast)) {
+        bad = true;
+        bits.push(`The newest message read here is ${esc(dubaiStamp(readLast))}, not the moment above. Both sides exclude internal rows with the same predicate, so that is not the reason, and this screen cannot say what is.`);
+      } else if (msgSource === 'view' && viewLast == null && msgCount) {
+        bad = true;
+        bits.push(`v_customer_360 reports ${esc(String(msgCount))} message${msgCount === 1 ? '' : 's'} for this customer but carries no last_contact_at, which its own definition should not allow — the two are computed from one subquery over one predicate.`);
       }
       if (!bits.length) return '';
-      const bad = !!(lastContact && viewLast && !lastAgree) || (!markerRows.length && datedFromInternal);
       return `<div><span class="${bad ? 't-warm' : 't-muted'}">${bits.join(' ')}</span></div>`;
     })();
-    const msgSub = commCount == null
+    /* A history that could not be read is said so under the figure. The figure
+       itself still stands when the view owns it — the view is not a stand-in
+       here, it is the source — but it has not been checked against the rows, and
+       an empty Recent messages section below means "not read", not "nothing was
+       said". */
+    const msgReadNote = msgSource === 'view' && comms.rows == null
+      ? (comms.err
+          ? `<div><span class="t-warm">communication_logs could not be read — ${esc(comms.err)} — so the figure above could not be checked against the rows themselves, and the section below is empty for that reason and not because nothing was said.</span></div>`
+          : `<div><span class="t-warm">No history was read: ${esc(commsFilter.note)} So the figure above could not be checked against the rows themselves.</span></div>`)
+      : '';
+    const msgSub = msgSource == null
       ? (comms.err
           ? `<span class="t-warm">communication_logs could not be read — ${esc(comms.err)}</span>`
-            + (viewMsgs == null
-                ? ''
-                : `<div><span class="t-muted">v_customer_360 reports ${esc(String(viewMsgs))}, but a count is not the history, so it is not shown as the figure.</span></div>`)
-          : viewMsgs != null
-            ? `<span class="t-warm">${esc(String(viewMsgs))} on v_customer_360 — nothing on this row could be matched to a message key here, so no history was read directly</span>`
-            : `<span class="t-muted">Not countable — ${esc(commsFilter.note)}</span>`)
-      : `<span class="t-muted">${msgCapped
-            ? `At least ${esc(String(MSG_LIMIT))} — the read is capped there, so this is a floor`
-            : `Counted from communication_logs across ${esc(String(commsFilter.keys.length))} recorded key${commsFilter.keys.length === 1 ? '' : 's'}${commsFilter.patterns.length ? ' and the last-nine-digit rule the backend matches on' : ''}`}${
+            + `<div><span class="t-muted">${esc(viewGap)}, so there is no second source to fall back to and no figure is shown.</span></div>`
+          : `<span class="t-muted">Not countable — ${esc(commsFilter.note)} ${esc(viewGap)}.</span>`)
+      : `<span class="${msgSource === 'view' ? 't-muted' : 't-warm'}">${msgSource === 'view'
+            ? 'Every message on file · v_customer_360.message_count, counted with public.nexus_is_message()'
+            : `Counted here from communication_logs across ${esc(String(commsFilter.keys.length))} recorded key${commsFilter.keys.length === 1 ? '' : 's'}${commsFilter.patterns.length ? ' and the last-nine-digit rule the backend matches on' : ''} — ${esc(viewGap)}${msgCapped ? `, and the read stops at ${esc(String(MSG_LIMIT))} rows, so this is a floor` : ''}`}${
             lastContact
               ? ` · last contact ${esc(ago(lastContact))}`
-              : markerRows.length
-                ? ` · no contact on record — every row read is one of the dealership’s own internal notes${silenceRows === markerRows.length ? ` (${esc(SILENCE_MARKER)}), written because nobody was in touch` : ', never sent to or received from this customer'}`
+              : msgCount === 0
+                ? ' · nothing on record was said to or by this customer'
                 : ''}</span>`
         + contactNote
-        + commsForeign
-        + (viewMsgs == null
-            ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
-            : msgCapped || viewMsgs === commCount
-              ? ''
-              : `<div><span class="t-warm">v_customer_360 reports ${esc(String(viewMsgs))}, ${esc(String(Math.abs(commCount - viewMsgs)))} ${commCount > viewMsgs ? 'below' : 'above'} the figure above.${markerRows.length && commCount - viewMsgs === markerRows.length ? ` That difference is exactly the ${esc(String(markerRows.length))} internal ${markerRows.length === 1 ? 'row' : 'rows'} named above:` : ' Since 1 Sep 2026 the view expands the same key shapes this screen does, so the gap should be the internal rows —'} the view counts messages only, using public.nexus_is_message(), and an internal note is not a message to or from the customer. This screen counts every row it read, because those are the rows the Recent messages section below lists — but it no longer dates the last contact from one. Neither number is wrong; they are answering different questions.</span></div>`);
+        + msgReadNote
+        + commsForeign;
 
     /* LIFETIME VALUE, and what the view's figure actually is.
 
@@ -1599,7 +1652,7 @@ SCREENS.customers = async host => {
         <div style="flex:1;min-width:0">
           <div class="card-title">${esc(nameOf(c))}
             ${v.is_vip ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>' : ''}
-            ${buyErr ? '' : c.purchases.length ? pill('Buyer', 'ok') : '<span class="chip">Enquiry — no purchase on file</span>'}</div>
+            ${buyErr ? '' : c.purchases.length ? pill('Buyer', 'ok', { verbatim: false }) : '<span class="chip">Enquiry — no purchase on file</span>'}</div>
           <div class="card-sub">${ph.phone
             ? `<span class="mono">${esc(ph.phone)}</span> <span class="t-muted">· ${esc(ph.from)}</span>`
             : '<span class="t-warm">No phone number on any source</span>'}
@@ -1685,7 +1738,7 @@ SCREENS.customers = async host => {
                      : !aggReg
                        ? '<span class="t-muted">Unknown — no workflow_registry row identifies the aggregation</span>'
                        : custRun
-                         ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone)}
+                         ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone, { verbatim: false })}
                             <span class="cell-sub">· ${esc(ago(custRun.logged_at))} · logged beside this row’s last_synced_at · ${esc(String(custRuns.length))} logged run${custRuns.length === 1 ? '' : 's'} in all name this customer</span>
                             <div class="cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
                          : custLatestRun
@@ -1756,7 +1809,7 @@ SCREENS.customers = async host => {
                        : `${esc(mins(l.response_time_minutes))} to first reply ${Number(l.response_time_minutes) > 5
                             ? '<span class="t-hot">· breaches the 5-minute rule</span>'
                             : '<span class="t-ok">· within SLA</span>'}`}</div>
-                <div>${esc(str(l.vehicle_interest) || 'No vehicle recorded')} ${pill(l.status || 'NEW')}</div>
+                <div>${esc(str(l.vehicle_interest) || 'No vehicle recorded')} ${pill(l.status || 'NEW', undefined, { verbatim: !!l.status })}</div>
                 ${n0(l.budget_aed) == null ? '' : `<div class="cell-sub">Budget ${aed(l.budget_aed)}</div>`}
               </div></div>`).join('')}</div>`)}
 
@@ -1767,7 +1820,14 @@ SCREENS.customers = async host => {
             <div class="tl-item"><span class="tl-dot"></span><div class="tl-body">
               <div class="tl-meta"><span class="chip">${esc(str(m.channel) || 'unknown channel')}</span> ${esc(str(m.direction))} · ${esc(ago(m.created_at))}</div>
               <div style="white-space:pre-wrap">${esc(String(m.message || '').slice(0, 240))}</div></div></div>`).join('')}</div>
-          <div class="cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} messages read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}These come from communication_logs and are counted independently of the aggregation's email and Slack figures above.
+          <div class="cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} rows read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}${events && events.internalCount
+            /* This list is EVENTS, and the figure above is MESSAGES, so the two
+               will not tally whenever an internal note is among the rows — said
+               here rather than left for the reader to notice. It used to call
+               every row in this list a message, which is the same conflation the
+               count itself was making until 2 Sep 2026. */
+            ? `${esc(String(events.count))} of the rows read here ${events.count === 1 ? 'is a message' : 'are messages'} and ${esc(String(events.internalCount))} ${events.internalCount === 1 ? 'is one of the dealership’s own internal notes' : 'are the dealership’s own internal notes'}, listed here because the read returned them and not counted in the figure above. `
+            : ''}These come from communication_logs and are counted independently of the aggregation's email and Slack figures above.
           ${esc(commsFilter.note)} ${esc(identKeyLine)}</div>
           ${ident.ambiguity.length
             ? ident.ambiguity.map(a => `<div class="banner warm" style="margin-top:10px"><span class="material-symbols-outlined">warning</span>

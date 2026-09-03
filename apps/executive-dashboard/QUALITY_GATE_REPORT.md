@@ -1,0 +1,259 @@
+# NEXUS OS — quality gate
+
+Run 2026-09-03T11:45:26.060Z
+
+**PASS 26 · FAIL 2 · WARN 2 · NOT RUN 4 · exit 1**
+
+Schema source: LIVE (2026-09-03T11:39:43Z)
+
+Live lane: RAN — catalogue from --catalogue /tmp/cat.json
+
+A NOT RUN is not a PASS. Exit 2 means nothing failed and something launch-critical could not be checked.
+
+### L2 · RLS is on for every tenant-owned table, and no policy is open to anon or authenticated
+
+**FAIL** · P0 · LIVE · database
+
+- deal_rescue_states/deal_rescue_states_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- deal_rescue_evidence_sources/deal_rescue_evidence_sources_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- deal_rescue_prerequisites/deal_rescue_prerequisites_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- attribution_link_basis/attribution_link_basis_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- attribution_edge_type/attribution_edge_type_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- attribution_event_type/attribution_event_type_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- policy_unmigrated_constant/policy_unmigrated_constant_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- lead_recovery_states/lead_recovery_states_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- policy_rule_type/policy_rule_type_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- policy_unit/policy_unit_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+
+### L9 · Every audit_log writer is a registered workflow, so a business execution is distinguishable
+
+**FAIL** · P0 · LIVE · database
+
+- "Example Workflow" wrote 1 audit_log row(s) (FAILED) and resolves to no workflow_registry entry — v_audit_unregistered_writers calls it an unrecognised writer, so its runs are on no health surface. Register it from the box with its real n8n id, or establish it is not a NEXUS workflow. Do not invent a registry row to clear this.
+
+### B1 · A decide() call by a non-approver is refused by Postgres, not just greyed out in the UI
+
+**NOT RUN** · P0 · LIVE · database
+
+_Could not run: needs a signed-in NON-APPROVER, and this database has none to sign in as: tenant_members holds exactly one row and its role is "owner", which inventory_action_policy.approver_tenant_roles admits. Creating a non-approving member is a write to production. Measured 2026-09-03 through the read-only SQL channel: action_decide() invoked against a real inventory_actions row as a signed-in identity with no membership returned ok=false, refusal_code=NO_TENANT, and wrote 0 audit_log and 0 inventory_action_events rows — so the refusal is demonstrably Postgres-side on that arm. The arm this check names, NOT_AN_APPROVER, writes an audit row and an event row before it returns and therefore cannot be exercised read-only either._
+
+
+### B2 · Submitting the same decision twice produces one state change (idempotent=true on the second)
+
+**NOT RUN** · P0 · LIVE · database
+
+_Could not run: needs a real session and a writable action; the gate is read-only against production and will not create one_
+
+
+### B3 · A member of dealership A cannot see or act on dealership B's actions
+
+**NOT RUN** · P0 · LIVE · database
+
+_Could not run: needs two dealerships and this database has one: public.tenants holds a single row, so there is no dealership B whose rows could be withheld. Standing one up is a write to production. Proven adversarially against two synthetic tenants on 2026-09-02 per CLAUDE.md; that evidence is not re-derived here and is not carried forward as a pass._
+
+
+### B4 · The rendered figures match the live rows for a real dealership
+
+**NOT RUN** · P0 · LIVE · database
+
+_Could not run: the render lane serves a stub on purpose, so the result is deterministic; matching live data is a separate, credentialed run_
+
+
+### L8b · One audit row covers more than one ledger event
+
+**WARN** · P1 · LIVE · database
+
+- 7 events share 6 audit rows
+- One decide() call emits APPROVED and ASSIGNED and audits once. Defensible — one decision, one audit row — but the audit ledger then under-counts what happened, and anything that counts audit rows to count actions will be short.
+
+### S5b · Exposure totals coalesce a null impact to zero
+
+**WARN** · P1 · OFFLINE · source
+
+- screens/actions.js:637: const exposureWaiting = waiting.reduce((s, r) => s + (Number(r.engine_impact_aed) \|\| 0), 0);
+- Defensible — impact_kind NONE means no exposure — but a total built this way cannot distinguish "no exposure" from "not computed". Partition by impact_kind before summing if that distinction ever has to hold.
+
+### L1 · The embedded schema snapshot still matches the live catalogue
+
+**PASS** · P0 · LIVE · database
+
+- 73 relations, identical to the snapshot taken 2026-09-03T00:00:00Z
+
+### L10 · No recovered_value_aed exists without an attributed sale behind it
+
+**PASS** · P0 · LIVE · database
+
+- 0 rows; the CHECK inventory_actions_recovered_needs_real_sale holds
+
+### L3 · Every public view carries security_invoker
+
+**PASS** · P0 · LIVE · database
+
+- every view in public carries security_invoker
+
+### L4 · No SECURITY DEFINER function granted to authenticated writes across tenants
+
+**PASS** · P0 · LIVE · database
+
+- 25 of 60 functions are SECURITY DEFINER with EXECUTE reachable by authenticated; 45 write statements were read out of 84100 characters of their source, and every one carries a tenant predicate within 900 characters
+- every definer function reachable by authenticated resolves its tenant from the caller and scopes its writes
+
+### L5 · anon holds no EXECUTE on any function that reads tenant-owned data
+
+**PASS** · P0 · LIVE · database
+
+- 0 of 60 functions in public hold EXECUTE for anon at all; 0 of those have a body that reads a tenant-owned table
+- This passes because the grant is absent everywhere, not because a grant was inspected and found harmless — which is the strongest form this result takes, and the one the 2 Sep revocation was aiming at.
+- Supabase grants EXECUTE directly to anon and authenticated by default, and REVOKE ... FROM PUBLIC does not remove a direct grant — this check exists because that exact shape has opened three holes here
+
+### L6 · Sentinel economics are deterministic: no rate means no holding cost and no net margin
+
+**PASS** · P0 · LIVE · database
+
+- 12 units checked; every state column agrees with the figure beside it
+
+### L7 · UNKNOWN has not silently become a number without the evidence to support it
+
+**PASS** · P0 · LIVE · database
+
+- baseline 2026-09-03T00:00:00Z: holding NOT_COMPUTABLE 12/12, net margin NOT_COMPUTABLE 12/12, market UNKNOWN 12/12, demand UNKNOWN_LOW_COVERAGE 12/12
+- this run: 12 units, 0 with a computed economic figure, 0 claiming a market position
+
+### L8 · Every action ledger event links to exactly one audit row, in its own tenant
+
+**PASS** · P0 · LIVE · database
+
+- 7 events, 6 audit rows, 0 orphan, 0 dangling, 0 cross-tenant
+
+### R0 · The bundle builds, and the gate builds it
+
+**PASS** · P0 · OFFLINE · rendered
+
+- vite build, fresh, with the app environment contract satisfied
+
+### R1 · The app boots and registers every screen
+
+**PASS** · P0 · OFFLINE · rendered
+
+- loggedIn=true, navItems=20 matching lib/nav.js
+- 0 page errors across the whole run
+
+### R2 · Every screen renders real content with no page errors
+
+**PASS** · P0 · OFFLINE · rendered
+
+- 20/20 screens rendered
+- overview:39685c/8cards  leads:10095c/2cards  conversations:13897c/3cards  compliance:24337c/4cards  revenue:31238c/7cards  leadrecovery:18406c/6cards  dealrescue:13852c/5cards  attribution:21076c/6cards  policy:19710c/6cards  inventory:6336c/2cards  competitors:20393c/4cards  ask:8870c/4cards  finance:32774c/7cards  customers:20892c/2cards  actions:22265c/6cards  campaigns:16966c/7cards  deals:18471c/5cards  automation:32334c/7cards  team:14827c/4cards  settings:28894c/11cards
+
+### R3 · No query the database would reject — and the check is not vacuous
+
+**PASS** · P0 · OFFLINE · rendered
+
+- 129 PostgREST calls observed across 20 screens; 0 rejected
+
+### R4 · An uncomputable figure renders as words, never as zero
+
+**PASS** · P0 · OFFLINE · rendered
+
+- served: holding_cost_accrued_aed null / NOT_COMPUTABLE, net_margin_aed null / NOT_COMPUTABLE, market UNKNOWN_NO_COMPARABLE, demand UNKNOWN_LOW_COVERAGE — the live shape on 12 of 12 units
+- no "AED 0" and no "0.0%" reached any of the 8 screens that render money: overview, inventory, actions, revenue, leadrecovery, dealrescue, attribution, policy
+
+### R5 · A fabricated recovered value is refused by the screen
+
+**PASS** · P0 · OFFLINE · rendered
+
+- served a row with recovered_value_aed 250000, outcome_state NONE_YET, outcome_purchase_id null, attribution_basis null, recovered_value_basis null — all four columns the CHECK requires absent
+- it did not reach any of the 8 money-rendering screens as a figure: overview, inventory, actions, revenue, leadrecovery, dealrescue, attribution, policy
+
+### R6 · Every action lifecycle state has its own words
+
+**PASS** · P0 · OFFLINE · rendered
+
+- all seven inventory_actions.status values rendered with distinct wording
+
+### R7 · Authorisation is shown and disabled, not hidden
+
+**PASS** · P0 · OFFLINE · rendered
+
+- served may_decide=false / NOT_AN_APPROVER; screen rendered 10 disabled controls and the refusal sentence
+
+### S1 · Navigation and screen registry agree
+
+**PASS** · P0 · OFFLINE · source
+
+- 20 nav entries, 20 registered screens, parsed from lib/nav.js: overview, leads, conversations, compliance, revenue, leadrecovery, dealrescue, attribution, policy, inventory, competitors, ask, finance, customers, actions, campaigns, deals, automation, team, settings
+
+### S10 · One outcome vocabulary, and it is not the action lifecycle
+
+**PASS** · P0 · OFFLINE · source
+
+- every file that reads audit_log or v_workflow_health imports lib/health.js and classifies through it
+- screens/actions.js reads audit_outcome_class from v_inventory_action_timeline rather than re-deriving it
+- the action lifecycle and the run outcome are never passed through each other
+
+### S2 · Nobody reached outside the helper contract
+
+**PASS** · P0 · OFFLINE · source
+
+- 40 source files linted (screens, lib and app.js)
+
+### S3 · Every query names a relation and columns that exist
+
+**PASS** · P0 · OFFLINE · source
+
+- 135 distinct PostgREST paths extracted from 40 files
+- column map: LIVE (2026-09-03T11:39:43Z), 73 relations
+
+### S4 · No browser-side tenant scoping
+
+**PASS** · P0 · OFFLINE · source
+
+- no db() path filters on tenant_id; no dbWrite() body composes one; lib/tenant.js reads membership to label the session only
+
+### S5 · No zero substituted for an uncomputable economic figure
+
+**PASS** · P0 · OFFLINE · source
+
+- 6 unknownable figures checked across 40 files
+- live evidence: holding_cost_accrued_aed and net_margin_aed are NULL on 12 of 12 units
+
+### S6 · Every state the engine emits reaches the reader
+
+**PASS** · P0 · OFFLINE · source
+
+- screens/inventory.js: holding_cost_state — every value named
+- screens/overview.js: holding_cost_state — partitioned on the computed value, so every other state is handled by complement
+- screens/revenue.js: holding_cost_state — partitioned on the computed value, so every other state is handled by complement
+- lib/unit-form.js: holding_cost_state — every value named
+- screens/inventory.js: net_margin_state — every value named
+- screens/overview.js: net_margin_state — partitioned on the computed value, so every other state is handled by complement
+- lib/unit-form.js: net_margin_state — every value named
+- screens/inventory.js: market_position — every value named
+- screens/overview.js: market_position — UNKNOWN family covered by a prefix guard
+- screens/revenue.js: market_position — UNKNOWN family covered by a prefix guard
+- screens/inventory.js: demand_signal — every value named
+- screens/overview.js: demand_signal — UNKNOWN family covered by a prefix guard
+- screens/inventory.js: enquiry_coverage — printed verbatim, so any value reaches the reader
+
+### S7 · No invented or hard-coded market price
+
+**PASS** · P0 · OFFLINE · source
+
+- REPRICE asks for a human price review; no screen names a figure
+
+### S8 · No finance figure is computed by the browser or by a model
+
+**PASS** · P0 · OFFLINE · source
+
+- APR / EMI / monthly / LTV are read from finance_quotes with calculation_id and execution_id, never derived
+- lifetime value in screens/customers.js is summed from purchase_history and is not a finance figure — excluded on purpose, by name
+
+### S9 · Exposure is never called recovery, and recovery names its sale
+
+**PASS** · P0 · OFFLINE · source
+
+- recoveryEvidence() is the single derivation and reads all four columns the CHECK names: outcome_state, outcome_purchase_id, attribution_basis, recovered_value_basis
+- defined in screens/actions.js; every render of recovered_value_aed routes through it
+- no bare null test on recovered_value_aed survives outside that function
+- live: recovered_value_aed is null on all 3 inventory_actions rows, so a fabricated figure is latent, not visible today
+

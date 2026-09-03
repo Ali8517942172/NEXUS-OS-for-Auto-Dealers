@@ -1010,7 +1010,7 @@ const leadStatusPill = t => {
         ? 'Read from v_conversations.lead_status for this thread.'
         : `v_conversations resolved no lead for this thread, so this is the status of the row lib/identity.js `
           + `matched. ${leadWhy(t)}`);
-  return `<span title="${esc(why)}">${pill(`${s} lead`, tone(s))}</span>`;
+  return `<span title="${esc(why)}">${pill(`${s} lead`, tone(s), { verbatim: false })}</span>`;
 };
 
 /* The line under the name. The phone has moved up beside it, so what is left
@@ -1442,7 +1442,7 @@ SCREENS.conversations = async host => {
                     : (a.kind === 'silence_escalated' ? 'notifications_paused' : 'schedule'))}</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
-              <span title="${esc(sevWhy)}">${pill(`${a.severity} severity`, sevTone)}</span>
+              <span title="${esc(sevWhy)}">${pill(`${a.severity} severity`, sevTone, { verbatim: false })}</span>
               <span style="font-weight:500${name ? '' : ';font-style:italic'}" class="${name ? '' : 't-muted'}">${esc(name || 'Unidentified contact')}</span>
               ${phone}
               ${t ? leadStatusPill(t) : ''}
@@ -2216,7 +2216,7 @@ SCREENS.conversations = async host => {
                     called 17 msg sat directly under a line saying the newest row
                     was not a message. It is the message-only count now, with the
                     rows it leaves out named in the title. */''}
-              ${t.awaiting ? pill('Reply due', 'hot') : `<span class="cell-sub" title="${esc(figuresAreExact(t)
+              ${t.awaiting ? pill('Reply due', 'hot', { verbatim: false }) : `<span class="cell-sub" title="${esc(figuresAreExact(t)
                   ? `v_conversations.msg_count — rows public.nexus_is_message() accepts.${t.internalCount ? ` ${t.internalCount} further row${t.internalCount === 1 ? '' : 's'} on this thread ${t.internalCount === 1 ? 'is' : 'are'} an internal note and ${t.internalCount === 1 ? 'is' : 'are'} not counted here.` : ''}`
                   : 'v_conversations.message_count. That column counts every row filed under this contact, internal notes included; the message-only count did not come back on this read.')}">${num(realCount(t))} msg</span>`}
               ${t.identified === 'lead' ? '' : `<span class="chip" title="${esc(id.label)} — ${esc(identNote(t))}">${esc(id.short)}</span>`}
@@ -2427,7 +2427,7 @@ SCREENS.conversations = async host => {
           </div>
         </div>
         <div style="flex:1"></div>
-        <span title="${esc(identNote(t))}">${pill(id.label, id.tone)}</span>
+        <span title="${esc(identNote(t))}">${pill(id.label, id.tone, { verbatim: false })}</span>
         ${/* Was `t.lead_status ? pill(t.lead_status) : ''` — the view's column,
               and a bare `WARM` or `DISQUALIFIED` with no noun on it, in the same
               component and the same colour vocabulary this screen's alert strip
@@ -2850,7 +2850,7 @@ SCREENS.conversations = async host => {
                     : `<span class="t-warm">${esc(leadWhy(t))}</span>`))}</dd>
         <dt>WhatsApp address</dt><dd>${chatHtml(t, '')}</dd>
         <dt>Thread keyed on</dt><dd><span class="mono">${esc(t.key)}</span> <span class="t-muted">— ${esc(keyKind(t.key))}. This is who the thread is, not where it goes; the message is addressed to the line above.</span></dd>
-        <dt>Identified as</dt><dd>${pill(id.label, id.tone)}${leadStatusPill(t) ? ' ' + leadStatusPill(t) : ''}</dd>
+        <dt>Identified as</dt><dd>${pill(id.label, id.tone, { verbatim: false })}${leadStatusPill(t) ? ' ' + leadStatusPill(t) : ''}</dd>
       </dl>
       <div class="label-caps" style="margin-top:16px">Message as it will be sent</div>
       <div class="bubble out" style="max-width:100%;margin-top:8px">${esc(text)}</div>

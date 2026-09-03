@@ -108,6 +108,30 @@
    screen counts people as well as quotes, and no mean is printed until enough
    different people are behind it. Nothing here reads as a live figure.
 
+   ── 2 Sep 2026: "zero rows" is a live count, NOT a life history ─────────────
+   It is repeated around this codebase that `finance_quotes` has held no row
+   since it was created, and that the Finance Calculator has therefore never
+   completed once. The live count is right and the history is wrong. Postgres
+   keeps its own tally:
+
+     select n_tup_ins, n_tup_del, n_live_tup, n_dead_tup
+       from pg_stat_all_tables where relname = 'finance_quotes';
+     -- 16 inserted, 13 deleted, 0 live, 16 dead   (read 2 Sep 2026)
+
+   Sixteen tuples reached the heap; thirteen were DELETED and three were rolled
+   back (13 deleted + 3 aborted = the 16 dead, which is why nothing is live).
+   A NOT NULL or CHECK violation never reaches the heap and so never counts
+   here — these were real, committed rows. And the delete is not a mystery:
+   `docs/journeys/README.md` §2.3 is a teardown script that runs
+   `delete from finance_quotes where lead_email = '…'` after every test journey,
+   against the one customer every one of these quotes belongs to.
+
+   So the calculator's insert path HAS worked, repeatedly, and the record was
+   removed on purpose afterwards. What is unproven is narrower and worth stating
+   exactly: it has not been exercised ONCE since 31 Aug 2026, when the last
+   failing constraint was dropped. Empty here means "cleared", not "never".
+   These counters reset with `pg_stat_reset()`, so 16 is a floor, not a total.
+
    `finance_quotes` held three rows and all three carried the same lead_email.
    The vehicle value on them is 152,000, then 280,000, then 100,000. That is one
    negotiation being re-priced, not a book of business, and the difference
@@ -595,8 +619,12 @@ SCREENS.finance = async host => {
     <div class="card-title" style="margin-bottom:4px">Quote a trade-in</div>
     <div class="card-sub" style="margin-bottom:16px">
       Runs the live Finance Calc workflow, which returns the equity, the credit band and a
-      range of indicative APRs, and records the quote in <span class="mono">finance_quotes</span>.
-      A trade-in is optional — a customer with nothing to trade still gets a rate off their credit score.</div>
+      range of indicative APRs, and is <em>supposed</em> to record the quote in
+      <span class="mono">finance_quotes</span>. Whether it did is checked before any figure is shown here,
+      because on five live runs it did not and said it had.
+      A trade-in is optional — a customer with nothing to trade still gets a rate off their credit score.
+      No monthly instalment can be produced from this desk: the calculator needs the price of the car being
+      bought and this form has no field for one.</div>
     <div class="grid" style="gap:14px">
       ${field('fLead', 'Lead',
         `<select id="fLead" disabled><option value="">Loading leads…</option></select>`,
@@ -849,7 +877,7 @@ SCREENS.finance = async host => {
     if (!lead) {
       return leadsCapped
         ? `<span class="t-muted" title="${esc(`The leads read stopped at its ${LEAD_LIMIT}-row ceiling, so whether a lead carries this email is not known — only that none of the ${LEAD_LIMIT} newest does. No phone number is shown and none is claimed absent.`)}">not looked up</span>`
-        : `<span class="t-muted" title="No lead in the database carries this email address, so there is no phone number to show. finance_quotes stores no phone of its own.">—</span>`;
+        : `<span class="t-muted" title="No lead on this dealership's books carries this email address, so there is no phone number to show. finance_quotes stores no phone of its own. Leads belonging to another dealership are refused by the database and are not what this is reading.">—</span>`;
     }
     if (!str(lead.phone)) {
       return '<span class="t-muted" title="This lead has no phone number on file.">—</span>';
@@ -1206,6 +1234,45 @@ SCREENS.finance = async host => {
     $('fqFocusClear')?.addEventListener('click', () => { focusKey = null; drawHistory(); });
   }
 
+  /* ── What audit_log says was quoted, counted the way this desk counts ─────
+     2 Sep 2026. `issued` was read for drawHistory() and for the alert strip and
+     was invisible to the two tiles at the top, which are the largest type on the
+     screen. Both of them printed "Nothing quoted from this desk yet" over a
+     month in which the calculator behind THIS form issued eight quotes: the
+     screen's own drawHistory() said so two panels below, and the alert strip
+     said so in red, and the tiles said the opposite in 48px.
+
+     No new read. This is the `issued` array loadAudit() already holds, grouped
+     on lead_email — the same key indexPeople() groups finance_quotes on, and the
+     same key the alert strip groups the orphan runs on, so a customer is one
+     customer in all three places.
+
+     Grouping on email rather than on name is the whole point of returning
+     `names` alongside it. Live on 2 Sep 2026 the eight runs carry ONE address
+     (shabbir53ujjainwala@gmail.com) under THREE spellings — "Shabbir
+     Ujjainwala", "ALI ASGHER UJJAIN WALA" and "Ali" — so a tile that counted
+     names would report three customers where there is one man, which is the
+     exact error the rest of this screen exists to stop.
+
+     `noEmail` is counted apart and never folded into a bucket: a run with no
+     address belongs to nobody this desk can name, and quietly adding it to the
+     email count would invent a customer. null means the read FAILED and is
+     never rendered as "none". */
+  function issuedIdentities() {
+    if (!issued) return null;
+    const byEmail = new Map();
+    const names = new Set();
+    let noEmail = 0;
+    for (const a of issued) {
+      const n = str(a.lead_name);
+      if (n) names.add(n);
+      const k = lower(str(a.lead_email));
+      if (!k) { noEmail += 1; continue; }
+      byEmail.set(k, (byEmail.get(k) || 0) + 1);
+    }
+    return { runs: issued.length, emails: byEmail.size, names: names.size, noEmail };
+  }
+
   /* ── The strip ────────────────────────────────────────────────────────────
      Four tiles, and not one of them is a rate. Two used to be: the mean
      indicative APR and the mean loan to value, both computed across every row
@@ -1232,6 +1299,35 @@ SCREENS.finance = async host => {
     const noTradeIn = rows.filter(r => isNoTradeIn(r.equity_status)).length;
     const values = rows.map(r => n0(r.vehicle_value_aed)).filter(v => v != null).sort((a, b) => a - b);
 
+    /* ── Zero rows here is not zero quotes ────────────────────────────────
+       Both tiles below used to fall back to "Nothing quoted from this desk yet"
+       on `rows.length === 0`, which is a claim about the DESK made from the
+       state of one TABLE. It was false on the live database, and this file
+       already knew it was false in two other places.
+
+       "From this desk" cannot be rescued by scoping to finance_quotes.source
+       either, and the option was considered rather than skipped. Three reasons,
+       and any one of them is enough. (1) `source` is a column ON finance_quotes:
+       it can only describe rows that exist, and every subset of an empty table
+       is empty, so no filter on it turns 0 into a true "nothing was quoted".
+       (2) loadQuotes() reads `finance_quotes?select=*` with no source filter, so
+       `rows.length` is every source there is — wording the fallback as "this
+       desk" while counting all of them would be a second contradiction, not a
+       fix for the first. (3) The distinction it draws does not exist here: this
+       screen's own calculator posts to HOOK.finance ('finance-calc'), which IS
+       the Finance Calc workflow that logged all eight "Quote issued" runs, so
+       those quotes came from this desk in the only sense a rep means by it.
+
+       So the tiles state the two facts they hold — this table is empty, and
+       audit_log records quotes issued — and neither is dressed as the other. */
+    const iss = issuedIdentities();
+    /* Quotes said to have been issued that this desk holds nothing for. Only
+       meaningful with the table empty, which is the branch it is used in: with
+       rows present, whether a given run is one of them is not knowable from
+       here (audit_log carries no calculation_id), and the alert strip already
+       does that cross-check per person. */
+    const unrecorded = iss ? iss.runs : 0;
+
     strip.innerHTML = [
       kpi('Quotes recorded', num(rows.length),
         rows.length
@@ -1241,21 +1337,47 @@ SCREENS.finance = async host => {
             + (unattributed
               ? `<br>${warn(`${num(unattributed)} of them ${plural(unattributed, 'carries', 'carry')} no customer email and ${plural(unattributed, 'belongs', 'belong')} to nobody`)}`
               : '')
-          : muted('Nothing quoted from this desk yet')),
+          : iss === null
+            ? muted('Whether anything has been quoted is unknown — the audit_log read failed, so an empty table here is not evidence of an idle desk.')
+            : unrecorded
+              ? `${warn(`${num(unrecorded)} ${plural(unrecorded, 'quote was', 'quotes were')} issued and not one is recorded here`)}`
+                + `<br>${muted('audit_log holds the runs; this table holds no row for any of them. Zero is what this desk has stored, not what it has quoted.')}`
+              : muted('Nothing recorded, and audit_log records no quote issued either — the desk has not quoted.'),
+        rows.length ? '' : (unrecorded ? 't-warm' : '')),
 
       /* The tile the rest of the screen hangs off. It is not decoration: it is
          the denominator, and every figure that is missing from this strip is
          missing because of what it says. */
-      kpi('Customers quoted', num(ppl.length),
+      /* Headed "Customers recorded", not "Customers quoted". The value is
+         `ppl.length` — people with a row in finance_quotes — and on the live
+         database that is 0 while one customer has been quoted eight times. Under
+         the old heading the tile read "Customers quoted: 0", which is not a
+         shortfall in wording but a false statement about a man who has been
+         quoted, printed in the largest type on the screen. The heading now names
+         what the number counts; the sub-line says what audit_log knows. */
+      kpi('Customers recorded', num(ppl.length),
         ppl.length
           ? (oneCustomer
               ? `${warn(`All ${num(rows.length)} quotes belong to one email address`)}<br>${muted(ppl[0].email)}`
                 + `<br>${muted('One customer re-priced is a negotiation, not a book of business. Nothing on this screen is divided by it.')}`
               : muted(`Across ${num(ppl.length)} email addresses`))
-          : muted(rows.length
-              ? 'No quote carries a customer email, so none of them can be attributed to a person'
-              : 'Nothing quoted from this desk yet'),
-        oneCustomer ? 't-warm' : ''),
+          : rows.length
+            ? muted('No quote carries a customer email, so none of them can be attributed to a person')
+            : iss === null
+              ? muted('Whether anyone has been quoted is unknown — the audit_log read failed, so nobody here is not the same as nobody quoted.')
+              : unrecorded
+                ? `${warn(`${num(iss.emails)} ${plural(iss.emails, 'customer was', 'customers were')} quoted and ${plural(iss.emails, 'is', 'are')} not on this desk`)}`
+                  + `<br>${muted(`Counted by email address, which is what finance_quotes identifies a customer by. ${num(unrecorded)} issued ${plural(unrecorded, 'run', 'runs')} in audit_log, and no row here for any of them.`)}`
+                  /* The reason this tile counts emails and not names, stated
+                     where the miscount would have been visible. */
+                  + (iss.names > iss.emails
+                    ? `<br>${muted(`Those runs are filed under ${num(iss.names)} different spellings of a name — counted by name this tile would say ${num(iss.names)}.`)}`
+                    : '')
+                  + (iss.noEmail
+                    ? `<br>${warn(`A further ${num(iss.noEmail)} issued ${plural(iss.noEmail, 'run carries', 'runs carry')} no email and ${plural(iss.noEmail, 'is', 'are')} outside this count — ${plural(iss.noEmail, 'it belongs', 'they belong')} to nobody this desk can name.`)}`
+                    : '')
+                : muted('Nobody recorded, and audit_log records no quote issued to anybody either.'),
+        (oneCustomer || (!ppl.length && !rows.length && unrecorded)) ? 't-warm' : ''),
 
       /* A range, never a mean. The lowest and highest figures actually typed are
          two facts; the number between them would be an invention with a
@@ -1620,7 +1742,7 @@ SCREENS.finance = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px">warning</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${sev ? pill(sev, sevTone(sev)) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
+            ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
           </div>
           <div class="cell-sub">${esc(str(it.detail))}</div>
@@ -1648,7 +1770,7 @@ SCREENS.finance = async host => {
         <span class="material-symbols-outlined t-${esc(sevTone(c.sev))}" style="font-size:20px">${c.icon}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${pill(c.sev, sevTone(c.sev))}${esc(c.title)}
+            ${pill(c.sev, sevTone(c.sev), { verbatim: false })}${esc(c.title)}
           </div>
           <div class="cell-sub">${esc(c.detail)}</div>
           <div class="cell-sub" style="margin-top:4px">${previewOf(c.quotes)}</div>
@@ -1785,7 +1907,7 @@ SCREENS.finance = async host => {
       <span class="material-symbols-outlined t-hot" style="font-size:20px">report</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill('CRITICAL', sevTone('CRITICAL'))}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued and never recorded, to ${
+          ${pill('CRITICAL', sevTone('CRITICAL'), { verbatim: false })}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued and never recorded, to ${
             lostPeople.length === 1 ? 'one customer' : `${num(lostPeople.length)} customers`}`)}
         </div>
         <div class="cell-sub">${esc(
@@ -1819,7 +1941,7 @@ SCREENS.finance = async host => {
       <span class="material-symbols-outlined t-hot" style="font-size:20px">receipt_long</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${pill('HIGH', sevTone('HIGH'))}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
+          ${pill('HIGH', sevTone('HIGH'), { verbatim: false })}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
             orphanPeople.length === 1 ? 'one customer' : `${num(orphanPeople.length)} customers`}`)}
         </div>
         <div class="cell-sub">${esc(
@@ -2102,20 +2224,19 @@ SCREENS.finance = async host => {
         auditCapped ? `The read stopped at ${num(AUDIT_LIMIT)} rows, so older runs are not counted.` : '',
       ].filter(Boolean).map(esc).join('<br>')}</div></div>`;
 
-    /* pill() in lib/format.js attaches "This dashboard has no wording for that
-       status" to anything it renders in the unknown tone, unless the LABEL it
-       is handed is itself a key in that file's TONE table. The canonical layer's
-       labels are human words — "Refused", "No result" — and "REFUSED" is not a
-       TONE key, so pill('Refused', 'unknown') produces a grey pill whose hover
-       reads "this dashboard has no wording for that status" directly above two
-       paragraphs of wording for it. That is the same defect the 31 Aug audit
-       caught on the automation screen, which is why automation.js grows its own
-       wordPill(); this is that helper, in the markup pill() emits, carrying
-       health.js's own sentence as the title instead. Every other pill on this
-       screen still goes through pill(), because every other pill on this screen
-       is labelled with a value TONE actually knows. */
+    /* The canonical layer's labels are human words — "Refused", "No result" —
+       and "REFUSED" is not a TONE key, so pill('Refused', 'unknown') used to
+       produce a grey pill whose hover read "this dashboard has no wording for
+       that status" directly above two paragraphs of wording for it. That is why
+       this helper re-emitted pill()'s markup by hand.
+
+       pill() now takes `{ verbatim: false }` for that, so the markup comes from
+       the shared helper again and only the difference is left here: pill()
+       attaches no title but its own, and these need health.js's sentence. It
+       goes on a wrapper, as it already does on overview, settings and ask. */
     const wordPill = (label, tone, why) =>
-      `<span class="pill ${esc(tone || '')}"${why ? ` title="${esc(why)}"` : ''}><span class="dot"></span>${esc(label)}</span>`;
+      (why ? `<span title="${esc(why)}">${pill(label, tone, { verbatim: false })}</span>`
+           : pill(label, tone, { verbatim: false }));
 
     const head = (title, blurb) => `<div class="toolbar" style="background:var(--surface-sunken)">
       <div class="cell-sub" style="white-space:normal;flex:1"><strong>${esc(title)}</strong> ${esc(blurb)}</div></div>`;
@@ -2242,11 +2363,11 @@ SCREENS.finance = async host => {
           <h2 style="font-size:18px">${personName(q.lead_name, personName(lead?.name, 'Unnamed customer'))}</h2>
           <div class="cell-sub" style="margin-top:4px">${phoneCell(q)}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-            ${q.equity_status ? pill(q.equity_status, eqTone(q.equity_status)) : ''}
+            ${q.equity_status ? pill(q.equity_status, eqTone(q.equity_status), { verbatim: true }) : ''}
             <!-- legacy column name; the workflow writes the credit band into it -->
             ${q.finance_tier ? `<span class="chip">${esc(q.finance_tier)}</span>` : ''}
             ${q.source ? `<span class="chip">${esc(q.source)}</span>` : ''}
-            ${lead?.status ? pill(lead.status) : ''}
+            ${lead?.status ? pill(lead.status, undefined, { verbatim: true }) : ''}
           </div>
         </div>
         <button class="btn ghost sm" id="fqClose" aria-label="Close quote">
@@ -2356,7 +2477,7 @@ SCREENS.finance = async host => {
             <dt>Lead record</dt><dd>${leads
               ? (lead
                 ? `${personName(lead.name, '<span class="t-muted">Unnamed lead</span>')}${lead.status ? ' · ' + esc(str(lead.status)) : ''}`
-                : '<span class="t-warm">No lead in the database carries this email</span>')
+                : '<span class="t-warm" title="Checked against this dealership&#39;s leads. Another dealership&#39;s rows are refused by the database, so they are neither checked nor claimed absent.">No lead on this dealership&#39;s books carries this email</span>')
               : '<span class="t-muted">Leads could not be read, so this was not checked</span>'}</dd>
             <dt>Quoted by</dt><dd>${esc(q.quoted_by || '—')}</dd>
             <dt>Recorded</dt><dd>${esc(stamp(q.created_at))}</dd>
@@ -2410,6 +2531,9 @@ SCREENS.finance = async host => {
          The workflow reads an omitted vehicleValue as "this customer has nothing
          to trade" and a supplied one as a valuation to price, so sending a blank
          string is asking it to interpret an empty field on our behalf. */
+      /* The moment the request left, used by the evidence gate to tell a row
+         written by THIS calculation from an older one for the same customer. */
+      const submittedAt = Date.now();
       const r = await n8n(HOOK.finance, {
         ...(v.vehicleValue ? { vehicleValue: v.vehicleValue } : {}),
         ...(v.loanPayoffAmount === '' ? {} : { loanPayoffAmount: v.loanPayoffAmount }),
@@ -2418,7 +2542,7 @@ SCREENS.finance = async host => {
         lead_email: v.lead_email,
         quoted_by: ME?.name || SESSION?.user?.email || null,
       });
-      renderQuote(r, v);
+      await renderQuote(r, v, submittedAt);
     } catch (e) {
       const msg = String(e?.message || e);
       /* A refusal answered with a 4xx lands here rather than in renderQuote, and
@@ -2474,6 +2598,224 @@ SCREENS.finance = async host => {
       </div></div>`;
   }
 
+  /* ── THE EVIDENCE GATE ──────────────────────────────────────
+     Added 2 Sep 2026. One rule, and it governs every figure below: no
+     authoritative finance number is shown on this screen unless a
+     `finance_quotes` row exists behind it.
+
+     Why this is not paranoia. On the live n8n box the Finance Calc `Log Quote`
+     node runs with `onError: continueRegularOutput` and `alwaysOutputData:
+     true`, and `Return Quote` answers the webhook with
+     `$('Calculate Equity & Tier').all()` — the in-memory calculation — whether
+     or not the insert landed. A 400 from PostgREST therefore changes NOTHING
+     about the body this screen receives: the rep is handed a complete rate,
+     band and instalment by a workflow that has just failed to record any of it.
+     The response is the calculator talking, not the dealership's record.
+
+     Measured against the live database on 2 Sep 2026: `finance_quotes` holds
+     ZERO rows, while `audit_log` holds EIGHT Finance Calc runs whose summary
+     begins "Quote issued". Five carry "1 of 1 claimed steps did not land
+     [finance_quotes row … — Bad request - please check your parameters]"; three
+     reported nothing wrong at all. All eight are ONE customer. Before this gate
+     every one of those eight rendered here as a finished quote.
+
+     So the figures are HELD until the row is found. The rep waits one read
+     rather than reading out a number the dealership cannot produce afterwards.
+
+     What counts as evidence, and nothing else does: THE row this calculation
+     wrote — not "a row for this customer, recently" — carrying BOTH
+     `calculation_id` and `execution_id`. `calculation_id` on its own is NOT
+     evidence: the column defaults to `gen_random_uuid()` and the published
+     `Log Quote` node does not send one, so every row carries one whether or not
+     the workflow supplied it. `execution_id` is what ties the figure to a run
+     somebody can open in n8n, and it is the column the dealership needs the day
+     a customer disputes what they were told.
+
+     ── HOW "THE row" IS IDENTIFIED, AND WHY THE OLD ANSWER WAS WRONG ─────────
+     Until 2 Sep 2026 this gate correlated on `lead_email` plus a 120-SECOND
+     WINDOW around the moment the request was sent, took the NEWEST matching
+     row, and released the figures. Both halves of that are unsafe, and the
+     unsafety is not theoretical:
+
+       · The window reaches BACKWARDS. `created_at >= submittedAt - 120s` admits
+         a row written up to two minutes BEFORE this calculation started. A rep
+         who quotes a customer, sees a figure they want to change, and quotes
+         again inside two minutes gets the FIRST quote's row accepted as
+         evidence for the SECOND quote — including when the second insert failed
+         outright. The figures are released with nothing behind them and the
+         screen prints "it can be produced again". It cannot.
+
+       · The newest row wins. Two quotes for one customer inside the window —
+         two reps, or a rep and the WhatsApp agent, which calls the same
+         calculator with the same lead_email — are indistinguishable. Screen A
+         renders quote A's instalment under quote B's row id and execution id.
+
+       · Nothing catches it afterwards. The only cross-check is `aprDiffers`,
+         and two quotes for the same customer share a credit score, therefore a
+         band, therefore an identical `indicative_apr_low_pct`. The instalment,
+         the amount financed, the deposit, the tenure and the vehicle price can
+         all differ and none of them is compared. The mismatch is silent.
+
+     A rep being told a rate backed by somebody else's calculation is the exact
+     failure this gate exists to prevent, so the correlation key is no longer a
+     time window.
+
+     `calculated_at` is an EXACT key and it is already on both sides. The
+     `Calculate Equity & Tier` node stamps `calculated_at: new Date()
+     .toISOString()` once per run and returns it in the response; the published
+     `Log Quote` node writes `calculated_at: $json.calculated_at` onto the row
+     verbatim. One calculation, one timestamp, on the response the rep is
+     holding and on the row it wrote. So the gate matches on it, and a match
+     is an identity rather than a coincidence of timing.
+
+     The window survives only as a FALLBACK for a response that carries no
+     `calculated_at` at all, and it is deliberately weaker there: more than one
+     candidate row is refused as `ambiguous` instead of being resolved by
+     recency. Refusing is right. This screen cannot tell two quotes apart
+     without a key, and guessing which one backs the figure is how the wrong
+     execution id ends up beside a number a customer is about to hear.
+
+     Failure direction, stated plainly: if `calculated_at` ever stops
+     round-tripping, this gate WITHHOLDS a figure that was in fact recorded.
+     That is the safe direction. The behaviour it replaces failed the other way.
+
+     The mirror of the same rule in the database is `v_fin_gate_quote_evidence`,
+     whose COMMENT states it. This screen does not read that view — it reads the
+     columns directly, because a view that failed to deploy must not read here
+     as "no quote" — but the two say the same thing, and the view is where the
+     rule can be checked without a browser. Note the view expresses only the
+     `calculation_id`/`execution_id` half; the identity half lives here, because
+     the response timestamp exists only in the browser. */
+  const EVIDENCE_SKEW_MS = 120000;   // fallback window only; browser clock vs Postgres now()
+  const EV_COLS = 'id,calculation_id,execution_id,created_at,calculated_at,lead_email,lead_name'
+    + ',indicative_apr_pct,indicative_apr_high_pct,disclaimer,finance_tier';
+
+  /* Five ways this can come back, and they are NOT the same sentence.
+     'recorded'   — the row is there and traceable; the figures may be shown.
+                    `match` says how it was identified: 'exact' (calculated_at)
+                    or 'window' (the fallback, one unambiguous candidate).
+     'missing'    — the read worked and there is no row: the workflow quoted and
+                    did not record, which is the 31 Aug incident happening again.
+     'untraceable'— a row exists but carries no execution_id, so the figure
+                    cannot be tied to a run. Shown as unavailable, because the
+                    gate is about traceability and not about row-count.
+     'ambiguous'  — more than one row could be this quote and nothing tells them
+                    apart. Withheld, because attaching the wrong evidence to a
+                    figure is worse than attaching none.
+     'unverified' — OUR read failed. This is the one that must not be reported
+                    as the workflow's fault: we do not know either way, and a
+                    figure we cannot verify is still a figure we may not show. */
+  async function quoteEvidence(sent, submittedAt, res) {
+    const email = str(sent.lead_email);
+    if (!email) return { state: 'missing', why: 'This quote carries no customer email, so there is no key to find a recorded row by.' };
+    const enc = encodeURIComponent;
+
+    /* ── Exact identity: the calculation's own timestamp ──────────────────── */
+    const stamp = str(res && res.calculated_at);
+    if (stamp) {
+      let exact;
+      try {
+        exact = await db(`finance_quotes?select=${EV_COLS}`
+          + `&lead_email=eq.${enc(email)}&calculated_at=eq.${enc(stamp)}&limit=3`);
+      } catch (e) {
+        return { state: 'unverified', err: e,
+                 why: `finance_quotes could not be read (${e && e.message ? e.message : String(e)}), so whether this quote was recorded is unknown here.` };
+      }
+      if (exact.length > 1) {
+        return { state: 'ambiguous', rows: exact,
+                 why: `${exact.length} finance_quotes rows carry this customer and this calculation timestamp, so which one records this quote cannot be settled from here.` };
+      }
+      if (exact.length === 1) {
+        const row = exact[0];
+        if (!(str(row.execution_id) && str(row.calculation_id))) {
+          return { state: 'untraceable', row,
+                   why: 'The finance_quotes row for this calculation carries no execution_id — nothing ties the figure to a Finance Calc run that can be opened and checked.' };
+        }
+        return { state: 'recorded', row, match: 'exact' };
+      }
+      return { state: 'missing',
+               why: 'The Finance Calculator answered with a quote and no row carrying this calculation’s own timestamp reached finance_quotes. '
+                  + 'An older quote for the same customer is not evidence for this one and is not accepted as it.' };
+    }
+
+    /* ── Fallback: no timestamp on the response, so no identity is available ─
+       Everything here is deliberately more suspicious than the branch above.
+       One unambiguous candidate is accepted and labelled as such; anything else
+       is refused rather than resolved by recency. */
+    const since = new Date(submittedAt - EVIDENCE_SKEW_MS).toISOString();
+    let found;
+    try {
+      found = await db(`finance_quotes?select=${EV_COLS}`
+        + `&lead_email=eq.${enc(email)}`
+        + `&created_at=gte.${enc(since)}`
+        + '&order=created_at.desc&limit=5');
+    } catch (e) {
+      return { state: 'unverified', err: e,
+               why: `finance_quotes could not be read (${e && e.message ? e.message : String(e)}), so whether this quote was recorded is unknown here.` };
+    }
+    if (!found.length) {
+      return { state: 'missing',
+               why: 'The Finance Calculator answered with a quote and no row for it reached finance_quotes.' };
+    }
+    if (found.length > 1) {
+      return { state: 'ambiguous', rows: found,
+               why: `${found.length} finance_quotes rows were written for this customer around this moment and this response carries no calculation timestamp to tell them apart. `
+                  + 'Which of them records THIS quote cannot be settled from here, and the wrong one would put another calculation’s reference beside this figure.' };
+    }
+    const row = found[0];
+    if (!(str(row.execution_id) && str(row.calculation_id))) {
+      return { state: 'untraceable', row,
+               why: 'A finance_quotes row was written for this customer, but it carries no execution_id — nothing ties the figure to a Finance Calc run that can be opened and checked.' };
+    }
+    return { state: 'recorded', row, match: 'window' };
+  }
+
+  /* The figures are not drawn. This is the whole point of the gate, so it says
+     what was withheld, why, and what to do — and it never renders an em dash, a
+     zero or an empty tile where a rate would have been, because all three read
+     as "it didn't load" and get filled in from memory. */
+  function renderWithheld(ev, sent) {
+    const isOurs = ev.state === 'unverified';
+    /* 'ambiguous' is its own sentence and must not be collapsed into "not
+       recorded". A row almost certainly IS on file; what is missing is proof of
+       WHICH row, and telling a rep the quote was lost would send them to
+       re-quote a customer who is already on record. */
+    const isAmbiguous = ev.state === 'ambiguous';
+    out().innerHTML = `<div class="banner hot">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">gpp_bad</span>
+        <div style="flex:1;min-width:0"><strong>${esc(isOurs
+          ? 'This quote cannot be verified, so no figure is shown.'
+          : isAmbiguous
+            ? 'This quote cannot be told apart from another one, so no figure is shown.'
+            : 'This quote was not recorded, so no figure is shown.')}</strong>
+          <div style="margin-top:6px">${esc(ev.why)}</div>
+        </div></div>
+      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
+        isAmbiguous
+          ? 'The Finance Calculator did return a rate for this customer. It is deliberately not printed here. More than one quote for this customer landed around this moment, '
+            + 'and this screen cannot say which row records THIS one — so it would have to print a rate beside another calculation’s reference. A figure carrying the wrong '
+            + 'reference is worse than no figure: it reads as proven and cannot be produced again from the run it names.'
+          : 'The Finance Calculator did return a rate for this customer. It is deliberately not printed here. A figure with no row behind it cannot be '
+            + 'produced again by this dealership — not for the customer, not for the bank, and not for a regulator — so it is not a figure this desk may read out. '
+            + 'That is not a display fault; it is the one rule this screen exists to enforce.')}</div>
+      <dl class="kv" style="margin-top:16px">
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(str(sent.lead_email))}</div></dd>
+        <dt>Trade-in value entered</dt><dd class="num">${sent.vehicleValue ? aed(sent.vehicleValue) : '<span class="t-muted">no trade-in</span>'}</dd>
+        <dt>Payoff entered</dt><dd class="num">${sent.loanPayoffAmount === '' || sent.loanPayoffAmount == null ? '<span class="t-muted">none</span>' : aed(sent.loanPayoffAmount)}</dd>
+        <dt>Credit score entered</dt><dd class="num">${num(sent.creditScore)}</dd>
+      </dl>
+      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
+        'The four figures above are what the rep typed into this form, not anything the calculator returned, and they are shown so the attempt can be repeated exactly.')}</div>
+      <div style="margin-top:16px">
+        <div class="label-caps" style="margin-bottom:6px">What to do</div>
+        <div class="quote">${esc(isOurs
+          ? 'Say nothing about a rate to the customer yet. Refresh the quote history below; if the row appears, the figures are on file and the quote can be given from the history. If it does not, treat it as unrecorded and escalate before quoting.'
+          : isAmbiguous
+            ? 'Do not read out anything from this card. Open the quote history below, find the row for this customer with the right value, payoff and score on it, and quote from that row — it carries its own execution id. If two rows both match, whoever quoted the other one has to say which is current before either is given to the customer.'
+            : 'Do not give this customer a rate. Calculate again — if it fails a second time the Finance Calc workflow is quoting without recording, which is a stop-the-desk fault and belongs with whoever owns the workflow, not with the rep.')}</div>
+      </div>`;
+  }
+
   /* Not quotable is not a decline and not a failure ─────────────────────────
      Below an AECB score of 541 the workflow returns `status:'success'` with
      `quotable:false`, no rate of any kind, and an `instruction` saying what to
@@ -2484,7 +2826,7 @@ SCREENS.finance = async host => {
 
      No APR field appears here at all. A blank labelled "Indicative APR" invites
      somebody to fill it in from memory. */
-  function renderReferral(res, sent) {
+  async function renderReferral(res, sent, submittedAt) {
     const band = str(res.credit_band);
     const instruction = str(res.instruction);
     const equity = isNoTradeIn(res.equity_status) || res.has_trade_in === false ? null : n0(res.equity_aed);
@@ -2505,10 +2847,78 @@ SCREENS.finance = async host => {
         <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(sent.lead_email)}</div></dd>
       </dl>
       ${res.disclaimer ? `<div class="quote" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
-      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
-        'Recorded by the workflow in finance_quotes with no APR against it. A row in the history below with an empty rate column is this outcome, not a lost figure.')}</div>`;
+      <div id="fRefRecord"></div>`;
 
-    /* Same re-read as a priced quote: the row exists either way. */
+    /* Painted, THEN checked. A referral shows no rate at all, so nothing on the
+       card above is gated — holding it behind a database read would delay the
+       one instruction that matters ("do not quote a percentage") for no safety
+       gained. The record status is appended when it is known. */
+    (async () => {
+        /* This card used to close with "Recorded by the workflow in
+           finance_quotes with no APR against it. A row in the history below
+           with an empty rate column is this outcome, not a lost figure."
+
+           That was wrong in the direction that reassures: a referral leaves no
+           record at all. But the REASON printed here until 2 Sep 2026 was also
+           wrong, and it was checked against the published workflow rather than
+           inferred. It read: "on the current schema none can — indicative_apr_pct
+           and finance_tier are NOT NULL, and a file the calculator refuses to
+           price has neither."
+
+           Both halves fail on the workflow as published (Finance Calc
+           unMMpeL9uuPO79pp, version 142bfb57, read 2 Sep 2026):
+
+             · The `Quote Valid?` IF node tests
+               `status === 'success' && quotable !== false`. A non-quotable file
+               takes the FALSE branch, which goes straight to `Delivery Report`.
+               `Log Quote` is never reached, so no insert is attempted and no
+               constraint is ever tested. The absence is a ROUTING decision, not
+               a schema limit.
+             · The non-quotable branch does return `credit_band`
+               ("Poor (below 541 on the AECB scale)"), which is what `Log Quote`
+               maps to `finance_tier`. Only `indicative_apr_pct` would be
+               missing — so even if the row were attempted, `finance_tier` is
+               not what would stop it.
+
+           The real "Bad request" of 30–31 Aug was neither column. Execution 7160
+           carries the server's own words: `null value in column
+           "vehicle_value_aed" of relation "finance_quotes" violates not-null
+           constraint` — a CASH BUYER with no trade-in, on the quotable path.
+           That NOT NULL was dropped by migration 20260831041251
+           (`finance_quotes_allow_no_trade_in`) nine minutes after the last
+           failure, and no quotable run has happened since, so the fix is real
+           and untested.
+
+           Relaxing indicative_apr_pct / finance_tier would therefore change
+           nothing here on its own — the insert is not attempted — while costing
+           the guarantee that every row in this table carries an APR, which two
+           captions on this screen currently rely on. Making a referral leave a
+           record is a workflow change, not a schema change.
+
+           It is still CHECKED rather than assumed, because the day the workflow
+           routes a referral into a record this sentence must stop being printed
+           on its own say-so. */
+      const ev = await quoteEvidence(sent, submittedAt, res);
+      const slot = $('fRefRecord');
+      if (!slot) return;
+      if (ev.state === 'recorded') {
+        slot.innerHTML = `<div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
+            'Recorded. finance_quotes row ' + str(ev.row.id) + ', from Finance Calc execution ' + str(ev.row.execution_id)
+          + (ev.match === 'exact' ? ', matched on this calculation’s own timestamp' : ', matched on customer and timing only')
+          + '. This referral is on file, so the decision not to quote can be shown later.')}</div>`;
+        return;
+      }
+      if (ev.state === 'unverified') {
+        slot.innerHTML = `<div class="cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
+          ev.why + ' No rate was quoted either way, so nothing was said to the customer that needs a record — but this desk cannot confirm the referral was filed.')}</div>`;
+        return;
+      }
+      slot.innerHTML = `<div class="cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
+          'NOT recorded, and on the workflow as published none can be: a file the calculator declines to price is routed around the step that writes the row, so no record is even attempted. '
+          + 'The dealership keeps no record that this customer was assessed and referred. '
+        + 'Nothing incorrect was said to them — no rate was given — but if the referral needs to be evidenced later, log it by hand.')}</div>`;
+    })();
+
     loadQuotes().then(() => { focusKey = null; renderAll(); });
   }
 
@@ -2516,7 +2926,7 @@ SCREENS.finance = async host => {
      shape of the body is what decides which of the four outcomes this is: a
      refusal, a customer no rate may be quoted for, an answer with no quote in
      it, or a quote. */
-  function renderQuote(r, sent) {
+  async function renderQuote(r, sent, submittedAt) {
     const res = r && typeof r === 'object' ? r : {};
     const listed = reasonsFrom(res);
     /* `input_error` is the 30 Aug 2026 name for what used to arrive as
@@ -2527,7 +2937,7 @@ SCREENS.finance = async host => {
 
     if (rejected) { renderDecline(listed, 'body'); return; }
 
-    if (res.quotable === false) { renderReferral(res, sent); return; }
+    if (res.quotable === false) { await renderReferral(res, sent, submittedAt); return; }
 
     /* What counts as a quote, restated for the shape the workflow returns now.
        This used to test `finance_tier` and `indicative_apr_pct`, neither of
@@ -2569,15 +2979,19 @@ SCREENS.finance = async host => {
        basis it is on. It used to read `res.indicative_apr_pct` and
        `res.finance_tier`, neither of which the workflow has returned since
        30 Aug: every live quote rendered "Indicative APR —" with no band beside
-       it, which is a rep watching a working workflow look broken. */
-    out().innerHTML = `
+       it, which is a rep watching a working workflow look broken.
+
+       Built into a string and NOT painted yet. Everything below this line is
+       held behind the evidence gate at the foot of this function: the figures
+       are drawn only once a finance_quotes row for them has been found. */
+    const pricedHtml = `
       <div class="grid g2">
         ${kpi('Equity', noTradeIn
             ? '<span class="t-muted">No trade-in</span>'
             : `<span class="${eqClass(res.equity_status)}">${aed(res.equity_aed)}</span>`,
           noTradeIn
             ? muted('This customer has nothing to trade in, so there is no equity to have. The rate below is priced off the credit score alone.')
-            : (res.equity_status ? pill(res.equity_status, eqTone(res.equity_status)) : ''))}
+            : (res.equity_status ? pill(res.equity_status, eqTone(res.equity_status), { verbatim: true }) : ''))}
         ${kpi('Indicative APR', aprRange(res.indicative_apr_low_pct, res.indicative_apr_high_pct),
           `${res.credit_band ? `<span class="chip">${esc(str(res.credit_band))}</span> ` : ''}`
           + muted(str(res.rate_basis) || RATE_BASIS))}
@@ -2625,12 +3039,67 @@ SCREENS.finance = async host => {
       ${res.email_from_model ? `<div class="cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
         'The workflow flagged that the customer email on this quote did not come from the caller — it was recovered from what the model sent. '
         + 'The identity behind this promise was not established by the workflow; check it before the figure is repeated.')}</div>` : ''}
-      <div class="cell-sub" style="margin-top:12px;white-space:normal">
-        Recorded by the workflow in finance_quotes. If it is not in the history below, refresh it.</div>`;
+`;
 
-    /* The workflow writes the row; this screen only re-reads it. A failed
-       re-read must not make a successful quote look like it failed, so the
-       result above stays exactly as it is. */
+    /* ── The gate ─────────────────────────────────────────────────────────
+       This function used to paint the card above and then close with the
+       sentence "Recorded by the workflow in finance_quotes. If it is not in the
+       history below, refresh it." That sentence was an ASSERTION the screen was
+       in no position to make: it was printed before the re-read it refers to
+       had happened, and on 2 Sep 2026 it is false eight times over — eight runs
+       said "Quote issued" and finance_quotes holds nothing. A screen may not
+       tell a rep a figure is on file while it is still finding out.
+
+       So the card is held. `verifying` is painted, the row is looked for, and
+       only a row that is actually there and actually traceable releases the
+       figures. Everything the withheld branch prints is in renderWithheld. */
+    out().innerHTML = `<div class="banner">
+        <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">hourglass_top</span>
+        <div><strong>Checking this quote was recorded before showing it.</strong>
+          <div style="margin-top:6px">${esc(
+            'The Finance Calculator has answered. The rate is not shown until a finance_quotes row for it has been found, because a figure this desk cannot produce again is not one it may read out.')}</div>
+        </div></div>`;
+
+    const ev = await quoteEvidence(sent, submittedAt, res);
+    if (ev.state !== 'recorded') {
+      renderWithheld(ev, sent);
+      loadQuotes().then(() => { focusKey = null; renderAll(); });
+      return;
+    }
+
+    /* Released. The provenance line replaces the old assertion and says what is
+       actually known — which row, which run, and HOW that row was identified —
+       rather than that a row is expected to exist.
+
+       `rowRate` is a cross-check and not a second source: if the stored rate and
+       the returned rate disagree, the customer is about to be told something the
+       record does not say, and that is worth a line.
+
+       Its reach is stated rather than assumed, because it is narrow. It compares
+       ONE number, the low end of the APR. Two quotes for the same customer share
+       a credit score and therefore a band and therefore an identical
+       indicative_apr_low_pct, so this check cannot detect a row belonging to a
+       different calculation for the same person — the instalment, the amount
+       financed, the deposit, the tenure and the vehicle price are not compared
+       and are exactly what would differ. That hole is why the row is identified
+       by `calculated_at` above rather than by recency; this check is the second
+       line, not the first, and it must not be read as one. */
+    const rowRate = aprOf(ev.row);
+    const shownLow = n0(res.indicative_apr_low_pct);
+    const aprDiffers = rowRate.low != null && shownLow != null && Number(rowRate.low) !== Number(shownLow);
+    out().innerHTML = pricedHtml + `
+      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(
+        'Recorded. finance_quotes row ' + str(ev.row.id) + ', calculation ' + str(ev.row.calculation_id)
+        + ', from Finance Calc execution ' + str(ev.row.execution_id) + '. '
+        + (ev.match === 'exact'
+            ? 'The row was matched on this calculation’s own timestamp, so it is this quote’s row and not another quote for the same customer. '
+            : 'The row was matched on the customer and the time this request was sent — this response carried no calculation timestamp to match on — and it was the only candidate. '
+              + 'That is weaker than an identity match: read the row in the history below before this figure is put in writing. ')
+        + 'That is what makes this figure quotable: it can be produced again, tied to the run that computed it, if the customer or the bank ever asks.')}</div>`
+      + (aprDiffers ? `<div class="cell-sub t-hot" style="margin-top:8px;white-space:normal">${esc(
+        'The rate shown above and the rate stored on the row do not match — the response says ' + shownLow + '% at the low end and the stored row says '
+        + rowRate.low + '%. Do not quote either until that is explained; one of them is wrong and this screen cannot tell which.')}</div>` : '');
+
     loadQuotes().then(() => { focusKey = null; renderAll(); });
   }
 
@@ -2649,7 +3118,7 @@ SCREENS.finance = async host => {
     if (!usable.length) {
       sel.innerHTML = '<option value="">No lead has an email address on file</option>';
       sel.disabled = true;
-      sel.title = 'The workflow keys a quote on the customer email, and no lead in the database has one.';
+      sel.title = 'The workflow keys a quote on the customer email, and no lead on this dealership\u2019s books has one.';
       return;
     }
     sel.disabled = false;
@@ -2672,7 +3141,7 @@ SCREENS.finance = async host => {
          next car — it is not the trade-in's value, so it is never written
          into the value field. */
       ctx.innerHTML = `<div class="quote">
-          ${o.dataset.status ? pill(o.dataset.status) + ' ' : ''}
+          ${o.dataset.status ? pill(o.dataset.status, undefined, { verbatim: true }) + ' ' : ''}
           ${o.dataset.phone
             ? `<span class="mono">${esc(o.dataset.phone)}</span>. `
             : '<span class="t-muted">No phone number on this lead.</span> '}
@@ -2707,7 +3176,7 @@ SCREENS.finance = async host => {
         const u = units[Number(sel.value)] || units[0];
         $('cOut').innerHTML = `
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-            ${u.aging_alert ? pill(u.aging_alert) : ''}
+            ${u.aging_alert ? pill(u.aging_alert, undefined, { verbatim: true }) : ''}
             <span class="chip">${esc(u.id || '—')}</span>
             <span class="chip">${num(u.days_in_stock)} days in stock</span>
           </div>
@@ -2715,16 +3184,21 @@ SCREENS.finance = async host => {
             <dt>List price</dt><dd class="num">${aed(u.price_aed)}</dd>
             <dt>Cost</dt><dd class="num">${aed(u.cost_aed)}</dd>
             <dt>Gross margin</dt><dd class="num ${(n0(u.gross_margin) || 0) < 0 ? 't-hot' : ''}">${aed(u.gross_margin)}</dd>
-            <dt>Holding cost</dt><dd class="num ${(n0(u.holding_cost_accrued) || 0) > 5000 ? 't-hot' : 't-muted'}">${aed(u.holding_cost_accrued)}</dd>
-            <dt>Net margin</dt><dd class="num"><strong class="${(n0(u.net_margin) || 0) < 0 ? 't-hot' : ''}">${aed(u.net_margin)}</strong></dd>
+            <dt>Holding cost</dt><dd class="num ${n0(u.holding_cost_accrued) == null ? 't-warm' : (n0(u.holding_cost_accrued) > 5000 ? 't-hot' : 't-muted')}">${n0(u.holding_cost_accrued) == null ? 'Not computable' : aed(u.holding_cost_accrued)}</dd>
+            <dt>Net margin</dt><dd class="num">${n0(u.net_margin) == null ? '<span class="t-warm">Not computable</span>' : `<strong class="${n0(u.net_margin) < 0 ? 't-hot' : ''}">${aed(u.net_margin)}</strong>`}</dd>
             <dt>VAT</dt><dd class="num">${aed(u.vat_amount)}</dd>
             <dt>Commission</dt><dd class="num" style="font-size:18px;font-weight:600">${aed(u.recommended_commission)}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:10px;white-space:normal">
-            ${esc(`List price and cost are the figures on the unit. Everything under them is worked out here on stated rates, not read off the row: `
-              + `holding cost at ${aed(INV.HOLDING_PER_DAY)} per day since acquisition (a sold unit stops accruing), `
-              + `VAT at ${INV.VAT_RATE * 100}% of the list price, and commission at ${INV.COMMISSION_RATE * 100}% of net margin. `
-              + `Recomputed from the unit's acquisition date each time this is opened, so it matches Inventory even between nightly recomputes.`)}</div>`;
+            ${esc(`List price and cost are the figures on the unit. VAT is ${INV.VAT_RATE * 100}% of the list price and commission is `
+              + `${INV.COMMISSION_RATE * 100}% of net margin — both stated rates, not read off the row.`
+              + (n0(u.holding_cost_accrued) == null
+                  ? ` Holding cost and net margin are NOT COMPUTABLE: this dealership has not recorded what a day of floor costs it, so the daily`
+                    + ` rate is unknown rather than nil. Until 2 Sep 2026 this panel multiplied the day count by an assumed AED 50 that came from a`
+                    + ` browser constant, not from any dealership. What is real is on the row: ${aed(u.cost_aed)} of capital tied up`
+                    + ` for ${n0(u.days_in_stock) == null ? 'an unrecorded number of' : num(u.days_in_stock)} days. Set the floor-plan rate in`
+                    + ` inventory_profit_settings and both figures return.`
+                  : ` Holding cost accrues from the acquisition date at the rate on record for this dealership (a sold unit stops accruing).`))}</div>`;
       };
       sel.addEventListener('change', draw);
       draw();

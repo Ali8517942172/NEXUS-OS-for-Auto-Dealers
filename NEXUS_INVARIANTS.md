@@ -1,63 +1,117 @@
+<!-- BUSINESS CONTEXT — added 2026-09-02 -->
+> **This is a commercial product, not a demo.** NEXUS is a **Revenue Recovery &
+> Action OS for dealerships** — it sits above the dealership's existing DMS, CRM
+> and inventory systems, finds revenue leaks, decides the next best action and
+> executes it. It replaces none of them. See `PRODUCT.md` for the thesis and
+> `CLAUDE.md` for how to work here. Ali owns NEXUS OS and is selling it
+> to real dealerships on a subscription. Judge changes by whether they make it
+> sellable and keep it sellable. The honest commercial position today is a
+> **controlled dealership pilot** — not "enterprise-ready", not "compliant".
+> Never state more than the evidence supports; "wired but never fired" is a real
+> answer. The blocker before a second paying dealership is that the system is
+> **single-tenant**: every RLS policy is `USING (true)`, so tenant two would read
+> tenant one's customers. See `CLAUDE.md` for how to work here.
+
 # NEXUS OS — Invariants
 
 Eight rules the system is not allowed to break. Each was checked against the live
-Supabase project `dsvuoovivysszdoiorch` on **2026-09-01**, as role `postgres`
+Supabase project `dsvuoovivysszdoiorch` on **2026-09-02**, as role `postgres`
 with `rolbypassrls = true` — so no count below is a row-level-security artefact.
 
 Every "verified" line names the query or script that produced it. Where the data
 contradicts the rule, the contradiction is recorded as an **OPEN VIOLATION**
-rather than smoothed over. Three of the eight carry one; between them they carry
-five.
+rather than smoothed over.
 
-The previous revision recorded eight open violations. **Six are closed** — four
-by migrations applied between 21:06 and 21:16 on 2026-09-01
-(`inv008_daily_metrics_failures_use_outcome_class`,
-`inv004_needs_attention_unanswered_chat_uses_message_predicate`,
-`inv002_lead_for_comm_key_refuses_ambiguous_phone_tail`,
-`inv001_workflow_health_healthy_is_structurally_closed`) and two by frontend work
-in the same window (`lib/comm-events.js` adopted by `screens/campaigns.js` and
-`screens/overview.js`; `lib/pipeline.js` created and adopted by
-`screens/overview.js` and `screens/team.js`). A seventh migration,
-`comm_taxonomy_predicate_trims_direction_and_channel`, closed a mirror gap the
-previous revision had noted but not raised as a violation; it is recorded below
-too. **Two remain open, and three more are recorded here for the first time.**
+**Every figure in this file was re-measured between 05:15 and 05:25 UTC on
+2026-09-02. None was carried forward from the previous revision, and several
+had moved.** The previous revision was written at 21:2x on 2026-09-01 and is
+stale wherever it disagrees with this one.
 
-Each closure says what actually changed and whether any figure moved. In every
-one of them, no figure that anybody reads moved: the faults were structural and
-the data had not yet exercised them. That is stated plainly at each one rather
-than left to read as a repair.
+## What changed since the previous revision
 
-Every figure in this file was re-measured at 21:2x on 2026-09-01. None was
-carried forward from the previous revision.
+The previous revision recorded **two open violations under INV-002 and INV-008,
+plus three sub-violations under INV-008**. Measured today:
 
-Runnable evidence:
+- **Closed** — `purchase_history` now carries `lead_id`, with the frontend and
+  the two n8n nodes to match. Closed at the schema and code layer and **not
+  proven at runtime**; see INV-002, which says so at length rather than letting
+  the word "closed" imply more than was tested.
+- **Closed** — the third and fourth definitions of "open pipeline" in the
+  database. `v_team_performance.pipeline_aed` and `capture_daily_metrics()`
+  both now sum over `public.nexus_lead_is_open(status)` and neither coalesces an
+  unknown budget to zero.
+- **Closed** — `capture_daily_metrics().open_leads`, which as recently as
+  **05:15:49 today** still counted `status <> 'CLOSED' OR status IS NULL` in the
+  same INSERT whose `pipeline_aed` used the shared rule. It was repointed by
+  another agent at 05:16 while this pass was running. Both states are recorded
+  under INV-008, because a register that only shows the end state cannot be
+  audited.
+- **Closed** — `screens/customers.js` no longer prints two message totals.
+- **Narrowed, not closed** — the `pill()` provenance defect. The markup has one
+  owner again, but 19 of 106 call sites still leave the decision to the
+  helper's fallback, and one of them is the exact shape that was lying. INV-008
+  carries the detail, **and a correction of a wrong claim this register made
+  about it on 2026-09-01.**
+- **Raised and closed inside this pass** — five views were not
+  `security_invoker`. See the section below.
 
-- `/home/claude/verify/invariants.sql` — every SQL probe below. **The queries
-  still run, but the results recorded beside them as comments were taken at
-  20:54, before the five migrations, and four of those comments are now stale**
-  (probe D, the `v_lead_messages` marker probe under INV-004, Finance Calc's
-  NO_RESULT count under INV-006, and the `daily_metrics` probe under INV-008).
-  The current values are the ones in this file.
+Two things got worse or stayed bad and are recorded as such: `audit_log` grew by
+14 rows and every one of them was a Competitor scrape that found nothing
+(NO_RESULT 115 → 127, of which Competitor Price Scraping 94 → 106), and
+`architecture/schema.sql` has already fallen behind the live catalogue again.
+
+## The five views: not `security_invoker`, then fixed under this pass
+
+At **05:17:07 UTC** Supabase's linter (`get_advisors`, type `security`) reported
+**five ERROR-level `security_definer_view` findings** — `v_conversations`,
+`v_customer_360`, `v_lead_messages`, `v_needs_attention` and `v_workflow_health`
+each had `reloptions = NULL`, so RLS on their base tables was evaluated as the
+view owner rather than the caller. Two migrations already existed that had set
+the option on two of them — `20260820022441 v_workflow_health_security_invoker`
+and `20260824195539 restore_security_invoker_on_v_needs_attention` — and the
+option was absent anyway, because a later `CREATE OR REPLACE VIEW` drops
+`reloptions` silently and nothing was watching.
+
+Migration `20260902051823 sec_views_restore_security_invoker_on_five_views`
+landed at 05:18:23. Re-checked at **05:24:34**: all nine views in `public` carry
+`security_invoker` (five as `=true`, the four older ones as `=on`). Re-run of
+`get_advisors` at **05:24:42** returns **zero ERROR-level lints**. The remaining
+findings are all WARN: mutable `search_path` on `nexus_is_message`,
+`nexus_is_reply` and `nexus_outcome_class`; `vector` and `pg_trgm` installed in
+`public`; leaked-password protection disabled.
+
+**This has now been fixed three times.** Nothing structural stops the fourth
+regression: the option is not asserted by any test, and any future
+`CREATE OR REPLACE VIEW` on these five will drop it again without an error.
+
+## Currency of the generated schema
+
+`architecture/schema.sql` was regenerated at **05:01 UTC on 2026-09-02** against
+migration `20260902050255`. Its own currency check —
+`select max(version) from supabase_migrations.schema_migrations` — returns
+**`20260902051823`** as of 05:24:57, over **81 applied migrations**. The file is
+therefore **two migrations behind again**, and both of them matter: they are the
+`open_leads` repoint (`20260902051636 inv008_open_leads_one_rule_per_row`, which
+adds a `daily_metrics.open_leads_rule` column) and the `security_invoker`
+restore. The previous revision's claim that the stale-schema violation is closed
+was true when written and is not true now. Regenerate before relying on the file.
+
+## Runnable evidence
+
+- `/home/claude/verify/invariants.sql` — the SQL probes. **The queries run; the
+  result comments beside them were taken at 20:54 on 2026-09-01 and are now
+  stale in most places**, because `audit_log` has grown by 14 rows and four
+  database objects have been redefined since. The values in this file are the
+  current ones.
 - `/home/claude/verify/health_parity.mjs` — imports the real
   `apps/executive-dashboard/lib/health.js` and runs it over live `audit_log`
-  data. Exit 0 = agreement. Re-run 2026-09-01 21:2x: exit 0.
-- `/home/claude/verify/extract_audit.mjs` — builds the data file the above reads.
-
-`architecture/schema.sql` is **stale and must not be read as the schema of
-record**. Its header says it was generated by introspection on 2026-08-30; 26 of
-the project's 74 migrations have landed since, 20 of them on 1 September. It
-contains no mention of `nexus_outcome_class`, `nexus_is_message`,
-`v_lead_messages`, `workflow_failures_rule`, `workflow_failures_canonical`,
-`awaiting_msg_reply` or the `unique_tail` guard, and it still prints
-`capture_daily_metrics` (line 893), `v_workflow_health` (lines 1215–1220) and
-`v_needs_attention` (line 1303) as counting failures by raw `status = 'FAILED'`
-— which is exactly the rule INV-001 forbids and which the live database stopped
-using. Read the live catalogue, or this file, and not that one.
-
-Frontend file lists were re-taken by grep at 21:2x on 2026-09-01. Several
-`screens/*.js` and `lib/*.js` files were written between 20:51 and 21:14 during
-this pass — `lib/comm-events.js` at 20:51, `lib/pipeline.js` at 21:06,
-`lib/format.js` at 21:14. Re-run the greps before relying on a consumer list.
+  data. **Its data file `/home/claude/verify/audit_pairs.json` was refreshed
+  from the live catalogue on 2026-09-02** and now holds all 311 pairs / 634
+  rows; the copy it replaced was stale (288 pairs / 570 rows, taken 20:47 on
+  2026-09-01). Re-run against the refreshed file for this revision: **exit 0**.
+  The copy it replaced is kept beside it at
+  `/home/claude/verify/audit_pairs.2026-09-01.json` (288 pairs / 570 rows).
+- `/home/claude/verify/extract_audit.mjs` — builds that data file.
 
 ---
 
@@ -83,15 +137,14 @@ it can only be corrected by the function.
 `audit_log` rows must classify them through `lib/health.js` — the sole frontend
 mirror — and never by comparing `status` itself.
 
-**Frontend consumers.** `lib/health.js` (the mirror), imported by
-`screens/ask.js`, `screens/automation.js`, `screens/campaigns.js`,
-`screens/competitors.js`, `screens/compliance.js`, `screens/conversations.js`,
-`screens/customers.js`, `screens/finance.js`, `screens/inventory.js`,
-`screens/leads.js`, `screens/overview.js`, `screens/settings.js` and
-`lib/lead-drawer.js` — thirteen files. *(The previous revision also listed
-`lib/format.js`. It does not import `lib/health.js`; it names it in six comments
-explaining which of its tones health.js owns. Corrected here rather than left as
-a consumer that does not consume.)*
+**Frontend consumers.** Re-grepped 2026-09-02 05:2x. `lib/health.js` (the
+mirror), imported by `screens/ask.js`, `screens/automation.js`,
+`screens/campaigns.js`, `screens/competitors.js`, `screens/compliance.js`,
+`screens/conversations.js`, `screens/customers.js`, `screens/finance.js`,
+`screens/inventory.js`, `screens/leads.js`, `screens/overview.js`,
+`screens/settings.js` and `lib/lead-drawer.js` — **thirteen files, unchanged
+from the previous revision**. `lib/format.js` still does not import it; it names
+it in comments explaining which of its tones health.js owns.
 
 **Failure mode.** Competitor Price Scraping showed a green "Clean, 30 d — 100.0%"
 pill while producing no price on most of its runs, because four screens each
@@ -100,51 +153,59 @@ reading that tile had no way to know the scraper had found nothing all month.
 
 **Regression test.**
 
-1. `node /home/claude/verify/health_parity.mjs` — runs the real `lib/health.js`
-   over every distinct `(status, summary)` pair in `audit_log`, weighted by row
-   count, and compares against `nexus_outcome_class`.
-   **Result 2026-09-01 21:2x: 570 rows compared, 570 in agreement, 0
-   disagreements** (288 distinct pairs). No class outside the declared
-   vocabulary. Exit 0. Distribution: FAILURE 199, SUCCESS 199, NO_RESULT 115,
-   REJECTED_EXPECTED 36, PARTIAL 19, ESCALATED 2. `audit_log` holds 570 rows and
-   has not grown since the earlier run of this pass.
+1. `node health_parity.mjs` — runs the real `lib/health.js` over every distinct
+   `(status, summary)` pair in `audit_log`, weighted by row count, and compares
+   against `nexus_outcome_class`.
+   **Result 2026-09-02, re-run live: 634 rows compared, 634 in agreement,
+   0 disagreements** (311 distinct pairs). No class outside the declared
+   vocabulary. Exit 0. Distribution, identical on both sides:
+
+   | class | n | change since the previous revision |
+   |---|---|---|
+   | SUCCESS | **212** | *(was 199)* |
+   | FAILURE | **211** | *(was 199)* |
+   | NO_RESULT | **152** | *(was 127)* |
+   | REJECTED_EXPECTED | 36 | unchanged |
+   | PARTIAL | 21 | unchanged |
+   | ESCALATED | 2 | unchanged |
+
+   `audit_log` holds **634 rows**, up from 584 at the previous revision, across
+   **311** distinct pairs, up from 289. The growth is **+13 SUCCESS, +12 FAILURE
+   and +25 NO_RESULT**; nothing entered a class that did not already exist, and
+   the parity harness was genuinely re-run against a pair file refreshed from
+   the live catalogue rather than the figures being transcribed.
+
+   Six of the new rows are the **Inventory Action Center**, which is the first
+   writer to `audit_log` that is not an n8n workflow — they are decisions people
+   took in the dashboard. Five class SUCCESS and one classes **NO_RESULT**: the
+   row recording that a second decision arrived for an action already approved
+   and was refused so the first decision stood. That is a control working, and
+   an automation vocabulary has no word for it. It is why the Action Center is
+   deliberately not in `workflow_registry` and reports through
+   `v_action_center_health` instead — registering it would have published
+   `DEGRADED, 83.3%` for a desk that is working correctly (measured 2026-09-02
+   by inserting the registry row inside a transaction and rolling it back).
 2. Grep for screens classifying status themselves — comments stripped,
    pattern `(status|st)\s*===?\s*['"](FAILED|SUCCESS|PARTIAL|NOT_EXECUTED|REJECTED|ESCALATED)['"]`.
-   **Result: 8 matches on 7 lines, all in `lib/health.js`. Zero in any screen.**
-3. `invariants.sql` probe C — no workflow reported HEALTHY carries a failure,
-   partial, no-result, escalation or unknown in its window.
-   **Result: all five counts zero, over 2 HEALTHY workflows** (Ask-AI RAG Query
-   Agent, Inventory Ageing Recompute).
+   **Result 2026-09-02: 8 matches on 7 lines, all in `lib/health.js`. Zero in
+   any screen.** Unchanged.
+3. No workflow reported HEALTHY carries a failure, partial, no-result,
+   escalation or unknown in its window.
+   **Result 2026-09-02: all five counts zero, over 2 HEALTHY workflows**
+   (Ask-AI - RAG Query Agent, Inventory Ageing Recompute). Unchanged.
 
-**CLOSED 2026-09-01 — `HEALTHY` is now structurally closed against NO_RESULT and ESCALATED.**
-Probe C passed on the previous revision's data too, but that was a property of
-the data rather than of the view: `1 NOT_EXECUTED + 10 SUCCESS` and
-`2 ESCALATED + 10 SUCCESS` both returned HEALTHY when the health `CASE` was
-replayed over synthetic counters. Migration
-`inv001_workflow_health_healthy_is_structurally_closed` added two branches —
-`escalated_30d > 0 → DEGRADED` above the `NO_QUALIFYING_RUNS` branch, and
-`no_result_30d > 0 → DEGRADED` immediately below `PRODUCING_NOTHING`. Replaying
-the view's current `CASE` (probe D):
-
-| scenario | effective_runs_30d | health |
-|---|---|---|
-| 1 PARTIAL + 10 SUCCESS | 11 | DEGRADED |
-| 1 FAILED + 10 SUCCESS | 11 | DEGRADED |
-| 1 NOT_EXECUTED + 10 SUCCESS | 11 | **DEGRADED** *(was HEALTHY)* |
-| 2 ESCALATED + 10 SUCCESS | 10 | **DEGRADED** *(was HEALTHY)* |
-| 6 NOT_EXECUTED + 5 SUCCESS | 11 | PRODUCING_NOTHING |
-| 11 SUCCESS, nothing else | 11 | HEALTHY |
-
-HEALTHY now requires every qualifying run to have succeeded outright, which is
-what `HEALTH_WORDS.HEALTHY` already told the reader it meant.
-
-**No live workflow label moved.** Replaying the OLD `CASE` over the current
-counters and comparing against the view's `health` column returns **0 rows that
-differ**, across all 18 registry workflows. The escalation question was decided
-in the direction of colouring — KYC/AML's 2 escalations now contribute to its
-DEGRADED state instead of being invisible to it — but that workflow was already
-DEGRADED on 7 failures, so nothing on screen changed. `lib/health.js` needed no
-change and got none: it mirrors the row classifier, not the health roll-up.
+**`HEALTHY` is structurally closed against NO_RESULT and ESCALATED.** Re-read
+off `pg_get_viewdef('public.v_workflow_health')` at 05:23 on 2026-09-02, the
+health `CASE` in the live view is, in order: `NOT_INSTRUMENTED` when the
+registry says the workflow writes no audit row; `NEVER_RAN` at zero runs;
+`DEGRADED` on `failures_30d > 0`; `DEGRADED` on `partials_30d > 0`;
+`UNKNOWN_OUTCOME` on `unknown_30d > 0`; **`DEGRADED` on `escalated_30d > 0`**;
+`NO_QUALIFYING_RUNS` on `effective_runs_30d = 0`; `PRODUCING_NOTHING` when
+`no_result_30d * 2 > effective_runs_30d`; **`DEGRADED` on `no_result_30d > 0`**;
+else `HEALTHY`. Both branches added by
+`inv001_workflow_health_healthy_is_structurally_closed` are present in the live
+definition. HEALTHY requires every qualifying run to have succeeded outright,
+which is what `HEALTH_WORDS.HEALTHY` already told the reader it meant.
 
 ---
 
@@ -171,88 +232,106 @@ through `whatsapp_contacts`. A tail shared by two people matches nothing.
 Screens call `expandIdentity` / `sameIdentity` / `personQuery` from
 `lib/identity.js` rather than slicing phone strings themselves.
 
-**Frontend consumers.** `screens/campaigns.js`, `screens/compliance.js`,
-`screens/conversations.js`, `screens/customers.js`, `screens/deals.js`,
-`screens/leads.js`, `screens/overview.js`, `lib/deal-form.js`,
-`lib/lead-drawer.js`. *(`lib/deal-form.js` is new to this list since the previous
-revision.)*
+**Frontend consumers.** Re-grepped 2026-09-02 05:2x, unchanged at nine files:
+`screens/campaigns.js`, `screens/compliance.js`, `screens/conversations.js`,
+`screens/customers.js`, `screens/deals.js`, `screens/leads.js`,
+`screens/overview.js`, `lib/deal-form.js`, `lib/lead-drawer.js`.
 
 **Failure mode.** Before the guard, a message from one customer was attributed to
 another whose number ended in the same nine digits, and two screens showed
 different message counts for the same person — each confident, neither right.
 
-**Regression test.** `invariants.sql`, INV-002 block.
-**Result 2026-09-01: lead 34 → 8 rows, lead 35 → 10, lead 38 → 29** — the
-canonical *resolution* figures. These count rows resolved to a lead, not
-messages: filtered by the `is_message` column (INV-004) the same three leads hold
-**7 / 10 / 28** messages, the difference being one silence marker each for leads
-34 and 38. Quote whichever figure the question asks for, and never the resolution
-count under the word "messages". Collision probe returns **0 rows**: `leads` holds
-3 distinct 9-digit phone tails and the maximum number of distinct people on any
-one of them is 1. Resolution coverage: **99 rows in `communication_logs`, 47
-resolved by `v_lead_messages`, 52 unresolved.**
+**Regression test.**
+**Result 2026-09-02, unchanged from the previous revision: lead 34 → 8 rows,
+lead 35 → 10, lead 38 → 29** — the canonical *resolution* figures. These count
+rows resolved to a lead, not messages: filtered by the `is_message` column
+(INV-004) the same three leads hold **7 / 10 / 28** messages, the difference
+being one silence marker each for leads 34 and 38. Quote whichever figure the
+question asks for, and never the resolution count under the word "messages".
+Collision probe returns **0 rows**: `leads` holds **3 distinct 9-digit phone
+tails** and the maximum number of distinct people on any one of them is **1**.
+Resolution coverage: **99 rows in `communication_logs`, 47 resolved by
+`v_lead_messages`, 52 unresolved.**
 
-**CLOSED 2026-09-01 — the two identity paths in Postgres now implement the same rule.**
-`v_lead_messages` had always refused an ambiguous phone tail via `unique_tail`;
-`nexus_lead_for_comm_key(text)` — the function the response-time trigger uses
-(INV-003) — had no such guard and took `order by created_at limit 1` on a
-collision, silently picking the oldest matching lead. Migration
-`inv002_lead_for_comm_key_refuses_ambiguous_phone_tail` gives the function the
-same restriction, on both its branches: branch (b), the direct phone-tail match,
-and branch (c), the tail bridged through `whatsapp_contacts`. Each first counts
-`distinct person_key` on the tail and `return null` where that count exceeds 1,
-with the comment `ambiguous tail: refuse, do not guess`.
+**The two identity paths in Postgres implement the same rule.** Re-verified
+2026-09-02 by comparing `nexus_lead_for_comm_key(text)` against `v_lead_messages`
+over **all 14 distinct `communication_logs.lead_email` keys**: **14 agree, 0
+disagree** — 6 keys resolve to the same lead on both paths, 8 resolve to NULL on
+both. The ambiguity guard is still untested by live data, because no collision
+exists to trigger it; what is guaranteed is that when one appears, both paths
+refuse it.
 
-Verified by comparing the two paths over **all 14 distinct
-`communication_logs.lead_email` keys**: **14 agree, 0 disagree** — 6 keys resolve
-to the same lead on both paths, 8 resolve to NULL on both. The guard itself is
-still untested by live data, because no collision exists to trigger it; what is
-now guaranteed is that when one appears, both paths refuse it.
+One asymmetry survives and is deliberate: the function counts people matching
+the tail against `leads.phone` **or** digits embedded in `leads.email`, while
+the view's `unique_tail` CTE counts only against `leads.phone`. The function's
+guard is therefore strictly the wider of the two and can refuse where the view
+resolves. Unobservable today — all three leads have distinct tails — but it is
+one rule spelled with two extents.
 
-One asymmetry survives and is deliberate rather than accidental: the function
-counts people matching the tail against `leads.phone` **or** digits embedded in
-`leads.email`, while the view's `unique_tail` CTE counts only against
-`leads.phone`. The function's guard is therefore strictly the wider of the two
-and can refuse where the view resolves. Unobservable today — all three leads
-have distinct tails — but it is one rule spelled with two extents, and if a lead
-ever carries a digit-bearing email whose tail matches another lead's phone, the
-function will return NULL where the view returns a lead.
+### CLOSED at the schema and code layer 2026-09-02 — a sale can now name the lead it came from. **Not proven at runtime.**
 
-**OPEN VIOLATION — a recorded sale cannot be joined to the lead it came from.**
-`purchase_history` has no `lead_id` and no `customer_id`. Its columns are `id`,
-`customer_name`, `email`, `phone`, `vehicle`, `purchase_date`, `amount_aed`,
-`created_at`, `deal_id` — and `deal_id` is not a foreign key to anything; it is
-the string the Closed-Won workflow derives, falling back to
-`'auto:' + email + '|' + closed_at` when the caller supplies no id.
+The previous revision recorded that `purchase_history` had no `lead_id` and no
+`customer_id`, so a sale could only be joined back to a person by re-running the
+identity inference this invariant exists to make refusable. Four things had to
+change together. All four have:
 
-The workflow confirms it end to end. `Sync Closed-Won Deals to Supabase
-pgvector`, n8n id `dhy2DDjWUqwuzHLW` (read live 2026-09-01; the live definition
-matches `n8n-workflows/sync_closed_won_deals_to_supabase_pgvector.json` exactly),
-normalises the deal in its `Format Deal Text` node and returns
-`{ dealId, dealText, customer_name, email, phone, vehicle, amount_aed,
-purchase_date }`. No lead id is read from the incoming payload and none is
-emitted. `Record Purchase` then POSTs exactly those fields to
-`/rest/v1/purchase_history`. The dashboard's own `lib/deal-form.js` posts
-`{ lead_email, lead_name, phone, vehicle, sale_price_aed, closed_at }` and
-carries no lead id either.
+1. **The column.** Migration `20260902045735 inv002_purchase_history_lead_id`.
+   Confirmed live 2026-09-02: `purchase_history.lead_id`, `integer`, nullable,
+   no default; constraint `purchase_history_lead_id_fkey`
+   `FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL`; index
+   `purchase_history_lead_id_idx` on `btree (lead_id)`. All three read out of
+   `information_schema.columns`, `pg_constraint` and `pg_indexes` respectively.
+2. **The dashboard.** `lib/deal-form.js:167` adds `lead_id` to the posted body —
+   **conditionally**, `...(picked && picked.anchor === $('dEmail').value.trim() ? { lead_id: picked.id } : {})`.
+   A deal typed by hand rather than picked from a lead posts no `lead_id` at
+   all, and the file's own comment at lines 121–149 says so. That is the right
+   behaviour for this invariant — an unrecorded provenance is better than a
+   guessed one — but it means `lead_id IS NULL` will be a normal state, not an
+   error state, and nothing downstream may read a NULL there as "no lead exists".
+3. **`Format Deal Text`.** The node now reads `d.lead_id` / `d.leadId`, coerces
+   to a positive integer, and returns `lead_id` in its object. Anything absent,
+   empty or non-integral becomes `null` rather than raising — deliberately, so a
+   bad id cannot cost the sale itself.
+4. **`Record Purchase`** (node `263e6e0c-0bf5-424e-9ad4-ba60fcdaaeb8`) names
+   `lead_id: $json.lead_id` in the JSON body it POSTs to
+   `/rest/v1/purchase_history`.
 
-The consequence is that a sale is joined back to a person only by re-running
-identity resolution over `email` and `phone` — the very inference this invariant
-exists to make refusable. Unobservable today: `purchase_history` holds **0 rows**.
+Read live from n8n 2026-09-02: workflow `dhy2DDjWUqwuzHLW`, "Sync Closed-Won
+Deals to Supabase pgvector", `versionId` = `activeVersionId` =
+**`563d0df3-368c-4543-9b85-ab5e907cb976`**, updated `2026-09-02T05:00:48Z`. Both
+nodes carry `lead_id` in the published version.
 
-*To close, four things must change together, and three of them are outside this
-repository:* a `lead_id` column on `purchase_history` (a migration); `lib/deal-form.js`
-must put the lead id in the payload; the `Format Deal Text` node must read it and
-return it; and the `Record Purchase` node must include it in its JSON body. The
-comment block at `lib/deal-form.js:121–149` already names this list; nothing has
-been done to it.
+**WIRED, NOT FIRED — and this path was already unproven before the change.**
+
+- `purchase_history` holds **0 rows**. It held 0 before this migration and holds
+  0 now. **No sale has ever been written through this path**, with or without a
+  lead id.
+- n8n retains **zero executions** for `dhy2DDjWUqwuzHLW` (`search_executions`,
+  workflow-filtered, returns `count: 0`). The webhook was not fired to test this
+  change, and there is no retained run to inspect.
+- The previous claim that it has "zero executions in its entire history" is
+  **narrower than the evidence supports, and this register should say so.**
+  `audit_log` holds **2 rows attributable to this workflow**: a `FAILED` row on
+  **2026-08-17 18:05:53Z** whose summary names `Execution 2018` and reports the
+  run aborting at the `Format Deal Text` node — *"unauthorized. A valid Supabase
+  session token is required in the Authorization header"* — and a `SUCCESS` row
+  on **2026-08-23 06:26:58Z** with the summary `Completed`, a summary shape the
+  current `Delivery Report` node no longer produces, so it came from an older
+  build. The workflow has run before; n8n has simply not retained those
+  executions. What is true is the thing that matters: **no run has ever written
+  a `purchase_history` row**, so the `Record Purchase` node, the FK, and the
+  whole `lead_id` chain are unexercised.
+
+So: closed in the schema, closed in the dashboard, closed in the published
+workflow, and **untested end to end**. The first real closed-won deal is the
+test. Until one lands, this invariant holds by construction only.
 
 **Note, not a violation.** `screens/finance.js` does not import `lib/identity.js`
-and joins on the raw `lead_email` string (30 code references, comments stripped —
-29 in the previous revision). That is narrower than the identity rule, not in
-conflict with it — it will miss a customer whose quote carries a different key
-shape rather than misattribute one. Unobservable now: `finance_quotes` holds
-0 rows.
+and joins on the raw `lead_email` string — **30 code references, comments
+stripped, unchanged from the previous revision**. That is narrower than the
+identity rule, not in conflict with it: it will miss a customer whose quote
+carries a different key shape rather than misattribute one. Unobservable now —
+`finance_quotes` holds **0 rows**.
 
 ---
 
@@ -280,29 +359,28 @@ produce it. SLA counts come from `v_team_performance.within_sla` /
 `breached_sla`, which are `count(*) FILTER` on the same column at `<= 5` and
 `> 5`; a NULL lead counts in neither.
 
-**Frontend consumers.** Comment-stripped reference counts: `screens/team.js` (10),
-`screens/leads.js` (6), `screens/overview.js` (3), `screens/customers.js` (3),
-`lib/lead-drawer.js` (3). *(team.js, customers.js and lead-drawer.js each carry
-one more reference than the previous revision recorded.)*
+**Frontend consumers.** Comment-stripped reference counts, re-taken 2026-09-02:
+`screens/team.js` (10), `screens/leads.js` (6), `screens/overview.js` (3),
+`screens/customers.js` (3), `lib/lead-drawer.js` (3). Unchanged.
 
 **Failure mode.** Until 31 Aug 2026 a second BEFORE INSERT trigger on `leads`
 clamped a negative interval to 0 and locked the real writer out, so leads that
-had never been answered displayed as answered instantly. It has been deleted:
-`leads` now carries exactly one non-internal trigger, `trg_assign_hot_lead`,
-which does not touch the column.
+had never been answered displayed as answered instantly.
 
-**Regression test.** `invariants.sql`, INV-003 block.
-**Result 2026-09-01:** of the two functions whose source mentions the column,
-only `nexus_mark_first_response` matches `set\s+response_time_minutes`
-(`writes_it = true`); `capture_daily_metrics` reads it but does not write it.
-Column state: **2 leads populated (1 and 4 minutes), 1 NULL, 3 leads total.**
-Frontend derivation check — grep for `response_time_minutes\s*=` across
-`screens/*.js` and `lib/*.js` with comments stripped: **zero assignments.**
+**Regression test.**
+**Result 2026-09-02:** `leads` carries exactly **one** non-internal trigger,
+`trg_assign_hot_lead`, which does not touch the column. Of the two functions
+whose source mentions `response_time_minutes`, only `nexus_mark_first_response`
+matches `set\s+response_time_minutes` (`writes_it = true`);
+`capture_daily_metrics` reads it and does not write it. Column state:
+**2 leads populated (1 and 4 minutes), 1 NULL, 3 leads total** — the NULL is
+lead 35, Effco Contracting llc. Frontend derivation check — grep for
+`response_time_minutes\s*=` across `screens/*.js` and `lib/*.js` with comments
+stripped: **zero assignments.** All unchanged.
 
-The gate this trigger uses, `nexus_is_reply`, is now defined by delegating to
-`nexus_is_message` rather than restating it, so the two cannot drift apart and
-strand an answered lead with a NULL response time. Recorded under INV-004,
-where the predicate lives.
+`nexus_is_reply` is still defined by delegating to `nexus_is_message` rather than
+restating it, so the two cannot drift apart and strand an answered lead with a
+NULL response time. Re-verified under INV-004.
 
 ---
 
@@ -336,40 +414,36 @@ email, sms), body matching neither `[system]%` nor `[SILENCE-%`.
 its original all-rows columns, which were left in place because other consumers
 sort on them.
 
-**Frontend consumers.** `lib/comm-events.js` — `MARKER_PREFIXES`,
-`SILENCE_MARKER`, `isMarkerText`, `isMessageRow`, `isInternalRow`,
-`isInboundMessage`, `isOutboundMessage`/`isReply`, `lastContactAt`,
-`splitEvents`, `silenceCount` — imported by `screens/campaigns.js`,
-`screens/conversations.js`, `screens/customers.js`, `screens/overview.js` and
-`lib/lead-drawer.js`. `screens/leads.js` defers to the DB rule.
+**Frontend consumers.** Re-grepped 2026-09-02, unchanged: `lib/comm-events.js` —
+`MARKER_PREFIXES`, `SILENCE_MARKER`, `isMarkerText`, `isMessageRow`,
+`isInternalRow`, `isInboundMessage`, `isOutboundMessage`/`isReply`,
+`lastContactAt`, `splitEvents`, `silenceCount` — imported by
+`screens/campaigns.js` (line 158), `screens/conversations.js`,
+`screens/customers.js`, `screens/overview.js` (line 154) and
+`lib/lead-drawer.js` — **five files**. `screens/leads.js` defers to the DB rule.
 
 **Failure mode.** A thread preview rendered "[SILENCE-ESCALATED] Silent for 12h
 since …" as though the dealership had sent the customer that text, and the
 thread's last-contact date was taken from the marker — so a customer nobody had
 spoken to in days looked freshly contacted.
 
-**Regression test.** `invariants.sql`, INV-004 block.
-**Result 2026-09-01:** `communication_logs` holds 99 rows — whatsapp/inbound 78,
-whatsapp/outbound 19, **system/outbound 2, and both system rows are silence
-markers**; no marker exists on any other channel. By `nexus_is_message`: **97
-messages, 2 internal**. By `nexus_is_reply`: 19.
-`nexus_is_reply('outbound','system','[SILENCE-ESCALATED] Silent for 12h')`
-returns **false**; `nexus_is_reply('outbound','whatsapp','Hi, here is your quote')`
-returns **true**.
+**Regression test.**
+**Result 2026-09-02, every figure unchanged from the previous revision:**
+`communication_logs` holds **99 rows** — whatsapp/inbound **78**,
+whatsapp/outbound **19**, **system/outbound 2, and both system rows are silence
+markers**; no marker exists on any other channel. By `nexus_is_message`:
+**97 messages, 2 internal**. By `nexus_is_reply`: **19**.
 
-**CLOSED 2026-09-01 — the alert surface now keys off the message predicate.**
-`v_needs_attention.unanswered_chat` keyed off
-`awaiting_reply = (last_direction = 'inbound')` and dated itself from
-`last_message_at` / `last_message` — the all-rows columns — so a thread whose
-newest row was a marker satisfied no alert. Migration
-`inv004_needs_attention_unanswered_chat_uses_message_predicate` repoints the
-branch at `v.awaiting_msg_reply`, `v.last_msg_at` and `v.last_msg`.
+Over all 99 live rows, `bool_and(nexus_is_reply(d,c,m) = (nexus_is_message(d,c,m)
+AND btrim(lower(d)) = 'outbound'))` returns **true** — the delegation holds on
+every stored row. **0 rows carry a padded direction or channel**, so the
+`btrim` fix remains structural rather than a repair of anything on disk.
 
-**No row moved.** Over the 12 threads in `v_conversations`, the old predicate and
-the new one both select **9**, and `awaiting_reply` and `awaiting_msg_reply`
-differ on **0** threads. Two threads do have `last_message_at ≠ last_msg_at` —
-the two marker-topped ones — but neither is awaiting a reply, so neither reached
-the alert either way. Current `v_needs_attention` totals, 13 rows:
+`v_needs_attention.unanswered_chat` keys off the message predicate
+(`awaiting_msg_reply`, `last_msg_at`, `last_msg`), not the all-rows columns.
+Over the **12 threads** in `v_conversations`, `awaiting_msg_reply` selects
+**9** and the old `last_direction = 'inbound'` predicate also selects **9** —
+they still differ on 0 threads. Current `v_needs_attention` totals, **13 rows**:
 
 | kind | n |
 |---|---|
@@ -381,66 +455,9 @@ the alert either way. Current `v_needs_attention` totals, 13 rows:
 | sla_breach | 0 |
 | kyc_archive_gap | 0 |
 
-**CLOSED 2026-09-01 — the last two screens carrying their own encoding were migrated.**
-`screens/campaigns.js:710` tested the narrow full string `[SILENCE-ESCALATED]`
-and never the channel; `screens/overview.js:819` tested
-`channel ∈ {system, internal} || direction === 'internal'` and never the message
-text — the mirror-image hole. Both now import `lib/comm-events.js`:
-`campaigns.js:158` takes `MARKER_PREFIXES`, `isInboundMessage`, `isMarkerText`,
-`isOutboundMessage`, `silenceCount` and `splitEvents`; `overview.js:154` takes
-`isInternalRow` and `isReply`. The old literals survive only inside comments that
-quote what they replaced.
-
-**Neither hole was live, and no figure moved.** Both files record the measurement
-in place: campaigns' old and new tests both return 2 silence rows, and overview's
-old and new predicates both return 2 internal rows and 19 replies in the 30-day
-window — the same as the SQL function. Both were latent defects that would have
-appeared the first time a marker was spelled `[SILENCE-WARNED]` (missed by the old
-campaigns test) or written on `channel='whatsapp'` (missed by the old overview
-test).
-
-**CLOSED 2026-09-01 — the SQL predicate now trims direction and channel.**
-`lib/comm-events.js` had always applied `.trim().toLowerCase()` to direction and
-channel; the SQL applied `lower()` alone, so a row whose direction was `' outbound'`
-was a message in the browser and an internal row in the view. Migration
-`comm_taxonomy_predicate_trims_direction_and_channel` changes `nexus_is_message`
-to `btrim(lower(...))` on both. The message **body** is still tested untrimmed on
-both sides, deliberately, because SQL `LIKE` does not trim either.
-
-Re-verified over 8 synthetic cases — plain inbound; padded direction; padded
-channel; uppercase direction and channel; a silence marker on `channel='system'`;
-a marker body with a leading space; a `[system]` body; and `channel='system'`
-with an ordinary body. **8 of 8 agree** between `nexus_is_message` and
-`isMessageRow` from `lib/comm-events.js`. Live: **0 rows have a padded direction
-or channel and 0 have a leading-whitespace body**, so no stored row changed
-classification.
-
-**CLOSED 2026-09-01 — `nexus_is_reply` now delegates instead of restating.**
-The trim migration changed `nexus_is_message` and left `nexus_is_reply` on
-`lower(coalesce(p_direction,'')) = 'outbound'` with no `btrim` — a gap opened by
-the fix itself. Of the 8 synthetic cases above, 2 disagreed: a row with direction
-`' outbound'` or channel `' WhatsApp '` was a message by `nexus_is_message` (and
-so by every view, and by `lib/comm-events.js`) while `nexus_is_reply` returned
-false for it.
-
-That was not cosmetic. `nexus_is_reply` gates `nexus_mark_first_response`
-(INV-003), so a padded reply would have counted as a message everywhere on the
-dashboard and would **not** have started the response clock — leaving
-`response_time_minutes` NULL on a lead that had in fact been answered, with
-nothing on any screen able to explain why.
-
-Migration `comm_taxonomy_is_reply_defers_to_is_message` redefines it as
-`public.nexus_is_message(...) AND btrim(lower(direction)) = 'outbound'`. There is
-now one message rule in this database and one restriction of it; the second copy
-that could be forgotten no longer exists. `lib/comm-events.js` was already built
-this way — `isReply` is an alias of `isOutboundMessage`, which is `isMessageRow`
-restricted to outbound — so no frontend change was needed.
-
-**Verified 2026-09-01:** all 8 synthetic cases now satisfy
-`nexus_is_reply(d,c,m) = (nexus_is_message(d,c,m) AND btrim(lower(d))='outbound')`,
-and `bool_and(...)` of the same identity over all 99 live `communication_logs`
-rows returns **true**. No reply classification changed and no response time
-moved: 0 live rows carry padding, so this is structural, not a repair.
+All 13 rows carry a non-blank `severity`; **0 are blank**. That matters to the
+`pill()` discussion under INV-008 and is measured here because this is where the
+view is measured.
 
 ---
 
@@ -467,9 +484,8 @@ figures onto a `finance_quotes` row. Where it cannot price a quote it writes
 computed substitute.
 
 **Frontend consumers.** `screens/finance.js` (the only screen touching quote
-columns; `aprRange`/`aprOf` at lines 83–96, render path from line 420).
-`lib/deal-form.js` and `screens/deals.js` pass `budget_aed` through as an
-attribute and compute nothing.
+columns). `lib/deal-form.js` and `screens/deals.js` pass `budget_aed` through as
+an attribute and compute nothing.
 
 **Failure mode.** No observed failure — this invariant has held. The risk it
 guards against is the dashboard and the finance workflow quoting a customer two
@@ -477,11 +493,14 @@ different monthly payments for the same car.
 
 **Regression test.** Grep for amortisation arithmetic across `screens/*.js` and
 `lib/*.js` with comments stripped.
-**Result 2026-09-01: zero occurrences of `Math.pow` or `**` anywhere in the
-frontend.** No rate-over-12 term, no principal loop. The only finance-shaped
-identifiers in `screens/finance.js` are reads of stored column names. Note that
-`finance_quotes` currently holds **0 rows**, so this is a source-level guarantee,
-not one exercised by live data.
+**Result 2026-09-02: zero occurrences of `Math.pow` or `**` in frontend code.**
+`Math.pow` matches twice on a raw grep, at `screens/finance.js:470–471`, and
+**both hits are inside a comment recording that the old amortisation was
+removed** — they disappear when comments are stripped. That distinction is
+written down here because the raw grep now returns a non-zero count and a future
+reader would otherwise read it as a regression. No rate-over-12 term, no
+principal loop. `finance_quotes` holds **0 rows**, so this is a source-level
+guarantee, not one exercised by live data.
 
 ---
 
@@ -503,9 +522,9 @@ not distinguish. The split is made on read, from the summary the writer emits.
 
 **Read path.** `REJECTED_EXPECTED` is excluded from `effective_runs_30d`, so a
 genuine refusal cannot dilute a success rate. `NO_RESULT` stays in the
-denominator, drives `PRODUCING_NOTHING` once it exceeds half the qualifying runs,
-and since `inv001_workflow_health_healthy_is_structurally_closed` forces
-DEGRADED at any count above zero. Neither is green in `lib/health.js`.
+denominator, drives `PRODUCING_NOTHING` once `no_result_30d * 2` exceeds
+`effective_runs_30d`, and forces DEGRADED at any count above zero. Neither is
+green in `lib/health.js`.
 
 **Frontend consumers.** `screens/competitors.js`, `screens/ask.js`,
 `screens/finance.js`, `screens/automation.js`, `screens/settings.js` — all via
@@ -516,25 +535,40 @@ DEGRADED at any count above zero. Neither is green in `lib/health.js`.
 dropped from the denominator. The dealership believed it had current competitor
 pricing; it had none.
 
-**Regression test.** `invariants.sql`, INV-006 block.
-**Result 2026-09-01:**
+**Regression test.**
+**Result 2026-09-02:**
 
-| workflow | class | n |
-|---|---|---|
-| Competitor Price Scraping | NO_RESULT | **94** |
-| Finance Calc | REJECTED_EXPECTED | 33 |
-| Finance Calc | NO_RESULT | **21** |
-| Ask-AI RAG Query | REJECTED_EXPECTED | 3 |
+| workflow | class | n | previous |
+|---|---|---|---|
+| Competitor Price Scraping | NO_RESULT | **106** | 94 |
+| Finance Calc | REJECTED_EXPECTED | 33 | 33 |
+| Finance Calc | NO_RESULT | 21 | 21 |
+| Ask-AI RAG Query | REJECTED_EXPECTED | 3 | 3 |
 
-Competitor Price Scraping's no-price count is **94, unchanged** since the earlier
-measurement in this pass (84 in the pass before that). Finance Calc's NO_RESULT
-count has moved from **13 to 21** — it has kept running and kept failing to
-price. Competitor Price Scraping's health row reads `PRODUCING_NOTHING`, 14
-successes against 94 no-results over 108 effective runs, **13.0%**. Finance Calc
-reads DEGRADED: 3 successes and 5 partials over 29 effective runs, **10.3%**,
-with its 33 genuine refusals correctly excluded from the denominator. Ask-AI's 3
-rejections are also genuine refusals and are also excluded: it reads HEALTHY on
-11 effective runs of 14.
+**This is the figure that got worse.** Competitor Price Scraping's no-price
+count has gone **84 → 94 → 106** across three measurements. All twelve new
+`audit_log` rows carry one of four complaints: no price could be extracted from
+the page; the source was the placeholder `"null"`; `"google.com"` is a search or
+social site, not a seller; the page carried no identifiable source.
+
+**All twelve were logged in a single burst at 2026-09-02 01:00:25 UTC** —
+`min(logged_at)` and `max(logged_at)` are 70 milliseconds apart — so this is one
+scheduled sweep writing one row per vehicle, not twelve separate runs. **The
+whole of last night's sweep returned no usable price for any vehicle.**
+
+Current health rows, read from `v_workflow_health` 2026-09-02:
+
+| workflow | health | successes_30d | effective_runs_30d | success_rate_30d |
+|---|---|---|---|---|
+| Competitor Price Scraping | PRODUCING_NOTHING | 14 | 120 | **11.7%** *(was 13.0%)* |
+| Finance Calc | DEGRADED | 3 (+5 partials) | 29 | 10.3% |
+| Ask-AI - RAG Query Agent | HEALTHY | 11 | 11 | 100.0% |
+| KYC/AML Document Auditor | DEGRADED | 0 | 7 | 0.0% |
+
+Competitor's 106 no-results against 120 effective runs satisfy the
+`no_result_30d * 2 > effective_runs_30d` test twice over. Finance Calc's 33
+genuine refusals are correctly excluded from its denominator, and Ask-AI's 3 are
+also excluded — which is why 11 of its 14 runs are the ones being rated.
 
 ---
 
@@ -565,16 +599,18 @@ compliant and is not non-compliant; they are unaudited.
 rows while the auditor has 9 logged runs** — 7 failures and 2 escalations in the
 last 30 days, 0 successes. Nine documents entered the process and the register
 records nothing about any of them. A compliance view that reported "no problems
-found" here would be reporting the auditor's own failure as a clean result. The
-planner's stale estimate for the table (`pg_class.reltuples`) is 9, which is the
-fingerprint of rows that once existed and are gone.
+found" here would be reporting the auditor's own failure as a clean result.
 
-**Regression test.** `invariants.sql`, INV-007 block.
-**Result 2026-09-01: `kyc_documents` = 0 rows; auditor runs = 9; failures_30d = 7;
-escalated_30d = 2; successes_30d = 0; effective_runs_30d = 7;
-success_rate_30d = 0.0; health = DEGRADED.** All 3 leads have no KYC row.
-Verified as `postgres` with `rolbypassrls = true`, so the zero is real and not
-RLS hiding rows from this connection.
+**Regression test.**
+**Result 2026-09-02, unchanged from the previous revision: `kyc_documents` = 0
+rows; auditor runs_30d = 9; failures_30d = 7; escalated_30d = 2;
+successes_30d = 0; effective_runs_30d = 7; success_rate_30d = 0.0;
+health = DEGRADED.** The planner's stale estimate for the table
+(`pg_class.reltuples`) is **9**, which is the fingerprint of rows that once
+existed and are gone. Measured as `postgres` with `rolbypassrls = true`, so the
+zero is real and not RLS hiding rows from this connection — and it stays real
+now that the five views carry `security_invoker`, because this count is taken
+against the table, not through a view.
 
 ---
 
@@ -595,184 +631,292 @@ twin.
 
 **Frontend consumers.** All fourteen screens.
 
-**Failure mode.** Two screens showing different totals for the same thing, with
-no way to tell which is right — as `screens/customers.js` does today, printing
-both a locally counted message total and `v_customer_360`'s.
+**Regression test.** SQL probes plus greps for the same business number computed
+twice. **Three of the previous revision's four violations are now closed. One is
+narrowed but not closed, and it comes with a correction of a claim this register
+made and got wrong.**
 
-**Regression test.** `invariants.sql`, INV-008 block, plus greps for the same
-business number computed twice. **This invariant still does not hold. Two of the
-four violations recorded in the previous revision are closed; two remain, and a
-third has been added.**
+### CLOSED 2026-09-02 — open pipeline has one rule in three places
 
-**CLOSED 2026-09-01 — the stored workflow failure count now uses the class.**
-`capture_daily_metrics()` computed
-`workflow_failures = count(*) FROM audit_log WHERE status='FAILED'`, a raw status
-count that bypassed `nexus_outcome_class` in direct conflict with INV-001.
-Migration `inv008_daily_metrics_failures_use_outcome_class` changes the subquery
-to `count(*) FROM audit_log WHERE nexus_outcome_class(workflow,status,summary) =
-'FAILURE'`, and adds two columns to `daily_metrics` — `workflow_failures_rule`
-(text) and `workflow_failures_canonical` (integer) — so that the rule behind each
-stored number is dated and visible rather than inferred. Both confirmed present
-in `information_schema.columns`; the function body confirmed by
-`pg_get_functiondef`.
+`public.nexus_lead_is_open(text)` exists, `IMMUTABLE`, `SET search_path TO ''`
+(pinned by `20260902050255`). Its terminal list is exactly the union of
+`lib/pipeline.js`'s `TERMINAL_TONES` — `won`: WON, CLOSED_WON, CONVERTED,
+DELIVERED, SOLD; `dead`: LOST, CLOSED_LOST, DISQUALIFIED, UNQUALIFIED, CLOSED,
+DEAD, JUNK, SPAM, ARCHIVED — and it normalises the same way the browser does
+(`upper`, whitespace and hyphens collapsed to `_`, against JS `toUpperCase()`
+and `replace(/[\s-]+/g, '_')`).
 
-**The 14 historical snapshots were not rewritten, and that is the point.** All 14
-still carry `workflow_failures_rule = 'raw_status'` and their original
-`workflow_failures` value; `workflow_failures_canonical` was backfilled by
-recomputing the class over the rows that existed as of each snapshot date. That
-backfill was checked rather than trusted: recomputing
-`count(*) WHERE logged_at < snapshot_date + 1 AND nexus_outcome_class(...) =
-'FAILURE'` reproduces the stored canonical value on **all 14 rows**, and the same
-query with `status = 'FAILED'` reproduces the stored raw value on all 14. **Only
-4 of the 14 rows differ between the two rules:**
+**Parity measured, not assumed.** Both implementations were run over the same 25
+status values — every won word, every dead word, the open lifecycle words, the
+empty string, NULL, a padded `'  won  '` and an invented `'Some New Word'`.
+**25 of 25 agree**, including the two cases that matter most: an unrecognised
+status is **open** on both sides, and a padded `'  won  '` is **open** on both
+sides (neither normaliser trims, so both file it as a word they do not know).
 
-| snapshot | workflow_runs | raw rule | canonical rule |
-|---|---|---|---|
-| 2026-08-29 | 411 | 192 | 191 |
-| 2026-08-30 | 482 | 196 | 192 |
-| 2026-08-31 | 540 | 205 | 199 |
-| 2026-09-01 | 569 | 205 | 199 |
+Read live 2026-09-02 05:24:
+- `v_team_performance.pipeline_aed` is
+  `sum(l.budget_aed) FILTER (WHERE nexus_lead_is_open(l.status))` — **no
+  `COALESCE`**. It returns **NULL** for the one row the view has (Ali Asgher,
+  1 lead assigned), where the previous revision measured **0**.
+- `capture_daily_metrics().pipeline_aed` is
+  `(SELECT sum(budget_aed) FROM leads WHERE nexus_lead_is_open(status))` — also
+  **no `COALESCE`** — stamped into `daily_metrics.pipeline_aed_rule` as
+  `'open_leads_null_when_unknown'`. Today's row records **`pipeline_aed = NULL`**
+  where 2026-09-01's records **0** under `'all_leads_coalesce_0'`.
 
-The ten snapshots from 19 to 28 August agree exactly, because the `did not land`
-partial-delivery rows that the two rules disagree about did not exist yet. The
-current gap is 6 rows (205 raw against 199 canonical over 570 `audit_log` rows) —
-the six rows that spell `FAILED` but mean PARTIAL.
+"No budget is recorded" is no longer stored or served as "AED 0". All 3 leads
+still carry `budget_aed = NULL`, so no displayed figure moved — the screens
+already rendered "—" through `sumBudget`, which returns null rather than 0.
 
-The 1 September row still reads `workflow_failures = 205`, `rule = 'raw_status'`,
-`canonical = 199`, because it was captured at 19:50 UTC and the migration landed
-at 21:06. The first snapshot written under the new rule will be 2 September's.
-No screen renders any of this: `workflow_failures` has **zero references** across
-`screens/*.js` and `lib/*.js`, and `overview.js` reads `daily_metrics` only for
-`avg_response_minutes`.
+`lib/pipeline.js` owns the frontend rule: grep confirms `TERMINAL_TONES` and
+`isOpenLead` are declared in **exactly one file**, and `screens/overview.js:178`
+and `screens/team.js:175` are its only importers. `LEAD_LIMIT` is 2000 in the one
+place it now lives.
 
-**CLOSED 2026-09-01 — the frontend's open-pipeline rule has one owner.**
-`screens/overview.js` and `screens/team.js` each declared `TERMINAL_TONES` and
-`isOpenLead` verbatim and locally, and read different volumes (`LEAD_LIMIT` 2000
-against 1000), so the same rule could report two totals above 1000 leads.
-`lib/pipeline.js` now holds `LEAD_LIMIT` (reconciled to **2000**, the higher of
-the two), `TERMINAL_TONES`, `isOpenLead`, `isTerminalLead`, `sumBudget`,
-`openPipeline`, `CAP_NOTE` and `DB_PIPELINE_NOTE`. Grep confirms
-`TERMINAL_TONES` and `isOpenLead` are declared in exactly one file and that
-`overview.js:175` and `team.js:156` are its only importers. `sumBudget` returns
-**null**, not 0, when nothing carries a budget — "AED 0 of pipeline" and "no
-pipeline figure exists" are different statements.
+**The snapshot history is mixed-rule, and that is the residue.** Every
+`daily_metrics` row before 2026-09-02 was written under the old definitions and
+still says so in `pipeline_aed_rule` (`'all_leads_coalesce_0'`) and
+`open_leads_rule` (`'status_not_closed'`). Subtracting across that boundary
+subtracts two definitions. `screens/overview.js` refuses to draw a
+period-over-period delta on the pipeline tile and its comment now gives the
+mixed history as the reason rather than the defect that has been fixed. That
+refusal is not gated on `pipeline_aed_rule` — the screen reads the newest row
+and does not look at the column — so the refusal is correct today for a reason
+the code cannot check. Gating it on the rule column would be a behaviour change
+and has not been made.
 
-No figure moved: `leads` holds 3 rows, so neither limit truncates anything today.
+### CLOSED 2026-09-02, DURING THIS PASS — `capture_daily_metrics` held two definitions of "open" in one INSERT
 
-**OPEN VIOLATION 1 — a rep's pipeline still has a third, contradicting definition in the database.**
-`v_team_performance.pipeline_aed` is `COALESCE(sum(l.budget_aed), 0)` over
-`users LEFT JOIN leads ON l.assigned_to_id = u.id` — **every lead ever assigned
-to that user, with no status filter**, won and dead included.
-`capture_daily_metrics.pipeline_aed` is `coalesce(sum(budget_aed), 0) FROM leads
-WHERE budget_aed IS NOT NULL` — **every lead in the table**, also unfiltered.
-Both view definitions confirmed live by `pg_get_viewdef` / `pg_get_functiondef`
-2026-09-01. Neither matches `lib/pipeline.js`'s open-leads-only rule, and both
-coalesce to zero, so "no budget is recorded" is stored and served as "AED 0".
+This was going to be recorded here as a new open violation, and for the first
+nine minutes of this pass it was one. Both states are recorded, because a
+register that shows only the end state cannot be audited.
 
-That difference is live now, in the mildest possible form. All **3** leads have
-`budget_aed = NULL`; 2 of the 3 are unassigned. The screens, reading through
-`sumBudget`, render **"—"**. `v_team_performance` returns one row (Ali Asgher,
-1 lead assigned) with `pipeline_aed = 0`, and today's `daily_metrics` snapshot
-stores `pipeline_aed = 0`. Two answers to one question, and the wrong one is on
-disk.
+**At 05:15:49 UTC**, `pg_get_functiondef(capture_daily_metrics)` read:
 
-Neither screen displays the database figure, and both say why in words rather
-than quietly averaging it in — `screens/team.js` at lines 402, 619, 1174, 1589
-and `screens/overview.js` at 1184, where it refuses to draw a period-over-period
-delta on the pipeline tile because the snapshot answers a different question.
-That refusal is why nothing incorrect is currently shown. It is not a fix: the
-contradicting definitions still exist, still feed `daily_metrics`, and still
-carry the word "pipeline".
+```
+(SELECT count(*) FROM leads WHERE status <> 'CLOSED' OR status IS NULL),   -- open_leads
+...
+(SELECT sum(budget_aed) FROM leads WHERE nexus_lead_is_open(status)),      -- pipeline_aed
+```
 
-*To close:* either add the open-status filter to both DB definitions so all three
-agree, or rename the columns to something that does not read as pipeline —
-`assigned_budget_total_aed` — and decide separately whether coalescing an absent
-budget to 0 is ever the right answer.
+Two rules for "open" in one statement, writing two columns of one row. Live at
+that moment, the 2026-09-02 snapshot (captured 05:01:12) recorded
+**`open_leads = 3`** while only **1** lead is open under the shared rule: leads
+34 and 35 are both `DISQUALIFIED`, which `nexus_lead_is_open` calls closed and
+`status <> 'CLOSED'` calls open. One row of one table asserting both 3 and 1
+about the same three leads.
 
-**OPEN VIOLATION 2 — customer message count, two derivations, both rendered.**
-`screens/customers.js` prints its own count of `communication_logs` rows
-(`commCount`) alongside `v_customer_360.message_count` (`viewMsgs`) and explains
-the difference in prose when they diverge.
+**At 05:16:36 UTC** migration `20260902051636 inv008_open_leads_one_rule_per_row`
+landed. Re-read at **05:24:06**, `open_leads` is
+`(SELECT count(*) FROM leads WHERE nexus_lead_is_open(status))`, stamped into a
+new `daily_metrics.open_leads_rule` column, and the 2026-09-02 row was
+re-captured at **05:17:00** reading **`open_leads = 1`, `open_leads_rule =
+'nexus_lead_is_open'`**. The 2026-09-01 and earlier rows read
+**`open_leads = 3`, `open_leads_rule = 'status_not_closed'`** — backfilled, not
+rewritten, which is the same choice made for `workflow_failures_rule` and the
+right one.
 
-What changed is the *reason* they diverge, not the fact of it. The view now
-expands every key shape (migration `customer_360_count_every_key_shape`) and
-excludes internal rows with `public.nexus_is_message` — the same test
-`lib/comm-events.js` applies in the browser — so the remaining gap is exactly the
-two silence markers. Measured 2026-09-01: `v_customer_360` reports **28** for
-`shabbir53ujjainwala@gmail.com` and **7** for `+971547484167@whatsapp.lead`,
-against the screen's **29** and **8**. The screen keeps its own figure
-deliberately, because it is the count of the rows in the list printed directly
-beneath it and a total that does not match the list under it cannot be checked
-by the reader.
+So a snapshot row is internally consistent from 2026-09-02 onward. **The mixed
+history is the whole of the remaining problem**, and it is the same residue the
+pipeline closure leaves.
 
-That is a defensible choice and the disclosure is better than picking one
-silently — but it is still two derivations of one figure shown as two numbers,
-which is what this invariant forbids.
+### CLOSED 2026-09-02 — the stored workflow failure count uses the class
 
-*To close:* have the screen render the view's `message_count` as the message
-count and label its own figure as what it actually is — the number of rows
-listed, internal ones included — so the two are two questions with two names
-rather than one question with two answers.
+`capture_daily_metrics()` counts
+`WHERE nexus_outcome_class(workflow, status, summary) = 'FAILURE'` and stamps
+`workflow_failures_rule`. Today's row, captured 05:17:00, is the **first
+snapshot written under the new rule**. Recaptured at 19:59 the same day it
+reads `workflow_runs = 634`, `workflow_failures = 211`,
+`rule = 'nexus_outcome_class'`, `workflow_failures_canonical = 211` — the two
+agree because they are the same query. The 2026-09-01 row still reads
+`205 / 'raw_status' / 199`, and the 14 historical rows still carry their
+original values, which is the point of keeping the rule column. The current gap
+between the rules is still **6 rows** (217 raw `FAILED` against 211 canonical
+FAILURE over 634 `audit_log` rows) — the same six rows that spell `FAILED` but
+mean PARTIAL.
 
-**OPEN VIOLATION 3 — one pill, four implementations; the fix exists and is unused.**
-`lib/format.js` `pill(label, tone)` attached a hover claim about **provenance** —
-"This dashboard has no wording for that status. It is shown exactly as the
-database holds it" — to any grey pill whose label was not a TONE key. It cannot
-see provenance, so on a label a caller wrote itself both halves of that sentence
-are false. Three screens fled the helper over it rather than fix it there:
-`screens/automation.js:210` (`wordPill`), `screens/finance.js:2117` (`wordPill`)
-and `screens/compliance.js:472` (`casePill`) each re-emit `pill()`'s own markup
-by hand. All three are still present.
+No screen renders any of this: `workflow_failures` has **zero references**
+across `screens/*.js` and `lib/*.js`, re-grepped 2026-09-02.
 
-`lib/format.js` (21:14 on 2026-09-01) now takes a third argument,
-`opts.verbatim`, letting a caller state the provenance the helper cannot observe;
-the default falls back to whether the helper derived the tone itself. **No call
-site passes it.** Grep across `screens/*.js` and `lib/*.js`: **0 occurrences of
-`verbatim` outside `lib/format.js`.** Until the call sites move, the three
-private copies cannot be retired and the markup has four owners.
+### CLOSED 2026-09-02 — customer message count has one derivation
 
-The call sites that need it, re-located 2026-09-01 21:2x:
+The previous revision recorded `screens/customers.js` printing its own count of
+`communication_logs` rows alongside `v_customer_360.message_count` and
+explaining the difference in prose. That is gone. Read at
+`screens/customers.js:1431–1432`, the rule is now one line:
 
-*Needs `{ verbatim: false }` — the label is the caller's own word, no tone is
-passed, so the default wrongly claims the database holds it:*
+```
+const msgSource = viewMsgs != null ? 'view' : readMsgs != null ? 'read' : null;
+const msgCount  = msgSource === 'view' ? viewMsgs : msgSource === 'read' ? readMsgs : null;
+```
 
-- `screens/overview.js:1416` — `pill(l.status || 'Unscored')`
-- `screens/overview.js:1950` — `pill(str(it.severity) || 'Unrated')`
-- `screens/overview.js:2095` — `pill(str(r.status) || 'Unscored')`
-- `screens/ask.js:1540` — `pill('UNREPORTED', tone(''))`; `tone('')` is `''`, so
-  the explicit-tone path is not taken and the fallback applies
-- `screens/team.js:303` — `pill(statusLabel(r), hasAccount(r) ? 'ok' : undefined)`;
-  `statusLabel` replaces underscores with spaces, so the label is not the stored
-  string even when a status exists
-- `screens/campaigns.js:1735`, `screens/customers.js:1759`,
-  `screens/leads.js:1042` — `pill(status || 'NEW')`; verbatim when a status
-  exists and the caller's word when it does not, so these need the flag computed
-  rather than fixed
+**`v_customer_360.message_count` owns the figure wherever the view has the
+customer.** The local count is the fallback, used only where the view has no row
+— and the sub-line names which of the two answered, every time. The last-contact
+timestamp travels with the count from the same source, so a total and a
+timestamp can never again come from two populations. The derivation that did not
+answer becomes a **check**: where both exist and agree, the screen says so;
+where they disagree it reports the disagreement as a fault rather than
+explaining it away.
 
-*Needs `{ verbatim: true }` — a raw column value whose tone the caller computes,
-so the explicit path is taken and the note is lost on a value that genuinely did
-come from the database:*
+**The live figures, measured 2026-09-02:**
 
-- `screens/campaigns.js:1442`, `screens/campaigns.js:1461` — `pill(sev, sevTone(sev))`
-- `screens/settings.js:1184`, `screens/settings.js:1200` — same shape
-- `screens/competitors.js:2208` — `pill(a.sev, sevTone(a.sev))`
-- `screens/inventory.js:1135` — `pill(a, tone(a))`
-- `screens/finance.js:1623`, `1651` — `pill(sev, sevTone(sev))`; `2245`, `2580` —
-  `pill(q.equity_status, eqTone(q.equity_status))`
+| lead | person | `v_customer_360.message_count` | `v_lead_messages` resolution rows | of which messages |
+|---|---|---|---|---|
+| 38 | Ali · `shabbir53ujjainwala@gmail.com` | **28** | 29 | **28** |
+| 34 | Siva Thangavelu · `+971547484167@whatsapp.lead` | **7** | 8 | **7** |
+| 35 | Effco Contracting llc · `email = ''` | **no row** | 10 | **10** |
 
-`screens/team.js:975` looks like the second group but is not: it passes
-`tone(a.sev)` with a label of `String(a.sev).replace(/_/g,' ')`, so the label is
-transformed and `{ verbatim: true }` would be the wrong claim there.
+The view and the screen's own count now agree on both customers the view holds
+— 28 and 7 — so the check passes and the gap the previous revision recorded (29
+vs 28, 8 vs 7) is gone, because the screen was counting *events* and is now
+counting *messages*. The two silence markers are the difference between the
+29/8 resolution figures and the 28/7 message figures, exactly as INV-004 says.
 
-*To close:* pass the flag at the sites above, then delete
-`automation.js`'s and `finance.js`'s `wordPill` and `compliance.js`'s `casePill`
-and route those pills back through `lib/format.js`.
+**Lead 35 is why the fallback cannot be dropped.** `v_customer_360` returns
+**2 rows**, not 3: its spine is `leads UNION purchase_history WHERE email <> ''`,
+and Effco Contracting llc's `email` column holds the empty string. He is absent
+from the view and his 10 messages are counted locally. That is a real hole in
+the view's spine, disclosed rather than papered over, and it is the reason this
+was closed in the screen and not in the database.
 
-**Also checked, not a violation.** Average first-response time is computed in
-`screens/overview.js` (mean of `response_time_minutes` over leads read) and in
-`capture_daily_metrics` (`avg(response_time_minutes)` over all non-null leads).
-Same definition, different read scope; `overview.js` compares the two as a
-period-over-period delta, which is the intended use, and the population really is
-the same. Worth watching if `LEAD_LIMIT` is ever exceeded, since the frontend
-mean would then be over a sample and the stored one over the population. Today's
-stored value is 2.50 minutes over the 2 measured leads (1 and 4).
+### NARROWED, NOT CLOSED — `pill()` provenance. And a correction of this register's own claim.
+
+**First, the correction.** The previous revision listed eight call sites under
+the heading *"Needs `{ verbatim: false }` — the label is the caller's own word,
+no tone is passed, so the default wrongly claims the database holds it."* That
+list was wrong about which calls were actually lying to a reader, and a register
+that quietly drops its own wrong claim is not a register.
+
+The helper's fallback is `verbatim = stated ? !!opts.verbatim : !t`, and the
+note is attached only when `k === 'unknown' && !named && verbatim`. Two
+consequences the previous revision did not follow through:
+
+1. **Any call passing a truthy tone already suppressed the note**, because `!t`
+   is false. `pill(statusLabel(r), hasAccount(r) ? 'ok' : undefined)` on
+   `screens/team.js` could not attach a false note on the branch where an
+   account exists. Verified by running the real `lib/format.js`:
+   `pill('Active','ok')` and `pill('HIGH','hot')` both emit **no** `title`.
+2. **A label the TONE table knows never carries the note**, whatever the
+   fallback decides. `NEW` is a TONE key (`'open'`), so every
+   `pill(status || 'NEW')` — the three sites on `campaigns.js`, `customers.js`
+   and `leads.js` the previous revision flagged — was safe on both branches.
+   Verified: `pill('NEW')` emits no `title`.
+
+**Three code shapes actually attached the note to a caller's own word on every
+render, all of them reached through a falsy tone**, and these are the ones that
+were lying on screen:
+
+- `screens/ask.js` — `pill('UNREPORTED', tone(''))`. `tone('')` returns `''`, so
+  the explicit-tone path is not taken and the fallback claims the database holds
+  the word "UNREPORTED".
+- `screens/automation.js` — `SCHED.CLOCK_RESET`, label `'Clock restarted'`, and
+  `SCHED.UNCHECKABLE`, label `'Cannot be checked'`, both declared with
+  `tone: ''` at `automation.js:734` and `:736`. Same falsy-tone path, same false
+  claim, on two phrases no row anywhere contains.
+
+Verified by running the real helper: `pill('UNREPORTED', tone(''))`,
+`pill('Clock restarted','')` and `pill('Cannot be checked','')` each emit the
+`title`; `pill('Active','ok')`, `pill('HIGH','hot')` and `pill('NEW')` do not.
+
+**Three further shapes lied in code but could not fire on live data**, which is
+a different and lesser thing, and the previous revision conflated the two.
+`screens/overview.js` had `pill(l.status || 'Unscored')` at two sites and
+`pill(str(it.severity) || 'Unrated')` at one. `pill('Unscored')` and
+`pill('Unrated')` do both attach the note — verified — but the fallback only
+renders when the column is absent, and it is not: **all 3 leads carry a status**,
+and **all 13 `v_needs_attention` rows carry a non-blank severity**. Latent, not
+live.
+
+**What actually changed today.** `pill()`'s markup has one owner again.
+`screens/automation.js`'s `wordPill`, `screens/finance.js`'s `wordPill` and
+`screens/compliance.js`'s `casePill` no longer re-emit the helper's span by
+hand: all three now call `pill(label, tone, { verbatim: false })` and keep only
+the thing `pill()` cannot do, which is give each word its own explanatory
+`title`. The three named helpers still exist as wrappers — they were not deleted
+— but they are no longer **re-implementations**, and that was the defect.
+
+**Why this is not closed.** Of **106 `pill(` call sites** across `screens/*.js`
+and `lib/*.js` (comments stripped, `lib/format.js` itself excluded), **87 pass an
+explicit `verbatim` flag and 19 do not**:
+
+| file | unflagged sites |
+|---|---|
+| `screens/conversations.js` | 1013, 1445, 2219, 2430, 2853 |
+| `screens/customers.js` | 1324, 1655, 1741, 1812 |
+| `screens/deals.js` | 1479, 1654, 1836, 1895 |
+| `screens/leads.js` | 746, 765, 1042, 1146 |
+| `lib/lead-drawer.js` | 125 |
+| `lib/unit-form.js` | 331 |
+
+Checked one by one, **none of the 19 attaches a wrong note under today's data** —
+they either pass a truthy tone (`conversations.js`'s `IDENT` tones are all
+`'ok'`/`'cold'`/`'warm'`; `customers.js:1655`; `deals.js:1479`, `1836`, `1895`),
+or pass a label the TONE table knows (`leads.js:746` and `:765` pass `'HOT'` or
+`'WARM'`; the four `status || 'NEW'` sites), or pass a genuine raw column value
+where the fallback's claim is true (`customers.js:1324`, `leads.js:1042`,
+`unit-form.js:331`).
+
+**One of the 19 is the lying shape itself.** `screens/deals.js:1654` is
+`pill(str(a.severity) || 'ALERT', t)` where `t = tone(a.severity)` at line 1643.
+When an alert carries no severity, `tone('')` is `''`, the fallback applies, and
+the authored word **`ALERT`** — not a TONE key — is rendered with "shown exactly
+as the database holds it". That is `ask.js`'s `pill('UNREPORTED', tone(''))`
+verbatim, in a file the previous revision never listed. Whether it fires depends
+on whether a deals-screen alert is ever built without a severity, which is a
+frontend-derived value this register cannot measure from the database.
+
+*To close:* pass the flag at the 19 remaining sites, `deals.js:1654` first.
+
+**Also still outside the helper, and not previously recorded:** six `class="pill"`
+spans are written by hand rather than through `pill()` — `screens/customers.js`
+:1167 and :1654 (the `vip` tone, which the TONE table does not carry),
+`screens/deals.js:1215`, and `screens/leads.js` :1050, :1094 and :1096. These
+are not the three the previous revision named and they were not part of that
+violation; they are recorded now because the claim "the markup has one owner"
+would otherwise be broader than the measurement supports.
+
+### Also checked, not a violation
+
+Average first-response time is computed in `screens/overview.js` (mean of
+`response_time_minutes` over leads read) and in `capture_daily_metrics`
+(`avg(response_time_minutes)` over all non-null leads). Same definition,
+different read scope; `overview.js` compares the two as a period-over-period
+delta, which is the intended use, and the population really is the same. Worth
+watching if `LEAD_LIMIT` (2000) is ever exceeded, since the frontend mean would
+then be over a sample and the stored one over the population. Today's stored
+value is **2.50 minutes** over the 2 measured leads (1 and 4).
+
+---
+
+## Last check
+
+Every object another agent was changing during this pass was re-read at the end
+rather than assumed, and then re-read once more after this file was written.
+**Final state confirmed at 2026-09-02 05:29:30 UTC**, unchanged from the
+05:24:57 reading:
+
+| object | state at last check |
+|---|---|
+| `capture_daily_metrics()` | `open_leads` and `pipeline_aed` both on `nexus_lead_is_open`; rules stamped |
+| `daily_metrics` 2026-09-02 row | `open_leads = 1`, `pipeline_aed = NULL`, captured 05:17:00 |
+| `v_team_performance.pipeline_aed` | `NULL` on its single row |
+| `v_conversations` | `security_invoker=true` |
+| `v_customer_360` | `security_invoker=true` |
+| `v_lead_messages` | `security_invoker=true` |
+| `v_needs_attention` | `security_invoker=true` |
+| `v_workflow_health` | `security_invoker=true` |
+| `get_advisors` (security) | zero ERROR lints, observed 05:24:42 |
+| `max(schema_migrations.version)` | `20260902051823`, 81 applied |
+| `architecture/schema.sql` | generated 05:01 against `20260902050255` — **two migrations behind** |
+
+Two migrations landed while this pass was running (`20260902051636` at 05:16 and
+`20260902051823` at 05:18) and both closed things this file was about to record
+as open. Four `screens/*.js` and `lib/*.js` files were also written mid-pass —
+`screens/deals.js` at 05:17:48, `lib/pipeline.js` at 05:19:08,
+`screens/team.js` at 05:20:06, `screens/overview.js` at 05:22:07 — so every
+frontend grep quoted above was re-taken at 05:29 against the current files. The
+`pill()` counts (106 / 87 / 19) and the `deals.js:1654` finding are from that
+re-take.
+
+Re-run the currency check before trusting any figure above.

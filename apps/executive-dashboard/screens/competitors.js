@@ -2043,6 +2043,9 @@ SCREENS.competitors = async host => {
     push({
       source: 'view',
       sev: String(it.severity || 'WARM').toUpperCase(),
+      /* Whether that `sev` is the view's own word or this file's 'WARM' fallback
+         decides what pill() may claim about where it came from. */
+      sevFromRow: it.severity != null && String(it.severity).trim() !== '',
       icon: KIND_ICON[it.kind] || 'warning',
       titleHtml: esc(it.title || 'Untitled alert'),
       detailHtml: [esc(it.detail || ''), ...extra].filter(Boolean).join(' '),
@@ -2205,7 +2208,7 @@ SCREENS.competitors = async host => {
       <span class="material-symbols-outlined t-${sevTone(a.sev)}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${a.titleHtml}${pill(a.sev, sevTone(a.sev))}${a.source === 'view' ? '<span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
+          ${a.titleHtml}${pill(a.sev, sevTone(a.sev), { verbatim: a.sevFromRow === true })}${a.source === 'view' ? '<span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
         <div class="cell-sub" style="white-space:normal">${a.detailHtml}${a.why ? ` <span class="t-muted">${a.why}</span>` : ''}</div>
       </div>
@@ -2585,7 +2588,7 @@ SCREENS.competitors = async host => {
               <div style="text-align:right;flex-shrink:0">
                 <div class="num">${p == null ? '—' : aed(p)}</div>
                 <div class="cell-sub">${d == null ? 'no gap' : esc(aedSigned(d))}</div>
-                ${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? pill('CRITICAL', 'hot') : ''}
+                ${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? pill('CRITICAL', 'hot', { verbatim: false }) : ''}
               </div></div>`;
           }).join('')
           : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(c.conflictNote || BASIS.none.why)}</div>`}

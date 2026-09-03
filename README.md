@@ -1,3 +1,17 @@
+<!-- BUSINESS CONTEXT — added 2026-09-02 -->
+> **This is a commercial product, not a demo.** NEXUS is a **Revenue Recovery &
+> Action OS for dealerships** — it sits above the dealership's existing DMS, CRM
+> and inventory systems, finds revenue leaks, decides the next best action and
+> executes it. It replaces none of them. See `PRODUCT.md` for the thesis and
+> `CLAUDE.md` for how to work here. Ali owns NEXUS OS and is selling it
+> to real dealerships on a subscription. Judge changes by whether they make it
+> sellable and keep it sellable. The honest commercial position today is a
+> **controlled dealership pilot** — not "enterprise-ready", not "compliant".
+> Never state more than the evidence supports; "wired but never fired" is a real
+> answer. The blocker before a second paying dealership is that the system is
+> **single-tenant**: every RLS policy is `USING (true)`, so tenant two would read
+> tenant one's customers. See `CLAUDE.md` for how to work here.
+
 # NEXUS OS
 
 **NEXUS OS** is a production AI operating system for automotive dealerships that unifies CRM, Marketing, Knowledge Management, Sales Intelligence, Inventory Lifecycle, and Business Automation into a single platform.
