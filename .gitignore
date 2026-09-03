@@ -54,3 +54,6 @@ backups/
 *.patch
 COMMIT_MSG.txt
 _to_delete_build/
+
+# Gate evidence: a live catalogue snapshot, regenerated on demand and stale after 24h.
+apps/executive-dashboard/.gate/

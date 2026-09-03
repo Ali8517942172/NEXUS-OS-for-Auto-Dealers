@@ -817,13 +817,86 @@ select json_build_object(
         where lower(coalesce(w.audit_name, w.name)) = lower(a.workflow)
            or lower(w.name) = lower(a.workflow)
            or exists (select 1 from unnest(coalesce(w.audit_aliases,'{}'::text[])) al
-                       where lower(al) = lower(a.workflow))))
+                       where lower(al) = lower(a.workflow)))),
+  'meta', json_build_object(
+     'functions_expected', (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        where n.nspname='public' and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e')),
+     'body_chars_expected', (select sum(length(p.prosrc)) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        where n.nspname='public' and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e')),
+     'relations_expected', (select count(distinct c.table_name) from information_schema.columns c
+        join pg_class pc on pc.relname=c.table_name join pg_namespace pn on pn.oid=pc.relnamespace and pn.nspname='public'
+       where c.table_schema='public' and pc.relkind in ('r','v','m','p')),
+     'tables_total', (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'),
+     'views_total', (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='v'),
+     'policies_total', (select count(*) from pg_policies where schemaname='public'),
+     'sentinel_units', (select count(*) from public.v_inventory_profit_sentinel))
 )::text;`.replace(/\n\s*'sentinel', \(select json_build_object\([\s\S]*?\) z\),/, '');
+
+/* ── Is this catalogue actually a catalogue? ───────────────────────────────
+   The live lane reads nine keys off this object. Supply four of them and every
+   check that reads a missing key sees `undefined`, iterates nothing, finds
+   nothing wrong, and reports PASS — a P0 going green *because its evidence was
+   absent*. That is not hypothetical. On 3 Sep 2026 a catalogue was produced
+   through a channel that truncates large values; it carried all 60 functions
+   and every one of them had `body: ""`. L4 scans those bodies for writes with
+   no tenant predicate and L5 scans them for reads of tenant-owned tables.
+   Against empty bodies both find nothing, and the report would have said the
+   two grant checks CLAUDE.md calls "the shape that has opened a hole three
+   times" had PASSED, on no evidence at all.
+
+   So a catalogue must carry every key the live lane reads, and must agree with
+   the counts Postgres computed for itself *in the same statement that built
+   it*. Those counts are not a signature and nothing here defends against a
+   deliberately forged file; they defend against the two failures that actually
+   happen — a partial source, and a truncated transfer. A catalogue that fails
+   them is not a weaker live source. It is not a live source at all, and the
+   live lane stays NOT RUN, which is the honest answer. */
+const CATALOGUE_MAX_AGE_H = Number(process.env.NEXUS_CATALOGUE_MAX_AGE_H || 24);
+function catalogueIntegrity(cat) {
+  if (!cat || typeof cat !== 'object' || Array.isArray(cat)) return 'it is not a JSON object';
+  const isObj = v => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+  const shape = {
+    relations: isObj,            functions: Array.isArray,
+    tables_no_rls: Array.isArray, views_no_invoker: Array.isArray,
+    open_policies: Array.isArray, sentinel_states: Array.isArray,
+    unregistered_writers: Array.isArray, ledger: isObj,
+    bad_recovered: v => typeof v === 'number' && Number.isFinite(v),
+  };
+  const missing = Object.entries(shape).filter(([k, ok]) => !ok(cat[k])).map(([k]) => k);
+  if (missing.length) return `missing or malformed on ${missing.join(', ')} — every live check reads one of these, and a check whose evidence is absent must not report PASS`;
+
+  const m = cat.meta;
+  if (!isObj(m)) return 'it carries no meta block, so nothing states how much data the database selected and a truncated transfer is indistinguishable from a complete one';
+  const bad = [];
+  const fns = cat.functions.length;
+  if (Number(m.functions_expected) !== fns) bad.push(`${m.functions_expected} functions were selected and ${fns} arrived`);
+  const bodyChars = cat.functions.reduce((a, f) => a + String(f.body || '').length, 0);
+  if (Number(m.body_chars_expected) !== bodyChars) bad.push(`${m.body_chars_expected} characters of function source were selected and ${bodyChars} arrived — L4 and L5 read those bodies, and against a truncated body they find nothing and pass`);
+  const rels = Object.keys(cat.relations).length;
+  if (Number(m.relations_expected) !== rels) bad.push(`${m.relations_expected} relations were selected and ${rels} arrived`);
+  if (Number.isFinite(Number(m.sentinel_units)) && Number(m.sentinel_units) !== cat.sentinel_states.length)
+    bad.push(`${m.sentinel_units} sentinel units were selected and ${cat.sentinel_states.length} arrived`);
+  if (bad.length) return `incomplete: ${bad.join('; ')}`;
+
+  const t = Date.parse(cat.takenAt || '');
+  if (!Number.isFinite(t)) return 'it carries no readable takenAt, so nothing says how old the reading is';
+  const ageH = (Date.now() - t) / 3.6e6;
+  if (ageH > CATALOGUE_MAX_AGE_H) return `taken ${ageH.toFixed(1)}h ago and the limit is ${CATALOGUE_MAX_AGE_H}h — the live lane asserts what the database is NOW, and a stale reading reported as a live PASS is the same untruth as a NOT RUN reported as a PASS`;
+  if (ageH < -1) return `takenAt is ${(-ageH).toFixed(1)}h in the future — the clock on one side of this reading is wrong and its freshness cannot be established`;
+  return null;
+}
+
+/* Neither live path is trusted until the catalogue it produced passes the
+   integrity gate. Failing it is reported as "could not run", not as a pass. */
+const sealed = (how, cat) => {
+  const why = catalogueIntegrity(cat);
+  return why ? { how: null, why: `the catalogue from ${how} is not usable as a live source: ${why}` } : { how, cat };
+};
 
 async function loadCatalogue() {
   const file = opt('--catalogue');
   if (file) {
-    try { return { how: `--catalogue ${file}`, cat: JSON.parse(await readFile(file, 'utf8')) }; }
+    try { return sealed(`--catalogue ${file}`, JSON.parse(await readFile(file, 'utf8'))); }
     catch (e) { return { how: null, why: `--catalogue ${file} could not be read: ${e.message}` }; }
   }
   const url = process.env.NEXUS_DB_URL;
@@ -832,7 +905,7 @@ async function loadCatalogue() {
   catch { return { how: null, why: 'NEXUS_DB_URL is set but psql is not on PATH' }; }
   try {
     const out = execFileSync('psql', [url, '-Atqc', CATALOGUE_SQL], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    return { how: 'psql via NEXUS_DB_URL', cat: JSON.parse(out.trim()) };
+    return sealed('psql via NEXUS_DB_URL', JSON.parse(out.trim()));
   } catch (e) {
     return { how: null, why: `psql failed: ${String(e.message).slice(0, 200)}` };
   }
@@ -1834,9 +1907,14 @@ if (!live.cat) {
   /* L2 */ verdict('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1],
     (c.tables_no_rls || []).map(t => `${t}: RLS is off`).concat(
       (c.open_policies || []).filter(p => !/reason_codes|workflow_registry/.test(p.table))
-        .map(p => `${p.table}/${p.policy}: USING(true) for ${p.roles}`)),
+        .map(p => `${p.table}/${p.policy}: ${p.cmd} USING(true) for ${p.roles}`
+          + ((RELATIONS[p.table] || []).includes('tenant_id')
+             ? ' — and this table HAS a tenant_id column, so a USING(true) policy on it crosses dealerships'
+             : ' — the table carries no tenant_id column')
+          + (String(p.roles || '').includes('anon') ? ' — AND anon is in its roles' : ''))),
     [`${(c.tables_no_rls || []).length} tables without RLS`,
-     'the two remaining USING(true) SELECT policies are on inventory_action_reason_codes and workflow_registry — reference tables that carry no tenant column and no customer data']);
+     `${(c.open_policies || []).length} USING(true) policies exist in public; the ones this check does not fail on are exempted by NAME (/reason_codes|workflow_registry/), not by any property of the table`,
+     'That name list is the last hand-maintained list of database contents left in this file, and it is the shape this gate was rebuilt to end. It went stale the day the lead-recovery, deal-rescue, attribution and policy engines shipped their vocabulary tables. Replacing it with the property that actually makes such a policy safe — SELECT only, anon not in roles, no tenant_id column on the table, and no write letters in the role grant — is a decision for the owner, not a change to slip in beside a failing run.']);
   /* L3 */ verdict('L3', LANE.LIVE, 'P0', LIVE_CHECKS[2][1],
     (c.views_no_invoker || []).map(v => `${v}: no security_invoker — RLS on its base tables is evaluated as the view owner`),
     ['every view in public carries security_invoker']);
@@ -1845,21 +1923,27 @@ if (!live.cat) {
      writes without a tenant predicate is a cross-tenant write. */
   {
     const bad = [];
+    let l4cand = 0, l4stmts = 0, l4chars = 0;
     for (const f of c.functions || []) {
       const acl = f.acl || '';
       const toAuth = /(^|[|\s])authenticated=X/.test(acl) || /(^|[|\s])=X/.test(acl);
       if (!f.secdef || !toAuth) continue;
+      l4cand++; l4chars += String(f.body || '').length;
       if (/\bp_tenant\b/.test(f.args || ''))
         bad.push(`${f.name}(${f.args}): SECURITY DEFINER, EXECUTE to authenticated, and takes a tenant as an argument — a caller can name a tenant that is not theirs`);
       const writes = /\b(update|delete\s+from|insert\s+into)\s+(public\.)?\w+/gi;
       for (const m of String(f.body || '').matchAll(writes)) {
+        l4stmts++;
         const after = String(f.body).slice(m.index, m.index + 900);
         if (!/tenant_id/i.test(after))
           bad.push(`${f.name}: SECURITY DEFINER, EXECUTE to authenticated, and its "${m[0].trim()}" carries no tenant predicate — it rewrites every dealership's rows`);
       }
     }
     verdict('L4', LANE.LIVE, 'P0', LIVE_CHECKS[3][1], [...new Set(bad)],
-      ['every definer function reachable by authenticated resolves its tenant from the caller and scopes its writes']);
+      [`${l4cand} of ${(c.functions || []).length} functions are SECURITY DEFINER with EXECUTE reachable by authenticated; ${l4stmts} write statements were read out of ${l4chars} characters of their source, and every one carries a tenant predicate within 900 characters`,
+       l4cand === 0 || l4stmts === 0
+         ? 'NOTE: this pass inspected nothing. Read it as an absence of candidates, not as a clean result — and check the catalogue carried real function bodies.'
+         : 'every definer function reachable by authenticated resolves its tenant from the caller and scopes its writes']);
   }
   /* L5 · the grant shape CLAUDE.md says has opened a hole three times.
      Graded, because the two cases are genuinely different and calling them the
@@ -1873,10 +1957,14 @@ if (!live.cat) {
          notice, which is exactly how this shape got in three times. */
   {
     const READS = /\b(from|join|update|insert\s+into|delete\s+from)\s+(public\.)?(leads|inventory|competitors|communication_logs|finance_quotes|kyc_documents|purchase_history|rag_documents|customer_360_profiles|audit_log|inventory_actions|inventory_action_events|users|tenants|tenant_members)\b/i;
-    const anonFns = (c.functions || []).filter(f => /(^|[|\s])anon=X/.test(f.acl || '') && READS.test(String(f.body || '')));
+    const anonAll = (c.functions || []).filter(f => /(^|[|\s])anon=X/.test(f.acl || ''));
+    const anonFns = anonAll.filter(f => READS.test(String(f.body || '')));
     const holes = anonFns.filter(f => f.secdef).map(f => `${f.name}: SECURITY DEFINER, anon holds EXECUTE, and the body reads a tenant-owned table with RLS bypassed`);
     verdict('L5', LANE.LIVE, 'P0', LIVE_CHECKS[4][1], holes,
-      ['no SECURITY DEFINER function granted to anon reads tenant-owned data',
+      [`${anonAll.length} of ${(c.functions || []).length} functions in public hold EXECUTE for anon at all; ${anonFns.length} of those have a body that reads a tenant-owned table`,
+       anonAll.length === 0
+         ? 'This passes because the grant is absent everywhere, not because a grant was inspected and found harmless — which is the strongest form this result takes, and the one the 2 Sep revocation was aiming at.'
+         : 'no SECURITY DEFINER function granted to anon reads tenant-owned data',
        'Supabase grants EXECUTE directly to anon and authenticated by default, and REVOKE ... FROM PUBLIC does not remove a direct grant — this check exists because that exact shape has opened three holes here']);
     const surface = anonFns.filter(f => !f.secdef).map(f => `${f.name}: anon holds EXECUTE and the body reads a tenant-owned table; SECURITY INVOKER, so RLS answers and anon reads nothing today`);
     if (surface.length) WARN('L5b', LANE.LIVE, 'P1', 'anon can reach a function that reads tenant-owned data', surface.concat([
@@ -1937,11 +2025,11 @@ if (!live.cat) {
    amount of stubbing can stand in for. Stated rather than silently absent. */
 for (const [id, t, why] of [
   ['B1', 'A decide() call by a non-approver is refused by Postgres, not just greyed out in the UI',
-   'needs a real signed-in session: the refusal is enforced in a SECURITY DEFINER function, and a stubbed RPC proves only what the UI does with the answer'],
+   'needs a signed-in NON-APPROVER, and this database has none to sign in as: tenant_members holds exactly one row and its role is "owner", which inventory_action_policy.approver_tenant_roles admits. Creating a non-approving member is a write to production. Measured 2026-09-03 through the read-only SQL channel: action_decide() invoked against a real inventory_actions row as a signed-in identity with no membership returned ok=false, refusal_code=NO_TENANT, and wrote 0 audit_log and 0 inventory_action_events rows — so the refusal is demonstrably Postgres-side on that arm. The arm this check names, NOT_AN_APPROVER, writes an audit row and an event row before it returns and therefore cannot be exercised read-only either.'],
   ['B2', 'Submitting the same decision twice produces one state change (idempotent=true on the second)',
    'needs a real session and a writable action; the gate is read-only against production and will not create one'],
   ['B3', 'A member of dealership A cannot see or act on dealership B\'s actions',
-   'needs two signed-in sessions in two tenants; proven adversarially on 2026-09-02 per CLAUDE.md, not re-proven by this gate'],
+   'needs two dealerships and this database has one: public.tenants holds a single row, so there is no dealership B whose rows could be withheld. Standing one up is a write to production. Proven adversarially against two synthetic tenants on 2026-09-02 per CLAUDE.md; that evidence is not re-derived here and is not carried forward as a pass.'],
   ['B4', 'The rendered figures match the live rows for a real dealership',
    'the render lane serves a stub on purpose, so the result is deterministic; matching live data is a separate, credentialed run'],
 ]) NOTRUN(id, LANE.LIVE, 'P0', t, why);
@@ -1979,8 +2067,13 @@ if (md) {
     `### ${r.id} · ${r.title}\n\n**${r.state}** · ${r.severity} · ${r.lane}\n\n`
     + (r.reason ? `_Could not run: ${r.reason}_\n\n` : '')
     + (r.evidence.length ? r.evidence.map(e => `- ${esc(e)}`).join('\n') + '\n' : '')).join('\n');
+  const tally = st => results.filter(r => r.state === st).length;
+  const codeNow = blocking.length ? 1 : (unrun.length ? 2 : 0);
   await writeFile(md, `# NEXUS OS — quality gate\n\nRun ${new Date().toISOString()}\n\n`
-    + `Schema source: ${SCHEMA_IS_LIVE ? 'LIVE' : 'SNAPSHOT'} (${SCHEMA_TAKEN})\n\n${body}\n`);
+    + `**PASS ${tally('PASS')} · FAIL ${tally('FAIL')} · WARN ${tally('WARN')} · NOT RUN ${tally('NOT RUN')} · exit ${codeNow}**\n\n`
+    + `Schema source: ${SCHEMA_IS_LIVE ? 'LIVE' : 'SNAPSHOT'} (${SCHEMA_TAKEN})\n\n`
+    + `Live lane: ${live.cat ? `RAN — catalogue from ${live.how}` : `NOT RUN — ${live.why || 'no live database connection'}`}\n\n`
+    + `A NOT RUN is not a PASS. Exit 2 means nothing failed and something launch-critical could not be checked.\n\n${body}\n`);
   console.log(`\nreport written to ${md}`);
 }
 

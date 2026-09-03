@@ -1,14 +1,42 @@
 # NEXUS OS — quality gate
 
-Run 2026-09-03T07:27:00.179Z
+Run 2026-09-03T09:59:33.801Z
 
-Schema source: SNAPSHOT (2026-09-03T00:00:00Z)
+**PASS 26 · FAIL 2 · WARN 2 · NOT RUN 4 · exit 1**
+
+Schema source: LIVE (2026-09-03T09:43:18Z)
+
+Live lane: RAN — catalogue from --catalogue .gate/catalogue.live.json
+
+A NOT RUN is not a PASS. Exit 2 means nothing failed and something launch-critical could not be checked.
+
+### L2 · RLS is on for every tenant-owned table, and no policy is open to anon or authenticated
+
+**FAIL** · P0 · LIVE · database
+
+- deal_rescue_states/deal_rescue_states_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- deal_rescue_evidence_sources/deal_rescue_evidence_sources_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- deal_rescue_prerequisites/deal_rescue_prerequisites_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- attribution_link_basis/attribution_link_basis_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- attribution_edge_type/attribution_edge_type_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- attribution_event_type/attribution_event_type_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- policy_unmigrated_constant/policy_unmigrated_constant_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- lead_recovery_states/lead_recovery_states_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- policy_rule_type/policy_rule_type_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+- policy_unit/policy_unit_authenticated_read: SELECT USING(true) for authenticated — the table carries no tenant_id column
+
+### L9 · Every audit_log writer is a registered workflow, so a business execution is distinguishable
+
+**FAIL** · P0 · LIVE · database
+
+- "Example Workflow" writes audit_log rows and has no workflow_registry entry — v_workflow_health cannot see it, so its runs are invisible to every health surface in the product
+- "Inventory Action Center" writes audit_log rows and has no workflow_registry entry — v_workflow_health cannot see it, so its runs are invisible to every health surface in the product
 
 ### B1 · A decide() call by a non-approver is refused by Postgres, not just greyed out in the UI
 
 **NOT RUN** · P0 · LIVE · database
 
-_Could not run: needs a real signed-in session: the refusal is enforced in a SECURITY DEFINER function, and a stubbed RPC proves only what the UI does with the answer_
+_Could not run: needs a signed-in NON-APPROVER, and this database has none to sign in as: tenant_members holds exactly one row and its role is "owner", which inventory_action_policy.approver_tenant_roles admits. Creating a non-approving member is a write to production. Measured 2026-09-03 through the read-only SQL channel: action_decide() invoked against a real inventory_actions row as a signed-in identity with no membership returned ok=false, refusal_code=NO_TENANT, and wrote 0 audit_log and 0 inventory_action_events rows — so the refusal is demonstrably Postgres-side on that arm. The arm this check names, NOT_AN_APPROVER, writes an audit row and an event row before it returns and therefore cannot be exercised read-only either._
 
 
 ### B2 · Submitting the same decision twice produces one state change (idempotent=true on the second)
@@ -22,7 +50,7 @@ _Could not run: needs a real session and a writable action; the gate is read-onl
 
 **NOT RUN** · P0 · LIVE · database
 
-_Could not run: needs two signed-in sessions in two tenants; proven adversarially on 2026-09-02 per CLAUDE.md, not re-proven by this gate_
+_Could not run: needs two dealerships and this database has one: public.tenants holds a single row, so there is no dealership B whose rows could be withheld. Standing one up is a write to production. Proven adversarially against two synthetic tenants on 2026-09-02 per CLAUDE.md; that evidence is not re-derived here and is not carried forward as a pass._
 
 
 ### B4 · The rendered figures match the live rows for a real dealership
@@ -32,75 +60,12 @@ _Could not run: needs two signed-in sessions in two tenants; proven adversariall
 _Could not run: the render lane serves a stub on purpose, so the result is deterministic; matching live data is a separate, credentialed run_
 
 
-### L1 · The embedded schema snapshot still matches the live catalogue
+### L8b · One audit row covers more than one ledger event
 
-**NOT RUN** · P0 · LIVE · database
+**WARN** · P1 · LIVE · database
 
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L10 · No recovered_value_aed exists without an attributed sale behind it
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L2 · RLS is on for every tenant-owned table, and no policy is open to anon or authenticated
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L3 · Every public view carries security_invoker
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L4 · No SECURITY DEFINER function granted to authenticated writes across tenants
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L5 · anon holds no EXECUTE on any function that reads tenant-owned data
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L6 · Sentinel economics are deterministic: no rate means no holding cost and no net margin
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L7 · UNKNOWN has not silently become a number without the evidence to support it
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L8 · Every action ledger event links to exactly one audit row, in its own tenant
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
-
-### L9 · Every audit_log writer is a registered workflow, so a business execution is distinguishable
-
-**NOT RUN** · P0 · LIVE · database
-
-_Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a SQL connection because RLS, EXECUTE grants, security_invoker and function bodies are catalogue facts PostgREST does not expose_
-
+- 7 events share 6 audit rows
+- One decide() call emits APPROVED and ASSIGNED and audits once. Defensible — one decision, one audit row — but the audit ledger then under-counts what happened, and anything that counts audit rows to count actions will be short.
 
 ### S5b · Exposure totals coalesce a null impact to zero
 
@@ -108,6 +73,58 @@ _Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a S
 
 - screens/actions.js:637: const exposureWaiting = waiting.reduce((s, r) => s + (Number(r.engine_impact_aed) \|\| 0), 0);
 - Defensible — impact_kind NONE means no exposure — but a total built this way cannot distinguish "no exposure" from "not computed". Partition by impact_kind before summing if that distinction ever has to hold.
+
+### L1 · The embedded schema snapshot still matches the live catalogue
+
+**PASS** · P0 · LIVE · database
+
+- 73 relations, identical to the snapshot taken 2026-09-03T00:00:00Z
+
+### L10 · No recovered_value_aed exists without an attributed sale behind it
+
+**PASS** · P0 · LIVE · database
+
+- 0 rows; the CHECK inventory_actions_recovered_needs_real_sale holds
+
+### L3 · Every public view carries security_invoker
+
+**PASS** · P0 · LIVE · database
+
+- every view in public carries security_invoker
+
+### L4 · No SECURITY DEFINER function granted to authenticated writes across tenants
+
+**PASS** · P0 · LIVE · database
+
+- 25 of 60 functions are SECURITY DEFINER with EXECUTE reachable by authenticated; 45 write statements were read out of 84100 characters of their source, and every one carries a tenant predicate within 900 characters
+- every definer function reachable by authenticated resolves its tenant from the caller and scopes its writes
+
+### L5 · anon holds no EXECUTE on any function that reads tenant-owned data
+
+**PASS** · P0 · LIVE · database
+
+- 0 of 60 functions in public hold EXECUTE for anon at all; 0 of those have a body that reads a tenant-owned table
+- This passes because the grant is absent everywhere, not because a grant was inspected and found harmless — which is the strongest form this result takes, and the one the 2 Sep revocation was aiming at.
+- Supabase grants EXECUTE directly to anon and authenticated by default, and REVOKE ... FROM PUBLIC does not remove a direct grant — this check exists because that exact shape has opened three holes here
+
+### L6 · Sentinel economics are deterministic: no rate means no holding cost and no net margin
+
+**PASS** · P0 · LIVE · database
+
+- 12 units checked; every state column agrees with the figure beside it
+
+### L7 · UNKNOWN has not silently become a number without the evidence to support it
+
+**PASS** · P0 · LIVE · database
+
+- baseline 2026-09-03T00:00:00Z: holding NOT_COMPUTABLE 12/12, net margin NOT_COMPUTABLE 12/12, market UNKNOWN 12/12, demand UNKNOWN_LOW_COVERAGE 12/12
+- this run: 12 units, 0 with a computed economic figure, 0 claiming a market position
+
+### L8 · Every action ledger event links to exactly one audit row, in its own tenant
+
+**PASS** · P0 · LIVE · database
+
+- 7 events, 6 audit rows, 0 orphan, 0 dangling, 0 cross-tenant
 
 ### R0 · The bundle builds, and the gate builds it
 
@@ -186,7 +203,7 @@ _Could not run: no NEXUS_DB_URL and no --catalogue file; the live lane needs a S
 **PASS** · P0 · OFFLINE · source
 
 - 135 distinct PostgREST paths extracted from 40 files
-- column map: SNAPSHOT (2026-09-03T00:00:00Z), 73 relations
+- column map: LIVE (2026-09-03T09:43:18Z), 73 relations
 
 ### S4 · No browser-side tenant scoping
 
