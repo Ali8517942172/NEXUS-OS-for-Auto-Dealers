@@ -2049,11 +2049,31 @@ if (!live.cat) {
       const unknown = disp.filter(d => /^\s*unrecognised writer/i.test(String(d.disposition || '')));
       const accepted = disp.filter(d => /^\s*known and deliberate/i.test(String(d.disposition || '')));
       const unclassified = disp.filter(d => !unknown.includes(d) && !accepted.includes(d));
+      /* THE VIEW'S OPINION MAY NOT SILENTLY REPLACE THE STRICTER DERIVATION.
+         The catalogue carries TWO derivations of "unregistered": this gate's own
+         set difference (`unregistered_writers`, matched case-insensitively) and
+         the view's per-writer classification. Reading the view's `disposition`
+         instead of re-deriving the JUDGEMENT is right — one figure, one
+         derivation. Discarding the set difference entirely is not, because the
+         two answer different questions: the set difference says WHO wrote, the
+         view says WHAT TO THINK of them. Whoever narrows the view narrows the
+         first question too, and until this cross-check existed that turned a P0
+         green with no diff in this repo and nothing in the report to notice —
+         an `AND workflow <> '...'` in a CREATE OR REPLACE VIEW was enough. The
+         set difference is the stricter derivation and it stays load-bearing: a
+         writer it names that the view does not list at all is not a
+         disagreement to settle in the view's favour, it is a failure. This
+         clause can only ever ADD failures; on 2026-09-03 both derivations
+         returned the same two names and it changes nothing. */
+      const listed = new Set(disp.map(d => String(d.workflow)));
+      const unlisted = (c.unregistered_writers || []).filter(w => !listed.has(String(w)));
       bad = unknown.map(d => `"${d.workflow}" wrote ${d.audit_rows} audit_log row(s) (${(d.statuses || []).join(', ')}) and resolves to no workflow_registry entry — v_audit_unregistered_writers calls it an unrecognised writer, so its runs are on no health surface. Register it from the box with its real n8n id, or establish it is not a NEXUS workflow. Do not invent a registry row to clear this.`)
-        .concat(unclassified.map(d => `"${d.workflow}" carries a disposition this gate does not recognise (${JSON.stringify(d.disposition)}) — failing closed rather than assuming it is benign`));
+        .concat(unclassified.map(d => `"${d.workflow}" carries a disposition this gate does not recognise (${JSON.stringify(d.disposition)}) — failing closed rather than assuming it is benign`))
+        .concat(unlisted.map(w => `"${w}" writes audit_log rows and resolves to no workflow_registry entry by this gate's own set difference, yet public.v_audit_unregistered_writers does not list it at all — the view no longer sees every writer the check it stands in for sees. Failing on the stricter derivation; read the view definition before doing anything else.`));
       evidence = [
         `${disp.length} writer(s) in audit_log resolve to no workflow_registry row; the database's own view classified ${accepted.length} of them as known and deliberate and ${unknown.length} as unrecognised`,
         'the judgement is read from public.v_audit_unregistered_writers.disposition, not re-derived here — one figure, one derivation',
+        `cross-checked against this gate's own set difference: ${(c.unregistered_writers || []).length} writer(s) there, ${unlisted.length} of them missing from the view`,
       ].concat(accepted.map(d => `accepted: "${d.workflow}" — ${d.disposition}`));
     } else {
       bad = (c.unregistered_writers || []).map(w => `"${w}" writes audit_log rows and has no workflow_registry entry, and this catalogue predates the dispositions key, so the gate cannot tell an unrecognised writer from a deliberate non-n8n one and refuses to guess`);
