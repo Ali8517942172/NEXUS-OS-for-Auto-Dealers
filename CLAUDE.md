@@ -412,3 +412,74 @@ dies halfway and leaves the repository mid-`am`. Call
 then re-run clean. Do not try to nurse a half-applied `am` forward with `mv`
 tricks — the counter in `.git/rebase-apply` stops advancing and it re-applies
 the same commit forever.
+
+## Two WAHA instances are posting the same messages into production
+
+3 Sep 2026, read from saved executions. Executions 9427 and 9428 carry the
+**same `body.payload.id`** and different everything else:
+
+| | 9427 | 9428 |
+|---|---|---|
+| `x-webhook-request-id` | `35bsz6mtlzeem9` | `1mt17mtlzf9bc` |
+| `user-agent` | `WAHA/2026.7.2` | `WAHA/2026.7.1` |
+| `x-forwarded-for` | `35.224.126.225` (the box) | `2.50.10.149` (external, UAE) |
+| `me.jid` | `971526647253:12@…` | `971526647253:8@…` |
+
+A second pair, 9420/9421, carries an identical `payload.id` and started **1 ms
+apart** — far too close for a retry. Different build, different source address,
+different device index on the same WhatsApp account. This is not one WAHA
+retrying; it is **two senders**, and one of them is a host nobody has
+accounted for.
+
+So the execution list is pairs: 275 executions is roughly 137 messages. The
+only thing absorbing the doubling is `Claim Message Id`. And the control that
+would refuse an unknown sender — `WAHA Auth Gate` — is measured `DORMANT` on
+that same traffic.
+
+Two things follow. Any count of "messages" taken from the execution list is
+roughly double the truth. And an external host is posting genuine WhatsApp
+traffic into production through an open door; find out what `2.50.10.149` is
+before arming the gate, because arming it will cut off whichever sender is not
+configured with the secret.
+
+## Corrections to what this file used to say
+
+- **`saveDataSuccessExecution` on the WhatsApp workflow is `"all"`, not
+  `"none"`.** The published settings say `all` for both success and error, with
+  a 300 s timeout. The MONITOR window is observable today; earlier text here
+  said it was not.
+- **`Resolve Tenant` runs BEFORE `Claim Message Id`** — fourth node against
+  sixth — and `Claim Message Id` **does** send `tenant_id`, taken from
+  `Resolve Tenant`'s output. The `nexus_default_tenant_id()` fallback on
+  `processed_messages` fires only if `Resolve Tenant` is disabled, which is the
+  documented ten-second rollback. Claims file under the right dealership.
+- **The claim gate's "side door" is not a live re-entry path.** `Called by
+  Master Router` does connect straight to `Extract Message & Sender`, past the
+  claim — but `HOT/WARM: Already In A Live Chat?` gate both callbacks on
+  `lead.origin === 'whatsapp-bdc'`, and `Shape Lead For Router` always sets it.
+  The internal branch also rewrites the item to `direction:'outbound'`, and
+  `New Lead Worth Scoring?` requires `inbound`, so the loop is bounded at one
+  pass. Zero of 275 retained executions are `mode:"integrated"`; zero
+  `'[system] Initial outreach…'` rows exist in `communication_logs` ever.
+- **`x-webhook-request-id` is a delivery id, not a message id.** Proven by the
+  pair above. So is `body.id` (`evt_…`). The only identifier stable across
+  deliveries of one WhatsApp message is `body.payload.id` — which is what
+  `Prefilter` and `Claim Message Id` already key on. That design is correct.
+- **`body.session` IS present on real inbound traffic**, value `"default"`,
+  with `Resolve Tenant` emitting `tenant_source:"waha_session"` on live
+  messages. The rollback contingency "WAHA sends no session" is dead; retire
+  it. The `channel_registry` cutover has its input field.
+
+## The duplicate inbound rows are a retry, not a second pass
+
+Ten of 83 inbound `communication_logs` rows are near-duplicates — about 12%.
+The `W.slam` case is one claim at 06:48:01 and two identical **inbound** rows
+at 06:48:23 and 06:48:29. The re-entry path cannot produce that: it would have
+written `direction:'outbound'` with the outreach marker.
+
+Inferred cause: `Log Incoming Message` is published with `retryOnFail: true`
+and `Prefer: return=minimal`, and it never populates `external_message_id`, so
+a POST that commits server-side but whose response is lost gets retried and
+inserts a second row with nothing to dedupe it. A unique index on
+`(tenant_id, direction, external_message_id)` now exists and is inert until a
+writer sends the column — that node is the writer to fix.
