@@ -132,6 +132,46 @@ nearer 7,800) and sent it to a real person, and a separate reply leaked the
 dealership's internal vehicle cost. Both are now gated. The WhatsApp finance
 path should not go live.
 
+## The open webhook — read before touching anything WhatsApp
+
+Tested live 3 Sep. There are **11 business POST webhooks**, and **not one uses
+n8n's own `authentication` parameter** — every guard is downstream application
+logic, so every endpoint accepts the request and starts an execution before
+refusing. Ten refuse correctly. One does not:
+
+**`POST /webhook/whatsapp-inbound` accepts unauthenticated calls.** Its
+`WAHA Auth Gate` is env-driven and **dormant on this box** — `WAHA_WEBHOOK_SECRET`
+is unset, so the gate's early `return items;` passes everything through. Proven
+by running the published workflow with a payload that dies before any write: the
+gate emitted the item with no `_gate` key, which only the dormant branch does.
+
+What an unauthenticated caller gets: keyword-matched AI replies **sent to a
+number they choose** (`Guard Reply` filters content, never the recipient), rows
+in `processed_messages`, `whatsapp_contacts`, `communication_logs`, `audit_log`,
+and — via `Score New Lead`, which enters the Master Router through
+`Called Internally` and **bypasses that router's own Auth Gate** — rows in
+`leads`. A guarded front door with an unguarded side door behind it.
+
+**And the caller picks the dealership.** `Resolve Tenant` keys off `body.session`,
+which is caller-supplied; a bogus session resolves to the sole configured tenant
+today. The moment `NEXUS_TENANT_MAP` holds two dealerships, one JSON field
+chooses whose data is written — and n8n writes as `service_role`, `BYPASSRLS`,
+so nothing in the database filters it. **Every tenant control proven this week
+has this in front of it.**
+
+The workflow code is already correct; the hole is configuration, and the fix is
+on the VM, not in n8n: set `WAHA_WEBHOOK_SECRET`, make WAHA send
+`x-nexus-webhook-secret`, confirm in MONITOR mode, then set
+`WAHA_WEBHOOK_ENFORCE=true`. Hardcoding a secret in n8n first would silently
+drop every real customer message, because WAHA is not sending the header yet.
+One trap: that workflow has `saveDataSuccessExecution:"none"`, so MONITOR-mode
+executions are never saved and the monitoring window is unobservable — flip it
+to `"all"` for the rollout or you will enforce blind.
+
+Also: `slack-command` is closed **by accident**, not by design — its
+`Tenant For JWT User` lacks `alwaysOutputData:true`, so the chain halts before
+`Auth Gate` runs, and unauthenticated probing records SUCCESS with no audit row.
+
 ## House rules that exist because something broke
 
 - **One agent on the n8n box at a time.** Parallel writes have taken the
