@@ -1,12 +1,12 @@
 # NEXUS OS — quality gate
 
-Run 2026-09-03T09:59:33.801Z
+Run 2026-09-03T11:45:26.060Z
 
 **PASS 26 · FAIL 2 · WARN 2 · NOT RUN 4 · exit 1**
 
-Schema source: LIVE (2026-09-03T09:43:18Z)
+Schema source: LIVE (2026-09-03T11:39:43Z)
 
-Live lane: RAN — catalogue from --catalogue .gate/catalogue.live.json
+Live lane: RAN — catalogue from --catalogue /tmp/cat.json
 
 A NOT RUN is not a PASS. Exit 2 means nothing failed and something launch-critical could not be checked.
 
@@ -29,8 +29,7 @@ A NOT RUN is not a PASS. Exit 2 means nothing failed and something launch-critic
 
 **FAIL** · P0 · LIVE · database
 
-- "Example Workflow" writes audit_log rows and has no workflow_registry entry — v_workflow_health cannot see it, so its runs are invisible to every health surface in the product
-- "Inventory Action Center" writes audit_log rows and has no workflow_registry entry — v_workflow_health cannot see it, so its runs are invisible to every health surface in the product
+- "Example Workflow" wrote 1 audit_log row(s) (FAILED) and resolves to no workflow_registry entry — v_audit_unregistered_writers calls it an unrecognised writer, so its runs are on no health surface. Register it from the box with its real n8n id, or establish it is not a NEXUS workflow. Do not invent a registry row to clear this.
 
 ### B1 · A decide() call by a non-approver is refused by Postgres, not just greyed out in the UI
 
@@ -144,7 +143,7 @@ _Could not run: the render lane serves a stub on purpose, so the result is deter
 **PASS** · P0 · OFFLINE · rendered
 
 - 20/20 screens rendered
-- overview:39685c/8cards  leads:10095c/2cards  conversations:13897c/3cards  compliance:24337c/4cards  revenue:31238c/7cards  leadrecovery:18406c/6cards  dealrescue:13852c/5cards  attribution:21076c/6cards  policy:19710c/6cards  inventory:6336c/2cards  competitors:20394c/4cards  ask:8870c/4cards  finance:32774c/7cards  customers:20892c/2cards  actions:22265c/6cards  campaigns:16966c/7cards  deals:18471c/5cards  automation:32334c/7cards  team:14827c/4cards  settings:28894c/11cards
+- overview:39685c/8cards  leads:10095c/2cards  conversations:13897c/3cards  compliance:24337c/4cards  revenue:31238c/7cards  leadrecovery:18406c/6cards  dealrescue:13852c/5cards  attribution:21076c/6cards  policy:19710c/6cards  inventory:6336c/2cards  competitors:20393c/4cards  ask:8870c/4cards  finance:32774c/7cards  customers:20892c/2cards  actions:22265c/6cards  campaigns:16966c/7cards  deals:18471c/5cards  automation:32334c/7cards  team:14827c/4cards  settings:28894c/11cards
 
 ### R3 · No query the database would reject — and the check is not vacuous
 
@@ -203,7 +202,7 @@ _Could not run: the render lane serves a stub on purpose, so the result is deter
 **PASS** · P0 · OFFLINE · source
 
 - 135 distinct PostgREST paths extracted from 40 files
-- column map: LIVE (2026-09-03T09:43:18Z), 73 relations
+- column map: LIVE (2026-09-03T11:39:43Z), 73 relations
 
 ### S4 · No browser-side tenant scoping
 

@@ -818,6 +818,12 @@ select json_build_object(
            or lower(w.name) = lower(a.workflow)
            or exists (select 1 from unnest(coalesce(w.audit_aliases,'{}'::text[])) al
                        where lower(al) = lower(a.workflow)))),
+  'unregistered_writer_dispositions', (select coalesce(json_agg(json_build_object(
+       'workflow', v.workflow_written_in_audit_log,
+       'audit_rows', v.audit_rows,
+       'statuses', v.statuses_seen,
+       'disposition', v.disposition)),'[]'::json)
+     from public.v_audit_unregistered_writers v),
   'meta', json_build_object(
      'functions_expected', (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname='public' and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e')),
@@ -2013,9 +2019,49 @@ if (!live.cat) {
       [`${l.events} events share ${l.audit_rows} audit rows`,
        'One decide() call emits APPROVED and ASSIGNED and audits once. Defensible — one decision, one audit row — but the audit ledger then under-counts what happened, and anything that counts audit rows to count actions will be short.']);
   }
-  /* L9 */ verdict('L9', LANE.LIVE, 'P0', LIVE_CHECKS[8][1],
-    (c.unregistered_writers || []).map(w => `"${w}" writes audit_log rows and has no workflow_registry entry — v_workflow_health cannot see it, so its runs are invisible to every health surface in the product`),
-    ['every distinct audit_log.workflow resolves to a registered workflow']);
+  /* L9 · READ THE DATABASE'S JUDGEMENT; DO NOT RE-DERIVE IT.
+     Until 3 Sep 2026 this check took the raw set difference between
+     audit_log.workflow and workflow_registry and called every member of it a
+     defect, with the sentence "v_workflow_health cannot see it, so its runs are
+     invisible to every health surface in the product". Measured on the live
+     database the same day, that sentence was FALSE for one of the two names it
+     was printed against: "Inventory Action Center" wrote 6 audit rows, and
+     public.v_action_center_health reports audit_rows = 6, audit_rows_30d = 6
+     and last_audit_at equal to the newest of them. Those runs are not invisible;
+     they are on a different health surface on purpose, because they are human
+     decisions rather than an n8n execution.
+
+     public.v_audit_unregistered_writers already owns that judgement and states
+     it per writer in its `disposition` column. CLAUDE.md's rule is one figure,
+     one derivation — so the gate now READS that column instead of computing a
+     second, cruder opinion beside it. This does not weaken the check: a writer
+     the database calls unrecognised still FAILS, and a disposition this gate
+     does not recognise also fails, so a future third category cannot pass by
+     being unfamiliar.
+
+     The raw list stays as the fallback for a catalogue dumped before this key
+     existed. That fallback is the STRICTER of the two behaviours, which is the
+     right direction for a missing input. */
+  {
+    const disp = c.unregistered_writer_dispositions;
+    let bad, evidence;
+    if (Array.isArray(disp)) {
+      const unknown = disp.filter(d => /^\s*unrecognised writer/i.test(String(d.disposition || '')));
+      const accepted = disp.filter(d => /^\s*known and deliberate/i.test(String(d.disposition || '')));
+      const unclassified = disp.filter(d => !unknown.includes(d) && !accepted.includes(d));
+      bad = unknown.map(d => `"${d.workflow}" wrote ${d.audit_rows} audit_log row(s) (${(d.statuses || []).join(', ')}) and resolves to no workflow_registry entry — v_audit_unregistered_writers calls it an unrecognised writer, so its runs are on no health surface. Register it from the box with its real n8n id, or establish it is not a NEXUS workflow. Do not invent a registry row to clear this.`)
+        .concat(unclassified.map(d => `"${d.workflow}" carries a disposition this gate does not recognise (${JSON.stringify(d.disposition)}) — failing closed rather than assuming it is benign`));
+      evidence = [
+        `${disp.length} writer(s) in audit_log resolve to no workflow_registry row; the database's own view classified ${accepted.length} of them as known and deliberate and ${unknown.length} as unrecognised`,
+        'the judgement is read from public.v_audit_unregistered_writers.disposition, not re-derived here — one figure, one derivation',
+      ].concat(accepted.map(d => `accepted: "${d.workflow}" — ${d.disposition}`));
+    } else {
+      bad = (c.unregistered_writers || []).map(w => `"${w}" writes audit_log rows and has no workflow_registry entry, and this catalogue predates the dispositions key, so the gate cannot tell an unrecognised writer from a deliberate non-n8n one and refuses to guess`);
+      evidence = ['every distinct audit_log.workflow resolves to a registered workflow',
+        'NOTE: this catalogue carries no unregistered_writer_dispositions key, so the raw set difference was used — re-dump the catalogue with --print-sql to get the database\'s own classification'];
+    }
+    verdict('L9', LANE.LIVE, 'P0', LIVE_CHECKS[8][1], bad, evidence);
+  }
   /* L10 */ verdict('L10', LANE.LIVE, 'P0', LIVE_CHECKS[9][1],
     c.bad_recovered ? [`${c.bad_recovered} inventory_actions rows claim a recovered value with no attributed sale behind them`] : [],
     ['0 rows; the CHECK inventory_actions_recovered_needs_real_sale holds']);
