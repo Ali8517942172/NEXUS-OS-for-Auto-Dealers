@@ -14,6 +14,32 @@ const NAV = [
     { id:'conversations', title:'Conversations',   icon:'forum' },
     { id:'compliance',    title:'Compliance',      icon:'verified_user' },
   ]},
+  /* ── Revenue Recovery ────────────────────────────────────────────────────
+     PRODUCT.md's thesis in one group: find where money is leaking, decide the
+     next best action, execute it, and measure what came back. Revenue Recovery
+     is the aggregate — the screen an owner opens first — and the four beneath
+     it are the individual engines it summarises, in the order the money moves:
+     the lead, then the deal, then the attribution of whatever the deal
+     produced, then the rules all three of them apply.
+
+     It sits above Assets rather than inside Operations because Operations is
+     where work is carried out and this group is where the case for doing that
+     work is made.
+
+     THE FOUR ENGINE SCREENS ARE SEPARATE MODULES AND MAY NOT ALL BE PRESENT.
+     They are offered here regardless, on purpose: a navigation that hides a
+     screen when its module is missing gives the operator no way to tell a
+     feature that does not exist from one that failed to load, and app.js loads
+     them by glob precisely so a module that has not landed cannot break the
+     build. go() below renders an explicit "not in this build" state for an id
+     the registry does not hold. */
+  { group: 'Revenue recovery', items: [
+    { id:'revenue',      title:'Revenue Recovery', icon:'savings' },
+    { id:'leadrecovery', title:'Lead Recovery',    icon:'restore' },
+    { id:'dealrescue',   title:'Deal Rescue',      icon:'handyman' },
+    { id:'attribution',  title:'Attribution',      icon:'hub' },
+    { id:'policy',       title:'Policy',           icon:'gavel' },
+  ]},
   { group: 'Assets', items: [
     { id:'inventory',   title:'Inventory',   icon:'directions_car' },
     { id:'competitors', title:'Competitors', icon:'trending_up' },
@@ -174,8 +200,38 @@ function stateNoTenant() {
        (a <span class="mono">tenant_members</span> row) before any screen can say anything true.</p></div>`;
 }
 
+/* The navigation offers a screen this bundle does not contain.
+
+   This is a real state, not a hypothetical one: the four Revenue Recovery
+   engine screens are separate modules, app.js loads them by glob so that a
+   module which has not landed cannot break the build, and lib/nav.js offers all
+   five ids either way. What must not happen is the old behaviour — falling
+   through to `overview` — because the operator then clicks Deal Rescue, lands
+   on Overview, and has no way to tell whether they mis-clicked, whether the
+   screen was removed, or whether the app is broken. Silently substituting a
+   different screen for the one that was asked for is the navigation lying about
+   what it did.
+
+   Note what this state does NOT say. It says nothing about deals, leads,
+   attribution or policy, and in particular it does not say there is no data:
+   the module is absent, so nothing has been read and nothing can be claimed
+   either way. This codebase has rendered "no rows" for "no code" before. */
+function stateNotInBuild(id) {
+  const title = flatNav().find(i => i.id === id)?.title || id;
+  return `<div class="state"><span class="material-symbols-outlined">construction</span>
+    <h3>${esc(title)} is not part of this build</h3>
+    <p>The navigation offers this screen and no module in this bundle registers it, so there is nothing to render.
+       That is a missing file, not an empty engine — nothing has been read here, so nothing is being claimed about
+       what it would have shown. Every other screen is unaffected. If you are expecting this one, the deployment is
+       behind the navigation and needs rebuilding.</p></div>`;
+}
+
 function go(id) {
-  if (!SCREENS[id]) id = 'overview';
+  /* Two different misses, told apart deliberately. An id the navigation has
+     never heard of is a stale bookmark or a typed hash, and Overview is the
+     right answer for it. An id the navigation DOES offer, whose module is
+     absent, gets said out loud above. */
+  if (!SCREENS[id] && !flatNav().some(i => i.id === id)) id = 'overview';
   current = id;
   location.hash = id;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
@@ -193,6 +249,10 @@ function go(id) {
   const paint = () => {
     if (staleRender(gen)) return;
     if (hasNoTenant()) { host.innerHTML = stateNoTenant(); return; }
+    /* Checked here rather than at the top of go() so that the title, the active
+       nav item and the hash are all set first: the operator sees the screen they
+       asked for, named, explaining itself — not a silent bounce elsewhere. */
+    if (!SCREENS[id]) { host.innerHTML = stateNotInBuild(id); return; }
     host.innerHTML = '';
     try {
       Promise.resolve(SCREENS[id](host)).catch(fail);

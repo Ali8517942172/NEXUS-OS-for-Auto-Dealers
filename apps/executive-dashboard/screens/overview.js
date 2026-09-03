@@ -170,7 +170,12 @@
       sold. The panel says "exposed" and never loss, revenue, saved or
       recovered. `recovered_value_aed` is null on every action on this box and
       renders as "not recorded", never as AED 0 — the column comment is explicit
-      that a missing outcome is a state with a reason, not a zero.
+      that a missing outcome is a state with a reason, not a zero. And the word
+      ATTRIBUTED is earned on this screen rather than assumed: a figure is only
+      counted where the row also carries outcome_state ATTRIBUTED, a linked
+      purchase_history row, an attribution basis and a value basis, which is the
+      four-column rule the database itself enforces. A row with the amount and
+      not the evidence is reported as a fault and its amount is withheld.
 
    What the data actually looked like when this was written, read live at
    18:45 UTC on 2 Sep 2026 — recorded as a dated observation, exactly like the
@@ -209,6 +214,10 @@
    test record must not read as a trend. */
 /* COUNTS, not a copy of it. badges.js exports the severity set precisely so
    this file cannot drift from it — see the note at the foot of badges.js. */
+/* The recovered-value evidence test is imported, never re-implemented. It is
+   the one derivation for the only money in this product that claims to be
+   real, and screens/actions.js owns it. */
+import { recoveryEvidence, unsupportedRecoverySentence } from './actions.js';
 import { COUNTS as BADGE_SEVERITIES, LAST as BADGE_SNAPSHOT } from '../lib/badges.js';
 /* What counts as a reply. This screen used to decide it here — channel in
    {system, internal} OR direction === 'internal', with the message body never
@@ -289,13 +298,22 @@ const QUEUE_LIMIT = 200;
    than `*`. screens/actions.js selects `*` because it renders the whole record;
    this screen reads a summary and a named list is the only form in which a
    stale column shows up as a 42703 at the gate instead of as `undefined` on a
-   card. All 27 were confirmed against the live catalogue on 2 Sep 2026. */
+   card. All 27 were confirmed against the live catalogue on 2 Sep 2026.
+
+   Three more added 3 Sep 2026 — outcome_purchase_id, attribution_basis and
+   recovered_value_basis — and they are not decoration. They are the other
+   three quarters of the evidence that makes `recovered_value_aed` sayable at
+   all (see recoveryEvidence() in screens/actions.js). Without them selected
+   this screen could only ever test one column while asserting four, which is
+   the defect this list is being widened to close. Confirmed present on
+   v_inventory_action_queue against the live catalogue on 3 Sep 2026. */
 const QUEUE_COLS = ['id', 'unit_id', 'unit_model', 'status', 'is_live', 'awaiting_decision',
   'deferral_now_due', 'recommendation', 'engine_impact_aed', 'engine_impact_kind',
   'engine_days_in_stock', 'engine_still_agrees', 'engine_now_recommendation',
   'proposed_at', 'decided_at', 'decided_by_name', 'decision_reason_label',
   'escalated_at', 'escalation_reason', 'executed_at', 'assigned_role', 'assigned_to_name',
-  'outcome_state', 'recovered_value_aed', 'outcome_sentence', 'cost_of_doing_nothing',
+  'outcome_state', 'outcome_purchase_id', 'attribution_basis', 'recovered_value_basis',
+  'recovered_value_aed', 'outcome_sentence', 'cost_of_doing_nothing',
   'days_open'].join(',');
 const ATTN_LIMIT = 200;
 const AWAITING_LIMIT = 200;
@@ -614,6 +632,9 @@ SCREENS.overview = async host => {
      is an argument about what matters. Leads, messages and pipeline are what
      happened; this is what is costing money and who has to answer for it. */
   const leakHost = el('div'); host.appendChild(leakHost);
+  /* Directly under the leak panel, because it answers the question that panel
+     raises and cannot close: what about the customers and the sales? */
+  const recoveryHost = el('div'); recoveryHost.style.marginTop = '16px'; host.appendChild(recoveryHost);
 
   const strip = el('div', 'grid g5'); strip.style.marginTop = '16px';
   strip.innerHTML = stateLoading(2); host.appendChild(strip);
@@ -1876,7 +1897,15 @@ SCREENS.overview = async host => {
         const escalated = q.filter(a => a.escalated_at);
         const closed = q.filter(a => a.is_live === false);
         const executed = q.filter(a => a.executed_at);
-        const attributed = q.filter(a => n0(a.recovered_value_aed) != null);
+        /* Recovery, partitioned by the EVIDENCE and not by the amount column.
+           `n0(a.recovered_value_aed) != null` was a test of one column beneath
+           a sentence claiming four ("a recorded sale tied to it by a person"),
+           so a row whose columns disagreed was totalled as attributed money.
+           recoveryEvidence() is the shared test; UNSUPPORTED rows are pulled
+           out and reported as a fault, never added into a figure. */
+        const recovery = q.map(a => ({ a, ev: recoveryEvidence(a) }));
+        const attributed  = recovery.filter(x => x.ev.state === 'ATTRIBUTED').map(x => x.a);
+        const unsupported = recovery.filter(x => x.ev.state === 'UNSUPPORTED');
         const disagreed = q.filter(a => a.engine_still_agrees === false);
 
         if (awaiting.length) {
@@ -1993,12 +2022,27 @@ SCREENS.overview = async host => {
            because this is the sentence the whole product is most tempted to
            get wrong. `recovered_value_aed` is null on every row on this box and
            null is not zero: the column comment says a missing outcome is a
-           state with a reason, and the view spells that reason out per row. */
+           state with a reason, and the view spells that reason out per row.
+
+           The total below is built from `attributed` only, which now means the
+           rows that carry outcome_state ATTRIBUTED, a linked purchase, an
+           attribution basis and a value basis — not the rows that merely carry
+           a number. The words "a recorded sale tied to it by a person" are
+           therefore a description of the filter and not a hope about it. */
         if (attributed.length) {
           const t = expose(attributed, a => a.recovered_value_aed, () => 'ATTRIBUTED_MARGIN');
           notes.push(`${num(attributed.length)} of ${num(q.length)} ${plural(q.length, 'action', 'actions')} ${plural(attributed.length, 'has', 'have')} a recorded sale tied to ${plural(attributed.length, 'it', 'them')} by a person: ${aed(t.total)} of realised gross margin, ATTRIBUTED and not confirmed as caused. NEXUS does not claim the action produced the sale.`);
         } else if (q.length) {
           notes.push(`No action has an attributed outcome. Recovered value is not zero on ${num(q.length)} ${plural(q.length, 'action', 'actions')} — it is not recorded, and it stays that way until a person ties a real recorded sale to a unit, which today they must do by hand because purchase_history carries no reference to an inventory unit at all.`);
+        }
+        /* A row carrying an amount the evidence does not support. The database
+           CHECK inventory_actions_recovered_needs_real_sale makes it unstorable,
+           so one arriving here means something upstream is wrong. It is stated
+           and the amount is withheld: reporting the count without the figure is
+           the only way to say "this is broken" without repeating the fabricated
+           claim while doing so. */
+        if (unsupported.length) {
+          notes.push(`${num(unsupported.length)} ${plural(unsupported.length, 'action carries', 'actions carry')} a recovered amount with no evidence behind ${plural(unsupported.length, 'it', 'them')}, and ${plural(unsupported.length, 'that amount is', 'those amounts are')} not shown and not counted anywhere above. ${unsupportedRecoverySentence(unsupported[0].ev)} Action Center names ${plural(unsupported.length, 'the row', 'each row')}.`);
         }
         if (executed.length) {
           notes.push(`${num(executed.length)} ${plural(executed.length, 'action has', 'actions have')} been marked carried out. Whether ${plural(executed.length, 'it', 'they')} produced anything is the separate question above.`);
@@ -2156,6 +2200,75 @@ SCREENS.overview = async host => {
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('actions'));
     wireGoto(card);
+  }));
+
+  /* ── Revenue Recovery, in three figures ──────────────────────────────────
+     Added 3 Sep 2026 alongside screens/revenue.js, and rendered directly BELOW
+     the leak panel (recoveryHost is appended after leakHost). That panel
+     measures inventory decisions, the action queue, lead ownership, reply gaps,
+     response time and waiting threads — and says so in its own empty state.
+     These three figures are the questions it does not ask, because they belong
+     to the lead recovery, deal rescue and attribution engines rather than to it.
+
+     ALL THREE READ ZERO TODAY, WHICH IS WHY THEY ARE HERE. A panel that only
+     ever shows non-zero rows teaches an operator that silence means nothing was
+     checked; a stated zero is a check that ran and came back clear, and it is
+     what makes the non-zero rows above it believable.
+
+     Two aggregate reads, neither recomputed from anything else on this screen.
+     Nothing here is added to anything in the leak panel: that one measures
+     margin sitting inside unsold stock, these measure customers and sales, and
+     the two are not the same quantity. The full page is one click away, and
+     every claim wider than these two reads belongs on it rather than here. */
+  panels.push(panel(recoveryHost, {
+    title: 'Revenue Recovery',
+    sub: 'The three questions the panel above does not ask, because they belong to the lead, deal and '
+       + 'attribution engines rather than to inventory',
+    actions: `<button class="btn sm" data-act="revenue">Open Revenue Recovery</button>`,
+    load: async () => {
+      const [cov, inFlight] = await Promise.all([
+        db('v_lead_recovery_coverage?select=*'),
+        db('v_deal_rescue?select=lead_id&limit=200'),
+      ]);
+      return { c: cov[0] || null, inFlight };
+    },
+    render: ({ c, inFlight }) => {
+      if (!c) {
+        return stateEmpty('The Lead Recovery coverage view returned no row',
+          'It reports one row per dealership, so an empty answer means this account matched none of them. No count is '
+          + 'shown rather than a zero, because a zero here would read as a finding about the business.', 'savings');
+      }
+      /* Each caption states the denominator its figure came out of, and each is
+         written for the branch it sits in — the zero wording and the non-zero
+         wording are separate strings, not one sentence with a number in it. */
+      return `<div class="grid g3">
+        ${kpi('Leads at risk', num(c.leads_at_risk),
+          `<div class="cell-sub">${esc(n0(c.leads_at_risk)
+            ? `Of ${num(c.leads_total)} scored. Each one is listed on Revenue Recovery with its evidence.`
+            : `Of ${num(c.leads_total)} scored, and ${num(c.leads_risk_unknown)} whose risk could not be determined. `
+              + 'No measurable recovery opportunity is currently detected: the engine scored every lead and flagged '
+              + 'none. Its reason for each is on Revenue Recovery.')}</div>`,
+          n0(c.leads_at_risk) ? 't-hot' : '')}
+        ${kpi('Deals in flight', num(inFlight.length),
+          `<div class="cell-sub">${esc(inFlight.length
+            ? 'Deals the rescue engine is tracking. Each is ranked by what it is stuck on.'
+            : 'No deal record exists while a deal is in progress — the sale record is written at the moment of sale — '
+              + 'so this engine has nothing to rank. A gap in the schema, not a quiet sales floor.')}</div>`,
+          inFlight.length ? 't-hot' : '')}
+        ${kpi('Sales linked to a recovery action', num(c.sales_attributed_to_a_recovery_action),
+          `<div class="cell-sub">${esc(n0(c.sales_attributed_to_a_recovery_action)
+            ? `Of ${num(c.leads_with_a_confirmed_sale)} confirmed on file.`
+            /* Scoped to what this panel actually read — the lead recovery lane.
+               Whether ANY lane has attributed an outcome is a wider claim than
+               these two queries support, and it is made on Revenue Recovery,
+               which reads both lanes. */
+            : `${num(c.leads_with_a_confirmed_sale)} confirmed ${Number(c.leads_with_a_confirmed_sale) === 1 ? 'sale is' : 'sales are'} `
+              + `on file (${aed(c.confirmed_revenue_aed)}), and none is linked to a recovery action. `
+              + 'Confirmed is not attributed.')}</div>`)}
+      </div>`;
+    },
+  }).then(card => {
+    card.querySelector('[data-act]')?.addEventListener('click', () => go('revenue'));
   }));
 
   /* 1 · Leads nobody has replied to. */

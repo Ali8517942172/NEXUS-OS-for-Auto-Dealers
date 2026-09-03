@@ -95,6 +95,86 @@ const LIFECYCLE = {
 const life = s => LIFECYCLE[up(s)] || { label: str(s) || 'Unknown', tone: 'unknown',
   blurb: 'This dashboard has no wording for that state; it is shown exactly as the database holds it.' };
 
+/* ── The recovered-value evidence test ─────────────────────────────────────
+   THE ONE DERIVATION FOR THE ONLY MONEY IN THIS PRODUCT THAT CLAIMS TO BE
+   REAL. Exported, and screens/overview.js imports it rather than writing a
+   second copy, because two derivations of a monetary claim is exactly the
+   shape INV "one figure, one derivation" exists to stop.
+
+   `recovered_value_aed` is not a figure this dashboard may render on its own
+   null-ness. The sentence that has always sat beside it — "attributed", "a
+   recorded sale tied to it by a person" — is a claim about FOUR other columns,
+   and it was being made on a test of ONE. The database says what the claim
+   costs, in public.inventory_actions:
+
+     CONSTRAINT inventory_actions_recovered_needs_real_sale CHECK (
+       recovered_value_aed IS NULL
+       OR (outcome_state = 'ATTRIBUTED'
+           AND outcome_purchase_id   IS NOT NULL
+           AND attribution_basis     IS NOT NULL
+           AND recovered_value_basis IS NOT NULL))
+
+   Read live from pg_constraint on 3 Sep 2026. All four are required, including
+   `recovered_value_basis` — the earlier three-column reading of this rule was
+   short by one, and the fourth is the column that says HOW the figure was
+   arrived at, which is the difference between an attributed number and a typed
+   one.
+
+   A CHECK is a storage rule, not a rendering rule, and the distinction is the
+   whole point. The constraint holds today and every live row is null, so
+   nothing fabricated is on screen. But it is not the only way a row reaches
+   this browser: a view could compute the column, a future migration could drop
+   or defer the constraint, a service-role import could arrive before it, and
+   the screen would have no way to notice. So the screen tests the evidence
+   itself and does not delegate its honesty to a constraint it cannot see.
+
+   THREE STATES, AND THE THIRD IS THE POINT.
+     NOT_RECORDED  no figure. The view's own outcome_sentence says which input
+                   is missing. Never a zero, never a dash.
+     ATTRIBUTED    a figure with all four columns behind it. Renders as money,
+                   still labelled attributed and NOT confirmed as caused.
+     UNSUPPORTED   a figure with the evidence missing. The figure is WITHHELD
+                   and the disagreement is stated. Hiding it silently would be
+                   the same defect one layer down: the reader would see nothing
+                   and conclude nothing was recovered, when what is true is that
+                   the row is broken. A row claiming money with no evidence
+                   behind it cannot be stored by this database, so if one is on
+                   screen something upstream is wrong and somebody must look. */
+export const RECOVERY_EVIDENCE_COLS = ['outcome_state', 'outcome_purchase_id',
+  'attribution_basis', 'recovered_value_basis', 'recovered_value_aed'];
+
+export function recoveryEvidence(r) {
+  const raw = r == null ? null : r.recovered_value_aed;
+  const amount = (raw == null || raw === '' || Number.isNaN(Number(raw))) ? null : Number(raw);
+  if (amount == null) return { state: 'NOT_RECORDED', amount: null, missing: [], basis: '' };
+
+  /* Named in the operator's language, not the column's, because this sentence
+     is read by a general manager and not by whoever wrote the migration. The
+     column name is kept alongside so the person who has to fix the row can
+     find it. */
+  const missing = [];
+  if (up(r.outcome_state) !== 'ATTRIBUTED')
+    missing.push(`the outcome is recorded as ${str(r.outcome_state) || 'nothing at all'}, not ATTRIBUTED (outcome_state)`);
+  if (!str(r.outcome_purchase_id))
+    missing.push('no recorded sale is linked to it (outcome_purchase_id)');
+  if (!str(r.attribution_basis))
+    missing.push('nobody recorded on what basis the sale was tied to this action (attribution_basis)');
+  if (!str(r.recovered_value_basis))
+    missing.push('nobody recorded how the figure itself was arrived at (recovered_value_basis)');
+
+  return missing.length
+    ? { state: 'UNSUPPORTED', amount, missing, basis: str(r.recovered_value_basis) }
+    : { state: 'ATTRIBUTED',  amount, missing: [], basis: str(r.recovered_value_basis) };
+}
+
+/* The single sentence every screen uses for the UNSUPPORTED case, so the
+   product describes this defect the same way wherever it surfaces. It does not
+   contain the figure: the figure is the thing being withheld. */
+export const unsupportedRecoverySentence = ev =>
+  `A recovered amount is recorded on this action with no evidence behind it, so NEXUS will not show it as money: `
+  + `${ev.missing.join('; ')}. The database cannot store that combination, so this row is a fault to be reported, `
+  + `not an amount to be read.`;
+
 /* The engine's own recommendation words. HOLD reads calm because HOLD is the
    engine saying there is nothing to do; the rest are graded by how much is at
    stake. Same map as screens/inventory.js uses, for the same reason: a
@@ -273,11 +353,20 @@ function decisionStrip(r, ctx) {
   /* The outcome block. recovered_value_aed is the only money on this screen
      that is not exposure, and it exists only where a person tied a recorded
      sale to this action. Where it is null the view's sentence says which input
-     is missing; it never renders as a zero and never as an em dash. */
+     is missing; it never renders as a zero and never as an em dash. Where a
+     figure is present but the four evidence columns do not back it, the figure
+     is withheld and the disagreement is named — see recoveryEvidence(). */
+  const ev = recoveryEvidence(r);
   bits.push(`<div><div class="label-caps">Outcome</div>
-    <div style="margin-top:6px">${r.recovered_value_aed == null
-      ? '<span class="t-muted">Nothing recovered has been recorded</span>'
-      : `${aed(r.recovered_value_aed)} <span class="chip" title="${esc(str(r.recovered_value_basis))}">attributed, not confirmed</span>`}</div>
+    <div style="margin-top:6px">${
+      ev.state === 'NOT_RECORDED'
+        ? '<span class="t-muted">Nothing recovered has been recorded</span>'
+      : ev.state === 'ATTRIBUTED'
+        ? `${aed(ev.amount)} <span class="chip" title="${esc(ev.basis)}">attributed, not confirmed</span>`
+        : '<span class="t-hot">An amount is recorded here with nothing behind it — it is not shown</span>'}</div>
+    ${ev.state === 'UNSUPPORTED' ? `<div class="banner hot" style="margin:8px 0 0">
+      <span class="material-symbols-outlined" style="font-size:20px">report</span>
+      <div>${esc(unsupportedRecoverySentence(ev))}</div></div>` : ''}
     <div class="cell-sub" style="white-space:normal">${esc(str(r.outcome_sentence) || 'No outcome state recorded on this row.')}</div>
     ${r.outcome_sale_vehicle ? `<div class="cell-sub" style="margin-top:4px">Linked sale: ${esc(r.outcome_sale_vehicle)} · ${r.outcome_sale_amount_aed == null ? 'amount not recorded' : esc(aed(r.outcome_sale_amount_aed))} · ${esc(String(r.outcome_sale_date || 'no date'))}</div>` : ''}
   </div>`);
@@ -634,9 +723,18 @@ SCREENS.actions = async host => {
           ? `<div>${esc(r.decision_reason_label)}</div><div class="cell-sub" style="white-space:normal">${esc(str(r.decision_note))}</div>`
           : `<div class="cell-sub">${esc(str(r.decision_note) || 'No reason recorded')}</div>` },
       { label: 'Decided by', render: r => `<div>${esc(str(r.decided_by_name) || '—')}</div><div class="cell-sub">${esc(str(r.decided_by_authority) || '')}</div>` },
-      { label: 'Recovered', align: 'r', render: r => r.recovered_value_aed == null
-          ? `<span class="t-muted" title="${esc(str(r.outcome_sentence))}">nothing recorded</span>`
-          : `${aed(r.recovered_value_aed)}<div class="cell-sub">attributed</div>` },
+      /* Same three-way test as the card footer, from the same function. The
+         cell cannot carry the full sentence, so UNSUPPORTED gets the words and
+         the tooltip and never the figure; the card below states it in full. */
+      { label: 'Recovered', align: 'r', render: r => {
+          const ev = recoveryEvidence(r);
+          if (ev.state === 'NOT_RECORDED')
+            return `<span class="t-muted" title="${esc(str(r.outcome_sentence))}">nothing recorded</span>`;
+          if (ev.state === 'ATTRIBUTED')
+            return `${aed(ev.amount)}<div class="cell-sub">attributed</div>`;
+          return `<span class="t-hot" title="${esc(unsupportedRecoverySentence(ev))}">not shown</span>`
+            + `<div class="cell-sub">an amount with no evidence behind it</div>`;
+        } },
     ], list, {
       empty: stateEmpty('Nothing has been decided yet',
         'No action has been approved, rejected, deferred or withdrawn. Once one is, the reason lands here and stays.'),
@@ -645,7 +743,10 @@ SCREENS.actions = async host => {
       The Recovered column is empty on every row until somebody links a real recorded sale to an action.
       <span class="mono">purchase_history</span> holds no reference to an inventory unit — not a VIN, not a stock
       number — so NEXUS cannot tie a sale to a car by itself, and it will not guess. Approving something does not
-      recover money and neither does carrying it out.</div>`,
+      recover money and neither does carrying it out. A figure only appears where the row carries all four of
+      <span class="mono">outcome_state = ATTRIBUTED</span>, <span class="mono">outcome_purchase_id</span>,
+      <span class="mono">attribution_basis</span> and <span class="mono">recovered_value_basis</span>; where an
+      amount is present without them the amount is withheld and the row is flagged as a fault.</div>`,
   }).then(card => {
     card.querySelectorAll('tbody tr').forEach((tr, i) => {
       tr.classList.add('clickable');
