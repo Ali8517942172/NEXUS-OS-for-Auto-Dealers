@@ -734,3 +734,91 @@ when every assertion passed.
 And a phone number is not safely fakeable: `Guard Reply` filters content, never
 the recipient. Either journeys run against a WAHA session on a controlled
 device, or the send legs stay blocked.
+
+## The idempotency family, and what the release verifier found
+
+4 Sep 2026, two independent passes. The first fixed six identities; the second
+verified PR #6 and found four things the branch's own author had not seen.
+
+### The window could be extended by replaying a message
+
+`whatsapp_record_customer_message` ignored `external_message_id` and upserted
+on `last_customer_message_at` alone. Replaying one message with a later
+timestamp moved the window forward six hours. Proved end to end:
+
+    genuine customer message 30h ago  -> TEMPLATE_REQUIRED / WINDOW_CLOSED
+    redelivery of the same payload.id -> FREEFORM_ALLOWED  / WINDOW_OPEN
+
+That is not a data bug. `last_customer_message_at` is the single fact that
+turns `TEMPLATE_REQUIRED` into `FREEFORM_ALLOWED`, so a replay was **NEXUS
+granting itself permission to send outside Meta's window** — and with two WAHA
+hosts posting the same `payload.id` and a retrying `Log Incoming Message`, it
+was reachable from live traffic.
+
+Fixed with `whatsapp_customer_message_seen`, keyed on the window's own identity
+plus the message id. A single `last_seen_id` column would not work — A→B→A
+defeats it, tested. A null `external_message_id` is **refused**: accepting one
+restores the whole defect through another door, because with nothing to dedupe
+on every redelivery looks new.
+
+### An actor is not part of an event's identity
+
+`nexus_request_send` keyed on `(tenant_id, requested_by, request_ref)`, and
+`requested_by` is caller-declared. Two n8n nodes retrying the same logical send
+under different names produced two sends; a null `request_ref` disabled
+idempotency entirely. Both closed, and a null ref now refuses rather than
+silently going unkeyed.
+
+**Four more of the same shape**, found by looking for it deliberately:
+`channel_message_events`'s key omitted `integration_id`; the directive was not
+bound to its carrier; and `whatsapp_opt_in_event` **had no key at all** — so
+replaying the same consent evidence with a bumped timestamp overturned a later
+OPT_OUT, taking a conversation from `BLOCKED / CUSTOMER_OPTED_OUT` back to
+`FREEFORM_ALLOWED`. Defect one's shape applied to consent withdrawal.
+
+**Still open and stated rather than papered over:** a decision from a
+*different conversation* cannot be closed by a constraint, because no decision
+entity is persisted — `policy_applied_rule_id` is a bare uuid with no foreign
+key and there is no row to compare against.
+
+### The gate had been exempting workflow_registry all along
+
+This file has said for a day that `workflow_registry` is "deliberately NOT
+exempt" and "left failing on purpose". Measured against the base gate: its
+filter was the substring regex `/reason_codes|workflow_registry/`, so
+`workflow_registry` **was being silently exempted and was not among the
+failures**. The claim was true of the intent and false of the artefact. It
+fails by name now, with its reason.
+
+### `policy_platform_attestation` is on the wrong plane
+
+Ten column-level `authenticated=r` grants and a `USING (true)` policy, with
+**no `authenticated` entry in `relacl` at all** — so the ACL query prescribed
+in this file, and the gate's own `l2AuthenticatedAclLetters`, both report it as
+`service_role`-only. It is not. Every signed-in dealership user can read who
+attested a global rule, their email, the source they read and when. Zero rows
+today, so this is exposure of an empty table — but attestations are control
+plane, and this is the dealer data plane.
+
+### Three smaller things worth carrying
+
+- **L5 is blind to a PUBLIC grant.** Its filter is `/anon=X/`; L4's also
+  matches `/=X/`. `anon` inherits PUBLIC, and one PUBLIC-granted function
+  exists. A future `CREATE OR REPLACE` adding `SECURITY DEFINER` and a tenant
+  read to it would be invisible to L5 — the exact "no grant-shaped diff to
+  review" shape that has opened three holes here.
+- **The catalogue's 24-hour freshness tolerance is a fuse, not a lock.** A
+  catalogue 23.92 hours old was accepted and produced a full live verdict — for
+  a database with 60 functions where live had 110.
+- **`applied_rule_*` names the wrong rule when a house rule closes the window.**
+  The hours come from `TENANT_HOUSE` while `applied_rule_jurisdiction` reads
+  `PLATFORM_WHATSAPP`. Anything persisting only `policy_applied_rule_id` will
+  attribute the dealership's own decision to Meta — the same shape as the
+  defect above it, one layer up. The truth is in `rules_considered`.
+
+### Staging is not yet a faithful rehearsal
+
+Semantic parity is exact — 110 functions, 356 constraints, 167 indexes, 161
+policies, identical. But production carries seven `channel_registry` **column**
+grants and staging carries none, and that is the table the tenant resolver
+reads. Rehearsing the tenant-map switch there proves less than it appears to.
