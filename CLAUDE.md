@@ -987,3 +987,71 @@ of an OPT_IN one microsecond after an OPT_OUT still reads as consent. n8n holds
 closing it properly means moving consent reversal onto a named-human path
 rather than the n8n key — an authority question, the same lesson as
 `policy_verify_rule`, and it deserves its own pass.
+
+## The door was the schema, not the ACL
+
+4 Sep 2026. The exposure was reproduced exactly: `CREATE EXTENSION postgis
+SCHEMA public` as **postgres** produced `public.spatial_ref_sys` owned by
+`supabase_admin`, RLS off, `anon=arwdDxtm` — and `anon` read **8,500 rows**,
+inserted, updated and deleted. **Not read-only. Writable.**
+
+**Root cause: `supautils`.** Supabase re-runs `CREATE EXTENSION` as
+`supabase_admin` for the 70 names in `supautils.privileged_extensions`, and it
+**skips non-superuser event triggers** — there is a
+`supautils.log_skipped_evtrigs` setting for exactly this. Proved with three
+triggers running simultaneously (untagged `ddl_command_start`, tagged
+`ddl_command_start`, tagged `ddl_command_end`): all three logged a `CREATE
+TABLE` in the same transaction, **none logged the `CREATE EXTENSION`**.
+
+So the answer to "can the guard be made to cover it" is **no**, and a
+scheduled sweep would not have been an answer either — a sweep cannot
+remediate what it cannot out-race.
+
+**The earlier 42501 on revoking schema USAGE did not reproduce.** `postgres`
+is a member of `pg_database_owner`, which is the grantor. So the door that was
+thought shut was open. `USAGE` is now revoked from `PUBLIC` and `anon` and
+re-granted **by name** to the eleven service roles that held it only through
+PUBLIC; the thirteen `pg_*` roles need no grant, because
+`pg_read_all_data`/`pg_write_all_data` confer schema USAGE implicitly.
+
+### The verification that matters, and the lesson in it
+
+With the door shut, postgis was installed **for real** on staging.
+`relacl` still read `anon=arwdDxtm`. `has_table_privilege('anon', …)` still
+returned **true**. And `GET`/`POST /rest/v1/spatial_ref_sys` with the anon key
+both returned **401, `42501 permission denied for schema public`** — `42501`
+and not `PGRST205`, which proves PostgREST had the table cached and refused
+anyway.
+
+**ACL metadata was the wrong witness.** Every ACL sweep this project has run —
+including the ones in this file — would have called that table exposed. The
+reachability probe is the one that told the truth.
+
+### Extensions are contained, not migrated — and the reason matters
+
+`ALTER EXTENSION … SET SCHEMA extensions` succeeds, and doing it would break
+the RAG path: `search_rag_documents` is pinned `search_path='public'` and its
+trigram tier calls `word_similarity()` unqualified, so after the move that is
+`42883 function does not exist`. A first test appeared to pass only on a cached
+plan. Production holds 15 live `rag_documents` rows.
+
+**Prerequisite for any later migration pass:** change `search_rag_documents`
+and `nexus_tenancy_readiness` to `search_path = public, extensions` *first*.
+
+The rule, written down: **extensions belong in `extensions`, never `public`.**
+
+### What is still open, and it needs Supabase
+
+**`authenticated` still reaches born-open objects** — measured live: SELECT
+8,500 rows, UPDATE one row. It cannot lose `USAGE` on `public`, because the
+dashboard lives there. Closing it needs Supabase to either close the
+`supabase_admin` default-ACL line for `public` or pin extensions via
+`supautils.extensions_parameter_overrides`. Both are config-file settings and
+both return **55P02 "cannot be changed now"** from SQL.
+
+`nexus_public_exposure_report()` reports reachability rather than ACL —
+currently **anon 0, authenticated 149**. It reports and does not remediate,
+because here a sweep genuinely cannot.
+
+Reversal, if the schema revoke ever needs undoing, is one statement:
+`grant usage on schema public to public;`
