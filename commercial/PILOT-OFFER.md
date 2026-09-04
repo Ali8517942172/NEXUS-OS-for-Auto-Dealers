@@ -1,10 +1,9 @@
 # NEXUS OS — Managed AI Dealership Pilot
 
-**Version 2.0 · 2 September 2026 · Ali Asgher**
-**Every figure re-verified against the live database at 10:04:17 UTC on 2 September 2026**,
-scoped to the one real dealership on the system. (A separate workstream was writing synthetic
-test dealerships into the same tables while this was written; none of that data is counted
-here.)
+**Version 2.1 · 3 September 2026 · Ali Asgher**
+**Every figure re-verified against the live database on 3 September 2026**, scoped to the one
+real dealership on the system. Where a count has moved since the 2 September version it has
+been corrected here rather than left standing.
 
 This is a managed pilot, not an enterprise software subscription. Where something has not
 been proven, this document says so. Nothing here is a projection dressed up as a fact.
@@ -73,22 +72,31 @@ bot said, when, and to whom.
 **4. Ageing stock, computed nightly**
 Days-in-stock is recomputed every night at 00:15 and flags cars that are sitting too long.
 On the current 12-unit demo stock, three cars carry an ageing flag (2 WARNING, 1 CRITICAL),
-average 56.4 days. This job has run 18 times with 18 successes — it is the most reliable
-thing in the system.
+average 57.4 days and rising by one a night. This job has run 20 times with 20 successes — it
+is the most reliable thing in the system.
 
 **5. Your data is separated in the database from any other dealership's**
-This landed on 2 September 2026 and it is new. Every table now carries a dealership id, and
-every access rule in the database checks it: a signed-in user reads only their own
-dealership's rows. It was tested the same morning with two test dealerships across all 15
-tables and all 10 dashboard views — each saw its own rows and none of the other's; attempts
-to write across the line, or to forge the dealership id inside a login token, were refused by
-the database.
+This landed on 2 September 2026 and it is new. Every table that holds your data carries a
+dealership id, and every access rule in the database checks it: a signed-in user reads only
+their own dealership's rows. It was tested that morning with two test dealerships, and
+re-tested harder on 3 September across every table and every view in the database, including
+with the same customer email and the same phone number deliberately planted in both
+dealerships. Each saw its own rows and none of the other's; attempts to write across the line,
+or to forge the dealership id inside a login token, were refused by the database.
 
-**Read the limit as carefully as the claim.** That is the database layer and it is done. The
-automation layer is not: the workflows that write your messages into the database still run
-as a system account with no dealership attached, so a second dealership's traffic would file
-under the first. Until that is fixed I sell **one dealership per system**, and I am telling
-you the shape of the gap rather than selling you the word "multi-tenant".
+**Read the limit as carefully as the claim.** The database layer is most of the way, not
+finished, and the automation layer is not started. Three things are outstanding, and none of
+them can happen while there is one dealership on the system:
+
+- the workflows that write your messages into the database still run as a system account with
+  no dealership attached, so a second dealership's traffic would file under the first;
+- uploaded ID documents that lose their database record fall through to whichever dealership
+  is set as the default;
+- two of the reports go silently empty, rather than wrong, the moment a second dealership
+  exists.
+
+Until all three are fixed I sell **one dealership per system**. I am telling you the shape of
+the gap rather than selling you the word "multi-tenant".
 
 **6. Me**
 Daily supervision. I read what the bot said. I fix it when it is wrong. You get me on
@@ -103,12 +111,14 @@ checked this morning.
 
 | Not included | Why |
 |---|---|
-| **Finance quoting** — monthly payment, APR, EMI | The finance calculator has run 62 times and written **zero** quote records. Its last recorded success was 24 August. On 31 August an earlier version quoted a real person a monthly payment of AED 11,200 when the true figure was nearer AED 7,800. That path is switched off and stays off during the pilot. |
-| **KYC / ID verification** | Three documents have been submitted through it. All three were correctly rejected as "not an identity document". **Zero documents have ever been successfully verified.** The auditor workflow has 9 runs, 7 failures and 0 successes, and last ran on 17 August. Rows appearing in the register is not the same as the capability working. |
-| **Closed-deal / sold reporting** | `purchase_history` held **zero rows** all the way to 09:59 on 2 September 2026. At **09:59:53** the first row appeared, written by repair work going on that morning: the owner's own test lead (lead 38, still marked WARM), a Lexus LX 600 2024 at AED 585,000. **It is not a customer sale.** No dealership customer has ever bought a car through this system. The sync job now shows 13 runs, 11 failures, 2 successes and is still graded DEGRADED. One row from a repair test is not a working capability — check the outcome, never the count. |
-| **Competitor price tracking** | It runs nightly and finds a usable price on 14 of 120 attempts. It is classified by the system's own health rules as "producing nothing". Not sold, not shown. |
-| **A second dealership on this system** | The database now separates dealerships (see point 5 above). The automation does not — every workflow writes as a system account, so dealership two's messages would land under dealership one. One dealership only, and that is a hard limit until the workflows are made dealership-aware. |
-| **Per-role permissions** | Everyone you give a login to sees every lead, every customer, every message and every cost price. There is no junior-salesperson view. Restrict who gets a login. |
+| **Finance quoting** — monthly payment, APR, EMI | The finance calculator has run 65 times and written **zero** quote records. Its last recorded success was 24 August. On 31 August an earlier version quoted a real person a monthly payment of AED 11,200 when the true figure was nearer AED 7,800. That path is switched off and stays off during the pilot. |
+| **KYC / ID verification** | Three documents have been submitted through it. All three were correctly rejected as "not an identity document". **Zero documents have ever been successfully verified.** The auditor workflow has 12 logged runs, 10 failures and 0 successes; the last genuine run was 17 August. Rows appearing in the register is not the same as the capability working. |
+| **Closed-deal / sold reporting** | `purchase_history` held **zero rows** all the way to 09:59 on 2 September 2026. At **09:59:53** the first row appeared, written by repair work going on that morning: the owner's own test lead (lead 38, still marked WARM), a Lexus LX 600 2024 at AED 585,000. **It is not a customer sale.** No dealership customer has ever bought a car through this system. The sync job now shows 19 runs, 15 failures, 4 successes and is still graded DEGRADED. One row from a repair test is not a working capability — check the outcome, never the count. |
+| **Competitor price tracking** | It runs nightly and finds a usable price on 17 of 168 attempts. It is classified by the system's own health rules as "producing nothing". Not sold, not shown. |
+| **A second dealership on this system** | The database separates dealerships and that is tested (see point 5 above), but it is not finished and the automation has not started. One dealership only, and that is a hard limit. |
+| **Per-role permissions** | Everyone you give a login to sees every lead, every customer, every message and every cost price. **And it is not a read-only login:** anyone signed in can also change a car's asking price and cost price, delete a vehicle record outright, and reassign any lead. Nothing in the system stops them — there is no junior-salesperson view and no approval step on those two screens. Give logins only to people you would trust with the stock file itself. |
+| **Service history, service reminders, no-show recovery, trade-in valuation, deal-stage rescue, finance across multiple banks, benchmarking against other dealerships** | None of these is built. There is no service table, no appointments table and no connection to a DMS in this system, so they are not "switched off", they do not exist. They are on the roadmap and they are not in this price. If one of them is what you actually need, that is a good reason not to buy this yet. |
+| **Anything about the automation being locked down** | The inbound WhatsApp webhook does not yet check a secret — the check is written but not switched on. A second control refuses requests that do not name a known WhatsApp session, and that is what is holding the door today. Switching the secret on is a configuration change on the server and it is part of week one, before your customers touch it. I would rather you saw this in writing now. |
 | **An uptime SLA or support ticketing** | There is none. There is me, on WhatsApp, in UAE hours. The infrastructure health probe is registered and has never run. |
 | **Automatic data retention / purging** | The retention purge workflow is registered, is marked active, and has **never run once**. Deletion during the pilot is manual and on request. |
 | **A signed data-processing agreement** | Not drafted. If your legal team needs one before customer data moves, say so now and we build that into week one. |
@@ -215,14 +225,21 @@ is a real margin, and it should be, because that is the dealership that will tak
 On the live inventory of 12 units, the average gross margin per car is **AED 31,658**
 (AED 3,046,900 total asking price against AED 2,667,000 total cost).
 
-The pilot costs AED 12,500 to AED 15,500 for the quarter. **That is 40% to 49% of the gross
-margin on one car.** If the system recovers one deal in three months that would otherwise
-have been lost to a slow reply, it has paid for itself twice over.
+**That is asking price minus purchase cost, and nothing else.** It is before reconditioning,
+VAT, commission and the cost of the car sitting on the lot. The system does not hold a
+reconditioning cost for a single one of those twelve units, so it cannot compute a net margin
+and it says "not computable" rather than showing you a number — which is the behaviour you
+should want from it, and it is also why the figure above is the top of the range, not the
+money you keep.
 
-I am not going to promise you that deal. There are 3 leads in the system and none is a
-completed customer sale. What I can show you is the mechanism: a customer asked a price question at
-six in the morning and got a correct, grounded answer with no human awake. Whether that
-converts is what the pilot is for.
+The pilot costs AED 12,500 to AED 15,500 for the quarter. **That is 40% to 49% of the gross
+margin on one car**, and a larger share of the net.
+
+I am not going to promise you a recovered deal, and nothing in this document is a projection
+of one. There are 3 leads in the system and none is a completed customer sale. What I can show
+you is the mechanism: a customer asked a price question at six in the morning and got a
+correct, grounded answer with no human awake. Whether that converts is exactly what the pilot
+is for, and it is the thing neither of us knows yet.
 
 ### The setup fee
 
@@ -293,19 +310,19 @@ find out either way.
 
 ## Figures in this document, and when they were checked
 
-Checked against Supabase project `dsvuoovivysszdoiorch` at **10:04:17 UTC, 2 September 2026**,
-scoped to the one real dealership.
+Checked against Supabase project `dsvuoovivysszdoiorch` on **3 September 2026**, scoped to the
+one real dealership.
 
 | Figure | Value |
 |---|---|
-| Real customer sales recorded | **0** (1 row exists, written 09:59:53 by a repair test against the owner's own lead) |
+| Real customer sales recorded | **0** (1 row exists, written 09:59:53 on 2 Sep by a repair test against the owner's own lead) |
 | Finance quotes produced | **0** |
 | ID documents successfully verified | **0** (3 submitted, all 3 correctly rejected) |
 | Customer records | **3** (2 are disqualified wrong numbers) |
-| Vehicles in stock | **12** — AED 3,046,900 asking, AED 2,667,000 cost |
+| Vehicles in stock | **12** — AED 3,046,900 asking, AED 2,667,000 cost, **0 with a reconditioning cost recorded** |
 | Messages on record | **108** — 83 inbound WhatsApp, 18 automated replies, 5 sent by hand, 2 system |
-| Automated replies: fastest / median / slowest | **13.3s / 38.8s / 218.3s** across 18 replies |
-| Run records written | **600** |
+| Automated replies: fastest / median / slowest | **13.3s / 38.8s / 218.3s** across 18 replies, all sent between 31 Aug and 2 Sep |
+| Run records written | **687** |
 | Dealerships on the system | **1** |
 | Dashboard logins | **1** |
 

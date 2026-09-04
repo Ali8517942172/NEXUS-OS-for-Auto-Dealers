@@ -97,6 +97,17 @@ operational rather than structural:
   whichever dealership holds the flag. Harmless with one; wrong with two. Either
   point it at a quarantine tenant or convert the remaining omissions to explicit
   nulls.
+- **`workflow_registry` is readable by every signed-in user and is not
+  tenant-scoped.** Its policy is `SELECT USING (true)` for `authenticated`, and
+  the table has no `tenant_id` column — which is survivable only because there
+  is one dealership. It holds the real n8n workflow ids, names, trigger detail
+  and `is_active` flags, i.e. which automations a dealership runs and which are
+  switched off: operational configuration, not shipped vocabulary. Give it a
+  `tenant_id` and a scoped policy before onboarding a second dealership.
+  Measured and left failing on purpose: `QUALITY_GATE.mjs` check **L2** is red
+  on exactly this row, and `workflow_registry` is deliberately excluded from
+  `L2_EXEMPT_TABLES` so the finding stays visible instead of being absorbed
+  into an exemption list.
 
 `select * from public.nexus_tenancy_readiness();` is the live gate — but note
 its remaining BLOCKER fires whenever any tenant holds the default flag and
@@ -401,3 +412,168 @@ dies halfway and leaves the repository mid-`am`. Call
 then re-run clean. Do not try to nurse a half-applied `am` forward with `mv`
 tricks — the counter in `.git/rebase-apply` stops advancing and it re-applies
 the same commit forever.
+
+## Two WAHA instances are posting the same messages into production
+
+3 Sep 2026, read from saved executions. Executions 9427 and 9428 carry the
+**same `body.payload.id`** and different everything else:
+
+| | 9427 | 9428 |
+|---|---|---|
+| `x-webhook-request-id` | `35bsz6mtlzeem9` | `1mt17mtlzf9bc` |
+| `user-agent` | `WAHA/2026.7.2` | `WAHA/2026.7.1` |
+| `x-forwarded-for` | `35.224.126.225` (the box) | `2.50.10.149` (external, UAE) |
+| `me.jid` | `971526647253:12@…` | `971526647253:8@…` |
+
+A second pair, 9420/9421, carries an identical `payload.id` and started **1 ms
+apart** — far too close for a retry. Different build, different source address,
+different device index on the same WhatsApp account. This is not one WAHA
+retrying; it is **two senders**, and one of them is a host nobody has
+accounted for.
+
+So the execution list is pairs: 275 executions is roughly 137 messages. The
+only thing absorbing the doubling is `Claim Message Id`. And the control that
+would refuse an unknown sender — `WAHA Auth Gate` — is measured `DORMANT` on
+that same traffic.
+
+Two things follow. Any count of "messages" taken from the execution list is
+roughly double the truth. And an external host is posting genuine WhatsApp
+traffic into production through an open door; find out what `2.50.10.149` is
+before arming the gate, because arming it will cut off whichever sender is not
+configured with the secret.
+
+## Corrections to what this file used to say
+
+- **`saveDataSuccessExecution` on the WhatsApp workflow is `"all"`, not
+  `"none"`.** The published settings say `all` for both success and error, with
+  a 300 s timeout. The MONITOR window is observable today; earlier text here
+  said it was not.
+- **`Resolve Tenant` runs BEFORE `Claim Message Id`** — fourth node against
+  sixth — and `Claim Message Id` **does** send `tenant_id`, taken from
+  `Resolve Tenant`'s output. The `nexus_default_tenant_id()` fallback on
+  `processed_messages` fires only if `Resolve Tenant` is disabled, which is the
+  documented ten-second rollback. Claims file under the right dealership.
+- **The claim gate's "side door" is not a live re-entry path.** `Called by
+  Master Router` does connect straight to `Extract Message & Sender`, past the
+  claim — but `HOT/WARM: Already In A Live Chat?` gate both callbacks on
+  `lead.origin === 'whatsapp-bdc'`, and `Shape Lead For Router` always sets it.
+  The internal branch also rewrites the item to `direction:'outbound'`, and
+  `New Lead Worth Scoring?` requires `inbound`, so the loop is bounded at one
+  pass. Zero of 275 retained executions are `mode:"integrated"`; zero
+  `'[system] Initial outreach…'` rows exist in `communication_logs` ever.
+- **`x-webhook-request-id` is a delivery id, not a message id.** Proven by the
+  pair above. So is `body.id` (`evt_…`). The only identifier stable across
+  deliveries of one WhatsApp message is `body.payload.id` — which is what
+  `Prefilter` and `Claim Message Id` already key on. That design is correct.
+- **`body.session` IS present on real inbound traffic**, value `"default"`,
+  with `Resolve Tenant` emitting `tenant_source:"waha_session"` on live
+  messages. The rollback contingency "WAHA sends no session" is dead; retire
+  it. The `channel_registry` cutover has its input field.
+
+## The duplicate inbound rows are a retry, not a second pass
+
+Ten of 83 inbound `communication_logs` rows are near-duplicates — about 12%.
+The `W.slam` case is one claim at 06:48:01 and two identical **inbound** rows
+at 06:48:23 and 06:48:29. The re-entry path cannot produce that: it would have
+written `direction:'outbound'` with the outreach marker.
+
+Inferred cause: `Log Incoming Message` is published with `retryOnFail: true`
+and `Prefer: return=minimal`, and it never populates `external_message_id`, so
+a POST that commits server-side but whose response is lost gets retried and
+inserts a second row with nothing to dedupe it. A unique index on
+`(tenant_id, direction, external_message_id)` now exists and is inert until a
+writer sends the column — that node is the writer to fix.
+
+## The WhatsApp messaging layer — wired, never fired
+
+4 Sep 2026. Four agents built a provider-agnostic messaging layer in the
+database. **None of it has carried a real customer message.** Everything below
+is applied to production and to staging at byte parity, and every part of it is
+`service_role`-only with `anon` and `authenticated` refused by grant.
+
+WAHA is temporary. The production transport is meant to be the official
+WhatsApp Business Cloud API, and each dealership chooses. So nothing in NEXUS
+core may know which provider carried a message.
+
+**`channel_registry`** — tenant from a trusted integration identity, not from
+an env var and not from anything the caller names. `whatsapp_waha_session` and
+`whatsapp_cloud_phone_number_id` are both valid namespaces; the Cloud one is
+still empty. The resolver returns a **set**, so unresolved is zero rows and an
+n8n branch halts on it.
+
+**The Message Policy Engine** — `whatsapp_policy_decision_for_channel(...)`
+answers `FREEFORM_ALLOWED | TEMPLATE_REQUIRED | BLOCKED` with the reason, the
+`policy_rule` row it applied, that rule's verification status, and what would
+change the answer. No `SECURITY DEFINER` anywhere in it, and no model in the
+path — the arguments are identifiers and a timestamp, so a message body cannot
+become one.
+
+**The 24-hour customer service window is Meta's rule, not a dealer setting.**
+It lives in `policy_rule` under jurisdiction `PLATFORM_WHATSAPP`, seeded
+`NOT_VERIFIED`, and the number `24` appears in no function body. Withdrawing
+the rule produces `TEMPLATE_REQUIRED / POLICY_RULE_MISSING`, not a fallback.
+One rule is deliberately filed under `NEXUS_HOUSE` instead — NEXUS refuses
+marketing without evidenced opt-in even inside an open window, which is
+stricter than the platform, and it is recorded as our choice rather than
+Meta's requirement.
+
+**Cloud API is structurally better than WAHA and the adapter must not squander
+it.** Meta signs every webhook with `X-Hub-Signature-256` — HMAC-SHA256 over
+the **raw bytes**, so hashing a re-serialised JSON object never matches; and
+the tenant comes from Meta's own `metadata.phone_number_id`, not a
+caller-chosen string. A CHECK constraint makes this structural: a
+`whatsapp_cloud` row in `channel_message_events` cannot exist unless
+`origin_verified = 'hmac_sha256_x_hub'`.
+
+Write nothing before the signature verifies. The reason that matters most is
+not storage: **claiming a `wamid` before verification is a denial of service on
+a real customer** — the genuine Meta delivery then looks like a duplicate and
+is silently dropped, and nothing appears broken.
+
+**Never invent a messaging cost.** `whatsapp_message_usage` has **zero numeric
+columns** and the monthly rollup has no total. `cost_state` distinguishes
+"awaiting a provider report", "provider reported no pricing", "provider said
+not billable" and "billable, amount unknown" — and a screen may not render any
+of them as zero. Meta's `pricing` and `conversation` objects are stored
+verbatim as provider-reported facts.
+
+**NEXUS's template record is a cache, not an approval.** `nexus_state` and
+`provider_status` are separate, an APPROVED with no observation timestamp is
+unsavable, and `whatsapp_template_sendability()` takes a staleness tolerance
+with **no default** — the caller must state how old an answer it will accept,
+and that tolerance is recorded on the usage row. A 40-day-old APPROVED refuses.
+
+**The router never selects a provider on cost.** Order is: conversation
+continuity, then the official platform first, then earliest registered.
+`channel_provider_rank` has no cost column, and
+`nexus_provider_router_invariants()` fails if one appears — and fails again if
+WAHA ever gains a capability Cloud lacks, which is the only route by which the
+capability filter could push a send downward. Using an unofficial transport to
+avoid an official platform's charges is a policy bypass, and the number at risk
+of a ban is the dealership's own business line.
+
+### Two blockers this layer cannot clear itself
+
+- **`policy_verify_rule()` refuses global rules by design** — "global rules are
+  verified by the platform" — and no platform-verification path exists. So the
+  window rule stays `NOT_VERIFIED`, and **every conversation in production
+  returns `TEMPLATE_REQUIRED / WINDOW_RULE_NOT_VERIFIED` today.** That is the
+  engine being honest, and it is also the single thing standing between this
+  layer and being usable. Someone with the Meta Business account has to check
+  the rule, and a platform-verification function has to exist to record that.
+- **`channel_message_events` cannot hold an outbound `whatsapp_cloud` event** —
+  its signature CHECK demands `hmac_sha256_x_hub`, right for an inbound
+  webhook, impossible for a call we made ourselves.
+
+### Two defects the router's own probes found, worth remembering
+
+A CHECK constraint of the form `a OR b` **passes on NULL** — CHECK rejects only
+FALSE. The "a SEND requires a policy decision" guarantee did not structurally
+exist until an explicit `is not null` was added, and a forged send inserted
+cleanly until then.
+
+And a `row_number()` that counted ineligible candidates put WAHA first for a
+template send it cannot carry, so the router asked the policy engine with a
+NULL integration and got back `CHANNEL_NOT_REGISTERED_TO_TENANT` — **a tenancy
+alarm raised by a ranking bug.** It failed closed, which is what the
+constraints bought.

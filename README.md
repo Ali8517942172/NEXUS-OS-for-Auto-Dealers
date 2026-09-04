@@ -1,226 +1,231 @@
-<!-- BUSINESS CONTEXT — added 2026-09-02 -->
-> **This is a commercial product, not a demo.** NEXUS is a **Revenue Recovery &
-> Action OS for dealerships** — it sits above the dealership's existing DMS, CRM
-> and inventory systems, finds revenue leaks, decides the next best action and
-> executes it. It replaces none of them. See `PRODUCT.md` for the thesis and
-> `CLAUDE.md` for how to work here. Ali owns NEXUS OS and is selling it
-> to real dealerships on a subscription. Judge changes by whether they make it
-> sellable and keep it sellable. The honest commercial position today is a
-> **controlled dealership pilot** — not "enterprise-ready", not "compliant".
-> Never state more than the evidence supports; "wired but never fired" is a real
-> answer. The blocker before a second paying dealership is that the system is
-> **single-tenant**: every RLS policy is `USING (true)`, so tenant two would read
-> tenant one's customers. See `CLAUDE.md` for how to work here.
+<!-- BUSINESS CONTEXT — rewritten 2026-09-03 against the live system -->
+> **NEXUS is a Revenue Recovery & Action OS for dealerships.** It sits above the
+> dealership's existing DMS, CRM and inventory systems, looks for where revenue is
+> leaking, decides the next best action, and executes it with the team in control.
+> It replaces none of those systems. See `PRODUCT.md` for the thesis and
+> `CLAUDE.md` for how to work in this repository.
+>
+> **The honest commercial position today is a controlled, single-dealership
+> pilot.** Not "enterprise-ready", not "compliant", not multi-tenant in
+> production. There is no paying dealership on it yet. Never state more than the
+> evidence supports; "wired but never fired" is a real answer.
+>
+> **If you are preparing to say something to a customer, do not read this file.**
+> Read `commercial/WHAT-WE-CLAIM.md`. It is the claims register, it carries the
+> query and the date behind every claim, and it outranks this page.
 
 # NEXUS OS
 
-**NEXUS OS** is a production AI operating system for automotive dealerships that unifies CRM, Marketing, Knowledge Management, Sales Intelligence, Inventory Lifecycle, and Business Automation into a single platform.
-
-The platform is designed to increase dealership profitability, reduce operational overhead, improve lead conversion, and enable AI-assisted decision making across every department. This is a live, production system built for a real paying dealership client.
-
----
-
-## Business Problems This Platform Solves
-
-| Problem | Current Manual Process | AI-Powered Solution |
-|---------|----------------------|---------------------|
-| Leads go cold | Salesperson manually checks inbox every few hours | AI scores and routes leads in < 60 seconds |
-| No pricing intelligence | Manager guesses competitor pricing | Daily automated competitor scraping with AI recommendations |
-| Slow customer answers | Employee searches through PDF folders | RAG-powered Knowledge Assistant with source citations |
-| Revenue leakage | Commission and margin calculated in Excel | Real-time financial intelligence with automated costing |
-| Disconnected systems | Copy-paste between CRM, ERP, WhatsApp, Email | Event-driven automation connecting all platforms |
-| Vehicle aging losses | Nobody tracks holding costs until it's too late | AI flags aging inventory and suggests price reductions |
-| Slow onboarding | New hires take weeks to learn policies | Knowledge Agent answers any policy question instantly |
+A dealership operating system built on Supabase, n8n and a single-page dashboard.
+One dealership is live on it. One conversation path is proven end to end. Most of
+what follows is honest about which is which.
 
 ---
 
-## Platform Modules
+## Status, measured 3 September 2026
 
-### 1. AI-Powered CRM
-**Business Problem:** Leads from multiple channels (website, WhatsApp, walk-ins, referrals) are handled inconsistently. Response times vary from minutes to days. No standardized qualification process.
+| | |
+|---|---|
+| Dealerships on the system | 1 |
+| Dashboard logins | 1 |
+| Customer sales recorded through the system | **0** |
+| Finance quotes produced | **0** |
+| ID documents successfully verified | **0** |
+| Vehicles in stock | 12 |
+| Messages on record | 108 (83 inbound WhatsApp, 18 automated replies) |
+| Run records in `audit_log` | 687, first row 14 August 2026 |
+| Registered workflows | 18 — 2 healthy, 11 degraded, 1 producing nothing, 1 never run, 3 not instrumented |
+| Quality gate | 26 pass, **2 P0 fail, 2 warn, 4 P0 not run** — exits non-zero |
 
-**Solution:** AI-first CRM that automatically scores every lead, assigns priority, routes to the right salesperson, and triggers multi-channel follow-up — all within 60 seconds of lead creation.
-
-### 2. Marketing Intelligence OS
-**Business Problem:** Marketing team has no visibility into competitor pricing. Campaigns are created based on intuition rather than data. No way to measure true ROI per channel.
-
-**Solution:** Daily automated competitor scraping with AI-powered pricing recommendations. Campaign generator that creates multi-channel content (Google, Meta, WhatsApp) based on actual market gaps. Revenue attribution that connects marketing spend directly to closed deals.
-
-### 3. Enterprise Knowledge Assistant
-**Business Problem:** Company policies, vehicle manuals, warranty terms, and sales procedures are buried in PDF folders. Employees waste hours searching for answers. New hires take weeks to become productive.
-
-**Solution:** Multi-agent RAG system where specialized AI agents (Compliance, Sales Support, Marketing) answer questions with exact source citations. Supports HR policies, finance procedures, warranty terms, sales SOPs, and vehicle documentation.
-
-### 4. Vehicle Inventory Intelligence
-**Business Problem:** Vehicles sit in stock for months without price reviews. Holding costs (AED 50/day) silently erode margins. No systematic way to track the full vehicle lifecycle from purchase to resale.
-
-**Solution:** AI-powered inventory lifecycle management that tracks every vehicle from import through sale, calculates real-time holding costs, flags aging stock, predicts demand, and recommends optimal pricing.
-
-### 5. Automation Engine (`apps/automation-engine/`)
-**Business Problem:** Business processes require manual handoffs between CRM, ERP, WhatsApp, email, and spreadsheets. Data gets lost. Steps get skipped. No audit trail.
-
-
-### 6. Executive Dashboard (`apps/executive-dashboard/`)
-**Business Problem:** Management relies on end-of-month reports to make decisions. No real-time visibility into sales pipeline, inventory health, marketing ROI, or team performance.
-
-**Solution:** Live dashboard pulling from all modules showing today's sales, lead conversion, revenue, profit, marketing ROI, inventory aging, and AI-generated forecasts.
+Re-run these before quoting them; they move. Scope every count to the real
+dealership (`tenants.slug = 'alba-cars'`) — a raw `count(*)` has included another
+workstream's test rows before now.
 
 ---
 
-## Measurable Business KPIs
+## What is proven
 
-| Capability | KPI |
-|-----------|-----|
-| AI Lead Scoring | Higher qualified lead conversion |
-| AI Sales Copilot | Reduced quotation preparation time |
-| Knowledge Assistant | Faster onboarding and information retrieval |
-| Marketing Intelligence | Better campaign targeting and attribution |
-| Inventory Intelligence | Reduced aging inventory and holding costs |
-| Executive Dashboard | Faster management decision-making |
+Each of these has run on real data and left a record.
 
----
-
-## Dealership Financial Intelligence
-
-The platform doesn't just track cars — it tracks money.
-
-| Metric | Description |
-|--------|-------------|
-| Gross Margin | Selling price minus total landed cost |
-| Net Profit | Gross margin minus all commissions and VAT |
-| Floor Plan Financing Cost | Daily interest cost of financing inventory |
-| Vehicle Aging Analysis | Days in stock with holding cost accumulation |
-| Holding Cost per Day | Storage, insurance, depreciation (AED 50/day default) |
-| Break-even Price | Minimum selling price to avoid loss |
-| Expected Margin | AI-predicted margin based on market conditions |
-| Reconditioning Cost | Per-vehicle repair and preparation costs |
-| Trade-in Profitability | Margin analysis on trade-in vehicles |
-| Finance Partner Commission | Bank commission on approved loans |
-| Accessory Attach Rate | Percentage of deals with accessory upsells |
-| Warranty Margin | Revenue from extended warranty sales |
-| Salesperson Incentive Forecast | Projected commissions based on pipeline |
-| VAT Reporting | Input/Output VAT tracking per transaction |
+- **Inbound WhatsApp → grounded reply.** A real customer message on 2 September
+  resolved to an existing customer record without creating a duplicate, and was
+  answered with the asking price read from the `inventory` row for that VIN. The
+  vehicle's cost price was not disclosed. The run wrote a `SUCCESS` audit row with
+  all three of its claimed steps independently verified. This is the one path that
+  is demoable.
+- **Duplicate suppression.** The message id is claimed atomically before a reply
+  is generated, so a repeated delivery does not produce a second reply.
+- **Identity resolution refuses to guess.** Resolution requires a unique phone
+  tail; a tail shared by two people matches nobody and the message is left
+  unassigned rather than filed against the wrong customer.
+- **Nightly inventory ageing.** 20 runs, 20 successes, graded healthy. It is the
+  most reliable job in the system.
+- **A closed-won deal recorded through the dashboard, idempotently.** Submitted
+  four times on 2 September, one row written. This is a mechanism test on the
+  owner's own lead — **it is not a customer sale**.
+- **Tenant isolation at the database layer.** Every table holding customer data
+  carries a dealership id and every access rule checks it. Tested 2 September with
+  two synthetic dealerships and re-tested 3 September across all tables and all 33
+  views, as real Postgres roles with real JWT claims, including as the system
+  account that bypasses row-level security, and including a deliberate
+  same-email/same-phone collision. Zero cross-tenant rows in either direction.
+  Evidence: `apps/executive-dashboard/SECURITY_REGRESSION_REPORT.md`.
 
 ---
 
-## Multi-Agent Architecture
+## What is built but not proven
 
-Each agent is specialized for a specific business domain:
+Present in the codebase, wired, and either never successful or not successful
+recently. **None of this may be sold as a capability.**
 
-| Agent | Role | Trigger |
-|-------|------|---------|
-| Lead Agent | Scores and qualifies incoming leads | New lead event |
-| Sales Agent | Assists salesperson with quotes, follow-ups | Salesperson request |
-| Finance Agent | Checks loan eligibility, calculates EMI | Finance application |
-| Inventory Agent | Monitors stock aging, recommends pricing | Daily cron / manual |
-| Marketing Agent | Generates campaigns, analyzes competitors | Campaign request / daily |
-| Knowledge Agent | Answers policy/manual questions with citations | Employee query |
-| Compliance Agent | Validates warranty claims, checks regulations | Claim submission |
-| Manager Agent | Summarizes team performance, flags issues | Daily digest |
+| Area | State |
+|---|---|
+| Finance quoting (APR, EMI, monthly payment) | 65 runs, 3 successes, **0 quote rows ever written**, last success 24 August. On 31 August an earlier build sent a real person a monthly payment of AED 11,200 when the true figure was nearer AED 7,800. The path is gated off and must stay off. |
+| KYC / ID verification | 12 runs, 0 successes ever. Three documents submitted, all three correctly rejected as not identity documents. |
+| Competitor price tracking | 168 runs, 17 usable prices. The system's own health rule grades it `PRODUCING_NOTHING`. |
+| Marketing drip campaign | 8 runs, 8 failures, never succeeded. |
+| Customer 360 | A once-daily batch, not a live view. 27 runs at 33% success, 2 profiles on file. |
+| Ask AI / RAG | 11 successes in 17 runs, but **no answer produced since 24 August**, and the 15 documents loaded are samples rather than a customer's. |
+| Retention / purge | Registered, marked active, **has never run**. Nothing enforces a retention window. |
+| Infrastructure health probe | Registered, **has never run**. There is no uptime measurement and no SLA. |
+| Lead channels other than WhatsApp | Facebook, Instagram, website forms and TikTok webhooks exist. **Not one lead has ever arrived through any of them.** |
 
 ---
 
-## Event-Driven Architecture
+## What is not built
 
-The platform runs on business events, not just API calls:
+Roadmap. No code, no data, no schema. Listed here so nobody mistakes an intention
+for a feature.
+
+- **Service retention and service revenue recovery.** There is no service table,
+  no appointments table and no DMS connection. This is the largest opportunity in
+  the strategy and the furthest away.
+- **No-show recovery, and most of Deal Rescue.** Both need appointment and
+  deal-stage data that does not exist.
+- **True margin.** There is no `recon_cost` column, so net margin is not
+  computable and the system reports it as such rather than guessing.
+- **Trade-in mining and trade-in valuation.**
+- **Multi-bank finance comparison.**
+- **Dealer benchmarking.** It needs several dealerships. There is one.
+- **Per-role permissions.** See the limits below.
+- **Automatic inventory feed.** Stock is loaded and refreshed by hand.
+
+---
+
+## Known limits, in production, today
+
+These are disclosed to buyers in `commercial/PILOT-OFFER.md`. They are listed
+here so an engineer does not accidentally close one and assume it was never open.
+
+1. **The inbound WhatsApp webhook is not authenticated.**
+   `POST /webhook/whatsapp-inbound` accepts unauthenticated requests: the secret
+   check is written into the workflow but dormant, because `WAHA_WEBHOOK_SECRET`
+   is unset on the VM. What holds the door today is a downstream allowlist on the
+   WhatsApp session name, which refuses an unknown session and writes nothing.
+   Closing it is a configuration change on the box, in this order: set the secret,
+   make WAHA send the header, confirm in MONITOR mode, then enforce. Setting the
+   secret first would silently drop every real customer message.
+2. **A dashboard login is not read-only and carries no role.** Any signed-in user
+   can change a vehicle's asking and cost price, delete a vehicle record, and
+   reassign any lead. Neither the database nor the interface gates it.
+3. **One dealership per system.** The database layer separates dealerships and is
+   tested; the automation layer does not — every n8n workflow writes as a system
+   account with no dealership attached. Three further defects fire on the day a
+   second dealership is added. `select * from public.nexus_tenancy_readiness();`
+   reports the database half; the security regression report covers the rest.
+4. **Four launch-critical checks have never been run.** Non-approver refusal,
+   decision idempotency, cross-dealership denial through the real signed-in path,
+   and rendered-vs-live parity all need a second dealership and a non-approving
+   user. Production has one dealership and one user, and that user is an approver.
+   A NOT RUN is not a pass.
+5. **WhatsApp runs through an unofficial client on a personal number.** It is
+   against WhatsApp's terms of service and the number can be banned without
+   warning. Migration to the official Cloud API is step one of any onboarding.
+6. **Everything is on free tiers.** The VM is a CPU-starved e2-micro that has
+   fallen over twice; Supabase's free tier pauses after inactivity and takes no
+   daily backups; the AI models are rate-limited free capacity.
+
+---
+
+## Architecture
 
 ```
-Lead Created → Event Bus → CRM + Marketing + Notification + Analytics
-Deal Closed  → Event Bus → ERP + Commission + Inventory + Dashboard
-Vehicle Aged → Event Bus → Price Review + Marketing + Manager Alert
-Claim Filed  → Event Bus → RAG + Service + Compliance + Customer Update
+WhatsApp (WAHA, unofficial client)
+        │
+        ▼
+n8n on a Google Cloud e2-micro VM  ── 18 registered workflows
+        │  writes as service_role
+        ▼
+Supabase (Postgres + Auth + pgvector)  ── single source of truth
+        ▲
+        │  reads as authenticated, row-level security per dealership
+        │
+Executive dashboard (static SPA on Vercel)
 ```
 
----
+There is no second data store and no event bus. Every figure a screen shows comes
+from one Supabase project.
 
-## Production Engineering
-
-| Category | Implementation |
-|----------|---------------|
-| Authentication | Supabase Auth with JWT |
-| Authorization | Role-Based Access Control (RBAC) |
-| Database | Supabase (Postgres + Auth + pgvector + Storage + Realtime) |
-| API Documentation | OpenAPI / Swagger |
-| Containerization | Docker + Docker Compose |
-| CI/CD | GitHub Actions |
-| Audit Trail | Every data mutation logged with user, timestamp, and diff |
-| Health Checks | `/api/health` on every service |
-| Rate Limiting | Per-user API rate limits |
-| Secrets Management | Environment variables via `.env` (never committed) |
-| Error Handling | Structured error responses with correlation IDs |
-| Background Jobs | Cron-based scrapers, scheduled reports |
-| API Versioning | `/api/v1/` prefix on all endpoints |
-
----
-
-## Tech Stack
+### Tech stack, as actually deployed
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | ReactJS, Vite, Tailwind CSS |
-| Backend | Node.js (Express) |
-| Database | Supabase (Postgres + Auth + pgvector) — single source of truth |
-| AI/LLM | OpenRouter, LangChain, LangGraph |
-| Automation | n8n, WAHA (WhatsApp Agent) |
-| CRM | Bitrix24 (free tier, inbound-webhook REST) |
+|---|---|
+| Dashboard | Vanilla JS modules, Vite, Tailwind CSS, `@supabase/supabase-js`. **No React.** |
+| Database, auth, vectors | Supabase (Postgres, Auth, pgvector) — the single source of truth |
+| Automation | n8n (self-hosted, Docker) using its LangChain-based AI agent nodes |
+| WhatsApp | WAHA, an unofficial client — to be replaced by the WhatsApp Cloud API |
+| Models | OpenRouter and Groq free tiers, behind a fallback model ladder |
+| CRM sync | Bitrix24 (free tier, inbound-webhook REST) |
+| Hosting | Vercel (dashboard), Google Cloud e2-micro `nexus-vm` (n8n + WAHA) |
+
+`apps/ai-crm/backend/server.js` is a small unused Express service that exposes
+`/api/health` and `/api/v1/*`. It is not deployed and nothing depends on it.
+
+There is no CI pipeline in this repository, no OpenAPI document, no rate limiting
+and no role-based access control. Do not describe any of them as present.
 
 ---
 
-## Deployment Phase (Current → Target)
-
-| Phase | Where It Runs |
-|-------|---------------|
-| **Now (Build Phase)** | n8n and WAHA run locally via Docker Compose. Supabase (Postgres + Auth + pgvector) is already the live cloud database — it is never local. |
-| **Target (Go-Live Phase)** | n8n and WAHA move to a **Google Cloud e2-micro VM** — `nexus-vm`, `us-central1-a`, `35.224.126.225`, Always Free tier, 30 GB disk + 3 GB swap, Caddy on 80/443 for HTTPS. The React frontend deploys to **Vercel**. **Supabase stays the single backend/database/auth layer throughout** — nothing changes there between phases. |
-
-
----
-
-## Multi-Tenant Architecture
-
-The platform is designed as a SaaS product adaptable to any dealership:
-
-```
-/customers
-  ├── Nexus-cars/
-  ├── toyota-dubai/
-  ├── nissan-uae/
-  └── bmw-abudhabi/
-```
-
-Each tenant gets isolated data, configurable workflows, and customizable branding.
-
----
-
-## Repository Structure
+## Repository structure
 
 ```
 nexus-os/
-├── .github/workflows/        # CI/CD pipelines
-├── architecture/              # System diagrams, DB schemas, API specs
-├── deployment/                # Docker Compose, environment configs
-├── docs/                      # Business flows, AI dev workflow, setup guides
-├── apps/
-│   ├── ai-crm/                # AI-First CRM (React + Node.js + Supabase)
-│   ├── automation-engine/     # n8n Workflows & WAHA WhatsApp Agent
-│   └── executive-dashboard/   # Real-time Analytics (React)
-└── README.md
+├── CLAUDE.md                    # house rules — read first
+├── PRODUCT.md                   # the product thesis and the roadmap
+├── NEXUS_INVARIANTS.md          # INV-001..INV-008, and which are open
+├── DESIGN.md
+├── commercial/                  # the customer-facing pack
+│   ├── WHAT-WE-CLAIM.md         # the claims register — outranks every other doc
+│   ├── PILOT-OFFER.md
+│   ├── PILOT-ONBOARDING.md
+│   └── DEMO-SCRIPT.md
+├── architecture/                # schema.sql, transcribed from the live catalogue
+├── supabase/                    # some SQL; migrations are applied to the live project, not kept here in full
+├── n8n-workflows/               # exported workflow definitions (an export, not the source of truth)
+├── docs/
+└── apps/
+    ├── executive-dashboard/     # the deployed dashboard, its quality gate and its reports
+    ├── automation-engine/       # workflow drafts and webhook simulation scripts
+    └── ai-crm/                  # an unused Express service
 ```
 
----
-
-## Cost to Run (Current Build Phase)
-
-| Component | Cost |
-|-----------|------|
-| React + Vite + Tailwind | Free |
-| Node.js | Free |
-| Supabase (Free Tier) | Free |
-| n8n (Self-hosted) | Free |
-| Bitrix24 Free Plan | Free |
-| OpenRouter (Free Models) | Free |
-| GitHub | Free |
-| **Total** | **$0** |
+The live n8n instance, not `n8n-workflows/`, is the source of truth for workflow
+behaviour. That directory is an export and it goes stale.
 
 ---
-_Contract Auditor (Phase 1) added — see `docs/contract-auditor-walkthrough.md` for demo script._
+
+## Where the record lives
+
+- `commercial/WHAT-WE-CLAIM.md` — what may and may not be said to a buyer, with
+  the evidence and the date beside each claim.
+- `NEXUS_INVARIANTS.md` — the business rules, who owns each, and the query that
+  proves it. Open violations are recorded as open.
+- `apps/executive-dashboard/QUALITY_GATE_REPORT.md` — the generated gate result.
+  Read it rather than any narrative summary of it.
+- `apps/executive-dashboard/SECURITY_REGRESSION_REPORT.md` — the 3 September
+  security sweep and its open findings.
+- `apps/executive-dashboard/J1_PRODUCTION_READINESS_REPORT.md` — release
+  readiness. It contains at least one arithmetic error about the gate's own
+  counts, so cross-check it against the generated report.
+- `architecture/schema.sql` — a transcription of the live catalogue; it goes stale
+  within days.

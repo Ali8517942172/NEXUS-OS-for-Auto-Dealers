@@ -1,6 +1,6 @@
 # NEXUS OS — Demo Script
 
-**Version 2.0 · 2 September 2026**
+**Version 2.1 · 3 September 2026**
 **Runs in 12 minutes. Do not run long.**
 
 **Two changes from version 1.0, and they are not cosmetic.** The "17.8 seconds" line is
@@ -63,8 +63,9 @@ the correct answer.
 > AED 133,000. Remember the cost number — I am going to come back to it."
 
 Point out the ageing flags: on the sample stock, three of twelve cars carry a WARNING or
-CRITICAL flag, average 56 days in stock. Say the ageing recompute runs every night at 00:15
-and has run 18 times with 18 successes.
+CRITICAL flag, average 57 days in stock. Say the ageing recompute runs every night at 00:15
+and has run 20 times with 20 successes. **Read the average off the screen** — it goes up by one
+every night.
 
 **Why this beat comes first:** if you show the reply before the price, the buyer has no way
 to check it. Showing the inventory first turns the reply from a demo into a verification.
@@ -171,7 +172,7 @@ producing nothing, 1 never run, 3 not instrumented.**
 > way and I would rather you hear it from me."
 
 Then point at the competitor scraper, marked "producing nothing":
-> "That one finds a usable price on 14 attempts out of 120. The system says so itself, in
+> "That one finds a usable price on 17 attempts out of 168. The system says so itself, in
 > those words. It is not in your pilot and I am not charging you for it."
 
 **Why this beat exists:** it is the trust beat. A buyer who has just watched you volunteer
@@ -214,13 +215,13 @@ just the list.
 | Screen | Why it stays shut |
 |---|---|
 | **Intelligence → Finance Desk** | The quotes table holds **zero rows**. The screen is honest and will render as empty, which looks broken. Worse: on 31 August an earlier build quoted a real person a monthly payment of **AED 11,200** when the true figure was nearer **AED 7,800**, and sent it. That is a number a dealership could be held to. The path is gated off and stays off. |
-| **Work → Compliance** | The KYC register holds **3 rows and zero verified customers** — all three submissions were correctly rejected as "not an identity document". The auditor workflow has 9 logged runs, 7 failures, 0 successes. A buyer who sees a compliance screen assumes compliance. You have none to sell. |
-| **Operations → Deals** | No dealership customer has ever bought a car through this system. The sales table held zero rows until 09:59 on 2 September, when a repair test wrote one row against Ali's own lead — a Lexus at AED 585,000 that nobody bought. The sync job is 13 runs, 11 failures, graded DEGRADED. A pipeline screen showing one deal that is not a deal is worse than an empty one. |
-| **Assets → Competitors** | 14 usable prices out of 120 attempts. The system classifies it as "producing nothing" in those words. Do not open a screen that argues against you. |
-| **Operations → Campaigns** | The drip campaign has run 5 times and failed 5 times. 0% success. |
+| **Work → Compliance** | The KYC register holds **3 rows and zero verified customers** — all three submissions were correctly rejected as "not an identity document". The auditor workflow has 12 logged runs, 10 failures, 0 successes, and has never succeeded once. A buyer who sees a compliance screen assumes compliance. You have none to sell. |
+| **Operations → Deals** | No dealership customer has ever bought a car through this system. The sales table held zero rows until 09:59 on 2 September, when a repair test wrote one row against Ali's own lead — a Lexus at AED 585,000 that nobody bought. The sync job is 19 runs, 15 failures, graded DEGRADED. A pipeline screen showing one deal that is not a deal is worse than an empty one. |
+| **Assets → Competitors** | 17 usable prices out of 168 attempts. The system classifies it as "producing nothing" in those words. Do not open a screen that argues against you. |
+| **Operations → Campaigns** | The drip campaign has run 8 times and failed 8 times. 0% success, and it has never succeeded once. |
 | **Operations → Team** | There is **one user** in the system. A team screen showing one person undercuts everything you just said about a dealership floor. |
 | **Settings** | It exposes integration configuration and connection state. It is an engineering screen and it invites engineering questions you do not want in a sales meeting. |
-| **Intelligence → Ask AI** | *Judgement call.* It works — 11 successes in 14 runs, graded healthy — but it has not run since **24 August** and there are only 15 documents loaded. Show it only if the buyer asks about "AI answering staff questions", and say clearly it is loaded with sample documents, not theirs. |
+| **Intelligence → Ask AI** | *Judgement call.* It works — 11 successes in 17 logged runs, graded healthy — but it **has not produced an answer since 24 August** and there are only 15 documents loaded. The six later entries are an unauthenticated security probe being correctly refused, not the agent working. Show it only if the buyer asks about "AI answering staff questions", and say clearly it is loaded with sample documents, not theirs. |
 | **Intelligence → Customer 360** | Holds **2 profiles** and refreshes once daily as a batch. If you show it, do not describe it as live. It is a nightly job. |
 | **Overview — the Pipeline value tile** | With the current data it correctly reports that no open lead has a budget recorded. That is the right answer and it looks like a bug. Overview is the landing screen so the buyer will see it; steer to Inventory within fifteen seconds and do not narrate the tiles. |
 
@@ -230,7 +231,7 @@ just the list.
 
 ### "Can it work out the monthly payment for the customer?"
 
-> "No, and I am not going to let it. The finance calculator has run 62 times and written
+> "No, and I am not going to let it. The finance calculator has run 65 times and written
 > zero quotes. Its last recorded success was 24 August. On 31 August it quoted a real person
 > AED 11,200 a month when the right answer was closer to AED 7,800 — and it sent it. I
 > switched that path off and it stays off for your pilot.
@@ -298,26 +299,42 @@ fast end alone.
    and that was proven on 2 September with two test dealerships. The workflows do not — they
    write as a system account with no dealership attached. So: "your data is separated at the
    database level, tested; the automation is not there yet, so I still run one dealership per
-   system." Do not shorten that to "we are multi-tenant". The repository's own README claims
-   a multi-tenant architecture and describes an intention — do not read from it.
+   system." Do not shorten that to "we are multi-tenant". The repository README used to claim
+   a multi-tenant architecture; it was corrected on 3 September and now states the limit. If
+   any version of it reads better than this document, this document is the one that is right.
 5. **If the live demo fails, do not fake it.** Say: "That is the unofficial WhatsApp client
    dropping — it is exactly why moving to the official API is week one of your onboarding."
    Then walk the Conversations screen showing the 2 September exchange that did work. A
    recovered failure demonstrates the honesty you have been claiming for ten minutes.
 6. **If you do not know, say you will check and then actually check.** Every figure in this
    pack came from a query against the live database. You can always get the real answer.
+7. **Never say the system is secured, locked down, or hardened.** It has had no external
+   review, and one endpoint — the inbound WhatsApp webhook — still accepts unauthenticated
+   requests because its secret is not set on the server. That is a week-one configuration
+   task and it is disclosed in the offer document. If a buyer asks about security, say what
+   is true: "I have tested it hard myself and written down what I found. Nobody independent
+   has looked at it, and there is one door I am closing in your first week."
+8. **Never imply a dashboard login is read-only.** Anyone you give a login to can change a
+   car's price, delete a vehicle record and reassign a lead. If the buyer asks who should get
+   logins, that is the answer, and it is better said in the meeting than found in month two.
 
 
 ---
 
 ## Figures in this script
 
-Checked against Supabase project `dsvuoovivysszdoiorch` at **10:04:17 UTC, 2 September 2026**,
-scoped to the one real dealership. Another workstream was writing synthetic QA dealerships
-into the same tables at the time; none of that is counted here, and anyone re-running these
-counts must scope them to `tenants.slug = 'alba-cars'` or the numbers will flatter you.
+Checked against Supabase project `dsvuoovivysszdoiorch` on **3 September 2026**, scoped to the
+one real dealership. Anyone re-running these counts must scope them to
+`tenants.slug = 'alba-cars'` or the numbers will flatter you.
 
 108 messages, 24 resolving to a named customer · 3 leads · 12 vehicles · 0 customer sales
-(1 `purchase_history` row exists, written 09:59:53 by a repair test) · 0 finance quotes ·
-3 KYC submissions, 0 verified · 1 login · 600 run records ·
+(1 `purchase_history` row exists, written 09:59:53 on 2 Sep by a repair test) · 0 finance
+quotes · 3 KYC submissions, 0 verified · 1 login · 687 run records ·
 18 automated replies at 13.3s fastest, 38.8s median, 218.3s slowest.
+
+**Two warnings on reading the Automation screen before a meeting.** A workflow's *last run*
+date is not evidence it worked — on 3 September a security test posted an unauthenticated
+request to every endpoint, ten refused correctly, and each refusal wrote a failure row. That
+one burst moved the last-run date on eight workflows, Ask AI and KYC among them. Read
+*last success*. And the run counts in this script go stale within days: re-read them, and if
+one has moved against you, say the new number.

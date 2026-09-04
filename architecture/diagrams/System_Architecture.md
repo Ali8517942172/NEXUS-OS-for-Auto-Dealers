@@ -1,80 +1,115 @@
 # System Architecture
 
+Corrected 2026-09-03 against the live systems. The previous edition of this
+diagram drew a **NodeJS API Gateway**, a separate **pgvector RAG store**, five
+distinct "NEXUS OS Modules", **Bank Loan APIs** and **Incoming Calls**. None of
+those exists. There is no application server anywhere in this product: the front
+end is a static bundle that talks to Supabase and to n8n directly from the
+browser.
+
+## The stack is four things
+
+| | what it is | where |
+|---|---|---|
+| **Supabase** | Postgres 17. The only data store — leads, inventory, messages, audit, RAG, policy, tenancy. 40 tables, 33 views. | project `dsvuoovivysszdoiorch` |
+| **n8n** | 21 workflows under Docker. Every automation and every AI call. Writes as `service_role`. | GCP VM `35.224.126.225`, `https://35.224.126.225.nip.io` |
+| **WAHA** | self-hosted WhatsApp HTTP API. The WhatsApp transport, both directions. | same VM |
+| **Executive Dashboard** | a static Vite bundle — vanilla ES modules, no framework, no server. | Vercel |
+
 ```mermaid
 graph TD
-    %% External Interfaces
-    subgraph "External Interfaces"
-        Web[Website Forms]
-        Social[WhatsApp / Social Media]
-        Call[Incoming Calls]
-        CEO[Executive Access]
+    subgraph Inbound["Inbound"]
+        WA[WhatsApp customer]
+        GM[Gmail — sales inbox]
+        SL[Slack — sales floor]
     end
 
-    %% AI Gateway & Auth
-    subgraph "API & Security Layer"
-        AG[NodeJS API Gateway]
-        Auth[Supabase Auth / RBAC]
-        AG --> Auth
+    subgraph VM["GCP VM 35.224.126.225 · Docker"]
+        WAHA[WAHA<br/>WhatsApp HTTP API]
+        N8N[n8n · 21 workflows]
+        WAHA <--> N8N
     end
 
-    Web --> AG
-    Social --> AG
-    Call --> AG
-
-    %% Core Databases
-    subgraph "Data Storage"
-        PG[(Supabase / Postgres)]
-        Vect[(Supabase pgvector / RAG)]
+    subgraph AI["Model providers — called only from n8n"]
+        OR[OpenRouter<br/>free-tier ladder with fallback]
+        GQ[Groq<br/>Whisper voice transcription]
     end
 
-    Auth --> PG
-
-    %% Business Modules (Apps)
-    subgraph "NEXUS OS Modules"
-        CRM[NEXUS OS AI CRM]
-        Mktg[Marketing Intelligence OS]
-        RAG[Enterprise Knowledge RAG]
-        Inv[Inventory Intelligence]
-        Exec[Executive Dashboard]
+    subgraph SB["Supabase · Postgres 17"]
+        PG[(40 tables · 33 views<br/>RLS + tenant_id)]
+        RAG[(rag_documents<br/>tsvector + pg_trgm<br/>NOT embeddings)]
+        ST[(Storage: kyc-documents<br/>private bucket)]
+        AUTH[Supabase Auth]
     end
 
-    %% Agents and Automation
-    subgraph "AI Agents & Automation"
-        N8N[n8n / WAHA Engine]
-        Sales((Sales Agent\nSales Copilot))
-        Marketing((Marketing Agent\nMarketing))
-        Knowledge((Knowledge Agent\nCompliance RAG))
+    subgraph FE["Vercel"]
+        DASH[Executive Dashboard<br/>static Vite bundle<br/>vanilla ES modules]
     end
 
-    %% Connections
-    AG --> CRM
-    AG --> Mktg
-    AG --> Exec
-    
-    CRM <--> N8N
-    Mktg <--> N8N
-    
-    N8N <--> Sales
-    N8N <--> Marketing
-    
-    RAG <--> Knowledge
-    Knowledge <--> Vect
-    
-    CRM --> PG
-    Mktg --> PG
-    Exec --> PG
-
-    %% External Systems
-    subgraph "External Dealership Systems"
-        Bitrix[Bitrix24 CRM]
-        Banks[Bank Loan APIs]
+    subgraph OUT["Outbound integrations"]
+        BX[Bitrix24 REST<br/>the working CRM]
+        RS[Resend — email]
+        AP[Apify — competitor scraping]
     end
 
-    N8N <--> Bitrix
-    CRM <--> Banks
+    WA  --> WAHA
+    GM  --> N8N
+    SL  <--> N8N
+
+    N8N --> OR
+    N8N --> GQ
+    N8N -->|service_role · BYPASSRLS| PG
+    N8N --> RAG
+    N8N --> BX
+    N8N --> RS
+    N8N --> AP
+
+    DASH -->|PostgREST · user JWT · authenticated| PG
+    DASH -->|8 webhooks · same JWT| N8N
+    DASH -->|60s signed URLs| ST
+    DASH --> AUTH
+    AUTH --> PG
 ```
 
-## Architecture Principles
-1. **Event-Driven:** Every inbound lead or CRM change triggers an event in the n8n automation engine.
-2. **AI Segregation:** Specific agents handle specific domains (Sales Agent for Sales, Marketing Agent for Marketing, Knowledge Agent for Knowledge Retrieval).
-3. **Single Source of Truth:** Supabase is the master for inventory, customer state and access control. Bitrix24 is the sales team's working CRM and is kept in sync one-way from Supabase.
+## What is deliberately absent
+
+Each of these has appeared in an earlier document about this system and **none of
+them is in the live path**:
+
+- **No application server.** No Node API, no Express, no `/api/v1/*`. The
+  dashboard is static files; every read is PostgREST and every action is an n8n
+  webhook.
+- **No React, no framework, no Tailwind.** Vanilla ES modules built by Vite;
+  Tailwind was removed and `postcss.config.js` records why.
+- **No WebSocket, no Socket.io, no event bus.** Screens fetch; a badge poller
+  re-fetches on an interval. Nothing is pushed.
+- **No MongoDB.** Supabase is the only data store.
+- **No Odoo.** The live ERP sync target is **Bitrix24 REST**
+  (`wf_108 ERP Sync - Bitrix24`).
+- **No FastAPI / Python service.** Ask AI is an n8n workflow.
+- **No OpenAI.** There is no OpenAI credential on the box. Generation is
+  OpenRouter free-tier models behind a fallback ladder; Groq runs Whisper for
+  voice notes.
+- **No embeddings behind Ask AI.** `rag_documents` is `tsvector` full-text plus
+  `pg_trgm`. `document_embeddings` does not exist.
+- **Make.com and Zapier are not in the live path.** Make holds two inactive
+  scenarios with 0 executions.
+
+## Architecture principles
+
+1. **Automation is n8n, and only n8n.** Every scheduled job, every AI call and
+   every outbound message runs there. The browser starts a workflow by calling a
+   webhook with the signed-in user's Supabase JWT; the workflow verifies it.
+2. **Supabase is the single source of truth** for inventory, leads, customer
+   state, audit and access control. Bitrix24 is the sales team's working CRM and
+   is synchronised one-way from Supabase.
+3. **The browser holds no privilege it should not.** The dashboard reads as
+   `authenticated` under RLS. It has exactly one write helper and two direct
+   table write paths (`inventory`, `leads.assigned_to_id`); everything else goes
+   through `SECURITY DEFINER` RPCs owned by `postgres`.
+4. **n8n writes as `service_role`, which is `BYPASSRLS`.** Nothing in the
+   database filters a workflow's writes. Whatever guards a workflow endpoint is
+   the whole of the guard — see the open-webhook section of `CLAUDE.md`.
+5. **Two AI providers, deliberately free-tier, with a fallback ladder.** A model
+   being unavailable is a normal condition and the workflows are built to fall
+   through rather than fail.
