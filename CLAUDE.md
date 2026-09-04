@@ -677,3 +677,60 @@ template send it cannot carry, so the router asked the policy engine with a
 NULL integration and got back `CHANNEL_NOT_REGISTERED_TO_TENANT` — **a tenancy
 alarm raised by a ranking bug.** It failed closed, which is what the
 constraints bought.
+
+## Two planes, and the boundary between them
+
+4 Sep 2026. NEXUS is a product Ali sells to dealerships, so there are two
+audiences and they must not see the same screen.
+
+- **Control Plane** — platform users, tenants, subscriptions, licences,
+  entitlements, usage events, workflow and node health, error events,
+  releases, support cases. Ali's.
+- **Dealer Data Plane** — customers, leads, messages, vehicles, deals,
+  finance, compliance, campaigns, actions, audit. The dealership's.
+
+Least privilege applies to Ali too: platform telemetry by default, customer
+content only through an audited support path. On Cloud he holds the database
+credentials and nothing in software prevents him bypassing that path — the
+document says so rather than pretending otherwise.
+
+**The audit of what the dashboard shows today found no cross-tenant leak and
+no secret rendered.** The finding is different and more ordinary: *the
+operator's instrumentation accumulated inside the customer's product.*
+`settings.js:1402` tells a dealership that one n8n instance serves every
+dealership; `workflow_registry` is `SELECT USING (true)` for `authenticated`
+with no `tenant_id` and 18 rows of workflow ids, cron expressions and webhook
+paths; `automation.js` renders n8n execution deep links, node names and
+"spends OpenRouter tokens"; `ask.js` prints the model ladder and the prompt
+budget. The operating rule is: **symptom and impact to the dealership;
+mechanism and location to the vendor.**
+
+**Self-hosted telemetry is a fiction.** That is what self-hosting means. A
+licence check can gate first-run setup, carry an expiry and be revoked; it
+cannot prove the software stopped running, report health, or count active
+dealerships. Any control-plane design that assumes it can see a self-hosted
+installation is designing against a customer who can block it at the firewall.
+
+## The node count is 334, not 250-300
+
+Read from the published definitions on the box, 4 Sep. 21 workflows, 334
+nodes. **19 carry a published version; two have none at all** — Phase 6
+Silence Detector and NEXUS Infra Health Probe, 12 nodes each,
+`activeVersionId: null`.
+
+That second one matters: **nothing is watching the WhatsApp channel.** The
+Infra Health Probe is the schedule trigger, the WAHA session check and the
+alarm that throws into the error workflow, and it has never been published.
+`workflow_registry` reports `is_active = true` for both — the registry and the
+box disagree, and the dashboard reads the registry.
+
+**There is no run-marker column anywhere** — no `journey_id`, `test_run_id` or
+`is_test` on any of the 58 tables. So a journey's test data is marked
+structurally by `tenant_id` (NOT NULL everywhere, therefore unforgettable) and
+by an RFC 2606 `.invalid` email namespace, with an external primary-key
+manifest and a three-snapshot cleanup proof. Cleanup fails on collateral even
+when every assertion passed.
+
+And a phone number is not safely fakeable: `Guard Reply` filters content, never
+the recipient. Either journeys run against a WAHA session on a controlled
+device, or the send legs stay blocked.
