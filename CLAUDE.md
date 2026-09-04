@@ -552,7 +552,107 @@ capability filter could push a send downward. Using an unofficial transport to
 avoid an official platform's charges is a policy bypass, and the number at risk
 of a ban is the dealership's own business line.
 
-### Two blockers this layer cannot clear itself
+### A dealership could legislate as Meta, until 4 Sep
+
+An adversarial pass proved this on production, as the ALBA CARS owner acting
+as role `authenticated` — a signed-in dashboard user, no `service_role`, no
+n8n — using only functions that carry EXECUTE for `authenticated`:
+
+    propose PLATFORM_WHATSAPP / WA_CUSTOMER_SERVICE_WINDOW_HOURS = 99999  -> ok
+    verify that same rule themselves                                      -> ok
+    decision: TEMPLATE_REQUIRED -> FREEFORM_ALLOWED, AUTHORITATIVE,
+              window_hours 99999, jurisdiction PLATFORM_WHATSAPP
+
+Two facts combined: `policy_verify_rule` guarded *scope* but not
+*jurisdiction*, and the lookup ordered `(tenant_id is null)` ascending, so a
+tenant rule **outranked** the global one. The audit trail then said Meta had
+said so.
+
+Fixed by making it unrepresentable rather than refused. A jurisdiction is now
+a namespace with an owner (`policy_jurisdiction`), the owner kind is pinned to
+the rule by a composite foreign key, and a CHECK ties scope to ownership: a
+dealership row under `PLATFORM_WHATSAPP` cannot exist. The lookup no longer
+*orders* by scope — scope is a filter derived from ownership, so there is no
+direction left to invert. A dealership may still hold house rules under
+`TENANT_HOUSE`, and one is applied only when it is **strictly stricter** than
+the platform's; a longer window is recorded as considered-and-ignored.
+
+**The lesson worth keeping: a guard on scope is not a guard on authority.**
+Asking "may this actor write a row of this shape" is a different question from
+"may this actor speak in this name".
+
+### And the platform-verification path exists now
+
+`policy_verify_rule` returned `NO_SESSION` to `postgres` and `service_role`, so
+nobody — not even the platform operator — could verify a global rule. That, not
+policy, was why every conversation returned `TEMPLATE_REQUIRED`.
+
+`policy_platform_verify_rule()` is `service_role`-only and demands an
+attestation: a named person, a reachable contact, a source kind, an openable
+reference, and the day it was read. No session means the actor cannot be
+derived, so it must be stated. A global rule cannot reach `VERIFIED` without
+one.
+
+**Ali still has to check the WhatsApp rules against his own Meta account.** The
+road is built; nobody has driven it. Production holds zero attestations and
+zero verified rules.
+
+### Corrections earned by measurement, 4 Sep
+
+- **"Applied at byte parity" was wrong.** `md5(prosrc)` differs on 34 of 105
+  functions between production and staging. Comment-and-whitespace-stripped
+  they all match — staging's copies were applied with `--` comments removed —
+  but the honest claim is *semantic* parity, and it must be stated that way.
+- **"`service_role` only, `anon` and `authenticated` refused by grant" was
+  wrong**, and the way it was wrong matters more than the claim.
+  `channel_registry` carries **column-level** grants: `authenticated=r` on
+  seven of eight columns with `credential_ref` deliberately withheld. That
+  design is right — but **the ACL query prescribed above reads `relacl` and
+  cannot see it**, and would report the table as `service_role`-only. Check
+  `pg_attribute.attacl` as well, or the check is blind to exactly the grants
+  someone took care over.
+- **The template staleness gate was wired to nothing.** The function behaved
+  as designed and the router never called it — it called a stub returning
+  `UNVERIFIED_REGISTRY_PRESENT_NOT_WIRED` and set `SEND` before it. A 40-day
+  stale APPROVED, a provider-REJECTED template, a NEXUS-retired one and a
+  reference that never existed all returned `SEND / SENDABLE_TEMPLATE`. Now
+  wired; the router takes a staleness tolerance with no default and refuses for
+  want of one.
+- **`channel_message_events` *can* hold an outbound `whatsapp_cloud` event** —
+  by claiming a signature it does not have. The CHECK demands
+  `hmac_sha256_x_hub`; recording an outbound with the honest value
+  `shared_header` is refused, and claiming the signature is accepted. So the
+  constraint pressures the writer into asserting something it cannot have, and
+  `origin_verified` on an outbound row is evidence of nothing.
+- **The forged-send CHECK is real but shallow.** It holds on NULL, empty string
+  and out-of-vocabulary values, and on nothing else. `policy_decision` is bare
+  `text` and `policy_applied_rule_id` a bare `uuid` with no foreign key,
+  because **no decision entity is persisted anywhere** — the function returns a
+  row type. A decision belonging to a different tenant, customer or
+  conversation, or one taken 30 days ago against a window that has since
+  closed, all insert cleanly. A tenant A directive naming tenant B's
+  `integration_id` inserted cleanly too.
+- **Two cracks in idempotency.** The key includes `requested_by`, which is
+  caller-declared and defaults to a placeholder — two n8n nodes retrying the
+  same logical send under different names produce two sends; and a null
+  `request_ref` disables it entirely. Separately,
+  `whatsapp_record_customer_message` ignores `external_message_id` and upserts
+  on timestamp alone, so **replaying one message with a later timestamp extends
+  the customer service window** — which is the fact that turns
+  `TEMPLATE_REQUIRED` into `FREEFORM_ALLOWED`. Given two WAHA hosts posting the
+  same `payload.id` and a retrying `Log Incoming Message`, that is the live
+  traffic shape.
+
+### Refusals must raise, not be returned in a column
+
+`policy_verify_rule` and `policy_supersede_rule` signalled refusal as
+`ok=false` and raised nothing. A `PERFORM` or an ignored column read as
+success — the QA agent made exactly that mistake and filed a false finding
+from it. The four dealership policy write functions now raise SQLSTATE `NX001`
+with the machine code in `DETAIL`, the sentence in `MESSAGE` and the next step
+in `HINT`, so PostgREST hands a dashboard all three.
+
+### One blocker this layer still cannot clear itself
 
 - **`policy_verify_rule()` refuses global rules by design** — "global rules are
   verified by the platform" — and no platform-verification path exists. So the
