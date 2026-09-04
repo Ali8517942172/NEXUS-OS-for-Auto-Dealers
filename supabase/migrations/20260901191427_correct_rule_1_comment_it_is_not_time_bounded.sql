@@ -1,0 +1,37 @@
+-- Correcting a comment I wrote minutes ago in scope_writer_correction_rule_to_history.
+--
+-- That migration's comment said rule 1 "applies only to rows logged before the
+-- writers were fixed". It does not, and it cannot: nexus_outcome_class takes
+-- (workflow, status, summary) and never sees logged_at. What the migration
+-- actually changed was narrower - rule 1 now fires only when the status is
+-- FAILED or SUCCESS, so it no longer rewrites a row a writer had already
+-- labelled correctly. That is a real improvement and it is not a time bound.
+--
+-- I have spent today removing sentences that described something the code did
+-- not do, and then wrote one. Recording it here rather than quietly editing it,
+-- because the wrong comment is already in the migration history.
+--
+-- WHERE THIS ACTUALLY STANDS.
+-- Rule 1 corrects two writers that labelled a partial delivery as FAILED. Both
+-- were fixed on the box on 2026-09-01 and neither can emit FAILED any more, so
+-- the rule has nothing new to correct. It is kept because the six historical
+-- rows still carry the old spelling, and the alternatives are worse: deleting
+-- the rule reclassifies them to FAILURE and empties the Finance Desk's "quote
+-- issued, record lost" panel, which reads them with no time window; rewriting
+-- the rows would let the rule go but would destroy the record that the writers
+-- were once wrong, which is not a trade to make in an audit log.
+--
+-- The cost of keeping it unbounded: if a writer regresses and emits FAILED with
+-- "did not land" again, this rule silently downgrades it to PARTIAL instead of
+-- surfacing a failure. That is the risk being accepted, and it is why a real
+-- time bound is worth doing.
+--
+-- TO ACTUALLY BOUND IT, later: add a fourth argument, logged_at, defaulting to
+-- null so existing three-argument callers keep working, and have rule 1 require
+-- it to be null or before 2026-09-01. v_workflow_health and v_needs_attention
+-- pass the row's logged_at; lib/health.js takes it from the same row so the
+-- mirror stays exact. Verified today: the newest FAILED row carrying the phrase
+-- is 2026-08-31 04:03:40 UTC, so that cutoff captures all six and no others.
+
+comment on function public.nexus_outcome_class(text,text,text) is
+'Canonical audit_log outcome vocabulary: SUCCESS, PARTIAL, FAILURE, NO_RESULT, REJECTED_EXPECTED, ESCALATED, UNKNOWN. Sole authority - no screen may map status to health itself. Rule 1 reclassifies a "did not land" summary as PARTIAL when the status reads FAILED or SUCCESS; it corrects two writers fixed on 2026-09-01 and is NOT time-bounded, so a future writer regression emitting that combination would be silently downgraded. Bounding it needs a fourth logged_at argument - see migration correct_rule_1_comment_it_is_not_time_bounded. lib/health.js mirrors this function exactly.';

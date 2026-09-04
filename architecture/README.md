@@ -1,20 +1,37 @@
 # `architecture/` — read this first
 
-## There is no schema file you can run. The database is the record.
+## The schema you can run lives in `supabase/`, not in this folder.
 
-**The authoritative description of the database is the live catalogue of Supabase
-project `dsvuoovivysszdoiorch`, and nothing in this folder.** Migrations are
-applied to that project and are listed in `supabase_migrations.schema_migrations`;
-this repository holds no migration directory that mirrors them.
+**This folder holds no runnable description of the database and never did.**
+Until 4 September 2026 nothing in the repository did, and this file said so:
+*"There is no schema file you can run. The database is the record."* That is no
+longer true. `supabase/` now holds one file per applied migration, a
+catalogue-derived baseline, the shipped vocabulary, and a restore procedure that
+was executed and diffed against production rather than described. **Read
+`supabase/README.md` for what the database is and how to rebuild it.**
 
-To see what the database is, query it:
+Two things from that work are worth carrying here, because they are the reason
+this folder's files are the way they are:
+
+* **The recorded migration chain does not replay from empty.** Its first entry,
+  `20260717130052`, is `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY` —
+  the tables predate the chain. Measured: 47 of 243 apply into an empty
+  database, 196 fail. A restore is therefore *baseline plus chain from a known
+  point*, and any file in this folder that presents itself as a from-scratch
+  build script is mistaken about what it is.
+* **The database is still the authority on what is live.** `supabase/` is a
+  snapshot of it, kept honest by `QUALITY_GATE.mjs` check `L11`, which fails
+  when the database has migrations the repository does not.
+
+To see what the database is right now, query it:
 
 ```sql
 select max(version), count(*) from supabase_migrations.schema_migrations;
 ```
 
-Measured 2026-09-03 18:4x UTC: **`20260903180749`, 181 applied**, over **40 tables
-and 33 views**.
+Measured 2026-09-04 09:0x UTC: **`20260904090150`, 243 applied**, over **59
+tables and 39 views** — all 243 extracted to `supabase/migrations/`, verified
+byte-identical.
 
 ## `schema.sql` is a stale transcription. Do not run it, and do not read it as current.
 
@@ -77,6 +94,7 @@ reads.
 | file | what it is | trust it? |
 |---|---|---|
 | `README.md` | this file | — |
+| *(the runnable schema)* | **not here — see `supabase/`** | **yes, and verified** |
 | `DRIFT.md` | itemised: what the two historical files claim, what was live on 2026-08-30, and every contradiction. Also records two live defects found while checking. | **as history, yes; as a description of today, no** — see below |
 | `schema.sql` | live catalogue transcribed 2026-09-02 05:01, 100 migrations behind | no |
 | `supabase_schema.HISTORICAL.sql` | a database that has never existed | never run |
@@ -100,7 +118,11 @@ Two live defects DRIFT.md reported have since moved and the file does not say so
 
 ## Where the current record actually lives
 
-* **The database** — the only authoritative schema.
+* `supabase/` — **the repository's own copy of the schema**: every applied
+  migration as a file, a baseline diffed against production, and the restore
+  procedure. Start with `supabase/README.md`.
+* **The database** — still the authority on what is live *now*; `supabase/` is a
+  snapshot of it and `QUALITY_GATE.mjs` `L11` is what stops the two drifting.
 * `CLAUDE.md` — tenancy, grants, the open webhook, and the house rules.
 * `NEXUS_INVARIANTS.md` — INV-001..INV-008 with the query that proves each.
 * `PRODUCT.md` — what the product is, and which engines the data supports.

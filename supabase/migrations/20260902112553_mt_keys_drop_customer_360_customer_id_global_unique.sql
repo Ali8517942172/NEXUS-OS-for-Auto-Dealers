@@ -1,0 +1,24 @@
+-- BUSINESS RULE: a customer_id identifies a customer WITHIN ONE DEALERSHIP.
+-- Each dealership maintains its own customer directory; the same directory id
+-- appearing under two dealerships must produce two independent profiles.
+--
+-- customer_360_profiles_customer_id_key was UNIQUE(customer_id) platform-wide,
+-- so the nightly Customer 360 aggregation of a second dealership would have
+-- merged its profile onto the first dealership's row (the write runs with
+-- Prefer: resolution=merge-duplicates), overwriting name, email, phone and
+-- engagement counts belonging to another business.
+--
+-- SAFE TO DROP: customer_360_profiles_tenant_customer_id_key
+-- UNIQUE(tenant_id, customer_id) already exists, is valid, ready and live, and
+-- customer_360_profiles.tenant_id is NOT NULL (default
+-- nexus_default_tenant_id()), so the composite cannot be defeated by a NULL.
+--
+-- The live writer agrees: published Customer 360 AZkGM5M4c1uzSH7S
+-- (versionId 4d6c005e-afae-46e2-9003-15fd8c24f783 == activeVersionId), node
+-- "Supabase - Upsert Profile", POSTs /rest/v1/customer_360_profiles with query
+-- parameter on_conflict=tenant_id,customer_id.
+--
+-- This index is enforced by a UNIQUE CONSTRAINT, so it is dropped via the
+-- constraint; dropping the index directly would be refused.
+alter table public.customer_360_profiles
+  drop constraint if exists customer_360_profiles_customer_id_key;

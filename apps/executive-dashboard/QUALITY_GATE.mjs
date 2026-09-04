@@ -112,6 +112,7 @@
  */
 
 import { execFileSync, execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -3237,6 +3238,111 @@ end $$;`;
           'read-only: this check signs in, reads and renders; it writes nothing',
         ].concat(measured));
       }
+    }
+  }
+}
+
+/* ══ L11 ═══════════════════════════════════════════════════════════════════
+   CAN THIS REPOSITORY STILL REBUILD THIS DATABASE?
+
+   Every other check in this file asks whether the software is safe to sell.
+   This one asks whether the company still owns its schema. On 3 September the
+   honest answer was no: architecture/README.md said "there is no schema file
+   you can run, the database is the record", and the only schema file in the
+   repository carried its own warning not to run it. 243 migrations existed in
+   exactly one place — Supabase project dsvuoovivysszdoiorch — and if that
+   project were lost the schema could not be reconstructed from git.
+
+   supabase/migrations/ now holds one file per recorded migration and
+   supabase/baseline/ holds a catalogue-derived starting point. That is a
+   snapshot, and snapshots rot. THE ROT IS THE DEFECT, NOT THE MISSING FILES —
+   the same sentence L1 is built around. A migration applied through the
+   Supabase MCP tool writes a row to supabase_migrations.schema_migrations and
+   writes nothing to this repository, so the drift is silent, unbounded and
+   invisible until someone needs a restore. A scheduled re-extraction does not
+   fix that: it produces a fresher file nobody read, which is precisely how
+   architecture/schema.sql came to say "THIS FILE IS AUTHORITATIVE" while
+   sitting one hundred migrations behind. So the drift is measured here, where
+   it has to be answered before a release.
+
+   SEVERITY IS P1 ON PURPOSE, AND THE CHOICE IS ARGUABLE.
+   This file's P0 bar is "would put a wrong number, or another dealership's
+   data, in front of a paying customer". A repository that has fallen behind
+   the database does neither; it is a business-continuity risk, not a customer-
+   facing one, and quietly widening P0 to cover it would make P0 mean less for
+   every other check. So it FAILS — visibly, in the tally and at the top of the
+   report — without blocking the exit code. If the owner decides that losing
+   the ability to rebuild the database should stop a release, change the
+   severity below from 'P1' to 'P0'; nothing else needs to change.
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const L11_TITLE = 'The repository still holds every migration the database has applied';
+  const L11_SEV   = 'P1';
+  const MIGDIR    = join(HERE, '..', '..', 'supabase', 'migrations');
+  const BASEDIR   = join(HERE, '..', '..', 'supabase', 'baseline');
+
+  let repo = null, repoWhy = null;
+  try {
+    const names = (await readdir(MIGDIR)).filter(f => f.endsWith('.sql'));
+    repo = new Map();
+    for (const f of names) {
+      const m = /^(\d{14})_(.+)\.sql$/.exec(f);
+      if (!m) { repoWhy = `${f} is not named <14-digit version>_<name>.sql, so the Supabase CLI will not order it`; break; }
+      const body = await readFile(join(MIGDIR, f), 'utf8');
+      repo.set(m[1], { name: m[2], file: f, md5: createHash('md5').update(body, 'utf8').digest('hex') });
+    }
+  } catch (e) { repoWhy = `supabase/migrations/ could not be read: ${e.message}`; }
+
+  const baselineFiles = await readdir(BASEDIR).catch(() => []);
+  const hasBaseline = baselineFiles.some(f => /baseline\.sql$/.test(f));
+
+  const url = process.env.NEXUS_DB_URL;
+  if (repoWhy) {
+    FAIL('L11', LANE.LIVE, L11_SEV, L11_TITLE, [repoWhy,
+      'until this is readable the repository cannot be compared with the database and no restore path can be claimed']);
+  } else if (!url) {
+    NOTRUN('L11', LANE.LIVE, L11_SEV, L11_TITLE,
+      `no NEXUS_DB_URL, so supabase_migrations.schema_migrations could not be read. The repository holds ${repo.size} migration file(s)`
+      + `${hasBaseline ? ' and a baseline' : ' and NO baseline'}, but whether the database has moved past them is exactly the question this check exists to answer, and it cannot be answered offline`);
+  } else {
+    const q = `select coalesce(json_agg(json_build_object('v', version, 'n', name, 'h', md5(statements[1])) order by version), '[]'::json)::text
+               from supabase_migrations.schema_migrations;`;
+    const r = psqlJson(url, q);
+    if (!r.ok) {
+      NOTRUN('L11', LANE.LIVE, L11_SEV, L11_TITLE, `supabase_migrations.schema_migrations could not be read: ${r.why}`);
+    } else {
+      const db = new Map(r.value.map(x => [x.v, { name: x.n, md5: x.h }]));
+      const missing = [...db.keys()].filter(v => !repo.has(v)).sort();
+      const extra   = [...repo.keys()].filter(v => !db.has(v)).sort();
+      /* A database RESTORED from supabase/baseline/ has its history stamped by
+         version and name only — the bodies live in supabase/migrations/ and are
+         deliberately not duplicated into the table. Such a row is not a body
+         that disagrees with the repository; it is a body the database never
+         recorded, and calling it a mismatch would send the reader hunting for a
+         tampered file that does not exist. */
+      const bodiless = [...db.keys()].filter(v => repo.has(v) && !db.get(v).md5).sort();
+      const changed = [...db.keys()].filter(v => repo.has(v) && db.get(v).md5 && repo.get(v).md5 !== db.get(v).md5).sort();
+      const renamed = [...db.keys()].filter(v => repo.has(v) && repo.get(v).name !== db.get(v).name).sort();
+
+      const bad = [];
+      for (const v of missing) bad.push(`${v}_${db.get(v).name} is applied to the database and has no file in supabase/migrations/ — re-run the extraction`);
+      for (const v of changed) bad.push(`${v}: the file in supabase/migrations/ is not byte-identical to the statements the database recorded — the repository is asserting a migration that was never applied in that form`);
+      for (const v of renamed) bad.push(`${v}: recorded as "${db.get(v).name}" and filed as "${repo.get(v).name}"`);
+      if (!hasBaseline) bad.push('supabase/baseline/ holds no baseline file, and the recorded chain does not replay from empty (its first entry ALTERs a table it never creates), so there is no restore path in this repository at all');
+
+      if (bodiless.length) WARN('L11c', LANE.LIVE, 'P1', 'The database records migrations it holds no statements for',
+        [`${bodiless.length} of ${db.size} rows in supabase_migrations.schema_migrations have a null or empty statements array`,
+         'This is the expected shape of a database restored from supabase/baseline/: the history was stamped by version and name, and the bodies were left in supabase/migrations/ rather than duplicated into the table.',
+         'It matters for one reason: supabase/migrations/ is now the ONLY copy of those bodies, so re-running the extractor against THIS database would produce empty files. The extractor refuses to do that; do not defeat the refusal.']);
+      const ev = [
+        `${db.size} migration(s) recorded in the database, ${repo.size} file(s) in supabase/migrations/, ${missing.length} missing, ${changed.length} differing in body, ${renamed.length} differing in name, ${bodiless.length} with no recorded body`,
+        hasBaseline ? 'a baseline is present in supabase/baseline/' : 'NO baseline is present',
+        'the fix when this fails is mechanical and is written down in supabase/README.md: re-extract, commit, done',
+      ];
+      if (extra.length) WARN('L11b', LANE.LIVE, 'P1', 'supabase/migrations/ holds a migration the database has never applied',
+        extra.slice(0, 10).map(v => `${v}_${repo.get(v).name}.sql has no row in supabase_migrations.schema_migrations`).concat([
+          'Not drift in the dangerous direction — a file the database has not seen cannot make a restore incomplete. It is either a migration written by hand and not yet applied, or a file extracted from a DIFFERENT database than the one NEXUS_DB_URL names. The second is worth knowing about before a restore.']));
+      verdict('L11', LANE.LIVE, L11_SEV, L11_TITLE, bad, ev);
     }
   }
 }

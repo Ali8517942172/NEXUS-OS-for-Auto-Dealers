@@ -1,0 +1,24 @@
+-- BUSINESS RULE: a deal_id identifies a sale WITHIN ONE DEALERSHIP. Deal ids
+-- are dealership-local (and the Closed-Won sync will derive one as
+-- 'auto:<email>|<closed_at>' when the caller sends none), so the same string is
+-- expected to recur across dealerships and must never be treated as one sale.
+--
+-- deals_embeddings_deal_id_key was UNIQUE(deal_id) platform-wide. A second
+-- dealership closing a deal whose id collided would not have stored its own
+-- embedding; under Prefer: resolution=merge-duplicates it would have
+-- OVERWRITTEN the first dealership's vector and content. That corrupts the RAG
+-- knowledge base and leaks one dealership's sale text into another's
+-- similarity search results.
+--
+-- SAFE TO DROP: deals_embeddings_tenant_deal_id_key UNIQUE(tenant_id, deal_id)
+-- already exists, is valid, ready and live, and deals_embeddings.tenant_id is
+-- NOT NULL (default nexus_default_tenant_id()).
+--
+-- The live writer agrees: published Closed-Won sync dhy2DDjWUqwuzHLW
+-- (versionId 77c4fa5b-4bc8-4bc7-80c2-30ef03a23874 == activeVersionId), node
+-- "Supabase (Postgres) - Upsert Vector", POSTs /rest/v1/deals_embeddings with
+-- query parameter on_conflict=tenant_id,deal_id.
+--
+-- Enforced by a UNIQUE CONSTRAINT, so dropped via the constraint.
+alter table public.deals_embeddings
+  drop constraint if exists deals_embeddings_deal_id_key;

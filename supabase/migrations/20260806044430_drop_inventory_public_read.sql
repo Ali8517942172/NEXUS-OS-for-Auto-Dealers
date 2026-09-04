@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS inventory_public_read ON inventory;
