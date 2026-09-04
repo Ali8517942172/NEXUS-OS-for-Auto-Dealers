@@ -822,3 +822,114 @@ Semantic parity is exact — 110 functions, 356 constraints, 167 indexes, 161
 policies, identical. But production carries seven `channel_registry` **column**
 grants and staging carries none, and that is the table the tenant resolver
 reads. Rehearsing the tenant-map switch there proves less than it appears to.
+
+## anon read 8,500 rows, and the guard does not cover the door it came through
+
+4 Sep 2026, proved by execution, not inferred.
+
+The 2 September closure revoked default privileges for role **`postgres`
+only**. Supabase carries a second line for **`supabase_admin`** in `public`,
+and it was never closed. `CREATE EXTENSION … SCHEMA public` — run *by
+postgres* — produces objects *owned by supabase_admin*, so a probe table
+arrived with `anon=arwdDxtm` and **RLS off**, and `anon` then read **8,500
+rows from it**. `REVOKE … FROM anon` as postgres returned SUCCESS and changed
+nothing: the non-grantor no-op, exactly as this file warns.
+
+The `postgres` line was also only half closed — a table created by an ordinary
+migration was born with `authenticated` holding **TRUNCATE and DELETE**, and a
+sequence with `setval()`. The 3 Sep pass narrowed the objects that existed and
+never touched the default, so the defect was set to recur on every migration.
+
+Both are closed now. The `postgres` line is narrowed to `SELECT` for
+`authenticated` on tables and nothing on sequences — the FUNCTIONS line is
+deliberately left, because every `rpc/*` the dashboard calls depends on it.
+The line postgres does not own is handled by an event trigger,
+`nexus_guard_born_open_grants()`, which is **`SECURITY INVOKER` on purpose**:
+an event-trigger function runs as the role that ran the DDL, so the REVOKE
+inside it executes *as the grantor* and bites. `SECURITY DEFINER` would run it
+as postgres and turn it straight back into the proved no-op.
+
+**Three things are not closed, and pretending otherwise would be worse than
+the defect:**
+
+- **The guard does not fire for `CREATE EXTENSION`** — measured with an
+  instrumented trigger, which logged `CREATE TABLE` and `CREATE SEQUENCE` and
+  logged nothing for `create extension`. That is the exact path that produced
+  the 8,500-row read. **Operational rule: install extensions into
+  `extensions`, never `public`.**
+- **The one lever that would close it — `revoke usage on schema public from
+  anon, public` — was not pulled.** Revoking from `anon` alone changes nothing
+  (PUBLIC still holds `=U`); revoking from PUBLIC too returns 42501. Eleven
+  roles hold that USAGE only through PUBLIC, including **`authenticator`, the
+  role PostgREST logs in as**. That is a plausible whole-API outage and needs a
+  rehearsal against a live REST endpoint first.
+- **A third default-ACL line nobody has looked at:** `postgres` / `storage`
+  still grants `anon` ALL on new tables and `rwU` on new sequences. Postgres
+  owns that one, so it *can* be closed.
+
+`policy_jurisdiction` and `policy_platform_attestation` are off the dealer data
+plane now — revoked, not viewed, because `v_policy_rule` already carries the
+verification facts a dealership legitimately needs and a second view would be a
+second derivation of the same figure. Neither was added to the exemption map.
+L2 is down from three failures to one, and the one left is the one deliberately
+left red.
+
+And a detection lesson: `inventory_actions_touch()` reached `anon` on both
+projects, but via a **direct** grant on staging and via **PUBLIC** on
+production. A sweep written as `proacl like '%anon=%'` flags staging and clears
+production, which is exactly as reachable. The direct-vs-PUBLIC rule applies to
+the *detection query*, not only to the REVOKE.
+
+## The consent fix was half done, and messaging must not be switched on
+
+Adversarial regression, 4 Sep. `recorded_by` was correctly removed from
+`whatsapp_opt_in_event`'s identity — and **two other caller-controlled fields
+were left in it**: `evidence_kind` and `evidence_ref`, both free text. So a
+conversation that reached `BLOCKED / CUSTOMER_OPTED_OUT` returns to
+`FREEFORM_ALLOWED` by three routes, none involving the customer:
+
+- the same consent replayed under a different `evidence_ref`
+- the same consent replayed under a different `evidence_kind`
+- an OPT_IN dated 2099 — there is no temporal CHECK
+
+And the tiebreak at an identical `occurred_at` **is not deterministic and
+resolves toward consent**: `recorded_at` defaults to transaction time, so a
+writer recording both events in one transaction ties on both sort keys and heap
+order decides. Proved concurrently too — two OPT_INs racing an OPT_OUT across
+three real backends returned `OPTED_IN`.
+
+Today, with the window rule `NOT_VERIFIED`, that forgery sends a **marketing
+template to someone who sent STOP**. After attestation it sends a free-form
+message.
+
+Compare `whatsapp_record_customer_message`, which refuses a null id and carries
+a 400-character hint warning against per-delivery ids. The consent writer has
+no equivalent discipline, and **no caller exists yet** — which is exactly why
+the discipline must be structural before one is written.
+
+**The window fix holds against every stable-id replay, including A→B→A — and
+is defeated by the live `nokey:` shape.** `whatsapp_bdc_ai_agent.json:713`
+mints `'nokey:' + $now.toMillis()` when the message id is absent: a
+per-delivery id that changes on every retry, which is precisely what the
+function's own hint warns against. Two `nokey:` ids for one message jump the
+window to now.
+
+**`nexus_request_send` is the one of the six that is properly finished** — all
+five attacks held, including a genuine two-backend race.
+
+Six more found by looking where nobody had: `whatsapp_delivery_events` keys on
+unnormalised `status_raw`, so `delivered` and `DELIVERED` double-count, and its
+key **omits `integration_id`** — the defect just fixed one table over — so a
+second integration's genuine delivery report is silently dropped. Template
+identity duplicates through a nullable `waba_ref`. And **seven of nine tables
+carrying both `tenant_id` and `integration_id` accept a mismatched pairing** —
+the functions check `channel_registry`, the tables do not, and `service_role`
+writes tables directly.
+
+A SEND can also cite a decision belonging to a different customer, or the
+finance `MAX_LTV_PCT` rule, or a rule id that exists nowhere — because
+`policy_applied_rule_id` is a bare uuid. **The cheapest real fix is one
+constraint:** a foreign key to `policy_rule(id)`.
+
+**Verdict: the idempotency family is not safe enough to switch WhatsApp
+messaging on.**
