@@ -483,3 +483,97 @@ a POST that commits server-side but whose response is lost gets retried and
 inserts a second row with nothing to dedupe it. A unique index on
 `(tenant_id, direction, external_message_id)` now exists and is inert until a
 writer sends the column — that node is the writer to fix.
+
+## The WhatsApp messaging layer — wired, never fired
+
+4 Sep 2026. Four agents built a provider-agnostic messaging layer in the
+database. **None of it has carried a real customer message.** Everything below
+is applied to production and to staging at byte parity, and every part of it is
+`service_role`-only with `anon` and `authenticated` refused by grant.
+
+WAHA is temporary. The production transport is meant to be the official
+WhatsApp Business Cloud API, and each dealership chooses. So nothing in NEXUS
+core may know which provider carried a message.
+
+**`channel_registry`** — tenant from a trusted integration identity, not from
+an env var and not from anything the caller names. `whatsapp_waha_session` and
+`whatsapp_cloud_phone_number_id` are both valid namespaces; the Cloud one is
+still empty. The resolver returns a **set**, so unresolved is zero rows and an
+n8n branch halts on it.
+
+**The Message Policy Engine** — `whatsapp_policy_decision_for_channel(...)`
+answers `FREEFORM_ALLOWED | TEMPLATE_REQUIRED | BLOCKED` with the reason, the
+`policy_rule` row it applied, that rule's verification status, and what would
+change the answer. No `SECURITY DEFINER` anywhere in it, and no model in the
+path — the arguments are identifiers and a timestamp, so a message body cannot
+become one.
+
+**The 24-hour customer service window is Meta's rule, not a dealer setting.**
+It lives in `policy_rule` under jurisdiction `PLATFORM_WHATSAPP`, seeded
+`NOT_VERIFIED`, and the number `24` appears in no function body. Withdrawing
+the rule produces `TEMPLATE_REQUIRED / POLICY_RULE_MISSING`, not a fallback.
+One rule is deliberately filed under `NEXUS_HOUSE` instead — NEXUS refuses
+marketing without evidenced opt-in even inside an open window, which is
+stricter than the platform, and it is recorded as our choice rather than
+Meta's requirement.
+
+**Cloud API is structurally better than WAHA and the adapter must not squander
+it.** Meta signs every webhook with `X-Hub-Signature-256` — HMAC-SHA256 over
+the **raw bytes**, so hashing a re-serialised JSON object never matches; and
+the tenant comes from Meta's own `metadata.phone_number_id`, not a
+caller-chosen string. A CHECK constraint makes this structural: a
+`whatsapp_cloud` row in `channel_message_events` cannot exist unless
+`origin_verified = 'hmac_sha256_x_hub'`.
+
+Write nothing before the signature verifies. The reason that matters most is
+not storage: **claiming a `wamid` before verification is a denial of service on
+a real customer** — the genuine Meta delivery then looks like a duplicate and
+is silently dropped, and nothing appears broken.
+
+**Never invent a messaging cost.** `whatsapp_message_usage` has **zero numeric
+columns** and the monthly rollup has no total. `cost_state` distinguishes
+"awaiting a provider report", "provider reported no pricing", "provider said
+not billable" and "billable, amount unknown" — and a screen may not render any
+of them as zero. Meta's `pricing` and `conversation` objects are stored
+verbatim as provider-reported facts.
+
+**NEXUS's template record is a cache, not an approval.** `nexus_state` and
+`provider_status` are separate, an APPROVED with no observation timestamp is
+unsavable, and `whatsapp_template_sendability()` takes a staleness tolerance
+with **no default** — the caller must state how old an answer it will accept,
+and that tolerance is recorded on the usage row. A 40-day-old APPROVED refuses.
+
+**The router never selects a provider on cost.** Order is: conversation
+continuity, then the official platform first, then earliest registered.
+`channel_provider_rank` has no cost column, and
+`nexus_provider_router_invariants()` fails if one appears — and fails again if
+WAHA ever gains a capability Cloud lacks, which is the only route by which the
+capability filter could push a send downward. Using an unofficial transport to
+avoid an official platform's charges is a policy bypass, and the number at risk
+of a ban is the dealership's own business line.
+
+### Two blockers this layer cannot clear itself
+
+- **`policy_verify_rule()` refuses global rules by design** — "global rules are
+  verified by the platform" — and no platform-verification path exists. So the
+  window rule stays `NOT_VERIFIED`, and **every conversation in production
+  returns `TEMPLATE_REQUIRED / WINDOW_RULE_NOT_VERIFIED` today.** That is the
+  engine being honest, and it is also the single thing standing between this
+  layer and being usable. Someone with the Meta Business account has to check
+  the rule, and a platform-verification function has to exist to record that.
+- **`channel_message_events` cannot hold an outbound `whatsapp_cloud` event** —
+  its signature CHECK demands `hmac_sha256_x_hub`, right for an inbound
+  webhook, impossible for a call we made ourselves.
+
+### Two defects the router's own probes found, worth remembering
+
+A CHECK constraint of the form `a OR b` **passes on NULL** — CHECK rejects only
+FALSE. The "a SEND requires a policy decision" guarantee did not structurally
+exist until an explicit `is not null` was added, and a forged send inserted
+cleanly until then.
+
+And a `row_number()` that counted ineligible candidates put WAHA first for a
+template send it cannot carry, so the router asked the policy engine with a
+NULL integration and got back `CHANNEL_NOT_REGISTERED_TO_TENANT` — **a tenancy
+alarm raised by a ranking bug.** It failed closed, which is what the
+constraints bought.
