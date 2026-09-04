@@ -255,3 +255,31 @@ Every feature must connect to at least one of: time saved, revenue recovered,
 gross profit protected, customers retained, inventory moved, deals closed. If
 it connects to none of them, it is interesting rather than valuable, and it
 waits.
+
+---
+
+# The commercial shape, decided 4 September 2026
+
+NEXUS is sold as three product shapes, and the difference between them is not
+packaging — it is **what Ali can see**.
+
+| Shape | Who hosts | Telemetry Ali gets |
+|---|---|---|
+| **NEXUS Cloud** | Ali | Everything. This is the recommended shape |
+| **NEXUS Managed** | Ali, installed in person | Everything |
+| **NEXUS Self-Hosted** | The dealership | A licence activation, and nothing else that a competent operator cannot block |
+
+A software marketplace is a **distribution channel**, not the product. NEXUS's
+own control plane stays the source of truth for licences, subscriptions,
+activations, health, usage and tenant lifecycle.
+
+**Never sell NEXUS as a cheap unlimited lifetime deal.** AI calls, WhatsApp
+conversations, hosting and support are recurring costs, so a one-time price
+turns a successful launch into a loss that grows with every sale.
+
+**Four metrics that are not the same metric:** a download, an activation, an
+active dealership, and a paying subscription. Conflating them is how a product
+believes it has customers it does not have.
+
+See `CONTROL-PLANE.md` for the vendor/dealership information boundary, and
+`JOURNEYS.md` for the twenty journeys and the node coverage matrix.
