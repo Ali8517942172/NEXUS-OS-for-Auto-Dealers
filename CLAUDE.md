@@ -933,3 +933,57 @@ constraint:** a foreign key to `policy_rule(id)`.
 
 **Verdict: the idempotency family is not safe enough to switch WhatsApp
 messaging on.**
+
+## Consent identity, closed
+
+4 Sep 2026. Five migrations, both projects, fingerprint identical across 279
+objects. Production held zero consent rows before and after — no backfill,
+nothing deleted.
+
+**The key is now two constraints, not one.** `UNIQUE (tenant, integration,
+customer, event, occurred_at)` is the act — "this customer said yes or no at
+this moment on this channel", and nothing a caller invents is in it. A second
+constraint pins evidence as a *property*: one reference attests one act,
+normalised by `lower(btrim(…))`, with **`evidence_kind` deliberately absent**
+so relabelling cannot mint a row and **`event` absent** so one reference cannot
+attest both a yes and a no.
+
+Dropping evidence from the key alone would have re-opened "identical evidence
+at a bumped timestamp"; keeping it in the key was the original defect. It takes
+both constraints to close both directions.
+
+**`occurred_at` is bounded, asymmetrically, and the asymmetry is the point.** A
+future OPT_IN is **refused** — a stored-but-ignored row reads as consent to
+anyone auditing the table, and this codebase has already paid repeatedly for
+"unknown rendered as a fact". A future OPT_OUT is **clamped to now** with the
+stated time kept in notes, because a clock disagreement must never be the
+reason a customer who sent STOP keeps being messaged.
+
+**The tiebreak is structural and can only fall one way.** A generated,
+unwritable `consent_rank` column puts OPT_OUT ahead of OPT_IN, and the
+canonical order is `occurred_at desc, consent_rank asc, recorded_at desc,
+id desc`. The two hand-written ORDER BYs that had to agree are gone — both
+consumers now call one function. **The answer no longer depends on commit
+order**, proved with five separate `pg_cron` backends whose execution windows
+overlapped: two OPT_INs racing an OPT_OUT now returns `OPTED_OUT`.
+
+**Overturning a STOP is held to a higher standard than granting consent in the
+first place.** A first opt-in may rest on the recording system's word. A
+reversal may not use `OPERATOR_RECORDED` or an import, and must cite evidence
+NEXUS can resolve **to a row it already holds, dated after the withdrawal** —
+the customer's own measured inbound message, or an audit row of that tenant's.
+A bare uuid, a bare epoch, an `exec-`/`run-`/`job-`/`nokey:` prefix, or a
+`wamid` NEXUS never observed are all refused by name.
+
+All three original forgery routes, the tie, and the concurrent race now return
+`BLOCKED / CUSTOMER_OPTED_OUT` — including with the platform rule attested
+inside the transaction, which is the severity that will actually matter.
+
+**What is left is not a consent defect.** There is no `SECURITY DEFINER` here,
+so `service_role` writing the table directly bypasses the writer's checks; the
+CHECKs and the derivation's own future-filter still bite, but a direct insert
+of an OPT_IN one microsecond after an OPT_OUT still reads as consent. n8n holds
+`service_role`. **The writer is the disciplined door, not the only door**, and
+closing it properly means moving consent reversal onto a named-human path
+rather than the n8n key — an authority question, the same lesson as
+`policy_verify_rule`, and it deserves its own pass.
