@@ -2,7 +2,7 @@
 
 Until 4 September 2026 this repository could not rebuild its own database.
 `architecture/README.md` said so in as many words — *"There is no schema file you
-can run. The database is the record."* — and it was right. 243 migrations
+can run. The database is the record."* — and it was right. 255 migrations
 existed in exactly one place, Supabase project `dsvuoovivysszdoiorch`. If that
 project had been lost, the schema was gone.
 
@@ -12,11 +12,13 @@ That sentence is now false. This folder is why.
 
 | path | what it is | generated? |
 |---|---|---|
-| `migrations/` | 243 files, one per row of `supabase_migrations.schema_migrations`, each containing the statements production actually applied, **verbatim** | yes — `tools/extract-migrations.mjs` |
-| `baseline/00000000000000_baseline.sql` | the schema of production at version `20260904090150`, read out of the live catalogue | yes |
-| `baseline/00000000000001_migration_history.sql` | stamps the 243 versions into `supabase_migrations.schema_migrations` so a restored project knows what it already has | yes |
-| `baseline/00000000000002_vocabulary_seed.sql` | the shipped vocabulary — reason codes, state models, units, jurisdictions. **Not** dealership data | yes |
+| `migrations/` | 255 files, one per row of `supabase_migrations.schema_migrations`, each containing the statements production actually applied, **verbatim** | yes — `tools/extract-migrations.mjs` |
+| `baseline/00000000000000_baseline.sql` | the schema of production at version `20260904142907`, read out of the live catalogue | yes — `tools/generate-baseline.mjs` |
+| `baseline/00000000000001_migration_history.sql` | stamps the 255 versions into `supabase_migrations.schema_migrations` so a restored project knows what it already has | yes |
+| `baseline/00000000000002_vocabulary_seed.sql` | the shipped vocabulary — reason codes, state models, units, jurisdictions. 190 rows across 19 tables. **Not** dealership data | yes |
 | `tools/extract-migrations.mjs` | re-reads the history and rewrites `migrations/` | — |
+| `tools/generate-baseline.mjs` | re-reads the catalogue and rewrites the baseline | — |
+| `tools/verification-harness.sql` | the Supabase-shaped scaffolding a bare Postgres needs before any of this can be replayed or checked | — |
 | `sentinel/`, `2026-08-14_*.sql`, `create_missing_tables.sql` | pre-existing loose SQL, unrelated to this, left alone | — |
 
 **Nothing in `migrations/` or `baseline/` is hand-written, and none of it should
@@ -30,8 +32,9 @@ point of this folder is to not build a second one.
 This is the thing to understand before trusting anything here, and it was
 measured rather than assumed.
 
-Replaying all 243 recorded migrations, in version order, into an empty
-PostgreSQL 17 carrying a Supabase-shaped harness: **47 applied, 196 failed.**
+Replaying all recorded migrations, in version order, into an empty PostgreSQL 17
+carrying a Supabase-shaped harness: **47 applied, 196 failed** (measured at 243
+migrations; nothing since changes the argument).
 
 The reason is the first migration. `20260717130052_enable_rls_all_tables.sql` is:
 
@@ -58,7 +61,7 @@ schema, `auth.uid()`, `pg_cron` and `supabase_vault`):
 1. `baseline/00000000000000_baseline.sql` — schema.
 2. `baseline/00000000000001_migration_history.sql` — history stamp.
 3. `baseline/00000000000002_vocabulary_seed.sql` — shipped vocabulary.
-4. Every file in `migrations/` whose version is **greater than `20260904090150`**
+4. Every file in `migrations/` whose version is **greater than `20260904142907`**
    (the version stamped in the baseline's first line). Today that is none.
    `supabase db push` will do exactly this and skip the rest, because step 2
    told the project it already has them.
@@ -67,12 +70,20 @@ schema, `auth.uid()`, `pg_cron` and `supabase_vault`):
    Section 22 of the baseline carries this and says why omitting it fails
    silently.
 
+**Steps 1 and 2 have to move together.** The baseline now carries the effects of
+the 4 September migrations, so a history stamp that still claimed only 243
+versions would send `supabase db push` off to replay twelve migrations whose work
+is already in the file — and several of them (`drop constraint`, `drop index`)
+would fail on the second application. Both files are regenerated together or
+neither is.
+
 **A restored database has no dealership data.** No `tenants` row, no leads, no
 inventory, no `workflow_registry`. That is deliberate — see below — and it means
 a restore gets you a working NEXUS, not this dealership's NEXUS.
 
-Into a **bare Postgres** (for testing): stand up the platform first. The harness
-used to verify everything below is reproduced at the end of this file.
+Into a **bare Postgres** (for testing): stand up the platform first with
+`tools/verification-harness.sql`, which is the harness every number below was
+measured against.
 
 ## Why there is a vocabulary seed, and why a schema-only baseline is not enough
 
@@ -99,7 +110,7 @@ The line between the two kinds of rows is the one `CLAUDE.md` already draws:
   `attribution_*_type`, `lead_recovery_*`, `deal_rescue_*`,
   `inventory_action_reason_codes`, `channel_*` capability and send forms,
   `tenant_capability_catalogue`, `tenant_configuration_default`,
-  `whatsapp_message_intent`. 19 tables.
+  `whatsapp_message_intent`. 19 tables, 190 rows.
 * **Not in the seed** — `tenants` (the dealership's own identity) and
   `workflow_registry`, which holds this box's real n8n workflow ids, trigger
   detail and `is_active` flags. `CLAUDE.md` calls that operational
@@ -110,65 +121,115 @@ The line between the two kinds of rows is the one `CLAUDE.md` already draws:
 
 Everything below was run. None of it is inferred.
 
-**The extraction is byte-exact.** The 243 files total 1,629,767 bytes, which is
-exactly `sum(octet_length(statements[1]))` on production. Independently, a
-per-migration md5 rollup computed locally over the files and by Postgres over
-the table both give `a1b46b16897559f7ea60bf27ea176bd2`. Loading the files back
-into a fresh `schema_migrations` table reproduces the same rollup a third time.
+**The extraction is byte-exact.** The 255 files total **1,702,345 bytes**, which
+is exactly `sum(octet_length(statements[1]))` on production. Independently, a
+per-migration md5 rollup — `md5` over `version:md5(body)` lines in version order
+— computed locally over the files and by Postgres over the table both give
+`3946a4fe5fdfed86041e83cbd6a0eb91`. `ls migrations | wc -l` is **255**, and
+`select count(*) from supabase_migrations.schema_migrations` is **255**.
 
-**The baseline reproduces production.** A fingerprint query — 25,867 lines
-covering columns, constraints, indexes, views, function bodies, triggers, event
-triggers, RLS flags, policies, and *effective* privileges for `anon`,
-`authenticated` and `service_role` at table, column and function level, plus
-default privileges — was run against production and against a database built
-from `baseline/` alone:
+The twelve migrations of 4 September were the ones missing, 72,578 bytes of
+them, and they are the whole of that day's security and consent hardening:
+the control-plane revokes, the born-open default-ACL closure and its guard, the
+five consent-identity P0s, and the schema-door closure. Each was fetched as
+base64, decoded, and checked against the recorded `octet_length` and `md5`
+before and after being written to disk.
 
-| | production | restored | differing |
+**The migration history stamp matches the table.** The 255 `(version, name)`
+pairs in `baseline/00000000000001_migration_history.sql` hash to
+`7a5968e5668b6b64a1ebe255a3773bdc`, which is what production gives for
+`md5(string_agg(version||'|'||name, …))` over all 255 rows.
+
+**The baseline reproduces production.** A fingerprint query covering columns,
+constraints, indexes, views, function bodies, triggers, event triggers, RLS
+flags, policies, and *effective* privileges for `anon`, `authenticated` and
+`service_role` at schema, table, column and function level, plus default
+privileges, was run against production and against a database built from
+`tools/verification-harness.sql` and `baseline/00000000000000_baseline.sql`
+alone:
+
+| | production | restored | result |
 |---|---|---|---|
-| columns | 1736 | 1736 | 0 |
-| constraints | 356 | 356 | 0 |
-| indexes | 167 | 167 | 0 |
-| views | 39 | 39 | **2** |
-| function bodies | 110 | 110 | 0 |
-| triggers | 17 | 17 | 0 |
-| event triggers | 1 | 1 | 0 |
-| RLS flags | 59 | 59 | 0 |
-| policies | 161 | 161 | 0 |
-| table privileges | 2076 | 2076 | 0 |
-| **column privileges** | 20724 | 20724 | 0 |
-| function privileges | 330 | 330 | 0 |
-| default privileges | 84 | 84 | 0 |
+| columns | 1737 | 1737 | identical |
+| constraints | 359 | 359 | identical |
+| indexes | 168 | 168 | identical |
+| views | 39 | 39 | **1 view differs, see below** |
+| function bodies | 113 | 113 | identical |
+| triggers | 17 | 17 | identical |
+| event triggers | 8 | 2 | the 2 NEXUS guards are identical; 6 are platform |
+| RLS flags | 59 | 59 | identical |
+| policies | 159 | 159 | identical |
+| table privileges | 2352 | 2352 | identical |
+| **column privileges** | 20736 | 20736 | identical |
+| function privileges | 339 | 339 | identical |
+| default privileges | 27 | 9 | the 9 `public` + `storage` lines are byte-identical; 18 are platform |
+| schema privileges on `public` | 10 | 10 | identical (`6d08e639a19a897753246dd313307943` both sides) |
 
-The ACL-only fingerprint — 23,214 privilege facts — is identical on both sides:
-`d5c270e430811e523ca1719b1fa3d277`.
+The **event trigger** and **default privilege** counts differ because production
+is a real Supabase project and carries platform objects the baseline is not
+responsible for and must not invent: `pgrst_ddl_watch`, `pgrst_drop_watch`,
+`issue_pg_cron_access`, `issue_pg_graphql_access`, `issue_pg_net_access`,
+`issue_graphql_placeholder`, and default-ACL lines for `auth`, `realtime`,
+`graphql_public` and friends. The objects the baseline *does* own match exactly:
+both `nexus_guard_born_open_grants` and `nexus_guard_security_invoker_views`,
+and all nine `postgres`/`supabase_admin` default-ACL lines for `public` and
+`storage`.
 
-The **two** differing lines are one view, `v_inventory_profit_sentinel`, and
-they are a `pg_get_viewdef` artifact, not a difference: production deparses a
-`UNION ALL` branch as `'message'::text` and the round-tripped copy as
-`'message'::text AS text`. Normalising that one redundant alias label makes the
-definitions identical, and the view's output columns and types already matched
-exactly. It changes nothing — a non-first `UNION` branch does not name the
-view's columns — but it is written down here rather than swept up, because "one
-line differs" is the kind of thing that should be explained and not rounded to
-zero.
+One further difference is recorded rather than rounded away: `pg_namespace.nspacl`
+on `public` contains the **same fifteen entries** on both sides, in a different
+array **order**, because array order records the order the grants were made. The
+effective answer — the `has_schema_privilege` digest in the table above — is
+identical, so this is a difference in how the fact is stored, not in the fact.
+
+The **one differing view** is `v_inventory_profit_sentinel`, and it is the same
+`pg_get_viewdef` artifact recorded here in the previous generation, unchanged:
+production deparses a `UNION ALL` branch as `'message'::text` (33,906 bytes) and
+the round-tripped copy as `'message'::text AS text` (33,914 bytes). A non-first
+`UNION` branch does not name the view's columns, so the view's output columns and
+types are identical; the other 38 views match byte for byte.
 
 **Column-level grants survive.** Production genuinely uses them:
 `channel_registry.credential_ref` is granted to `service_role` and **not** to
-`authenticated`, while its sibling columns are. A `relacl`-only dump loses that
-distinction silently. All 20,724 column-privilege facts match.
+`authenticated`, while its seven sibling columns are. A `relacl`-only dump loses
+that distinction silently. All 20,736 column-privilege facts match.
 
-**The forward path works.** Applying the repo's migration files for versions
-after a catalogue-derived baseline taken at an earlier point: 53 of 55 applied
-directly, and the remaining 2 applied once the vocabulary seed was present —
-**55/55**, with the failure diagnosed to a specific FK and proven by fixing only
-that.
+**The vocabulary seed matches production, row for row.** All 19 tables, 190 rows,
+compared with a collation-independent digest (`md5` over the sorted list of
+per-row `md5`s) on both sides. Identical.
 
-**The repo's own auditor passes against the replica.** Pointing
-`QUALITY_GATE.mjs` at a database built only from `baseline/`, its live lane
-returns **PASS on L3, L4, L5, L6, L7, L8, L9 and L10** — security_invoker on
-every view, no cross-tenant SECURITY DEFINER write, no `anon` EXECUTE, and the
-engine invariants. L1 and L2 fail there for reasons that are not about the
-baseline and are recorded in the findings section below.
+**The generator reproduces its own output.** Running
+`tools/generate-baseline.mjs` against the verified replica emits a file that is
+byte-identical to `baseline/00000000000000_baseline.sql`
+(`334b0b1cbfa15fe0e27c1f424323f1b4`, 777,711 bytes).
+
+### The security posture the baseline is there to preserve
+
+The previous baseline was taken at `20260904090150`, hours before that
+afternoon's work. Restoring from it would have rebuilt the database **with the
+born-open grants and the open schema door** — the precise failure the twelve
+missing migrations exist to close. That is the reason this folder was regenerated
+rather than merely topped up.
+
+Measured on production and on a database restored from the new baseline alone.
+Both columns are the same query:
+
+| claim | production | restored |
+|---|---|---|
+| `anon` holds `USAGE` on schema `public` | `false` | `false` |
+| tables `authenticated` may write | `inventory, leads` | `inventory, leads` |
+| `channel_registry` columns granted to `authenticated` | 7 | 7 |
+| …`credential_ref` among them | `false` | `false` |
+| views total / lacking `security_invoker` | 39 / 0 | 39 / 0 |
+| event triggers owned by `postgres` | the two NEXUS guards | the two NEXUS guards |
+| objects in `public` reachable by `anon` | 0 | 0 |
+
+Section 15 of the baseline is the load-bearing one. The previous generation
+granted `USAGE ON SCHEMA public` to `PUBLIC` **and** to `anon`; this one revokes
+both and grants it back to eleven named roles, which is what production holds.
+Without `USAGE` on the schema, no object ACL inside it is reachable — including
+objects that do not exist yet, whichever path creates them. That is what
+contains the `supabase_admin` default-ACL line recorded below, which `postgres`
+still cannot alter.
 
 ## How this is kept from going stale
 
@@ -208,59 +269,94 @@ git add supabase/migrations && git commit
 `--check` does the same comparison, writes nothing, and exits 1 on
 disagreement — the form to put in front of a commit or in CI.
 
-**Regenerating the baseline is a bigger job and is not automated.** It is a
-long catalogue-dump query, and it should be re-run when the chain since the
-baseline gets long enough that replaying it is slower than restoring, or before
-any real disaster-recovery rehearsal. The current baseline's provenance is in
-its own header. When you regenerate it, re-run the fingerprint comparison; a
-baseline nobody diffed against production is a claim, not a check.
+**L11 does not watch the baseline, and that gap has now cost something once.**
+The twelve migrations of 4 September were recorded in the database and absent
+from `migrations/`, which `L11` is built to catch; but the *baseline* had also
+gone stale on the same afternoon, and nothing checks that at all. A baseline one
+day behind is not a nuisance — for one afternoon it was the difference between
+restoring a database with the schema door shut and restoring one with it open.
+Regenerating is now a script rather than a remembered query:
+
+```bash
+GEN_CONN='-h HOST -p PORT -U postgres' GEN_DB=DBNAME \
+  node supabase/tools/generate-baseline.mjs > supabase/baseline/00000000000000_baseline.sql
+```
+
+and the history stamp must be regenerated in the same commit. **Re-run the
+fingerprint comparison afterwards**; a baseline nobody diffed against production
+is a claim, not a check.
 
 ## Known deviations, recorded rather than fixed
 
 Found while doing this. Nothing here was written to either database.
 
 1. **`anon` still gets ALL on new tables through the `supabase_admin` default-
-   privilege line.** Production's `pg_default_acl` carries two lines. The
-   `postgres` line has had `anon` removed — that is the 2 September closure. The
-   `supabase_admin` line has not: `anon` holds DELETE, INSERT, MAINTAIN,
-   REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE on tables created in `public`
-   **as `supabase_admin`**, plus sequences and functions. Tables created by the
-   MCP tool run as `postgres` and are safe; a table created through the
-   dashboard as `supabase_admin` is not. The baseline reproduces this faithfully
-   (section 21) and says in its own comment that it is doing so because it is
-   true, not because it is right.
+   privilege line.** Production's `pg_default_acl` carries three lines that
+   matter. The `postgres` lines for `public` and `storage` have had `anon`
+   removed — the 2 and 4 September closures. The `supabase_admin` line has not:
+   `anon` holds DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE,
+   UPDATE on tables created in `public` **as `supabase_admin`**, plus sequences
+   and functions. `postgres` cannot alter that line (42501, re-proved 4
+   September) and cannot revoke a grant it did not make. The baseline reproduces
+   it faithfully (section 21) and says in its own comment that it is doing so
+   because it is true, not because it is right.
+   **What now contains it is the closed schema door**, not the ACL: with `anon`
+   holding no `USAGE` on `public`, an object born open through that line is
+   still unreachable. That is why section 15 must never be "fixed" by granting
+   `anon` back.
 
-2. **Two new `L2` rows.** Against the replica, `L2` names
-   `policy_jurisdiction` and `policy_platform_attestation` alongside the already
-   documented `workflow_registry` — both `SELECT USING(true)` for
-   `authenticated`, both added by the 4 September jurisdiction work. `CLAUDE.md`
-   currently documents only `workflow_registry`.
+2. **The two `L2` rows recorded in the previous generation are now closed.**
+   `policy_jurisdiction` and `policy_platform_attestation` were `SELECT
+   USING(true)` for `authenticated`; `20260904112412` revoked both, including the
+   ten `pg_attribute.attacl` column grants on the attestation table that a
+   `relacl`-only check could not see. `workflow_registry` remains the one
+   documented `L2` row.
 
 3. **`QUALITY_GATE.mjs`'s embedded `SNAPSHOT` is stale.** Its `takenAt` is
    3 September and it does not know `channel_message_events`,
    `channel_registry`, `channel_send_form`, `channel_provider_capability`,
    `channel_provider_rank`, `channel_send_directive` or the other 4 September
-   tables, so `L1` fails against production too — not only against the replica.
+   tables, so `L1` fails against production too — not only against a replica.
    Fixed by `node QUALITY_GATE.mjs --refresh-schema` with a connection. Not done
-   here: `--refresh-schema` rewrites the snapshot block in place, and this change
-   was required to leave every existing check exactly where it was.
+   here.
+
+4. **The 4 September vocabulary seed had HTML-escaped text, and it has been
+   repaired.** The generation of that file passed its free text through an
+   HTML-escaping step, so twenty characters were stored as entities rather than
+   as themselves — 11 × `&gt;`, 6 × `&lt;`, 3 × `&amp;`. A restore seeded
+   `purchase_history.lead_id -&gt; leads(id)` into `attribution_link_basis`,
+   and the same corruption into six other vocabulary tables, where production
+   holds `->`. **Row counts always matched, which is exactly why it survived the
+   first pass** — only free-text columns (`description`, `finding`, `meaning`,
+   `snippet`) were wrong, and nothing that has a key or a foreign key was
+   affected. The entities were decoded and all 19 tables were then re-compared
+   against production; they now match. `migrations/` and the baseline were
+   checked for the same corruption and have none.
 
 ## The harness the verification ran against
 
 A bare Postgres is not a Supabase project. To make a replay fail on NEXUS's own
 SQL rather than on the absence of the platform, the verification above created,
-on PostgreSQL 17 (production is 17.6):
+on PostgreSQL 17 (production is 17.6) — this is now
+`tools/verification-harness.sql` rather than a listing to retype:
 
 * roles `anon`, `authenticated`, `service_role` (BYPASSRLS), `authenticator`,
-  `supabase_admin`, `supabase_auth_admin`, `dashboard_user`;
+  `supabase_admin`, `supabase_auth_admin`, `supabase_storage_admin`,
+  `supabase_realtime_admin`, `supabase_replication_admin`,
+  `supabase_read_only_user`, `supabase_etl_admin`, `supabase_privileged_role`,
+  `dashboard_user`, `pgbouncer` — the last eleven because the 4 September
+  schema-door migration grants `USAGE` to them by name;
 * schemas `extensions`, `auth`, `graphql_public`, `storage`, `realtime`;
 * extensions `pgcrypto` and `uuid-ossp` in `extensions`, `pg_trgm` and `vector`
-  in `public`;
+  in `public` (the baseline creates the last two itself);
 * `auth.users`, and `auth.uid()` / `auth.jwt()` / `auth.role()` reading
   `request.jwt.claims`;
-* both stock Supabase default-privilege lines — `FOR ROLE postgres` and
-  `FOR ROLE supabase_admin` — granting ALL in `public` to the three roles, so
-  that the baseline's revokes are actually exercised rather than assumed.
+* all three stock Supabase default-privilege lines — `FOR ROLE postgres` in
+  `public` and in `storage`, and `FOR ROLE supabase_admin` in `public` —
+  granting ALL to the three roles, **and** the stock
+  `GRANT USAGE ON SCHEMA public TO anon`, so that the baseline's revokes are
+  actually exercised rather than assumed. This matters more than it sounds: a
+  harness that never opens the door cannot prove the baseline shuts it.
 
 `pg_cron`, `supabase_vault` and `pg_stat_statements` are not installable in that
 environment and are not needed: `pg_depend` records **zero** non-extension

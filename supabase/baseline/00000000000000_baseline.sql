@@ -1,7 +1,7 @@
--- BASELINE VERSION: 20260904090150  (a_message_identity_includes_the_channel_it_arrived_on)
--- Taken 2026-09-04 from Supabase project dsvuoovivysszdoiorch.
+-- BASELINE VERSION: 20260904142907  (nexus_storage_defacl_drop_maintain_from_authenticated)
+-- Taken 2026-09-05 from Supabase project dsvuoovivysszdoiorch.
 -- Restore = this file, then 00000000000001_migration_history.sql, then every
--- file in supabase/migrations/ whose version is greater than 20260904090150.
+-- file in supabase/migrations/ whose version is greater than 20260904142907.
 -- NEXUS OS — baseline schema of Supabase project dsvuoovivysszdoiorch
 --
 -- WHAT THIS IS
@@ -9,19 +9,32 @@
 --   version named below. It is GENERATED from the live catalogue
 --   (pg_get_functiondef / pg_get_viewdef / pg_get_constraintdef /
 --   pg_get_indexdef / pg_get_triggerdef / pg_policy / pg_class.relacl /
---   pg_attribute.attacl / pg_default_acl). It is not hand-transcribed, and it
---   must never be hand-edited: regenerate it, or the folder is back where it
---   started. See supabase/README.md.
+--   pg_attribute.attacl / pg_namespace.nspacl / pg_default_acl). It is not
+--   hand-transcribed, and it must never be hand-edited: regenerate it, or the
+--   folder is back where it started. See supabase/README.md.
 --
 -- WHY IT EXISTS
 --   The recorded migration chain cannot replay from an empty database. Its
 --   first entry, 20260717130052, is
 --     ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 --   so the tables predate the chain and nothing in the chain creates them.
---   Measured: replaying all 243 recorded migrations into an empty Postgres 16
---   applies 47 and fails 196. This file is the missing pre-history, brought
---   forward to today so that restore = this file, then every migration whose
---   version is GREATER than the version stamped below.
+--   This file is the missing pre-history, brought forward to today so that
+--   restore = this file, then every migration whose version is GREATER than
+--   the version stamped above.
+--
+-- WHAT CHANGED IN THIS GENERATION (4 September security and consent work)
+--   The previous baseline was taken at 20260904090150, BEFORE the twelve
+--   migrations of 4 September. Restoring from it reproduced the born-open
+--   grants and the open schema door — the precise failure those migrations
+--   exist to close. This generation is taken after them, so:
+--     * anon holds NO USAGE on schema public (section 15 revokes it and does
+--       not grant it back; the previous baseline granted it, twice).
+--     * the postgres default-privilege line for public grants authenticated
+--       SELECT only, and nothing to anon (section 20).
+--     * the postgres default-privilege line for STORAGE is reproduced for the
+--       first time (section 20), because 4 September narrowed it.
+--     * both NEXUS event triggers are present (section 11); the previous
+--       baseline carried one.
 --
 -- DATA
 --   None. Schema only. No dealership rows, no tenants, no vocabulary seed.
@@ -916,7 +929,12 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_opt_in_event (
   evidence_ref text NOT NULL,
   recorded_by text NOT NULL,
   recorded_at timestamp with time zone NOT NULL,
-  notes text
+  notes text,
+  consent_rank smallint GENERATED ALWAYS AS (
+CASE
+    WHEN (event = 'OPT_OUT'::text) THEN 0
+    ELSE 1
+END) STORED
 );
 CREATE TABLE IF NOT EXISTS public.whatsapp_templates (
   template_id uuid NOT NULL,
@@ -2832,6 +2850,64 @@ AS $function$
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.nexus_guard_born_open_grants()
+ RETURNS event_trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog'
+AS $function$
+declare
+  r record;
+begin
+  -- GRANT and REVOKE also fire ddl_command_end, so without this the guard's
+  -- own REVOKEs would re-enter it.
+  if coalesce(current_setting('nexus.acl_guard', true), '') = 'running' then
+    return;
+  end if;
+  perform set_config('nexus.acl_guard', 'running', true);
+
+  for r in select object_type, object_identity, schema_name
+             from pg_event_trigger_ddl_commands()
+  loop
+    begin
+      if r.schema_name = 'public' then
+        if r.object_type in ('table','view','materialized view','foreign table') then
+          execute format('revoke all on %s from anon', r.object_identity);
+          execute format('revoke insert, update, delete, truncate on %s from authenticated', r.object_identity);
+        elsif r.object_type = 'sequence' then
+          execute format('revoke all on sequence %s from anon', r.object_identity);
+          execute format('revoke update on sequence %s from authenticated', r.object_identity);
+        elsif r.object_type in ('function','procedure','aggregate') then
+          execute format('revoke all on function %s from anon', r.object_identity);
+        end if;
+      end if;
+    exception when others then null;
+    end;
+  end loop;
+
+  -- Re-assert the schema door. This is the control that covers the creation
+  -- paths the guard cannot see -- CREATE EXTENSION above all -- because it does
+  -- not depend on seeing the object at all. Only ever runs when the door has
+  -- been re-opened, so it is a no-op on every ordinary migration.
+  begin
+    if pg_catalog.has_schema_privilege('anon', 'public', 'USAGE') then
+      execute 'revoke usage on schema public from public';
+      execute 'revoke usage on schema public from anon';
+      execute 'grant usage on schema public to authenticator, dashboard_user, pgbouncer, '
+           || 'supabase_admin, supabase_auth_admin, supabase_storage_admin, '
+           || 'supabase_realtime_admin, supabase_replication_admin, '
+           || 'supabase_read_only_user, supabase_etl_admin, supabase_privileged_role';
+    end if;
+  exception when others then null;
+  end;
+
+  perform set_config('nexus.acl_guard', 'idle', true);
+exception when others then
+  -- Never abort somebody else's DDL, including a Supabase platform upgrade.
+  perform set_config('nexus.acl_guard', 'idle', true);
+end
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.nexus_is_approval_rules(p jsonb)
  RETURNS boolean
  LANGUAGE sql
@@ -3346,6 +3422,61 @@ begin
                         else format('%s refused directive(s) carry a provider result, which means something sent a message NEXUS had declined.', v_n)
                       end::text;
 end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.nexus_public_exposure_report()
+ RETURNS TABLE(role_name text, object_kind text, object_name text, object_owner text, privileges text, rule_broken text)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'pg_catalog'
+AS $function$
+  with r(rn) as (select unnest(array['anon','authenticated'])),
+  privs(p) as (select unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'])),
+  rel as (
+    select r.rn, c.oid, c.relkind, (n.nspname || '.' || c.relname) as nm,
+           pg_get_userbyid(c.relowner) as own
+      from r
+      join pg_class c on true
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind in ('r','p','v','m','f','S')
+  ),
+  fn as (
+    select r.rn, p.oid, p.oid::regprocedure::text as nm,
+           pg_get_userbyid(p.proowner) as own
+      from r
+      join pg_proc p on true
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+  )
+  select rel.rn::text,
+         case rel.relkind when 'S' then 'sequence' when 'v' then 'view'
+                          when 'm' then 'materialized view' when 'f' then 'foreign table'
+                          else 'table' end,
+         rel.nm, rel.own,
+         case when rel.relkind = 'S'
+              then (select string_agg(x, ',') from unnest(array['SELECT','UPDATE','USAGE']) x
+                     where has_sequence_privilege(rel.rn, rel.oid, x))
+              else (select string_agg(privs.p, ',' order by privs.p) from privs
+                     where has_table_privilege(rel.rn, rel.oid, privs.p)) end,
+         case when rel.rn = 'anon' then 'anon must reach nothing in schema public'
+              else 'authenticated may reach only objects owned by postgres' end
+    from rel
+   where has_schema_privilege(rel.rn, 'public', 'USAGE')
+     and (rel.rn = 'anon' or rel.own <> 'postgres')
+     and case when rel.relkind = 'S'
+              then exists (select 1 from unnest(array['SELECT','UPDATE','USAGE']) x
+                            where has_sequence_privilege(rel.rn, rel.oid, x))
+              else exists (select 1 from privs where has_table_privilege(rel.rn, rel.oid, privs.p)) end
+  union all
+  select fn.rn::text, 'function', fn.nm, fn.own, 'EXECUTE',
+         case when fn.rn = 'anon' then 'anon must reach nothing in schema public'
+              else 'authenticated may reach only objects owned by postgres' end
+    from fn
+   where has_schema_privilege(fn.rn, 'public', 'USAGE')
+     and (fn.rn = 'anon' or fn.own <> 'postgres')
+     and has_function_privilege(fn.rn, fn.oid, 'EXECUTE')
+  order by 1, 2, 3;
 $function$
 ;
 
@@ -6053,6 +6184,29 @@ end;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.whatsapp_opt_in_state(p_tenant_id uuid, p_integration_id uuid, p_customer_wa_id text)
+ RETURNS TABLE(state text, event text, occurred_at timestamp with time zone, mechanism text, evidence_kind text, evidence_ref text, recorded_by text, recorded_at timestamp with time zone)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  select case when e.event = 'OPT_IN' then 'OPTED_IN' else 'OPTED_OUT' end,
+         e.event, e.occurred_at, e.mechanism, e.evidence_kind, e.evidence_ref,
+         e.recorded_by, e.recorded_at
+    from public.whatsapp_opt_in_event e
+   where e.tenant_id       = p_tenant_id
+     and e.integration_id  = p_integration_id
+     and e.customer_wa_id  = lower(btrim(coalesce(p_customer_wa_id,'')))
+     -- A consent act dated in the future is not a consent act. The CHECK
+     -- refuses one at the door; this refuses to act on one that reached the
+     -- table by some other road, and it is uniform, so it can never hide a
+     -- withdrawal while showing a grant.
+     and e.occurred_at <= now() + interval '5 minutes'
+   order by e.occurred_at desc, e.consent_rank asc, e.recorded_at desc, e.id desc
+   limit 1;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.whatsapp_policy_decision(p_tenant_id uuid, p_integration_id uuid, p_customer_wa_id text, p_intent text, p_as_of timestamp with time zone DEFAULT now())
  RETURNS SETOF whatsapp_policy_decision_row
  LANGUAGE plpgsql
@@ -6277,14 +6431,9 @@ begin
   ------------------------------------------------------------------
   -- 4. Opt-in, derived from the latest recorded fact.
   ------------------------------------------------------------------
-  select e.event, e.occurred_at, e.mechanism, e.evidence_kind, e.evidence_ref, e.recorded_by
+  select s.event, s.occurred_at, s.mechanism, s.evidence_kind, s.evidence_ref, s.recorded_by
     into v_opt
-    from public.whatsapp_opt_in_event e
-   where e.tenant_id = p_tenant_id
-     and e.integration_id = p_integration_id
-     and e.customer_wa_id = v_cust
-   order by e.occurred_at desc, e.recorded_at desc
-   limit 1;
+    from public.whatsapp_opt_in_state(p_tenant_id, p_integration_id, v_cust) s;
 
   if found then
     v_optstate := case when v_opt.event = 'OPT_IN' then 'OPTED_IN' else 'OPTED_OUT' end;
@@ -6734,36 +6883,218 @@ CREATE OR REPLACE FUNCTION public.whatsapp_record_opt_in_event(p_tenant_id uuid,
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 declare
-  v_cust text := lower(btrim(coalesce(p_customer_wa_id,'')));
-  v_evk  text := upper(btrim(coalesce(p_evidence_kind,'')));
-  v_evr  text := btrim(coalesce(p_evidence_ref,''));
-  v_ev   text := upper(btrim(coalesce(p_event,'')));
-  v_row  public.whatsapp_opt_in_event;
+  v_skew  constant interval    := interval '5 minutes';
+  v_floor constant timestamptz := timestamptz '2015-01-01 00:00:00+00';
+  v_cust  text := lower(btrim(coalesce(p_customer_wa_id,'')));
+  v_evk   text := upper(btrim(coalesce(p_evidence_kind,'')));
+  v_evr   text := btrim(coalesce(p_evidence_ref,''));
+  v_ev    text := upper(btrim(coalesce(p_event,'')));
+  v_mech  text := upper(btrim(coalesce(p_mechanism,'')));
+  v_by    text := btrim(coalesce(p_recorded_by,''));
+  v_at    timestamptz := p_occurred_at;
+  v_notes text := p_notes;
+  v_row   public.whatsapp_opt_in_event;
+  v_seen  record;
+  v_lastout timestamptz;
+  v_resolved boolean := false;
+  v_uuid  constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 begin
+  ------------------------------------------------------------------
+  -- Whose channel, and whose customer.
+  ------------------------------------------------------------------
   if not exists (select 1 from public.channel_registry cr
                   where cr.integration_id = p_integration_id
                     and cr.tenant_id = p_tenant_id
                     and cr.status = 'active') then
     raise exception using errcode = '42501',
-      message = 'That channel is not an active registered channel of that dealership.';
+      message = 'That channel is not an active registered channel of that dealership.',
+      detail  = 'NEXUS_CONSENT_CHANNEL_NOT_REGISTERED_TO_TENANT',
+      hint    = 'Resolve the tenant from the channel identity (nexus_resolve_channel_tenant) rather than passing both in independently.';
   end if;
 
+  if v_cust = '' then
+    raise exception using errcode = '22023',
+      message = 'A customer WhatsApp identity is required to record consent.',
+      detail  = 'NEXUS_CONSENT_CUSTOMER_IDENTITY_REQUIRED';
+  end if;
+
+  if v_ev not in ('OPT_IN','OPT_OUT') then
+    raise exception using errcode = '22023',
+      message = format('%L is not a consent event NEXUS recognises.', coalesce(nullif(v_ev,''),'(empty)')),
+      detail  = 'NEXUS_CONSENT_EVENT_UNKNOWN',
+      hint    = 'A consent event is OPT_IN or OPT_OUT. An unrecognised third value is refused rather than treated as either.';
+  end if;
+
+  if v_by = '' then
+    raise exception using errcode = '22023',
+      message = 'Recording consent requires naming who recorded it.',
+      detail  = 'NEXUS_CONSENT_RECORDED_BY_REQUIRED',
+      hint    = 'recorded_by is not part of the event''s identity -- two systems recording the same act do not make two acts -- but an unattributable consent record cannot be audited.';
+  end if;
+
+  ------------------------------------------------------------------
+  -- When. Bounded in both directions, and bounded differently
+  -- depending on which way the error would fall.
+  ------------------------------------------------------------------
+  if v_at is null then
+    raise exception using errcode = '22023',
+      message = 'A consent act with no timestamp cannot be ordered against a withdrawal.',
+      detail  = 'NEXUS_CONSENT_TIMESTAMP_REQUIRED',
+      hint    = 'Send the moment the customer acted, from the provider''s payload or the form''s own submission time. Do not substitute the time the row is being written.';
+  end if;
+
+  if v_at < v_floor then
+    raise exception using errcode = '22023',
+      message = format('A consent act dated %s predates WhatsApp business messaging and is a broken timestamp, not an old fact.',
+                       to_char(v_at at time zone 'UTC','YYYY-MM-DD')),
+      detail  = 'NEXUS_CONSENT_TIMESTAMP_IMPLAUSIBLE',
+      hint    = 'Check the parse: an epoch in seconds read as milliseconds, or a missing timezone, lands here. Re-record with the real moment.';
+  end if;
+
+  if v_at > now() + v_skew then
+    if v_ev = 'OPT_IN' then
+      raise exception using errcode = '22023',
+        message = format('A consent grant dated %s has not happened yet, and NEXUS will not hold a permission on the strength of it.',
+                         to_char(v_at at time zone 'UTC','YYYY-MM-DD HH24:MI') || ' UTC'),
+        detail  = 'NEXUS_CONSENT_TIMESTAMP_IN_FUTURE',
+        hint    = 'A future-dated OPT_IN outranks every real event on file, including a withdrawal, so it is refused rather than stored and ignored -- a stored row reads as consent to anyone auditing this table. Five minutes of clock skew is tolerated. If the provider clock is further out than that, fix the clock.';
+    else
+      -- A withdrawal is never refused for a clock disagreement.
+      v_notes := concat_ws(' ', v_notes,
+        format('[NEXUS] Stated occurred_at %s was beyond the accepted clock skew and was clamped to the time of recording; a withdrawal is never refused because two clocks disagree.',
+               to_char(v_at at time zone 'UTC','YYYY-MM-DD HH24:MI:SS') || ' UTC'));
+      v_at := now();
+    end if;
+  end if;
+
+  ------------------------------------------------------------------
+  -- Evidence. Required, and for a grant, checkable.
+  ------------------------------------------------------------------
+  if v_evr = '' then
+    raise exception using errcode = '22023',
+      message = 'A consent event with no evidence reference cannot be recorded.',
+      detail  = 'NEXUS_CONSENT_EVIDENCE_REF_REQUIRED',
+      hint    = 'Send the reference to the thing the customer actually did: the provider''s own message id, the form submission id, the signed document reference, the source-system record id. Do NOT substitute an n8n execution id, a webhook delivery id, a generated uuid or a timestamp -- those identify NEXUS''s own retry, not the customer''s act, and each retry would mint a fresh consent record. If there is genuinely no reference, do not record consent.';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_tenant_id::text || p_integration_id::text || v_cust, 0));
+
+  if v_ev = 'OPT_IN' then
+    if v_evk = 'WHATSAPP_MESSAGE_ID' then
+      -- The strongest route, and the only one NEXUS can check by itself:
+      -- the customer sent a message and NEXUS measured it.
+      select s.* into v_seen
+        from public.whatsapp_customer_message_seen s
+       where s.tenant_id = p_tenant_id and s.integration_id = p_integration_id
+         and s.customer_wa_id = v_cust and s.external_message_id = v_evr;
+      if not found then
+        raise exception using errcode = '22023',
+          message = 'That message id is not a message NEXUS has observed from this customer on this channel.',
+          detail  = 'NEXUS_CONSENT_EVIDENCE_NOT_OBSERVED',
+          hint    = 'An OPT_IN evidenced by the customer''s own message must name a message already recorded by whatsapp_record_customer_message for this same conversation. Record the inbound message first. A message id NEXUS never saw is an assertion, not evidence -- if the consent came from somewhere else, say where with the matching evidence_kind.';
+      end if;
+      if v_at <> v_seen.first_occurred_at then
+        raise exception using errcode = '22023',
+          message = 'The consent timestamp does not match the message it cites.',
+          detail  = 'NEXUS_CONSENT_EVIDENCE_TIME_MISMATCH',
+          hint    = format('Message %L was observed at %s. A consent act evidenced by a message happened when that message was sent; a different timestamp on the same evidence is how one act becomes two.',
+                           v_evr, to_char(v_seen.first_occurred_at at time zone 'UTC','YYYY-MM-DD HH24:MI:SS') || ' UTC');
+      end if;
+
+    elsif v_evk = 'AUDIT_LOG_ID' then
+      if v_evr !~* v_uuid
+         or not exists (select 1 from public.audit_log a
+                         where a.id = v_evr::uuid and a.tenant_id = p_tenant_id) then
+        raise exception using errcode = '22023',
+          message = 'That audit log id is not on file for this dealership.',
+          detail  = 'NEXUS_CONSENT_EVIDENCE_NOT_ON_FILE',
+          hint    = 'An AUDIT_LOG_ID must name a row that exists in audit_log for this tenant. A uuid that resolves to nothing is a generated id wearing an evidence label.';
+      end if;
+
+    else
+      -- COMMUNICATION_LOG_ID, FORM_SUBMISSION_ID, DOCUMENT_REF,
+      -- SOURCE_SYSTEM_RECORD_ID: NEXUS holds no table to check these
+      -- against, so they stay operator assertions. What can be refused
+      -- is the shape that means "I had nothing to put here".
+      if v_evr ~* v_uuid
+         or v_evr ~ '^[0-9]{10,}$'
+         or v_evr ~* '^(nokey:|urn:uuid:|exec[-_:]|execution[-_:]|run[-_:]|job[-_:])' then
+        raise exception using errcode = '22023',
+          message = format('%L is a generated identifier, not evidence a person could go and check.', v_evr),
+          detail  = 'NEXUS_CONSENT_EVIDENCE_LOOKS_GENERATED',
+          hint    = 'A bare uuid, a bare epoch, or an execution/run/job id identifies a NEXUS process, not something the customer did, and NEXUS cannot resolve it to anything. If the reference genuinely is a row in this database, cite it with a kind that can be checked (AUDIT_LOG_ID) or qualify it so a human can find the table it belongs to (for example form:<id>). If it is an n8n execution id, it is not evidence of consent.';
+      end if;
+    end if;
+
+    ----------------------------------------------------------------
+    -- Reversing a withdrawal.
+    ----------------------------------------------------------------
+    select max(e.occurred_at) into v_lastout
+      from public.whatsapp_opt_in_event e
+     where e.tenant_id = p_tenant_id and e.integration_id = p_integration_id
+       and e.customer_wa_id = v_cust and e.event = 'OPT_OUT'
+       and e.occurred_at <= now() + v_skew;
+
+    if v_lastout is not null and v_at > v_lastout then
+      -- A withdrawal is reversed by an act of the customer's, not by an
+      -- operator keystroke and not by a re-import.
+      if v_mech in ('OPERATOR_RECORDED','IMPORTED_FROM_SOURCE_SYSTEM') then
+        raise exception using errcode = '22023',
+          message = 'This customer has withdrawn consent, and a withdrawal cannot be reversed by NEXUS or by an import.',
+          detail  = 'NEXUS_CONSENT_REVERSAL_REQUIRES_CUSTOMER_ACT',
+          hint    = format('The most recent OPT_OUT on this conversation is dated %s. An OPT_IN after it must name something the customer did -- their own message, a form they submitted, a document they signed or a call that was recorded. OPERATOR_RECORDED and IMPORTED_FROM_SOURCE_SYSTEM name no act of the customer''s, and re-importing an old CRM opt-in over a fresh STOP is exactly the harm this table exists to prevent.',
+                           to_char(v_lastout at time zone 'UTC','YYYY-MM-DD HH24:MI') || ' UTC');
+      end if;
+
+      -- And the act it names must be one NEXUS can resolve to a row it
+      -- already holds, dated after the withdrawal. A free-text reference
+      -- nobody can look up is the last route by which a conversation
+      -- came back from BLOCKED without the customer doing anything.
+      if v_evk = 'WHATSAPP_MESSAGE_ID' then
+        v_resolved := v_seen.first_occurred_at > v_lastout;
+      elsif v_evk = 'AUDIT_LOG_ID' then
+        select exists (select 1 from public.audit_log a
+                        where a.id = v_evr::uuid and a.tenant_id = p_tenant_id
+                          and a.logged_at > v_lastout)
+          into v_resolved;
+      end if;
+
+      if not v_resolved then
+        raise exception using errcode = '22023',
+          message = 'Reversing a withdrawal requires evidence NEXUS can resolve, and this reference resolves to nothing.',
+          detail  = 'NEXUS_CONSENT_REVERSAL_REQUIRES_RESOLVABLE_EVIDENCE',
+          hint    = format('The most recent OPT_OUT on this conversation is dated %s. A first opt-in may rest on the recording system''s word; overturning a customer''s STOP may not, because a reference nobody can look up is indistinguishable from a fabricated one. Cite either the customer''s own inbound message (evidence_kind WHATSAPP_MESSAGE_ID, already recorded by whatsapp_record_customer_message and dated after the opt-out), or an audit_log row of this dealership''s dated after the opt-out (evidence_kind AUDIT_LOG_ID). An off-channel re-subscription is still recordable: write the audit_log row when the form is submitted, then cite it here.',
+                           to_char(v_lastout at time zone 'UTC','YYYY-MM-DD HH24:MI') || ' UTC');
+      end if;
+    end if;
+  end if;
+
+  ------------------------------------------------------------------
+  -- Record it. Both unique constraints are serialisation points: a
+  -- concurrent second backend blocks on the uncommitted key and then
+  -- finds it committed, so one act produces one row however many
+  -- writers raced for it.
+  ------------------------------------------------------------------
   insert into public.whatsapp_opt_in_event
     (tenant_id, integration_id, customer_wa_id, event, occurred_at,
      mechanism, evidence_kind, evidence_ref, recorded_by, notes)
-  values (p_tenant_id, p_integration_id, v_cust, v_ev, p_occurred_at,
-          upper(btrim(coalesce(p_mechanism,''))), v_evk, v_evr,
-          btrim(coalesce(p_recorded_by,'')), p_notes)
-  on conflict on constraint whatsapp_opt_in_event_evidence_key do nothing
+  values (p_tenant_id, p_integration_id, v_cust, v_ev, v_at,
+          v_mech, v_evk, v_evr, v_by, nullif(btrim(coalesce(v_notes,'')),''))
+  on conflict do nothing
   returning * into v_row;
 
   if v_row is null then
-    -- Already on file. Return the fact as first recorded; a redelivery does not
-    -- restate it later than it happened.
+    -- Already on file. Return the fact as first recorded; a redelivery
+    -- does not restate it later than it happened, and a restatement
+    -- under different paperwork does not make it a second act.
     select * into v_row from public.whatsapp_opt_in_event e
      where e.tenant_id = p_tenant_id and e.integration_id = p_integration_id
-       and e.customer_wa_id = v_cust and e.event = v_ev
-       and e.evidence_kind = v_evk and e.evidence_ref = v_evr;
+       and e.customer_wa_id = v_cust and lower(btrim(e.evidence_ref)) = lower(v_evr);
+    if v_row is null then
+      select * into v_row from public.whatsapp_opt_in_event e
+       where e.tenant_id = p_tenant_id and e.integration_id = p_integration_id
+         and e.customer_wa_id = v_cust and e.event = v_ev and e.occurred_at = v_at;
+    end if;
   end if;
   return v_row;
 end;
@@ -7340,7 +7671,7 @@ ALTER TABLE public.policy_unit ADD CONSTRAINT policy_unit_code_kind_uq UNIQUE (c
 ALTER TABLE public.policy_unmigrated_constant ADD CONSTRAINT policy_unmigrated_constant_uq UNIQUE (layer, location, snippet);
 ALTER TABLE public.tenants ADD CONSTRAINT tenants_slug_key UNIQUE (slug);
 ALTER TABLE public.whatsapp_delivery_events ADD CONSTRAINT whatsapp_delivery_events_idempotency UNIQUE (tenant_id, provider_message_id, status_raw);
-ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT whatsapp_opt_in_event_evidence_key UNIQUE (tenant_id, integration_id, customer_wa_id, event, evidence_kind, evidence_ref);
+ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT whatsapp_opt_in_event_act_key UNIQUE (tenant_id, integration_id, customer_wa_id, event, occurred_at);
 ALTER TABLE public.attribution_edge_type ADD CONSTRAINT attribution_edge_type_pkey PRIMARY KEY (edge);
 ALTER TABLE public.attribution_event_type ADD CONSTRAINT attribution_event_type_pkey PRIMARY KEY (event);
 ALTER TABLE public.attribution_link_basis ADD CONSTRAINT attribution_link_basis_pkey PRIMARY KEY (basis);
@@ -7500,7 +7831,8 @@ CREATE INDEX whatsapp_message_usage_cost_state_idx ON public.whatsapp_message_us
 CREATE INDEX whatsapp_message_usage_month_idx ON public.whatsapp_message_usage USING btree (tenant_id, sent_at);
 CREATE UNIQUE INDEX whatsapp_message_usage_one_per_message ON public.whatsapp_message_usage USING btree (tenant_id, event_id);
 CREATE INDEX whatsapp_message_usage_template_idx ON public.whatsapp_message_usage USING btree (template_id) WHERE (template_id IS NOT NULL);
-CREATE INDEX whatsapp_opt_in_event_latest_idx ON public.whatsapp_opt_in_event USING btree (tenant_id, integration_id, customer_wa_id, occurred_at DESC, recorded_at DESC);
+CREATE UNIQUE INDEX whatsapp_opt_in_event_evidence_once ON public.whatsapp_opt_in_event USING btree (tenant_id, integration_id, customer_wa_id, lower(btrim(evidence_ref)));
+CREATE INDEX whatsapp_opt_in_event_governing_idx ON public.whatsapp_opt_in_event USING btree (tenant_id, integration_id, customer_wa_id, occurred_at DESC, consent_rank, recorded_at DESC, id DESC);
 CREATE UNIQUE INDEX whatsapp_templates_identity_key ON public.whatsapp_templates USING btree (tenant_id, provider, COALESCE(waba_ref, ''::text), name, language);
 CREATE INDEX whatsapp_templates_integration_idx ON public.whatsapp_templates USING btree (integration_id) WHERE (integration_id IS NOT NULL);
 CREATE UNIQUE INDEX whatsapp_templates_provider_id_key ON public.whatsapp_templates USING btree (tenant_id, provider, provider_template_id) WHERE (provider_template_id IS NOT NULL);
@@ -7782,11 +8114,14 @@ ALTER TABLE public.whatsapp_message_usage ADD CONSTRAINT wmu_template_required_i
 ALTER TABLE public.whatsapp_message_usage ADD CONSTRAINT wmu_template_required_names_a_template CHECK (((template_required = false) OR (template_id IS NOT NULL)));
 ALTER TABLE public.whatsapp_message_usage ADD CONSTRAINT wmu_template_send_records_the_staleness_answer CHECK (((template_id IS NULL) OR ((template_provider_status_at_send IS NOT NULL) AND (template_staleness_verdict_at_send IS NOT NULL))));
 ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_customer_id_normalised CHECK (((customer_wa_id = lower(btrim(customer_wa_id))) AND ((length(customer_wa_id) >= 1) AND (length(customer_wa_id) <= 120))));
+ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_customer_message_names_a_message CHECK (((event <> 'OPT_IN'::text) OR (mechanism <> 'CUSTOMER_MESSAGE'::text) OR (evidence_kind = 'WHATSAPP_MESSAGE_ID'::text)));
 ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_event_check CHECK ((event = ANY (ARRAY['OPT_IN'::text, 'OPT_OUT'::text])));
 ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_evidence_kind_check CHECK ((evidence_kind = ANY (ARRAY['WHATSAPP_MESSAGE_ID'::text, 'COMMUNICATION_LOG_ID'::text, 'FORM_SUBMISSION_ID'::text, 'DOCUMENT_REF'::text, 'SOURCE_SYSTEM_RECORD_ID'::text, 'AUDIT_LOG_ID'::text])));
 ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_evidence_not_blank CHECK (((btrim(evidence_ref) <> ''::text) AND (btrim(recorded_by) <> ''::text)));
+ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_evidence_ref_normalised CHECK (((evidence_ref = btrim(evidence_ref)) AND ((length(evidence_ref) >= 1) AND (length(evidence_ref) <= 300))));
 ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_import_names_a_system CHECK (((mechanism <> 'IMPORTED_FROM_SOURCE_SYSTEM'::text) OR (evidence_kind = 'SOURCE_SYSTEM_RECORD_ID'::text)));
 ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_mechanism_check CHECK ((mechanism = ANY (ARRAY['CUSTOMER_MESSAGE'::text, 'WEB_FORM'::text, 'IN_STORE_SIGNED'::text, 'PHONE_RECORDED'::text, 'IMPORTED_FROM_SOURCE_SYSTEM'::text, 'OPERATOR_RECORDED'::text])));
+ALTER TABLE public.whatsapp_opt_in_event ADD CONSTRAINT wa_optin_occurred_at_bounded CHECK (((occurred_at >= '2015-01-01 00:00:00+00'::timestamp with time zone) AND (occurred_at <= (now() + '00:05:00'::interval))));
 ALTER TABLE public.whatsapp_templates ADD CONSTRAINT wat_approved_body_must_be_the_providers CHECK (((provider_status <> 'APPROVED'::text) OR (body_text IS NULL) OR (body_text_source = 'PROVIDER_FETCHED'::text)));
 ALTER TABLE public.whatsapp_templates ADD CONSTRAINT wat_body_text_is_text_not_a_blob CHECK (((body_text IS NULL) OR ((length(body_text) <= 4096) AND (body_text !~ '^data:'::text))));
 ALTER TABLE public.whatsapp_templates ADD CONSTRAINT wat_body_text_provenance CHECK ((((body_text IS NULL) AND (body_text_source IS NULL) AND (body_text_observed_at IS NULL)) OR ((body_text IS NOT NULL) AND (body_text_source IS NOT NULL) AND (body_text_observed_at IS NOT NULL))));
@@ -7862,1096 +8197,6 @@ CREATE OR REPLACE VIEW public.v_action_center_health WITH (security_invoker=true
           WHERE l.tenant_id = a.tenant_id AND l.workflow = 'Inventory Action Center'::text) aud ON true
   GROUP BY a.tenant_id, ev.events_total, ev.events_without_audit, aud.audit_rows, aud.audit_rows_30d, aud.last_audit_at;
 
-CREATE OR REPLACE VIEW public.v_audit_unregistered_writers WITH (security_invoker=true) AS
- SELECT tenant_id,
-    workflow AS workflow_written_in_audit_log,
-    count(*) AS audit_rows,
-    count(*) FILTER (WHERE logged_at > (now() - '30 days'::interval)) AS audit_rows_30d,
-    min(logged_at) AS first_written_at,
-    max(logged_at) AS last_written_at,
-    array_agg(DISTINCT status) AS statuses_seen,
-        CASE
-            WHEN workflow = 'Inventory Action Center'::text THEN 'Known and deliberate. Human decisions, not an n8n run - see v_action_center_health.'::text
-            ELSE 'Unrecognised writer. Register it from the box with its real n8n id, or establish it is not a NEXUS workflow. Do not invent a registry row.'::text
-        END AS disposition
-   FROM audit_log l
-  WHERE NOT (EXISTS ( SELECT 1
-           FROM workflow_registry r
-          WHERE l.workflow = r.name OR l.workflow = r.audit_name OR (l.workflow = ANY (r.audit_aliases))))
-  GROUP BY tenant_id, workflow;
-
-CREATE OR REPLACE VIEW public.v_channel_provider_capability WITH (security_invoker=true) AS
- SELECT c.provider,
-    r.rank AS provider_rank,
-    COALESCE(r.is_official_platform, false) AS is_official_platform,
-    c.send_form,
-    f.label AS send_form_label,
-    f.requires_template_ref,
-    f.is_media,
-    c.support_state,
-    c.basis,
-    c.verified_at,
-    c.support_state = 'SUPPORTED'::text AND c.basis <> 'MEASURED_HERE'::text AS supported_but_never_exercised_here,
-    c.evidence,
-    c.set_by
-   FROM channel_provider_capability c
-     JOIN channel_send_form f ON f.code = c.send_form
-     LEFT JOIN channel_provider_rank r ON r.provider = c.provider;
-
-CREATE OR REPLACE VIEW public.v_channel_send_health WITH (security_invoker=true) AS
- SELECT tenant_id,
-    integration_id,
-    provider,
-    external_identifier,
-    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval)) AS routed_7d,
-    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND directive = 'SEND'::text) AS sends_7d,
-    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'ACCEPTED_BY_PROVIDER'::text) AS accepted_7d,
-    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'REJECTED_BY_PROVIDER'::text) AS rejected_7d,
-    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'TRANSPORT_ERROR'::text) AS transport_errors_7d,
-    count(*) FILTER (WHERE send_result = 'PENDING'::text) AS pending_now,
-    max(result_recorded_at) FILTER (WHERE send_result = 'ACCEPTED_BY_PROVIDER'::text) AS last_accepted_at,
-    max(result_recorded_at) FILTER (WHERE send_result = ANY (ARRAY['REJECTED_BY_PROVIDER'::text, 'TRANSPORT_ERROR'::text])) AS last_failed_at,
-        CASE
-            WHEN count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND directive = 'SEND'::text) = 0 THEN 'NO_SENDS_MEASURED'::text
-            WHEN count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'ACCEPTED_BY_PROVIDER'::text) = 0 THEN 'PRODUCING_NOTHING'::text
-            WHEN count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND (send_result = ANY (ARRAY['REJECTED_BY_PROVIDER'::text, 'TRANSPORT_ERROR'::text]))) > count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'ACCEPTED_BY_PROVIDER'::text) THEN 'DEGRADED'::text
-            ELSE 'CARRYING'::text
-        END AS observed_state
-   FROM channel_send_directive d
-  GROUP BY tenant_id, integration_id, provider, external_identifier;
-
-CREATE OR REPLACE VIEW public.v_competitor_latest WITH (security_invoker=on) AS
- SELECT DISTINCT ON (competitor, model) id,
-    competitor,
-    model,
-    price_aed,
-    our_price_aed,
-    price_diff_aed,
-    ai_recommendation,
-    scraped_at,
-    listing_title,
-    source_host,
-    source_kind,
-    offer_name,
-    offer_condition,
-    match_quality,
-    match_note
-   FROM competitors c
-  ORDER BY competitor, model, scraped_at DESC;
-
-CREATE OR REPLACE VIEW public.v_conversations WITH (security_invoker=true) AS
- WITH resolved AS (
-         SELECT cl.id,
-            cl.lead_email,
-            cl.channel,
-            cl.direction,
-            cl.message,
-            cl.created_at,
-            cl.tenant_id,
-            nexus_is_message(cl.direction, cl.channel, cl.message) AS is_msg,
-            COALESCE(lower(l_direct.email), lower(wc_direct.lead_email), lower(cl.lead_email)) AS person_key,
-                CASE
-                    WHEN cl.lead_email ~~ '%@lid'::text OR cl.lead_email ~~ '%@c.us'::text THEN cl.lead_email
-                    ELSE wc_by_lead.chat_id
-                END AS reply_chat_id
-           FROM communication_logs cl
-             LEFT JOIN leads l_direct ON lower(l_direct.email) = lower(cl.lead_email) AND l_direct.tenant_id = cl.tenant_id
-             LEFT JOIN whatsapp_contacts wc_direct ON wc_direct.chat_id = cl.lead_email AND wc_direct.tenant_id = cl.tenant_id
-             LEFT JOIN whatsapp_contacts wc_by_lead ON lower(wc_by_lead.lead_email) = lower(cl.lead_email) AND wc_by_lead.tenant_id = cl.tenant_id
-          WHERE cl.lead_email IS NOT NULL AND cl.lead_email <> ''::text
-        ), threads AS (
-         SELECT resolved.tenant_id,
-            resolved.person_key,
-            (array_agg(resolved.reply_chat_id ORDER BY (resolved.reply_chat_id IS NULL), resolved.created_at DESC))[1] AS chat_id,
-            count(*) AS message_count,
-            count(*) FILTER (WHERE resolved.direction = 'inbound'::text) AS inbound_count,
-            count(*) FILTER (WHERE resolved.direction = 'outbound'::text) AS outbound_count,
-            max(resolved.created_at) AS last_message_at,
-            (array_agg(resolved.message ORDER BY resolved.created_at DESC))[1] AS last_message,
-            (array_agg(resolved.direction ORDER BY resolved.created_at DESC))[1] AS last_direction,
-            count(*) FILTER (WHERE resolved.is_msg) AS msg_count,
-            count(*) FILTER (WHERE NOT resolved.is_msg) AS internal_count,
-            count(*) FILTER (WHERE resolved.is_msg AND resolved.direction = 'inbound'::text) AS msg_inbound_count,
-            count(*) FILTER (WHERE resolved.is_msg AND resolved.direction = 'outbound'::text) AS msg_outbound_count,
-            max(resolved.created_at) FILTER (WHERE resolved.is_msg) AS last_msg_at,
-            (array_agg(resolved.message ORDER BY resolved.created_at DESC) FILTER (WHERE resolved.is_msg))[1] AS last_msg,
-            (array_agg(resolved.direction ORDER BY resolved.created_at DESC) FILTER (WHERE resolved.is_msg))[1] AS last_msg_direction
-           FROM resolved
-          GROUP BY resolved.tenant_id, resolved.person_key
-        )
- SELECT t.person_key AS thread_key,
-    t.chat_id,
-    COALESCE(wc.phone, wc2.phone) AS phone,
-    COALESCE(wc.push_name, wc2.push_name) AS push_name,
-    COALESCE(l.email, wc.lead_email, wc2.lead_email) AS lead_email,
-    l.name AS lead_name,
-    l.status AS lead_status,
-    COALESCE(l.name, NULLIF(wc.push_name, ''::text), NULLIF(wc2.push_name, ''::text), NULLIF(wc.phone, ''::text), NULLIF(wc2.phone, ''::text), t.person_key) AS display_name,
-        CASE
-            WHEN l.name IS NOT NULL THEN 'lead'::text
-            WHEN COALESCE(wc.push_name, wc2.push_name) IS NOT NULL THEN 'whatsapp_profile'::text
-            WHEN COALESCE(wc.phone, wc2.phone) IS NOT NULL THEN 'phone_only'::text
-            ELSE 'unidentified'::text
-        END AS identified,
-    t.message_count,
-    t.inbound_count,
-    t.outbound_count,
-    t.last_message_at,
-    t.last_message,
-    t.last_direction,
-    t.last_direction = 'inbound'::text AS awaiting_reply,
-    t.msg_count,
-    t.internal_count,
-    t.msg_inbound_count,
-    t.msg_outbound_count,
-    t.last_msg_at,
-    t.last_msg,
-    t.last_msg_direction,
-    t.last_msg_direction = 'inbound'::text AS awaiting_msg_reply,
-    t.tenant_id
-   FROM threads t
-     LEFT JOIN leads l ON lower(l.email) = t.person_key AND l.tenant_id = t.tenant_id
-     LEFT JOIN whatsapp_contacts wc ON wc.chat_id = t.chat_id AND wc.tenant_id = t.tenant_id
-     LEFT JOIN whatsapp_contacts wc2 ON lower(wc2.lead_email) = t.person_key AND wc2.tenant_id = t.tenant_id;
-
-CREATE OR REPLACE VIEW public.v_customer_360 WITH (security_invoker=true) AS
- WITH ids AS (
-         SELECT lower(btrim(leads.email)) AS email,
-            leads.tenant_id
-           FROM leads
-          WHERE leads.email IS NOT NULL AND leads.email <> ''::text
-        UNION
-         SELECT lower(btrim(purchase_history.email)) AS email,
-            purchase_history.tenant_id
-           FROM purchase_history
-          WHERE purchase_history.email IS NOT NULL AND purchase_history.email <> ''::text
-        ), ident AS (
-         SELECT i_1.email,
-            i_1.tenant_id,
-            max(NULLIF(regexp_replace(COALESCE(l_1.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text), ''::text)) AS digits
-           FROM ids i_1
-             LEFT JOIN leads l_1 ON lower(btrim(l_1.email)) = i_1.email AND l_1.tenant_id = i_1.tenant_id
-          GROUP BY i_1.email, i_1.tenant_id
-        ), keys AS (
-         SELECT d.email,
-            d.tenant_id,
-            k.key
-           FROM ident d
-             CROSS JOIN LATERAL ( SELECT d.email AS key
-                UNION
-                 SELECT regexp_replace(d.email, '[^0-9]'::text, ''::text, 'g'::text) || '@c.us'::text
-                  WHERE d.email ~~ '+%@whatsapp.lead'::text AND regexp_replace(d.email, '[^0-9]'::text, ''::text, 'g'::text) <> ''::text
-                UNION
-                 SELECT ('+'::text || d.digits) || '@whatsapp.lead'::text
-                  WHERE d.digits IS NOT NULL
-                UNION
-                 SELECT d.digits || '@c.us'::text
-                  WHERE d.digits IS NOT NULL
-                UNION
-                 SELECT wc.chat_id
-                   FROM whatsapp_contacts wc
-                  WHERE wc.chat_id IS NOT NULL AND wc.tenant_id = d.tenant_id AND (lower(btrim(wc.lead_email)) = d.email OR d.digits IS NOT NULL AND regexp_replace(COALESCE(wc.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text) = d.digits)) k
-          WHERE k.key IS NOT NULL AND btrim(k.key) <> ''::text
-        )
- SELECT i.email,
-    COALESCE(max(p.customer_name), max(l.name)) AS name,
-    COALESCE(max(p.phone), max(l.phone)) AS phone,
-    count(DISTINCT l.id) AS lead_count,
-    max(l.ai_score) AS best_ai_score,
-    max(upper(l.status)) AS latest_status,
-    count(DISTINCT p.id) AS purchase_count,
-    ( SELECT sum(p2.amount_aed) AS sum
-           FROM purchase_history p2
-          WHERE lower(btrim(p2.email)) = i.email AND p2.tenant_id = i.tenant_id) AS lifetime_value_aed,
-    max(p.purchase_date) AS last_purchase_date,
-    count(DISTINCT p.id) > 0 AS is_vip,
-    ( SELECT count(*) AS count
-           FROM communication_logs c
-          WHERE c.tenant_id = i.tenant_id AND (c.lead_email IN ( SELECT k.key
-                   FROM keys k
-                  WHERE k.email = i.email AND k.tenant_id = i.tenant_id)) AND nexus_is_message(c.direction, c.channel, c.message)) AS message_count,
-    ( SELECT max(c.created_at) AS max
-           FROM communication_logs c
-          WHERE c.tenant_id = i.tenant_id AND (c.lead_email IN ( SELECT k.key
-                   FROM keys k
-                  WHERE k.email = i.email AND k.tenant_id = i.tenant_id)) AND nexus_is_message(c.direction, c.channel, c.message)) AS last_contact_at,
-    max(c3.total_emails) AS total_emails,
-    max(c3.total_slack_messages) AS total_slack_messages,
-    i.tenant_id
-   FROM ids i
-     LEFT JOIN leads l ON lower(btrim(l.email)) = i.email AND l.tenant_id = i.tenant_id
-     LEFT JOIN purchase_history p ON lower(btrim(p.email)) = i.email AND p.tenant_id = i.tenant_id
-     LEFT JOIN customer_360_profiles c3 ON lower(btrim(c3.email)) = i.email AND c3.tenant_id = i.tenant_id
-  GROUP BY i.email, i.tenant_id;
-
-CREATE OR REPLACE VIEW public.v_customer_directory WITH (security_invoker=on) AS
- SELECT lower(email) AS id,
-    (array_agg(name ORDER BY at DESC NULLS LAST) FILTER (WHERE name IS NOT NULL AND name <> ''::text))[1] AS name,
-    lower(email) AS email,
-    (array_agg(phone ORDER BY at DESC NULLS LAST) FILTER (WHERE phone IS NOT NULL AND phone <> ''::text))[1] AS phone,
-    count(*) AS source_records,
-    max(at) AS last_seen_at,
-    tenant_id
-   FROM ( SELECT leads.email,
-            leads.name,
-            leads.phone,
-            leads.created_at AS at,
-            leads.tenant_id
-           FROM leads
-          WHERE leads.email IS NOT NULL AND leads.email <> ''::text AND leads.tenant_id = nexus_scoped_tenant_id()
-        UNION ALL
-         SELECT purchase_history.email,
-            purchase_history.customer_name,
-            purchase_history.phone,
-            purchase_history.created_at,
-            purchase_history.tenant_id
-           FROM purchase_history
-          WHERE purchase_history.email IS NOT NULL AND purchase_history.email <> ''::text AND purchase_history.tenant_id = nexus_scoped_tenant_id()) x
-  GROUP BY tenant_id, (lower(email));
-
-CREATE OR REPLACE VIEW public.v_deal_rescue_candidates WITH (security_invoker=true) AS
- WITH lead_key AS (
-         SELECT l.tenant_id,
-            lower(btrim(l.email)) AS k,
-            min(l.id) AS lead_id,
-            count(*) AS n
-           FROM leads l
-          WHERE NULLIF(btrim(COALESCE(l.email, ''::text)), ''::text) IS NOT NULL
-          GROUP BY l.tenant_id, (lower(btrim(l.email)))
-        ), sale_by_lead AS (
-         SELECT p.tenant_id,
-            p.lead_id,
-            count(*) AS n
-           FROM purchase_history p
-          WHERE p.lead_id IS NOT NULL
-          GROUP BY p.tenant_id, p.lead_id
-        ), sale_by_email AS (
-         SELECT p.tenant_id,
-            lower(btrim(p.email)) AS k,
-            count(*) AS n
-           FROM purchase_history p
-          WHERE NULLIF(btrim(COALESCE(p.email, ''::text)), ''::text) IS NOT NULL
-          GROUP BY p.tenant_id, (lower(btrim(p.email)))
-        )
- SELECT q.tenant_id,
-    'FINANCE_QUOTE'::text AS candidate_kind,
-    q.id::text AS candidate_ref,
-    COALESCE(NULLIF(btrim(COALESCE(q.lead_name, ''::text)), ''::text), NULLIF(btrim(COALESCE(q.lead_email, ''::text)), ''::text), '(unnamed)'::text) AS customer_label,
-    'finance_quotes'::text AS source_table,
-    q.created_at AS observed_at,
-        CASE
-            WHEN lk.n = 1 THEN lk.lead_id
-            ELSE NULL::integer
-        END AS lead_id,
-        CASE
-            WHEN lk.n = 1 THEN 'RESOLVED_EXACT_EMAIL'::text
-            WHEN lk.n > 1 THEN 'UNKNOWN_AMBIGUOUS_EMAIL'::text
-            ELSE 'UNKNOWN_UNRESOLVED_IDENTITY'::text
-        END AS identity_state,
-        CASE
-            WHEN lk.n = 1 THEN 'finance_quotes.lead_email matches exactly one leads.email in this dealership.'::text
-            ELSE 'This quote names a person NEXUS cannot resolve to exactly one lead by the exact-email clause. It is reported, not attached to anybody.'::text
-        END AS identity_basis,
-        CASE
-            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'REFUSED_ALREADY_SOLD'::text
-            ELSE 'IN_FLIGHT_DEAL'::text
-        END AS verdict,
-        CASE
-            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN NULL::text
-            ELSE 'STRONG'::text
-        END AS evidence_tier,
-        CASE
-            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'A sale is already recorded for this person. The deal is done; there is nothing to rescue.'::text
-            ELSE 'A priced, dated finance offer with no sale on record. Somebody priced a specific car for a specific person - that is a transaction under way, not an enquiry.'::text
-        END AS verdict_basis,
-    COALESCE(q.vehicle_price_aed, q.vehicle_value_aed) AS deal_value_aed,
-        CASE
-            WHEN COALESCE(q.vehicle_price_aed, q.vehicle_value_aed) IS NULL THEN 'UNKNOWN_NOT_RECORDED'::text
-            ELSE 'AT_STAKE_FROM_QUOTE'::text
-        END AS deal_value_state,
-    'EXPOSURE - the vehicle price recorded on the finance quote. This is what is AT STAKE. It is not estimated revenue, not attributed revenue and not confirmed revenue.'::text AS deal_value_basis
-   FROM finance_quotes q
-     LEFT JOIN lead_key lk ON lk.tenant_id = q.tenant_id AND lk.k = lower(btrim(COALESCE(q.lead_email, ''::text)))
-     LEFT JOIN sale_by_email se ON se.tenant_id = q.tenant_id AND se.k = lower(btrim(COALESCE(q.lead_email, ''::text)))
-     LEFT JOIN sale_by_lead sl ON sl.tenant_id = q.tenant_id AND sl.lead_id =
-        CASE
-            WHEN lk.n = 1 THEN lk.lead_id
-            ELSE NULL::integer
-        END
-UNION ALL
- SELECT k.tenant_id,
-    'KYC_DOCUMENT'::text AS candidate_kind,
-    k.id::text AS candidate_ref,
-    COALESCE(NULLIF(btrim(COALESCE(k.lead_name, ''::text)), ''::text), NULLIF(btrim(COALESCE(k.lead_email, ''::text)), ''::text), '(unnamed)'::text) AS customer_label,
-    'kyc_documents'::text AS source_table,
-    k.created_at AS observed_at,
-        CASE
-            WHEN lk.n = 1 THEN lk.lead_id
-            ELSE NULL::integer
-        END AS lead_id,
-        CASE
-            WHEN lk.n = 1 THEN 'RESOLVED_EXACT_EMAIL'::text
-            WHEN lk.n > 1 THEN 'UNKNOWN_AMBIGUOUS_EMAIL'::text
-            ELSE 'UNKNOWN_UNRESOLVED_IDENTITY'::text
-        END AS identity_state,
-        CASE
-            WHEN lk.n = 1 THEN 'kyc_documents.lead_email matches exactly one leads.email in this dealership.'::text
-            ELSE 'This document names a person NEXUS cannot resolve to exactly one lead by the exact-email clause.'::text
-        END AS identity_basis,
-        CASE
-            WHEN k.voided_at IS NOT NULL OR upper(COALESCE(k.verdict, ''::text)) = 'REJECTED'::text OR COALESCE(k.is_valid, false) IS FALSE THEN 'REFUSED_VOIDED_OR_REJECTED'::text
-            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'REFUSED_ALREADY_SOLD'::text
-            ELSE 'IN_FLIGHT_DEAL'::text
-        END AS verdict,
-        CASE
-            WHEN k.voided_at IS NOT NULL OR upper(COALESCE(k.verdict, ''::text)) = 'REJECTED'::text OR COALESCE(k.is_valid, false) IS FALSE THEN NULL::text
-            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN NULL::text
-            ELSE 'WEAK'::text
-        END AS evidence_tier,
-        CASE
-            WHEN k.voided_at IS NOT NULL OR upper(COALESCE(k.verdict, ''::text)) = 'REJECTED'::text OR COALESCE(k.is_valid, false) IS FALSE THEN ((('Not an accepted identity document (verdict '::text || COALESCE(k.verdict, 'none'::text)) || ', document_type '::text) || COALESCE(k.document_type, 'none'::text)) || '). It evidences nothing about a deal.'::text
-            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'A sale is already recorded for this person. The deal is done.'::text
-            ELSE 'Identity papers accepted for a person with no sale on record. WEAK: the KYC workflow audits any image sent over WhatsApp, so this can raise NEEDS_MANAGER and nothing stronger.'::text
-        END AS verdict_basis,
-    NULL::bigint AS deal_value_aed,
-    'UNKNOWN_NO_LINK'::text AS deal_value_state,
-    'UNKNOWN. A KYC document carries no vehicle and no price, so nothing here says what is at stake.'::text AS deal_value_basis
-   FROM kyc_documents k
-     LEFT JOIN lead_key lk ON lk.tenant_id = k.tenant_id AND lk.k = lower(btrim(COALESCE(k.lead_email, ''::text)))
-     LEFT JOIN sale_by_email se ON se.tenant_id = k.tenant_id AND se.k = lower(btrim(COALESCE(k.lead_email, ''::text)))
-     LEFT JOIN sale_by_lead sl ON sl.tenant_id = k.tenant_id AND sl.lead_id =
-        CASE
-            WHEN lk.n = 1 THEN lk.lead_id
-            ELSE NULL::integer
-        END
-UNION ALL
- SELECT l.tenant_id,
-    'LEAD'::text AS candidate_kind,
-    l.id::text AS candidate_ref,
-    l.name AS customer_label,
-    'leads'::text AS source_table,
-    l.created_at AS observed_at,
-    l.id AS lead_id,
-    'RESOLVED_SELF'::text AS identity_state,
-    'The candidate is the lead row itself.'::text AS identity_basis,
-    'REFUSED_NOT_DEAL_EVIDENCE'::text AS verdict,
-    NULL::text AS evidence_tier,
-    ((((('leads.status = '::text || COALESCE(l.status, '(blank)'::text)) || ', open = '::text) || COALESCE(nexus_lead_is_open(l.status)::text, 'unknown'::text)) || '. An open lead is an enquiry: nothing here says a price was agreed, a vehicle was chosen or a transaction started. '::text) || 'Calling it an in-flight deal would manufacture a deal lifecycle this dealership does not have, and Lead Recovery (v_lead_recovery) already states this lead''s risk. '::text) || 'Age is not a reason either.'::text AS verdict_basis,
-    NULL::bigint AS deal_value_aed,
-    'UNKNOWN_NO_LINK'::text AS deal_value_state,
-    'UNKNOWN. leads.budget_aed is null on every lead on file and nothing links a lead to a unit.'::text AS deal_value_basis
-   FROM leads l
-UNION ALL
- SELECT p.tenant_id,
-    'CONFIRMED_SALE'::text AS candidate_kind,
-    p.id::text AS candidate_ref,
-    COALESCE(NULLIF(btrim(COALESCE(p.customer_name, ''::text)), ''::text), '(unnamed)'::text) AS customer_label,
-    'purchase_history'::text AS source_table,
-    p.created_at AS observed_at,
-    p.lead_id,
-        CASE
-            WHEN p.lead_id IS NOT NULL THEN 'RESOLVED_FOREIGN_KEY'::text
-            ELSE 'UNKNOWN_UNRESOLVED_IDENTITY'::text
-        END AS identity_state,
-        CASE
-            WHEN p.lead_id IS NOT NULL THEN 'purchase_history.lead_id -> leads(id), a declared foreign key.'::text
-            ELSE 'This sale names no lead. That is a recorded absence of provenance, not proof no lead existed.'::text
-        END AS identity_basis,
-    'COMPLETED_SALE_NOT_IN_FLIGHT'::text AS verdict,
-    NULL::text AS evidence_tier,
-    (('deal_id '::text || COALESCE(p.deal_id, '(none)'::text)) || ' was synthesised at the moment of sale, so this row is not the tail of a deal record - it is the whole of it. '::text) || 'DEAL_CREATED and SALE_CONFIRMED are one event here. What is known about this sale is answered by v_attribution_sale_chain.'::text AS verdict_basis,
-    p.amount_aed::bigint AS deal_value_aed,
-        CASE
-            WHEN p.amount_aed IS NULL THEN 'UNKNOWN_NOT_RECORDED'::text
-            ELSE 'CONFIRMED_REVENUE'::text
-        END AS deal_value_state,
-    'CONFIRMED revenue - a recorded business outcome. Not at stake, not estimated, not attributed.'::text AS deal_value_basis
-   FROM purchase_history p
-UNION ALL
- SELECT a.tenant_id,
-    'APPROVED_UNEXECUTED_INVENTORY_ACTION'::text AS candidate_kind,
-    a.id::text AS candidate_ref,
-    'unit '::text || a.unit_id AS customer_label,
-    'inventory_actions'::text AS source_table,
-    a.decided_at AS observed_at,
-    NULL::integer AS lead_id,
-    'NOT_APPLICABLE_NO_CUSTOMER'::text AS identity_state,
-    'An inventory action concerns a unit. There is no customer to resolve.'::text AS identity_basis,
-    'REFUSED_NOT_DEAL_EVIDENCE'::text AS verdict,
-    NULL::text AS evidence_tier,
-    ((('An approved '::text || a.recommendation) || ' on '::text) || a.unit_id) || ' with no execution recorded. That is a stalled ACTION, not a stalled deal: no customer, no agreed price, no transaction. The Inventory Action Center owns it.'::text AS verdict_basis,
-    NULL::bigint AS deal_value_aed,
-    'NOT_APPLICABLE'::text AS deal_value_state,
-    'A unit''s exposed margin is not a deal value and must not be read as one.'::text AS deal_value_basis
-   FROM inventory_actions a
-  WHERE a.status = 'APPROVED'::text AND a.executed_at IS NULL
-UNION ALL
- SELECT r.tenant_id,
-    'APPROVED_UNEXECUTED_LEAD_RECOVERY_ACTION'::text AS candidate_kind,
-    r.id::text AS candidate_ref,
-    'lead '::text || r.lead_id::text AS customer_label,
-    'lead_recovery_actions'::text AS source_table,
-    r.decided_at AS observed_at,
-    r.lead_id,
-    'RESOLVED_FOREIGN_KEY'::text AS identity_state,
-    'lead_recovery_actions.lead_id -> leads(id).'::text AS identity_basis,
-    'REFUSED_NOT_DEAL_EVIDENCE'::text AS verdict,
-    NULL::text AS evidence_tier,
-    ('An approved '::text || r.recommendation) || ' with no execution recorded. Lead Recovery already surfaces this as action_state on the lead; raising a deal from it would put one piece of work on two screens with two owners.'::text AS verdict_basis,
-    NULL::bigint AS deal_value_aed,
-    'NOT_APPLICABLE'::text AS deal_value_state,
-    'A recovery action carries no deal value.'::text AS deal_value_basis
-   FROM lead_recovery_actions r
-  WHERE r.status = 'APPROVED'::text AND r.executed_at IS NULL;
-
-CREATE OR REPLACE VIEW public.v_fin_gate_quote_evidence WITH (security_invoker=true) AS
- SELECT id,
-    lead_email,
-    lead_name,
-    quoted_by,
-    created_at,
-    calculated_at,
-    calculation_id,
-    execution_id,
-    indicative_apr_pct,
-    indicative_apr_high_pct,
-    monthly_payment_low_aed,
-    monthly_payment_high_aed,
-    calculation_id IS NOT NULL AND NULLIF(btrim(COALESCE(execution_id, ''::text)), ''::text) IS NOT NULL AS is_evidenced,
-        CASE
-            WHEN NULLIF(btrim(COALESCE(execution_id, ''::text)), ''::text) IS NULL THEN 'untraceable: no execution_id, so this figure cannot be tied to a Finance Calc run'::text
-            WHEN calculation_id IS NULL THEN 'untraceable: no calculation_id'::text
-            ELSE 'evidenced'::text
-        END AS evidence_note,
-    monthly_payment_low_aed IS NOT NULL AS has_instalment
-   FROM finance_quotes q;
-
-CREATE OR REPLACE VIEW public.v_inventory_action_timeline WITH (security_invoker=true) AS
- SELECT e.id,
-    e.tenant_id,
-    e.action_id,
-    e.at,
-    e.event,
-    u.name AS actor_name,
-    u.role AS actor_job_title,
-    e.actor_authority,
-    e.detail,
-    e.audit_log_id,
-    l.status AS audit_status,
-    nexus_outcome_class(l.workflow, l.status, l.summary) AS audit_outcome_class,
-    l.summary AS audit_summary
-   FROM inventory_action_events e
-     LEFT JOIN users u ON u.id = e.actor_staff_id
-     LEFT JOIN audit_log l ON l.id = e.audit_log_id;
-
-CREATE OR REPLACE VIEW public.v_inventory_profit_sentinel WITH (security_invoker=true) AS
- WITH cfg AS (
-         SELECT i.tenant_id,
-            s.holding_cost_per_day_aed AS holding_rate,
-            s.holding_cost_source AS holding_source,
-            s.holding_cost_basis AS holding_basis,
-            s.holding_cost_set_by AS holding_set_by,
-            s.holding_cost_verified_at AS holding_verified_at,
-            COALESCE(s.aging_warn_days, 90) AS warn_days,
-            COALESCE(s.aging_critical_days, 120) AS crit_days,
-            COALESCE(s.promote_days, 60) AS promote_days,
-            COALESCE(s.wholesale_days, 180) AS wholesale_days,
-            COALESCE(s.min_reprice_margin_pct, 8.00) AS min_margin_pct,
-            COALESCE(s.market_tolerance_pct, 3.00) AS tol_pct,
-            COALESCE(s.enquiry_window_days, 30) AS enq_days,
-            COALESCE(s.min_enquiry_sources, 50) AS min_enq_sources,
-            COALESCE(s.min_model_token_overlap, 2) AS min_overlap,
-            COALESCE(s.accepted_market_match_quality, ARRAY['exact'::text, 'strong'::text]) AS ok_quality,
-            COALESCE(s.market_max_age_days, 14) AS mkt_max_age,
-            s.tenant_id IS NULL AS on_defaults
-           FROM ( SELECT DISTINCT inventory.tenant_id
-                   FROM inventory) i
-             LEFT JOIN inventory_profit_settings s ON s.tenant_id = i.tenant_id
-        ), enq_src AS (
-         SELECT l.tenant_id,
-            'lead'::text AS kind,
-            l.id::text AS ref,
-            l.created_at,
-            nexus_model_tokens(l.vehicle_interest) AS tk
-           FROM leads l
-             JOIN cfg c ON c.tenant_id = l.tenant_id
-          WHERE COALESCE(l.vehicle_interest, ''::text) <> ''::text AND l.created_at >= (now() - make_interval(days => c.enq_days))
-        UNION ALL
-         SELECT m.tenant_id,
-            'message'::text,
-            m.id::text AS id,
-            m.created_at,
-            nexus_model_tokens(m.message) AS nexus_model_tokens
-           FROM communication_logs m
-             JOIN cfg c ON c.tenant_id = m.tenant_id
-          WHERE lower(COALESCE(m.direction, ''::text)) = 'inbound'::text AND COALESCE(m.message, ''::text) <> ''::text AND m.created_at >= (now() - make_interval(days => c.enq_days))
-        ), enq_cover AS (
-         SELECT c.tenant_id,
-            ( SELECT count(*) AS count
-                   FROM enq_src e
-                  WHERE e.tenant_id = c.tenant_id) AS src_rows,
-            ( SELECT count(*) AS count
-                   FROM enq_src e
-                  WHERE e.tenant_id = c.tenant_id AND (EXISTS ( SELECT 1
-                           FROM inventory i2
-                          WHERE i2.tenant_id = c.tenant_id AND (( SELECT count(*) AS count
-                                   FROM unnest(nexus_model_tokens(i2.model)) t(t)
-                                  WHERE t.t = ANY (e.tk))) >= c.min_overlap))) AS resolved_rows
-           FROM cfg c
-        ), base AS (
-         SELECT i.id,
-            i.model,
-            i.vin,
-            i.status,
-            i.acquired_at,
-            i.cost_aed,
-            i.price_aed,
-            lower(COALESCE(i.status, ''::text)) = 'sold'::text AS is_sold,
-                CASE
-                    WHEN i.acquired_at IS NULL THEN NULL::integer
-                    ELSE GREATEST(0, (now() AT TIME ZONE 'Asia/Dubai'::text)::date - i.acquired_at)
-                END AS days,
-                CASE
-                    WHEN i.price_aed IS NULL OR i.cost_aed IS NULL THEN NULL::integer
-                    ELSE i.price_aed - i.cost_aed
-                END AS gross,
-                CASE
-                    WHEN i.price_aed IS NULL OR i.cost_aed IS NULL OR i.price_aed <= 0 THEN NULL::numeric
-                    ELSE round((i.price_aed - i.cost_aed)::numeric / i.price_aed::numeric * 100::numeric, 2)
-                END AS gross_pct,
-            c.tenant_id,
-            c.holding_rate,
-            c.holding_source,
-            c.holding_basis,
-            c.holding_set_by,
-            c.holding_verified_at,
-            c.warn_days,
-            c.crit_days,
-            c.promote_days,
-            c.wholesale_days,
-            c.min_margin_pct,
-            c.tol_pct,
-            c.enq_days,
-            c.min_enq_sources,
-            c.min_overlap,
-            c.ok_quality,
-            c.mkt_max_age,
-            c.on_defaults,
-            ec.src_rows,
-            ec.resolved_rows
-           FROM inventory i
-             JOIN cfg c ON c.tenant_id = i.tenant_id
-             JOIN enq_cover ec ON ec.tenant_id = i.tenant_id
-        ), mkt AS (
-         SELECT b.tenant_id,
-            b.id,
-            k.competitor,
-            k.price_aed AS comp_price,
-            k.match_quality,
-            k.scraped_at,
-            k.match_note,
-            k.source_host
-           FROM base b
-             LEFT JOIN LATERAL ( SELECT x.id,
-                    x.competitor,
-                    x.model,
-                    x.price_aed,
-                    x.our_price_aed,
-                    x.price_diff_aed,
-                    x.ai_recommendation,
-                    x.scraped_at,
-                    x.listing_title,
-                    x.source_host,
-                    x.source_kind,
-                    x.offer_name,
-                    x.offer_condition,
-                    x.match_quality,
-                    x.match_note,
-                    x.tenant_id
-                   FROM competitors x
-                  WHERE x.tenant_id = b.tenant_id AND lower(btrim(x.model)) = lower(btrim(b.model))
-                  ORDER BY x.scraped_at DESC NULLS LAST, x.id DESC
-                 LIMIT 1) k ON true
-        ), enq AS (
-         SELECT b.tenant_id,
-            b.id,
-            count(e.ref) AS enq_n,
-            count(*) FILTER (WHERE e.kind = 'lead'::text) AS enq_leads,
-            count(*) FILTER (WHERE e.kind = 'message'::text) AS enq_msgs,
-            max(e.created_at) AS enq_last
-           FROM base b
-             LEFT JOIN enq_src e ON e.tenant_id = b.tenant_id AND (( SELECT count(*) AS count
-                   FROM unnest(nexus_model_tokens(b.model)) t(t)
-                  WHERE t.t = ANY (e.tk))) >= b.min_overlap
-          GROUP BY b.tenant_id, b.id
-        ), j AS (
-         SELECT b.id,
-            b.model,
-            b.vin,
-            b.status,
-            b.acquired_at,
-            b.cost_aed,
-            b.price_aed,
-            b.is_sold,
-            b.days,
-            b.gross,
-            b.gross_pct,
-            b.tenant_id,
-            b.holding_rate,
-            b.holding_source,
-            b.holding_basis,
-            b.holding_set_by,
-            b.holding_verified_at,
-            b.warn_days,
-            b.crit_days,
-            b.promote_days,
-            b.wholesale_days,
-            b.min_margin_pct,
-            b.tol_pct,
-            b.enq_days,
-            b.min_enq_sources,
-            b.min_overlap,
-            b.ok_quality,
-            b.mkt_max_age,
-            b.on_defaults,
-            b.src_rows,
-            b.resolved_rows,
-            m.competitor,
-            m.comp_price,
-            m.match_quality,
-            m.scraped_at AS comp_scraped_at,
-            m.match_note,
-            m.source_host,
-            e.enq_n,
-            e.enq_leads,
-            e.enq_msgs,
-            e.enq_last,
-            b.resolved_rows >= b.min_enq_sources AS enq_ok,
-                CASE
-                    WHEN b.days IS NULL THEN 'UNKNOWN'::text
-                    WHEN b.is_sold THEN 'HEALTHY'::text
-                    WHEN b.days >= b.crit_days THEN 'CRITICAL'::text
-                    WHEN b.days >= b.warn_days THEN 'WARNING'::text
-                    ELSE 'HEALTHY'::text
-                END AS band,
-                CASE
-                    WHEN b.holding_rate IS NULL OR b.days IS NULL THEN 'NOT_COMPUTABLE'::text
-                    WHEN b.holding_basis = 'PLACEHOLDER'::text THEN 'PLACEHOLDER'::text
-                    ELSE 'COMPUTED'::text
-                END AS holding_state,
-                CASE
-                    WHEN b.holding_rate IS NULL OR b.days IS NULL THEN NULL::numeric
-                    ELSE round(b.holding_rate * b.days::numeric)
-                END AS holding_aed,
-                CASE
-                    WHEN m.competitor IS NULL THEN 'UNKNOWN_NO_COMPARABLE'::text
-                    WHEN lower(COALESCE(m.match_quality, ''::text)) <> ALL (b.ok_quality) THEN 'UNKNOWN_UNVERIFIED_COMPARABLE'::text
-                    WHEN m.scraped_at IS NULL OR m.scraped_at < (now() - make_interval(days => b.mkt_max_age)) THEN 'UNKNOWN_STALE_COMPARABLE'::text
-                    WHEN m.comp_price IS NULL OR b.price_aed IS NULL THEN 'UNKNOWN_NO_PRICE'::text
-                    WHEN (abs(b.price_aed - m.comp_price)::numeric / NULLIF(m.comp_price, 0)::numeric * 100::numeric) <= b.tol_pct THEN 'AT_MARKET'::text
-                    WHEN b.price_aed > m.comp_price THEN 'ABOVE_MARKET'::text
-                    ELSE 'BELOW_MARKET'::text
-                END AS market_position
-           FROM base b
-             JOIN mkt m ON m.tenant_id = b.tenant_id AND m.id = b.id
-             JOIN enq e ON e.tenant_id = b.tenant_id AND e.id = b.id
-        ), risk AS (
-         SELECT j.id,
-            j.model,
-            j.vin,
-            j.status,
-            j.acquired_at,
-            j.cost_aed,
-            j.price_aed,
-            j.is_sold,
-            j.days,
-            j.gross,
-            j.gross_pct,
-            j.tenant_id,
-            j.holding_rate,
-            j.holding_source,
-            j.holding_basis,
-            j.holding_set_by,
-            j.holding_verified_at,
-            j.warn_days,
-            j.crit_days,
-            j.promote_days,
-            j.wholesale_days,
-            j.min_margin_pct,
-            j.tol_pct,
-            j.enq_days,
-            j.min_enq_sources,
-            j.min_overlap,
-            j.ok_quality,
-            j.mkt_max_age,
-            j.on_defaults,
-            j.src_rows,
-            j.resolved_rows,
-            j.competitor,
-            j.comp_price,
-            j.match_quality,
-            j.comp_scraped_at,
-            j.match_note,
-            j.source_host,
-            j.enq_n,
-            j.enq_leads,
-            j.enq_msgs,
-            j.enq_last,
-            j.enq_ok,
-            j.band,
-            j.holding_state,
-            j.holding_aed,
-            j.market_position,
-                CASE
-                    WHEN j.days IS NULL THEN NULL::integer
-                    WHEN j.is_sold THEN 0
-                    WHEN j.days >= j.crit_days THEN 3
-                    WHEN j.days >= j.warn_days THEN 2
-                    WHEN j.days >= j.promote_days THEN 1
-                    ELSE 0
-                END AS age_rank,
-                CASE
-                    WHEN j.gross IS NULL OR j.gross_pct IS NULL THEN NULL::integer
-                    WHEN j.gross <= 0 THEN 3
-                    WHEN j.gross_pct < j.min_margin_pct THEN 2
-                    ELSE 0
-                END AS margin_rank
-           FROM j
-        ), r AS (
-         SELECT risk.id,
-            risk.model,
-            risk.vin,
-            risk.status,
-            risk.acquired_at,
-            risk.cost_aed,
-            risk.price_aed,
-            risk.is_sold,
-            risk.days,
-            risk.gross,
-            risk.gross_pct,
-            risk.tenant_id,
-            risk.holding_rate,
-            risk.holding_source,
-            risk.holding_basis,
-            risk.holding_set_by,
-            risk.holding_verified_at,
-            risk.warn_days,
-            risk.crit_days,
-            risk.promote_days,
-            risk.wholesale_days,
-            risk.min_margin_pct,
-            risk.tol_pct,
-            risk.enq_days,
-            risk.min_enq_sources,
-            risk.min_overlap,
-            risk.ok_quality,
-            risk.mkt_max_age,
-            risk.on_defaults,
-            risk.src_rows,
-            risk.resolved_rows,
-            risk.competitor,
-            risk.comp_price,
-            risk.match_quality,
-            risk.comp_scraped_at,
-            risk.match_note,
-            risk.source_host,
-            risk.enq_n,
-            risk.enq_leads,
-            risk.enq_msgs,
-            risk.enq_last,
-            risk.enq_ok,
-            risk.band,
-            risk.holding_state,
-            risk.holding_aed,
-            risk.market_position,
-            risk.age_rank,
-            risk.margin_rank,
-            GREATEST(COALESCE(risk.age_rank, '-1'::integer), COALESCE(risk.margin_rank, '-1'::integer)) AS overall_rank_raw,
-                CASE
-                    WHEN risk.is_sold THEN 'HOLD'::text
-                    WHEN risk.days IS NULL OR risk.price_aed IS NULL OR risk.cost_aed IS NULL THEN 'MANAGER_REVIEW'::text
-                    WHEN risk.gross <= 0 THEN 'MANAGER_REVIEW'::text
-                    WHEN risk.days >= risk.wholesale_days AND risk.gross_pct < risk.min_margin_pct THEN 'WHOLESALE'::text
-                    WHEN risk.days >= risk.wholesale_days THEN 'MANAGER_REVIEW'::text
-                    WHEN risk.days >= risk.warn_days AND risk.market_position = 'BELOW_MARKET'::text THEN 'INSPECT'::text
-                    WHEN risk.days >= risk.warn_days AND risk.gross_pct >= risk.min_margin_pct THEN 'REPRICE'::text
-                    WHEN risk.days >= risk.warn_days THEN 'INSPECT'::text
-                    WHEN risk.gross_pct < risk.min_margin_pct THEN 'MANAGER_REVIEW'::text
-                    WHEN risk.days >= risk.promote_days THEN 'PROMOTE'::text
-                    ELSE 'HOLD'::text
-                END AS recommendation
-           FROM risk
-        )
- SELECT tenant_id,
-    id,
-    model,
-    vin,
-    status,
-    acquired_at,
-    days AS days_in_stock,
-    band AS aging_band,
-        CASE
-            WHEN days IS NULL THEN NULL::integer
-            ELSE GREATEST(0, warn_days - days)
-        END AS days_to_warning,
-        CASE
-            WHEN days IS NULL THEN NULL::integer
-            ELSE GREATEST(0, crit_days - days)
-        END AS days_to_critical,
-    cost_aed,
-    price_aed,
-    gross AS gross_margin_aed,
-    gross_pct AS gross_margin_pct,
-    cost_aed AS capital_tied_aed,
-    holding_rate AS holding_cost_per_day_aed,
-    holding_basis AS holding_cost_basis,
-    holding_source AS holding_cost_source,
-    holding_set_by AS holding_cost_set_by,
-    holding_verified_at AS holding_cost_verified_at,
-        CASE
-            WHEN holding_state = 'NOT_COMPUTABLE'::text THEN NULL::numeric
-            ELSE holding_aed
-        END AS holding_cost_accrued_aed,
-    holding_state AS holding_cost_state,
-        CASE
-            WHEN holding_rate IS NULL THEN ((((('Not computable. This dealership has not recorded what a day of floor costs, so no '::text || 'holding figure and no net margin are shown. The inputs are here instead: AED '::text) || to_char(COALESCE(cost_aed, 0), 'FM999,999,999'::text)) || ' of capital tied up for '::text) || COALESCE(days::text, 'an unknown number of'::text)) || ' days. '::text) || 'Enter a sourced rate in Settings and this becomes a number.'::text
-            WHEN days IS NULL THEN 'Not computable: this unit has no acquisition date, so there are no days to charge a rate against.'::text
-            WHEN holding_basis = 'PLACEHOLDER'::text THEN ((((((('ASSUMPTION, not this dealership''s money. AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || '/day x '::text) || days) || ' days, using a PLACEHOLDER rate recorded by '::text) || COALESCE(holding_set_by, 'someone unnamed'::text)) || ': '::text) || COALESCE(holding_source, 'no source given'::text)) || '. Replace it with the dealership''s floor-plan figure before anyone acts on this number.'::text
-            ELSE ((((((((('AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || '/day x '::text) || days) || ' days. Rate supplied by '::text) || COALESCE(holding_set_by, 'unnamed'::text)) || ', source: '::text) || COALESCE(holding_source, 'source missing'::text)) || ', confirmed '::text) || COALESCE(to_char(holding_verified_at, 'DD Mon YYYY'::text), 'never'::text)) || '.'::text
-        END AS holding_cost_note,
-        CASE
-            WHEN holding_state = 'NOT_COMPUTABLE'::text OR gross IS NULL THEN NULL::numeric
-            ELSE gross::numeric - holding_aed
-        END AS net_margin_aed,
-        CASE
-            WHEN gross IS NULL THEN 'NOT_COMPUTABLE'::text
-            ELSE holding_state
-        END AS net_margin_state,
-        CASE
-            WHEN gross IS NULL THEN 'Net margin not computable: list price or acquisition cost is missing.'::text
-            WHEN holding_state = 'NOT_COMPUTABLE'::text THEN (('Net margin NOT COMPUTABLE - gross margin of AED '::text || to_char(gross, 'FM999,999,999'::text)) || ' is real, the holding cost that would be subtracted from it is not on record. '::text) || 'Gross is shown; net is withheld rather than guessed.'::text
-            WHEN holding_state = 'PLACEHOLDER'::text THEN 'Net margin shown against a PLACEHOLDER holding rate. Treat as a model, not as money.'::text
-            ELSE 'Gross margin minus holding cost at the rate this dealership supplied.'::text
-        END AS net_margin_note,
-    market_position,
-    competitor AS market_competitor,
-    comp_price AS market_price_aed,
-    match_quality AS market_match_quality,
-    comp_scraped_at AS market_scraped_at,
-        CASE market_position
-            WHEN 'UNKNOWN_NO_COMPARABLE'::text THEN 'No competitor row for this exact model, so this unit has NO market position. Unknown, not average.'::text
-            WHEN 'UNKNOWN_UNVERIFIED_COMPARABLE'::text THEN ((((((('A competitor row exists ('::text || COALESCE(competitor, '?'::text)) || ' at AED '::text) || to_char(COALESCE(comp_price, 0), 'FM999,999,999'::text)) || ') but nothing ties that price to this car - '::text) || 'match quality '::text) || COALESCE(NULLIF(match_quality, ''::text), 'not recorded'::text)) || COALESCE(('. Their own note: "'::text || match_note) || '"'::text, ''::text)) || '. Shown as evidence only; no position is derived from it and no price move is recommended because of it.'::text
-            WHEN 'UNKNOWN_STALE_COMPARABLE'::text THEN ((('The only comparable for this model was captured '::text || COALESCE(to_char(comp_scraped_at, 'DD Mon YYYY'::text), 'at an unrecorded time'::text)) || ', older than the '::text) || mkt_max_age) || '-day freshness window. Too old to price against.'::text
-            WHEN 'UNKNOWN_NO_PRICE'::text THEN 'A comparable exists but one of the two prices is missing, so no position can be taken.'::text
-            WHEN 'AT_MARKET'::text THEN ((('Within '::text || tol_pct) || '% of a verified comparable at '::text) || COALESCE(competitor, '?'::text)) || '.'::text
-            WHEN 'ABOVE_MARKET'::text THEN ((('AED '::text || to_char(abs(COALESCE(price_aed, 0) - COALESCE(comp_price, 0)), 'FM999,999,999'::text)) || ' above a verified comparable at '::text) || COALESCE(competitor, '?'::text)) || '.'::text
-            ELSE ((('AED '::text || to_char(abs(COALESCE(price_aed, 0) - COALESCE(comp_price, 0)), 'FM999,999,999'::text)) || ' below a verified comparable at '::text) || COALESCE(competitor, '?'::text)) || '.'::text
-        END AS market_note,
-        CASE
-            WHEN NOT enq_ok THEN 'UNKNOWN_LOW_COVERAGE'::text
-            WHEN enq_n > 0 THEN 'ENQUIRIES_PRESENT'::text
-            ELSE 'NO_ENQUIRIES_IN_WINDOW'::text
-        END AS demand_signal,
-    enq_n AS enquiries_in_window,
-    enq_leads AS enquiry_leads,
-    enq_msgs AS enquiry_messages,
-    enq_last AS enquiry_last_at,
-    src_rows AS enquiry_source_rows,
-    resolved_rows AS enquiry_resolved_rows,
-    enq_days AS enquiry_window_days,
-        CASE
-            WHEN enq_ok THEN 'SUFFICIENT'::text
-            ELSE 'INSUFFICIENT'::text
-        END AS enquiry_coverage,
-        CASE
-            WHEN enq_ok THEN ((((((enq_n || ' enquiry '::text) ||
-            CASE
-                WHEN enq_n = 1 THEN 'record'::text
-                ELSE 'records'::text
-            END) || ' in '::text) || enq_days) || ' days, matched to this unit on '::text) || min_overlap) || ' or more shared model words.'::text
-            ELSE ((((((((('Counted but NOT used to decide. Across the whole lot, '::text || src_rows) || ' enquiry rows in '::text) || enq_days) || ' days resolve to a vehicle only '::text) || resolved_rows) || ' times, under the floor of '::text) || min_enq_sources) || '. At that coverage a count of '::text) || enq_n) || ' says what our records hold, not what the market wants, so it cannot move a recommendation.'::text
-        END AS enquiry_note,
-        CASE age_rank
-            WHEN 3 THEN 'SEVERE'::text
-            WHEN 2 THEN 'HIGH'::text
-            WHEN 1 THEN 'ELEVATED'::text
-            WHEN 0 THEN 'LOW'::text
-            ELSE 'UNKNOWN'::text
-        END AS age_risk,
-    age_rank AS age_risk_rank,
-        CASE margin_rank
-            WHEN 3 THEN 'SEVERE'::text
-            WHEN 2 THEN 'HIGH'::text
-            WHEN 0 THEN 'LOW'::text
-            ELSE 'UNKNOWN'::text
-        END AS margin_risk,
-    margin_rank AS margin_risk_rank,
-        CASE
-            WHEN age_rank IS NULL AND margin_rank IS NULL THEN 'UNKNOWN'::text
-            WHEN overall_rank_raw = 3 THEN 'SEVERE'::text
-            WHEN overall_rank_raw = 2 THEN 'HIGH'::text
-            WHEN overall_rank_raw = 1 THEN 'ELEVATED'::text
-            ELSE 'LOW'::text
-        END AS overall_risk,
-        CASE
-            WHEN age_rank IS NULL AND margin_rank IS NULL THEN NULL::integer
-            ELSE overall_rank_raw
-        END AS overall_risk_rank,
-        CASE
-            WHEN age_rank IS NULL AND margin_rank IS NULL THEN 'Neither age nor margin can be assessed: no acquisition date and no price/cost pair.'::text
-            WHEN age_rank IS NULL THEN 'Margin risk only - this unit has no acquisition date, so it has no age and no ageing band.'::text
-            WHEN margin_rank IS NULL THEN 'Age risk only - list price or acquisition cost is missing, so margin risk is unknown.'::text
-            ELSE (((('Overall risk is the higher of age risk ('::text || age_rank) || ') and margin risk ('::text) || margin_rank) || '), not a weighted blend. Nothing here has been calibrated against real days-to-sell, '::text) || 'so a weighting would be an invention.'::text
-        END AS risk_basis,
-    recommendation,
-        CASE recommendation
-            WHEN 'HOLD'::text THEN
-            CASE
-                WHEN is_sold THEN 'Marked Sold. No lot action applies to a unit that is off the lot.'::text
-                ELSE ((((('On the lot '::text || days) || ' days with '::text) || gross_pct) || '% gross margin intact - inside the healthy band and not yet at the '::text) || promote_days) || '-day promotion point. Nothing to do.'::text
-            END
-            WHEN 'PROMOTE'::text THEN ((((('At '::text || days) || ' days this unit is in the last third of the healthy band and enters WARNING in '::text) || GREATEST(0, warn_days - days)) || ' days. Marketing spend now still has the full AED '::text) || to_char(COALESCE(gross, 0), 'FM999,999,999'::text)) || ' of gross margin behind it; after the band it will not.'::text
-            WHEN 'REPRICE'::text THEN ((((((('On the lot '::text || days) || ' days - past the '::text) || warn_days) || '-day ageing threshold this database already uses - and still carrying '::text) || gross_pct) || '% gross margin, which is room above the '::text) || min_margin_pct) || '% floor to move the price without going under cost.'::text
-            WHEN 'INSPECT'::text THEN
-            CASE
-                WHEN market_position = 'BELOW_MARKET'::text THEN (('Aged at '::text || days) || ' days while already priced below a verified comparable. Price is not '::text) || 'what is stopping this one - inspect condition, photos and description before cutting further.'::text
-                ELSE ((((('Aged at '::text || days) || ' days with only '::text) || gross_pct) || '% gross margin, under the '::text) || min_margin_pct) || '% floor. A price cut has no room to work here, so the question is the car, not the number.'::text
-            END
-            WHEN 'WHOLESALE'::text THEN ((((('On the lot '::text || days) || ' days - past the '::text) || wholesale_days) || '-day point - with only '::text) || gross_pct) || '% gross margin left. Retail has had six months and there is no room left to cut.'::text
-            WHEN 'MANAGER_REVIEW'::text THEN
-            CASE
-                WHEN days IS NULL THEN 'No acquisition date on this unit, so it has no age and no ageing band. Nothing can be recommended until that is recorded.'::text
-                WHEN price_aed IS NULL OR cost_aed IS NULL THEN ('Missing '::text ||
-                CASE
-                    WHEN price_aed IS NULL AND cost_aed IS NULL THEN 'both list price and cost'::text
-                    WHEN price_aed IS NULL THEN 'a list price'::text
-                    ELSE 'an acquisition cost'::text
-                END) || ', so margin cannot be computed and no recommendation is safe.'::text
-                WHEN gross <= 0 THEN ((('Listed at AED '::text || to_char(COALESCE(price_aed, 0), 'FM999,999,999'::text)) || ' against a cost of AED '::text) || to_char(COALESCE(cost_aed, 0), 'FM999,999,999'::text)) || ' - at or below cost before any discount. A person has to decide this one.'::text
-                WHEN days >= wholesale_days THEN (((((('On the lot '::text || days) || ' days, past the '::text) || wholesale_days) || '-day point, yet still carrying '::text) || gross_pct) || '% margin. Six months of pricing has not moved it, so the choice between a deeper cut '::text) || 'and a wholesale is a person''s, not the engine''s.'::text
-                ELSE ((('Gross margin is '::text || gross_pct) || '%, under the '::text) || min_margin_pct) || '% floor, on a unit that is not yet aged. Priced this close to cost it has no room to discount later.'::text
-            END
-            ELSE NULL::text
-        END AS reason,
-        CASE
-            WHEN is_sold THEN 'HIGH'::text
-            WHEN days IS NULL OR price_aed IS NULL OR cost_aed IS NULL THEN 'LOW'::text
-            WHEN market_position ~~ 'UNKNOWN%'::text OR NOT enq_ok THEN 'MEDIUM'::text
-            ELSE 'HIGH'::text
-        END AS confidence,
-        CASE
-            WHEN is_sold THEN 'The unit''s own status field is the whole basis.'::text
-            WHEN days IS NULL OR price_aed IS NULL OR cost_aed IS NULL THEN 'A required input is missing from the record, so this is a finding about the data rather than about the car.'::text
-            WHEN market_position ~~ 'UNKNOWN%'::text AND NOT enq_ok THEN ('The trigger - days in stock against the band this database already uses, and margin from real cost '::text || 'and price - is solid. Capped at MEDIUM because neither of the two things that would confirm the '::text) || 'direction is available: no verified market comparable, and enquiry coverage below the floor.'::text
-            WHEN market_position ~~ 'UNKNOWN%'::text THEN 'The trigger is solid. Capped at MEDIUM because there is no verified market comparable for this model.'::text
-            WHEN NOT enq_ok THEN 'The trigger is solid. Capped at MEDIUM because enquiry coverage across the lot is below the floor.'::text
-            ELSE 'Days, margin, a verified market comparable and adequate enquiry coverage all present.'::text
-        END AS confidence_basis,
-        CASE
-            WHEN recommendation = 'HOLD'::text THEN NULL::integer
-            WHEN gross IS NULL THEN NULL::integer
-            ELSE gross
-        END AS impact_aed,
-        CASE
-            WHEN recommendation = 'HOLD'::text THEN 'NONE'::text
-            WHEN gross IS NULL THEN 'NOT_COMPUTABLE'::text
-            ELSE 'MARGIN_EXPOSED'::text
-        END AS impact_kind,
-        CASE
-            WHEN recommendation = 'HOLD'::text THEN
-            CASE
-                WHEN is_sold THEN 'No action recommended, so no impact is claimed.'::text
-                ELSE ('No action recommended, so no impact is claimed. AED '::text || to_char(COALESCE(gross, 0), 'FM999,999,999'::text)) || ' of gross margin is intact and not at risk yet.'::text
-            END
-            WHEN gross IS NULL THEN 'Not computable: margin cannot be derived from this record.'::text
-            ELSE ((((('EXPOSURE - AED '::text || to_char(gross, 'FM999,999,999'::text)) || ' of gross margin (list minus acquisition cost) sits in a unit that has not sold in '::text) || COALESCE(days::text, 'an unknown number of'::text)) || ' days. This is the amount AT RISK. It is not '::text) || 'expected loss, not attributed revenue and not recovered revenue. '::text) ||
-            CASE
-                WHEN holding_state = 'NOT_COMPUTABLE'::text THEN 'How fast it is being eaten is NOT COMPUTABLE - no holding rate on record.'::text
-                WHEN holding_state = 'PLACEHOLDER'::text THEN ('On a PLACEHOLDER rate it would be reduced by AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || ' a day, which is an assumption, not this dealership''s cost.'::text
-                ELSE ('It is being reduced by AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || ' of holding cost every further day, at the rate this dealership supplied.'::text
-            END
-        END AS impact_basis,
-        CASE recommendation
-            WHEN 'HOLD'::text THEN NULL::text
-            WHEN 'PROMOTE'::text THEN 'Marketing'::text
-            WHEN 'INSPECT'::text THEN 'Workshop / Recon'::text
-            WHEN 'REPRICE'::text THEN 'Sales Manager'::text
-            WHEN 'WHOLESALE'::text THEN 'Sales Manager'::text
-            WHEN 'MANAGER_REVIEW'::text THEN 'Sales Manager'::text
-            ELSE NULL::text
-        END AS suggested_owner_role,
-        CASE
-            WHEN recommendation = 'HOLD'::text THEN 'NO_ACTION'::text
-            ELSE 'ROLE_ONLY'::text
-        END AS suggested_owner_state,
-        CASE
-            WHEN recommendation = 'HOLD'::text THEN 'No action, so no owner.'::text
-            ELSE 'A role, not a person. NEXUS holds no role directory for this dealership, so it will not '::text || 'put a name against an action it cannot verify that person owns.'::text
-        END AS suggested_owner_note,
-    recommendation <> 'HOLD'::text AS human_approval_required,
-        CASE recommendation
-            WHEN 'HOLD'::text THEN 'NONE_NEEDED'::text
-            WHEN 'PROMOTE'::text THEN 'AUTOMATABLE_AFTER_APPROVAL'::text
-            ELSE 'MANUAL_ONLY'::text
-        END AS automation_state,
-    jsonb_build_array(jsonb_build_object('fact', (('On the lot '::text || COALESCE(days::text, 'an unknown number of'::text)) || ' days'::text) ||
-        CASE
-            WHEN acquired_at IS NULL THEN ''::text
-            ELSE (' (acquired '::text || to_char(acquired_at::timestamp with time zone, 'DD Mon YYYY'::text)) || ')'::text
-        END, 'source', 'inventory.acquired_at, counted on the Asia/Dubai calendar'), jsonb_build_object('fact',
-        CASE
-            WHEN gross IS NULL THEN 'Gross margin not computable'::text
-            ELSE ((('Gross margin AED '::text || to_char(gross, 'FM999,999,999'::text)) || ' ('::text) || gross_pct) || '% of list)'::text
-        END, 'source', 'inventory.price_aed minus inventory.cost_aed'), jsonb_build_object('fact',
-        CASE
-            WHEN holding_rate IS NULL THEN 'Holding cost: UNKNOWN - no rate on record for this dealership'::text
-            WHEN holding_basis = 'PLACEHOLDER'::text THEN ('Holding cost AED '::text || to_char(COALESCE(holding_aed, 0::numeric), 'FM999,999,999'::text)) || ' on a PLACEHOLDER rate'::text
-            ELSE 'Holding cost accrued AED '::text || to_char(COALESCE(holding_aed, 0::numeric), 'FM999,999,999'::text)
-        END, 'source', 'inventory_profit_settings.holding_cost_per_day_aed'::text || COALESCE((((' ('::text || holding_source) || ', set by '::text) || holding_set_by) || ')'::text, ''::text)), jsonb_build_object('fact',
-        CASE
-            WHEN gross IS NULL OR holding_state = 'NOT_COMPUTABLE'::text THEN 'Net margin: NOT COMPUTABLE'::text
-            ELSE 'Net margin AED '::text || to_char(gross::numeric - holding_aed, 'FM999,999,999'::text)
-        END, 'source', 'gross margin minus holding cost'), jsonb_build_object('fact', 'Market position: '::text || market_position, 'source', 'competitors, newest row for this exact model'::text || COALESCE((((' ('::text || competitor) || ', match quality '::text) || COALESCE(NULLIF(match_quality, ''::text), 'not recorded'::text)) || ')'::text, ''::text)), jsonb_build_object('fact', ((((enq_n || ' resolvable enquiries in '::text) || enq_days) || ' days ('::text) ||
-        CASE
-            WHEN enq_ok THEN 'coverage sufficient'::text
-            ELSE 'coverage below floor - evidence only'::text
-        END) || ')'::text, 'source', ('leads.vehicle_interest and inbound communication_logs, matched on '::text || min_overlap) || '+ shared model words'::text), jsonb_build_object('fact', ((((('Band '::text || band) || ' at warn '::text) || warn_days) || ' / critical '::text) || crit_days) || ' days'::text, 'source', 'inventory_profit_settings, defaulted from recompute_inventory_derived()'), jsonb_build_object('fact', (('Risk: age '::text ||
-        CASE age_rank
-            WHEN 3 THEN 'SEVERE'::text
-            WHEN 2 THEN 'HIGH'::text
-            WHEN 1 THEN 'ELEVATED'::text
-            WHEN 0 THEN 'LOW'::text
-            ELSE 'UNKNOWN'::text
-        END) || ', margin '::text) ||
-        CASE margin_rank
-            WHEN 3 THEN 'SEVERE'::text
-            WHEN 2 THEN 'HIGH'::text
-            WHEN 0 THEN 'LOW'::text
-            ELSE 'UNKNOWN'::text
-        END, 'source', 'days_in_stock against the configured bands; gross margin % against min_reprice_margin_pct')) AS evidence,
-    warn_days,
-    crit_days,
-    promote_days,
-    wholesale_days,
-    min_margin_pct,
-    tol_pct,
-    min_enq_sources,
-    min_overlap AS min_model_token_overlap,
-    mkt_max_age AS market_max_age_days,
-    on_defaults AS settings_are_defaults,
-    now() AS computed_at
-   FROM r;
-
-CREATE OR REPLACE VIEW public.v_inventory_sales WITH (security_invoker=on) AS
- SELECT id,
-    model,
-    status,
-    price_aed,
-    days_in_stock,
-    tenant_id
-   FROM inventory i
-  WHERE tenant_id = nexus_scoped_tenant_id();
-
 CREATE OR REPLACE VIEW public.v_lead_messages WITH (security_invoker=true) AS
  WITH person AS (
          SELECT l_1.id,
@@ -8985,357 +8230,6 @@ CREATE OR REPLACE VIEW public.v_lead_messages WITH (security_invoker=true) AS
           WHERE wc.chat_id = c.lead_email AND wc.tenant_id = c.tenant_id AND (COALESCE(btrim(l.email), ''::text) <> ''::text AND lower(btrim(wc.lead_email)) = lower(btrim(l.email)) OR length(regexp_replace(COALESCE(wc.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text)) >= 9 AND "right"(regexp_replace(COALESCE(wc.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text), 9) = "right"(regexp_replace(COALESCE(l.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text), 9) AND length(regexp_replace(COALESCE(l.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text)) >= 9 AND (EXISTS ( SELECT 1
                    FROM unique_tail ut2
                   WHERE ut2.tenant_id = l.tenant_id AND ut2.tail9 = "right"(regexp_replace(COALESCE(l.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text), 9)))))));
-
-CREATE OR REPLACE VIEW public.v_lead_recovery_health WITH (security_invoker=true) AS
- SELECT a.tenant_id,
-    count(*) AS actions_total,
-    count(*) FILTER (WHERE a.status = 'PROPOSED'::text) AS awaiting_decision,
-    count(*) FILTER (WHERE a.status = 'PROPOSED'::text AND a.escalated_at IS NOT NULL) AS escalated_no_approver,
-    count(*) FILTER (WHERE a.status = 'APPROVED'::text AND a.executed_at IS NULL) AS approved_not_executed,
-    count(*) FILTER (WHERE a.status = 'EXECUTED'::text) AS executed,
-    count(*) FILTER (WHERE a.status = 'EXECUTION_FAILED'::text) AS execution_failed,
-    count(*) FILTER (WHERE a.status = 'REJECTED'::text) AS rejected,
-    count(*) FILTER (WHERE a.status = 'DEFERRED'::text) AS deferred,
-    count(*) FILTER (WHERE a.status = 'CANCELLED'::text) AS cancelled,
-    count(*) FILTER (WHERE a.outcome_state = 'ATTRIBUTED'::text) AS outcomes_attributed,
-    count(*) FILTER (WHERE a.outcome_state = 'NOT_ATTRIBUTABLE'::text) AS outcomes_not_attributable,
-    count(*) FILTER (WHERE a.status = 'EXECUTED'::text AND a.outcome_state = 'AWAITING_OUTCOME'::text) AS executed_awaiting_outcome,
-    sum(a.recovered_value_aed) FILTER (WHERE a.outcome_state = 'ATTRIBUTED'::text) AS attributed_revenue_aed,
-    max(a.proposed_at) AS last_proposed_at,
-    max(a.decided_at) AS last_decided_at,
-    max(a.executed_at) AS last_executed_at,
-    ev.events_total,
-    ev.events_without_audit,
-    aud.audit_rows,
-    aud.audit_rows_30d,
-    aud.last_audit_at,
-        CASE
-            WHEN count(*) = 0 THEN 'NO_ACTIONS'::text
-            WHEN COALESCE(ev.events_without_audit, 0::bigint) > 0 THEN 'AUDIT_TRAIL_BROKEN'::text
-            WHEN COALESCE(aud.audit_rows, 0::bigint) = 0 THEN 'AUDIT_TRAIL_BROKEN'::text
-            WHEN count(*) FILTER (WHERE a.status = 'EXECUTION_FAILED'::text) > 0 THEN 'EXECUTIONS_FAILING'::text
-            WHEN count(*) FILTER (WHERE a.status = 'PROPOSED'::text AND a.escalated_at IS NOT NULL) > 0 THEN 'NOBODY_MAY_APPROVE'::text
-            ELSE 'ACTIVE'::text
-        END AS health
-   FROM lead_recovery_actions a
-     LEFT JOIN LATERAL ( SELECT count(*) AS events_total,
-            count(*) FILTER (WHERE e.audit_log_id IS NULL) AS events_without_audit
-           FROM lead_recovery_action_events e
-          WHERE e.tenant_id = a.tenant_id) ev ON true
-     LEFT JOIN LATERAL ( SELECT count(*) AS audit_rows,
-            count(*) FILTER (WHERE l.logged_at > (now() - '30 days'::interval)) AS audit_rows_30d,
-            max(l.logged_at) AS last_audit_at
-           FROM audit_log l
-          WHERE l.tenant_id = a.tenant_id AND l.workflow = 'Lead Recovery Action Center'::text) aud ON true
-  GROUP BY a.tenant_id, ev.events_total, ev.events_without_audit, aud.audit_rows, aud.audit_rows_30d, aud.last_audit_at;
-
-CREATE OR REPLACE VIEW public.v_policy_rule WITH (security_invoker=true) AS
- SELECT r.id,
-    r.tenant_id,
-    r.tenant_id IS NULL AS is_global_rule,
-    r.jurisdiction,
-    r.rule_type,
-    r.rule_name,
-    r.version,
-    r.supersedes_id,
-    r.value_numeric,
-    r.value_text,
-    r.unit,
-    r.value_kind,
-        CASE
-            WHEN r.verification_status = 'UNKNOWN'::text THEN NULL::text
-            WHEN r.value_kind = 'NUMERIC'::text THEN (TRIM(BOTH FROM to_char(r.value_numeric, 'FM999,999,999,990.999999'::text)) || ' '::text) || r.unit
-            ELSE r.value_text
-        END AS value_display,
-    r.status,
-    r.verification_status,
-    r.confidence,
-    r.effective_from,
-    r.effective_to,
-    r.source_name,
-    r.source_url,
-    r.source_document,
-    r.verification_date,
-    r.verified_by,
-    r.added_by,
-    r.added_at,
-    r.updated_at,
-    r.notes,
-    a.authority,
-        CASE a.authority
-            WHEN 'AUTHORITATIVE'::text THEN ((('Verified against '::text || COALESCE(r.source_name, 'its source'::text)) || ' on '::text) || to_char(r.verification_date::timestamp with time zone, 'DD Mon YYYY'::text)) || ' and in force today. This rule may be relied on.'::text
-            WHEN 'UNKNOWN'::text THEN 'No value has ever been stated for this rule. It is registered as a question, not as an answer. '::text || 'Nothing may be computed from it and no claim may be made on it.'::text
-            WHEN 'NOT_VERIFIED'::text THEN (('A value is recorded but NOBODY HAS CHECKED IT against '::text || COALESCE(r.source_name, 'any source'::text)) || '. It describes what this system currently does, not what the law or the lender says. '::text) || 'It may not be quoted to a customer or used in a regulatory claim.'::text
-            WHEN 'DISPUTED'::text THEN 'Sources disagree about this rule. Until that is resolved it may not be relied on.'::text
-            WHEN 'NOT_IN_FORCE'::text THEN ('This version is '::text || lower(r.status)) || ' — it is not the rule in force.'::text
-            WHEN 'NO_EFFECTIVE_DATE'::text THEN 'This version states no effective_from, so it cannot be tied to the date any decision was taken.'::text
-            WHEN 'NOT_YET_EFFECTIVE'::text THEN ('This version does not take effect until '::text || to_char(r.effective_from::timestamp with time zone, 'DD Mon YYYY'::text)) || '.'::text
-            WHEN 'EXPIRED'::text THEN ('This version stopped applying on '::text || to_char(r.effective_to::timestamp with time zone, 'DD Mon YYYY'::text)) || '. It remains readable because decisions taken while it applied were correct under it.'::text
-            ELSE 'Unrecognised authority state.'::text
-        END AS authority_reason,
-    a.authority = 'AUTHORITATIVE'::text AS may_be_relied_on
-   FROM policy_rule r
-     CROSS JOIN LATERAL ( SELECT policy_authority(r.status, r.verification_status, r.effective_from, r.effective_to, (now() AT TIME ZONE 'Asia/Dubai'::text)::date) AS authority) a;
-
-CREATE OR REPLACE VIEW public.v_policy_rule_history WITH (security_invoker=true) AS
- SELECT r.tenant_id,
-    r.jurisdiction,
-    r.rule_type,
-    r.rule_name,
-    r.version,
-    r.id,
-    r.supersedes_id,
-    r.status,
-    r.verification_status,
-    r.value_numeric,
-    r.value_text,
-    r.unit,
-    r.effective_from,
-    r.effective_to,
-    r.source_name,
-    r.source_document,
-    r.verification_date,
-    r.verified_by,
-    r.added_by,
-    r.added_at,
-    prev.value_numeric AS previous_value_numeric,
-    prev.value_text AS previous_value_text,
-    prev.effective_from AS previous_effective_from,
-    prev.effective_to AS previous_effective_to,
-    prev.source_name AS previous_source_name
-   FROM policy_rule r
-     LEFT JOIN policy_rule prev ON prev.id = r.supersedes_id;
-
-CREATE OR REPLACE VIEW public.v_team_performance WITH (security_invoker=true) AS
- SELECT u.id,
-    u.name,
-    u.email,
-    u.role,
-    u.status,
-    count(l.id) AS leads_assigned,
-    count(l.id) FILTER (WHERE upper(l.status) = 'HOT'::text) AS hot_leads,
-    round(avg(l.response_time_minutes), 1) AS avg_response_minutes,
-    count(l.id) FILTER (WHERE l.response_time_minutes <= 5) AS within_sla,
-    count(l.id) FILTER (WHERE l.response_time_minutes > 5) AS breached_sla,
-    sum(l.budget_aed) FILTER (WHERE nexus_lead_is_open(l.status)) AS pipeline_aed
-   FROM users u
-     LEFT JOIN leads l ON l.assigned_to_id = u.id
-  GROUP BY u.id, u.name, u.email, u.role, u.status;
-
-CREATE OR REPLACE VIEW public.v_whatsapp_conversation_window WITH (security_invoker=true) AS
- SELECT c.tenant_id,
-    c.integration_id,
-    cr.channel_type,
-    cr.external_identifier AS channel_identifier,
-    c.customer_wa_id,
-    c.last_customer_message_at,
-    c.last_customer_message_external_id,
-    c.last_customer_message_source,
-    w.rule_id AS window_rule_id,
-    w.value_numeric AS window_hours,
-    w.verification_status AS window_rule_verification_status,
-    w.authority AS window_rule_authority,
-        CASE
-            WHEN c.last_customer_message_at IS NULL OR w.value_numeric IS NULL THEN NULL::timestamp with time zone
-            ELSE c.last_customer_message_at + w.value_numeric::double precision * '01:00:00'::interval
-        END AS window_expires_at,
-        CASE
-            WHEN c.last_customer_message_at IS NULL OR w.value_numeric IS NULL THEN 'UNKNOWN'::text
-            WHEN now() < (c.last_customer_message_at + w.value_numeric::double precision * '01:00:00'::interval) THEN 'OPEN'::text
-            ELSE 'CLOSED'::text
-        END AS window_state,
-    COALESCE(o.state, 'OPT_IN_UNKNOWN'::text) AS opt_in_state,
-    o.occurred_at AS opt_in_last_event_at,
-    o.evidence_ref AS opt_in_evidence_ref
-   FROM whatsapp_conversation_state c
-     JOIN channel_registry cr ON cr.integration_id = c.integration_id
-     LEFT JOIN LATERAL whatsapp_policy_rule_lookup(c.tenant_id, 'PLATFORM_WHATSAPP'::text, 'WA_CUSTOMER_SERVICE_WINDOW_HOURS'::text) w(rule_id, jurisdiction, rule_name, value_numeric, value_text, unit, status, verification_status, authority, source_name, source_url, effective_from, notes) ON true
-     LEFT JOIN LATERAL ( SELECT
-                CASE
-                    WHEN e.event = 'OPT_IN'::text THEN 'OPTED_IN'::text
-                    ELSE 'OPTED_OUT'::text
-                END AS state,
-            e.occurred_at,
-            e.evidence_ref
-           FROM whatsapp_opt_in_event e
-          WHERE e.tenant_id = c.tenant_id AND e.integration_id = c.integration_id AND e.customer_wa_id = c.customer_wa_id
-          ORDER BY e.occurred_at DESC, e.recorded_at DESC
-         LIMIT 1) o ON true;
-
-CREATE OR REPLACE VIEW public.v_whatsapp_message_usage WITH (security_invoker=true) AS
- SELECT u.usage_id,
-    u.tenant_id,
-    u.integration_id,
-    u.event_id,
-    u.sent_at,
-    u.message_category,
-    u.template_required,
-    u.template_id,
-    t.name AS template_name,
-    t.language AS template_language,
-    u.policy_decision,
-    u.policy_reason_code,
-    u.policy_rule_id,
-    u.policy_rule_name,
-    u.policy_rule_verification_status,
-    u.policy_decided_at,
-    u.template_provider_status_at_send,
-    u.template_status_age_at_send,
-    u.template_staleness_verdict_at_send,
-    t.provider_status AS template_provider_status_now,
-    u.template_id IS NOT NULL AND u.template_provider_status_at_send IS NOT NULL AND t.provider_status IS DISTINCT FROM u.template_provider_status_at_send AS template_status_changed_since_send,
-    u.latest_status,
-    u.latest_status_at,
-    u.billing_fact_state,
-    u.provider_billable,
-    u.provider_pricing_model,
-    u.provider_pricing_category,
-    u.provider_pricing_type,
-    u.provider_conversation_id,
-    u.provider_conversation_origin_type,
-    u.provider_conversation_expiration_at,
-    u.provider_pricing_observed_at,
-    u.cost_state,
-        CASE u.cost_state
-            WHEN 'UNKNOWN_AWAITING_PROVIDER_REPORT'::text THEN 'Unknown - no status callback has arrived for this message yet.'::text
-            WHEN 'UNKNOWN_PROVIDER_REPORTED_NO_PRICING'::text THEN 'Unknown - the provider''s callback carried no pricing object.'::text
-            WHEN 'NOT_BILLABLE_PROVIDER_REPORTED'::text THEN 'Not billable - the provider itself reported billable = false.'::text
-            WHEN 'BILLABLE_AMOUNT_UNKNOWN_NO_RATE_CARD'::text THEN 'Billable, amount unknown - the provider charged for this and NEXUS holds no rate card for its country, category or date.'::text
-            ELSE 'Unknown.'::text
-        END AS cost_answer,
-    u.recorded_at,
-    u.updated_at
-   FROM whatsapp_message_usage u
-     LEFT JOIN whatsapp_templates t ON t.template_id = u.template_id;
-
-CREATE OR REPLACE VIEW public.v_whatsapp_messaging_usage_monthly WITH (security_invoker=true) AS
- SELECT tenant_id,
-    date_trunc('month'::text, sent_at) AS month,
-    message_category,
-    count(*) AS messages,
-    count(*) FILTER (WHERE provider_billable IS TRUE) AS provider_billable_messages,
-    count(*) FILTER (WHERE provider_billable IS FALSE) AS provider_not_billable_messages,
-    count(*) FILTER (WHERE billing_fact_state = 'AWAITING_PROVIDER_REPORT'::text) AS awaiting_provider_report,
-    count(*) FILTER (WHERE billing_fact_state = 'PROVIDER_REPORTED_NO_PRICING'::text) AS reported_without_pricing,
-    count(DISTINCT provider_conversation_id) AS provider_conversations_reported,
-    count(*) FILTER (WHERE template_required) AS template_messages,
-    count(*) FILTER (WHERE policy_rule_verification_status = 'VERIFIED'::text) AS sent_under_a_verified_rule,
-    count(*) FILTER (WHERE policy_rule_verification_status = ANY (ARRAY['NOT_VERIFIED'::text, 'UNKNOWN'::text, 'DISPUTED'::text])) AS sent_under_an_unverified_rule,
-    count(*) FILTER (WHERE policy_rule_verification_status = 'NO_RULE_APPLIED'::text) AS sent_with_no_rule_applied,
-    count(*) FILTER (WHERE latest_status = 'failed'::text) AS failed_messages,
-    count(*) FILTER (WHERE latest_status IS NULL) AS no_status_reported,
-    'UNKNOWN - NEXUS holds no WhatsApp rate card. Meta prices by country, category and date; these are counts of what was sent and what the provider said about it, not an amount.'::text AS cost_answer
-   FROM whatsapp_message_usage u
-  GROUP BY tenant_id, (date_trunc('month'::text, sent_at)), message_category;
-
-CREATE OR REPLACE VIEW public.v_whatsapp_template_registry WITH (security_invoker=true) AS
- SELECT template_id,
-    tenant_id,
-    integration_id,
-    name,
-    language,
-    category,
-    nexus_state,
-    provider_status,
-    provider_status_raw,
-    provider_status_source,
-    provider_status_observed_at,
-        CASE
-            WHEN provider_status_observed_at IS NULL THEN NULL::interval
-            ELSE now() - provider_status_observed_at
-        END AS status_age,
-        CASE
-            WHEN provider_status_source = 'NEVER_OBSERVED'::text THEN 'NEVER_OBSERVED'::text
-            ELSE 'OBSERVED'::text
-        END AS status_confidence,
-    previous_provider_status,
-    previous_status_observed_at,
-    provider_rejected_reason,
-    body_variable_count,
-    variable_schema,
-    body_text,
-    body_text_source,
-        CASE
-            WHEN provider_status = 'UNKNOWN'::text THEN 'NEXUS has never asked the provider about this template. It is not approved, and it is not rejected -- it is unknown.'::text
-            WHEN previous_provider_status IS NOT NULL AND provider_status <> previous_provider_status THEN format('The provider changed this template from %s to %s. Anything NEXUS sent on the old status was sent on a belief that no longer holds.'::text, previous_provider_status, provider_status)
-            WHEN provider_status = 'APPROVED'::text THEN format('The provider said APPROVED when NEXUS last asked, on %s. Whether that is still true depends on how long ago that was.'::text, to_char(provider_status_observed_at, 'YYYY-MM-DD HH24:MI'::text))
-            ELSE format('The provider last reported %s, on %s.'::text, provider_status, to_char(provider_status_observed_at, 'YYYY-MM-DD HH24:MI'::text))
-        END AS what_this_row_claims,
-    created_at,
-    updated_at
-   FROM whatsapp_templates t;
-
-CREATE OR REPLACE VIEW public.v_workflow_health WITH (security_invoker=true) AS
- SELECT r.id,
-    r.name,
-    r.category,
-    r.trigger_type,
-    r.trigger_detail,
-    r.description,
-    r.is_active,
-    r.writes_audit_log,
-    COALESCE(a.runs, 0::bigint) AS runs,
-    COALESCE(a.failures, 0::bigint) AS failures,
-    COALESCE(a.escalations, 0::bigint) AS escalations,
-    COALESCE(a.runs_30d, 0::bigint) AS runs_30d,
-    COALESCE(a.failures_30d, 0::bigint) AS failures_30d,
-    COALESCE(a.partials_30d, 0::bigint) AS partials_30d,
-    COALESCE(a.no_result_30d, 0::bigint) AS no_result_30d,
-    COALESCE(a.rejected_30d, 0::bigint) AS rejected_30d,
-    COALESCE(a.escalated_30d, 0::bigint) AS escalated_30d,
-    COALESCE(a.successes_30d, 0::bigint) AS successes_30d,
-    COALESCE(a.unknown_30d, 0::bigint) AS unknown_30d,
-    COALESCE(a.effective_runs_30d, 0::bigint) AS effective_runs_30d,
-        CASE
-            WHEN COALESCE(a.effective_runs_30d, 0::bigint) = 0 THEN NULL::numeric
-            ELSE round(100.0 * a.successes_30d::numeric / a.effective_runs_30d::numeric, 1)
-        END AS success_rate_30d,
-        CASE
-            WHEN COALESCE(a.effective_runs, 0::bigint) = 0 THEN NULL::numeric
-            ELSE round(100.0 * a.successes::numeric / a.effective_runs::numeric, 1)
-        END AS success_rate,
-    a.last_run,
-    a.last_success,
-    a.last_failure,
-    a.last_partial,
-    a.last_incomplete,
-        CASE
-            WHEN NOT r.writes_audit_log THEN 'NOT_INSTRUMENTED'::text
-            WHEN COALESCE(a.runs, 0::bigint) = 0 THEN 'NEVER_RAN'::text
-            WHEN COALESCE(a.failures_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
-            WHEN COALESCE(a.partials_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
-            WHEN COALESCE(a.unknown_30d, 0::bigint) > 0 THEN 'UNKNOWN_OUTCOME'::text
-            WHEN COALESCE(a.escalated_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
-            WHEN COALESCE(a.effective_runs_30d, 0::bigint) = 0 THEN 'NO_QUALIFYING_RUNS'::text
-            WHEN (COALESCE(a.no_result_30d, 0::bigint) * 2) > COALESCE(a.effective_runs_30d, 0::bigint) THEN 'PRODUCING_NOTHING'::text
-            WHEN COALESCE(a.no_result_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
-            ELSE 'HEALTHY'::text
-        END AS health
-   FROM workflow_registry r
-     LEFT JOIN LATERAL ( SELECT count(*) AS runs,
-            count(*) FILTER (WHERE x.c = 'FAILURE'::text) AS failures,
-            count(*) FILTER (WHERE x.c = 'ESCALATED'::text) AS escalations,
-            count(*) FILTER (WHERE x.c = 'SUCCESS'::text) AS successes,
-            count(*) FILTER (WHERE x.c <> ALL (ARRAY['REJECTED_EXPECTED'::text, 'ESCALATED'::text])) AS effective_runs,
-            count(*) FILTER (WHERE x.recent) AS runs_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'FAILURE'::text) AS failures_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'PARTIAL'::text) AS partials_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'NO_RESULT'::text) AS no_result_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'REJECTED_EXPECTED'::text) AS rejected_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'ESCALATED'::text) AS escalated_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'SUCCESS'::text) AS successes_30d,
-            count(*) FILTER (WHERE x.recent AND x.c = 'UNKNOWN'::text) AS unknown_30d,
-            count(*) FILTER (WHERE x.recent AND (x.c <> ALL (ARRAY['REJECTED_EXPECTED'::text, 'ESCALATED'::text]))) AS effective_runs_30d,
-            max(x.logged_at) AS last_run,
-            max(x.logged_at) FILTER (WHERE x.c = 'SUCCESS'::text) AS last_success,
-            max(x.logged_at) FILTER (WHERE x.c = 'FAILURE'::text) AS last_failure,
-            max(x.logged_at) FILTER (WHERE x.c = 'PARTIAL'::text) AS last_partial,
-            max(x.logged_at) FILTER (WHERE x.c = ANY (ARRAY['FAILURE'::text, 'PARTIAL'::text])) AS last_incomplete
-           FROM ( SELECT l.logged_at,
-                    l.logged_at > (now() - '30 days'::interval) AS recent,
-                    nexus_outcome_class(l.workflow, l.status, l.summary) AS c
-                   FROM audit_log l
-                  WHERE l.workflow = r.name OR l.workflow = r.audit_name OR (l.workflow = ANY (r.audit_aliases))) x) a ON true;
 
 CREATE OR REPLACE VIEW public.v_attribution_edges WITH (security_invoker=on) AS
  WITH cfg AS (
@@ -9909,6 +8803,54 @@ CREATE OR REPLACE VIEW public.v_attribution_lead_chain WITH (security_invoker=on
         END, 'aed', COALESCE(revenue_aed, 0::bigint))) AS chain
    FROM base b;
 
+CREATE OR REPLACE VIEW public.v_attribution_link_map WITH (security_invoker=on) AS
+ WITH vis AS (
+         SELECT t.id AS tenant_id,
+            t.name AS tenant_name
+           FROM tenants t
+        ), agg AS (
+         SELECT e.tenant_id,
+            e.edge,
+            count(*)::integer AS instances_total,
+            count(*) FILTER (WHERE b_1.is_evidence)::integer AS instances_evidenced,
+            count(*) FILTER (WHERE NOT b_1.is_evidence)::integer AS instances_refused
+           FROM v_attribution_edges e
+             JOIN attribution_link_basis b_1 USING (basis)
+          GROUP BY e.tenant_id, e.edge
+        )
+ SELECT v.tenant_id,
+    v.tenant_name,
+    et.seq,
+    et.edge,
+    et.from_node,
+    et.to_node,
+    et.state,
+    et.basis,
+    b.is_evidence AS basis_is_evidence,
+    b.default_confidence AS basis_confidence,
+    et.source_ref,
+    et.finding,
+    et.unlocked_by,
+    et.unlock_rank,
+    COALESCE(a.instances_total, 0) AS instances_total,
+    COALESCE(a.instances_evidenced, 0) AS instances_evidenced,
+    COALESCE(a.instances_refused, 0) AS instances_refused,
+        CASE
+            WHEN COALESCE(a.instances_total, 0) = 0 THEN NULL::numeric
+            ELSE round(a.instances_evidenced::numeric * 100::numeric / a.instances_total::numeric, 1)
+        END AS coverage_pct,
+        CASE
+            WHEN a.edge IS NULL AND (et.state = ANY (ARRAY['ABSENT_NO_TABLE'::text, 'ABSENT_NO_FIELD'::text, 'BLOCKED_BY_UPSTREAM'::text])) THEN ('No instances, and none can exist: '::text || lower(et.state)) || '. Coverage is UNKNOWN, not 0%.'::text
+            WHEN a.edge IS NULL THEN ('This hop is not instantiated row-by-row by v_attribution_edges - either nothing has '::text || 'happened yet, or the candidate set would be every record against every unit and is '::text) || 'reported in aggregate instead. Coverage is UNKNOWN, not 0%.'::text
+            WHEN a.instances_evidenced = 0 THEN a.instances_total || ' candidate(s) exist and NOT ONE is evidence. Everything on this hop is a refusal.'::text
+            WHEN a.instances_refused = 0 THEN ('All '::text || a.instances_total) || ' instances are evidenced.'::text
+            ELSE ((((a.instances_evidenced || ' of '::text) || a.instances_total) || ' instances are evidence; the other '::text) || a.instances_refused) || ' are refusals and must render as UNKNOWN.'::text
+        END AS coverage_note
+   FROM vis v
+     CROSS JOIN attribution_edge_type et
+     JOIN attribution_link_basis b ON b.basis = et.basis
+     LEFT JOIN agg a ON a.tenant_id = v.tenant_id AND a.edge = et.edge;
+
 CREATE OR REPLACE VIEW public.v_attribution_sale_chain WITH (security_invoker=on) AS
  WITH cfg AS (
          SELECT t.id AS tenant_id,
@@ -10198,112 +9140,447 @@ CREATE OR REPLACE VIEW public.v_attribution_sale_chain WITH (security_invoker=on
     jsonb_build_array(jsonb_build_object('hop', 'CAMPAIGN', 'state', campaign_state, 'basis', campaign_basis, 'note', campaign_note), jsonb_build_object('hop', 'LEAD', 'state', lead_state, 'basis', lead_basis, 'note', lead_note), jsonb_build_object('hop', 'CONVERSATION', 'state', conversation_state, 'basis', conversation_basis, 'note', conversation_note), jsonb_build_object('hop', 'VEHICLE', 'state', vehicle_state, 'basis', vehicle_basis, 'note', vehicle_note), jsonb_build_object('hop', 'DEAL_RECORD', 'state', deal_record_state, 'basis', deal_record_basis, 'note', deal_record_note), jsonb_build_object('hop', 'FINANCE', 'state', finance_state, 'basis', finance_basis, 'note', finance_note), jsonb_build_object('hop', 'REVENUE', 'state', revenue_state, 'basis', revenue_basis, 'note', revenue_note), jsonb_build_object('hop', 'MARGIN', 'state', margin_state, 'basis', 'NO_LINK_FIELD', 'note', margin_note)) AS chain
    FROM walk w;
 
-CREATE OR REPLACE VIEW public.v_inventory_action_queue WITH (security_invoker=true) AS
- SELECT a.id,
-    a.tenant_id,
-    a.unit_id,
-    i.model AS unit_model,
-    i.vin AS unit_vin,
-    i.status AS unit_status,
-    i.price_aed AS unit_price_aed,
-    i.cost_aed AS unit_cost_aed,
-    a.status,
-    a.status = ANY (ARRAY['PROPOSED'::text, 'APPROVED'::text, 'DEFERRED'::text]) AS is_live,
-    a.status = 'PROPOSED'::text AS awaiting_decision,
-    a.status = 'DEFERRED'::text AND a.defer_until IS NOT NULL AND a.defer_until <= CURRENT_DATE AS deferral_now_due,
-    a.recommendation,
-    a.engine_reason,
-    a.engine_confidence,
-    a.engine_confidence_basis,
-    a.engine_impact_aed,
-    a.engine_impact_kind,
-    a.engine_impact_basis,
-    a.engine_overall_risk,
-    a.engine_days_in_stock,
-    a.engine_gross_margin_aed,
-    a.engine_owner_role,
-    a.engine_evidence,
-    a.engine_computed_at,
-    s.recommendation AS engine_now_recommendation,
-    s.overall_risk AS engine_now_risk,
-    s.days_in_stock AS engine_now_days_in_stock,
-    s.impact_aed AS engine_now_impact_aed,
-    s.reason AS engine_now_reason,
+CREATE OR REPLACE VIEW public.v_audit_unregistered_writers WITH (security_invoker=true) AS
+ SELECT tenant_id,
+    workflow AS workflow_written_in_audit_log,
+    count(*) AS audit_rows,
+    count(*) FILTER (WHERE logged_at > (now() - '30 days'::interval)) AS audit_rows_30d,
+    min(logged_at) AS first_written_at,
+    max(logged_at) AS last_written_at,
+    array_agg(DISTINCT status) AS statuses_seen,
         CASE
-            WHEN s.recommendation IS NULL THEN NULL::boolean
-            ELSE s.recommendation = a.recommendation
-        END AS engine_still_agrees,
-    a.proposed_at,
-    pu.name AS proposed_by_name,
-    a.proposed_source,
-    a.decided_at,
-    du.name AS decided_by_name,
-    du.role AS decided_by_job_title,
-    a.decided_by_authority,
-    a.decision_reason_code,
-    rc.label AS decision_reason_label,
-    rc.meaning AS decision_reason_meaning,
-    rc.engine_was_wrong AS decision_says_engine_was_wrong,
-    a.decision_note,
-    a.defer_until,
-    a.assigned_to_staff_id,
-    au.name AS assigned_to_name,
-    a.assigned_role,
-    a.assigned_at,
-    a.executed_at,
-    eu.name AS executed_by_name,
-    a.execution_note,
-    a.execution_failure,
-    a.escalated_at,
-    a.escalation_reason,
-    a.outcome_state,
-    a.outcome_purchase_id,
-    ph.vehicle AS outcome_sale_vehicle,
-    ph.amount_aed AS outcome_sale_amount_aed,
-    ph.purchase_date AS outcome_sale_date,
-    a.outcome_recorded_at,
-    ou.name AS outcome_recorded_by_name,
-    a.attribution_basis,
-    a.attribution_note,
-    a.recovered_value_aed,
-    a.recovered_value_basis,
-        CASE a.outcome_state
-            WHEN 'NONE_YET'::text THEN
-            CASE
-                WHEN a.status = 'PROPOSED'::text THEN 'No outcome, because nothing has been done yet. This is still waiting for a decision.'::text
-                WHEN a.status = 'APPROVED'::text THEN 'No outcome yet. This has been approved but not carried out, and an approval is a decision, not money.'::text
-                WHEN a.status = 'DEFERRED'::text THEN 'No outcome, because the decision was to wait.'::text
-                ELSE 'No outcome recorded.'::text
-            END
-            WHEN 'AWAITING_OUTCOME'::text THEN ((('Carried out on '::text || to_char((a.executed_at AT TIME ZONE 'Asia/Dubai'::text), 'DD Mon YYYY'::text)) || '. Nothing has been attributed to it yet. NEXUS will not claim a recovery until a real '::text) || 'recorded sale is tied to this unit by a person, and today no column anywhere links a '::text) || 'sale to a unit - purchase_history stores the vehicle as free text.'::text
-            WHEN 'ATTRIBUTED'::text THEN (('Attributed to a recorded sale by '::text || COALESCE(ou.name, 'an approver'::text)) || '. '::text) || COALESCE(a.recovered_value_basis, 'Realised margin is not computable: the sale amount or the unit cost is missing, '::text || 'so no figure is shown rather than a zero.'::text)
-            WHEN 'NOT_ATTRIBUTABLE'::text THEN 'Closed with no attributable outcome. '::text || COALESCE(a.attribution_note, ''::text)
-            WHEN 'CLOSED_WITHOUT_ACTION'::text THEN
-            CASE
-                WHEN a.status = 'REJECTED'::text THEN 'No outcome to measure: the recommendation was rejected, which is itself the useful result.'::text
-                WHEN a.status = 'EXECUTION_FAILED'::text THEN 'No outcome: the action was attempted and not carried out.'::text
-                ELSE 'No outcome to measure: the action was withdrawn before it was carried out.'::text
-            END
-            ELSE NULL::text
-        END AS outcome_sentence,
+            WHEN workflow = 'Inventory Action Center'::text THEN 'Known and deliberate. Human decisions, not an n8n run - see v_action_center_health.'::text
+            ELSE 'Unrecognised writer. Register it from the box with its real n8n id, or establish it is not a NEXUS workflow. Do not invent a registry row.'::text
+        END AS disposition
+   FROM audit_log l
+  WHERE NOT (EXISTS ( SELECT 1
+           FROM workflow_registry r
+          WHERE l.workflow = r.name OR l.workflow = r.audit_name OR (l.workflow = ANY (r.audit_aliases))))
+  GROUP BY tenant_id, workflow;
+
+CREATE OR REPLACE VIEW public.v_channel_provider_capability WITH (security_invoker=true) AS
+ SELECT c.provider,
+    r.rank AS provider_rank,
+    COALESCE(r.is_official_platform, false) AS is_official_platform,
+    c.send_form,
+    f.label AS send_form_label,
+    f.requires_template_ref,
+    f.is_media,
+    c.support_state,
+    c.basis,
+    c.verified_at,
+    c.support_state = 'SUPPORTED'::text AND c.basis <> 'MEASURED_HERE'::text AS supported_but_never_exercised_here,
+    c.evidence,
+    c.set_by
+   FROM channel_provider_capability c
+     JOIN channel_send_form f ON f.code = c.send_form
+     LEFT JOIN channel_provider_rank r ON r.provider = c.provider;
+
+CREATE OR REPLACE VIEW public.v_channel_send_health WITH (security_invoker=true) AS
+ SELECT tenant_id,
+    integration_id,
+    provider,
+    external_identifier,
+    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval)) AS routed_7d,
+    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND directive = 'SEND'::text) AS sends_7d,
+    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'ACCEPTED_BY_PROVIDER'::text) AS accepted_7d,
+    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'REJECTED_BY_PROVIDER'::text) AS rejected_7d,
+    count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'TRANSPORT_ERROR'::text) AS transport_errors_7d,
+    count(*) FILTER (WHERE send_result = 'PENDING'::text) AS pending_now,
+    max(result_recorded_at) FILTER (WHERE send_result = 'ACCEPTED_BY_PROVIDER'::text) AS last_accepted_at,
+    max(result_recorded_at) FILTER (WHERE send_result = ANY (ARRAY['REJECTED_BY_PROVIDER'::text, 'TRANSPORT_ERROR'::text])) AS last_failed_at,
         CASE
-            WHEN a.status <> 'PROPOSED'::text THEN NULL::text
-            WHEN a.engine_impact_aed IS NULL THEN 'The engine claims no monetary impact for this unit, so nothing is stated about the cost of waiting.'::text
-            ELSE (((('AED '::text || to_char(a.engine_impact_aed, 'FM999,999,999'::text)) || ' of gross margin stays exposed in a unit that has been on the lot '::text) || COALESCE(a.engine_days_in_stock::text, 'an unknown number of'::text)) || ' days. That is the amount AT RISK, not an expected loss and not a recoverable sum. '::text) || 'How fast it is being eaten is NOT COMPUTABLE - this dealership has no holding rate on record.'::text
-        END AS cost_of_doing_nothing,
-    CURRENT_DATE - a.proposed_at::date AS days_open,
-    a.created_at,
-    a.updated_at
+            WHEN count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND directive = 'SEND'::text) = 0 THEN 'NO_SENDS_MEASURED'::text
+            WHEN count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'ACCEPTED_BY_PROVIDER'::text) = 0 THEN 'PRODUCING_NOTHING'::text
+            WHEN count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND (send_result = ANY (ARRAY['REJECTED_BY_PROVIDER'::text, 'TRANSPORT_ERROR'::text]))) > count(*) FILTER (WHERE routed_at > (now() - '7 days'::interval) AND send_result = 'ACCEPTED_BY_PROVIDER'::text) THEN 'DEGRADED'::text
+            ELSE 'CARRYING'::text
+        END AS observed_state
+   FROM channel_send_directive d
+  GROUP BY tenant_id, integration_id, provider, external_identifier;
+
+CREATE OR REPLACE VIEW public.v_competitor_latest WITH (security_invoker=on) AS
+ SELECT DISTINCT ON (competitor, model) id,
+    competitor,
+    model,
+    price_aed,
+    our_price_aed,
+    price_diff_aed,
+    ai_recommendation,
+    scraped_at,
+    listing_title,
+    source_host,
+    source_kind,
+    offer_name,
+    offer_condition,
+    match_quality,
+    match_note
+   FROM competitors c
+  ORDER BY competitor, model, scraped_at DESC;
+
+CREATE OR REPLACE VIEW public.v_conversations WITH (security_invoker=true) AS
+ WITH resolved AS (
+         SELECT cl.id,
+            cl.lead_email,
+            cl.channel,
+            cl.direction,
+            cl.message,
+            cl.created_at,
+            cl.tenant_id,
+            nexus_is_message(cl.direction, cl.channel, cl.message) AS is_msg,
+            COALESCE(lower(l_direct.email), lower(wc_direct.lead_email), lower(cl.lead_email)) AS person_key,
+                CASE
+                    WHEN cl.lead_email ~~ '%@lid'::text OR cl.lead_email ~~ '%@c.us'::text THEN cl.lead_email
+                    ELSE wc_by_lead.chat_id
+                END AS reply_chat_id
+           FROM communication_logs cl
+             LEFT JOIN leads l_direct ON lower(l_direct.email) = lower(cl.lead_email) AND l_direct.tenant_id = cl.tenant_id
+             LEFT JOIN whatsapp_contacts wc_direct ON wc_direct.chat_id = cl.lead_email AND wc_direct.tenant_id = cl.tenant_id
+             LEFT JOIN whatsapp_contacts wc_by_lead ON lower(wc_by_lead.lead_email) = lower(cl.lead_email) AND wc_by_lead.tenant_id = cl.tenant_id
+          WHERE cl.lead_email IS NOT NULL AND cl.lead_email <> ''::text
+        ), threads AS (
+         SELECT resolved.tenant_id,
+            resolved.person_key,
+            (array_agg(resolved.reply_chat_id ORDER BY (resolved.reply_chat_id IS NULL), resolved.created_at DESC))[1] AS chat_id,
+            count(*) AS message_count,
+            count(*) FILTER (WHERE resolved.direction = 'inbound'::text) AS inbound_count,
+            count(*) FILTER (WHERE resolved.direction = 'outbound'::text) AS outbound_count,
+            max(resolved.created_at) AS last_message_at,
+            (array_agg(resolved.message ORDER BY resolved.created_at DESC))[1] AS last_message,
+            (array_agg(resolved.direction ORDER BY resolved.created_at DESC))[1] AS last_direction,
+            count(*) FILTER (WHERE resolved.is_msg) AS msg_count,
+            count(*) FILTER (WHERE NOT resolved.is_msg) AS internal_count,
+            count(*) FILTER (WHERE resolved.is_msg AND resolved.direction = 'inbound'::text) AS msg_inbound_count,
+            count(*) FILTER (WHERE resolved.is_msg AND resolved.direction = 'outbound'::text) AS msg_outbound_count,
+            max(resolved.created_at) FILTER (WHERE resolved.is_msg) AS last_msg_at,
+            (array_agg(resolved.message ORDER BY resolved.created_at DESC) FILTER (WHERE resolved.is_msg))[1] AS last_msg,
+            (array_agg(resolved.direction ORDER BY resolved.created_at DESC) FILTER (WHERE resolved.is_msg))[1] AS last_msg_direction
+           FROM resolved
+          GROUP BY resolved.tenant_id, resolved.person_key
+        )
+ SELECT t.person_key AS thread_key,
+    t.chat_id,
+    COALESCE(wc.phone, wc2.phone) AS phone,
+    COALESCE(wc.push_name, wc2.push_name) AS push_name,
+    COALESCE(l.email, wc.lead_email, wc2.lead_email) AS lead_email,
+    l.name AS lead_name,
+    l.status AS lead_status,
+    COALESCE(l.name, NULLIF(wc.push_name, ''::text), NULLIF(wc2.push_name, ''::text), NULLIF(wc.phone, ''::text), NULLIF(wc2.phone, ''::text), t.person_key) AS display_name,
+        CASE
+            WHEN l.name IS NOT NULL THEN 'lead'::text
+            WHEN COALESCE(wc.push_name, wc2.push_name) IS NOT NULL THEN 'whatsapp_profile'::text
+            WHEN COALESCE(wc.phone, wc2.phone) IS NOT NULL THEN 'phone_only'::text
+            ELSE 'unidentified'::text
+        END AS identified,
+    t.message_count,
+    t.inbound_count,
+    t.outbound_count,
+    t.last_message_at,
+    t.last_message,
+    t.last_direction,
+    t.last_direction = 'inbound'::text AS awaiting_reply,
+    t.msg_count,
+    t.internal_count,
+    t.msg_inbound_count,
+    t.msg_outbound_count,
+    t.last_msg_at,
+    t.last_msg,
+    t.last_msg_direction,
+    t.last_msg_direction = 'inbound'::text AS awaiting_msg_reply,
+    t.tenant_id
+   FROM threads t
+     LEFT JOIN leads l ON lower(l.email) = t.person_key AND l.tenant_id = t.tenant_id
+     LEFT JOIN whatsapp_contacts wc ON wc.chat_id = t.chat_id AND wc.tenant_id = t.tenant_id
+     LEFT JOIN whatsapp_contacts wc2 ON lower(wc2.lead_email) = t.person_key AND wc2.tenant_id = t.tenant_id;
+
+CREATE OR REPLACE VIEW public.v_customer_360 WITH (security_invoker=true) AS
+ WITH ids AS (
+         SELECT lower(btrim(leads.email)) AS email,
+            leads.tenant_id
+           FROM leads
+          WHERE leads.email IS NOT NULL AND leads.email <> ''::text
+        UNION
+         SELECT lower(btrim(purchase_history.email)) AS email,
+            purchase_history.tenant_id
+           FROM purchase_history
+          WHERE purchase_history.email IS NOT NULL AND purchase_history.email <> ''::text
+        ), ident AS (
+         SELECT i_1.email,
+            i_1.tenant_id,
+            max(NULLIF(regexp_replace(COALESCE(l_1.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text), ''::text)) AS digits
+           FROM ids i_1
+             LEFT JOIN leads l_1 ON lower(btrim(l_1.email)) = i_1.email AND l_1.tenant_id = i_1.tenant_id
+          GROUP BY i_1.email, i_1.tenant_id
+        ), keys AS (
+         SELECT d.email,
+            d.tenant_id,
+            k.key
+           FROM ident d
+             CROSS JOIN LATERAL ( SELECT d.email AS key
+                UNION
+                 SELECT regexp_replace(d.email, '[^0-9]'::text, ''::text, 'g'::text) || '@c.us'::text
+                  WHERE d.email ~~ '+%@whatsapp.lead'::text AND regexp_replace(d.email, '[^0-9]'::text, ''::text, 'g'::text) <> ''::text
+                UNION
+                 SELECT ('+'::text || d.digits) || '@whatsapp.lead'::text
+                  WHERE d.digits IS NOT NULL
+                UNION
+                 SELECT d.digits || '@c.us'::text
+                  WHERE d.digits IS NOT NULL
+                UNION
+                 SELECT wc.chat_id
+                   FROM whatsapp_contacts wc
+                  WHERE wc.chat_id IS NOT NULL AND wc.tenant_id = d.tenant_id AND (lower(btrim(wc.lead_email)) = d.email OR d.digits IS NOT NULL AND regexp_replace(COALESCE(wc.phone, ''::text), '[^0-9]'::text, ''::text, 'g'::text) = d.digits)) k
+          WHERE k.key IS NOT NULL AND btrim(k.key) <> ''::text
+        )
+ SELECT i.email,
+    COALESCE(max(p.customer_name), max(l.name)) AS name,
+    COALESCE(max(p.phone), max(l.phone)) AS phone,
+    count(DISTINCT l.id) AS lead_count,
+    max(l.ai_score) AS best_ai_score,
+    max(upper(l.status)) AS latest_status,
+    count(DISTINCT p.id) AS purchase_count,
+    ( SELECT sum(p2.amount_aed) AS sum
+           FROM purchase_history p2
+          WHERE lower(btrim(p2.email)) = i.email AND p2.tenant_id = i.tenant_id) AS lifetime_value_aed,
+    max(p.purchase_date) AS last_purchase_date,
+    count(DISTINCT p.id) > 0 AS is_vip,
+    ( SELECT count(*) AS count
+           FROM communication_logs c
+          WHERE c.tenant_id = i.tenant_id AND (c.lead_email IN ( SELECT k.key
+                   FROM keys k
+                  WHERE k.email = i.email AND k.tenant_id = i.tenant_id)) AND nexus_is_message(c.direction, c.channel, c.message)) AS message_count,
+    ( SELECT max(c.created_at) AS max
+           FROM communication_logs c
+          WHERE c.tenant_id = i.tenant_id AND (c.lead_email IN ( SELECT k.key
+                   FROM keys k
+                  WHERE k.email = i.email AND k.tenant_id = i.tenant_id)) AND nexus_is_message(c.direction, c.channel, c.message)) AS last_contact_at,
+    max(c3.total_emails) AS total_emails,
+    max(c3.total_slack_messages) AS total_slack_messages,
+    i.tenant_id
+   FROM ids i
+     LEFT JOIN leads l ON lower(btrim(l.email)) = i.email AND l.tenant_id = i.tenant_id
+     LEFT JOIN purchase_history p ON lower(btrim(p.email)) = i.email AND p.tenant_id = i.tenant_id
+     LEFT JOIN customer_360_profiles c3 ON lower(btrim(c3.email)) = i.email AND c3.tenant_id = i.tenant_id
+  GROUP BY i.email, i.tenant_id;
+
+CREATE OR REPLACE VIEW public.v_customer_directory WITH (security_invoker=on) AS
+ SELECT lower(email) AS id,
+    (array_agg(name ORDER BY at DESC NULLS LAST) FILTER (WHERE name IS NOT NULL AND name <> ''::text))[1] AS name,
+    lower(email) AS email,
+    (array_agg(phone ORDER BY at DESC NULLS LAST) FILTER (WHERE phone IS NOT NULL AND phone <> ''::text))[1] AS phone,
+    count(*) AS source_records,
+    max(at) AS last_seen_at,
+    tenant_id
+   FROM ( SELECT leads.email,
+            leads.name,
+            leads.phone,
+            leads.created_at AS at,
+            leads.tenant_id
+           FROM leads
+          WHERE leads.email IS NOT NULL AND leads.email <> ''::text AND leads.tenant_id = nexus_scoped_tenant_id()
+        UNION ALL
+         SELECT purchase_history.email,
+            purchase_history.customer_name,
+            purchase_history.phone,
+            purchase_history.created_at,
+            purchase_history.tenant_id
+           FROM purchase_history
+          WHERE purchase_history.email IS NOT NULL AND purchase_history.email <> ''::text AND purchase_history.tenant_id = nexus_scoped_tenant_id()) x
+  GROUP BY tenant_id, (lower(email));
+
+CREATE OR REPLACE VIEW public.v_deal_rescue_candidates WITH (security_invoker=true) AS
+ WITH lead_key AS (
+         SELECT l.tenant_id,
+            lower(btrim(l.email)) AS k,
+            min(l.id) AS lead_id,
+            count(*) AS n
+           FROM leads l
+          WHERE NULLIF(btrim(COALESCE(l.email, ''::text)), ''::text) IS NOT NULL
+          GROUP BY l.tenant_id, (lower(btrim(l.email)))
+        ), sale_by_lead AS (
+         SELECT p.tenant_id,
+            p.lead_id,
+            count(*) AS n
+           FROM purchase_history p
+          WHERE p.lead_id IS NOT NULL
+          GROUP BY p.tenant_id, p.lead_id
+        ), sale_by_email AS (
+         SELECT p.tenant_id,
+            lower(btrim(p.email)) AS k,
+            count(*) AS n
+           FROM purchase_history p
+          WHERE NULLIF(btrim(COALESCE(p.email, ''::text)), ''::text) IS NOT NULL
+          GROUP BY p.tenant_id, (lower(btrim(p.email)))
+        )
+ SELECT q.tenant_id,
+    'FINANCE_QUOTE'::text AS candidate_kind,
+    q.id::text AS candidate_ref,
+    COALESCE(NULLIF(btrim(COALESCE(q.lead_name, ''::text)), ''::text), NULLIF(btrim(COALESCE(q.lead_email, ''::text)), ''::text), '(unnamed)'::text) AS customer_label,
+    'finance_quotes'::text AS source_table,
+    q.created_at AS observed_at,
+        CASE
+            WHEN lk.n = 1 THEN lk.lead_id
+            ELSE NULL::integer
+        END AS lead_id,
+        CASE
+            WHEN lk.n = 1 THEN 'RESOLVED_EXACT_EMAIL'::text
+            WHEN lk.n > 1 THEN 'UNKNOWN_AMBIGUOUS_EMAIL'::text
+            ELSE 'UNKNOWN_UNRESOLVED_IDENTITY'::text
+        END AS identity_state,
+        CASE
+            WHEN lk.n = 1 THEN 'finance_quotes.lead_email matches exactly one leads.email in this dealership.'::text
+            ELSE 'This quote names a person NEXUS cannot resolve to exactly one lead by the exact-email clause. It is reported, not attached to anybody.'::text
+        END AS identity_basis,
+        CASE
+            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'REFUSED_ALREADY_SOLD'::text
+            ELSE 'IN_FLIGHT_DEAL'::text
+        END AS verdict,
+        CASE
+            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN NULL::text
+            ELSE 'STRONG'::text
+        END AS evidence_tier,
+        CASE
+            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'A sale is already recorded for this person. The deal is done; there is nothing to rescue.'::text
+            ELSE 'A priced, dated finance offer with no sale on record. Somebody priced a specific car for a specific person - that is a transaction under way, not an enquiry.'::text
+        END AS verdict_basis,
+    COALESCE(q.vehicle_price_aed, q.vehicle_value_aed) AS deal_value_aed,
+        CASE
+            WHEN COALESCE(q.vehicle_price_aed, q.vehicle_value_aed) IS NULL THEN 'UNKNOWN_NOT_RECORDED'::text
+            ELSE 'AT_STAKE_FROM_QUOTE'::text
+        END AS deal_value_state,
+    'EXPOSURE - the vehicle price recorded on the finance quote. This is what is AT STAKE. It is not estimated revenue, not attributed revenue and not confirmed revenue.'::text AS deal_value_basis
+   FROM finance_quotes q
+     LEFT JOIN lead_key lk ON lk.tenant_id = q.tenant_id AND lk.k = lower(btrim(COALESCE(q.lead_email, ''::text)))
+     LEFT JOIN sale_by_email se ON se.tenant_id = q.tenant_id AND se.k = lower(btrim(COALESCE(q.lead_email, ''::text)))
+     LEFT JOIN sale_by_lead sl ON sl.tenant_id = q.tenant_id AND sl.lead_id =
+        CASE
+            WHEN lk.n = 1 THEN lk.lead_id
+            ELSE NULL::integer
+        END
+UNION ALL
+ SELECT k.tenant_id,
+    'KYC_DOCUMENT'::text AS candidate_kind,
+    k.id::text AS candidate_ref,
+    COALESCE(NULLIF(btrim(COALESCE(k.lead_name, ''::text)), ''::text), NULLIF(btrim(COALESCE(k.lead_email, ''::text)), ''::text), '(unnamed)'::text) AS customer_label,
+    'kyc_documents'::text AS source_table,
+    k.created_at AS observed_at,
+        CASE
+            WHEN lk.n = 1 THEN lk.lead_id
+            ELSE NULL::integer
+        END AS lead_id,
+        CASE
+            WHEN lk.n = 1 THEN 'RESOLVED_EXACT_EMAIL'::text
+            WHEN lk.n > 1 THEN 'UNKNOWN_AMBIGUOUS_EMAIL'::text
+            ELSE 'UNKNOWN_UNRESOLVED_IDENTITY'::text
+        END AS identity_state,
+        CASE
+            WHEN lk.n = 1 THEN 'kyc_documents.lead_email matches exactly one leads.email in this dealership.'::text
+            ELSE 'This document names a person NEXUS cannot resolve to exactly one lead by the exact-email clause.'::text
+        END AS identity_basis,
+        CASE
+            WHEN k.voided_at IS NOT NULL OR upper(COALESCE(k.verdict, ''::text)) = 'REJECTED'::text OR COALESCE(k.is_valid, false) IS FALSE THEN 'REFUSED_VOIDED_OR_REJECTED'::text
+            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'REFUSED_ALREADY_SOLD'::text
+            ELSE 'IN_FLIGHT_DEAL'::text
+        END AS verdict,
+        CASE
+            WHEN k.voided_at IS NOT NULL OR upper(COALESCE(k.verdict, ''::text)) = 'REJECTED'::text OR COALESCE(k.is_valid, false) IS FALSE THEN NULL::text
+            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN NULL::text
+            ELSE 'WEAK'::text
+        END AS evidence_tier,
+        CASE
+            WHEN k.voided_at IS NOT NULL OR upper(COALESCE(k.verdict, ''::text)) = 'REJECTED'::text OR COALESCE(k.is_valid, false) IS FALSE THEN ((('Not an accepted identity document (verdict '::text || COALESCE(k.verdict, 'none'::text)) || ', document_type '::text) || COALESCE(k.document_type, 'none'::text)) || '). It evidences nothing about a deal.'::text
+            WHEN COALESCE(se.n, 0::bigint) > 0 OR COALESCE(sl.n, 0::bigint) > 0 THEN 'A sale is already recorded for this person. The deal is done.'::text
+            ELSE 'Identity papers accepted for a person with no sale on record. WEAK: the KYC workflow audits any image sent over WhatsApp, so this can raise NEEDS_MANAGER and nothing stronger.'::text
+        END AS verdict_basis,
+    NULL::bigint AS deal_value_aed,
+    'UNKNOWN_NO_LINK'::text AS deal_value_state,
+    'UNKNOWN. A KYC document carries no vehicle and no price, so nothing here says what is at stake.'::text AS deal_value_basis
+   FROM kyc_documents k
+     LEFT JOIN lead_key lk ON lk.tenant_id = k.tenant_id AND lk.k = lower(btrim(COALESCE(k.lead_email, ''::text)))
+     LEFT JOIN sale_by_email se ON se.tenant_id = k.tenant_id AND se.k = lower(btrim(COALESCE(k.lead_email, ''::text)))
+     LEFT JOIN sale_by_lead sl ON sl.tenant_id = k.tenant_id AND sl.lead_id =
+        CASE
+            WHEN lk.n = 1 THEN lk.lead_id
+            ELSE NULL::integer
+        END
+UNION ALL
+ SELECT l.tenant_id,
+    'LEAD'::text AS candidate_kind,
+    l.id::text AS candidate_ref,
+    l.name AS customer_label,
+    'leads'::text AS source_table,
+    l.created_at AS observed_at,
+    l.id AS lead_id,
+    'RESOLVED_SELF'::text AS identity_state,
+    'The candidate is the lead row itself.'::text AS identity_basis,
+    'REFUSED_NOT_DEAL_EVIDENCE'::text AS verdict,
+    NULL::text AS evidence_tier,
+    ((((('leads.status = '::text || COALESCE(l.status, '(blank)'::text)) || ', open = '::text) || COALESCE(nexus_lead_is_open(l.status)::text, 'unknown'::text)) || '. An open lead is an enquiry: nothing here says a price was agreed, a vehicle was chosen or a transaction started. '::text) || 'Calling it an in-flight deal would manufacture a deal lifecycle this dealership does not have, and Lead Recovery (v_lead_recovery) already states this lead''s risk. '::text) || 'Age is not a reason either.'::text AS verdict_basis,
+    NULL::bigint AS deal_value_aed,
+    'UNKNOWN_NO_LINK'::text AS deal_value_state,
+    'UNKNOWN. leads.budget_aed is null on every lead on file and nothing links a lead to a unit.'::text AS deal_value_basis
+   FROM leads l
+UNION ALL
+ SELECT p.tenant_id,
+    'CONFIRMED_SALE'::text AS candidate_kind,
+    p.id::text AS candidate_ref,
+    COALESCE(NULLIF(btrim(COALESCE(p.customer_name, ''::text)), ''::text), '(unnamed)'::text) AS customer_label,
+    'purchase_history'::text AS source_table,
+    p.created_at AS observed_at,
+    p.lead_id,
+        CASE
+            WHEN p.lead_id IS NOT NULL THEN 'RESOLVED_FOREIGN_KEY'::text
+            ELSE 'UNKNOWN_UNRESOLVED_IDENTITY'::text
+        END AS identity_state,
+        CASE
+            WHEN p.lead_id IS NOT NULL THEN 'purchase_history.lead_id -> leads(id), a declared foreign key.'::text
+            ELSE 'This sale names no lead. That is a recorded absence of provenance, not proof no lead existed.'::text
+        END AS identity_basis,
+    'COMPLETED_SALE_NOT_IN_FLIGHT'::text AS verdict,
+    NULL::text AS evidence_tier,
+    (('deal_id '::text || COALESCE(p.deal_id, '(none)'::text)) || ' was synthesised at the moment of sale, so this row is not the tail of a deal record - it is the whole of it. '::text) || 'DEAL_CREATED and SALE_CONFIRMED are one event here. What is known about this sale is answered by v_attribution_sale_chain.'::text AS verdict_basis,
+    p.amount_aed::bigint AS deal_value_aed,
+        CASE
+            WHEN p.amount_aed IS NULL THEN 'UNKNOWN_NOT_RECORDED'::text
+            ELSE 'CONFIRMED_REVENUE'::text
+        END AS deal_value_state,
+    'CONFIRMED revenue - a recorded business outcome. Not at stake, not estimated, not attributed.'::text AS deal_value_basis
+   FROM purchase_history p
+UNION ALL
+ SELECT a.tenant_id,
+    'APPROVED_UNEXECUTED_INVENTORY_ACTION'::text AS candidate_kind,
+    a.id::text AS candidate_ref,
+    'unit '::text || a.unit_id AS customer_label,
+    'inventory_actions'::text AS source_table,
+    a.decided_at AS observed_at,
+    NULL::integer AS lead_id,
+    'NOT_APPLICABLE_NO_CUSTOMER'::text AS identity_state,
+    'An inventory action concerns a unit. There is no customer to resolve.'::text AS identity_basis,
+    'REFUSED_NOT_DEAL_EVIDENCE'::text AS verdict,
+    NULL::text AS evidence_tier,
+    ((('An approved '::text || a.recommendation) || ' on '::text) || a.unit_id) || ' with no execution recorded. That is a stalled ACTION, not a stalled deal: no customer, no agreed price, no transaction. The Inventory Action Center owns it.'::text AS verdict_basis,
+    NULL::bigint AS deal_value_aed,
+    'NOT_APPLICABLE'::text AS deal_value_state,
+    'A unit''s exposed margin is not a deal value and must not be read as one.'::text AS deal_value_basis
    FROM inventory_actions a
-     LEFT JOIN inventory i ON i.tenant_id = a.tenant_id AND i.id = a.unit_id
-     LEFT JOIN v_inventory_profit_sentinel s ON s.tenant_id = a.tenant_id AND s.id = a.unit_id
-     LEFT JOIN users pu ON pu.id = a.proposed_by_staff_id
-     LEFT JOIN users du ON du.id = a.decided_by_staff_id
-     LEFT JOIN users au ON au.id = a.assigned_to_staff_id
-     LEFT JOIN users eu ON eu.id = a.executed_by_staff_id
-     LEFT JOIN users ou ON ou.id = a.outcome_recorded_by_staff_id
-     LEFT JOIN purchase_history ph ON ph.id = a.outcome_purchase_id
-     LEFT JOIN inventory_action_reason_codes rc ON rc.code = a.decision_reason_code;
+  WHERE a.status = 'APPROVED'::text AND a.executed_at IS NULL
+UNION ALL
+ SELECT r.tenant_id,
+    'APPROVED_UNEXECUTED_LEAD_RECOVERY_ACTION'::text AS candidate_kind,
+    r.id::text AS candidate_ref,
+    'lead '::text || r.lead_id::text AS customer_label,
+    'lead_recovery_actions'::text AS source_table,
+    r.decided_at AS observed_at,
+    r.lead_id,
+    'RESOLVED_FOREIGN_KEY'::text AS identity_state,
+    'lead_recovery_actions.lead_id -> leads(id).'::text AS identity_basis,
+    'REFUSED_NOT_DEAL_EVIDENCE'::text AS verdict,
+    NULL::text AS evidence_tier,
+    ('An approved '::text || r.recommendation) || ' with no execution recorded. Lead Recovery already surfaces this as action_state on the lead; raising a deal from it would put one piece of work on two screens with two owners.'::text AS verdict_basis,
+    NULL::bigint AS deal_value_aed,
+    'NOT_APPLICABLE'::text AS deal_value_state,
+    'A recovery action carries no deal value.'::text AS deal_value_basis
+   FROM lead_recovery_actions r
+  WHERE r.status = 'APPROVED'::text AND r.executed_at IS NULL;
 
 CREATE OR REPLACE VIEW public.v_lead_recovery WITH (security_invoker=true) AS
  WITH cfg AS (
@@ -10711,187 +9988,6 @@ CREATE OR REPLACE VIEW public.v_lead_recovery WITH (security_invoker=true) AS
     now() AS computed_at
    FROM scored s;
 
-CREATE OR REPLACE VIEW public.v_needs_attention WITH (security_invoker=true) AS
- SELECT 'lead_unassigned'::text AS kind,
-    'HOT'::text AS severity,
-    l.id::text AS ref,
-    l.name AS title,
-    'HOT lead with no rep assigned'::text AS detail,
-    l.created_at AS at,
-    'leads'::text AS screen
-   FROM leads l
-  WHERE upper(l.status) = 'HOT'::text AND l.assigned_to_id IS NULL
-UNION ALL
- SELECT 'sla_breach'::text AS kind,
-        CASE
-            WHEN l.response_time_minutes > 60 THEN 'HOT'::text
-            ELSE 'WARM'::text
-        END AS severity,
-    l.id::text AS ref,
-    l.name AS title,
-    ('Responded in '::text || l.response_time_minutes) || ' min — breaches the 5-minute rule'::text AS detail,
-    l.created_at AS at,
-    'leads'::text AS screen
-   FROM leads l
-  WHERE l.response_time_minutes > 5 AND l.created_at > (now() - '30 days'::interval)
-UNION ALL
- SELECT 'inventory_aging'::text AS kind,
-    'HOT'::text AS severity,
-    i.id AS ref,
-    i.model AS title,
-    ((i.days_in_stock || ' days in stock · AED '::text) || to_char(i.holding_cost_accrued, 'FM999,999'::text)) || ' holding cost'::text AS detail,
-    now() AS at,
-    'inventory'::text AS screen
-   FROM inventory i
-  WHERE i.aging_alert = 'CRITICAL'::text
-UNION ALL
- SELECT 'undercut'::text AS kind,
-    'WARM'::text AS severity,
-    c.id::text AS ref,
-    c.model AS title,
-    ((c.competitor || ' is AED '::text) || to_char(abs(c.price_diff_aed), 'FM999,999'::text)) || ' cheaper'::text AS detail,
-    c.scraped_at AS at,
-    'competitors'::text AS screen
-   FROM ( SELECT DISTINCT ON (c2.competitor, c2.model) c2.id,
-            c2.competitor,
-            c2.model,
-            c2.price_aed,
-            c2.our_price_aed,
-            c2.price_diff_aed,
-            c2.ai_recommendation,
-            c2.scraped_at,
-            c2.listing_title,
-            c2.source_host,
-            c2.source_kind,
-            c2.offer_name,
-            c2.offer_condition,
-            c2.match_quality,
-            c2.match_note
-           FROM competitors c2
-          ORDER BY c2.competitor, c2.model, c2.scraped_at DESC) c
-  WHERE c.price_diff_aed < 0
-UNION ALL
- SELECT 'workflow_failure'::text AS kind,
-    'HOT'::text AS severity,
-    COALESCE(r.name, f.workflow) AS ref,
-    COALESCE(r.name, f.workflow) AS title,
-    (((f.n || ' run'::text) ||
-        CASE
-            WHEN f.n = 1 THEN ''::text
-            ELSE 's'::text
-        END) || ' that did not deliver in the last 24 h · '::text) || "left"(COALESCE(f.latest, 'no detail recorded'::text), 140) AS detail,
-    f.last_at AS at,
-    'automation'::text AS screen
-   FROM ( SELECT a.workflow,
-            count(*) AS n,
-            max(a.logged_at) AS last_at,
-            (array_agg(a.summary ORDER BY a.logged_at DESC))[1] AS latest
-           FROM audit_log a
-          WHERE (nexus_outcome_class(a.workflow, a.status, a.summary) = ANY (ARRAY['FAILURE'::text, 'PARTIAL'::text])) AND a.logged_at > (now() - '24:00:00'::interval)
-          GROUP BY a.workflow) f
-     LEFT JOIN workflow_registry r ON f.workflow = r.name OR f.workflow = r.audit_name OR (f.workflow = ANY (r.audit_aliases))
-UNION ALL
- SELECT 'kyc_archive_gap'::text AS kind,
-    'HOT'::text AS severity,
-    k.id::text AS ref,
-    COALESCE(k.lead_name, k.full_name, k.lead_email, 'KYC document'::text) AS title,
-    'Document was never archived to Storage — retention cannot be proven'::text AS detail,
-    k.created_at AS at,
-    'compliance'::text AS screen
-   FROM kyc_documents k
-  WHERE k.storage_path IS NULL AND k.purged_at IS NULL AND k.void_reason IS NULL AND k.created_at > '2026-08-17 16:01:48+00'::timestamp with time zone
-UNION ALL
- SELECT 'unanswered_chat'::text AS kind,
-    'HOT'::text AS severity,
-    v.chat_id AS ref,
-    v.display_name AS title,
-    (('Waiting since '::text || to_char(v.last_msg_at, 'DD Mon HH24:MI'::text)) || ' · '::text) || "left"(COALESCE(v.last_msg, ''::text), 90) AS detail,
-    v.last_msg_at AS at,
-    'conversations'::text AS screen
-   FROM v_conversations v
-  WHERE v.awaiting_msg_reply AND v.last_msg_at > (now() - '7 days'::interval);
-
-CREATE OR REPLACE VIEW public.v_policy_authoritative WITH (security_invoker=true) AS
- SELECT id,
-    tenant_id,
-    is_global_rule,
-    jurisdiction,
-    rule_type,
-    rule_name,
-    version,
-    value_numeric,
-    value_text,
-    unit,
-    value_kind,
-    value_display,
-    effective_from,
-    effective_to,
-    source_name,
-    source_url,
-    source_document,
-    verification_date,
-    verified_by,
-    confidence,
-    (((((COALESCE(source_name, ''::text) ||
-        CASE
-            WHEN source_document IS NOT NULL THEN ', '::text || source_document
-            ELSE ''::text
-        END) ||
-        CASE
-            WHEN source_url IS NOT NULL THEN (' ('::text || source_url) || ')'::text
-            ELSE ''::text
-        END) || ', verified '::text) || to_char(verification_date::timestamp with time zone, 'DD Mon YYYY'::text)) || ' by '::text) || verified_by AS citation
-   FROM v_policy_rule
-  WHERE authority = 'AUTHORITATIVE'::text;
-
-CREATE OR REPLACE VIEW public.v_attribution_link_map WITH (security_invoker=on) AS
- WITH vis AS (
-         SELECT t.id AS tenant_id,
-            t.name AS tenant_name
-           FROM tenants t
-        ), agg AS (
-         SELECT e.tenant_id,
-            e.edge,
-            count(*)::integer AS instances_total,
-            count(*) FILTER (WHERE b_1.is_evidence)::integer AS instances_evidenced,
-            count(*) FILTER (WHERE NOT b_1.is_evidence)::integer AS instances_refused
-           FROM v_attribution_edges e
-             JOIN attribution_link_basis b_1 USING (basis)
-          GROUP BY e.tenant_id, e.edge
-        )
- SELECT v.tenant_id,
-    v.tenant_name,
-    et.seq,
-    et.edge,
-    et.from_node,
-    et.to_node,
-    et.state,
-    et.basis,
-    b.is_evidence AS basis_is_evidence,
-    b.default_confidence AS basis_confidence,
-    et.source_ref,
-    et.finding,
-    et.unlocked_by,
-    et.unlock_rank,
-    COALESCE(a.instances_total, 0) AS instances_total,
-    COALESCE(a.instances_evidenced, 0) AS instances_evidenced,
-    COALESCE(a.instances_refused, 0) AS instances_refused,
-        CASE
-            WHEN COALESCE(a.instances_total, 0) = 0 THEN NULL::numeric
-            ELSE round(a.instances_evidenced::numeric * 100::numeric / a.instances_total::numeric, 1)
-        END AS coverage_pct,
-        CASE
-            WHEN a.edge IS NULL AND (et.state = ANY (ARRAY['ABSENT_NO_TABLE'::text, 'ABSENT_NO_FIELD'::text, 'BLOCKED_BY_UPSTREAM'::text])) THEN ('No instances, and none can exist: '::text || lower(et.state)) || '. Coverage is UNKNOWN, not 0%.'::text
-            WHEN a.edge IS NULL THEN ('This hop is not instantiated row-by-row by v_attribution_edges - either nothing has '::text || 'happened yet, or the candidate set would be every record against every unit and is '::text) || 'reported in aggregate instead. Coverage is UNKNOWN, not 0%.'::text
-            WHEN a.instances_evidenced = 0 THEN a.instances_total || ' candidate(s) exist and NOT ONE is evidence. Everything on this hop is a refusal.'::text
-            WHEN a.instances_refused = 0 THEN ('All '::text || a.instances_total) || ' instances are evidenced.'::text
-            ELSE ((((a.instances_evidenced || ' of '::text) || a.instances_total) || ' instances are evidence; the other '::text) || a.instances_refused) || ' are refusals and must render as UNKNOWN.'::text
-        END AS coverage_note
-   FROM vis v
-     CROSS JOIN attribution_edge_type et
-     JOIN attribution_link_basis b ON b.basis = et.basis
-     LEFT JOIN agg a ON a.tenant_id = v.tenant_id AND a.edge = et.edge;
-
 CREATE OR REPLACE VIEW public.v_deal_rescue WITH (security_invoker=true) AS
  WITH cfg AS (
          SELECT t.id AS tenant_id,
@@ -11174,6 +10270,882 @@ CREATE OR REPLACE VIEW public.v_deal_rescue_readiness WITH (security_invoker=tru
     now() AS measured_at
    FROM deal_rescue_prerequisites p;
 
+CREATE OR REPLACE VIEW public.v_deal_rescue_state_model WITH (security_invoker=true) AS
+ SELECT s.state,
+    s.sort,
+    s.meaning,
+    s.engine_can_produce,
+    s.blocked_by,
+    s.requires,
+    COALESCE(n.n, 0::bigint) AS deals_in_state_now,
+        CASE
+            WHEN NOT s.engine_can_produce THEN 'UNREACHABLE_BY_DESIGN'::text
+            WHEN COALESCE(n.n, 0::bigint) > 0 THEN 'OBSERVED'::text
+            WHEN (( SELECT count(*) AS count
+               FROM v_deal_rescue)) = 0 THEN 'UNREACHABLE_TODAY_NO_POPULATION'::text
+            ELSE 'REACHABLE_NOT_OBSERVED'::text
+        END AS observation
+   FROM deal_rescue_states s
+     LEFT JOIN ( SELECT d.state,
+            count(*) AS n
+           FROM v_deal_rescue d
+          GROUP BY d.state) n ON n.state = s.state;
+
+CREATE OR REPLACE VIEW public.v_fin_gate_quote_evidence WITH (security_invoker=true) AS
+ SELECT id,
+    lead_email,
+    lead_name,
+    quoted_by,
+    created_at,
+    calculated_at,
+    calculation_id,
+    execution_id,
+    indicative_apr_pct,
+    indicative_apr_high_pct,
+    monthly_payment_low_aed,
+    monthly_payment_high_aed,
+    calculation_id IS NOT NULL AND NULLIF(btrim(COALESCE(execution_id, ''::text)), ''::text) IS NOT NULL AS is_evidenced,
+        CASE
+            WHEN NULLIF(btrim(COALESCE(execution_id, ''::text)), ''::text) IS NULL THEN 'untraceable: no execution_id, so this figure cannot be tied to a Finance Calc run'::text
+            WHEN calculation_id IS NULL THEN 'untraceable: no calculation_id'::text
+            ELSE 'evidenced'::text
+        END AS evidence_note,
+    monthly_payment_low_aed IS NOT NULL AS has_instalment
+   FROM finance_quotes q;
+
+CREATE OR REPLACE VIEW public.v_inventory_profit_sentinel WITH (security_invoker=true) AS
+ WITH cfg AS (
+         SELECT i.tenant_id,
+            s.holding_cost_per_day_aed AS holding_rate,
+            s.holding_cost_source AS holding_source,
+            s.holding_cost_basis AS holding_basis,
+            s.holding_cost_set_by AS holding_set_by,
+            s.holding_cost_verified_at AS holding_verified_at,
+            COALESCE(s.aging_warn_days, 90) AS warn_days,
+            COALESCE(s.aging_critical_days, 120) AS crit_days,
+            COALESCE(s.promote_days, 60) AS promote_days,
+            COALESCE(s.wholesale_days, 180) AS wholesale_days,
+            COALESCE(s.min_reprice_margin_pct, 8.00) AS min_margin_pct,
+            COALESCE(s.market_tolerance_pct, 3.00) AS tol_pct,
+            COALESCE(s.enquiry_window_days, 30) AS enq_days,
+            COALESCE(s.min_enquiry_sources, 50) AS min_enq_sources,
+            COALESCE(s.min_model_token_overlap, 2) AS min_overlap,
+            COALESCE(s.accepted_market_match_quality, ARRAY['exact'::text, 'strong'::text]) AS ok_quality,
+            COALESCE(s.market_max_age_days, 14) AS mkt_max_age,
+            s.tenant_id IS NULL AS on_defaults
+           FROM ( SELECT DISTINCT inventory.tenant_id
+                   FROM inventory) i
+             LEFT JOIN inventory_profit_settings s ON s.tenant_id = i.tenant_id
+        ), enq_src AS (
+         SELECT l.tenant_id,
+            'lead'::text AS kind,
+            l.id::text AS ref,
+            l.created_at,
+            nexus_model_tokens(l.vehicle_interest) AS tk
+           FROM leads l
+             JOIN cfg c ON c.tenant_id = l.tenant_id
+          WHERE COALESCE(l.vehicle_interest, ''::text) <> ''::text AND l.created_at >= (now() - make_interval(days => c.enq_days))
+        UNION ALL
+         SELECT m.tenant_id,
+            'message'::text AS text,
+            m.id::text AS id,
+            m.created_at,
+            nexus_model_tokens(m.message) AS nexus_model_tokens
+           FROM communication_logs m
+             JOIN cfg c ON c.tenant_id = m.tenant_id
+          WHERE lower(COALESCE(m.direction, ''::text)) = 'inbound'::text AND COALESCE(m.message, ''::text) <> ''::text AND m.created_at >= (now() - make_interval(days => c.enq_days))
+        ), enq_cover AS (
+         SELECT c.tenant_id,
+            ( SELECT count(*) AS count
+                   FROM enq_src e
+                  WHERE e.tenant_id = c.tenant_id) AS src_rows,
+            ( SELECT count(*) AS count
+                   FROM enq_src e
+                  WHERE e.tenant_id = c.tenant_id AND (EXISTS ( SELECT 1
+                           FROM inventory i2
+                          WHERE i2.tenant_id = c.tenant_id AND (( SELECT count(*) AS count
+                                   FROM unnest(nexus_model_tokens(i2.model)) t(t)
+                                  WHERE t.t = ANY (e.tk))) >= c.min_overlap))) AS resolved_rows
+           FROM cfg c
+        ), base AS (
+         SELECT i.id,
+            i.model,
+            i.vin,
+            i.status,
+            i.acquired_at,
+            i.cost_aed,
+            i.price_aed,
+            lower(COALESCE(i.status, ''::text)) = 'sold'::text AS is_sold,
+                CASE
+                    WHEN i.acquired_at IS NULL THEN NULL::integer
+                    ELSE GREATEST(0, (now() AT TIME ZONE 'Asia/Dubai'::text)::date - i.acquired_at)
+                END AS days,
+                CASE
+                    WHEN i.price_aed IS NULL OR i.cost_aed IS NULL THEN NULL::integer
+                    ELSE i.price_aed - i.cost_aed
+                END AS gross,
+                CASE
+                    WHEN i.price_aed IS NULL OR i.cost_aed IS NULL OR i.price_aed <= 0 THEN NULL::numeric
+                    ELSE round((i.price_aed - i.cost_aed)::numeric / i.price_aed::numeric * 100::numeric, 2)
+                END AS gross_pct,
+            c.tenant_id,
+            c.holding_rate,
+            c.holding_source,
+            c.holding_basis,
+            c.holding_set_by,
+            c.holding_verified_at,
+            c.warn_days,
+            c.crit_days,
+            c.promote_days,
+            c.wholesale_days,
+            c.min_margin_pct,
+            c.tol_pct,
+            c.enq_days,
+            c.min_enq_sources,
+            c.min_overlap,
+            c.ok_quality,
+            c.mkt_max_age,
+            c.on_defaults,
+            ec.src_rows,
+            ec.resolved_rows
+           FROM inventory i
+             JOIN cfg c ON c.tenant_id = i.tenant_id
+             JOIN enq_cover ec ON ec.tenant_id = i.tenant_id
+        ), mkt AS (
+         SELECT b.tenant_id,
+            b.id,
+            k.competitor,
+            k.price_aed AS comp_price,
+            k.match_quality,
+            k.scraped_at,
+            k.match_note,
+            k.source_host
+           FROM base b
+             LEFT JOIN LATERAL ( SELECT x.id,
+                    x.competitor,
+                    x.model,
+                    x.price_aed,
+                    x.our_price_aed,
+                    x.price_diff_aed,
+                    x.ai_recommendation,
+                    x.scraped_at,
+                    x.listing_title,
+                    x.source_host,
+                    x.source_kind,
+                    x.offer_name,
+                    x.offer_condition,
+                    x.match_quality,
+                    x.match_note,
+                    x.tenant_id
+                   FROM competitors x
+                  WHERE x.tenant_id = b.tenant_id AND lower(btrim(x.model)) = lower(btrim(b.model))
+                  ORDER BY x.scraped_at DESC NULLS LAST, x.id DESC
+                 LIMIT 1) k ON true
+        ), enq AS (
+         SELECT b.tenant_id,
+            b.id,
+            count(e.ref) AS enq_n,
+            count(*) FILTER (WHERE e.kind = 'lead'::text) AS enq_leads,
+            count(*) FILTER (WHERE e.kind = 'message'::text) AS enq_msgs,
+            max(e.created_at) AS enq_last
+           FROM base b
+             LEFT JOIN enq_src e ON e.tenant_id = b.tenant_id AND (( SELECT count(*) AS count
+                   FROM unnest(nexus_model_tokens(b.model)) t(t)
+                  WHERE t.t = ANY (e.tk))) >= b.min_overlap
+          GROUP BY b.tenant_id, b.id
+        ), j AS (
+         SELECT b.id,
+            b.model,
+            b.vin,
+            b.status,
+            b.acquired_at,
+            b.cost_aed,
+            b.price_aed,
+            b.is_sold,
+            b.days,
+            b.gross,
+            b.gross_pct,
+            b.tenant_id,
+            b.holding_rate,
+            b.holding_source,
+            b.holding_basis,
+            b.holding_set_by,
+            b.holding_verified_at,
+            b.warn_days,
+            b.crit_days,
+            b.promote_days,
+            b.wholesale_days,
+            b.min_margin_pct,
+            b.tol_pct,
+            b.enq_days,
+            b.min_enq_sources,
+            b.min_overlap,
+            b.ok_quality,
+            b.mkt_max_age,
+            b.on_defaults,
+            b.src_rows,
+            b.resolved_rows,
+            m.competitor,
+            m.comp_price,
+            m.match_quality,
+            m.scraped_at AS comp_scraped_at,
+            m.match_note,
+            m.source_host,
+            e.enq_n,
+            e.enq_leads,
+            e.enq_msgs,
+            e.enq_last,
+            b.resolved_rows >= b.min_enq_sources AS enq_ok,
+                CASE
+                    WHEN b.days IS NULL THEN 'UNKNOWN'::text
+                    WHEN b.is_sold THEN 'HEALTHY'::text
+                    WHEN b.days >= b.crit_days THEN 'CRITICAL'::text
+                    WHEN b.days >= b.warn_days THEN 'WARNING'::text
+                    ELSE 'HEALTHY'::text
+                END AS band,
+                CASE
+                    WHEN b.holding_rate IS NULL OR b.days IS NULL THEN 'NOT_COMPUTABLE'::text
+                    WHEN b.holding_basis = 'PLACEHOLDER'::text THEN 'PLACEHOLDER'::text
+                    ELSE 'COMPUTED'::text
+                END AS holding_state,
+                CASE
+                    WHEN b.holding_rate IS NULL OR b.days IS NULL THEN NULL::numeric
+                    ELSE round(b.holding_rate * b.days::numeric)
+                END AS holding_aed,
+                CASE
+                    WHEN m.competitor IS NULL THEN 'UNKNOWN_NO_COMPARABLE'::text
+                    WHEN lower(COALESCE(m.match_quality, ''::text)) <> ALL (b.ok_quality) THEN 'UNKNOWN_UNVERIFIED_COMPARABLE'::text
+                    WHEN m.scraped_at IS NULL OR m.scraped_at < (now() - make_interval(days => b.mkt_max_age)) THEN 'UNKNOWN_STALE_COMPARABLE'::text
+                    WHEN m.comp_price IS NULL OR b.price_aed IS NULL THEN 'UNKNOWN_NO_PRICE'::text
+                    WHEN (abs(b.price_aed - m.comp_price)::numeric / NULLIF(m.comp_price, 0)::numeric * 100::numeric) <= b.tol_pct THEN 'AT_MARKET'::text
+                    WHEN b.price_aed > m.comp_price THEN 'ABOVE_MARKET'::text
+                    ELSE 'BELOW_MARKET'::text
+                END AS market_position
+           FROM base b
+             JOIN mkt m ON m.tenant_id = b.tenant_id AND m.id = b.id
+             JOIN enq e ON e.tenant_id = b.tenant_id AND e.id = b.id
+        ), risk AS (
+         SELECT j.id,
+            j.model,
+            j.vin,
+            j.status,
+            j.acquired_at,
+            j.cost_aed,
+            j.price_aed,
+            j.is_sold,
+            j.days,
+            j.gross,
+            j.gross_pct,
+            j.tenant_id,
+            j.holding_rate,
+            j.holding_source,
+            j.holding_basis,
+            j.holding_set_by,
+            j.holding_verified_at,
+            j.warn_days,
+            j.crit_days,
+            j.promote_days,
+            j.wholesale_days,
+            j.min_margin_pct,
+            j.tol_pct,
+            j.enq_days,
+            j.min_enq_sources,
+            j.min_overlap,
+            j.ok_quality,
+            j.mkt_max_age,
+            j.on_defaults,
+            j.src_rows,
+            j.resolved_rows,
+            j.competitor,
+            j.comp_price,
+            j.match_quality,
+            j.comp_scraped_at,
+            j.match_note,
+            j.source_host,
+            j.enq_n,
+            j.enq_leads,
+            j.enq_msgs,
+            j.enq_last,
+            j.enq_ok,
+            j.band,
+            j.holding_state,
+            j.holding_aed,
+            j.market_position,
+                CASE
+                    WHEN j.days IS NULL THEN NULL::integer
+                    WHEN j.is_sold THEN 0
+                    WHEN j.days >= j.crit_days THEN 3
+                    WHEN j.days >= j.warn_days THEN 2
+                    WHEN j.days >= j.promote_days THEN 1
+                    ELSE 0
+                END AS age_rank,
+                CASE
+                    WHEN j.gross IS NULL OR j.gross_pct IS NULL THEN NULL::integer
+                    WHEN j.gross <= 0 THEN 3
+                    WHEN j.gross_pct < j.min_margin_pct THEN 2
+                    ELSE 0
+                END AS margin_rank
+           FROM j
+        ), r AS (
+         SELECT risk.id,
+            risk.model,
+            risk.vin,
+            risk.status,
+            risk.acquired_at,
+            risk.cost_aed,
+            risk.price_aed,
+            risk.is_sold,
+            risk.days,
+            risk.gross,
+            risk.gross_pct,
+            risk.tenant_id,
+            risk.holding_rate,
+            risk.holding_source,
+            risk.holding_basis,
+            risk.holding_set_by,
+            risk.holding_verified_at,
+            risk.warn_days,
+            risk.crit_days,
+            risk.promote_days,
+            risk.wholesale_days,
+            risk.min_margin_pct,
+            risk.tol_pct,
+            risk.enq_days,
+            risk.min_enq_sources,
+            risk.min_overlap,
+            risk.ok_quality,
+            risk.mkt_max_age,
+            risk.on_defaults,
+            risk.src_rows,
+            risk.resolved_rows,
+            risk.competitor,
+            risk.comp_price,
+            risk.match_quality,
+            risk.comp_scraped_at,
+            risk.match_note,
+            risk.source_host,
+            risk.enq_n,
+            risk.enq_leads,
+            risk.enq_msgs,
+            risk.enq_last,
+            risk.enq_ok,
+            risk.band,
+            risk.holding_state,
+            risk.holding_aed,
+            risk.market_position,
+            risk.age_rank,
+            risk.margin_rank,
+            GREATEST(COALESCE(risk.age_rank, '-1'::integer), COALESCE(risk.margin_rank, '-1'::integer)) AS overall_rank_raw,
+                CASE
+                    WHEN risk.is_sold THEN 'HOLD'::text
+                    WHEN risk.days IS NULL OR risk.price_aed IS NULL OR risk.cost_aed IS NULL THEN 'MANAGER_REVIEW'::text
+                    WHEN risk.gross <= 0 THEN 'MANAGER_REVIEW'::text
+                    WHEN risk.days >= risk.wholesale_days AND risk.gross_pct < risk.min_margin_pct THEN 'WHOLESALE'::text
+                    WHEN risk.days >= risk.wholesale_days THEN 'MANAGER_REVIEW'::text
+                    WHEN risk.days >= risk.warn_days AND risk.market_position = 'BELOW_MARKET'::text THEN 'INSPECT'::text
+                    WHEN risk.days >= risk.warn_days AND risk.gross_pct >= risk.min_margin_pct THEN 'REPRICE'::text
+                    WHEN risk.days >= risk.warn_days THEN 'INSPECT'::text
+                    WHEN risk.gross_pct < risk.min_margin_pct THEN 'MANAGER_REVIEW'::text
+                    WHEN risk.days >= risk.promote_days THEN 'PROMOTE'::text
+                    ELSE 'HOLD'::text
+                END AS recommendation
+           FROM risk
+        )
+ SELECT tenant_id,
+    id,
+    model,
+    vin,
+    status,
+    acquired_at,
+    days AS days_in_stock,
+    band AS aging_band,
+        CASE
+            WHEN days IS NULL THEN NULL::integer
+            ELSE GREATEST(0, warn_days - days)
+        END AS days_to_warning,
+        CASE
+            WHEN days IS NULL THEN NULL::integer
+            ELSE GREATEST(0, crit_days - days)
+        END AS days_to_critical,
+    cost_aed,
+    price_aed,
+    gross AS gross_margin_aed,
+    gross_pct AS gross_margin_pct,
+    cost_aed AS capital_tied_aed,
+    holding_rate AS holding_cost_per_day_aed,
+    holding_basis AS holding_cost_basis,
+    holding_source AS holding_cost_source,
+    holding_set_by AS holding_cost_set_by,
+    holding_verified_at AS holding_cost_verified_at,
+        CASE
+            WHEN holding_state = 'NOT_COMPUTABLE'::text THEN NULL::numeric
+            ELSE holding_aed
+        END AS holding_cost_accrued_aed,
+    holding_state AS holding_cost_state,
+        CASE
+            WHEN holding_rate IS NULL THEN ((((('Not computable. This dealership has not recorded what a day of floor costs, so no '::text || 'holding figure and no net margin are shown. The inputs are here instead: AED '::text) || to_char(COALESCE(cost_aed, 0), 'FM999,999,999'::text)) || ' of capital tied up for '::text) || COALESCE(days::text, 'an unknown number of'::text)) || ' days. '::text) || 'Enter a sourced rate in Settings and this becomes a number.'::text
+            WHEN days IS NULL THEN 'Not computable: this unit has no acquisition date, so there are no days to charge a rate against.'::text
+            WHEN holding_basis = 'PLACEHOLDER'::text THEN ((((((('ASSUMPTION, not this dealership''s money. AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || '/day x '::text) || days) || ' days, using a PLACEHOLDER rate recorded by '::text) || COALESCE(holding_set_by, 'someone unnamed'::text)) || ': '::text) || COALESCE(holding_source, 'no source given'::text)) || '. Replace it with the dealership''s floor-plan figure before anyone acts on this number.'::text
+            ELSE ((((((((('AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || '/day x '::text) || days) || ' days. Rate supplied by '::text) || COALESCE(holding_set_by, 'unnamed'::text)) || ', source: '::text) || COALESCE(holding_source, 'source missing'::text)) || ', confirmed '::text) || COALESCE(to_char(holding_verified_at, 'DD Mon YYYY'::text), 'never'::text)) || '.'::text
+        END AS holding_cost_note,
+        CASE
+            WHEN holding_state = 'NOT_COMPUTABLE'::text OR gross IS NULL THEN NULL::numeric
+            ELSE gross::numeric - holding_aed
+        END AS net_margin_aed,
+        CASE
+            WHEN gross IS NULL THEN 'NOT_COMPUTABLE'::text
+            ELSE holding_state
+        END AS net_margin_state,
+        CASE
+            WHEN gross IS NULL THEN 'Net margin not computable: list price or acquisition cost is missing.'::text
+            WHEN holding_state = 'NOT_COMPUTABLE'::text THEN (('Net margin NOT COMPUTABLE - gross margin of AED '::text || to_char(gross, 'FM999,999,999'::text)) || ' is real, the holding cost that would be subtracted from it is not on record. '::text) || 'Gross is shown; net is withheld rather than guessed.'::text
+            WHEN holding_state = 'PLACEHOLDER'::text THEN 'Net margin shown against a PLACEHOLDER holding rate. Treat as a model, not as money.'::text
+            ELSE 'Gross margin minus holding cost at the rate this dealership supplied.'::text
+        END AS net_margin_note,
+    market_position,
+    competitor AS market_competitor,
+    comp_price AS market_price_aed,
+    match_quality AS market_match_quality,
+    comp_scraped_at AS market_scraped_at,
+        CASE market_position
+            WHEN 'UNKNOWN_NO_COMPARABLE'::text THEN 'No competitor row for this exact model, so this unit has NO market position. Unknown, not average.'::text
+            WHEN 'UNKNOWN_UNVERIFIED_COMPARABLE'::text THEN ((((((('A competitor row exists ('::text || COALESCE(competitor, '?'::text)) || ' at AED '::text) || to_char(COALESCE(comp_price, 0), 'FM999,999,999'::text)) || ') but nothing ties that price to this car - '::text) || 'match quality '::text) || COALESCE(NULLIF(match_quality, ''::text), 'not recorded'::text)) || COALESCE(('. Their own note: "'::text || match_note) || '"'::text, ''::text)) || '. Shown as evidence only; no position is derived from it and no price move is recommended because of it.'::text
+            WHEN 'UNKNOWN_STALE_COMPARABLE'::text THEN ((('The only comparable for this model was captured '::text || COALESCE(to_char(comp_scraped_at, 'DD Mon YYYY'::text), 'at an unrecorded time'::text)) || ', older than the '::text) || mkt_max_age) || '-day freshness window. Too old to price against.'::text
+            WHEN 'UNKNOWN_NO_PRICE'::text THEN 'A comparable exists but one of the two prices is missing, so no position can be taken.'::text
+            WHEN 'AT_MARKET'::text THEN ((('Within '::text || tol_pct) || '% of a verified comparable at '::text) || COALESCE(competitor, '?'::text)) || '.'::text
+            WHEN 'ABOVE_MARKET'::text THEN ((('AED '::text || to_char(abs(COALESCE(price_aed, 0) - COALESCE(comp_price, 0)), 'FM999,999,999'::text)) || ' above a verified comparable at '::text) || COALESCE(competitor, '?'::text)) || '.'::text
+            ELSE ((('AED '::text || to_char(abs(COALESCE(price_aed, 0) - COALESCE(comp_price, 0)), 'FM999,999,999'::text)) || ' below a verified comparable at '::text) || COALESCE(competitor, '?'::text)) || '.'::text
+        END AS market_note,
+        CASE
+            WHEN NOT enq_ok THEN 'UNKNOWN_LOW_COVERAGE'::text
+            WHEN enq_n > 0 THEN 'ENQUIRIES_PRESENT'::text
+            ELSE 'NO_ENQUIRIES_IN_WINDOW'::text
+        END AS demand_signal,
+    enq_n AS enquiries_in_window,
+    enq_leads AS enquiry_leads,
+    enq_msgs AS enquiry_messages,
+    enq_last AS enquiry_last_at,
+    src_rows AS enquiry_source_rows,
+    resolved_rows AS enquiry_resolved_rows,
+    enq_days AS enquiry_window_days,
+        CASE
+            WHEN enq_ok THEN 'SUFFICIENT'::text
+            ELSE 'INSUFFICIENT'::text
+        END AS enquiry_coverage,
+        CASE
+            WHEN enq_ok THEN ((((((enq_n || ' enquiry '::text) ||
+            CASE
+                WHEN enq_n = 1 THEN 'record'::text
+                ELSE 'records'::text
+            END) || ' in '::text) || enq_days) || ' days, matched to this unit on '::text) || min_overlap) || ' or more shared model words.'::text
+            ELSE ((((((((('Counted but NOT used to decide. Across the whole lot, '::text || src_rows) || ' enquiry rows in '::text) || enq_days) || ' days resolve to a vehicle only '::text) || resolved_rows) || ' times, under the floor of '::text) || min_enq_sources) || '. At that coverage a count of '::text) || enq_n) || ' says what our records hold, not what the market wants, so it cannot move a recommendation.'::text
+        END AS enquiry_note,
+        CASE age_rank
+            WHEN 3 THEN 'SEVERE'::text
+            WHEN 2 THEN 'HIGH'::text
+            WHEN 1 THEN 'ELEVATED'::text
+            WHEN 0 THEN 'LOW'::text
+            ELSE 'UNKNOWN'::text
+        END AS age_risk,
+    age_rank AS age_risk_rank,
+        CASE margin_rank
+            WHEN 3 THEN 'SEVERE'::text
+            WHEN 2 THEN 'HIGH'::text
+            WHEN 0 THEN 'LOW'::text
+            ELSE 'UNKNOWN'::text
+        END AS margin_risk,
+    margin_rank AS margin_risk_rank,
+        CASE
+            WHEN age_rank IS NULL AND margin_rank IS NULL THEN 'UNKNOWN'::text
+            WHEN overall_rank_raw = 3 THEN 'SEVERE'::text
+            WHEN overall_rank_raw = 2 THEN 'HIGH'::text
+            WHEN overall_rank_raw = 1 THEN 'ELEVATED'::text
+            ELSE 'LOW'::text
+        END AS overall_risk,
+        CASE
+            WHEN age_rank IS NULL AND margin_rank IS NULL THEN NULL::integer
+            ELSE overall_rank_raw
+        END AS overall_risk_rank,
+        CASE
+            WHEN age_rank IS NULL AND margin_rank IS NULL THEN 'Neither age nor margin can be assessed: no acquisition date and no price/cost pair.'::text
+            WHEN age_rank IS NULL THEN 'Margin risk only - this unit has no acquisition date, so it has no age and no ageing band.'::text
+            WHEN margin_rank IS NULL THEN 'Age risk only - list price or acquisition cost is missing, so margin risk is unknown.'::text
+            ELSE (((('Overall risk is the higher of age risk ('::text || age_rank) || ') and margin risk ('::text) || margin_rank) || '), not a weighted blend. Nothing here has been calibrated against real days-to-sell, '::text) || 'so a weighting would be an invention.'::text
+        END AS risk_basis,
+    recommendation,
+        CASE recommendation
+            WHEN 'HOLD'::text THEN
+            CASE
+                WHEN is_sold THEN 'Marked Sold. No lot action applies to a unit that is off the lot.'::text
+                ELSE ((((('On the lot '::text || days) || ' days with '::text) || gross_pct) || '% gross margin intact - inside the healthy band and not yet at the '::text) || promote_days) || '-day promotion point. Nothing to do.'::text
+            END
+            WHEN 'PROMOTE'::text THEN ((((('At '::text || days) || ' days this unit is in the last third of the healthy band and enters WARNING in '::text) || GREATEST(0, warn_days - days)) || ' days. Marketing spend now still has the full AED '::text) || to_char(COALESCE(gross, 0), 'FM999,999,999'::text)) || ' of gross margin behind it; after the band it will not.'::text
+            WHEN 'REPRICE'::text THEN ((((((('On the lot '::text || days) || ' days - past the '::text) || warn_days) || '-day ageing threshold this database already uses - and still carrying '::text) || gross_pct) || '% gross margin, which is room above the '::text) || min_margin_pct) || '% floor to move the price without going under cost.'::text
+            WHEN 'INSPECT'::text THEN
+            CASE
+                WHEN market_position = 'BELOW_MARKET'::text THEN (('Aged at '::text || days) || ' days while already priced below a verified comparable. Price is not '::text) || 'what is stopping this one - inspect condition, photos and description before cutting further.'::text
+                ELSE ((((('Aged at '::text || days) || ' days with only '::text) || gross_pct) || '% gross margin, under the '::text) || min_margin_pct) || '% floor. A price cut has no room to work here, so the question is the car, not the number.'::text
+            END
+            WHEN 'WHOLESALE'::text THEN ((((('On the lot '::text || days) || ' days - past the '::text) || wholesale_days) || '-day point - with only '::text) || gross_pct) || '% gross margin left. Retail has had six months and there is no room left to cut.'::text
+            WHEN 'MANAGER_REVIEW'::text THEN
+            CASE
+                WHEN days IS NULL THEN 'No acquisition date on this unit, so it has no age and no ageing band. Nothing can be recommended until that is recorded.'::text
+                WHEN price_aed IS NULL OR cost_aed IS NULL THEN ('Missing '::text ||
+                CASE
+                    WHEN price_aed IS NULL AND cost_aed IS NULL THEN 'both list price and cost'::text
+                    WHEN price_aed IS NULL THEN 'a list price'::text
+                    ELSE 'an acquisition cost'::text
+                END) || ', so margin cannot be computed and no recommendation is safe.'::text
+                WHEN gross <= 0 THEN ((('Listed at AED '::text || to_char(COALESCE(price_aed, 0), 'FM999,999,999'::text)) || ' against a cost of AED '::text) || to_char(COALESCE(cost_aed, 0), 'FM999,999,999'::text)) || ' - at or below cost before any discount. A person has to decide this one.'::text
+                WHEN days >= wholesale_days THEN (((((('On the lot '::text || days) || ' days, past the '::text) || wholesale_days) || '-day point, yet still carrying '::text) || gross_pct) || '% margin. Six months of pricing has not moved it, so the choice between a deeper cut '::text) || 'and a wholesale is a person''s, not the engine''s.'::text
+                ELSE ((('Gross margin is '::text || gross_pct) || '%, under the '::text) || min_margin_pct) || '% floor, on a unit that is not yet aged. Priced this close to cost it has no room to discount later.'::text
+            END
+            ELSE NULL::text
+        END AS reason,
+        CASE
+            WHEN is_sold THEN 'HIGH'::text
+            WHEN days IS NULL OR price_aed IS NULL OR cost_aed IS NULL THEN 'LOW'::text
+            WHEN market_position ~~ 'UNKNOWN%'::text OR NOT enq_ok THEN 'MEDIUM'::text
+            ELSE 'HIGH'::text
+        END AS confidence,
+        CASE
+            WHEN is_sold THEN 'The unit''s own status field is the whole basis.'::text
+            WHEN days IS NULL OR price_aed IS NULL OR cost_aed IS NULL THEN 'A required input is missing from the record, so this is a finding about the data rather than about the car.'::text
+            WHEN market_position ~~ 'UNKNOWN%'::text AND NOT enq_ok THEN ('The trigger - days in stock against the band this database already uses, and margin from real cost '::text || 'and price - is solid. Capped at MEDIUM because neither of the two things that would confirm the '::text) || 'direction is available: no verified market comparable, and enquiry coverage below the floor.'::text
+            WHEN market_position ~~ 'UNKNOWN%'::text THEN 'The trigger is solid. Capped at MEDIUM because there is no verified market comparable for this model.'::text
+            WHEN NOT enq_ok THEN 'The trigger is solid. Capped at MEDIUM because enquiry coverage across the lot is below the floor.'::text
+            ELSE 'Days, margin, a verified market comparable and adequate enquiry coverage all present.'::text
+        END AS confidence_basis,
+        CASE
+            WHEN recommendation = 'HOLD'::text THEN NULL::integer
+            WHEN gross IS NULL THEN NULL::integer
+            ELSE gross
+        END AS impact_aed,
+        CASE
+            WHEN recommendation = 'HOLD'::text THEN 'NONE'::text
+            WHEN gross IS NULL THEN 'NOT_COMPUTABLE'::text
+            ELSE 'MARGIN_EXPOSED'::text
+        END AS impact_kind,
+        CASE
+            WHEN recommendation = 'HOLD'::text THEN
+            CASE
+                WHEN is_sold THEN 'No action recommended, so no impact is claimed.'::text
+                ELSE ('No action recommended, so no impact is claimed. AED '::text || to_char(COALESCE(gross, 0), 'FM999,999,999'::text)) || ' of gross margin is intact and not at risk yet.'::text
+            END
+            WHEN gross IS NULL THEN 'Not computable: margin cannot be derived from this record.'::text
+            ELSE ((((('EXPOSURE - AED '::text || to_char(gross, 'FM999,999,999'::text)) || ' of gross margin (list minus acquisition cost) sits in a unit that has not sold in '::text) || COALESCE(days::text, 'an unknown number of'::text)) || ' days. This is the amount AT RISK. It is not '::text) || 'expected loss, not attributed revenue and not recovered revenue. '::text) ||
+            CASE
+                WHEN holding_state = 'NOT_COMPUTABLE'::text THEN 'How fast it is being eaten is NOT COMPUTABLE - no holding rate on record.'::text
+                WHEN holding_state = 'PLACEHOLDER'::text THEN ('On a PLACEHOLDER rate it would be reduced by AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || ' a day, which is an assumption, not this dealership''s cost.'::text
+                ELSE ('It is being reduced by AED '::text || to_char(holding_rate, 'FM999,999,990.00'::text)) || ' of holding cost every further day, at the rate this dealership supplied.'::text
+            END
+        END AS impact_basis,
+        CASE recommendation
+            WHEN 'HOLD'::text THEN NULL::text
+            WHEN 'PROMOTE'::text THEN 'Marketing'::text
+            WHEN 'INSPECT'::text THEN 'Workshop / Recon'::text
+            WHEN 'REPRICE'::text THEN 'Sales Manager'::text
+            WHEN 'WHOLESALE'::text THEN 'Sales Manager'::text
+            WHEN 'MANAGER_REVIEW'::text THEN 'Sales Manager'::text
+            ELSE NULL::text
+        END AS suggested_owner_role,
+        CASE
+            WHEN recommendation = 'HOLD'::text THEN 'NO_ACTION'::text
+            ELSE 'ROLE_ONLY'::text
+        END AS suggested_owner_state,
+        CASE
+            WHEN recommendation = 'HOLD'::text THEN 'No action, so no owner.'::text
+            ELSE 'A role, not a person. NEXUS holds no role directory for this dealership, so it will not '::text || 'put a name against an action it cannot verify that person owns.'::text
+        END AS suggested_owner_note,
+    recommendation <> 'HOLD'::text AS human_approval_required,
+        CASE recommendation
+            WHEN 'HOLD'::text THEN 'NONE_NEEDED'::text
+            WHEN 'PROMOTE'::text THEN 'AUTOMATABLE_AFTER_APPROVAL'::text
+            ELSE 'MANUAL_ONLY'::text
+        END AS automation_state,
+    jsonb_build_array(jsonb_build_object('fact', (('On the lot '::text || COALESCE(days::text, 'an unknown number of'::text)) || ' days'::text) ||
+        CASE
+            WHEN acquired_at IS NULL THEN ''::text
+            ELSE (' (acquired '::text || to_char(acquired_at::timestamp with time zone, 'DD Mon YYYY'::text)) || ')'::text
+        END, 'source', 'inventory.acquired_at, counted on the Asia/Dubai calendar'), jsonb_build_object('fact',
+        CASE
+            WHEN gross IS NULL THEN 'Gross margin not computable'::text
+            ELSE ((('Gross margin AED '::text || to_char(gross, 'FM999,999,999'::text)) || ' ('::text) || gross_pct) || '% of list)'::text
+        END, 'source', 'inventory.price_aed minus inventory.cost_aed'), jsonb_build_object('fact',
+        CASE
+            WHEN holding_rate IS NULL THEN 'Holding cost: UNKNOWN - no rate on record for this dealership'::text
+            WHEN holding_basis = 'PLACEHOLDER'::text THEN ('Holding cost AED '::text || to_char(COALESCE(holding_aed, 0::numeric), 'FM999,999,999'::text)) || ' on a PLACEHOLDER rate'::text
+            ELSE 'Holding cost accrued AED '::text || to_char(COALESCE(holding_aed, 0::numeric), 'FM999,999,999'::text)
+        END, 'source', 'inventory_profit_settings.holding_cost_per_day_aed'::text || COALESCE((((' ('::text || holding_source) || ', set by '::text) || holding_set_by) || ')'::text, ''::text)), jsonb_build_object('fact',
+        CASE
+            WHEN gross IS NULL OR holding_state = 'NOT_COMPUTABLE'::text THEN 'Net margin: NOT COMPUTABLE'::text
+            ELSE 'Net margin AED '::text || to_char(gross::numeric - holding_aed, 'FM999,999,999'::text)
+        END, 'source', 'gross margin minus holding cost'), jsonb_build_object('fact', 'Market position: '::text || market_position, 'source', 'competitors, newest row for this exact model'::text || COALESCE((((' ('::text || competitor) || ', match quality '::text) || COALESCE(NULLIF(match_quality, ''::text), 'not recorded'::text)) || ')'::text, ''::text)), jsonb_build_object('fact', ((((enq_n || ' resolvable enquiries in '::text) || enq_days) || ' days ('::text) ||
+        CASE
+            WHEN enq_ok THEN 'coverage sufficient'::text
+            ELSE 'coverage below floor - evidence only'::text
+        END) || ')'::text, 'source', ('leads.vehicle_interest and inbound communication_logs, matched on '::text || min_overlap) || '+ shared model words'::text), jsonb_build_object('fact', ((((('Band '::text || band) || ' at warn '::text) || warn_days) || ' / critical '::text) || crit_days) || ' days'::text, 'source', 'inventory_profit_settings, defaulted from recompute_inventory_derived()'), jsonb_build_object('fact', (('Risk: age '::text ||
+        CASE age_rank
+            WHEN 3 THEN 'SEVERE'::text
+            WHEN 2 THEN 'HIGH'::text
+            WHEN 1 THEN 'ELEVATED'::text
+            WHEN 0 THEN 'LOW'::text
+            ELSE 'UNKNOWN'::text
+        END) || ', margin '::text) ||
+        CASE margin_rank
+            WHEN 3 THEN 'SEVERE'::text
+            WHEN 2 THEN 'HIGH'::text
+            WHEN 0 THEN 'LOW'::text
+            ELSE 'UNKNOWN'::text
+        END, 'source', 'days_in_stock against the configured bands; gross margin % against min_reprice_margin_pct')) AS evidence,
+    warn_days,
+    crit_days,
+    promote_days,
+    wholesale_days,
+    min_margin_pct,
+    tol_pct,
+    min_enq_sources,
+    min_overlap AS min_model_token_overlap,
+    mkt_max_age AS market_max_age_days,
+    on_defaults AS settings_are_defaults,
+    now() AS computed_at
+   FROM r;
+
+CREATE OR REPLACE VIEW public.v_inventory_action_queue WITH (security_invoker=true) AS
+ SELECT a.id,
+    a.tenant_id,
+    a.unit_id,
+    i.model AS unit_model,
+    i.vin AS unit_vin,
+    i.status AS unit_status,
+    i.price_aed AS unit_price_aed,
+    i.cost_aed AS unit_cost_aed,
+    a.status,
+    a.status = ANY (ARRAY['PROPOSED'::text, 'APPROVED'::text, 'DEFERRED'::text]) AS is_live,
+    a.status = 'PROPOSED'::text AS awaiting_decision,
+    a.status = 'DEFERRED'::text AND a.defer_until IS NOT NULL AND a.defer_until <= CURRENT_DATE AS deferral_now_due,
+    a.recommendation,
+    a.engine_reason,
+    a.engine_confidence,
+    a.engine_confidence_basis,
+    a.engine_impact_aed,
+    a.engine_impact_kind,
+    a.engine_impact_basis,
+    a.engine_overall_risk,
+    a.engine_days_in_stock,
+    a.engine_gross_margin_aed,
+    a.engine_owner_role,
+    a.engine_evidence,
+    a.engine_computed_at,
+    s.recommendation AS engine_now_recommendation,
+    s.overall_risk AS engine_now_risk,
+    s.days_in_stock AS engine_now_days_in_stock,
+    s.impact_aed AS engine_now_impact_aed,
+    s.reason AS engine_now_reason,
+        CASE
+            WHEN s.recommendation IS NULL THEN NULL::boolean
+            ELSE s.recommendation = a.recommendation
+        END AS engine_still_agrees,
+    a.proposed_at,
+    pu.name AS proposed_by_name,
+    a.proposed_source,
+    a.decided_at,
+    du.name AS decided_by_name,
+    du.role AS decided_by_job_title,
+    a.decided_by_authority,
+    a.decision_reason_code,
+    rc.label AS decision_reason_label,
+    rc.meaning AS decision_reason_meaning,
+    rc.engine_was_wrong AS decision_says_engine_was_wrong,
+    a.decision_note,
+    a.defer_until,
+    a.assigned_to_staff_id,
+    au.name AS assigned_to_name,
+    a.assigned_role,
+    a.assigned_at,
+    a.executed_at,
+    eu.name AS executed_by_name,
+    a.execution_note,
+    a.execution_failure,
+    a.escalated_at,
+    a.escalation_reason,
+    a.outcome_state,
+    a.outcome_purchase_id,
+    ph.vehicle AS outcome_sale_vehicle,
+    ph.amount_aed AS outcome_sale_amount_aed,
+    ph.purchase_date AS outcome_sale_date,
+    a.outcome_recorded_at,
+    ou.name AS outcome_recorded_by_name,
+    a.attribution_basis,
+    a.attribution_note,
+    a.recovered_value_aed,
+    a.recovered_value_basis,
+        CASE a.outcome_state
+            WHEN 'NONE_YET'::text THEN
+            CASE
+                WHEN a.status = 'PROPOSED'::text THEN 'No outcome, because nothing has been done yet. This is still waiting for a decision.'::text
+                WHEN a.status = 'APPROVED'::text THEN 'No outcome yet. This has been approved but not carried out, and an approval is a decision, not money.'::text
+                WHEN a.status = 'DEFERRED'::text THEN 'No outcome, because the decision was to wait.'::text
+                ELSE 'No outcome recorded.'::text
+            END
+            WHEN 'AWAITING_OUTCOME'::text THEN ((('Carried out on '::text || to_char((a.executed_at AT TIME ZONE 'Asia/Dubai'::text), 'DD Mon YYYY'::text)) || '. Nothing has been attributed to it yet. NEXUS will not claim a recovery until a real '::text) || 'recorded sale is tied to this unit by a person, and today no column anywhere links a '::text) || 'sale to a unit - purchase_history stores the vehicle as free text.'::text
+            WHEN 'ATTRIBUTED'::text THEN (('Attributed to a recorded sale by '::text || COALESCE(ou.name, 'an approver'::text)) || '. '::text) || COALESCE(a.recovered_value_basis, 'Realised margin is not computable: the sale amount or the unit cost is missing, '::text || 'so no figure is shown rather than a zero.'::text)
+            WHEN 'NOT_ATTRIBUTABLE'::text THEN 'Closed with no attributable outcome. '::text || COALESCE(a.attribution_note, ''::text)
+            WHEN 'CLOSED_WITHOUT_ACTION'::text THEN
+            CASE
+                WHEN a.status = 'REJECTED'::text THEN 'No outcome to measure: the recommendation was rejected, which is itself the useful result.'::text
+                WHEN a.status = 'EXECUTION_FAILED'::text THEN 'No outcome: the action was attempted and not carried out.'::text
+                ELSE 'No outcome to measure: the action was withdrawn before it was carried out.'::text
+            END
+            ELSE NULL::text
+        END AS outcome_sentence,
+        CASE
+            WHEN a.status <> 'PROPOSED'::text THEN NULL::text
+            WHEN a.engine_impact_aed IS NULL THEN 'The engine claims no monetary impact for this unit, so nothing is stated about the cost of waiting.'::text
+            ELSE (((('AED '::text || to_char(a.engine_impact_aed, 'FM999,999,999'::text)) || ' of gross margin stays exposed in a unit that has been on the lot '::text) || COALESCE(a.engine_days_in_stock::text, 'an unknown number of'::text)) || ' days. That is the amount AT RISK, not an expected loss and not a recoverable sum. '::text) || 'How fast it is being eaten is NOT COMPUTABLE - this dealership has no holding rate on record.'::text
+        END AS cost_of_doing_nothing,
+    CURRENT_DATE - a.proposed_at::date AS days_open,
+    a.created_at,
+    a.updated_at
+   FROM inventory_actions a
+     LEFT JOIN inventory i ON i.tenant_id = a.tenant_id AND i.id = a.unit_id
+     LEFT JOIN v_inventory_profit_sentinel s ON s.tenant_id = a.tenant_id AND s.id = a.unit_id
+     LEFT JOIN users pu ON pu.id = a.proposed_by_staff_id
+     LEFT JOIN users du ON du.id = a.decided_by_staff_id
+     LEFT JOIN users au ON au.id = a.assigned_to_staff_id
+     LEFT JOIN users eu ON eu.id = a.executed_by_staff_id
+     LEFT JOIN users ou ON ou.id = a.outcome_recorded_by_staff_id
+     LEFT JOIN purchase_history ph ON ph.id = a.outcome_purchase_id
+     LEFT JOIN inventory_action_reason_codes rc ON rc.code = a.decision_reason_code;
+
+CREATE OR REPLACE VIEW public.v_inventory_action_timeline WITH (security_invoker=true) AS
+ SELECT e.id,
+    e.tenant_id,
+    e.action_id,
+    e.at,
+    e.event,
+    u.name AS actor_name,
+    u.role AS actor_job_title,
+    e.actor_authority,
+    e.detail,
+    e.audit_log_id,
+    l.status AS audit_status,
+    nexus_outcome_class(l.workflow, l.status, l.summary) AS audit_outcome_class,
+    l.summary AS audit_summary
+   FROM inventory_action_events e
+     LEFT JOIN users u ON u.id = e.actor_staff_id
+     LEFT JOIN audit_log l ON l.id = e.audit_log_id;
+
+CREATE OR REPLACE VIEW public.v_inventory_sales WITH (security_invoker=on) AS
+ SELECT id,
+    model,
+    status,
+    price_aed,
+    days_in_stock,
+    tenant_id
+   FROM inventory i
+  WHERE tenant_id = nexus_scoped_tenant_id();
+
+CREATE OR REPLACE VIEW public.v_needs_attention WITH (security_invoker=true) AS
+ SELECT 'lead_unassigned'::text AS kind,
+    'HOT'::text AS severity,
+    l.id::text AS ref,
+    l.name AS title,
+    'HOT lead with no rep assigned'::text AS detail,
+    l.created_at AS at,
+    'leads'::text AS screen
+   FROM leads l
+  WHERE upper(l.status) = 'HOT'::text AND l.assigned_to_id IS NULL
+UNION ALL
+ SELECT 'sla_breach'::text AS kind,
+        CASE
+            WHEN l.response_time_minutes > 60 THEN 'HOT'::text
+            ELSE 'WARM'::text
+        END AS severity,
+    l.id::text AS ref,
+    l.name AS title,
+    ('Responded in '::text || l.response_time_minutes) || ' min — breaches the 5-minute rule'::text AS detail,
+    l.created_at AS at,
+    'leads'::text AS screen
+   FROM leads l
+  WHERE l.response_time_minutes > 5 AND l.created_at > (now() - '30 days'::interval)
+UNION ALL
+ SELECT 'inventory_aging'::text AS kind,
+    'HOT'::text AS severity,
+    i.id AS ref,
+    i.model AS title,
+    ((i.days_in_stock || ' days in stock · AED '::text) || to_char(i.holding_cost_accrued, 'FM999,999'::text)) || ' holding cost'::text AS detail,
+    now() AS at,
+    'inventory'::text AS screen
+   FROM inventory i
+  WHERE i.aging_alert = 'CRITICAL'::text
+UNION ALL
+ SELECT 'undercut'::text AS kind,
+    'WARM'::text AS severity,
+    c.id::text AS ref,
+    c.model AS title,
+    ((c.competitor || ' is AED '::text) || to_char(abs(c.price_diff_aed), 'FM999,999'::text)) || ' cheaper'::text AS detail,
+    c.scraped_at AS at,
+    'competitors'::text AS screen
+   FROM ( SELECT DISTINCT ON (c2.competitor, c2.model) c2.id,
+            c2.competitor,
+            c2.model,
+            c2.price_aed,
+            c2.our_price_aed,
+            c2.price_diff_aed,
+            c2.ai_recommendation,
+            c2.scraped_at,
+            c2.listing_title,
+            c2.source_host,
+            c2.source_kind,
+            c2.offer_name,
+            c2.offer_condition,
+            c2.match_quality,
+            c2.match_note
+           FROM competitors c2
+          ORDER BY c2.competitor, c2.model, c2.scraped_at DESC) c
+  WHERE c.price_diff_aed < 0
+UNION ALL
+ SELECT 'workflow_failure'::text AS kind,
+    'HOT'::text AS severity,
+    COALESCE(r.name, f.workflow) AS ref,
+    COALESCE(r.name, f.workflow) AS title,
+    (((f.n || ' run'::text) ||
+        CASE
+            WHEN f.n = 1 THEN ''::text
+            ELSE 's'::text
+        END) || ' that did not deliver in the last 24 h · '::text) || "left"(COALESCE(f.latest, 'no detail recorded'::text), 140) AS detail,
+    f.last_at AS at,
+    'automation'::text AS screen
+   FROM ( SELECT a.workflow,
+            count(*) AS n,
+            max(a.logged_at) AS last_at,
+            (array_agg(a.summary ORDER BY a.logged_at DESC))[1] AS latest
+           FROM audit_log a
+          WHERE (nexus_outcome_class(a.workflow, a.status, a.summary) = ANY (ARRAY['FAILURE'::text, 'PARTIAL'::text])) AND a.logged_at > (now() - '24:00:00'::interval)
+          GROUP BY a.workflow) f
+     LEFT JOIN workflow_registry r ON f.workflow = r.name OR f.workflow = r.audit_name OR (f.workflow = ANY (r.audit_aliases))
+UNION ALL
+ SELECT 'kyc_archive_gap'::text AS kind,
+    'HOT'::text AS severity,
+    k.id::text AS ref,
+    COALESCE(k.lead_name, k.full_name, k.lead_email, 'KYC document'::text) AS title,
+    'Document was never archived to Storage — retention cannot be proven'::text AS detail,
+    k.created_at AS at,
+    'compliance'::text AS screen
+   FROM kyc_documents k
+  WHERE k.storage_path IS NULL AND k.purged_at IS NULL AND k.void_reason IS NULL AND k.created_at > '2026-08-17 16:01:48+00'::timestamp with time zone
+UNION ALL
+ SELECT 'unanswered_chat'::text AS kind,
+    'HOT'::text AS severity,
+    v.chat_id AS ref,
+    v.display_name AS title,
+    (('Waiting since '::text || to_char(v.last_msg_at, 'DD Mon HH24:MI'::text)) || ' · '::text) || "left"(COALESCE(v.last_msg, ''::text), 90) AS detail,
+    v.last_msg_at AS at,
+    'conversations'::text AS screen
+   FROM v_conversations v
+  WHERE v.awaiting_msg_reply AND v.last_msg_at > (now() - '7 days'::interval);
+
 CREATE OR REPLACE VIEW public.v_lead_recovery_coverage WITH (security_invoker=true) AS
  WITH r AS (
          SELECT v_lead_recovery.tenant_id,
@@ -11310,6 +11282,49 @@ CREATE OR REPLACE VIEW public.v_lead_recovery_coverage WITH (security_invoker=tr
      LEFT JOIN acts ac ON ac.tenant_id = r.tenant_id
   GROUP BY r.tenant_id;
 
+CREATE OR REPLACE VIEW public.v_lead_recovery_health WITH (security_invoker=true) AS
+ SELECT a.tenant_id,
+    count(*) AS actions_total,
+    count(*) FILTER (WHERE a.status = 'PROPOSED'::text) AS awaiting_decision,
+    count(*) FILTER (WHERE a.status = 'PROPOSED'::text AND a.escalated_at IS NOT NULL) AS escalated_no_approver,
+    count(*) FILTER (WHERE a.status = 'APPROVED'::text AND a.executed_at IS NULL) AS approved_not_executed,
+    count(*) FILTER (WHERE a.status = 'EXECUTED'::text) AS executed,
+    count(*) FILTER (WHERE a.status = 'EXECUTION_FAILED'::text) AS execution_failed,
+    count(*) FILTER (WHERE a.status = 'REJECTED'::text) AS rejected,
+    count(*) FILTER (WHERE a.status = 'DEFERRED'::text) AS deferred,
+    count(*) FILTER (WHERE a.status = 'CANCELLED'::text) AS cancelled,
+    count(*) FILTER (WHERE a.outcome_state = 'ATTRIBUTED'::text) AS outcomes_attributed,
+    count(*) FILTER (WHERE a.outcome_state = 'NOT_ATTRIBUTABLE'::text) AS outcomes_not_attributable,
+    count(*) FILTER (WHERE a.status = 'EXECUTED'::text AND a.outcome_state = 'AWAITING_OUTCOME'::text) AS executed_awaiting_outcome,
+    sum(a.recovered_value_aed) FILTER (WHERE a.outcome_state = 'ATTRIBUTED'::text) AS attributed_revenue_aed,
+    max(a.proposed_at) AS last_proposed_at,
+    max(a.decided_at) AS last_decided_at,
+    max(a.executed_at) AS last_executed_at,
+    ev.events_total,
+    ev.events_without_audit,
+    aud.audit_rows,
+    aud.audit_rows_30d,
+    aud.last_audit_at,
+        CASE
+            WHEN count(*) = 0 THEN 'NO_ACTIONS'::text
+            WHEN COALESCE(ev.events_without_audit, 0::bigint) > 0 THEN 'AUDIT_TRAIL_BROKEN'::text
+            WHEN COALESCE(aud.audit_rows, 0::bigint) = 0 THEN 'AUDIT_TRAIL_BROKEN'::text
+            WHEN count(*) FILTER (WHERE a.status = 'EXECUTION_FAILED'::text) > 0 THEN 'EXECUTIONS_FAILING'::text
+            WHEN count(*) FILTER (WHERE a.status = 'PROPOSED'::text AND a.escalated_at IS NOT NULL) > 0 THEN 'NOBODY_MAY_APPROVE'::text
+            ELSE 'ACTIVE'::text
+        END AS health
+   FROM lead_recovery_actions a
+     LEFT JOIN LATERAL ( SELECT count(*) AS events_total,
+            count(*) FILTER (WHERE e.audit_log_id IS NULL) AS events_without_audit
+           FROM lead_recovery_action_events e
+          WHERE e.tenant_id = a.tenant_id) ev ON true
+     LEFT JOIN LATERAL ( SELECT count(*) AS audit_rows,
+            count(*) FILTER (WHERE l.logged_at > (now() - '30 days'::interval)) AS audit_rows_30d,
+            max(l.logged_at) AS last_audit_at
+           FROM audit_log l
+          WHERE l.tenant_id = a.tenant_id AND l.workflow = 'Lead Recovery Action Center'::text) aud ON true
+  GROUP BY a.tenant_id, ev.events_total, ev.events_without_audit, aud.audit_rows, aud.audit_rows_30d, aud.last_audit_at;
+
 CREATE OR REPLACE VIEW public.v_lead_recovery_queue WITH (security_invoker=true) AS
  SELECT a.id,
     a.tenant_id,
@@ -11413,6 +11428,116 @@ CREATE OR REPLACE VIEW public.v_lead_recovery_state_model WITH (security_invoker
           GROUP BY v_lead_recovery.state) c ON c.state = m.state
   ORDER BY m.sort;
 
+CREATE OR REPLACE VIEW public.v_policy_rule WITH (security_invoker=true) AS
+ SELECT r.id,
+    r.tenant_id,
+    r.tenant_id IS NULL AS is_global_rule,
+    r.jurisdiction,
+    r.rule_type,
+    r.rule_name,
+    r.version,
+    r.supersedes_id,
+    r.value_numeric,
+    r.value_text,
+    r.unit,
+    r.value_kind,
+        CASE
+            WHEN r.verification_status = 'UNKNOWN'::text THEN NULL::text
+            WHEN r.value_kind = 'NUMERIC'::text THEN (TRIM(BOTH FROM to_char(r.value_numeric, 'FM999,999,999,990.999999'::text)) || ' '::text) || r.unit
+            ELSE r.value_text
+        END AS value_display,
+    r.status,
+    r.verification_status,
+    r.confidence,
+    r.effective_from,
+    r.effective_to,
+    r.source_name,
+    r.source_url,
+    r.source_document,
+    r.verification_date,
+    r.verified_by,
+    r.added_by,
+    r.added_at,
+    r.updated_at,
+    r.notes,
+    a.authority,
+        CASE a.authority
+            WHEN 'AUTHORITATIVE'::text THEN ((('Verified against '::text || COALESCE(r.source_name, 'its source'::text)) || ' on '::text) || to_char(r.verification_date::timestamp with time zone, 'DD Mon YYYY'::text)) || ' and in force today. This rule may be relied on.'::text
+            WHEN 'UNKNOWN'::text THEN 'No value has ever been stated for this rule. It is registered as a question, not as an answer. '::text || 'Nothing may be computed from it and no claim may be made on it.'::text
+            WHEN 'NOT_VERIFIED'::text THEN (('A value is recorded but NOBODY HAS CHECKED IT against '::text || COALESCE(r.source_name, 'any source'::text)) || '. It describes what this system currently does, not what the law or the lender says. '::text) || 'It may not be quoted to a customer or used in a regulatory claim.'::text
+            WHEN 'DISPUTED'::text THEN 'Sources disagree about this rule. Until that is resolved it may not be relied on.'::text
+            WHEN 'NOT_IN_FORCE'::text THEN ('This version is '::text || lower(r.status)) || ' — it is not the rule in force.'::text
+            WHEN 'NO_EFFECTIVE_DATE'::text THEN 'This version states no effective_from, so it cannot be tied to the date any decision was taken.'::text
+            WHEN 'NOT_YET_EFFECTIVE'::text THEN ('This version does not take effect until '::text || to_char(r.effective_from::timestamp with time zone, 'DD Mon YYYY'::text)) || '.'::text
+            WHEN 'EXPIRED'::text THEN ('This version stopped applying on '::text || to_char(r.effective_to::timestamp with time zone, 'DD Mon YYYY'::text)) || '. It remains readable because decisions taken while it applied were correct under it.'::text
+            ELSE 'Unrecognised authority state.'::text
+        END AS authority_reason,
+    a.authority = 'AUTHORITATIVE'::text AS may_be_relied_on
+   FROM policy_rule r
+     CROSS JOIN LATERAL ( SELECT policy_authority(r.status, r.verification_status, r.effective_from, r.effective_to, (now() AT TIME ZONE 'Asia/Dubai'::text)::date) AS authority) a;
+
+CREATE OR REPLACE VIEW public.v_policy_authoritative WITH (security_invoker=true) AS
+ SELECT id,
+    tenant_id,
+    is_global_rule,
+    jurisdiction,
+    rule_type,
+    rule_name,
+    version,
+    value_numeric,
+    value_text,
+    unit,
+    value_kind,
+    value_display,
+    effective_from,
+    effective_to,
+    source_name,
+    source_url,
+    source_document,
+    verification_date,
+    verified_by,
+    confidence,
+    (((((COALESCE(source_name, ''::text) ||
+        CASE
+            WHEN source_document IS NOT NULL THEN ', '::text || source_document
+            ELSE ''::text
+        END) ||
+        CASE
+            WHEN source_url IS NOT NULL THEN (' ('::text || source_url) || ')'::text
+            ELSE ''::text
+        END) || ', verified '::text) || to_char(verification_date::timestamp with time zone, 'DD Mon YYYY'::text)) || ' by '::text) || verified_by AS citation
+   FROM v_policy_rule
+  WHERE authority = 'AUTHORITATIVE'::text;
+
+CREATE OR REPLACE VIEW public.v_policy_rule_history WITH (security_invoker=true) AS
+ SELECT r.tenant_id,
+    r.jurisdiction,
+    r.rule_type,
+    r.rule_name,
+    r.version,
+    r.id,
+    r.supersedes_id,
+    r.status,
+    r.verification_status,
+    r.value_numeric,
+    r.value_text,
+    r.unit,
+    r.effective_from,
+    r.effective_to,
+    r.source_name,
+    r.source_document,
+    r.verification_date,
+    r.verified_by,
+    r.added_by,
+    r.added_at,
+    prev.value_numeric AS previous_value_numeric,
+    prev.value_text AS previous_value_text,
+    prev.effective_from AS previous_effective_from,
+    prev.effective_to AS previous_effective_to,
+    prev.source_name AS previous_source_name
+   FROM policy_rule r
+     LEFT JOIN policy_rule prev ON prev.id = r.supersedes_id;
+
 CREATE OR REPLACE VIEW public.v_policy_unmigrated_constant WITH (security_invoker=true) AS
  SELECT layer,
     kind,
@@ -11444,26 +11569,227 @@ CREATE OR REPLACE VIEW public.v_policy_unmigrated_constant WITH (security_invoke
    FROM policy_unmigrated_constant u
   ORDER BY reaches_a_customer DESC, layer, location;
 
-CREATE OR REPLACE VIEW public.v_deal_rescue_state_model WITH (security_invoker=true) AS
- SELECT s.state,
-    s.sort,
-    s.meaning,
-    s.engine_can_produce,
-    s.blocked_by,
-    s.requires,
-    COALESCE(n.n, 0::bigint) AS deals_in_state_now,
+CREATE OR REPLACE VIEW public.v_team_performance WITH (security_invoker=true) AS
+ SELECT u.id,
+    u.name,
+    u.email,
+    u.role,
+    u.status,
+    count(l.id) AS leads_assigned,
+    count(l.id) FILTER (WHERE upper(l.status) = 'HOT'::text) AS hot_leads,
+    round(avg(l.response_time_minutes), 1) AS avg_response_minutes,
+    count(l.id) FILTER (WHERE l.response_time_minutes <= 5) AS within_sla,
+    count(l.id) FILTER (WHERE l.response_time_minutes > 5) AS breached_sla,
+    sum(l.budget_aed) FILTER (WHERE nexus_lead_is_open(l.status)) AS pipeline_aed
+   FROM users u
+     LEFT JOIN leads l ON l.assigned_to_id = u.id
+  GROUP BY u.id, u.name, u.email, u.role, u.status;
+
+CREATE OR REPLACE VIEW public.v_whatsapp_conversation_window WITH (security_invoker=true) AS
+ SELECT c.tenant_id,
+    c.integration_id,
+    cr.channel_type,
+    cr.external_identifier AS channel_identifier,
+    c.customer_wa_id,
+    c.last_customer_message_at,
+    c.last_customer_message_external_id,
+    c.last_customer_message_source,
+    w.rule_id AS window_rule_id,
+    w.value_numeric AS window_hours,
+    w.verification_status AS window_rule_verification_status,
+    w.authority AS window_rule_authority,
         CASE
-            WHEN NOT s.engine_can_produce THEN 'UNREACHABLE_BY_DESIGN'::text
-            WHEN COALESCE(n.n, 0::bigint) > 0 THEN 'OBSERVED'::text
-            WHEN (( SELECT count(*) AS count
-               FROM v_deal_rescue)) = 0 THEN 'UNREACHABLE_TODAY_NO_POPULATION'::text
-            ELSE 'REACHABLE_NOT_OBSERVED'::text
-        END AS observation
-   FROM deal_rescue_states s
-     LEFT JOIN ( SELECT d.state,
-            count(*) AS n
-           FROM v_deal_rescue d
-          GROUP BY d.state) n ON n.state = s.state;
+            WHEN c.last_customer_message_at IS NULL OR w.value_numeric IS NULL THEN NULL::timestamp with time zone
+            ELSE c.last_customer_message_at + w.value_numeric::double precision * '01:00:00'::interval
+        END AS window_expires_at,
+        CASE
+            WHEN c.last_customer_message_at IS NULL OR w.value_numeric IS NULL THEN 'UNKNOWN'::text
+            WHEN now() < (c.last_customer_message_at + w.value_numeric::double precision * '01:00:00'::interval) THEN 'OPEN'::text
+            ELSE 'CLOSED'::text
+        END AS window_state,
+    COALESCE(o.state, 'OPT_IN_UNKNOWN'::text) AS opt_in_state,
+    o.occurred_at AS opt_in_last_event_at,
+    o.evidence_ref AS opt_in_evidence_ref
+   FROM whatsapp_conversation_state c
+     JOIN channel_registry cr ON cr.integration_id = c.integration_id
+     LEFT JOIN LATERAL whatsapp_policy_rule_lookup(c.tenant_id, 'PLATFORM_WHATSAPP'::text, 'WA_CUSTOMER_SERVICE_WINDOW_HOURS'::text) w(rule_id, jurisdiction, rule_name, value_numeric, value_text, unit, status, verification_status, authority, source_name, source_url, effective_from, notes) ON true
+     LEFT JOIN LATERAL whatsapp_opt_in_state(c.tenant_id, c.integration_id, c.customer_wa_id) o(state, event, occurred_at, mechanism, evidence_kind, evidence_ref, recorded_by, recorded_at) ON true;
+
+CREATE OR REPLACE VIEW public.v_whatsapp_message_usage WITH (security_invoker=true) AS
+ SELECT u.usage_id,
+    u.tenant_id,
+    u.integration_id,
+    u.event_id,
+    u.sent_at,
+    u.message_category,
+    u.template_required,
+    u.template_id,
+    t.name AS template_name,
+    t.language AS template_language,
+    u.policy_decision,
+    u.policy_reason_code,
+    u.policy_rule_id,
+    u.policy_rule_name,
+    u.policy_rule_verification_status,
+    u.policy_decided_at,
+    u.template_provider_status_at_send,
+    u.template_status_age_at_send,
+    u.template_staleness_verdict_at_send,
+    t.provider_status AS template_provider_status_now,
+    u.template_id IS NOT NULL AND u.template_provider_status_at_send IS NOT NULL AND t.provider_status IS DISTINCT FROM u.template_provider_status_at_send AS template_status_changed_since_send,
+    u.latest_status,
+    u.latest_status_at,
+    u.billing_fact_state,
+    u.provider_billable,
+    u.provider_pricing_model,
+    u.provider_pricing_category,
+    u.provider_pricing_type,
+    u.provider_conversation_id,
+    u.provider_conversation_origin_type,
+    u.provider_conversation_expiration_at,
+    u.provider_pricing_observed_at,
+    u.cost_state,
+        CASE u.cost_state
+            WHEN 'UNKNOWN_AWAITING_PROVIDER_REPORT'::text THEN 'Unknown - no status callback has arrived for this message yet.'::text
+            WHEN 'UNKNOWN_PROVIDER_REPORTED_NO_PRICING'::text THEN 'Unknown - the provider''s callback carried no pricing object.'::text
+            WHEN 'NOT_BILLABLE_PROVIDER_REPORTED'::text THEN 'Not billable - the provider itself reported billable = false.'::text
+            WHEN 'BILLABLE_AMOUNT_UNKNOWN_NO_RATE_CARD'::text THEN 'Billable, amount unknown - the provider charged for this and NEXUS holds no rate card for its country, category or date.'::text
+            ELSE 'Unknown.'::text
+        END AS cost_answer,
+    u.recorded_at,
+    u.updated_at
+   FROM whatsapp_message_usage u
+     LEFT JOIN whatsapp_templates t ON t.template_id = u.template_id;
+
+CREATE OR REPLACE VIEW public.v_whatsapp_messaging_usage_monthly WITH (security_invoker=true) AS
+ SELECT tenant_id,
+    date_trunc('month'::text, sent_at) AS month,
+    message_category,
+    count(*) AS messages,
+    count(*) FILTER (WHERE provider_billable IS TRUE) AS provider_billable_messages,
+    count(*) FILTER (WHERE provider_billable IS FALSE) AS provider_not_billable_messages,
+    count(*) FILTER (WHERE billing_fact_state = 'AWAITING_PROVIDER_REPORT'::text) AS awaiting_provider_report,
+    count(*) FILTER (WHERE billing_fact_state = 'PROVIDER_REPORTED_NO_PRICING'::text) AS reported_without_pricing,
+    count(DISTINCT provider_conversation_id) AS provider_conversations_reported,
+    count(*) FILTER (WHERE template_required) AS template_messages,
+    count(*) FILTER (WHERE policy_rule_verification_status = 'VERIFIED'::text) AS sent_under_a_verified_rule,
+    count(*) FILTER (WHERE policy_rule_verification_status = ANY (ARRAY['NOT_VERIFIED'::text, 'UNKNOWN'::text, 'DISPUTED'::text])) AS sent_under_an_unverified_rule,
+    count(*) FILTER (WHERE policy_rule_verification_status = 'NO_RULE_APPLIED'::text) AS sent_with_no_rule_applied,
+    count(*) FILTER (WHERE latest_status = 'failed'::text) AS failed_messages,
+    count(*) FILTER (WHERE latest_status IS NULL) AS no_status_reported,
+    'UNKNOWN - NEXUS holds no WhatsApp rate card. Meta prices by country, category and date; these are counts of what was sent and what the provider said about it, not an amount.'::text AS cost_answer
+   FROM whatsapp_message_usage u
+  GROUP BY tenant_id, (date_trunc('month'::text, sent_at)), message_category;
+
+CREATE OR REPLACE VIEW public.v_whatsapp_template_registry WITH (security_invoker=true) AS
+ SELECT template_id,
+    tenant_id,
+    integration_id,
+    name,
+    language,
+    category,
+    nexus_state,
+    provider_status,
+    provider_status_raw,
+    provider_status_source,
+    provider_status_observed_at,
+        CASE
+            WHEN provider_status_observed_at IS NULL THEN NULL::interval
+            ELSE now() - provider_status_observed_at
+        END AS status_age,
+        CASE
+            WHEN provider_status_source = 'NEVER_OBSERVED'::text THEN 'NEVER_OBSERVED'::text
+            ELSE 'OBSERVED'::text
+        END AS status_confidence,
+    previous_provider_status,
+    previous_status_observed_at,
+    provider_rejected_reason,
+    body_variable_count,
+    variable_schema,
+    body_text,
+    body_text_source,
+        CASE
+            WHEN provider_status = 'UNKNOWN'::text THEN 'NEXUS has never asked the provider about this template. It is not approved, and it is not rejected -- it is unknown.'::text
+            WHEN previous_provider_status IS NOT NULL AND provider_status <> previous_provider_status THEN format('The provider changed this template from %s to %s. Anything NEXUS sent on the old status was sent on a belief that no longer holds.'::text, previous_provider_status, provider_status)
+            WHEN provider_status = 'APPROVED'::text THEN format('The provider said APPROVED when NEXUS last asked, on %s. Whether that is still true depends on how long ago that was.'::text, to_char(provider_status_observed_at, 'YYYY-MM-DD HH24:MI'::text))
+            ELSE format('The provider last reported %s, on %s.'::text, provider_status, to_char(provider_status_observed_at, 'YYYY-MM-DD HH24:MI'::text))
+        END AS what_this_row_claims,
+    created_at,
+    updated_at
+   FROM whatsapp_templates t;
+
+CREATE OR REPLACE VIEW public.v_workflow_health WITH (security_invoker=true) AS
+ SELECT r.id,
+    r.name,
+    r.category,
+    r.trigger_type,
+    r.trigger_detail,
+    r.description,
+    r.is_active,
+    r.writes_audit_log,
+    COALESCE(a.runs, 0::bigint) AS runs,
+    COALESCE(a.failures, 0::bigint) AS failures,
+    COALESCE(a.escalations, 0::bigint) AS escalations,
+    COALESCE(a.runs_30d, 0::bigint) AS runs_30d,
+    COALESCE(a.failures_30d, 0::bigint) AS failures_30d,
+    COALESCE(a.partials_30d, 0::bigint) AS partials_30d,
+    COALESCE(a.no_result_30d, 0::bigint) AS no_result_30d,
+    COALESCE(a.rejected_30d, 0::bigint) AS rejected_30d,
+    COALESCE(a.escalated_30d, 0::bigint) AS escalated_30d,
+    COALESCE(a.successes_30d, 0::bigint) AS successes_30d,
+    COALESCE(a.unknown_30d, 0::bigint) AS unknown_30d,
+    COALESCE(a.effective_runs_30d, 0::bigint) AS effective_runs_30d,
+        CASE
+            WHEN COALESCE(a.effective_runs_30d, 0::bigint) = 0 THEN NULL::numeric
+            ELSE round(100.0 * a.successes_30d::numeric / a.effective_runs_30d::numeric, 1)
+        END AS success_rate_30d,
+        CASE
+            WHEN COALESCE(a.effective_runs, 0::bigint) = 0 THEN NULL::numeric
+            ELSE round(100.0 * a.successes::numeric / a.effective_runs::numeric, 1)
+        END AS success_rate,
+    a.last_run,
+    a.last_success,
+    a.last_failure,
+    a.last_partial,
+    a.last_incomplete,
+        CASE
+            WHEN NOT r.writes_audit_log THEN 'NOT_INSTRUMENTED'::text
+            WHEN COALESCE(a.runs, 0::bigint) = 0 THEN 'NEVER_RAN'::text
+            WHEN COALESCE(a.failures_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
+            WHEN COALESCE(a.partials_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
+            WHEN COALESCE(a.unknown_30d, 0::bigint) > 0 THEN 'UNKNOWN_OUTCOME'::text
+            WHEN COALESCE(a.escalated_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
+            WHEN COALESCE(a.effective_runs_30d, 0::bigint) = 0 THEN 'NO_QUALIFYING_RUNS'::text
+            WHEN (COALESCE(a.no_result_30d, 0::bigint) * 2) > COALESCE(a.effective_runs_30d, 0::bigint) THEN 'PRODUCING_NOTHING'::text
+            WHEN COALESCE(a.no_result_30d, 0::bigint) > 0 THEN 'DEGRADED'::text
+            ELSE 'HEALTHY'::text
+        END AS health
+   FROM workflow_registry r
+     LEFT JOIN LATERAL ( SELECT count(*) AS runs,
+            count(*) FILTER (WHERE x.c = 'FAILURE'::text) AS failures,
+            count(*) FILTER (WHERE x.c = 'ESCALATED'::text) AS escalations,
+            count(*) FILTER (WHERE x.c = 'SUCCESS'::text) AS successes,
+            count(*) FILTER (WHERE x.c <> ALL (ARRAY['REJECTED_EXPECTED'::text, 'ESCALATED'::text])) AS effective_runs,
+            count(*) FILTER (WHERE x.recent) AS runs_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'FAILURE'::text) AS failures_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'PARTIAL'::text) AS partials_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'NO_RESULT'::text) AS no_result_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'REJECTED_EXPECTED'::text) AS rejected_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'ESCALATED'::text) AS escalated_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'SUCCESS'::text) AS successes_30d,
+            count(*) FILTER (WHERE x.recent AND x.c = 'UNKNOWN'::text) AS unknown_30d,
+            count(*) FILTER (WHERE x.recent AND (x.c <> ALL (ARRAY['REJECTED_EXPECTED'::text, 'ESCALATED'::text]))) AS effective_runs_30d,
+            max(x.logged_at) AS last_run,
+            max(x.logged_at) FILTER (WHERE x.c = 'SUCCESS'::text) AS last_success,
+            max(x.logged_at) FILTER (WHERE x.c = 'FAILURE'::text) AS last_failure,
+            max(x.logged_at) FILTER (WHERE x.c = 'PARTIAL'::text) AS last_partial,
+            max(x.logged_at) FILTER (WHERE x.c = ANY (ARRAY['FAILURE'::text, 'PARTIAL'::text])) AS last_incomplete
+           FROM ( SELECT l.logged_at,
+                    l.logged_at > (now() - '30 days'::interval) AS recent,
+                    nexus_outcome_class(l.workflow, l.status, l.summary) AS c
+                   FROM audit_log l
+                  WHERE l.workflow = r.name OR l.workflow = r.audit_name OR (l.workflow = ANY (r.audit_aliases))) x) a ON true;
+
 
 
 -- ========================================================================
@@ -11516,7 +11842,10 @@ CREATE TRIGGER whatsapp_templates_touch BEFORE UPDATE ON public.whatsapp_templat
 
 -- ========================================================================
 -- 11. EVENT TRIGGERS
+-- These are database-wide, not schema-scoped. Both are NEXUS guards; the Supabase
+-- platform ones (pgrst_*, issue_*) belong to the platform and are not reproduced.
 -- ========================================================================
+CREATE EVENT TRIGGER nexus_guard_born_open_grants ON ddl_command_end EXECUTE FUNCTION public.nexus_guard_born_open_grants();
 CREATE EVENT TRIGGER nexus_guard_security_invoker_views ON ddl_command_end WHEN TAG IN ('CREATE VIEW', 'ALTER VIEW', 'ALTER TABLE') EXECUTE FUNCTION public.nexus_require_security_invoker_views();
 
 
@@ -11680,10 +12009,8 @@ CREATE POLICY lead_recovery_states_service_role_all ON public.lead_recovery_stat
 CREATE POLICY leads_authenticated_all ON public.leads AS PERMISSIVE FOR ALL TO authenticated USING ((tenant_id IN ( SELECT nexus_current_tenant_ids() AS nexus_current_tenant_ids))) WITH CHECK ((tenant_id IN ( SELECT nexus_current_tenant_ids() AS nexus_current_tenant_ids)));
 CREATE POLICY leads_deny_anon ON public.leads AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
 CREATE POLICY leads_service_role_all ON public.leads AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY policy_jurisdiction_authenticated_read ON public.policy_jurisdiction AS PERMISSIVE FOR SELECT TO authenticated USING (true);
 CREATE POLICY policy_jurisdiction_deny_anon ON public.policy_jurisdiction AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
 CREATE POLICY policy_jurisdiction_service_role_all ON public.policy_jurisdiction AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
-CREATE POLICY policy_platform_attestation_authenticated_read ON public.policy_platform_attestation AS PERMISSIVE FOR SELECT TO authenticated USING (true);
 CREATE POLICY policy_platform_attestation_deny_anon ON public.policy_platform_attestation AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
 CREATE POLICY policy_platform_attestation_service_role_all ON public.policy_platform_attestation AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
 CREATE POLICY policy_rule_authenticated_read ON public.policy_rule AS PERMISSIVE FOR SELECT TO authenticated USING (((tenant_id IS NULL) OR (tenant_id IN ( SELECT nexus_current_tenant_ids() AS nexus_current_tenant_ids))));
@@ -11755,65 +12082,81 @@ CREATE POLICY workflow_registry_service_role_all ON public.workflow_registry AS 
 
 -- ========================================================================
 -- 14. GRANTS — revoke first
--- ========================================================================
 -- Supabase ships ALTER DEFAULT PRIVILEGES granting ALL on new objects in
--- public to anon, authenticated and service_role. Dozens of NEXUS migrations
--- exist only to take that back. A baseline that merely GRANTed would therefore
--- reproduce the tables and leave the grants wide open, which is the one kind of
--- drift that puts one dealership's data in front of another. So: revoke
--- everything first, then grant back exactly what production holds.
+-- public to anon, authenticated and service_role, and USAGE on schema public to
+-- anon and to PUBLIC. Dozens of NEXUS migrations exist only to take that back. A
+-- baseline that merely GRANTed would therefore reproduce the tables and leave the
+-- grants wide open, which is the one kind of drift that puts one dealership's data
+-- in front of another. So: revoke everything first, including the schema door,
+-- then grant back exactly what production holds.
+-- ========================================================================
 REVOKE ALL ON ALL TABLES    IN SCHEMA public FROM anon, authenticated, service_role, PUBLIC;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated, service_role, PUBLIC;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated, service_role, PUBLIC;
+REVOKE ALL ON SCHEMA public FROM anon, authenticated, service_role, PUBLIC;
 
 
 -- ========================================================================
 -- 15. GRANTS — schema
+-- Read from pg_namespace.nspacl. anon is absent BY MEASUREMENT, not by omission:
+-- the 4 September migration nexus_close_anon_schema_door_and_storage_defacl
+-- revoked USAGE from anon and from PUBLIC, and gave it back to eleven named roles.
+-- Without USAGE on the schema, no object ACL inside it is reachable — including
+-- objects that do not exist yet, whichever path creates them.
 -- ========================================================================
-GRANT USAGE ON SCHEMA public TO PUBLIC;
-GRANT USAGE ON SCHEMA public TO anon;
-GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT CREATE ON SCHEMA public TO pg_database_owner;
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT USAGE ON SCHEMA public TO authenticator;
+GRANT USAGE ON SCHEMA public TO dashboard_user;
 GRANT USAGE ON SCHEMA public TO pg_database_owner;
+GRANT USAGE ON SCHEMA public TO pgbouncer;
 GRANT USAGE ON SCHEMA public TO postgres;
 GRANT USAGE ON SCHEMA public TO service_role;
+GRANT USAGE ON SCHEMA public TO supabase_admin;
+GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
+GRANT USAGE ON SCHEMA public TO supabase_etl_admin;
+GRANT USAGE ON SCHEMA public TO supabase_privileged_role;
+GRANT USAGE ON SCHEMA public TO supabase_read_only_user;
+GRANT USAGE ON SCHEMA public TO supabase_realtime_admin;
+GRANT USAGE ON SCHEMA public TO supabase_replication_admin;
+GRANT USAGE ON SCHEMA public TO supabase_storage_admin;
 
 
 -- ========================================================================
 -- 16. GRANTS — tables, views and sequences
 -- ========================================================================
-GRANT SELECT ON TABLE public.attribution_edge_type TO authenticated;
 GRANT DELETE ON TABLE public.attribution_edge_type TO service_role;
 GRANT INSERT ON TABLE public.attribution_edge_type TO service_role;
 GRANT MAINTAIN ON TABLE public.attribution_edge_type TO service_role;
 GRANT REFERENCES ON TABLE public.attribution_edge_type TO service_role;
+GRANT SELECT ON TABLE public.attribution_edge_type TO authenticated;
 GRANT SELECT ON TABLE public.attribution_edge_type TO service_role;
 GRANT TRIGGER ON TABLE public.attribution_edge_type TO service_role;
 GRANT TRUNCATE ON TABLE public.attribution_edge_type TO service_role;
 GRANT UPDATE ON TABLE public.attribution_edge_type TO service_role;
-GRANT SELECT ON TABLE public.attribution_event_type TO authenticated;
 GRANT DELETE ON TABLE public.attribution_event_type TO service_role;
 GRANT INSERT ON TABLE public.attribution_event_type TO service_role;
 GRANT MAINTAIN ON TABLE public.attribution_event_type TO service_role;
 GRANT REFERENCES ON TABLE public.attribution_event_type TO service_role;
+GRANT SELECT ON TABLE public.attribution_event_type TO authenticated;
 GRANT SELECT ON TABLE public.attribution_event_type TO service_role;
 GRANT TRIGGER ON TABLE public.attribution_event_type TO service_role;
 GRANT TRUNCATE ON TABLE public.attribution_event_type TO service_role;
 GRANT UPDATE ON TABLE public.attribution_event_type TO service_role;
-GRANT SELECT ON TABLE public.attribution_link_basis TO authenticated;
 GRANT DELETE ON TABLE public.attribution_link_basis TO service_role;
 GRANT INSERT ON TABLE public.attribution_link_basis TO service_role;
 GRANT MAINTAIN ON TABLE public.attribution_link_basis TO service_role;
 GRANT REFERENCES ON TABLE public.attribution_link_basis TO service_role;
+GRANT SELECT ON TABLE public.attribution_link_basis TO authenticated;
 GRANT SELECT ON TABLE public.attribution_link_basis TO service_role;
 GRANT TRIGGER ON TABLE public.attribution_link_basis TO service_role;
 GRANT TRUNCATE ON TABLE public.attribution_link_basis TO service_role;
 GRANT UPDATE ON TABLE public.attribution_link_basis TO service_role;
-GRANT SELECT ON TABLE public.audit_log TO authenticated;
 GRANT DELETE ON TABLE public.audit_log TO service_role;
 GRANT INSERT ON TABLE public.audit_log TO service_role;
 GRANT MAINTAIN ON TABLE public.audit_log TO service_role;
 GRANT REFERENCES ON TABLE public.audit_log TO service_role;
+GRANT SELECT ON TABLE public.audit_log TO authenticated;
 GRANT SELECT ON TABLE public.audit_log TO service_role;
 GRANT TRIGGER ON TABLE public.audit_log TO service_role;
 GRANT TRUNCATE ON TABLE public.audit_log TO service_role;
@@ -11866,20 +12209,20 @@ GRANT SELECT ON TABLE public.channel_send_form TO service_role;
 GRANT TRIGGER ON TABLE public.channel_send_form TO service_role;
 GRANT TRUNCATE ON TABLE public.channel_send_form TO service_role;
 GRANT UPDATE ON TABLE public.channel_send_form TO service_role;
-GRANT SELECT ON TABLE public.communication_logs TO authenticated;
 GRANT DELETE ON TABLE public.communication_logs TO service_role;
 GRANT INSERT ON TABLE public.communication_logs TO service_role;
 GRANT MAINTAIN ON TABLE public.communication_logs TO service_role;
 GRANT REFERENCES ON TABLE public.communication_logs TO service_role;
+GRANT SELECT ON TABLE public.communication_logs TO authenticated;
 GRANT SELECT ON TABLE public.communication_logs TO service_role;
 GRANT TRIGGER ON TABLE public.communication_logs TO service_role;
 GRANT TRUNCATE ON TABLE public.communication_logs TO service_role;
 GRANT UPDATE ON TABLE public.communication_logs TO service_role;
-GRANT SELECT ON TABLE public.competitors TO authenticated;
 GRANT DELETE ON TABLE public.competitors TO service_role;
 GRANT INSERT ON TABLE public.competitors TO service_role;
 GRANT MAINTAIN ON TABLE public.competitors TO service_role;
 GRANT REFERENCES ON TABLE public.competitors TO service_role;
+GRANT SELECT ON TABLE public.competitors TO authenticated;
 GRANT SELECT ON TABLE public.competitors TO service_role;
 GRANT TRIGGER ON TABLE public.competitors TO service_role;
 GRANT TRUNCATE ON TABLE public.competitors TO service_role;
@@ -11887,203 +12230,202 @@ GRANT UPDATE ON TABLE public.competitors TO service_role;
 GRANT SELECT ON SEQUENCE public.competitors_id_seq TO service_role;
 GRANT UPDATE ON SEQUENCE public.competitors_id_seq TO service_role;
 GRANT USAGE ON SEQUENCE public.competitors_id_seq TO service_role;
-GRANT SELECT ON TABLE public.customer_360_profiles TO authenticated;
 GRANT DELETE ON TABLE public.customer_360_profiles TO service_role;
 GRANT INSERT ON TABLE public.customer_360_profiles TO service_role;
 GRANT MAINTAIN ON TABLE public.customer_360_profiles TO service_role;
 GRANT REFERENCES ON TABLE public.customer_360_profiles TO service_role;
+GRANT SELECT ON TABLE public.customer_360_profiles TO authenticated;
 GRANT SELECT ON TABLE public.customer_360_profiles TO service_role;
 GRANT TRIGGER ON TABLE public.customer_360_profiles TO service_role;
 GRANT TRUNCATE ON TABLE public.customer_360_profiles TO service_role;
 GRANT UPDATE ON TABLE public.customer_360_profiles TO service_role;
-GRANT SELECT ON TABLE public.daily_metrics TO authenticated;
 GRANT DELETE ON TABLE public.daily_metrics TO service_role;
 GRANT INSERT ON TABLE public.daily_metrics TO service_role;
 GRANT MAINTAIN ON TABLE public.daily_metrics TO service_role;
 GRANT REFERENCES ON TABLE public.daily_metrics TO service_role;
+GRANT SELECT ON TABLE public.daily_metrics TO authenticated;
 GRANT SELECT ON TABLE public.daily_metrics TO service_role;
 GRANT TRIGGER ON TABLE public.daily_metrics TO service_role;
 GRANT TRUNCATE ON TABLE public.daily_metrics TO service_role;
 GRANT UPDATE ON TABLE public.daily_metrics TO service_role;
-GRANT SELECT ON TABLE public.deal_rescue_evidence_sources TO authenticated;
 GRANT DELETE ON TABLE public.deal_rescue_evidence_sources TO service_role;
 GRANT INSERT ON TABLE public.deal_rescue_evidence_sources TO service_role;
 GRANT MAINTAIN ON TABLE public.deal_rescue_evidence_sources TO service_role;
 GRANT REFERENCES ON TABLE public.deal_rescue_evidence_sources TO service_role;
+GRANT SELECT ON TABLE public.deal_rescue_evidence_sources TO authenticated;
 GRANT SELECT ON TABLE public.deal_rescue_evidence_sources TO service_role;
 GRANT TRIGGER ON TABLE public.deal_rescue_evidence_sources TO service_role;
 GRANT TRUNCATE ON TABLE public.deal_rescue_evidence_sources TO service_role;
 GRANT UPDATE ON TABLE public.deal_rescue_evidence_sources TO service_role;
-GRANT SELECT ON TABLE public.deal_rescue_prerequisites TO authenticated;
 GRANT DELETE ON TABLE public.deal_rescue_prerequisites TO service_role;
 GRANT INSERT ON TABLE public.deal_rescue_prerequisites TO service_role;
 GRANT MAINTAIN ON TABLE public.deal_rescue_prerequisites TO service_role;
 GRANT REFERENCES ON TABLE public.deal_rescue_prerequisites TO service_role;
+GRANT SELECT ON TABLE public.deal_rescue_prerequisites TO authenticated;
 GRANT SELECT ON TABLE public.deal_rescue_prerequisites TO service_role;
 GRANT TRIGGER ON TABLE public.deal_rescue_prerequisites TO service_role;
 GRANT TRUNCATE ON TABLE public.deal_rescue_prerequisites TO service_role;
 GRANT UPDATE ON TABLE public.deal_rescue_prerequisites TO service_role;
-GRANT SELECT ON TABLE public.deal_rescue_settings TO authenticated;
 GRANT DELETE ON TABLE public.deal_rescue_settings TO service_role;
 GRANT INSERT ON TABLE public.deal_rescue_settings TO service_role;
 GRANT MAINTAIN ON TABLE public.deal_rescue_settings TO service_role;
 GRANT REFERENCES ON TABLE public.deal_rescue_settings TO service_role;
+GRANT SELECT ON TABLE public.deal_rescue_settings TO authenticated;
 GRANT SELECT ON TABLE public.deal_rescue_settings TO service_role;
 GRANT TRIGGER ON TABLE public.deal_rescue_settings TO service_role;
 GRANT TRUNCATE ON TABLE public.deal_rescue_settings TO service_role;
 GRANT UPDATE ON TABLE public.deal_rescue_settings TO service_role;
-GRANT SELECT ON TABLE public.deal_rescue_states TO authenticated;
 GRANT DELETE ON TABLE public.deal_rescue_states TO service_role;
 GRANT INSERT ON TABLE public.deal_rescue_states TO service_role;
 GRANT MAINTAIN ON TABLE public.deal_rescue_states TO service_role;
 GRANT REFERENCES ON TABLE public.deal_rescue_states TO service_role;
+GRANT SELECT ON TABLE public.deal_rescue_states TO authenticated;
 GRANT SELECT ON TABLE public.deal_rescue_states TO service_role;
 GRANT TRIGGER ON TABLE public.deal_rescue_states TO service_role;
 GRANT TRUNCATE ON TABLE public.deal_rescue_states TO service_role;
 GRANT UPDATE ON TABLE public.deal_rescue_states TO service_role;
-GRANT SELECT ON TABLE public.deals_embeddings TO authenticated;
 GRANT DELETE ON TABLE public.deals_embeddings TO service_role;
 GRANT INSERT ON TABLE public.deals_embeddings TO service_role;
 GRANT MAINTAIN ON TABLE public.deals_embeddings TO service_role;
 GRANT REFERENCES ON TABLE public.deals_embeddings TO service_role;
+GRANT SELECT ON TABLE public.deals_embeddings TO authenticated;
 GRANT SELECT ON TABLE public.deals_embeddings TO service_role;
 GRANT TRIGGER ON TABLE public.deals_embeddings TO service_role;
 GRANT TRUNCATE ON TABLE public.deals_embeddings TO service_role;
 GRANT UPDATE ON TABLE public.deals_embeddings TO service_role;
-GRANT SELECT ON TABLE public.finance_quotes TO authenticated;
 GRANT DELETE ON TABLE public.finance_quotes TO service_role;
 GRANT INSERT ON TABLE public.finance_quotes TO service_role;
 GRANT MAINTAIN ON TABLE public.finance_quotes TO service_role;
 GRANT REFERENCES ON TABLE public.finance_quotes TO service_role;
+GRANT SELECT ON TABLE public.finance_quotes TO authenticated;
 GRANT SELECT ON TABLE public.finance_quotes TO service_role;
 GRANT TRIGGER ON TABLE public.finance_quotes TO service_role;
 GRANT TRUNCATE ON TABLE public.finance_quotes TO service_role;
 GRANT UPDATE ON TABLE public.finance_quotes TO service_role;
 GRANT DELETE ON TABLE public.inventory TO authenticated;
-GRANT INSERT ON TABLE public.inventory TO authenticated;
-GRANT SELECT ON TABLE public.inventory TO authenticated;
-GRANT UPDATE ON TABLE public.inventory TO authenticated;
 GRANT DELETE ON TABLE public.inventory TO service_role;
+GRANT INSERT ON TABLE public.inventory TO authenticated;
 GRANT INSERT ON TABLE public.inventory TO service_role;
 GRANT MAINTAIN ON TABLE public.inventory TO service_role;
 GRANT REFERENCES ON TABLE public.inventory TO service_role;
+GRANT SELECT ON TABLE public.inventory TO authenticated;
 GRANT SELECT ON TABLE public.inventory TO service_role;
 GRANT TRIGGER ON TABLE public.inventory TO service_role;
 GRANT TRUNCATE ON TABLE public.inventory TO service_role;
+GRANT UPDATE ON TABLE public.inventory TO authenticated;
 GRANT UPDATE ON TABLE public.inventory TO service_role;
-GRANT SELECT ON TABLE public.inventory_action_events TO authenticated;
 GRANT DELETE ON TABLE public.inventory_action_events TO service_role;
 GRANT INSERT ON TABLE public.inventory_action_events TO service_role;
 GRANT MAINTAIN ON TABLE public.inventory_action_events TO service_role;
 GRANT REFERENCES ON TABLE public.inventory_action_events TO service_role;
+GRANT SELECT ON TABLE public.inventory_action_events TO authenticated;
 GRANT SELECT ON TABLE public.inventory_action_events TO service_role;
 GRANT TRIGGER ON TABLE public.inventory_action_events TO service_role;
 GRANT TRUNCATE ON TABLE public.inventory_action_events TO service_role;
 GRANT UPDATE ON TABLE public.inventory_action_events TO service_role;
-GRANT SELECT ON TABLE public.inventory_action_policy TO authenticated;
 GRANT DELETE ON TABLE public.inventory_action_policy TO service_role;
 GRANT INSERT ON TABLE public.inventory_action_policy TO service_role;
 GRANT MAINTAIN ON TABLE public.inventory_action_policy TO service_role;
 GRANT REFERENCES ON TABLE public.inventory_action_policy TO service_role;
+GRANT SELECT ON TABLE public.inventory_action_policy TO authenticated;
 GRANT SELECT ON TABLE public.inventory_action_policy TO service_role;
 GRANT TRIGGER ON TABLE public.inventory_action_policy TO service_role;
 GRANT TRUNCATE ON TABLE public.inventory_action_policy TO service_role;
 GRANT UPDATE ON TABLE public.inventory_action_policy TO service_role;
-GRANT SELECT ON TABLE public.inventory_action_reason_codes TO authenticated;
 GRANT DELETE ON TABLE public.inventory_action_reason_codes TO service_role;
 GRANT INSERT ON TABLE public.inventory_action_reason_codes TO service_role;
 GRANT MAINTAIN ON TABLE public.inventory_action_reason_codes TO service_role;
 GRANT REFERENCES ON TABLE public.inventory_action_reason_codes TO service_role;
+GRANT SELECT ON TABLE public.inventory_action_reason_codes TO authenticated;
 GRANT SELECT ON TABLE public.inventory_action_reason_codes TO service_role;
 GRANT TRIGGER ON TABLE public.inventory_action_reason_codes TO service_role;
 GRANT TRUNCATE ON TABLE public.inventory_action_reason_codes TO service_role;
 GRANT UPDATE ON TABLE public.inventory_action_reason_codes TO service_role;
-GRANT SELECT ON TABLE public.inventory_actions TO authenticated;
 GRANT DELETE ON TABLE public.inventory_actions TO service_role;
 GRANT INSERT ON TABLE public.inventory_actions TO service_role;
 GRANT MAINTAIN ON TABLE public.inventory_actions TO service_role;
 GRANT REFERENCES ON TABLE public.inventory_actions TO service_role;
+GRANT SELECT ON TABLE public.inventory_actions TO authenticated;
 GRANT SELECT ON TABLE public.inventory_actions TO service_role;
 GRANT TRIGGER ON TABLE public.inventory_actions TO service_role;
 GRANT TRUNCATE ON TABLE public.inventory_actions TO service_role;
 GRANT UPDATE ON TABLE public.inventory_actions TO service_role;
-GRANT SELECT ON TABLE public.inventory_profit_settings TO authenticated;
 GRANT DELETE ON TABLE public.inventory_profit_settings TO service_role;
 GRANT INSERT ON TABLE public.inventory_profit_settings TO service_role;
 GRANT MAINTAIN ON TABLE public.inventory_profit_settings TO service_role;
 GRANT REFERENCES ON TABLE public.inventory_profit_settings TO service_role;
+GRANT SELECT ON TABLE public.inventory_profit_settings TO authenticated;
 GRANT SELECT ON TABLE public.inventory_profit_settings TO service_role;
 GRANT TRIGGER ON TABLE public.inventory_profit_settings TO service_role;
 GRANT TRUNCATE ON TABLE public.inventory_profit_settings TO service_role;
 GRANT UPDATE ON TABLE public.inventory_profit_settings TO service_role;
-GRANT SELECT ON TABLE public.kyc_documents TO authenticated;
 GRANT DELETE ON TABLE public.kyc_documents TO service_role;
 GRANT INSERT ON TABLE public.kyc_documents TO service_role;
 GRANT MAINTAIN ON TABLE public.kyc_documents TO service_role;
 GRANT REFERENCES ON TABLE public.kyc_documents TO service_role;
+GRANT SELECT ON TABLE public.kyc_documents TO authenticated;
 GRANT SELECT ON TABLE public.kyc_documents TO service_role;
 GRANT TRIGGER ON TABLE public.kyc_documents TO service_role;
 GRANT TRUNCATE ON TABLE public.kyc_documents TO service_role;
 GRANT UPDATE ON TABLE public.kyc_documents TO service_role;
-GRANT SELECT ON TABLE public.lead_recovery_action_events TO authenticated;
 GRANT DELETE ON TABLE public.lead_recovery_action_events TO service_role;
 GRANT INSERT ON TABLE public.lead_recovery_action_events TO service_role;
 GRANT MAINTAIN ON TABLE public.lead_recovery_action_events TO service_role;
 GRANT REFERENCES ON TABLE public.lead_recovery_action_events TO service_role;
+GRANT SELECT ON TABLE public.lead_recovery_action_events TO authenticated;
 GRANT SELECT ON TABLE public.lead_recovery_action_events TO service_role;
 GRANT TRIGGER ON TABLE public.lead_recovery_action_events TO service_role;
 GRANT TRUNCATE ON TABLE public.lead_recovery_action_events TO service_role;
 GRANT UPDATE ON TABLE public.lead_recovery_action_events TO service_role;
-GRANT SELECT ON TABLE public.lead_recovery_actions TO authenticated;
 GRANT DELETE ON TABLE public.lead_recovery_actions TO service_role;
 GRANT INSERT ON TABLE public.lead_recovery_actions TO service_role;
 GRANT MAINTAIN ON TABLE public.lead_recovery_actions TO service_role;
 GRANT REFERENCES ON TABLE public.lead_recovery_actions TO service_role;
+GRANT SELECT ON TABLE public.lead_recovery_actions TO authenticated;
 GRANT SELECT ON TABLE public.lead_recovery_actions TO service_role;
 GRANT TRIGGER ON TABLE public.lead_recovery_actions TO service_role;
 GRANT TRUNCATE ON TABLE public.lead_recovery_actions TO service_role;
 GRANT UPDATE ON TABLE public.lead_recovery_actions TO service_role;
-GRANT SELECT ON TABLE public.lead_recovery_reason_codes TO authenticated;
 GRANT DELETE ON TABLE public.lead_recovery_reason_codes TO service_role;
 GRANT INSERT ON TABLE public.lead_recovery_reason_codes TO service_role;
 GRANT MAINTAIN ON TABLE public.lead_recovery_reason_codes TO service_role;
 GRANT REFERENCES ON TABLE public.lead_recovery_reason_codes TO service_role;
+GRANT SELECT ON TABLE public.lead_recovery_reason_codes TO authenticated;
 GRANT SELECT ON TABLE public.lead_recovery_reason_codes TO service_role;
 GRANT TRIGGER ON TABLE public.lead_recovery_reason_codes TO service_role;
 GRANT TRUNCATE ON TABLE public.lead_recovery_reason_codes TO service_role;
 GRANT UPDATE ON TABLE public.lead_recovery_reason_codes TO service_role;
-GRANT SELECT ON TABLE public.lead_recovery_settings TO authenticated;
 GRANT DELETE ON TABLE public.lead_recovery_settings TO service_role;
 GRANT INSERT ON TABLE public.lead_recovery_settings TO service_role;
 GRANT MAINTAIN ON TABLE public.lead_recovery_settings TO service_role;
 GRANT REFERENCES ON TABLE public.lead_recovery_settings TO service_role;
+GRANT SELECT ON TABLE public.lead_recovery_settings TO authenticated;
 GRANT SELECT ON TABLE public.lead_recovery_settings TO service_role;
 GRANT TRIGGER ON TABLE public.lead_recovery_settings TO service_role;
 GRANT TRUNCATE ON TABLE public.lead_recovery_settings TO service_role;
 GRANT UPDATE ON TABLE public.lead_recovery_settings TO service_role;
-GRANT SELECT ON TABLE public.lead_recovery_states TO authenticated;
 GRANT DELETE ON TABLE public.lead_recovery_states TO service_role;
 GRANT INSERT ON TABLE public.lead_recovery_states TO service_role;
 GRANT MAINTAIN ON TABLE public.lead_recovery_states TO service_role;
 GRANT REFERENCES ON TABLE public.lead_recovery_states TO service_role;
+GRANT SELECT ON TABLE public.lead_recovery_states TO authenticated;
 GRANT SELECT ON TABLE public.lead_recovery_states TO service_role;
 GRANT TRIGGER ON TABLE public.lead_recovery_states TO service_role;
 GRANT TRUNCATE ON TABLE public.lead_recovery_states TO service_role;
 GRANT UPDATE ON TABLE public.lead_recovery_states TO service_role;
-GRANT SELECT ON TABLE public.leads TO authenticated;
-GRANT UPDATE ON TABLE public.leads TO authenticated;
 GRANT DELETE ON TABLE public.leads TO service_role;
 GRANT INSERT ON TABLE public.leads TO service_role;
 GRANT MAINTAIN ON TABLE public.leads TO service_role;
 GRANT REFERENCES ON TABLE public.leads TO service_role;
+GRANT SELECT ON TABLE public.leads TO authenticated;
 GRANT SELECT ON TABLE public.leads TO service_role;
 GRANT TRIGGER ON TABLE public.leads TO service_role;
 GRANT TRUNCATE ON TABLE public.leads TO service_role;
+GRANT UPDATE ON TABLE public.leads TO authenticated;
 GRANT UPDATE ON TABLE public.leads TO service_role;
 GRANT SELECT ON SEQUENCE public.leads_id_seq TO service_role;
 GRANT UPDATE ON SEQUENCE public.leads_id_seq TO service_role;
 GRANT USAGE ON SEQUENCE public.leads_id_seq TO service_role;
-GRANT SELECT ON TABLE public.policy_jurisdiction TO authenticated;
 GRANT DELETE ON TABLE public.policy_jurisdiction TO service_role;
 GRANT INSERT ON TABLE public.policy_jurisdiction TO service_role;
 GRANT MAINTAIN ON TABLE public.policy_jurisdiction TO service_role;
@@ -12100,47 +12442,47 @@ GRANT SELECT ON TABLE public.policy_platform_attestation TO service_role;
 GRANT TRIGGER ON TABLE public.policy_platform_attestation TO service_role;
 GRANT TRUNCATE ON TABLE public.policy_platform_attestation TO service_role;
 GRANT UPDATE ON TABLE public.policy_platform_attestation TO service_role;
-GRANT SELECT ON TABLE public.policy_rule TO authenticated;
 GRANT DELETE ON TABLE public.policy_rule TO service_role;
 GRANT INSERT ON TABLE public.policy_rule TO service_role;
 GRANT MAINTAIN ON TABLE public.policy_rule TO service_role;
 GRANT REFERENCES ON TABLE public.policy_rule TO service_role;
+GRANT SELECT ON TABLE public.policy_rule TO authenticated;
 GRANT SELECT ON TABLE public.policy_rule TO service_role;
 GRANT TRIGGER ON TABLE public.policy_rule TO service_role;
 GRANT TRUNCATE ON TABLE public.policy_rule TO service_role;
 GRANT UPDATE ON TABLE public.policy_rule TO service_role;
-GRANT SELECT ON TABLE public.policy_rule_event TO authenticated;
 GRANT DELETE ON TABLE public.policy_rule_event TO service_role;
 GRANT INSERT ON TABLE public.policy_rule_event TO service_role;
 GRANT MAINTAIN ON TABLE public.policy_rule_event TO service_role;
 GRANT REFERENCES ON TABLE public.policy_rule_event TO service_role;
+GRANT SELECT ON TABLE public.policy_rule_event TO authenticated;
 GRANT SELECT ON TABLE public.policy_rule_event TO service_role;
 GRANT TRIGGER ON TABLE public.policy_rule_event TO service_role;
 GRANT TRUNCATE ON TABLE public.policy_rule_event TO service_role;
 GRANT UPDATE ON TABLE public.policy_rule_event TO service_role;
-GRANT SELECT ON TABLE public.policy_rule_type TO authenticated;
 GRANT DELETE ON TABLE public.policy_rule_type TO service_role;
 GRANT INSERT ON TABLE public.policy_rule_type TO service_role;
 GRANT MAINTAIN ON TABLE public.policy_rule_type TO service_role;
 GRANT REFERENCES ON TABLE public.policy_rule_type TO service_role;
+GRANT SELECT ON TABLE public.policy_rule_type TO authenticated;
 GRANT SELECT ON TABLE public.policy_rule_type TO service_role;
 GRANT TRIGGER ON TABLE public.policy_rule_type TO service_role;
 GRANT TRUNCATE ON TABLE public.policy_rule_type TO service_role;
 GRANT UPDATE ON TABLE public.policy_rule_type TO service_role;
-GRANT SELECT ON TABLE public.policy_unit TO authenticated;
 GRANT DELETE ON TABLE public.policy_unit TO service_role;
 GRANT INSERT ON TABLE public.policy_unit TO service_role;
 GRANT MAINTAIN ON TABLE public.policy_unit TO service_role;
 GRANT REFERENCES ON TABLE public.policy_unit TO service_role;
+GRANT SELECT ON TABLE public.policy_unit TO authenticated;
 GRANT SELECT ON TABLE public.policy_unit TO service_role;
 GRANT TRIGGER ON TABLE public.policy_unit TO service_role;
 GRANT TRUNCATE ON TABLE public.policy_unit TO service_role;
 GRANT UPDATE ON TABLE public.policy_unit TO service_role;
-GRANT SELECT ON TABLE public.policy_unmigrated_constant TO authenticated;
 GRANT DELETE ON TABLE public.policy_unmigrated_constant TO service_role;
 GRANT INSERT ON TABLE public.policy_unmigrated_constant TO service_role;
 GRANT MAINTAIN ON TABLE public.policy_unmigrated_constant TO service_role;
 GRANT REFERENCES ON TABLE public.policy_unmigrated_constant TO service_role;
+GRANT SELECT ON TABLE public.policy_unmigrated_constant TO authenticated;
 GRANT SELECT ON TABLE public.policy_unmigrated_constant TO service_role;
 GRANT TRIGGER ON TABLE public.policy_unmigrated_constant TO service_role;
 GRANT TRUNCATE ON TABLE public.policy_unmigrated_constant TO service_role;
@@ -12153,20 +12495,20 @@ GRANT SELECT ON TABLE public.processed_messages TO service_role;
 GRANT TRIGGER ON TABLE public.processed_messages TO service_role;
 GRANT TRUNCATE ON TABLE public.processed_messages TO service_role;
 GRANT UPDATE ON TABLE public.processed_messages TO service_role;
-GRANT SELECT ON TABLE public.purchase_history TO authenticated;
 GRANT DELETE ON TABLE public.purchase_history TO service_role;
 GRANT INSERT ON TABLE public.purchase_history TO service_role;
 GRANT MAINTAIN ON TABLE public.purchase_history TO service_role;
 GRANT REFERENCES ON TABLE public.purchase_history TO service_role;
+GRANT SELECT ON TABLE public.purchase_history TO authenticated;
 GRANT SELECT ON TABLE public.purchase_history TO service_role;
 GRANT TRIGGER ON TABLE public.purchase_history TO service_role;
 GRANT TRUNCATE ON TABLE public.purchase_history TO service_role;
 GRANT UPDATE ON TABLE public.purchase_history TO service_role;
-GRANT SELECT ON TABLE public.rag_documents TO authenticated;
 GRANT DELETE ON TABLE public.rag_documents TO service_role;
 GRANT INSERT ON TABLE public.rag_documents TO service_role;
 GRANT MAINTAIN ON TABLE public.rag_documents TO service_role;
 GRANT REFERENCES ON TABLE public.rag_documents TO service_role;
+GRANT SELECT ON TABLE public.rag_documents TO authenticated;
 GRANT SELECT ON TABLE public.rag_documents TO service_role;
 GRANT TRIGGER ON TABLE public.rag_documents TO service_role;
 GRANT TRUNCATE ON TABLE public.rag_documents TO service_role;
@@ -12174,11 +12516,11 @@ GRANT UPDATE ON TABLE public.rag_documents TO service_role;
 GRANT SELECT ON SEQUENCE public.rag_documents_id_seq TO service_role;
 GRANT UPDATE ON SEQUENCE public.rag_documents_id_seq TO service_role;
 GRANT USAGE ON SEQUENCE public.rag_documents_id_seq TO service_role;
-GRANT SELECT ON TABLE public.tenant_capability TO authenticated;
 GRANT DELETE ON TABLE public.tenant_capability TO service_role;
 GRANT INSERT ON TABLE public.tenant_capability TO service_role;
 GRANT MAINTAIN ON TABLE public.tenant_capability TO service_role;
 GRANT REFERENCES ON TABLE public.tenant_capability TO service_role;
+GRANT SELECT ON TABLE public.tenant_capability TO authenticated;
 GRANT SELECT ON TABLE public.tenant_capability TO service_role;
 GRANT TRIGGER ON TABLE public.tenant_capability TO service_role;
 GRANT TRUNCATE ON TABLE public.tenant_capability TO service_role;
@@ -12191,11 +12533,11 @@ GRANT SELECT ON TABLE public.tenant_capability_catalogue TO service_role;
 GRANT TRIGGER ON TABLE public.tenant_capability_catalogue TO service_role;
 GRANT TRUNCATE ON TABLE public.tenant_capability_catalogue TO service_role;
 GRANT UPDATE ON TABLE public.tenant_capability_catalogue TO service_role;
-GRANT SELECT ON TABLE public.tenant_configuration TO authenticated;
 GRANT DELETE ON TABLE public.tenant_configuration TO service_role;
 GRANT INSERT ON TABLE public.tenant_configuration TO service_role;
 GRANT MAINTAIN ON TABLE public.tenant_configuration TO service_role;
 GRANT REFERENCES ON TABLE public.tenant_configuration TO service_role;
+GRANT SELECT ON TABLE public.tenant_configuration TO authenticated;
 GRANT SELECT ON TABLE public.tenant_configuration TO service_role;
 GRANT TRIGGER ON TABLE public.tenant_configuration TO service_role;
 GRANT TRUNCATE ON TABLE public.tenant_configuration TO service_role;
@@ -12208,92 +12550,92 @@ GRANT SELECT ON TABLE public.tenant_configuration_default TO service_role;
 GRANT TRIGGER ON TABLE public.tenant_configuration_default TO service_role;
 GRANT TRUNCATE ON TABLE public.tenant_configuration_default TO service_role;
 GRANT UPDATE ON TABLE public.tenant_configuration_default TO service_role;
-GRANT SELECT ON TABLE public.tenant_members TO authenticated;
 GRANT DELETE ON TABLE public.tenant_members TO service_role;
 GRANT INSERT ON TABLE public.tenant_members TO service_role;
 GRANT MAINTAIN ON TABLE public.tenant_members TO service_role;
 GRANT REFERENCES ON TABLE public.tenant_members TO service_role;
+GRANT SELECT ON TABLE public.tenant_members TO authenticated;
 GRANT SELECT ON TABLE public.tenant_members TO service_role;
 GRANT TRIGGER ON TABLE public.tenant_members TO service_role;
 GRANT TRUNCATE ON TABLE public.tenant_members TO service_role;
 GRANT UPDATE ON TABLE public.tenant_members TO service_role;
-GRANT SELECT ON TABLE public.tenants TO authenticated;
 GRANT DELETE ON TABLE public.tenants TO service_role;
 GRANT INSERT ON TABLE public.tenants TO service_role;
 GRANT MAINTAIN ON TABLE public.tenants TO service_role;
 GRANT REFERENCES ON TABLE public.tenants TO service_role;
+GRANT SELECT ON TABLE public.tenants TO authenticated;
 GRANT SELECT ON TABLE public.tenants TO service_role;
 GRANT TRIGGER ON TABLE public.tenants TO service_role;
 GRANT TRUNCATE ON TABLE public.tenants TO service_role;
 GRANT UPDATE ON TABLE public.tenants TO service_role;
-GRANT SELECT ON TABLE public.users TO authenticated;
 GRANT DELETE ON TABLE public.users TO service_role;
 GRANT INSERT ON TABLE public.users TO service_role;
 GRANT MAINTAIN ON TABLE public.users TO service_role;
 GRANT REFERENCES ON TABLE public.users TO service_role;
+GRANT SELECT ON TABLE public.users TO authenticated;
 GRANT SELECT ON TABLE public.users TO service_role;
 GRANT TRIGGER ON TABLE public.users TO service_role;
 GRANT TRUNCATE ON TABLE public.users TO service_role;
 GRANT UPDATE ON TABLE public.users TO service_role;
-GRANT SELECT ON TABLE public.v_action_center_health TO authenticated;
 GRANT DELETE ON TABLE public.v_action_center_health TO service_role;
 GRANT INSERT ON TABLE public.v_action_center_health TO service_role;
 GRANT MAINTAIN ON TABLE public.v_action_center_health TO service_role;
 GRANT REFERENCES ON TABLE public.v_action_center_health TO service_role;
+GRANT SELECT ON TABLE public.v_action_center_health TO authenticated;
 GRANT SELECT ON TABLE public.v_action_center_health TO service_role;
 GRANT TRIGGER ON TABLE public.v_action_center_health TO service_role;
 GRANT TRUNCATE ON TABLE public.v_action_center_health TO service_role;
 GRANT UPDATE ON TABLE public.v_action_center_health TO service_role;
-GRANT SELECT ON TABLE public.v_attribution_edges TO authenticated;
 GRANT DELETE ON TABLE public.v_attribution_edges TO service_role;
 GRANT INSERT ON TABLE public.v_attribution_edges TO service_role;
 GRANT MAINTAIN ON TABLE public.v_attribution_edges TO service_role;
 GRANT REFERENCES ON TABLE public.v_attribution_edges TO service_role;
+GRANT SELECT ON TABLE public.v_attribution_edges TO authenticated;
 GRANT SELECT ON TABLE public.v_attribution_edges TO service_role;
 GRANT TRIGGER ON TABLE public.v_attribution_edges TO service_role;
 GRANT TRUNCATE ON TABLE public.v_attribution_edges TO service_role;
 GRANT UPDATE ON TABLE public.v_attribution_edges TO service_role;
-GRANT SELECT ON TABLE public.v_attribution_events TO authenticated;
 GRANT DELETE ON TABLE public.v_attribution_events TO service_role;
 GRANT INSERT ON TABLE public.v_attribution_events TO service_role;
 GRANT MAINTAIN ON TABLE public.v_attribution_events TO service_role;
 GRANT REFERENCES ON TABLE public.v_attribution_events TO service_role;
+GRANT SELECT ON TABLE public.v_attribution_events TO authenticated;
 GRANT SELECT ON TABLE public.v_attribution_events TO service_role;
 GRANT TRIGGER ON TABLE public.v_attribution_events TO service_role;
 GRANT TRUNCATE ON TABLE public.v_attribution_events TO service_role;
 GRANT UPDATE ON TABLE public.v_attribution_events TO service_role;
-GRANT SELECT ON TABLE public.v_attribution_lead_chain TO authenticated;
 GRANT DELETE ON TABLE public.v_attribution_lead_chain TO service_role;
 GRANT INSERT ON TABLE public.v_attribution_lead_chain TO service_role;
 GRANT MAINTAIN ON TABLE public.v_attribution_lead_chain TO service_role;
 GRANT REFERENCES ON TABLE public.v_attribution_lead_chain TO service_role;
+GRANT SELECT ON TABLE public.v_attribution_lead_chain TO authenticated;
 GRANT SELECT ON TABLE public.v_attribution_lead_chain TO service_role;
 GRANT TRIGGER ON TABLE public.v_attribution_lead_chain TO service_role;
 GRANT TRUNCATE ON TABLE public.v_attribution_lead_chain TO service_role;
 GRANT UPDATE ON TABLE public.v_attribution_lead_chain TO service_role;
-GRANT SELECT ON TABLE public.v_attribution_link_map TO authenticated;
 GRANT DELETE ON TABLE public.v_attribution_link_map TO service_role;
 GRANT INSERT ON TABLE public.v_attribution_link_map TO service_role;
 GRANT MAINTAIN ON TABLE public.v_attribution_link_map TO service_role;
 GRANT REFERENCES ON TABLE public.v_attribution_link_map TO service_role;
+GRANT SELECT ON TABLE public.v_attribution_link_map TO authenticated;
 GRANT SELECT ON TABLE public.v_attribution_link_map TO service_role;
 GRANT TRIGGER ON TABLE public.v_attribution_link_map TO service_role;
 GRANT TRUNCATE ON TABLE public.v_attribution_link_map TO service_role;
 GRANT UPDATE ON TABLE public.v_attribution_link_map TO service_role;
-GRANT SELECT ON TABLE public.v_attribution_sale_chain TO authenticated;
 GRANT DELETE ON TABLE public.v_attribution_sale_chain TO service_role;
 GRANT INSERT ON TABLE public.v_attribution_sale_chain TO service_role;
 GRANT MAINTAIN ON TABLE public.v_attribution_sale_chain TO service_role;
 GRANT REFERENCES ON TABLE public.v_attribution_sale_chain TO service_role;
+GRANT SELECT ON TABLE public.v_attribution_sale_chain TO authenticated;
 GRANT SELECT ON TABLE public.v_attribution_sale_chain TO service_role;
 GRANT TRIGGER ON TABLE public.v_attribution_sale_chain TO service_role;
 GRANT TRUNCATE ON TABLE public.v_attribution_sale_chain TO service_role;
 GRANT UPDATE ON TABLE public.v_attribution_sale_chain TO service_role;
-GRANT SELECT ON TABLE public.v_audit_unregistered_writers TO authenticated;
 GRANT DELETE ON TABLE public.v_audit_unregistered_writers TO service_role;
 GRANT INSERT ON TABLE public.v_audit_unregistered_writers TO service_role;
 GRANT MAINTAIN ON TABLE public.v_audit_unregistered_writers TO service_role;
 GRANT REFERENCES ON TABLE public.v_audit_unregistered_writers TO service_role;
+GRANT SELECT ON TABLE public.v_audit_unregistered_writers TO authenticated;
 GRANT SELECT ON TABLE public.v_audit_unregistered_writers TO service_role;
 GRANT TRIGGER ON TABLE public.v_audit_unregistered_writers TO service_role;
 GRANT TRUNCATE ON TABLE public.v_audit_unregistered_writers TO service_role;
@@ -12314,227 +12656,227 @@ GRANT SELECT ON TABLE public.v_channel_send_health TO service_role;
 GRANT TRIGGER ON TABLE public.v_channel_send_health TO service_role;
 GRANT TRUNCATE ON TABLE public.v_channel_send_health TO service_role;
 GRANT UPDATE ON TABLE public.v_channel_send_health TO service_role;
-GRANT SELECT ON TABLE public.v_competitor_latest TO authenticated;
 GRANT DELETE ON TABLE public.v_competitor_latest TO service_role;
 GRANT INSERT ON TABLE public.v_competitor_latest TO service_role;
 GRANT MAINTAIN ON TABLE public.v_competitor_latest TO service_role;
 GRANT REFERENCES ON TABLE public.v_competitor_latest TO service_role;
+GRANT SELECT ON TABLE public.v_competitor_latest TO authenticated;
 GRANT SELECT ON TABLE public.v_competitor_latest TO service_role;
 GRANT TRIGGER ON TABLE public.v_competitor_latest TO service_role;
 GRANT TRUNCATE ON TABLE public.v_competitor_latest TO service_role;
 GRANT UPDATE ON TABLE public.v_competitor_latest TO service_role;
-GRANT SELECT ON TABLE public.v_conversations TO authenticated;
 GRANT DELETE ON TABLE public.v_conversations TO service_role;
 GRANT INSERT ON TABLE public.v_conversations TO service_role;
 GRANT MAINTAIN ON TABLE public.v_conversations TO service_role;
 GRANT REFERENCES ON TABLE public.v_conversations TO service_role;
+GRANT SELECT ON TABLE public.v_conversations TO authenticated;
 GRANT SELECT ON TABLE public.v_conversations TO service_role;
 GRANT TRIGGER ON TABLE public.v_conversations TO service_role;
 GRANT TRUNCATE ON TABLE public.v_conversations TO service_role;
 GRANT UPDATE ON TABLE public.v_conversations TO service_role;
-GRANT SELECT ON TABLE public.v_customer_360 TO authenticated;
 GRANT DELETE ON TABLE public.v_customer_360 TO service_role;
 GRANT INSERT ON TABLE public.v_customer_360 TO service_role;
 GRANT MAINTAIN ON TABLE public.v_customer_360 TO service_role;
 GRANT REFERENCES ON TABLE public.v_customer_360 TO service_role;
+GRANT SELECT ON TABLE public.v_customer_360 TO authenticated;
 GRANT SELECT ON TABLE public.v_customer_360 TO service_role;
 GRANT TRIGGER ON TABLE public.v_customer_360 TO service_role;
 GRANT TRUNCATE ON TABLE public.v_customer_360 TO service_role;
 GRANT UPDATE ON TABLE public.v_customer_360 TO service_role;
-GRANT SELECT ON TABLE public.v_customer_directory TO authenticated;
 GRANT DELETE ON TABLE public.v_customer_directory TO service_role;
 GRANT INSERT ON TABLE public.v_customer_directory TO service_role;
 GRANT MAINTAIN ON TABLE public.v_customer_directory TO service_role;
 GRANT REFERENCES ON TABLE public.v_customer_directory TO service_role;
+GRANT SELECT ON TABLE public.v_customer_directory TO authenticated;
 GRANT SELECT ON TABLE public.v_customer_directory TO service_role;
 GRANT TRIGGER ON TABLE public.v_customer_directory TO service_role;
 GRANT TRUNCATE ON TABLE public.v_customer_directory TO service_role;
 GRANT UPDATE ON TABLE public.v_customer_directory TO service_role;
-GRANT SELECT ON TABLE public.v_deal_rescue TO authenticated;
 GRANT DELETE ON TABLE public.v_deal_rescue TO service_role;
 GRANT INSERT ON TABLE public.v_deal_rescue TO service_role;
 GRANT MAINTAIN ON TABLE public.v_deal_rescue TO service_role;
 GRANT REFERENCES ON TABLE public.v_deal_rescue TO service_role;
+GRANT SELECT ON TABLE public.v_deal_rescue TO authenticated;
 GRANT SELECT ON TABLE public.v_deal_rescue TO service_role;
 GRANT TRIGGER ON TABLE public.v_deal_rescue TO service_role;
 GRANT TRUNCATE ON TABLE public.v_deal_rescue TO service_role;
 GRANT UPDATE ON TABLE public.v_deal_rescue TO service_role;
-GRANT SELECT ON TABLE public.v_deal_rescue_candidates TO authenticated;
 GRANT DELETE ON TABLE public.v_deal_rescue_candidates TO service_role;
 GRANT INSERT ON TABLE public.v_deal_rescue_candidates TO service_role;
 GRANT MAINTAIN ON TABLE public.v_deal_rescue_candidates TO service_role;
 GRANT REFERENCES ON TABLE public.v_deal_rescue_candidates TO service_role;
+GRANT SELECT ON TABLE public.v_deal_rescue_candidates TO authenticated;
 GRANT SELECT ON TABLE public.v_deal_rescue_candidates TO service_role;
 GRANT TRIGGER ON TABLE public.v_deal_rescue_candidates TO service_role;
 GRANT TRUNCATE ON TABLE public.v_deal_rescue_candidates TO service_role;
 GRANT UPDATE ON TABLE public.v_deal_rescue_candidates TO service_role;
-GRANT SELECT ON TABLE public.v_deal_rescue_readiness TO authenticated;
 GRANT DELETE ON TABLE public.v_deal_rescue_readiness TO service_role;
 GRANT INSERT ON TABLE public.v_deal_rescue_readiness TO service_role;
 GRANT MAINTAIN ON TABLE public.v_deal_rescue_readiness TO service_role;
 GRANT REFERENCES ON TABLE public.v_deal_rescue_readiness TO service_role;
+GRANT SELECT ON TABLE public.v_deal_rescue_readiness TO authenticated;
 GRANT SELECT ON TABLE public.v_deal_rescue_readiness TO service_role;
 GRANT TRIGGER ON TABLE public.v_deal_rescue_readiness TO service_role;
 GRANT TRUNCATE ON TABLE public.v_deal_rescue_readiness TO service_role;
 GRANT UPDATE ON TABLE public.v_deal_rescue_readiness TO service_role;
-GRANT SELECT ON TABLE public.v_deal_rescue_state_model TO authenticated;
 GRANT DELETE ON TABLE public.v_deal_rescue_state_model TO service_role;
 GRANT INSERT ON TABLE public.v_deal_rescue_state_model TO service_role;
 GRANT MAINTAIN ON TABLE public.v_deal_rescue_state_model TO service_role;
 GRANT REFERENCES ON TABLE public.v_deal_rescue_state_model TO service_role;
+GRANT SELECT ON TABLE public.v_deal_rescue_state_model TO authenticated;
 GRANT SELECT ON TABLE public.v_deal_rescue_state_model TO service_role;
 GRANT TRIGGER ON TABLE public.v_deal_rescue_state_model TO service_role;
 GRANT TRUNCATE ON TABLE public.v_deal_rescue_state_model TO service_role;
 GRANT UPDATE ON TABLE public.v_deal_rescue_state_model TO service_role;
-GRANT SELECT ON TABLE public.v_fin_gate_quote_evidence TO authenticated;
 GRANT DELETE ON TABLE public.v_fin_gate_quote_evidence TO service_role;
 GRANT INSERT ON TABLE public.v_fin_gate_quote_evidence TO service_role;
 GRANT MAINTAIN ON TABLE public.v_fin_gate_quote_evidence TO service_role;
 GRANT REFERENCES ON TABLE public.v_fin_gate_quote_evidence TO service_role;
+GRANT SELECT ON TABLE public.v_fin_gate_quote_evidence TO authenticated;
 GRANT SELECT ON TABLE public.v_fin_gate_quote_evidence TO service_role;
 GRANT TRIGGER ON TABLE public.v_fin_gate_quote_evidence TO service_role;
 GRANT TRUNCATE ON TABLE public.v_fin_gate_quote_evidence TO service_role;
 GRANT UPDATE ON TABLE public.v_fin_gate_quote_evidence TO service_role;
-GRANT SELECT ON TABLE public.v_inventory_action_queue TO authenticated;
 GRANT DELETE ON TABLE public.v_inventory_action_queue TO service_role;
 GRANT INSERT ON TABLE public.v_inventory_action_queue TO service_role;
 GRANT MAINTAIN ON TABLE public.v_inventory_action_queue TO service_role;
 GRANT REFERENCES ON TABLE public.v_inventory_action_queue TO service_role;
+GRANT SELECT ON TABLE public.v_inventory_action_queue TO authenticated;
 GRANT SELECT ON TABLE public.v_inventory_action_queue TO service_role;
 GRANT TRIGGER ON TABLE public.v_inventory_action_queue TO service_role;
 GRANT TRUNCATE ON TABLE public.v_inventory_action_queue TO service_role;
 GRANT UPDATE ON TABLE public.v_inventory_action_queue TO service_role;
-GRANT SELECT ON TABLE public.v_inventory_action_timeline TO authenticated;
 GRANT DELETE ON TABLE public.v_inventory_action_timeline TO service_role;
 GRANT INSERT ON TABLE public.v_inventory_action_timeline TO service_role;
 GRANT MAINTAIN ON TABLE public.v_inventory_action_timeline TO service_role;
 GRANT REFERENCES ON TABLE public.v_inventory_action_timeline TO service_role;
+GRANT SELECT ON TABLE public.v_inventory_action_timeline TO authenticated;
 GRANT SELECT ON TABLE public.v_inventory_action_timeline TO service_role;
 GRANT TRIGGER ON TABLE public.v_inventory_action_timeline TO service_role;
 GRANT TRUNCATE ON TABLE public.v_inventory_action_timeline TO service_role;
 GRANT UPDATE ON TABLE public.v_inventory_action_timeline TO service_role;
-GRANT SELECT ON TABLE public.v_inventory_profit_sentinel TO authenticated;
 GRANT DELETE ON TABLE public.v_inventory_profit_sentinel TO service_role;
 GRANT INSERT ON TABLE public.v_inventory_profit_sentinel TO service_role;
 GRANT MAINTAIN ON TABLE public.v_inventory_profit_sentinel TO service_role;
 GRANT REFERENCES ON TABLE public.v_inventory_profit_sentinel TO service_role;
+GRANT SELECT ON TABLE public.v_inventory_profit_sentinel TO authenticated;
 GRANT SELECT ON TABLE public.v_inventory_profit_sentinel TO service_role;
 GRANT TRIGGER ON TABLE public.v_inventory_profit_sentinel TO service_role;
 GRANT TRUNCATE ON TABLE public.v_inventory_profit_sentinel TO service_role;
 GRANT UPDATE ON TABLE public.v_inventory_profit_sentinel TO service_role;
-GRANT SELECT ON TABLE public.v_inventory_sales TO authenticated;
 GRANT DELETE ON TABLE public.v_inventory_sales TO service_role;
 GRANT INSERT ON TABLE public.v_inventory_sales TO service_role;
 GRANT MAINTAIN ON TABLE public.v_inventory_sales TO service_role;
 GRANT REFERENCES ON TABLE public.v_inventory_sales TO service_role;
+GRANT SELECT ON TABLE public.v_inventory_sales TO authenticated;
 GRANT SELECT ON TABLE public.v_inventory_sales TO service_role;
 GRANT TRIGGER ON TABLE public.v_inventory_sales TO service_role;
 GRANT TRUNCATE ON TABLE public.v_inventory_sales TO service_role;
 GRANT UPDATE ON TABLE public.v_inventory_sales TO service_role;
-GRANT SELECT ON TABLE public.v_lead_messages TO authenticated;
 GRANT DELETE ON TABLE public.v_lead_messages TO service_role;
 GRANT INSERT ON TABLE public.v_lead_messages TO service_role;
 GRANT MAINTAIN ON TABLE public.v_lead_messages TO service_role;
 GRANT REFERENCES ON TABLE public.v_lead_messages TO service_role;
+GRANT SELECT ON TABLE public.v_lead_messages TO authenticated;
 GRANT SELECT ON TABLE public.v_lead_messages TO service_role;
 GRANT TRIGGER ON TABLE public.v_lead_messages TO service_role;
 GRANT TRUNCATE ON TABLE public.v_lead_messages TO service_role;
 GRANT UPDATE ON TABLE public.v_lead_messages TO service_role;
-GRANT SELECT ON TABLE public.v_lead_recovery TO authenticated;
 GRANT DELETE ON TABLE public.v_lead_recovery TO service_role;
 GRANT INSERT ON TABLE public.v_lead_recovery TO service_role;
 GRANT MAINTAIN ON TABLE public.v_lead_recovery TO service_role;
 GRANT REFERENCES ON TABLE public.v_lead_recovery TO service_role;
+GRANT SELECT ON TABLE public.v_lead_recovery TO authenticated;
 GRANT SELECT ON TABLE public.v_lead_recovery TO service_role;
 GRANT TRIGGER ON TABLE public.v_lead_recovery TO service_role;
 GRANT TRUNCATE ON TABLE public.v_lead_recovery TO service_role;
 GRANT UPDATE ON TABLE public.v_lead_recovery TO service_role;
-GRANT SELECT ON TABLE public.v_lead_recovery_coverage TO authenticated;
 GRANT DELETE ON TABLE public.v_lead_recovery_coverage TO service_role;
 GRANT INSERT ON TABLE public.v_lead_recovery_coverage TO service_role;
 GRANT MAINTAIN ON TABLE public.v_lead_recovery_coverage TO service_role;
 GRANT REFERENCES ON TABLE public.v_lead_recovery_coverage TO service_role;
+GRANT SELECT ON TABLE public.v_lead_recovery_coverage TO authenticated;
 GRANT SELECT ON TABLE public.v_lead_recovery_coverage TO service_role;
 GRANT TRIGGER ON TABLE public.v_lead_recovery_coverage TO service_role;
 GRANT TRUNCATE ON TABLE public.v_lead_recovery_coverage TO service_role;
 GRANT UPDATE ON TABLE public.v_lead_recovery_coverage TO service_role;
-GRANT SELECT ON TABLE public.v_lead_recovery_health TO authenticated;
 GRANT DELETE ON TABLE public.v_lead_recovery_health TO service_role;
 GRANT INSERT ON TABLE public.v_lead_recovery_health TO service_role;
 GRANT MAINTAIN ON TABLE public.v_lead_recovery_health TO service_role;
 GRANT REFERENCES ON TABLE public.v_lead_recovery_health TO service_role;
+GRANT SELECT ON TABLE public.v_lead_recovery_health TO authenticated;
 GRANT SELECT ON TABLE public.v_lead_recovery_health TO service_role;
 GRANT TRIGGER ON TABLE public.v_lead_recovery_health TO service_role;
 GRANT TRUNCATE ON TABLE public.v_lead_recovery_health TO service_role;
 GRANT UPDATE ON TABLE public.v_lead_recovery_health TO service_role;
-GRANT SELECT ON TABLE public.v_lead_recovery_queue TO authenticated;
 GRANT DELETE ON TABLE public.v_lead_recovery_queue TO service_role;
 GRANT INSERT ON TABLE public.v_lead_recovery_queue TO service_role;
 GRANT MAINTAIN ON TABLE public.v_lead_recovery_queue TO service_role;
 GRANT REFERENCES ON TABLE public.v_lead_recovery_queue TO service_role;
+GRANT SELECT ON TABLE public.v_lead_recovery_queue TO authenticated;
 GRANT SELECT ON TABLE public.v_lead_recovery_queue TO service_role;
 GRANT TRIGGER ON TABLE public.v_lead_recovery_queue TO service_role;
 GRANT TRUNCATE ON TABLE public.v_lead_recovery_queue TO service_role;
 GRANT UPDATE ON TABLE public.v_lead_recovery_queue TO service_role;
-GRANT SELECT ON TABLE public.v_lead_recovery_state_model TO authenticated;
 GRANT DELETE ON TABLE public.v_lead_recovery_state_model TO service_role;
 GRANT INSERT ON TABLE public.v_lead_recovery_state_model TO service_role;
 GRANT MAINTAIN ON TABLE public.v_lead_recovery_state_model TO service_role;
 GRANT REFERENCES ON TABLE public.v_lead_recovery_state_model TO service_role;
+GRANT SELECT ON TABLE public.v_lead_recovery_state_model TO authenticated;
 GRANT SELECT ON TABLE public.v_lead_recovery_state_model TO service_role;
 GRANT TRIGGER ON TABLE public.v_lead_recovery_state_model TO service_role;
 GRANT TRUNCATE ON TABLE public.v_lead_recovery_state_model TO service_role;
 GRANT UPDATE ON TABLE public.v_lead_recovery_state_model TO service_role;
-GRANT SELECT ON TABLE public.v_needs_attention TO authenticated;
 GRANT DELETE ON TABLE public.v_needs_attention TO service_role;
 GRANT INSERT ON TABLE public.v_needs_attention TO service_role;
 GRANT MAINTAIN ON TABLE public.v_needs_attention TO service_role;
 GRANT REFERENCES ON TABLE public.v_needs_attention TO service_role;
+GRANT SELECT ON TABLE public.v_needs_attention TO authenticated;
 GRANT SELECT ON TABLE public.v_needs_attention TO service_role;
 GRANT TRIGGER ON TABLE public.v_needs_attention TO service_role;
 GRANT TRUNCATE ON TABLE public.v_needs_attention TO service_role;
 GRANT UPDATE ON TABLE public.v_needs_attention TO service_role;
-GRANT SELECT ON TABLE public.v_policy_authoritative TO authenticated;
 GRANT DELETE ON TABLE public.v_policy_authoritative TO service_role;
 GRANT INSERT ON TABLE public.v_policy_authoritative TO service_role;
 GRANT MAINTAIN ON TABLE public.v_policy_authoritative TO service_role;
 GRANT REFERENCES ON TABLE public.v_policy_authoritative TO service_role;
+GRANT SELECT ON TABLE public.v_policy_authoritative TO authenticated;
 GRANT SELECT ON TABLE public.v_policy_authoritative TO service_role;
 GRANT TRIGGER ON TABLE public.v_policy_authoritative TO service_role;
 GRANT TRUNCATE ON TABLE public.v_policy_authoritative TO service_role;
 GRANT UPDATE ON TABLE public.v_policy_authoritative TO service_role;
-GRANT SELECT ON TABLE public.v_policy_rule TO authenticated;
 GRANT DELETE ON TABLE public.v_policy_rule TO service_role;
 GRANT INSERT ON TABLE public.v_policy_rule TO service_role;
 GRANT MAINTAIN ON TABLE public.v_policy_rule TO service_role;
 GRANT REFERENCES ON TABLE public.v_policy_rule TO service_role;
+GRANT SELECT ON TABLE public.v_policy_rule TO authenticated;
 GRANT SELECT ON TABLE public.v_policy_rule TO service_role;
 GRANT TRIGGER ON TABLE public.v_policy_rule TO service_role;
 GRANT TRUNCATE ON TABLE public.v_policy_rule TO service_role;
 GRANT UPDATE ON TABLE public.v_policy_rule TO service_role;
-GRANT SELECT ON TABLE public.v_policy_rule_history TO authenticated;
 GRANT DELETE ON TABLE public.v_policy_rule_history TO service_role;
 GRANT INSERT ON TABLE public.v_policy_rule_history TO service_role;
 GRANT MAINTAIN ON TABLE public.v_policy_rule_history TO service_role;
 GRANT REFERENCES ON TABLE public.v_policy_rule_history TO service_role;
+GRANT SELECT ON TABLE public.v_policy_rule_history TO authenticated;
 GRANT SELECT ON TABLE public.v_policy_rule_history TO service_role;
 GRANT TRIGGER ON TABLE public.v_policy_rule_history TO service_role;
 GRANT TRUNCATE ON TABLE public.v_policy_rule_history TO service_role;
 GRANT UPDATE ON TABLE public.v_policy_rule_history TO service_role;
-GRANT SELECT ON TABLE public.v_policy_unmigrated_constant TO authenticated;
 GRANT DELETE ON TABLE public.v_policy_unmigrated_constant TO service_role;
 GRANT INSERT ON TABLE public.v_policy_unmigrated_constant TO service_role;
 GRANT MAINTAIN ON TABLE public.v_policy_unmigrated_constant TO service_role;
 GRANT REFERENCES ON TABLE public.v_policy_unmigrated_constant TO service_role;
+GRANT SELECT ON TABLE public.v_policy_unmigrated_constant TO authenticated;
 GRANT SELECT ON TABLE public.v_policy_unmigrated_constant TO service_role;
 GRANT TRIGGER ON TABLE public.v_policy_unmigrated_constant TO service_role;
 GRANT TRUNCATE ON TABLE public.v_policy_unmigrated_constant TO service_role;
 GRANT UPDATE ON TABLE public.v_policy_unmigrated_constant TO service_role;
-GRANT SELECT ON TABLE public.v_team_performance TO authenticated;
 GRANT DELETE ON TABLE public.v_team_performance TO service_role;
 GRANT INSERT ON TABLE public.v_team_performance TO service_role;
 GRANT MAINTAIN ON TABLE public.v_team_performance TO service_role;
 GRANT REFERENCES ON TABLE public.v_team_performance TO service_role;
+GRANT SELECT ON TABLE public.v_team_performance TO authenticated;
 GRANT SELECT ON TABLE public.v_team_performance TO service_role;
 GRANT TRIGGER ON TABLE public.v_team_performance TO service_role;
 GRANT TRUNCATE ON TABLE public.v_team_performance TO service_role;
@@ -12547,47 +12889,47 @@ GRANT SELECT ON TABLE public.v_whatsapp_conversation_window TO service_role;
 GRANT TRIGGER ON TABLE public.v_whatsapp_conversation_window TO service_role;
 GRANT TRUNCATE ON TABLE public.v_whatsapp_conversation_window TO service_role;
 GRANT UPDATE ON TABLE public.v_whatsapp_conversation_window TO service_role;
-GRANT SELECT ON TABLE public.v_whatsapp_message_usage TO authenticated;
 GRANT DELETE ON TABLE public.v_whatsapp_message_usage TO service_role;
 GRANT INSERT ON TABLE public.v_whatsapp_message_usage TO service_role;
 GRANT MAINTAIN ON TABLE public.v_whatsapp_message_usage TO service_role;
 GRANT REFERENCES ON TABLE public.v_whatsapp_message_usage TO service_role;
+GRANT SELECT ON TABLE public.v_whatsapp_message_usage TO authenticated;
 GRANT SELECT ON TABLE public.v_whatsapp_message_usage TO service_role;
 GRANT TRIGGER ON TABLE public.v_whatsapp_message_usage TO service_role;
 GRANT TRUNCATE ON TABLE public.v_whatsapp_message_usage TO service_role;
 GRANT UPDATE ON TABLE public.v_whatsapp_message_usage TO service_role;
-GRANT SELECT ON TABLE public.v_whatsapp_messaging_usage_monthly TO authenticated;
 GRANT DELETE ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
 GRANT INSERT ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
 GRANT MAINTAIN ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
 GRANT REFERENCES ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
+GRANT SELECT ON TABLE public.v_whatsapp_messaging_usage_monthly TO authenticated;
 GRANT SELECT ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
 GRANT TRIGGER ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
 GRANT TRUNCATE ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
 GRANT UPDATE ON TABLE public.v_whatsapp_messaging_usage_monthly TO service_role;
-GRANT SELECT ON TABLE public.v_whatsapp_template_registry TO authenticated;
 GRANT DELETE ON TABLE public.v_whatsapp_template_registry TO service_role;
 GRANT INSERT ON TABLE public.v_whatsapp_template_registry TO service_role;
 GRANT MAINTAIN ON TABLE public.v_whatsapp_template_registry TO service_role;
 GRANT REFERENCES ON TABLE public.v_whatsapp_template_registry TO service_role;
+GRANT SELECT ON TABLE public.v_whatsapp_template_registry TO authenticated;
 GRANT SELECT ON TABLE public.v_whatsapp_template_registry TO service_role;
 GRANT TRIGGER ON TABLE public.v_whatsapp_template_registry TO service_role;
 GRANT TRUNCATE ON TABLE public.v_whatsapp_template_registry TO service_role;
 GRANT UPDATE ON TABLE public.v_whatsapp_template_registry TO service_role;
-GRANT SELECT ON TABLE public.v_workflow_health TO authenticated;
 GRANT DELETE ON TABLE public.v_workflow_health TO service_role;
 GRANT INSERT ON TABLE public.v_workflow_health TO service_role;
 GRANT MAINTAIN ON TABLE public.v_workflow_health TO service_role;
 GRANT REFERENCES ON TABLE public.v_workflow_health TO service_role;
+GRANT SELECT ON TABLE public.v_workflow_health TO authenticated;
 GRANT SELECT ON TABLE public.v_workflow_health TO service_role;
 GRANT TRIGGER ON TABLE public.v_workflow_health TO service_role;
 GRANT TRUNCATE ON TABLE public.v_workflow_health TO service_role;
 GRANT UPDATE ON TABLE public.v_workflow_health TO service_role;
-GRANT SELECT ON TABLE public.whatsapp_contacts TO authenticated;
 GRANT DELETE ON TABLE public.whatsapp_contacts TO service_role;
 GRANT INSERT ON TABLE public.whatsapp_contacts TO service_role;
 GRANT MAINTAIN ON TABLE public.whatsapp_contacts TO service_role;
 GRANT REFERENCES ON TABLE public.whatsapp_contacts TO service_role;
+GRANT SELECT ON TABLE public.whatsapp_contacts TO authenticated;
 GRANT SELECT ON TABLE public.whatsapp_contacts TO service_role;
 GRANT TRIGGER ON TABLE public.whatsapp_contacts TO service_role;
 GRANT TRUNCATE ON TABLE public.whatsapp_contacts TO service_role;
@@ -12624,11 +12966,11 @@ GRANT SELECT ON TABLE public.whatsapp_message_intent TO service_role;
 GRANT TRIGGER ON TABLE public.whatsapp_message_intent TO service_role;
 GRANT TRUNCATE ON TABLE public.whatsapp_message_intent TO service_role;
 GRANT UPDATE ON TABLE public.whatsapp_message_intent TO service_role;
-GRANT SELECT ON TABLE public.whatsapp_message_usage TO authenticated;
 GRANT DELETE ON TABLE public.whatsapp_message_usage TO service_role;
 GRANT INSERT ON TABLE public.whatsapp_message_usage TO service_role;
 GRANT MAINTAIN ON TABLE public.whatsapp_message_usage TO service_role;
 GRANT REFERENCES ON TABLE public.whatsapp_message_usage TO service_role;
+GRANT SELECT ON TABLE public.whatsapp_message_usage TO authenticated;
 GRANT SELECT ON TABLE public.whatsapp_message_usage TO service_role;
 GRANT TRIGGER ON TABLE public.whatsapp_message_usage TO service_role;
 GRANT TRUNCATE ON TABLE public.whatsapp_message_usage TO service_role;
@@ -12641,20 +12983,20 @@ GRANT SELECT ON TABLE public.whatsapp_opt_in_event TO service_role;
 GRANT TRIGGER ON TABLE public.whatsapp_opt_in_event TO service_role;
 GRANT TRUNCATE ON TABLE public.whatsapp_opt_in_event TO service_role;
 GRANT UPDATE ON TABLE public.whatsapp_opt_in_event TO service_role;
-GRANT SELECT ON TABLE public.whatsapp_templates TO authenticated;
 GRANT DELETE ON TABLE public.whatsapp_templates TO service_role;
 GRANT INSERT ON TABLE public.whatsapp_templates TO service_role;
 GRANT MAINTAIN ON TABLE public.whatsapp_templates TO service_role;
 GRANT REFERENCES ON TABLE public.whatsapp_templates TO service_role;
+GRANT SELECT ON TABLE public.whatsapp_templates TO authenticated;
 GRANT SELECT ON TABLE public.whatsapp_templates TO service_role;
 GRANT TRIGGER ON TABLE public.whatsapp_templates TO service_role;
 GRANT TRUNCATE ON TABLE public.whatsapp_templates TO service_role;
 GRANT UPDATE ON TABLE public.whatsapp_templates TO service_role;
-GRANT SELECT ON TABLE public.workflow_registry TO authenticated;
 GRANT DELETE ON TABLE public.workflow_registry TO service_role;
 GRANT INSERT ON TABLE public.workflow_registry TO service_role;
 GRANT MAINTAIN ON TABLE public.workflow_registry TO service_role;
 GRANT REFERENCES ON TABLE public.workflow_registry TO service_role;
+GRANT SELECT ON TABLE public.workflow_registry TO authenticated;
 GRANT SELECT ON TABLE public.workflow_registry TO service_role;
 GRANT TRIGGER ON TABLE public.workflow_registry TO service_role;
 GRANT TRUNCATE ON TABLE public.workflow_registry TO service_role;
@@ -12663,7 +13005,9 @@ GRANT UPDATE ON TABLE public.workflow_registry TO service_role;
 
 -- ========================================================================
 -- 17. GRANTS — COLUMN LEVEL
--- A relacl-only dump misses these entirely. Production genuinely uses them.
+-- A relacl-only dump misses these entirely. Production genuinely uses them:
+-- channel_registry.credential_ref is withheld from authenticated while its
+-- siblings are granted, and that distinction lives only in pg_attribute.attacl.
 -- ========================================================================
 GRANT SELECT(channel_type) ON TABLE public.channel_registry TO authenticated;
 GRANT SELECT(created_at) ON TABLE public.channel_registry TO authenticated;
@@ -12672,16 +13016,6 @@ GRANT SELECT(integration_id) ON TABLE public.channel_registry TO authenticated;
 GRANT SELECT(status) ON TABLE public.channel_registry TO authenticated;
 GRANT SELECT(tenant_id) ON TABLE public.channel_registry TO authenticated;
 GRANT SELECT(updated_at) ON TABLE public.channel_registry TO authenticated;
-GRANT SELECT(attestation_id) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(attested_at) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(attested_by) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(confidence) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(notes) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(rule_id) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(source_kind) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(source_name) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(source_observed_on) ON TABLE public.policy_platform_attestation TO authenticated;
-GRANT SELECT(source_ref) ON TABLE public.policy_platform_attestation TO authenticated;
 
 
 -- ========================================================================
@@ -12689,158 +13023,161 @@ GRANT SELECT(source_ref) ON TABLE public.policy_platform_attestation TO authenti
 -- ========================================================================
 GRANT EXECUTE ON FUNCTION public.action_approver_context() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.action_approver_context() TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_cancel(p_action_id uuid, p_note text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_cancel(p_action_id uuid, p_note text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_decide(p_action_id uuid, p_decision text, p_reason_code text, p_note text, p_defer_until date, p_assign_staff_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_decide(p_action_id uuid, p_decision text, p_reason_code text, p_note text, p_defer_until date, p_assign_staff_id uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_mark_executed(p_action_id uuid, p_note text, p_failed boolean, p_failure text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_mark_executed(p_action_id uuid, p_note text, p_failed boolean, p_failure text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_mark_not_attributable(p_action_id uuid, p_note text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_mark_not_attributable(p_action_id uuid, p_note text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_outcome_candidates(p_action_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_outcome_candidates(p_action_id uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_propose(p_unit_id text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_propose(p_unit_id text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_record_outcome(p_action_id uuid, p_purchase_id uuid, p_note text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.action_record_outcome(p_action_id uuid, p_purchase_id uuid, p_note text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.action_write_audit(p_tenant uuid, p_action_id uuid, p_unit_id text, p_rec text, p_status text, p_summary text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_cancel(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_cancel(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_decide(uuid,text,text,text,date,uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_decide(uuid,text,text,text,date,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_mark_executed(uuid,text,boolean,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_mark_executed(uuid,text,boolean,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_mark_not_attributable(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_mark_not_attributable(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_outcome_candidates(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_outcome_candidates(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_propose(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_propose(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_record_outcome(uuid,uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.action_record_outcome(uuid,uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.action_write_audit(uuid,uuid,text,text,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.assign_hot_lead() TO service_role;
 GRANT EXECUTE ON FUNCTION public.capture_daily_metrics() TO service_role;
 GRANT EXECUTE ON FUNCTION public.channel_registry_touch() TO service_role;
-GRANT EXECUTE ON FUNCTION public.deal_rescue_recommended_action(p_state text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.deal_rescue_recommended_action(p_state text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.deal_rescue_state(p_evidence_tier text, p_has_confirmed_sale boolean, p_lead_is_open boolean, p_silence_state text, p_days_since_movement numeric, p_at_risk_days integer, p_stalled_days integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.deal_rescue_state(p_evidence_tier text, p_has_confirmed_sale boolean, p_lead_is_open boolean, p_silence_state text, p_days_since_movement numeric, p_at_risk_days integer, p_stalled_days integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.inventory_actions_touch() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.deal_rescue_recommended_action(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.deal_rescue_recommended_action(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.deal_rescue_state(text,boolean,boolean,text,numeric,integer,integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.deal_rescue_state(text,boolean,boolean,text,numeric,integer,integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.inventory_actions_touch() TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_cancel(p_action_id uuid, p_note text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_cancel(p_action_id uuid, p_note text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_decide(p_action_id uuid, p_decision text, p_reason_code text, p_note text, p_defer_until date, p_assign_staff_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_decide(p_action_id uuid, p_decision text, p_reason_code text, p_note text, p_defer_until date, p_assign_staff_id uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_executed(p_action_id uuid, p_note text, p_failed boolean, p_failure text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_executed(p_action_id uuid, p_note text, p_failed boolean, p_failure text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_not_attributable(p_action_id uuid, p_note text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_not_attributable(p_action_id uuid, p_note text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_outcome_candidates(p_action_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_outcome_candidates(p_action_id uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_propose(p_lead_id integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_propose(p_lead_id integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_recommended_action(p_state text, p_risk text, p_has_owner boolean) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_recommended_action(p_state text, p_risk text, p_has_owner boolean) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_record_outcome(p_action_id uuid, p_purchase_id uuid, p_note text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_record_outcome(p_action_id uuid, p_purchase_id uuid, p_note text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_risk(p_state text, p_minutes_since_inbound numeric, p_hours_since_outbound numeric, p_sla_minutes integer, p_stale_hours integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_risk(p_state text, p_minutes_since_inbound numeric, p_hours_since_outbound numeric, p_sla_minutes integer, p_stale_hours integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_state(p_sales_recorded bigint, p_lead_is_open boolean, p_messages bigint, p_escalated_at timestamp with time zone, p_last_message_at timestamp with time zone, p_last_inbound_at timestamp with time zone, p_last_outbound_at timestamp with time zone, p_hours_since_outbound numeric, p_silence_hours integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_state(p_sales_recorded bigint, p_lead_is_open boolean, p_messages bigint, p_escalated_at timestamp with time zone, p_last_message_at timestamp with time zone, p_last_inbound_at timestamp with time zone, p_last_outbound_at timestamp with time zone, p_hours_since_outbound numeric, p_silence_hours integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.lead_recovery_write_audit(p_tenant uuid, p_action_id uuid, p_lead_id integer, p_rec text, p_status text, p_summary text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_channel_capability_state(p_provider text, p_send_form text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_channel_send_candidates(p_tenant_id uuid, p_send_form text, p_customer_external_id text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_comm_keys_for_lead(p_email text, p_phone text, p_tenant uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_comm_keys_for_lead(p_email text, p_phone text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_cancel(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_cancel(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_decide(uuid,text,text,text,date,uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_decide(uuid,text,text,text,date,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_executed(uuid,text,boolean,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_executed(uuid,text,boolean,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_not_attributable(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_mark_not_attributable(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_outcome_candidates(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_outcome_candidates(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_propose(integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_propose(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_recommended_action(text,text,boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_recommended_action(text,text,boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_record_outcome(uuid,uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_record_outcome(uuid,uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_risk(text,numeric,numeric,integer,integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_risk(text,numeric,numeric,integer,integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_state(bigint,boolean,bigint,timestamp with time zone,timestamp with time zone,timestamp with time zone,timestamp with time zone,numeric,integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_state(bigint,boolean,bigint,timestamp with time zone,timestamp with time zone,timestamp with time zone,timestamp with time zone,numeric,integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.lead_recovery_write_audit(uuid,uuid,integer,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_channel_capability_state(text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_channel_send_candidates(uuid,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_comm_keys_for_lead(text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_comm_keys_for_lead(text,text,uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_current_tenant_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_current_tenant_id() TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_current_tenant_ids() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_current_tenant_ids() TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_default_tenant_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_default_tenant_id() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_is_approval_rules(p jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_is_business_hours(p jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_is_followup_policy(p jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_is_message(p_direction text, p_channel text, p_message text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.nexus_is_message(p_direction text, p_channel text, p_message text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_is_reply(p_direction text, p_channel text, p_message text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.nexus_is_reply(p_direction text, p_channel text, p_message text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_guard_born_open_grants() TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_is_approval_rules(jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_is_business_hours(jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_is_followup_policy(jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_is_message(text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nexus_is_message(text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_is_reply(text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nexus_is_reply(text,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_jwt_tenant_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_jwt_tenant_id() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_kyc_object_tenant(p_name text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.nexus_kyc_object_tenant(p_name text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_lead_for_comm_key(p_key text, p_tenant uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_lead_for_comm_key(p_key text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_lead_is_open(p_status text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.nexus_lead_is_open(p_status text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_kyc_object_tenant(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nexus_kyc_object_tenant(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_lead_for_comm_key(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_lead_for_comm_key(text,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_lead_is_open(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nexus_lead_is_open(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_mark_first_response() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_model_tokens(txt text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.nexus_model_tokens(txt text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_model_tokens(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nexus_model_tokens(text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_my_tenant_capabilities() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_my_tenant_capabilities() TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_my_tenant_config() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_my_tenant_config() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_onboard_dealership(p_slug text, p_name text, p_owner_email text, p_owner_role text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_outcome_class(p_workflow text, p_status text, p_summary text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.nexus_outcome_class(p_workflow text, p_status text, p_summary text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_onboard_dealership(text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_outcome_class(text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nexus_outcome_class(text,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_provider_router_invariants() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_record_channel_event(p_integration_id uuid, p_direction text, p_external_message_id text, p_origin_verified text, p_received_at timestamp with time zone, p_customer_external_id text, p_customer_phone text, p_conversation_id text, p_message_kind text, p_media_ref text, p_media_mime text, p_media_sha256 text, p_provider_account_id text, p_provider_delivery_ref text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_record_send_result(p_directive_id uuid, p_result text, p_provider_message_id text, p_error_code text, p_error_detail text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_register_channel(p_tenant_slug text, p_channel_type text, p_external_identifier text, p_credential_ref text, p_status text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_request_send(p_tenant_id uuid, p_customer_external_id text, p_intent text, p_send_form text, p_message_body text, p_template_ref text, p_template_variables jsonb, p_media_ref text, p_media_mime text, p_requested_by text, p_request_ref text, p_as_of timestamp with time zone, p_max_template_status_age interval) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_public_exposure_report() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nexus_public_exposure_report() TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_record_channel_event(uuid,text,text,text,timestamp with time zone,text,text,text,text,text,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_record_send_result(uuid,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_register_channel(text,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_request_send(uuid,text,text,text,text,text,jsonb,text,text,text,text,timestamp with time zone,interval) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_require_security_invoker_views() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_require_security_invoker_views() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_resolve_channel_tenant(p_channel_type text, p_external_identifier text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_resolve_tenant_capability(p_tenant_id uuid, p_capability_key text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_resolve_tenant_config(p_tenant_id uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_route_message(p_tenant_id uuid, p_customer_external_id text, p_intent text, p_send_form text, p_message_body text, p_template_ref text, p_template_variables jsonb, p_media_ref text, p_media_mime text, p_requested_by text, p_as_of timestamp with time zone, p_max_template_status_age interval) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_resolve_channel_tenant(text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_resolve_tenant_capability(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_resolve_tenant_config(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_route_message(uuid,text,text,text,text,text,jsonb,text,text,text,timestamp with time zone,interval) TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_scoped_tenant_id() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nexus_scoped_tenant_id() TO service_role;
 GRANT EXECUTE ON FUNCTION public.nexus_tenancy_readiness() TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_verify_template_ref(p_tenant_id uuid, p_provider text, p_template_ref text, p_required_category text, p_max_status_age interval) TO service_role;
-GRANT EXECUTE ON FUNCTION public.nexus_whatsapp_cloud_canonical_events(p_payload jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_authority(p_status text, p_verification_status text, p_effective_from date, p_effective_to date, p_as_of date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_authority(p_status text, p_verification_status text, p_effective_from date, p_effective_to date, p_as_of date) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_citation(p_jurisdiction text, p_rule_type text, p_rule_name text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_citation(p_jurisdiction text, p_rule_type text, p_rule_name text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_numeric(p_jurisdiction text, p_rule_type text, p_rule_name text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_numeric(p_jurisdiction text, p_rule_type text, p_rule_name text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_numeric_as_of(p_jurisdiction text, p_rule_type text, p_rule_name text, p_as_of date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_numeric_as_of(p_jurisdiction text, p_rule_type text, p_rule_name text, p_as_of date) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_verify_template_ref(uuid,text,text,text,interval) TO service_role;
+GRANT EXECUTE ON FUNCTION public.nexus_whatsapp_cloud_canonical_events(jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_authority(text,text,date,date,date) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_authority(text,text,date,date,date) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_citation(text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_citation(text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_numeric(text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_numeric(text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_numeric_as_of(text,text,text,date) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_numeric_as_of(text,text,text,date) TO service_role;
 GRANT EXECUTE ON FUNCTION public.policy_platform_attestation_append_only() TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_platform_supersede_rule(p_rule_id uuid, p_effective_from date, p_source_name text, p_changed_by text, p_value_numeric numeric, p_value_text text, p_source_ref text, p_notes text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_platform_verify_rule(p_rule_id uuid, p_attested_by text, p_attested_by_contact text, p_source_kind text, p_source_name text, p_source_ref text, p_source_observed_on date, p_effective_from date, p_confidence text, p_account_ref text, p_notes text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_propose_rule(p_jurisdiction text, p_rule_type text, p_rule_name text, p_unit text, p_source_name text, p_value_numeric numeric, p_value_text text, p_source_url text, p_source_document text, p_effective_from date, p_notes text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_propose_rule(p_jurisdiction text, p_rule_type text, p_rule_name text, p_unit text, p_source_name text, p_value_numeric numeric, p_value_text text, p_source_url text, p_source_document text, p_effective_from date, p_notes text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_read_unverified_rule(p_jurisdiction text, p_rule_type text, p_rule_name text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_read_unverified_rule(p_jurisdiction text, p_rule_type text, p_rule_name text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_refuse(p_code text, p_reason text, p_hint text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_platform_supersede_rule(uuid,date,text,text,numeric,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_platform_verify_rule(uuid,text,text,text,text,text,date,date,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_propose_rule(text,text,text,text,text,numeric,text,text,text,date,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_propose_rule(text,text,text,text,text,numeric,text,text,text,date,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_read_unverified_rule(text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_read_unverified_rule(text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_refuse(text,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.policy_rule_derive_jurisdiction_owner() TO service_role;
 GRANT EXECUTE ON FUNCTION public.policy_rule_event_append_only() TO service_role;
 GRANT EXECUTE ON FUNCTION public.policy_rule_guard_immutability() TO service_role;
 GRANT EXECUTE ON FUNCTION public.policy_rule_guard_one_active() TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_supersede_rule(p_rule_id uuid, p_effective_from date, p_source_name text, p_value_numeric numeric, p_value_text text, p_source_url text, p_source_document text, p_notes text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_supersede_rule(p_rule_id uuid, p_effective_from date, p_source_name text, p_value_numeric numeric, p_value_text text, p_source_url text, p_source_document text, p_notes text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_verify_rule(p_rule_id uuid, p_source_name text, p_source_url text, p_source_document text, p_effective_from date, p_confidence text, p_notes text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_verify_rule(p_rule_id uuid, p_source_name text, p_source_url text, p_source_document text, p_effective_from date, p_confidence text, p_notes text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.policy_withdraw_rule(p_rule_id uuid, p_reason text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.policy_withdraw_rule(p_rule_id uuid, p_reason text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_supersede_rule(uuid,date,text,numeric,text,text,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_supersede_rule(uuid,date,text,numeric,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_verify_rule(uuid,text,text,text,date,text,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_verify_rule(uuid,text,text,text,date,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.policy_withdraw_rule(uuid,text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.policy_withdraw_rule(uuid,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.recompute_inventory_derived() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.recompute_inventory_derived() TO service_role;
-GRANT EXECUTE ON FUNCTION public.search_rag_documents(q text, match_limit integer, p_tenant uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.search_rag_documents(q text, match_limit integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.search_rag_documents(q text, match_limit integer) TO service_role;
-GRANT EXECUTE ON FUNCTION public.search_rag_documents(q text, match_limit integer, p_tenant uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.sentinel_inventory_actions(p_recommendation text, p_min_risk_rank integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.sentinel_inventory_actions(p_recommendation text, p_min_risk_rank integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.search_rag_documents(text,integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.search_rag_documents(text,integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.search_rag_documents(text,integer,uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.search_rag_documents(text,integer,uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.sentinel_inventory_actions(text,integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.sentinel_inventory_actions(text,integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.tenant_capability_touch() TO service_role;
 GRANT EXECUTE ON FUNCTION public.tenant_configuration_validate() TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_apply_delivery_to_usage(p_delivery_event_id uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_apply_delivery_to_usage(uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.whatsapp_delivery_events_append_only() TO service_role;
 GRANT EXECUTE ON FUNCTION public.whatsapp_delivery_events_guard_link() TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_delivery_status_rank(p_status text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_link_delivery_events(p_integration_id uuid, p_limit integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_delivery_status_rank(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_link_delivery_events(uuid,integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.whatsapp_message_usage_touch() TO service_role;
 GRANT EXECUTE ON FUNCTION public.whatsapp_opt_in_event_append_only() TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_policy_decision(p_tenant_id uuid, p_integration_id uuid, p_customer_wa_id text, p_intent text, p_as_of timestamp with time zone) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_policy_decision_for_channel(p_channel_type text, p_external_identifier text, p_customer_wa_id text, p_intent text, p_as_of timestamp with time zone) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_policy_rule_lookup(p_tenant_id uuid, p_jurisdiction text, p_rule_name text, p_as_of date) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_record_customer_message(p_tenant_id uuid, p_integration_id uuid, p_customer_wa_id text, p_occurred_at timestamp with time zone, p_external_message_id text, p_source text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_record_delivery_status(p_integration_id uuid, p_provider_message_id text, p_status_raw text, p_status_at timestamp with time zone, p_provider_payload jsonb, p_recipient_wa_id text, p_conversation_id text, p_conversation_origin_type text, p_conversation_expiration_at timestamp with time zone, p_pricing_billable boolean, p_pricing_model text, p_pricing_category text, p_pricing_type text, p_errors jsonb, p_received_at timestamp with time zone) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_record_message_usage(p_event_id uuid, p_message_category text, p_policy_decision text, p_policy_reason_code text, p_policy_rule_verification_status text, p_policy_decided_at timestamp with time zone, p_sent_at timestamp with time zone, p_policy_rule_id uuid, p_policy_rule_name text, p_template_id uuid, p_template_provider_status_at_send text, p_template_status_age_at_send interval, p_template_staleness_verdict_at_send text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_record_opt_in_event(p_tenant_id uuid, p_integration_id uuid, p_customer_wa_id text, p_event text, p_occurred_at timestamp with time zone, p_mechanism text, p_evidence_kind text, p_evidence_ref text, p_recorded_by text, p_notes text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_refuse_end_user_role(p_fn text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_template_declare(p_integration_id uuid, p_name text, p_language text, p_category text, p_body_text text, p_variable_schema jsonb, p_declared_by text, p_waba_ref text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_template_observe(p_integration_id uuid, p_name text, p_language text, p_provider_status_raw text, p_source text, p_observed_at timestamp with time zone, p_category text, p_provider_template_id text, p_waba_ref text, p_evidence_ref text, p_rejected_reason text, p_body_text text, p_variable_schema jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_template_retire(p_template_id uuid, p_by text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_template_sendability(p_template_id uuid, p_max_status_age interval) TO service_role;
-GRANT EXECUTE ON FUNCTION public.whatsapp_template_variable_schema_ok(p jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_opt_in_state(uuid,uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_policy_decision(uuid,uuid,text,text,timestamp with time zone) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_policy_decision_for_channel(text,text,text,text,timestamp with time zone) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_policy_rule_lookup(uuid,text,text,date) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_record_customer_message(uuid,uuid,text,timestamp with time zone,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_record_delivery_status(uuid,text,text,timestamp with time zone,jsonb,text,text,text,timestamp with time zone,boolean,text,text,text,jsonb,timestamp with time zone) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_record_message_usage(uuid,text,text,text,text,timestamp with time zone,timestamp with time zone,uuid,text,uuid,text,interval,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_record_opt_in_event(uuid,uuid,text,text,timestamp with time zone,text,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_refuse_end_user_role(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_template_declare(uuid,text,text,text,text,jsonb,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_template_observe(uuid,text,text,text,text,timestamp with time zone,text,text,text,text,text,text,jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_template_retire(uuid,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_template_sendability(uuid,interval) TO service_role;
+GRANT EXECUTE ON FUNCTION public.whatsapp_template_variable_schema_ok(jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.whatsapp_templates_guard_channel() TO service_role;
 GRANT EXECUTE ON FUNCTION public.whatsapp_templates_touch() TO service_role;
 
@@ -12848,114 +13185,110 @@ GRANT EXECUTE ON FUNCTION public.whatsapp_templates_touch() TO service_role;
 -- ========================================================================
 -- 19. GRANTS — types
 -- ========================================================================
+GRANT USAGE ON TYPE public.whatsapp_policy_decision_row TO PUBLIC;
 GRANT USAGE ON TYPE public.whatsapp_policy_decision_row TO postgres;
 GRANT USAGE ON TYPE public.whatsapp_policy_decision_row TO service_role;
+GRANT USAGE ON TYPE public.whatsapp_template_sendability_row TO PUBLIC;
 GRANT USAGE ON TYPE public.whatsapp_template_sendability_row TO postgres;
 GRANT USAGE ON TYPE public.whatsapp_template_sendability_row TO service_role;
 
 
 -- ========================================================================
--- 20. DEFAULT PRIVILEGES — the postgres line
--- anon is absent here on purpose: production removed it. The REVOKE above is what removes it on a stock project, and is the whole reason this section is not GRANT-only.
+-- 20. DEFAULT PRIVILEGES — the postgres lines (public and storage)
+-- anon is absent from both on purpose: production removed it. The REVOKEs are what
+-- remove it on a stock project, and are the whole reason this section is not
+-- GRANT-only. The storage line is here because 4 September narrowed it — it grants
+-- nothing to anon and, since 20260904142907, no MAINTAIN to authenticated.
 -- ========================================================================
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;
 
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT UPDATE ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT USAGE ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON SEQUENCES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT UPDATE ON SEQUENCES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT USAGE ON SEQUENCES TO postgres;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON SEQUENCES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT UPDATE ON SEQUENCES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT USAGE ON SEQUENCES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO postgres;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO service_role;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT DELETE ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT INSERT ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT MAINTAIN ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT TRIGGER ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT TRUNCATE ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT UPDATE ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT DELETE ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT INSERT ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT MAINTAIN ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT TRIGGER ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT TRUNCATE ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT UPDATE ON TABLES TO postgres;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT DELETE ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT INSERT ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT MAINTAIN ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT REFERENCES ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO authenticated;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT TRIGGER ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT TRUNCATE ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT UPDATE ON TABLES TO service_role;
 
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage REVOKE ALL ON SEQUENCES FROM anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage REVOKE ALL ON FUNCTIONS FROM anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage REVOKE ALL ON TABLES FROM anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT SELECT ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT UPDATE ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT USAGE ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT EXECUTE ON FUNCTIONS TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT EXECUTE ON FUNCTIONS TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT DELETE ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT INSERT ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT MAINTAIN ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT REFERENCES ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT SELECT ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT SELECT ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT TRIGGER ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT TRUNCATE ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT UPDATE ON TABLES TO service_role;
+
+
 
 -- ========================================================================
 -- 21. DEFAULT PRIVILEGES — the supabase_admin line
--- MEASURED ON PRODUCTION 2026-09-04, and reproduced here because it is true, not because it is right: anon still holds ALL on new tables through this line. The 2 September anon closure closed the postgres line only. Any table created in public AS supabase_admin is readable by anon at birth. Guarded because a restore may not have rights on supabase_admin; it warns loudly rather than skipping silently.
+-- MEASURED ON PRODUCTION, and reproduced here because it is true, not because it is
+-- right: anon still holds ALL on new tables through this line. postgres cannot alter
+-- it (42501) and cannot revoke a supabase_admin grant. The schema door closed in
+-- section 15 is what actually contains it — without USAGE on public, an object born
+-- open through this line is still unreachable. Guarded because a restore may not
+-- have rights on supabase_admin; it warns loudly rather than skipping silently.
 -- ========================================================================
 DO $baseline$
 BEGIN
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated, service_role;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM anon, authenticated, service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated, service_role;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON SEQUENCES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON SEQUENCES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO anon;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON SEQUENCES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON SEQUENCES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON SEQUENCES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON SEQUENCES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO postgres;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON SEQUENCES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON SEQUENCES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON SEQUENCES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON SEQUENCES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT USAGE ON SEQUENCES TO service_role;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO postgres;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO service_role;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT DELETE ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT INSERT ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRIGGER ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRUNCATE ON TABLES TO anon;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO anon;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT DELETE ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT INSERT ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRIGGER ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRUNCATE ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO authenticated;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT DELETE ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT INSERT ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRIGGER ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRUNCATE ON TABLES TO postgres;';
-  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO postgres;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT DELETE ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT INSERT ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT INSERT ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT INSERT ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT MAINTAIN ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT REFERENCES ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRIGGER ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRIGGER ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRIGGER ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRUNCATE ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRUNCATE ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT TRUNCATE ON TABLES TO service_role;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO anon;';
+  EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO authenticated;';
   EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT UPDATE ON TABLES TO service_role;';
 EXCEPTION WHEN insufficient_privilege THEN
   RAISE WARNING 'default privileges FOR ROLE supabase_admin were NOT set: %, this restore lacks rights on that role. Production grants anon ALL on new tables through that line; a project restored without it will differ. Set it as an owner or record the deviation.', SQLERRM;
@@ -12965,7 +13298,7 @@ $baseline$;
 
 -- ========================================================================
 -- 22. THE SUPABASE PLATFORM, AND THE ONE SCHEDULED JOB
--- Not run by this file. Nothing in sections 1-20 depends on any of it, which
+-- Not run by this file. Nothing in sections 1-21 depends on any of it, which
 -- was checked, not assumed: pg_depend records zero non-extension dependencies
 -- on pg_cron, supabase_vault or pg_stat_statements.
 -- ========================================================================

@@ -1,8 +1,8 @@
 -- NEXUS OS — migration history stamp
 --
--- The baseline reproduces the SCHEMA production had at version 20260904090150.
+-- The baseline reproduces the SCHEMA production had at version 20260904142907.
 -- It does not reproduce the RECORD of how it got there, and without that record
--- `supabase db push` would try to replay all 243 historical migrations against a
+-- `supabase db push` would try to replay all 255 historical migrations against a
 -- database that already contains their effects. This file writes the record.
 --
 -- GENERATED from supabase/migrations/. Do not hand-edit — regenerate.
@@ -263,5 +263,17 @@ INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES
   ('20260904084434', 'directive_carrier_and_policy_decision_are_bound_to_the_row'),
   ('20260904085620', 'seen_table_is_service_role_only_by_grant_not_only_by_rls'),
   ('20260904090104', 'consent_identity_is_the_evidence_not_the_timestamp'),
-  ('20260904090150', 'a_message_identity_includes_the_channel_it_arrived_on')
+  ('20260904090150', 'a_message_identity_includes_the_channel_it_arrived_on'),
+  ('20260904112412', 'policy_control_plane_tables_off_the_dealer_data_plane'),
+  ('20260904112959', 'close_born_open_grants_default_acl_and_supabase_admin_guard'),
+  ('20260904113239', 'revoke_anon_execute_on_inventory_actions_touch_trigger_fn'),
+  ('20260904113422', 'pin_search_path_on_born_open_guard'),
+  ('20260904133833', 'consent_identity_p0_1_keys_bounds_tiebreak'),
+  ('20260904133929', 'consent_identity_p0_2_writer_discipline'),
+  ('20260904133950', 'consent_identity_p0_3_one_derivation'),
+  ('20260904134328', 'consent_identity_p0_4_reversal_needs_resolvable_evidence'),
+  ('20260904135611', 'consent_identity_p0_5_drop_superseded_order_index'),
+  ('20260904142259', 'nexus_close_anon_schema_door_and_storage_defacl'),
+  ('20260904142709', 'nexus_guard_reassert_schema_door_and_reachability_report'),
+  ('20260904142907', 'nexus_storage_defacl_drop_maintain_from_authenticated')
 ON CONFLICT (version) DO NOTHING;
