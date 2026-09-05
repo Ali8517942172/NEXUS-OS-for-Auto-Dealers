@@ -831,7 +831,7 @@ SCREENS.leads = async host => {
   if (leadsErr) {
     /* The strip above still says what the view reported and why the checks are
        missing; the table is the thing that is actually broken. */
-    card.innerHTML = stateError('leads', leadsErr.message);
+    card.innerHTML = stateError('leads', leadsErr);
     return;
   }
 

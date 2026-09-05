@@ -795,7 +795,7 @@ SCREENS.automation = async host => {
   const [healthR, auditR, regR, leadR] = await Promise.allSettled([
     db('v_workflow_health?select=*'),
     db(`audit_log?select=workflow,status,lead_name,lead_email,lead_score,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`),
-    db('workflow_registry?select=id,name,audit_name,audit_aliases'),
+    db('workflow_registry?select=name,audit_name,audit_aliases'),
     /* audit_log holds a customer's name and email but no phone. `leads.phone`
        is where the number lives, so it is joined here on email — a person shown
        with no way to reach them is half a record. There is deliberately no staff
@@ -830,9 +830,15 @@ SCREENS.automation = async host => {
      audit_log. Without it the drawer falls back to matching on the display
      name, which is a weaker join, so the difference is stated rather than
      hidden behind a suspiciously short history. */
-  const regById = new Map((registry || []).map(r => [String(r.id), r]));
+  /* Keyed on `name`, not on the n8n workflow id: `workflow_registry.id` and
+     `trigger_detail` are control-plane columns and `authenticated` no longer
+     holds SELECT on either (CONTROL-PLANE.md 5.2), so neither side of this join
+     carries an id any more. `name` is the registry's other unique key — 18 rows,
+     18 distinct names, measured — and v_workflow_health.name IS r.name, so the
+     join is exact rather than a loosening. */
+  const regByName = new Map((registry || []).map(r => [low(r.name), r]));
   const namesFor = w => {
-    const r = regById.get(String(w.id));
+    const r = regByName.get(low(w.name));
     const s = new Set();
     [w.name, r?.name, r?.audit_name, ...(Array.isArray(r?.audit_aliases) ? r.audit_aliases : [])]
       .filter(Boolean).forEach(n => s.add(low(n)));
@@ -1661,7 +1667,6 @@ SCREENS.automation = async host => {
           <h2 style="font-size:18px">${esc(w.name || 'Unnamed workflow')}</h2>
           <div class="cell-sub">${esc(w.category || 'Uncategorised')} · ${esc(w.trigger_type || 'trigger not recorded')}${
             w.trigger_detail ? ' · ' + esc(w.trigger_detail) : ''}</div>
-          <div class="cell-sub mono">${esc(w.id ?? '')}</div>
         </div>
         <button class="btn ghost sm" id="aClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>

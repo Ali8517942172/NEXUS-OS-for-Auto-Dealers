@@ -26,7 +26,7 @@ import './styles.css';
 import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';
 import { envErrors } from './lib/env.js';
-import { ME, SESSION, db, sessionEnded, setMe, setMeReadFailed, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
+import { ME, SESSION, db, myRole, sessionEnded, setMe, setMeReadFailed, setMembership, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
@@ -154,11 +154,28 @@ async function boot() {
     setMeReadFailed(String(e.message || e).slice(0, 160));
   }
 
+  /* Account authority, read from the same table the database's own inventory
+     and leads policies read. `users.role` above is a job title and decides
+     nothing; this decides what the screens offer. tenant_members carries a
+     self-read policy, so this returns only this account's own row(s).
+
+     A FAILED read leaves membership unknown rather than empty, and unknown
+     means the screens keep offering the action and let the database answer.
+     Hiding a button on a failed read would tell an owner they are not one. */
+  try {
+    setMembership(await db('tenant_members?select=tenant_id,role,staff_user_id'));
+  } catch {
+    setMembership(null);
+  }
+
   $('boot').classList.add('hide');
   $('app').classList.remove('hide');
   $('userInitials').textContent = initials(ME?.name || SESSION.user.email);
   $('userName').textContent = ME?.name || SESSION.user.email;
-  $('userRole').textContent = ME?.role || 'signed in';
+  /* Two different facts, and the header used to show only the first. The job
+     title says what this person does; the account role says what the product
+     will let them do, and it is the one that explains a refused action. */
+  $('userRole').textContent = [ME?.role, myRole()].filter(Boolean).join(' · ') || 'signed in';
 
   buildNav();
   applyDensity();

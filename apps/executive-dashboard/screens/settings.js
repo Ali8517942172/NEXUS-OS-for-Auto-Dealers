@@ -752,7 +752,7 @@ SCREENS.settings = async host => {
        failures. The rate, the state pill and the breakdown under each figure
        are all read from these columns; this screen does no arithmetic on them
        beyond adding the ones it says out loud that it is adding. */
-    settle(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,description,is_active,'
+    settle(db('v_workflow_health?select=name,category,description,is_active,'
       + 'writes_audit_log,runs,failures,success_rate,last_run,last_success,last_partial,last_incomplete,'
       + 'runs_30d,effective_runs_30d,successes_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,'
       + `escalated_30d,unknown_30d,success_rate_30d,last_failure,health&limit=${HEALTH_LIMIT}`)),
@@ -773,7 +773,7 @@ SCREENS.settings = async host => {
        audit_log. Without it the failure list falls back to matching on the
        display name, which is a weaker join — so the difference is stated rather
        than hidden behind a suspiciously short failure history. */
-    settle(db('workflow_registry?select=id,name,audit_name,audit_aliases')),
+    settle(db('workflow_registry?select=name,audit_name,audit_aliases')),
   ]).then(([attn, health, fails, reg]) => {
     sysState = {
       attn: attn.ok ? attn.value : null, attnErr: attn.ok ? null : attn.err,
@@ -1364,9 +1364,9 @@ SCREENS.settings = async host => {
     /* The registry join, used only to attribute failures. Where it is missing
        the fallback is the display name, and the shortfall is stated rather than
        shown as a shorter, healthier-looking history. */
-    const regById = new Map((s.reg || []).map(r => [String(r.id), r]));
+    const regByName = new Map((s.reg || []).map(r => [low(r.name), r]));
     const namesFor = w => {
-      const r = regById.get(String(w.id));
+      const r = regByName.get(low(w.name));
       const set = new Set();
       [w.name, r?.name, r?.audit_name, ...(Array.isArray(r?.audit_aliases) ? r.audit_aliases : [])]
         .filter(Boolean).forEach(n => set.add(low(n)));
@@ -1591,8 +1591,11 @@ SCREENS.settings = async host => {
     const s = sysState;
     if (!s) return stateLoading(2);
     if (s.failsErr) {
-      return stateError('credential faults',
-        `${s.failsErr}. A broken credential names itself only inside the run it breaks, so with audit_log unreadable this panel has no evidence to show — which is not the same as there being none.`);
+      /* The read's own words used to be pasted in front of this sentence. The
+         sentence is what matters and it is ours; what the database said about
+         itself goes to the console with the rest. */
+      return stateError('credential faults', s.failsErr, null,
+        'A broken credential names itself only inside the run it breaks, so with audit_log unreadable this panel has no evidence to show — which is not the same as there being none.');
     }
     const groups = credGroups() || [];
     if (!groups.length) {
@@ -1698,7 +1701,7 @@ SCREENS.settings = async host => {
     } catch (e) {
       kbState = { count: null, docs: null, capped: false, err: e.message };
       renderAlerts();
-      kbShell('What Ask AI is allowed to answer from', stateError('the knowledge base', e.message));
+      kbShell('What Ask AI is allowed to answer from', stateError('the knowledge base', e));
     }
   }
 

@@ -1,7 +1,7 @@
 /* NEXUS OS — lib/unit-form.js
    Split out of the original monolithic app.js on 17 Aug 2026. The body below is
    the original code, moved not rewritten. */
-import { db, dbWrite, onIdentityChange } from './data.js';
+import { canAddUnit, canDeleteUnit, canEditUnit, canSetCost, db, dbWrite, onIdentityChange } from './data.js';
 import { $ } from './dom.js';
 import { TZ, aed, esc, n0, num, pill } from './format.js';
 import { modalError, openModal } from './modal.js';
@@ -360,13 +360,29 @@ function deriveUnit(u, cfg) {
    supabase/2026-08-14_rls_and_inventory_ageing.sql:92 grants it to
    `authenticated`; that line is NOT in effect on the live database. Granting it
    is a schema decision, not this file's. */
-function unitRow(u) {
-  return {
+/* `withCost` is false for anyone who may not set a cost price, and the column
+   is then LEFT OUT of the payload rather than sent unchanged.
+
+   That is not belt-and-braces, it is the difference between the form working
+   and not working for a manager. rbac_05's trigger is `BEFORE UPDATE OF
+   cost_aed`, which fires whenever the column appears in the SET list at all —
+   PostgREST builds that list from the request body, so sending cost_aed on a
+   save that was really about the status would drag the whole PATCH in front of
+   a check it does not need to face. It would usually pass (the value has not
+   moved), and would fail exactly once: on a unit whose cost is null, where
+   `n0(null) || 0` sends 0 and null -> 0 IS a change.
+
+   The database is still the control. This only keeps the request honest about
+   what it is asking to do. */
+function unitRow(u, withCost) {
+  const row = {
     id: u.id, model: u.model, vin: u.vin || null,
     status: u.status, acquired_at: u.acquired_at,
-    price_aed: n0(u.price_aed) || 0, cost_aed: n0(u.cost_aed) || 0,
+    price_aed: n0(u.price_aed) || 0,
     ai_recommendation: u.ai_recommendation || null,
   };
+  if (withCost) row.cost_aed = n0(u.cost_aed) || 0;
+  return row;
 }
 
 /* This hardcoded `VH-` and a 3-digit pad, but every unit in the database is
@@ -409,6 +425,21 @@ const isoDate = d => {
 
 function unitForm(existing, inv, onDone) {
   const isNew = !existing;
+  /* Asked once, per dealership of the unit being edited, so a modal opened on
+     another tenant's row could never be judged against this one's role. Both
+     answer TRUE when the membership read failed — see lib/data.js. The
+     database refuses either way; hiding a control on an unknown answer would
+     tell an owner they are not one. */
+  const tid = existing && existing.tenant_id;
+  const mayCost   = canSetCost(tid);
+  const mayDelete = canDeleteUnit(tid);
+  /* Whether this form can be SAVED at all. Four screens open it — Inventory's
+     table and drawer, and two panels on Competitors — and gating each call
+     site separately is how one of them ends up missed. Gate it here, once, so
+     a form that cannot be saved says so on the button instead of PATCHing and
+     coming back "0 rows changed", which is what RLS returns and which reads
+     to the operator as though nothing was wrong. */
+  const mayEdit = isNew ? canAddUnit(tid) : canEditUnit(tid);
   const u = existing || {
     id: nextStockId(inv), model: '', vin: '', status: 'Available',
     acquired_at: dubaiToday(), price_aed: '', cost_aed: '', ai_recommendation: '',
@@ -432,7 +463,9 @@ function unitForm(existing, inv, onDone) {
     </div>
     <div class="grid g2">
       ${f('uPrice', 'List price (AED)', `<input type="number" min="0" id="uPrice" value="${esc(u.price_aed)}" placeholder="290000" />`)}
-      ${f('uCost', 'Cost (AED)', `<input type="number" min="0" id="uCost" value="${esc(u.cost_aed)}" placeholder="250000" />`)}
+      ${f('uCost', 'Cost (AED)',
+          `<input type="number" min="0" id="uCost" value="${esc(u.cost_aed)}" placeholder="250000" ${mayCost ? '' : 'disabled'} />`,
+          mayCost ? '' : 'Cost price is an owner or admin decision at this dealership, so it is shown here but not editable. Everything else on this vehicle can still be saved.')}
     </div>
     ${f('uRec', 'AI recommendation (optional)', `<textarea id="uRec" rows="2">${esc(u.ai_recommendation || '')}</textarea>`,
         'Normally written by the pricing workflow. Editable here for a manual override.')}
@@ -447,10 +480,12 @@ function unitForm(existing, inv, onDone) {
         the moment this screen next reads it.
       </div>
     </div>`,
-    `<button class="btn primary" id="uSave">${isNew ? 'Add vehicle' : 'Save changes'}</button>
+    `<button class="btn primary" id="uSave"${mayEdit ? '' : ` disabled title="${esc(isNew
+       ? 'Adding a vehicle states what it cost, so it is an owner or admin decision at this dealership.'
+       : 'Changing a vehicle is an owner, admin or manager decision at this dealership. You can read everything on this form.')}"`}>${isNew ? 'Add vehicle' : 'Save changes'}</button>
      <button class="btn" id="uCancel">Cancel</button>
      <div style="flex:1"></div>
-     ${isNew ? '' : '<button class="btn danger" id="uDelete">Delete</button>'}`);
+     ${isNew || !mayDelete ? '' : '<button class="btn danger" id="uDelete">Delete</button>'}`);
 
   const read = () => ({
     id: $('uId').value.trim(),
@@ -559,20 +594,24 @@ function unitForm(existing, inv, onDone) {
   m.wrap.querySelector('#uCancel').addEventListener('click', m.close);
 
   m.wrap.querySelector('#uSave').addEventListener('click', async () => {
+    /* The button is already disabled in this case; this is the second lock on
+       the same rule, because a disabled attribute is one DOM edit away from
+       gone. The real one is rbac_02's inventory_role_update policy. */
+    if (!mayEdit) return;
     const v = read();
     if (!v.id) return m.msg('<span class="t-hot">A stock number is required.</span>');
     if (!v.model) return m.msg('<span class="t-hot">A model is required.</span>');
     if (!v.acquired_at) return m.msg('<span class="t-hot">An acquisition date is required.</span>');
-    if (v.price_aed === '' || v.cost_aed === '')
-      return m.msg('<span class="t-hot">List price and cost are both required — every margin on this screen is derived from them.</span>');
+    if (v.price_aed === '' || (mayCost && v.cost_aed === ''))
+      return m.msg(`<span class="t-hot">${mayCost ? 'List price and cost are both required' : 'A list price is required'} — every margin on this screen is derived from them.</span>`);
     /* `min="0"` on a number input is a spinner hint, not a constraint: typing
        -5000 submits happily. Gross margin, net margin, VAT and the recommended
        commission are all derived from these two, so one negative number here
        propagates into five stored columns and into whatever the workflows and
        the Finance Desk read out of them afterwards. */
-    if (Number(v.price_aed) < 0 || Number(v.cost_aed) < 0)
+    if (Number(v.price_aed) < 0 || (mayCost && Number(v.cost_aed) < 0))
       return m.msg('<span class="t-hot">List price and cost cannot be negative — every margin, the VAT figure and the commission are derived from them.</span>');
-    if (!Number.isFinite(Number(v.price_aed)) || !Number.isFinite(Number(v.cost_aed)))
+    if (!Number.isFinite(Number(v.price_aed)) || (mayCost && !Number.isFinite(Number(v.cost_aed))))
       return m.msg('<span class="t-hot">List price and cost must both be numbers.</span>');
     if (isNew && inv.some(x => String(x.id) === v.id))
       return m.msg(`<span class="t-hot">Stock number ${esc(v.id)} already exists.</span>`);
@@ -580,8 +619,8 @@ function unitForm(existing, inv, onDone) {
     const btn = m.wrap.querySelector('#uSave');
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
-      if (isNew) await dbWrite('POST', 'inventory', unitRow(v));
-      else await dbWrite('PATCH', `inventory?id=eq.${encodeURIComponent(v.id)}`, unitRow(v));
+      if (isNew) await dbWrite('POST', 'inventory', unitRow(v, true));
+      else await dbWrite('PATCH', `inventory?id=eq.${encodeURIComponent(v.id)}`, unitRow(v, mayCost));
       m.close(); onDone();
     } catch (e) {
       btn.disabled = false; btn.textContent = isNew ? 'Add vehicle' : 'Save changes';
@@ -602,7 +641,13 @@ function unitForm(existing, inv, onDone) {
            deletion that never happened — the row is still there when the screen
            reloads, and the operator has been told otherwise. Check what came
            back before claiming anything. */
-        const gone = await dbWrite('DELETE', `inventory?id=eq.${encodeURIComponent(u.id)}`, undefined);
+        /* rpc/inventory_delete_unit rather than DELETE on the table. Both are
+           gated in the database, but the table path refuses by RLS, which is
+           200 with an empty body — indistinguishable from "already gone", and
+           the branch below has to guess between three explanations. The RPC
+           raises NX001 and says which one it is, and it will not silently
+           erase a unit that has recommendation history behind it. */
+        const gone = await dbWrite('POST', 'rpc/inventory_delete_unit', { p_unit_id: u.id });
         if (Array.isArray(gone) && gone.length === 0) {
           m.msg(`<span class="t-hot">Nothing was deleted — no row in inventory has stock number ${esc(u.id)} any more.
             It may already be gone, or your account may not be allowed to delete it. The list is unchanged.</span>`);

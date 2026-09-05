@@ -244,7 +244,7 @@ function go(id) {
      longer on screen, and the one that is has done nothing wrong. */
   const fail = e => {
     if (staleRender(gen)) return;
-    host.innerHTML = stateError('this screen', (e && e.message) || String(e));
+    host.innerHTML = stateError('this screen', e);
   };
   const paint = () => {
     if (staleRender(gen)) return;

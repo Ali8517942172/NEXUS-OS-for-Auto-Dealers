@@ -227,7 +227,7 @@
    wiring itself after `const card = await panel(...)`, which panel() cannot
    replay on retry; it is on the `.then` form the two panels at the foot of this
    file already use. */
-import { db } from '../lib/data.js';
+import { canEditUnit, db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, aedSigned, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
@@ -1099,7 +1099,7 @@ SCREENS.competitors = async host => {
      down" — and the view's answer is PRODUCING_NOTHING: it runs, it does not
      fail, and most runs end with no usable price. The columns the view already
      computes are read as they are; nothing here classifies a status itself. */
-  const healthP = db('v_workflow_health?select=name,trigger_detail,health,runs_30d,successes_30d,'
+  const healthP = db('v_workflow_health?select=name,health,runs_30d,successes_30d,'
     + `no_result_30d,failures_30d,partials_30d,effective_runs_30d,success_rate_30d,last_run,last_success&name=eq.${encodeURIComponent(SCRAPE_WORKFLOW)}`);
   logP.catch(() => {}); invP.catch(() => {}); attnP.catch(() => {}); healthP.catch(() => {});
 
@@ -1124,7 +1124,7 @@ SCREENS.competitors = async host => {
   try { rows = await db(`v_competitor_latest?select=*&limit=${ROW_LIMIT}`); }
   catch (e) {
     strip.remove(); below.remove(); alertHost.remove();
-    body.innerHTML = `<div class="card">${stateError('competitor pricing', e.message, 'competitors')}</div>`;
+    body.innerHTML = `<div class="card">${stateError('competitor pricing', e, 'competitors')}</div>`;
     body.querySelector('[data-retry]')?.addEventListener('click', () => go('competitors'));
     return;
   }
@@ -2616,12 +2616,14 @@ SCREENS.competitors = async host => {
           <div class="cell-sub t-muted" style="white-space:normal;margin-top:6px">Written by the scrape when the row was stored, and shown as stored. It calls the source a competitor and its figure a competitor's price; both are qualified above, and it was composed from the same ${esc(aedSigned(c.storedDiff == null ? 0 : c.storedDiff))} the workflow signs the other way round.</div></div>` : ''}
       </div>
       <div class="drawer-foot">
-        <button class="btn primary" id="dPrice"${best ? '' : ' disabled title="No comparable unit with a list price is in stock, so there is nothing here to re-price."'}>Adjust our list price</button>
+        <button class="btn primary" id="dPrice"${best && canEditUnit(best.tenant_id) ? '' : ` disabled title="${esc(!best
+          ? 'No comparable unit with a list price is in stock, so there is nothing here to re-price.'
+          : 'Changing a list price is an owner, admin or manager decision at this dealership.')}"`}>Adjust our list price</button>
         <button class="btn" id="dInv">Open Inventory</button>
       </div>`);
     $('dClose').addEventListener('click', closeDrawer);
     $('dInv').addEventListener('click', () => { closeDrawer(); go('inventory'); });
-    if (best) $('dPrice').addEventListener('click', () => { closeDrawer(); unitForm(best, inv, reload); });
+    if (best && canEditUnit(best.tenant_id)) $('dPrice').addEventListener('click', () => { closeDrawer(); unitForm(best, inv, reload); });
   }
 
   function draw() {

@@ -733,7 +733,7 @@ SCREENS.overview = async host => {
      puts failures_30d or partials_30d above zero, and v_workflow_health raises
      DEGRADED on either, so the item's workflow is inside this set. An item with
      no match here is still reported as unmatched rather than assumed healthy. */
-  const readHealth = shared(() => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,last_run,last_success,last_failure,last_partial,last_incomplete,is_active'
+  const readHealth = shared(() => db('v_workflow_health?select=name,category,health,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,last_run,last_success,last_failure,last_partial,last_incomplete,is_active'
     + '&health=in.(DEGRADED,PRODUCING_NOTHING,UNKNOWN_OUTCOME)'
     + '&order=failures_30d.desc,partials_30d.desc,name.asc&limit=50'));
   /* Read for one reason only: to explain an absence. `undercut` is one of the
@@ -1324,8 +1324,8 @@ SCREENS.overview = async host => {
   const requireCore = () => { if (coreErr) throw coreErr; return core; };
 
   if (coreErr) {
-    strip.innerHTML = stateError('the overview', coreErr.message);
-    pipeCard.innerHTML = stateError('pipeline by stage', coreErr.message);
+    strip.innerHTML = stateError('the overview', coreErr);
+    pipeCard.innerHTML = stateError('pipeline by stage', coreErr);
   } else {
     const { leads, sentinel, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
             openCount, terminalCount, terminalNames,

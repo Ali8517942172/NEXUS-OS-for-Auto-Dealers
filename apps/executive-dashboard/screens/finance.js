@@ -1121,7 +1121,7 @@ SCREENS.finance = async host => {
   function drawHistory() {
     const body = $('fqBody');
     if (!body) return;
-    if (quotesErr) { body.innerHTML = stateError('quote history', quotesErr.message); return; }
+    if (quotesErr) { body.innerHTML = stateError('quote history', quotesErr); return; }
     if (!rows.length) {
       /* The first of the three absences, and the only one that is a whole panel
          rather than a cell: there is no quote, as opposed to a quote the
@@ -1283,7 +1283,7 @@ SCREENS.finance = async host => {
      how many people, what range of values, how many came out negative — is true
      whether the table holds three rows or three thousand. */
   function drawStrip() {
-    if (quotesErr) { strip.innerHTML = stateError('the quote figures', quotesErr.message); return; }
+    if (quotesErr) { strip.innerHTML = stateError('the quote figures', quotesErr); return; }
     const capped = rows.length >= HISTORY_LIMIT;
     const ppl = [...people.values()];
     const oneCustomer = ppl.length === 1 && rows.length > 1;
@@ -1423,7 +1423,7 @@ SCREENS.finance = async host => {
   function drawScope() {
     const body = $('fScope');
     if (!body) return;
-    if (quotesErr) { body.innerHTML = stateError('the quote figures', quotesErr.message); return; }
+    if (quotesErr) { body.innerHTML = stateError('the quote figures', quotesErr); return; }
 
     const ppl = [...people.values()];
     const nQ = rows.length, nP = ppl.length;
@@ -2213,7 +2213,7 @@ SCREENS.finance = async host => {
   function drawRefusals() {
     const body = $('fxBody');
     if (!body) return;
-    if (auditErr) { body.innerHTML = stateError('what the workflow recorded', auditErr.message); return; }
+    if (auditErr) { body.innerHTML = stateError('what the workflow recorded', auditErr); return; }
     if (!refusals || !noResult) { body.innerHTML = stateLoading(3); return; }
 
     const foot = `<div class="list-item" style="cursor:default">
@@ -2544,7 +2544,15 @@ SCREENS.finance = async host => {
       });
       await renderQuote(r, v, submittedAt);
     } catch (e) {
-      const msg = String(e?.message || e);
+      /* `.technical` is the workflow's own response — status line and body — and
+         it is read here for exactly one reason: the refusal reasons are inside
+         it, and they are the rep's next step ("vehicleValue must be at least
+         AED 5000"). Only strings that pass VALIDATION_RE reach the screen, as
+         a decline; everything else in that body is dropped on the floor and the
+         error goes to stateError(), which prints none of it. `.message` is the
+         user-safe clause since 5 Sep 2026 and carries no status code, so
+         parsing it would silently stop recognising every refusal. */
+      const msg = String(e?.technical || e?.message || e);
       /* A refusal answered with a 4xx lands here rather than in renderQuote, and
          rendering it as "Couldn't load the quote" would blame the dashboard for
          the workflow correctly saying no. Whether the refusal arrives as a 200
@@ -2558,7 +2566,7 @@ SCREENS.finance = async host => {
       } else if (declined.length) {
         renderDecline(declined, 'http');
       } else {
-        out().innerHTML = stateError('the quote', msg);
+        out().innerHTML = stateError('the quote', e);
       }
     } finally {
       btn.disabled = !N8N_BASE;
@@ -3205,6 +3213,6 @@ SCREENS.finance = async host => {
     })
     .catch(e => {
       const body = $('cBody');
-      if (body) body.innerHTML = stateError('inventory', e.message);
+      if (body) body.innerHTML = stateError('inventory', e);
     });
 };

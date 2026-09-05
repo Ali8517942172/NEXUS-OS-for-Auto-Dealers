@@ -1542,8 +1542,8 @@ SCREENS.conversations = async host => {
       attn = a.rows; attnError = a.error;
       renderAlerts();
       strip.className = 'card flush';
-      strip.innerHTML = stateError('the inbox summary', e.message);
-      wrap.innerHTML = stateError('conversations', e.message, 'reload');
+      strip.innerHTML = stateError('the inbox summary', e);
+      wrap.innerHTML = stateError('conversations', e, 'reload');
       wrap.querySelector('[data-retry]')?.addEventListener('click', boot);
       return;
     }
@@ -2618,10 +2618,14 @@ SCREENS.conversations = async host => {
        would quietly match every row in the table, and this is the one branch
        that must never be confused with "this person has no messages". */
     if (!path) {
-      body.innerHTML = stateError('this conversation',
+      /* Passed as the note argument, not as an error: nothing failed and there
+         is no error to describe. This sentence is ours, and it is the whole
+         point of the branch — a blank panel here must not be read as "this
+         person has no history", because no query was ever issued. */
+      body.innerHTML = stateError('this conversation', null, 'thread',
         'No key on this thread can be matched against communication_logs.lead_email — the thread key identifies '
         + 'nobody and there is no email, phone or chat id to read under. Nothing was queried, so nothing here is '
-        + 'evidence that this person has no history.', 'thread');
+        + 'evidence that this person has no history.');
       body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
       return;
     }
@@ -2629,7 +2633,7 @@ SCREENS.conversations = async host => {
     try {
       msgs = await db(path);
     } catch (e) {
-      body.innerHTML = stateError('this conversation', e.message, 'thread');
+      body.innerHTML = stateError('this conversation', e, 'thread');
       body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
       return;
     }

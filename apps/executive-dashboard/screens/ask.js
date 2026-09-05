@@ -501,9 +501,13 @@ function grounded(e) {
 }
 
 /* ── Failure classification ─────────────────────────────────────────────────
-   db()/n8n() format transport errors as "<status> — <body>", and the browser
-   reports a blocked or unreachable request as "Failed to fetch". Each of those
-   means something different to whoever has to fix it. */
+   n8n() records the transport failure as "<status> — <body>" on the error's
+   `.technical`, and the browser reports a blocked or unreachable request as
+   "Failed to fetch". Each of those means something different to whoever has to
+   fix it. Read `.technical`, never `.message`: since 5 Sep 2026 `.message` is
+   the user-safe clause and carries no status code at all (lib/errors.js), and
+   nothing the backend said may be printed. Every string this returns is one we
+   wrote. */
 function diagnose(msg) {
   const m = String(msg || '');
   if (/VITE_N8N_BASE_URL/.test(m))
@@ -595,7 +599,7 @@ function entryBody(e) {
 
   if (e.status === 'error' || e.status === 'timeout') {
     const isTimeout = e.status === 'timeout';
-    const hint = isTimeout ? '' : diagnose(e.err);
+    const hint = isTimeout ? '' : diagnose(e.errTechnical || e.err);
     return head + `<div class="banner hot" style="margin-bottom:0">
         <span class="material-symbols-outlined" style="font-size:20px">${isTimeout ? 'hourglass_disabled' : 'error'}</span>
         <div><div style="font-weight:500">${isTimeout
@@ -1092,7 +1096,8 @@ SCREENS.ask = async host => {
         title: `${num(failed.length)} question${plural(failed.length, '', 's')} in this session got no answer`,
         detail: newest.status === 'timeout'
           ? `The most recent stopped being waited on after ${Math.round(DEADLINE_MS / 1000)} s, with the request still open. ${esc(CEILING_LINE)}`
-          : `${esc(str(newest.err) || 'Unknown error')}${diagnose(newest.err) ? `<br>${esc(diagnose(newest.err))}` : ''}`,
+          : (() => { const d = diagnose(newest.errTechnical || newest.err);
+              return `${esc(str(newest.err) || 'Unknown error')}${d ? `<br>${esc(d)}` : ''}`; })(),
         target: `askE${newest.id}`,
       });
     }
@@ -1383,6 +1388,11 @@ SCREENS.ask = async host => {
       } else {
         e.status = 'error';
         e.err = out.err?.message || String(out.err);
+        /* The wire's own words, for diagnose() only. `e.err` is what the screen
+           prints and lib/data.js keeps it user-safe; the status line and the
+           body that explain WHICH failure this was live on `.technical` and are
+           never rendered — diagnose() turns them into a sentence we wrote. */
+        e.errTechnical = out.err?.technical || '';
         e.rawText = '';
       }
       repaint(e);
@@ -1439,9 +1449,9 @@ SCREENS.ask = async host => {
      two numbers differ here and quoting the wrong one turns a workflow the
      database calls HEALTHY into a 79% one on screen. lib/health.js owns that
      distinction; this screen only reads the columns it publishes. */
-  const healthP = settled(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,description,is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,successes_30d,effective_runs_30d,success_rate_30d,last_failure,health&limit=200'));
+  const healthP = settled(db('v_workflow_health?select=name,category,description,is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,successes_30d,effective_runs_30d,success_rate_30d,last_failure,health&limit=200'));
   const auditP  = settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`));
-  const regP    = settled(db('workflow_registry?select=id,name,audit_name,audit_aliases'));
+  const regP    = settled(db('workflow_registry?select=name,audit_name,audit_aliases'));
 
   /* One round trip, no probe, no order-by. The probe existed to discover the
      column names and a date column; the names are now known (KB_COLS) and the
@@ -1608,7 +1618,7 @@ SCREENS.ask = async host => {
         ? await Promise.all([auditP, regP, healthP])
         : await Promise.all([
             settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`)),
-            settled(db('workflow_registry?select=id,name,audit_name,audit_aliases')),
+            settled(db('workflow_registry?select=name,audit_name,audit_aliases')),
             healthP,
           ]);
       if (!audit.ok) throw new Error(audit.err);
@@ -1621,7 +1631,7 @@ SCREENS.ask = async host => {
       const names = new Set();
       let regRow = null;
       if (reg.ok) {
-        regRow = (reg.v || []).find(r => healthRow && String(r.id) === String(healthRow.id))
+        regRow = (reg.v || []).find(r => healthRow && low(r.name) === low(healthRow.name))
           || (reg.v || []).find(r => /ask[\s._-]?ai|\brag\b/i.test(`${str(r.name)} ${str(r.audit_name)}`));
         if (regRow) {
           [regRow.name, regRow.audit_name, ...(Array.isArray(regRow.audit_aliases) ? regRow.audit_aliases : [])]

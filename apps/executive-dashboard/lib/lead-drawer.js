@@ -73,7 +73,7 @@
       and hiding them would be a different lie; they are labelled and they are
       not coloured by direction. */
 import { SILENCE_MARKER, isInternalRow, isMessageRow } from './comm-events.js';
-import { db, dbWrite } from './data.js';
+import { canReassignLead, db, dbWrite } from './data.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
 /* audit_log.status is not ours to read literally: lib/health.js mirrors
@@ -197,12 +197,17 @@ async function leadDrawer(lead) {
     </div>
     <div class="drawer-foot">
       <button class="btn" id="dWhats"><span class="material-symbols-outlined">chat</span>Open conversation</button>
-      <button class="btn" id="dAssign">Assign to…</button>
+      <button class="btn" id="dAssign"${canReassignLead(lead.tenant_id) ? '' : ' disabled title="Moving a lead to a different owner is an owner, admin or manager decision at this dealership. It moves commission and it moves who is answerable for the 5-minute rule."'}>Assign to…</button>
     </div>`);
 
   $('dClose').addEventListener('click', closeDrawer);
   $('dWhats').addEventListener('click', () => { closeDrawer(); go('conversations'); });
-  $('dAssign').addEventListener('click', () => assignDialog(lead));
+  /* rbac_04's leads_role_update policy carries assigned_to_id in BOTH its USING
+     and its WITH CHECK for a sales login, so a rep cannot move a lead to
+     anyone — not even one already theirs. The database refuses regardless of
+     this line; the point of the line is that the dialog is not offered and
+     then defeated. */
+  if (canReassignLead(lead.tenant_id)) $('dAssign').addEventListener('click', () => assignDialog(lead));
 
   /* Captured NOW, before any await. See note 2 in the file header: these used to
      be looked up by global id after the reads returned, so a second click within
@@ -435,6 +440,9 @@ async function leadDrawer(lead) {
 }
 
 async function assignDialog(lead) {
+  /* Second lock on the same rule. The button above is disabled for a rep, and a
+     disabled attribute is one DOM edit away from gone. */
+  if (!canReassignLead(lead.tenant_id)) return;
   /* An empty roster with a live Save button was a trap: `#assignSel.value` is ''
      and Save issued PATCH {assigned_to_id: '', assigned_to: null}, silently
      UNASSIGNING the lead the operator was trying to assign. */

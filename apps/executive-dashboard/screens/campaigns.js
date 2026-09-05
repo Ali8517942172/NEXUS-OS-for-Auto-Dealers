@@ -552,7 +552,7 @@ SCREENS.campaigns = async host => {
        raised about campaigns when it was not. */
     const attnRead = settle(db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen'
       + `&order=at.desc&limit=${ATTN_LIMIT}`));
-    const healthRead = settle(db('v_workflow_health?select=id,name,category,trigger_type,trigger_detail,'
+    const healthRead = settle(db('v_workflow_health?select=name,category,'
       + 'is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,last_failure,health'
       + `&limit=${HEALTH_LIMIT}`));
 
@@ -579,12 +579,12 @@ SCREENS.campaigns = async host => {
         db(`audit_log?select=workflow,status,lead_name,lead_email,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`),
       ]);
     } catch (e) {
-      alertCard.querySelector('.pbody').innerHTML = stateError('the alert strip', e.message);
-      strip.innerHTML = stateError('the campaign summary', e.message);
+      alertCard.querySelector('.pbody').innerHTML = stateError('the alert strip', e);
+      strip.innerHTML = stateError('the campaign summary', e);
       [['what this screen can answer', scopeCard], ['the enrolment list', enrolCard], ['the enrolment roster', rosterCard],
        ['the mail log', mailCard], ['the silence detector', silenceCard],
        ['campaign activity', activityCard]].forEach(([what, card]) => {
-        card.innerHTML = stateError(what, e.message, 'reload');
+        card.innerHTML = stateError(what, e, 'reload');
         card.querySelector('[data-retry]')?.addEventListener('click', boot);
       });
       return;
@@ -604,7 +604,7 @@ SCREENS.campaigns = async host => {
     let registry = null;
     const notes = [];
     try {
-      registry = await db('workflow_registry?select=name,audit_name,audit_aliases,category,trigger_detail,is_active,writes_audit_log');
+      registry = await db('workflow_registry?select=name,audit_name,audit_aliases,category,is_active,writes_audit_log');
     } catch (e) {
       notes.push(`workflow_registry could not be read (${e.message}), so drip runs are matched on the workflow name instead of the registry's audit aliases.`);
     }

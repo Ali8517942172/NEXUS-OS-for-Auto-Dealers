@@ -3,6 +3,7 @@
    the original code, moved not rewritten. */
 import { createClient } from '@supabase/supabase-js';
 import { N8N_BASE, SUPABASE_ANON, SUPABASE_URL, envErrors } from './env.js';
+import { caseFromStatus, logError, requestFailure } from './errors.js';
 
 const supabase = envErrors.length ? null : createClient(SUPABASE_URL, SUPABASE_ANON);
 let SESSION = null;
@@ -85,12 +86,96 @@ function fireIdentityChange() {
    transition to signed-out. */
 function setSession(s) {
   const next = s?.user?.id || null;
-  if (next !== IDENTITY) { IDENTITY = next; fireIdentityChange(); }
+  if (next !== IDENTITY) {
+    IDENTITY = next;
+    /* Account authority is per person, and this is the one path where a
+       different person arrives without the document being discarded. Carrying
+       the previous signer's role forward would show a rep the owner's buttons
+       until boot() finished re-reading. Back to unknown, not to empty: the
+       screens then offer the action and let the database answer, which is the
+       same rule as a failed read. */
+    MEMBERSHIP = null;
+    fireIdentityChange();
+  }
   SESSION = s; if (s) ENDED = false;
 }
 function setMe(m) { ME = m; }
 function setMeReadFailed(e) { ME_READ_FAILED = e; }
 function meReadFailed() { return ME_READ_FAILED; }
+
+/* ── Account authority ─────────────────────────────────────────────────
+   What this person may DO, which is a different question from who they are.
+
+   Read from public.tenant_members.role — the same column the database's own
+   inventory and leads policies read, and the same one action_02 already uses
+   for approval. NOT from public.users.role, which is a job title ('senior_rep'
+   here) and grants nothing. Two sources would drift, and the one that lost the
+   argument would be this one, because the database is where the refusal
+   actually happens.
+
+   MEMBERSHIP is null when the read FAILED, and [] when it succeeded and the
+   account belongs to no dealership. Those are different, for the same reason
+   ME_READ_FAILED exists: "we could not find out" must never render as "you
+   have no permissions". On an unknown authority the UI shows the action and
+   lets the database answer, rather than hiding a button this person may well
+   be entitled to press.
+
+   None of this is a security control. Every rule below is enforced in the
+   database against the same JWT, and PostgREST is reachable directly. The only
+   thing this buys is that the dashboard does not offer an action that is going
+   to come back refused. */
+let MEMBERSHIP = null;
+function setMembership(rows) { MEMBERSHIP = Array.isArray(rows) ? rows : null; }
+function membershipKnown() { return MEMBERSHIP !== null; }
+
+/* The role at the dealership currently in view. One dealership per login
+   today, so this is the first row; written as a lookup so a second one does
+   not silently pick the wrong answer. */
+function myRole(tenantId) {
+  if (!Array.isArray(MEMBERSHIP) || !MEMBERSHIP.length) return null;
+  const row = tenantId
+    ? MEMBERSHIP.find(r => String(r.tenant_id) === String(tenantId))
+    : MEMBERSHIP[0];
+  return row ? String(row.role || '') : null;
+}
+
+/* The public.users id this login is linked to. leads.assigned_to_id holds a
+   STAFF id, not an auth id, and the leads policy matches on exactly this, so
+   "is this lead mine" has to be asked with the same key the database uses. */
+function myStaffId(tenantId) {
+  if (!Array.isArray(MEMBERSHIP) || !MEMBERSHIP.length) return null;
+  const row = tenantId
+    ? MEMBERSHIP.find(r => String(r.tenant_id) === String(tenantId))
+    : MEMBERSHIP[0];
+  return row && row.staff_user_id ? String(row.staff_user_id) : null;
+}
+
+/* The four questions the screens actually ask. Each mirrors one rule that is
+   enforced in the database, and each answers TRUE when authority is unknown —
+   see MEMBERSHIP above. Keep these and the migrations in step: rbac_02
+   (inventory), rbac_04 (leads), rbac_05 (the cost trigger). */
+const OWNER_ADMIN = ['owner', 'admin'];
+const MANAGER_UP  = ['owner', 'admin', 'manager'];
+function held(list, tenantId) {
+  if (!membershipKnown()) return true;          // unknown ≠ no
+  const r = myRole(tenantId);
+  return r ? list.includes(r) : false;
+}
+/* Cost price. rbac_05's inventory_guard_cost_change trigger raises NX001 for
+   anyone else, and inventory_set_cost() refuses them too. */
+function canSetCost(tenantId)      { return held(OWNER_ADMIN, tenantId); }
+/* Deleting a vehicle. rbac_02's inventory_role_delete policy. */
+function canDeleteUnit(tenantId)   { return held(OWNER_ADMIN, tenantId); }
+/* Adding a vehicle — owner/admin, because adding one states its cost.
+   rbac_02's inventory_role_insert policy. */
+function canAddUnit(tenantId)      { return held(OWNER_ADMIN, tenantId); }
+/* Everything else on a vehicle, asking price included. rbac_02's
+   inventory_role_update policy. */
+function canEditUnit(tenantId)     { return held(MANAGER_UP, tenantId); }
+/* Moving a lead to a different owner. rbac_04's leads_role_update policy puts
+   assigned_to_id inside both USING and WITH CHECK for a sales login, so a rep
+   cannot reassign a lead — not even one of their own. */
+function canReassignLead(tenantId) { return held(MANAGER_UP, tenantId); }
 
 /* Once, per expiry. A screen fires four or five reads in parallel and the badge
    poller adds its own, so an expired token produces six simultaneous 401s —
@@ -105,25 +190,85 @@ function sessionEnded() {
   onSessionEnded('Your session expired. Please sign in again.');
 }
 
-async function db(path) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: await headers() });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    if (isAuthFailure(res.status, body)) { sessionEnded(); throw new Error('Session expired'); }
-    throw new Error(`${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 180) : ''}`);
+/* ── What a failed request throws ───────────────────────────────────────────
+   Everything this app knows about a failure is learned here — the four fetches
+   in this file are the only network calls in the bundle — so this is where the
+   two audiences separate. Before 5 Sep 2026 these threw the wire's own words:
+   `403 Forbidden — {"code":"42501","message":"permission denied for table
+   leads","hint":null}`. That string was then rendered to the user by
+   lib/states.js on fifteen screens, and interpolated into screen prose in about
+   twenty more places.
+
+   Now the thrown Error carries a user-safe clause as its `.message` (so every
+   one of those prose sentences is safe without being touched), the case on
+   `.nexusErrorCase`, and the wire's own account on `.technical` — console only,
+   plus the one caller that legitimately parses a workflow's refusal out of it.
+   The status and SQLSTATE ride along so a screen can tell a refusal from an
+   outage without reading text.
+
+   A rejected fetch is the one case this app can call the network with a
+   straight face: the request never produced a response. Anything else — 400,
+   404, 500, a body that will not parse — is generic, because the app cannot
+   tell those apart from here and will not pretend to. */
+function codeFrom(body) {
+  try { const j = JSON.parse(body); return j && typeof j === 'object' ? (j.code || null) : null; }
+  catch { return null; }
+}
+
+async function request(url, init, label) {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    /* fetch only rejects when no response was produced: DNS, TLS, a refused
+       connection, a dropped one, a CORS preflight that never landed. */
+    const err = requestFailure('offline', { technical: `${label} — ${String(e && e.message || e)}`, cause: e });
+    logError(label, err, e);
+    throw err;
   }
-  return res.json();
+}
+
+async function failure(res, label) {
+  const body = await res.text().catch(() => '');
+  if (isAuthFailure(res.status, body)) {
+    sessionEnded();
+    const err = requestFailure('session', { status: res.status, code: codeFrom(body), technical: `${label} — ${res.status} ${res.statusText} ${body.slice(0, 400)}` });
+    logError(label, err);
+    return err;
+  }
+  const code = codeFrom(body);
+  const err = requestFailure(caseFromStatus(res.status, code) || 'generic', {
+    status: res.status, code,
+    technical: `${label} — ${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 400) : ''}`,
+  });
+  logError(label, err);
+  return err;
+}
+
+async function db(path) {
+  const label = `GET /rest/v1/${path}`;
+  const res = await request(`${SUPABASE_URL}/rest/v1/${path}`, { headers: await headers() }, label);
+  if (!res.ok) throw await failure(res, label);
+  try {
+    return await res.json();
+  } catch (e) {
+    const err = requestFailure('generic', { status: res.status, technical: `${label} — response body did not parse: ${String(e && e.message || e)}`, cause: e });
+    logError(label, err, e);
+    throw err;
+  }
 }
 async function dbWrite(method, path, body) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const label = `${method} /rest/v1/${path}`;
+  const res = await request(`${SUPABASE_URL}/rest/v1/${path}`, {
     method, headers: { ...(await headers()), Prefer: 'return=representation' }, body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    if (isAuthFailure(res.status, text)) { sessionEnded(); throw new Error('Session expired'); }
-    throw new Error(`${res.status} — ${text.slice(0, 180)}`);
+  }, label);
+  if (!res.ok) throw await failure(res, label);
+  try {
+    return await res.json();
+  } catch (e) {
+    const err = requestFailure('generic', { status: res.status, technical: `${label} — response body did not parse: ${String(e && e.message || e)}`, cause: e });
+    logError(label, err, e);
+    throw err;
   }
-  return res.json();
 }
 
 /* n8n webhooks. Kept separate from db() because a missing VITE_N8N_BASE_URL is
@@ -140,16 +285,29 @@ async function n8n(path, payload) {
      (This comment used to end "harmless until the workflows check it, which is
      the next step" — that step landed on 22 Aug.) */
   const token = await authToken();
-  const res = await fetch(`${N8N_BASE}/webhook/${path}`, {
+  const label = `POST /webhook/${path}`;
+  const res = await request(`${N8N_BASE}/webhook/${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token && token !== SUPABASE_ANON ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(payload || {}),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${res.status} — ${text.slice(0, 200)}`);
+  }, label);
+  const text = await res.text().catch(() => '');
+  if (!res.ok) {
+    /* `.technical` keeps the shape the previous `.message` had — status, a dash,
+       then the body — because screens/finance.js reads a quote workflow's own
+       refusal reasons out of it and renders them as a decline, which is a
+       considered "no" from the validator and not an error at all. That parse is
+       now pointed at `.technical`; nothing renders the string itself. */
+    const err = requestFailure(caseFromStatus(res.status, codeFrom(text)) || 'generic', {
+      status: res.status, code: codeFrom(text),
+      technical: `${res.status} — ${text.slice(0, 400)}`,
+    });
+    logError(label, err);
+    throw err;
+  }
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
@@ -174,7 +332,15 @@ async function signedUrl(path, expiresIn = 60) {
   if (!path) throw new Error('No storage path on this record.');
   const { data, error } = await supabase.storage
     .from('kyc-documents').createSignedUrl(path, expiresIn);
-  if (error) throw new Error(error.message || 'Could not sign that document.');
+  /* Storage speaks for a backend too — "Object not found", a bucket name, a
+     policy name. The reason goes to the console; the user gets the sentence
+     this app wrote. */
+  if (error) {
+    const err = requestFailure(caseFromStatus(error.status, error.code) || 'generic',
+      { status: error.status ?? null, code: error.code ?? null, technical: `storage sign ${path} — ${String(error.message || error)}`, cause: error });
+    logError(`storage sign ${path}`, err, error);
+    throw err;
+  }
   if (!data?.signedUrl) throw new Error('Storage returned no URL for that path.');
   return data.signedUrl;
 }
@@ -201,4 +367,4 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange };
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead };
