@@ -1008,7 +1008,7 @@ SCREENS.leads = async host => {
   function actionCell(r) {
     const buttons = [ACTIONS.escalate, ACTIONS.drip].map(a => {
       const blocked = !N8N_BASE
-        ? 'VITE_N8N_BASE_URL is not set in this build, so no n8n workflow can be called from the browser.'
+        ? 'This deployment is not configured to reach the automation service, so nothing can be started from here. Only NEXUS can change that.'
         : a.blocker(r);
       return `<button class="btn sm" data-act="${a.key}" data-id="${esc(r.id)}"
         aria-label="${esc(a.label)} — ${esc(r.name || r.email || 'this lead')}"

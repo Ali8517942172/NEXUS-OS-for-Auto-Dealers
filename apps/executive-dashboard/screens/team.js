@@ -192,12 +192,19 @@ import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
    figure. Live 1 Sep 2026 `leads` holds 3 rows, so raising it changes nothing
    on screen today. */
 
+/* CONTROL-PLANE.md 5.8. These three tooltips said WHY the control is dead in
+   the vendor's terms — which table, which role, which policy, and the full list
+   of deployed webhook paths. That is an unbuilt-feature disclosure and an
+   inventory of the vendor's endpoints, rendered in the dealership's UI. The
+   control still shows and is still refused, which is the part that matters:
+   hiding it would teach the operator the feature does not exist. What it says
+   now is the fact and who owns it. */
 const NO_INVITE =
-  'No invite endpoint exists yet. The users table is service-role only from the browser, so RLS would reject the write, and none of the deployed n8n webhooks (ask-ai, finance-calc, lead-trigger, deals/closed-won, audit-kyc, erp-sync, lead-escalation) sends an invitation. Creating the account and emailing the link has to be built before this button can do anything.';
+  'Inviting somebody is not built yet. Ask NEXUS to add the account and it will appear here.';
 const NO_ROLE_WRITE =
-  'Changing a role means writing to the users table, which is service-role only — the browser would be rejected by RLS — and no workflow accepts a role change either.';
+  'Roles cannot be changed from this dashboard yet. Ask NEXUS to change it and it will appear here.';
 const NO_DELETE =
-  'Removing a user is deliberately not offered anywhere on this screen — but not because their leads would dangle. leads_assigned_to_id_fkey is ON DELETE SET NULL, so Postgres would null their assigned_to_id and the leads would become unassigned rather than point at a row that no longer exists. It is not offered for two other reasons, both true: the browser could not do it, because users carries a single policy for authenticated, a SELECT, and nothing that writes; and the leads would lose their owner silently, because leads records who owns a lead and nothing about how or when the owner got there — no assigned_by, no assigned_at, no updated_at — so afterwards a lead that was never assigned and a lead whose rep was deleted are indistinguishable.';
+  'Removing a person is deliberately not offered here, and the reason is not that their leads would be orphaned — those would simply become unassigned. It is that the record of who owned a lead carries nothing about how or when they got it, so after a removal a lead that was never assigned and a lead whose rep was removed would be indistinguishable. Ask NEXUS to remove somebody and it can be done without losing that.';
 
 /* Said wherever a figure derived from leads.response_time_minutes is withheld.
    The mechanism is named rather than summarised, because "the data is bad" is

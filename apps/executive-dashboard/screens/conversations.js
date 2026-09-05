@@ -573,9 +573,12 @@ function keyKind(key) {
   return describeKey(k);
 }
 
+/* The deployment variable's NAME is NEXUS's configuration, not the
+   dealership's (CONTROL-PLANE.md Part 4). What is theirs is that the
+   capability is off and that only NEXUS can turn it on. */
 const NO_N8N =
-  'VITE_N8N_BASE_URL is not set in this build, so the browser has no n8n host to call and the '
-  + 'whatsapp-send webhook cannot be reached. Replies have to go out from WhatsApp itself.';
+  'This deployment is not configured to reach the messaging service, so a reply cannot be sent '
+  + 'from here. Replies have to go out from WhatsApp itself until NEXUS redeploys it.';
 const noChatWhy = t =>
   `This thread is keyed on "${t.key}" (${keyKind(t.key)}) and no chat_id is stored for it in `
   + 'v_conversations, so WAHA has no WhatsApp address to send to. Replying needs a chat_id, which '

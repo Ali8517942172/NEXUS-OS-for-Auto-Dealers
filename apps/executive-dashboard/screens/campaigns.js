@@ -211,8 +211,8 @@ const NO_TIMEOUT_NOTE =
   + 'Ask-AI \u2014 RAG Query Agent carries 120 s, Competitor Price Scraping carries 1200 s (raised from 300 on 30 Aug), and the '
   + 'three NEXUS Public pages carry 60 s. This banner said "every other workflow carries a five-minute ceiling" until '
   + '31 Aug 2026, when the 21 workflow JSONs were counted; it is addressed to whoever standardises them, which is exactly '
-  + 'the reader who would have standardised on the wrong number. Counted from the JSON in n8n-workflows/, not read from '
-  + 'the live n8n instance — the dashboard cannot read a workflow\u2019s timeout.';
+  + 'the reader who would have standardised on the wrong number. Counted from the workflow definitions this build was written '
+  + 'against, not read live — the dashboard cannot read a workflow\u2019s timeout.';
 
 /* Names shown inline on an alert before it collapses into "+N more". The row
    itself scrolls to and highlights the full set, so this is a glance. */
@@ -436,6 +436,25 @@ const nextGateAt = since => {
    So it is drawn here, once, and named at every call site. */
 const STOPPED_PREFIX   = /^\s*stopped before\b/i;
 const isDeliberateStop = a => outcomeOf(a) === OUTCOME.PARTIAL && STOPPED_PREFIX.test(String(a && a.summary || ''));
+
+/* A run summary is written for whoever is on call, and whoever is on call is
+   NEXUS. The Error Handler puts the execution's own URL, the failing node's
+   name and the execution id into it — a workflow id, an execution id, a node
+   name and a host, all four in CONTROL-PLANE.md Part 4's table. What the run
+   was doing is the dealership's; where inside the system it stopped is not.
+   Only the RENDERED text goes through here: every classifier on this screen
+   reads the raw column, because redacting the evidence a verdict is computed
+   from would change the verdict. The same function, worded the same way, is
+   screens/automation.js's `dealerSummary`. */
+const dealerText = text => String(text || '')
+  .replace(/https?:\/\/[^\s·"'<>]+/g, '')
+  .replace(/\bexecution\s*(?:id\s*)?[#:]?\s*\d+/gi, '')
+  .replace(/\bfailed at node\s*:\s*[^·|\n]+/gi, 'failed inside the automation')
+  .replace(/\bnode\s*:\s*[^·|\n]+/gi, '')
+  .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\.nip\.io)?\b/g, '')
+  .replace(/\s+/g, ' ')
+  .replace(/[ \t]*·[ \t]*(?=·|$)/g, '')
+  .replace(/(^[\s·|]+)|([\s·|]+$)/g, '');
 /* What is held against the workflow: FAILURE or PARTIAL, minus the deliberate
    stops. A customer who replied is not a failed run. */
 const countsAgainst = a => isIncomplete(a) && !isDeliberateStop(a);
@@ -447,7 +466,7 @@ const countsAgainst = a => isIncomplete(a) && !isDeliberateStop(a);
    stops itself. The reply is the thing that needs a person. */
 const SELF_STOPPING_NOTE =
   'There is no button here because there is nothing to stop: the workflow\u2019s own day-1/3/5/7 gates end the sequence at its '
-  + 'next step. n8n exposes no cancel webhook either — HOOK in lib/data.js lists only lead-trigger, which starts a sequence — '
+  + 'next step. There is no cancel endpoint either — the only thing this dashboard can do is start a sequence — '
   + 'and this dashboard will not write to a service-role table to fake one. Open the conversation and answer them.';
 
 /* What the gates cannot see, stated because this screen leans on them to say a
@@ -489,8 +508,8 @@ const GATE_BLIND_SPOT =
    drip workflow's health. Saying which it is matters, because the absence of a
    failure row is not the same as a working mailbox. */
 const NOT_PROBED =
-  'n8n does not expose credential health to the dashboard, so this is read from failures the '
-  + 'workflows recorded, not from the credential itself. No recorded failure is not proof that mail is going out.';
+  'Nothing reports a connection\u2019s health to this dashboard directly, so this is read from failures the '
+  + 'workflows recorded, not from the connection itself. No recorded failure is not proof that mail is going out.';
 
 const FILTERS = [
   ['new', 'Not yet enrolled'],
@@ -1097,7 +1116,7 @@ SCREENS.campaigns = async host => {
             + 'Enrolling queues the sequence; whether an email leaves is unproven.')
       : delivery === 'recovered'
         ? `The mail credential that stopped this drip has been reconnected: ${str(mailProof.workflow) || 'a later run'} completed successfully on the same mailbox at ${stamp(mailProof.logged_at)}, after the failure. `
-          + 'Enrolling queues the sequence inside n8n. That is evidence rather than a guarantee — audit_log only records runs that completed.'
+          + 'Enrolling queues the sequence. That is evidence rather than a guarantee — only runs that completed are recorded.'
         : delivery === 'degraded'
           ? `The drip workflow logged ${dripFail30} ${plural(dripFail30, 'failure', 'failures')} in the last 30 days, so a queued sequence may not actually send.`
           : 'Enrolling queues the sequence inside n8n. Whether the mail then leaves cannot be confirmed from this dashboard — no credential failure is recorded, but the credential itself is not readable from the browser.';
@@ -1146,8 +1165,17 @@ SCREENS.campaigns = async host => {
         title: credLiveNow
           ? 'Email delivery is broken right now — every “Enrolled” row on this screen means queued, not delivered'
           : 'The last thing recorded about the mailbox is a credential failure, and nothing has proved it working since',
-        detailHtml: `A workflow recorded this: <span class="mono">${esc(str(top.detail) || 'no detail on the row')}</span>`
-          + `${top.clipped ? ' <span class="t-muted">(clipped — the full text is on the audit row)</span>' : ''}. `
+        /* WAS: the verbatim text a workflow recorded, in a mono span. That
+           string names the credential, quotes the provider's own error and
+           sometimes names the node that raised it — CONTROL-PLANE.md 5.7 calls
+           this out as the clearest illustration of the boundary rule, and it
+           splits it exactly: theirs is "your drip campaign has not sent any
+           email since 23 August, nothing reached a customer, we are on it";
+           the credential's name and `invalid_grant` are the vendor's. The
+           title above already carries the whole of the dealership's half, and
+           the date is in `at`. So the quote goes and the consequence stays. */
+        detailHtml: 'The connection this campaign sends email through is not working, and NEXUS is the only one who can restore it. '
+          + 'What broke it, and where it is fixed, is on NEXUS\u2019s side. '
           /* Where the row is filed matters, and getting it wrong in either
              direction is a lie: claiming an automation row was raised about
              campaigns, or claiming a campaigns row belongs to somebody else. */
@@ -1162,7 +1190,7 @@ SCREENS.campaigns = async host => {
             ? `${num(credEvidence.length)} mail-credential ${plural(credEvidence.length, 'failure is', 'failures are')} recorded across the two sources, the oldest ${esc(ago(credEvidence[credEvidence.length - 1].at))}. `
             : ''}`
           + `${dripHealthLine} ${deliveryEvidence} `
-          + `Enrolling still works: <span class="mono">${esc(HOOK.warmDrip)}</span> queues the sequence inside n8n. `
+          + 'Enrolling still works: it queues the sequence. '
           + 'The three email steps — day 1, day 3 and day 7 — cannot reach a customer until the credential is reconnected. '
           + 'The day-1 and day-5 WhatsApp steps go out over WAHA and are unaffected, so a lead with a phone number still hears something and a lead without one hears nothing at all.',
         target: mailCard,
@@ -1671,7 +1699,7 @@ SCREENS.campaigns = async host => {
               : 'Unproven, and the last evidence is bad: the most recent thing recorded about this mailbox is a credential failure, read from audit_log because v_needs_attention keeps a failure for only 24 hours. Nothing has succeeded on it since.')
           : delivery === 'recovered'
             ? 'A credential failure is recorded, and a later run completed successfully on the same mailbox — evidence that it works again, read from what the workflows logged rather than from the credential itself.'
-            : 'Only as far as the wreckage shows. n8n does not expose credential state to the browser, so the absence of a recorded failure is not proof that mail is going out.'],
+            : 'Only as far as the wreckage shows. Nothing reports a connection\u2019s state to this dashboard directly, so the absence of a recorded failure is not proof that mail is going out.'],
     ];
 
     const cannotAnswer = [
@@ -1705,14 +1733,14 @@ SCREENS.campaigns = async host => {
 
     /* ── Enrol a lead ─────────────────────────────────────────────────────── */
     const blockedGlobal = !N8N_BASE
-      ? 'VITE_N8N_BASE_URL is not set in this build, so no n8n workflow can be called from the browser.'
+      ? 'This deployment is not configured to reach the automation service, so nothing can be started from here. Only NEXUS can change that.'
       : null;
 
     enrolCard.innerHTML = `
       <div class="card-head">
         <div>
           <div class="card-title">Enrol a lead in the 7-day drip</div>
-          <div class="card-sub">Four waits — day 1, day 3, day 5 and day 7 — held open inside one n8n execution across the following week, never sent by this browser.
+          <div class="card-sub">Four waits — day 1, day 3, day 5 and day 7 — held open inside one run across the following week, never sent by this browser.
             Warm and cold leads that have an email address. Any other lead can be enrolled from the Leads screen.</div>
         </div>
       </div>
@@ -2071,7 +2099,7 @@ SCREENS.campaigns = async host => {
               ${keyed && !isRealEmail(keyed)
                 ? `<div class="cell-sub t-hot">lead_email is <span class="mono">${esc(str(x.lead_email))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
                 : ''}
-              <div class="cell-sub">${esc(String(x.summary || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
+              <div class="cell-sub">${esc(dealerText(x.summary).slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
             </div>
             <div class="cell-sub">${ago(x.logged_at)}</div>
           </div>`;

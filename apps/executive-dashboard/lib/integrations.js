@@ -43,10 +43,16 @@ function autoAllowed(autoProbe, name) {
 }
 
 async function renderIntegrations(node, opts = {}) {
+  /* The TILE NAMES are what a dealership reads, so they name the capability
+     rather than the supplier behind it (CONTROL-PLANE.md 5.5 and Part 4: which
+     SaaS is behind which feature is the vendor's). screens/settings.js matches
+     these names in its auto-probe allow-list and again when it reads the tiles
+     back, so the three places have to agree — if you rename one, rename all
+     three. */
   const checks = [
-    { name: 'Supabase', probe: async () => { await db('leads?select=id&limit=1'); return 'Connected'; } },
-    { name: 'n8n', probe: async () => {
-        if (!N8N_BASE) throw new Error('VITE_N8N_BASE_URL not set');
+    { name: 'NEXUS data', probe: async () => { await db('leads?select=id&limit=1'); return 'Connected'; } },
+    { name: 'Automation', probe: async () => {
+        if (!N8N_BASE) throw new Error('This deployment is not configured to reach it');
         const r = await fetch(`${N8N_BASE}/healthz`).catch(() => null);
         if (!r) throw new Error('Unreachable from the browser');
         /* This line used to return the string "HTTP <status>" on the non-ok
@@ -121,7 +127,7 @@ async function renderIntegrations(node, opts = {}) {
      asked something meaningless. That makes the row legible; it does not make
      the call free, and nothing in the deployed workflow treats it specially. */
   const manual = [
-    { name: 'Ask AI (RAG)', run: async () => {
+    { name: 'Ask AI', run: async () => {
         const r = await n8n('ask-ai', { question: 'Dashboard connectivity check, not a customer question' });
         /* Same defect the n8n tile had: returning 'No answer' painted the green
            dot next to the words "No answer". A 200 carrying no answer is a
@@ -131,7 +137,14 @@ async function renderIntegrations(node, opts = {}) {
         return Number.isFinite(docs) ? `Responding · ${docs} docs` : 'Responding';
       }},
   ];
-  const unprobed = ['Finance Calc', 'WhatsApp (WAHA)', 'Bitrix24', 'Slack', 'Gmail', 'OpenRouter'];
+  /* Was ['Finance Calc', 'WhatsApp (WAHA)', 'Bitrix24', 'Slack', 'Gmail',
+     'OpenRouter'] — the vendor's supplier list, rendered as chips on both
+     Settings and Automation, from which a dealership could price the stack and
+     discover in one search that their WhatsApp runs through an unofficial
+     client. CONTROL-PLANE.md 5.5. Named by the capability the dealership buys
+     instead, which is the half that is theirs and is also the half that is
+     stable when a supplier is swapped. */
+  const unprobed = ['Finance calculations', 'WhatsApp messaging', 'CRM sync', 'Team notifications', 'Email delivery', 'AI answers'];
 
   /* Decided once, before anything is rendered, so the tile a check gets and the
      decision to fire it cannot come apart: a tile saying "Checking…" for a probe
@@ -147,14 +160,14 @@ async function renderIntegrations(node, opts = {}) {
             <button class="btn sm" data-deferred="${i}" style="margin-top:8px">Check</button>`}</div>`).join('')}
     ${manual.map((m, i) => `<div class="card" style="padding:14px" id="mg${i}">
        <div style="font-weight:500">${esc(m.name)}</div>
-       <div class="cell-sub">Runs a real query — spends tokens and logs a run</div>
+       <div class="cell-sub">Runs a real query and records it, like any other</div>
        <button class="btn sm" data-manual="${i}" style="margin-top:8px">Test</button></div>`).join('')}</div>
     <div style="margin-top:14px">
       <div class="label-caps" style="margin-bottom:8px">Not probed from the browser</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${unprobed.map(u => `<span class="chip">${esc(u)}</span>`).join('')}
       </div>
-      <div class="cell-sub" style="margin-top:8px">None of these has a browser-reachable health endpoint. Most run server-side inside n8n; Finance Calc has only its live webhook, and calling that runs a real quote and writes a row to audit_log, which is how this panel came to manufacture 16 of that workflow's 60 logged runs before the check was withdrawn. Their real status is visible in the activity log above — a green dot here would be decoration, not a check.</div>
+      <div class="cell-sub" style="margin-top:8px">None of these can be checked from a browser without doing real work — the only way to test finance calculations is to run a real quote, which records a real run. Their true state is in the activity log above, which reads what they actually did. A green dot here would be decoration, not a check.</div>
     </div>`;
 
   /* Every tile is found inside `node` and never by global id, and a tile that

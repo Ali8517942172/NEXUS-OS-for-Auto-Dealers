@@ -160,7 +160,7 @@ const DEADLINE_MS = 45000;
    no timeout column — so it is stated as the policy this build was written
    against rather than as something checked. */
 const CEILING_SECONDS = 300;
-const CEILING_LINE = `n8n stops the execution itself after ${CEILING_SECONDS / 60} minutes — every workflow on the instance carries executionTimeout: ${CEILING_SECONDS} — and saves it, with its input, as a failed execution. So a question that never comes back is bounded there rather than running forever, and what made it slow is still in n8n to look at.`;
+const CEILING_LINE = `The run is stopped after ${CEILING_SECONDS / 60} minutes at the other end and kept, with its input, as a failed run. So a question that never comes back is bounded there rather than running forever, and what made it slow is still on file for NEXUS to look at.`;
 
 /* Past this the operator has started to wonder whether the tab is dead, so the
    wait is promoted from a counter inside the turn to an alert at the top of the
@@ -447,7 +447,7 @@ function grounded(e) {
   if (modelError || g.state === 'model_unavailable')
     add('severe', 'model',
       'No model answered this question',
-      'Both model tiers failed, so the text above is the workflow reporting that rather than an answer. Nothing in it comes from your documents.');
+      'No answer was produced, so the text above is the system reporting that rather than an answer. Nothing in it comes from your documents.');
 
   if (unreadable.length)
     add('degraded', 'unreadable',
@@ -511,20 +511,20 @@ function grounded(e) {
 function diagnose(msg) {
   const m = String(msg || '');
   if (/VITE_N8N_BASE_URL/.test(m))
-    return 'This build has no n8n base URL compiled into it, so no workflow can be called from the browser at all.';
+    return 'This deployment is not configured to reach the automation service, so nothing here can be asked at all. NEXUS sets that when it deploys the dashboard.';
   if (/Session expired/i.test(m))
-    return 'The Supabase session ended. Sign in again and re-ask.';
+    return 'Your session ended. Sign in again and re-ask.';
   if (/Failed to fetch|NetworkError|Load failed/i.test(m))
-    return 'The browser never got a reply from the n8n host. That is the request being blocked or the host being unreachable — a CORS allow-list that is missing Authorization has caused exactly this before — not the workflow declining to answer.';
+    return 'The browser never got a reply at all. That is the request being blocked or the service being unreachable, not the workflow declining to answer. It is one for NEXUS.';
   const code = (m.match(/^(\d{3})\b/) || [])[1];
   if (code === '401' || code === '403')
-    return 'The workflow rejected this request as unauthorised. Its JWT guard did not accept the session token this dashboard sent.';
+    return 'The workflow refused this request as unauthorised — it did not accept the session this dashboard is signed in with. Signing in again is worth one try; after that it is one for NEXUS.';
   if (code === '404')
-    return 'n8n has no webhook registered at this path right now, which normally means the Ask-AI workflow is not active.';
+    return 'Nothing is listening for this request right now, which normally means Ask AI is switched off. Only NEXUS can switch it back on.';
   if (code === '429')
-    return 'The workflow or its model provider is rate-limiting. Wait and re-ask.';
+    return 'Ask AI is being rate-limited. Wait and re-ask.';
   if (code && code.startsWith('5'))
-    return 'The workflow ran and failed inside n8n. The execution log there will name the node that threw.';
+    return 'The workflow ran and failed. Where it failed is not visible from here — quote the time above to NEXUS and they can find it.';
   return '';
 }
 
@@ -649,7 +649,11 @@ function entryBody(e) {
     retrieved != null
       ? `${esc(num(retrieved))} section${retrieved === 1 ? '' : 's'} retrieved${sent != null ? `, ${esc(num(sent))} sent to the model` : ''}`
       : null,
-    model ? `model ${esc(model)}` : null,
+    /* WAS `model ${model}`. CONTROL-PLANE.md 5.6: the dealership needs to know
+       how much to trust this answer, which the verdict pill beside this line
+       computes and states in words. Which model produced it is the vendor's
+       mechanism, and naming it also tells a reader what to try to steer. */
+    null,
   ].filter(Boolean).join(' · ');
 
   const body = e.answer
@@ -751,7 +755,14 @@ function entryBody(e) {
       `${num(gr.truncated.length)} truncated`,
       `${num(gr.figures.length)} unsupported figure${plural(gr.figures.length, '', 's')}`,
     ].join(' · '))}</div>
-    <div class="cell-sub" style="white-space:normal;margin-top:4px">${esc(`The reply names ${model || 'no'} model${model ? '' : ' at all'} but carries no marker saying whether the primary tier answered or the workflow had already dropped to its backup ladder, so a silent fallback is not visible from here.`)}</div>` : '';
+    ${/* WAS a sentence naming the model that replied and disclosing that a
+          backup ladder exists behind it. The epistemics were right — the screen
+          refused to guess which tier answered — but the refusal itself
+          described the architecture. CONTROL-PLANE.md 5.6. What survives is the
+          only part that changes what a reader should do: the answer carries no
+          marker saying how it was produced, so nothing here can confirm it came
+          from the intended path. */ ''}
+    <div class="cell-sub" style="white-space:normal;margin-top:4px">${esc('The reply carries no marker saying how it was produced, so this screen cannot confirm the answer came from the intended path. Judge it on the grounding above, which is checked rather than claimed.')}</div>` : '';
 
   return head + body + severeBanner + warnBanner + declinedBanner + unknownBanner + sources
     + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">${verdict}<span class="cell-sub">${meta}</span></div>`
@@ -824,7 +835,7 @@ SCREENS.ask = async host => {
   /* ── Availability. A control that cannot work is disabled and says why. ── */
   let blocked = N8N_BASE
     ? ''
-    : 'VITE_N8N_BASE_URL is not set in this build, so the ask-ai webhook cannot be called from the browser.';
+    : 'This deployment is not configured to reach Ask AI, so no question can be sent from here. Only NEXUS can change that.';
 
   /* Every control is looked up per call, and every one is allowed to be absent.
 
@@ -937,8 +948,8 @@ SCREENS.ask = async host => {
     if (!N8N_BASE) {
       out.push({
         id: 'env', tone: 'hot', icon: 'link_off', durable: true,
-        title: 'This build cannot reach n8n at all',
-        detail: 'VITE_N8N_BASE_URL is empty in the bundle that is running, so the ask-ai webhook has no address to post to. Ask is disabled rather than left to fail on every press. This is a deployment variable — nothing in the dashboard can set it.',
+        title: 'This deployment cannot reach the automation service at all',
+        detail: 'Ask AI has nowhere to send a question, so it is disabled rather than left to fail on every press. This is set when NEXUS deploys the dashboard — nothing here can change it.',
         target: 'askComposer',
       });
     }
@@ -1013,7 +1024,7 @@ SCREENS.ask = async host => {
         out.push({
           id: 'wf-inactive', tone: 'hot', icon: 'toggle_off', durable: true,
           title: `"${str(w.name) || 'The Ask-AI workflow'}" is registered as inactive`,
-          detail: 'An inactive workflow has no live webhook in n8n, so a question posted from here comes back 404 however it is worded. Activating it in n8n is what fixes this; the dashboard cannot.',
+          detail: 'A workflow that is switched off has nothing listening for a question, so anything asked from here comes back refused however it is worded. Only NEXUS can switch it back on; the dashboard cannot.',
           target: 'askComposer',
         });
       }
@@ -1115,7 +1126,7 @@ SCREENS.ask = async host => {
         figures: 'a figure that appears in none of the retrieved text',
         invalid: 'a citation marker naming no retrieved section',
         unseen:  'a citation resolving to a section the model was never sent',
-        model:   'no model tier having answered at all',
+        model:   'nothing having answered at all',
       };
       out.push({
         id: 'turn-severe', tone: 'hot', icon: 'dangerous', durable: false,

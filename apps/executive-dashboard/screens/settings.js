@@ -105,12 +105,15 @@ const NO_PERSIST =
 const NO_KB_EDIT =
   'Editing the knowledge base is not built. rag_documents is written by the ingestion workflow and no endpoint accepts a document from the browser.';
 
-/* n8n's credential store is not reachable from a browser at all: there is no
-   webhook in HOOK for it, the n8n REST API needs an owner API key that must
-   never ship in a public bundle, and workflow_registry is service-role only.
-   So the control exists, disabled, and names exactly what is missing. */
+/* The control exists and is disabled, rather than absent, so nobody is left
+   wondering whether it was ever built. What it must NOT do is hand the
+   dealership the vendor's repair runbook: which console the credential lives
+   in, what it is called there and why no endpoint exists are CONTROL-PLANE.md
+   Part 4 material, and a disabled button's tooltip is still a panel someone
+   reads. The dealership's half is that it is broken, that NEXUS reconnects it,
+   and that this screen can only report what the break caused. */
 const NO_CRED_FIX =
-  'Reconnecting a credential is done in the n8n UI under Credentials — n8n exposes no browser-reachable endpoint for it, there is no webhook in HOOK for it, and its API key must not ship inside this bundle. This dashboard can only report the failures the credential caused.';
+  'Reconnecting this is NEXUS\u2019s to do — there is no way to do it from this dashboard, by design. What this screen can do is report what the broken connection has cost you, which is below.';
 
 /* v_needs_attention has no branch that files anything against this screen. Its
    seven UNION ALL branches emit screen = leads (twice), inventory, competitors,
@@ -139,26 +142,30 @@ const sevTone = s => tone(s);
 const SEV_RANK = { CRITICAL: 0, HIGH: 0, WARNING: 1, MEDIUM: 1, LOW: 2, INFO: 2 };
 const sevRank = s => SEV_RANK[up(s)] ?? 3;
 
-/* ── Three of the workflows on this instance are web pages ─────────────────
-   `NEXUS Public — Home`, `— Privacy` and `— Terms` are published and active in
-   n8n and automate nothing. Google will not publish an OAuth consent screen to
-   production without a home page, a privacy policy and a terms URL, and it
-   rejects vercel.app as a public suffix — nip.io was the only registrable
-   domain available, so n8n serves the three pages itself at /webhook/nexus,
-   /webhook/privacy and /webhook/terms. Publishing that consent screen is what
-   stopped Gmail's refresh token expiring every seven days, so they are
-   load-bearing, but they will never log a run and a silent one is correct.
+/* ── A few register entries are published web pages, not automations ───────
+   `NEXUS Public — Home`, `— Privacy` and `— Terms` are pages NEXUS publishes.
+   They will never log a run — a page view is not a workflow run — so a silent
+   one is correct rather than a blind spot, and they are labelled rather than
+   hidden.
+
+   WHY the vendor publishes them, over which hostname, and at which paths was
+   spelled out here until 5 Sep 2026 and is now gone: it is the vendor's
+   operational arrangement and its infrastructure topology, which
+   CONTROL-PLANE.md Part 4 puts on Ali's side of the glass. The webhook-path
+   arm of the test below went with it — `trigger_detail` is a control-plane
+   column and no longer reaches this screen at all (see the note in
+   screens/automation.js), so a test against it would silently match nothing
+   while looking like it still worked.
 
    The same rule lives in screens/automation.js. It is stated twice rather than
    shared because lib/ is not this task's to change; if a third screen needs it,
    it belongs in lib/format.js beside tone(). */
 const isPublicPage = w =>
   /nexus\s*public/i.test(String(w?.name || ''))
-  || /^\s*[—-]\s*(?:privacy|terms)\s*$/i.test(String(w?.name || ''))
-  || /\/webhook\/(?:nexus|privacy|terms)\b/i.test(String(w?.trigger_detail || ''));
+  || /^\s*[—-]\s*(?:privacy|terms)\s*$/i.test(String(w?.name || ''));
 /* One reason, worded once, so the chip tooltip and the alert cannot drift. */
 const PAGE_WHY =
-  'n8n serves it so that Google’s OAuth consent screen can be published: a home page, a privacy policy and a terms URL are mandatory for production, and vercel.app is rejected as a public suffix, so the pages are served from n8n over nip.io.';
+  'It is a page NEXUS publishes rather than an automation of yours.';
 const PAGE_NOTE = `This is a web page, not an automation — ${PAGE_WHY} It logs nothing because a page view is not a workflow run, and it never will.`;
 
 /* Icons for the kinds v_needs_attention emits. Only a fallback: the view names
@@ -439,7 +446,7 @@ const CRED_STALE_LINE = 'No logged failure has named it since, so it may already
    The Ask AI tile is excluded for a second reason: it is not auto-probed at all
    (a call spends OpenRouter tokens), so "not green" there means "not asked",
    which is not "down" and must never be alarmed on. */
-const AUTO_PROBE = /^(supabase|n8n)$/i;
+const AUTO_PROBE = /^(nexus data|automation)$/i;
 
 /* Session expiry as a number the operator can act on. supabase-js refreshes in
    the background, so a small figure here is normal — it is a negative one that
@@ -538,7 +545,7 @@ SCREENS.settings = async host => {
   const prof = el('div', 'card');
   prof.id = 'setProfile';
   prof.innerHTML = `<div class="card-title" style="margin-bottom:4px">Signed in</div>
-    <div class="card-sub" style="margin-bottom:14px">Identity as Supabase Auth and the <span class="mono">users</span> table each see it</div>
+    <div class="card-sub" style="margin-bottom:14px">Identity as the sign-in service and the staff record each see it</div>
     ${noMeRow ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">person_alert</span>
       <div>No row in <span class="mono">users</span> matches ${esc(email || 'this account')}. The read succeeded and came back empty, which is what makes this a real absence: the account can sign in, but it has no name, role or status on record, so anything keyed on role treats it as unassigned.</div></div>` : ''}
     ${meUnknown ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">help</span>
@@ -554,69 +561,85 @@ SCREENS.settings = async host => {
         ? `<span class="${exp.bad ? 't-hot' : ''}">${esc(exp.text)}</span>`
         : '<span class="t-muted">no expiry on the session object</span>'}</dd>
     </dl>
-    <div class="cell-sub" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by Supabase Auth, not by this dashboard. Roles are edited on the Team screen.</div>`;
+    <div class="cell-sub" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by the sign-in service, not by this dashboard. Roles are edited on the Team screen.</div>`;
   top.appendChild(prof);
 
-  /* ── Environment ────────────────────────────────────────────────────────
-     Exactly what this bundle was built against. "Which project am I actually
-     looking at?" is the first question of every incident where staging data
-     turns up in production, and until now it could only be answered by opening
-     the deploy configuration. */
-  let sbHost = null;
-  try { sbHost = new URL(SUPABASE_URL).host; } catch { sbHost = null; }
-  const projectRef = sbHost ? sbHost.split('.')[0] : null;
-  const mode = import.meta.env.MODE || null;
+  /* ── Connection ─────────────────────────────────────────────────────────
+     "Which project am I actually looking at?" is the first question of every
+     incident where staging data turns up in production — and it is the ON-CALL
+     ENGINEER'S question, which is to say the vendor's. The project ref, the
+     host and the build mode that used to answer it here are gone
+     (CONTROL-PLANE.md 5.3); what a dealership is entitled to is whether the
+     services NEXUS runs for them are configured and reachable, which is what
+     is below. The values themselves stay in the deploy configuration, where
+     whoever deploys this can read them. */
   const hooks = Object.values(HOOK);
 
-  /* Every VITE_ variable this bundle reads, and what breaks without it. env.js
-     validates the two that must exist — it measures the value rather than
-     testing it for truthiness, because a whole .env file pasted into one
-     variable is a thing that actually happened here. The n8n base is optional
-     in the sense that the app still boots, and precisely enumerated here in the
-     sense that nothing which calls a workflow works without it. */
+  /* Each piece of configuration this bundle needs, and — the only half that is
+     rendered — what stops working without it. env.js validates the two that
+     must exist; it measures the value rather than testing it for truthiness,
+     because a whole .env file pasted into one variable is a thing that actually
+     happened here. The `name` is kept because envBroken is derived from the
+     same list and a future reviewer needs to see which row is which; it is not
+     rendered anywhere on this screen. */
   const ENV_VARS = [
     { name: 'VITE_SUPABASE_URL', value: SUPABASE_URL,
-      dead: 'Nothing on this dashboard can load — every screen reads through PostgREST.' },
+      dead: 'No screen on this dashboard can load anything — every one of them reads from NEXUS.' },
     { name: 'VITE_SUPABASE_ANON_KEY', opaque: true,
-      dead: 'Every request is rejected before it reaches a table, so every screen renders its error state.' },
+      dead: 'Every request is refused before it reaches your data, so every screen renders its error state.' },
     { name: 'VITE_N8N_BASE_URL', value: N8N_BASE,
-      dead: 'Ask AI, the Finance Desk, drip enrolment, the ERP sync and WhatsApp replies all refuse outright — n8n() throws before it calls anything.' },
+      dead: 'Ask AI, the Finance Desk, drip enrolment, the ERP sync and WhatsApp replies all refuse outright — the request is not made at all.' },
   ];
   const anonBroken = envErrors.some(e => /ANON_KEY/.test(e));
 
+  /* ── What this card used to be, and why it is a connection state now ────
+     Until 5 Sep 2026 this card printed the Supabase project ref, the Supabase
+     URL, the n8n base host, the Vite build mode, the serving origin and the
+     three build-time variable NAMES, with a per-variable set/missing line.
+     CONTROL-PLANE.md 5.3 is the finding, and its verdict is quoted rather than
+     paraphrased: “the whole Environment card and the endpoint chip list are
+     control-plane diagnostics. On the dealership’s Settings, replace with a
+     connection state — connected / degraded / down — and nothing else.”
+
+     The defence written here before was that the values are compiled into a
+     public bundle and so reveal nothing further. That is true and it is not
+     the point: the bundle is public but nobody reads it, and a panel is read.
+     Presentation is what turns discoverable into known.
+
+     What the card keeps, because it is the dealership's and they are badly
+     served without it: whether this deployment is misconfigured, and what
+     stops working while it is. The FACT of a broken build stays; the values
+     and the variable names go. `ENV_VARS[].dead` is what survives from each
+     row — the consequence, which is the dealership's — and the name, which is
+     the vendor's, does not.
+
+     What it must not become is a green light. A missing value is still stated
+     in full, in red, because a dealership whose Ask AI has been dead for a week
+     is entitled to know that it is dead by configuration rather than by fault. */
+  const envBroken = ENV_VARS.filter(v => (v.opaque ? anonBroken : !str(v.value)));
   const envCard = el('div', 'card');
   envCard.id = 'setEnvCard';
-  envCard.innerHTML = `<div class="card-title" style="margin-bottom:4px">Environment</div>
-    <div class="card-sub" style="margin-bottom:14px">What this build points at — configuration values only, never secrets</div>
-    ${envErrors.length ? `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
-      <div>${envErrors.map(e => esc(e)).join('<br>')}</div></div>` : ''}
-    ${!N8N_BASE ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
-      <div><span class="mono">VITE_N8N_BASE_URL</span> is not set, so every workflow call is disabled: Ask AI, Finance Desk, drip enrolment, WhatsApp replies and the ERP sync will refuse outright rather than fail halfway.</div></div>` : ''}
+  envCard.innerHTML = `<div class="card-title" style="margin-bottom:4px">Connection</div>
+    <div class="card-sub" style="margin-bottom:14px">Whether this deployment is configured to reach the services NEXUS runs for you</div>
     <dl class="kv">
-      <dt>Supabase project</dt><dd class="mono">${projectRef ? esc(projectRef) : '<span class="t-hot">could not be parsed</span>'}</dd>
-      <dt>Supabase URL</dt><dd class="mono">${esc(SUPABASE_URL || 'not set')}</dd>
-      <dt>Anon key</dt><dd>${anonBroken
-        ? '<span class="t-hot">missing or malformed — see above</span>'
-        : 'configured <span class="t-muted">· never shown here, in full or masked</span>'}</dd>
-      <dt>n8n base</dt><dd class="mono">${N8N_BASE ? esc(N8N_BASE) : '<span class="t-hot">not set</span>'}</dd>
-      <dt>Build mode</dt><dd class="mono">${mode ? esc(mode) : '<span class="t-muted">unknown</span>'}</dd>
-      <dt>Served from</dt><dd class="mono">${esc(location.origin)}</dd>
+      <dt>NEXUS data</dt><dd>${envErrors.length || !SUPABASE_URL
+        ? '<span class="t-hot">not configured — no screen on this dashboard can load</span>'
+        : 'configured'}</dd>
+      <dt>Automation</dt><dd>${N8N_BASE
+        ? 'configured'
+        : '<span class="t-hot">not configured — nothing on this dashboard can start a workflow</span>'}</dd>
+      <dt>Credentials</dt><dd>${anonBroken
+        ? '<span class="t-hot">missing or malformed</span>'
+        : 'held by NEXUS <span class="t-muted">· never shown here, in full or masked</span>'}</dd>
     </dl>
-    <div style="margin-top:16px">
-      <div class="label-caps" style="margin-bottom:8px">Build-time variables</div>
-      ${ENV_VARS.map(v => {
-        const bad = v.opaque ? anonBroken : !str(v.value);
-        return `<div class="list-item" style="cursor:default">
-          <span class="material-symbols-outlined t-${bad ? 'hot' : 'ok'}" style="font-size:18px">${bad ? 'error' : 'check_circle'}</span>
-          <div style="flex:1;min-width:0">
-            <div class="mono" style="font-weight:500">${esc(v.name)}</div>
-            <div class="cell-sub">${bad ? `<span class="t-hot">Missing or unusable.</span> ${esc(v.dead)}` : 'Set in this build.'}</div>
-          </div></div>`;
-      }).join('')}
-    </div>
+    ${envBroken.length ? `<div class="banner hot" style="margin-top:14px">
+      <span class="material-symbols-outlined" style="font-size:20px">error</span>
+      <div><strong>This deployment is missing configuration NEXUS supplies, and ${envBroken.length === 1 ? 'something is' : 'things are'} switched off because of it.</strong>
+      ${envBroken.map(v => `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(v.dead)}</div>`).join('')}
+      <div class="cell-sub" style="margin-top:6px;white-space:normal">Nothing here can be fixed from this screen or by this dealership — it is set when NEXUS deploys the dashboard. Report it and it can be redeployed.</div></div></div>` : ''}
     <div class="banner info" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">lock</span>
-      <div>API keys, service-role keys and webhook secrets are never displayed or accepted on this screen, masked or otherwise. They live in n8n and in the server environment. The one thing this screen does print in full is the list of webhook <em>paths</em> under Connectivity below: those are compiled into this bundle, so anyone who can load this page already has them and listing them exposes nothing further — and a path is not what authorises a call.</div>
+      <div>API keys, service-role keys and webhook secrets are never displayed or accepted on this screen, masked or otherwise. Neither are the addresses of the services behind it: which host, which project and which build this bundle points at is NEXUS's operational configuration, and this screen states only whether each one is reachable.</div>
     </div>`;
   top.appendChild(envCard);
 
@@ -634,20 +657,24 @@ SCREENS.settings = async host => {
   const conn = el('div', 'card'); conn.id = 'setConn'; conn.style.marginTop = '16px'; host.appendChild(conn);
   conn.innerHTML = `<div class="card-head" style="padding:0 0 14px">
       <div><div class="card-title">Connectivity</div>
-        <div class="card-sub" id="setConnSub">Live checks against ${esc(projectRef || 'Supabase')} and the n8n health endpoint</div></div>
+        <div class="card-sub" id="setConnSub">Live checks, from this browser, against the services this dashboard depends on</div></div>
       <div style="flex:1"></div>
       <button class="btn sm" id="setRecheck">Re-run checks</button>
     </div>
     <div id="setIntg">${stateLoading(2)}</div>
+    ${/* CONTROL-PLANE.md 5.3. This block printed every webhook this build can
+          call as a full URL chip — the automation host plus the path, once per
+          endpoint — and then named which third-party service each one spends.
+          Both are Part 4 material: infrastructure topology, and which supplier
+          sits behind which feature. What replaced it is the count and the
+          capability, which is the half that is the dealership's. */ ''}
     <div style="margin-top:18px">
-      <div class="label-caps" style="margin-bottom:8px">Workflow endpoints this build will call</div>
-      ${N8N_BASE
-        ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${hooks
-            .map(p => `<span class="chip mono">${esc(N8N_BASE)}/webhook/${esc(p)}</span>`).join('')}</div>`
-        : `<div class="cell-sub t-hot">No base URL is configured, so none of these can be called: ${
-            hooks.map(p => esc(p)).join(', ')}.</div>`}
-      <div class="cell-sub" style="margin-top:8px">These are listed, not probed, and nothing on this screen posts to one of them by itself. Calling one to see whether it answers does real work: <span class="mono">lead-trigger</span> enrols a customer in a drip campaign, <span class="mono">ask-ai</span> spends OpenRouter tokens, and <span class="mono">finance-calc</span> writes a row to <span class="mono">audit_log</span> on every call, refusals included — which is how the tiles above came to manufacture most of that workflow's logged runs before that probe was removed on 31 Aug. The only checks that run on their own are the Supabase and n8n tiles above, and both are reads. What these endpoints actually did is in the workflow table below, which reads what they logged.</div>
-      <div class="cell-sub" style="margin-top:8px">The paths themselves are not secrets — they are compiled into this bundle and reachable by anyone who can open this page — so printing them here reveals nothing the JavaScript does not. They are shown as plain text and nothing on this card can call one. What makes a call succeed is the credential behind it, and no key, token or webhook secret is rendered anywhere on this screen.</div>
+      <div class="label-caps" style="margin-bottom:8px">Automations this dashboard can start</div>
+      <div class="cell-sub">${N8N_BASE
+        ? `${hooks.length} of them: asking a question of your documents, calculating finance, enrolling a customer in a drip, recording a closed deal, auditing an uploaded document, escalating a lead, syncing the ERP and sending a WhatsApp reply.`
+        : '<span class="t-hot">None. This deployment is not configured to reach the automation host, so every one of them refuses outright rather than failing halfway.</span>'}</div>
+      <div class="cell-sub" style="margin-top:8px">Their addresses are not shown: where an automation lives is NEXUS's operational configuration, not a fact this dashboard puts in front of you. Nothing on this card calls one, and none of these is probed by this screen — calling one to see whether it answers does real work, and a check that enrols a real customer or bills a real run is not a check. What they actually did is in the workflow table below, which reads what they recorded.</div>
+      <div class="cell-sub" style="margin-top:8px">No key, token or webhook secret is rendered anywhere on this screen, in full or masked.</div>
     </div>`;
 
   /* The tiles report into their own DOM and return nothing, and this screen may
@@ -900,16 +927,19 @@ SCREENS.settings = async host => {
        build, not an event, and dressing them with an age would be invention. */
     envErrors.forEach((e, i) => out.push({
       key: `env${i}`, sev: 'CRITICAL', icon: 'settings_alert',
-      title: 'This build is missing a required environment variable',
-      detail: esc(e),
-      foot: 'Compiled into the bundle at build time — fixing it means redeploying with the variable set, not changing anything from here.',
+      title: 'This deployment is missing configuration it needs',
+      /* The variable NAME and its value are in `e`, and both are NEXUS's
+         deployment configuration (CONTROL-PLANE.md Part 4). The fact is the
+         dealership's; the identifier is not. */
+      detail: 'Something this dashboard needs was not supplied when it was deployed. Which setting it is, and what it should hold, is NEXUS\u2019s to fix.',
+      foot: 'Compiled into the dashboard when it is built — fixing it means redeploying, not changing anything from here.',
       target: 'setEnvCard',
     }));
     if (!N8N_BASE) out.push({
       key: 'env-n8n', sev: 'CRITICAL', icon: 'link_off',
-      title: 'VITE_N8N_BASE_URL is not set, so no workflow can be called',
-      detail: 'n8n() throws before it makes a request, which means Ask AI, the Finance Desk, drip enrolment, WhatsApp replies from Conversations and the ERP sync are all dead in this build — not slow, not intermittent: refused at the first line.',
-      foot: 'Build-time configuration. The workflow table below still reads what n8n logged, because that comes from Supabase, not from n8n.',
+      title: 'This deployment cannot reach the automation service, so no workflow can be started',
+      detail: 'The request is refused before it is made, which means Ask AI, the Finance Desk, drip enrolment, WhatsApp replies from Conversations and the ERP sync are all dead in this build — not slow, not intermittent: refused at the first line.',
+      foot: 'Set when NEXUS deploys this dashboard; nothing here can change it. The workflow table below still reads what the automations recorded, which is held separately and is unaffected.',
       target: 'setEnvCard',
     });
 
@@ -944,26 +974,26 @@ SCREENS.settings = async host => {
        has no evidence except the tile, and where the tile cannot be read the
        strip says exactly that rather than assuming either answer. */
     const probeFor = re => (probeState || []).find(p => re.test(p.name)) || null;
-    const sbProbe = probeFor(/^supabase$/i);
-    const n8nProbe = probeFor(/^n8n$/i);
+    const sbProbe = probeFor(/^nexus data$/i);
+    const n8nProbe = probeFor(/^automation$/i);
 
     if (s && s.attnErr && s.healthErr && s.failsErr) out.push({
       key: 'sb-down', sev: 'CRITICAL', icon: 'cloud_off',
-      title: 'Every Supabase read from this screen failed',
-      detail: `All four queries came back with an error — v_workflow_health said: ${esc(s.healthErr)}. Nothing below this strip is a count of anything; the panels are empty because the database did not answer, not because the system is quiet.`,
+      title: 'Every read this screen made failed',
+      detail: 'All four queries came back with an error. Nothing below this strip is a count of anything; the panels are empty because the database did not answer, not because the system is quiet.',
       target: 'setConn',
     });
     else if (sbProbe?.state === 'down') out.push({
       key: 'sb-probe-down', sev: 'CRITICAL', icon: 'cloud_off',
-      title: 'The Supabase connectivity check failed',
-      detail: `The probe reported: ${esc(sbProbe.msg || 'no detail')}.${s && !s.healthErr ? ' This screen’s own reads did succeed, so the fault is narrower than “Supabase is down” — read what the probe actually said.' : ''}`,
+      title: 'The connectivity check on your data failed',
+      detail: `The check reported: ${esc(sbProbe.msg || 'no detail')}.${s && !s.healthErr ? ' This screen’s own reads did succeed, so the fault is narrower than “everything is down” — read what the check actually said.' : ''}`,
       target: 'setConn',
     });
 
     if (N8N_BASE && n8nProbe?.state === 'down') out.push({
       key: 'n8n-down', sev: 'CRITICAL', icon: 'power_off',
-      title: 'n8n is not reachable from this browser',
-      detail: `The health endpoint at <span class="mono">${esc(N8N_BASE)}/healthz</span> reported: ${esc(n8nProbe.msg || 'no detail')}. Every workflow this dashboard calls goes to that host, so Ask AI, the Finance Desk, drip enrolment and WhatsApp replies will all fail while this is true. Workflows triggered inside n8n itself may still be running — this check says nothing about them.`,
+      title: 'The automation service is not reachable from this browser',
+      detail: `Its health check answered: ${esc(n8nProbe.msg || 'no detail')}. Every workflow this dashboard starts goes there, so Ask AI, the Finance Desk, drip enrolment and WhatsApp replies will all fail while this is true. Automations that run on their own may still be running — this check says nothing about them.`,
       target: 'setConn',
     });
 
@@ -1007,7 +1037,7 @@ SCREENS.settings = async host => {
           detail: `${esc(deg.map(w => str(w.name)).join(', '))} — inside the 30-day window v_workflow_health measures, ${
             f30 ? `${num(f30)} ${plural(f30, 'run', 'runs')} failed outright` : 'no run failed outright'}${
             p30 ? ` and ${num(p30)} went out half-done — a step the workflow claimed did not land, so a customer may hold a reply the database has no record of` : ''}.${
-            stillOn ? ` ${num(stillOn)} of ${plural(deg.length, 'them is', 'them are')} still active in n8n, which means n8n keeps running ${plural(stillOn, 'it', 'them')} and ${plural(stillOn, 'it keeps', 'they keep')} doing this.` : ''}`,
+            stillOn ? ` ${num(stillOn)} of ${plural(deg.length, 'them is', 'them are')} still switched on, which means ${plural(stillOn, 'it keeps', 'they keep')} running and ${plural(stillOn, 'it keeps', 'they keep')} doing this.` : ''}`,
           foot: last ? `Most recent failed or half-landed run ${esc(ago(last))}.` : 'v_workflow_health recorded no last_incomplete timestamp for these.',
           target: 'setWfCard', wf: 'DEGRADED',
         });
@@ -1065,7 +1095,7 @@ SCREENS.settings = async host => {
       });
       if (off.length) out.push({
         key: 'wf-off', sev: 'WARNING', icon: 'toggle_off',
-        title: `${num(off.length)} registered ${plural(off.length, 'workflow is', 'workflows are')} inactive in n8n`,
+        title: `${num(off.length)} registered ${plural(off.length, 'workflow is', 'workflows are')} switched off`,
         detail: `${esc(off.map(w => str(w.name)).join(', '))} — an inactive workflow has no live webhook, so anything posting to it gets a 404 however well-formed the request is.`,
         target: 'setWfCard', wf: 'INACTIVE',
       });
@@ -1216,11 +1246,11 @@ SCREENS.settings = async host => {
              here reads as a clean bill of health from the database. */
           : 'v_needs_attention: files nothing against this screen',
       !s ? 'v_workflow_health: still reading'
-        : s.healthErr ? 'v_workflow_health: unreadable'
-        : `v_workflow_health: ${num(s.health.length)} workflow${plural(s.health.length, '', 's')}`,
+        : s.healthErr ? 'workflow health: unreadable'
+        : `workflow health: ${num(s.health.length)} workflow${plural(s.health.length, '', 's')}`,
       !s ? 'incomplete runs: still reading'
-        : s.failsErr ? 'audit_log: unreadable'
-        : `audit_log: newest ${num(s.fails.length)} failed or half-landed run${plural(s.fails.length, '', 's')}`,
+        : s.failsErr ? 'run history: unreadable'
+        : `run history: newest ${num(s.fails.length)} failed or half-landed run${plural(s.fails.length, '', 's')}`,
       !probeState ? 'connectivity: probing'
         : (() => {
             const named = probeState.filter(p => AUTO_PROBE.test(p.name));
@@ -1228,7 +1258,7 @@ SCREENS.settings = async host => {
             const unread = named.filter(p => p.state !== 'up' && p.state !== 'down').map(p => p.name);
             if (down.length) return `connectivity: ${down.join(', ')} down`;
             if (unread.length) return `connectivity: ${unread.join(', ')} not readable`;
-            return 'connectivity: Supabase and n8n both answered';
+            return 'connectivity: your data and the automation service both answered';
           })(),
       !kbState ? 'knowledge base: still reading'
         : kbState.err ? 'knowledge base: unreadable'
@@ -1342,7 +1372,7 @@ SCREENS.settings = async host => {
         <div class="card-sub">v_workflow_health could not be read</div></div></div>
         <div class="pbody">${stateError('workflow health', s.healthErr)}</div>`;
       credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
-        <div class="card-sub">Faults n8n reported in the text of a failed run</div></div></div>
+        <div class="card-sub">Faults named in the text of a failed run</div></div></div>
         <div class="pbody">${renderCreds()}</div>`;
       wireCreds();
       return;
@@ -1380,7 +1410,7 @@ SCREENS.settings = async host => {
 
     wfCard.innerHTML = `<div class="card-head">
         <div><div class="card-title">Workflows</div>
-          <div class="card-sub">${num(rows.length)} registered · ${num(active)} active in n8n · state and 30-day counts from <span class="mono">v_workflow_health</span>, read ${esc(clock(s.readAt))}</div></div>
+          <div class="card-sub">${num(rows.length)} registered · ${num(active)} switched on · state and 30-day counts read ${esc(clock(s.readAt))}</div></div>
         <div style="flex:1"></div>
         <button class="btn sm" id="setWfAutomation">Open Automation</button>
       </div>
@@ -1394,12 +1424,12 @@ SCREENS.settings = async host => {
       <div id="setWfList"></div>
       <div class="pbody" style="padding-top:0">
         <div class="cell-sub" style="white-space:normal">${[
-          'Active means n8n will run the workflow. It does not mean the workflow succeeds — an active workflow with a revoked credential runs on every trigger and fails on every trigger, and both of those are true at once.',
+          'Active means the workflow is switched on and will run. It does not mean it succeeds — an active workflow with a broken connection runs on every trigger and fails on every trigger, and both of those are true at once.',
           'Success is successes ÷ the runs that counted, computed by v_workflow_health against nexus_outcome_class(). Runs refused by design and runs escalated to a person on purpose are excluded from the denominator, so an unauthorised caller cannot dilute a real miss rate — which is why “Runs 30 d” can be larger than the number the rate is taken over, and says so where it is.',
-          'No output is not Degraded and is not a milder version of it. Those workflows are not failing: n8n completes the run, no error is raised, and every screen that counted only failures called them clean. They simply produce nothing — Competitor Price Scraping held a green “Clean, 30 d · 100.0%” pill for a month while 84 of its 96 runs returned no price.',
+          'No output is not Degraded and is not a milder version of it. Those workflows are not failing: the run completes, no error is raised, and every screen that counted only failures called them clean. They simply produce nothing — Competitor Price Scraping held a green “Clean, 30 d · 100.0%” pill for a month while 84 of its 96 runs returned no price.',
           'Not logged is not a pass. Those workflows have no Audit Log node, so nothing they do reaches audit_log; they are left uncoloured because this dashboard has no evidence either way, and colouring them green would manufacture some.',
           'No runs yet is the same kind of absence: registered to log, never logged, never observed working.',
-          'This list is the automation register, and the register is the platform’s: one n8n instance serves every dealership, so the same workflows are listed for all of them. Every count beside them is this dealership’s alone, read from audit_log — “no runs yet” means none for this dealership. The n8n instance also carries the three published workflows that serve NEXUS’s public home, privacy and terms pages — Google requires all three before an OAuth consent screen can go to production, and it rejects vercel.app as a public suffix — so a count taken in n8n is larger than the count here. Where one of those pages is registered it is labelled "web page" and left out of the not-logged count: a page that logs nothing is not a blind spot.',
+          'This list is the register of the automations NEXUS runs for you. Every count beside them is this dealership’s alone — “no runs yet” means none for you. A few entries are pages NEXUS publishes rather than automations; where one of those is registered it is labelled "web page" and left out of the not-logged count, because a page that logs nothing is not a blind spot.',
           rows.length >= HEALTH_LIMIT ? `The read is capped at ${num(HEALTH_LIMIT)} workflows and hit the cap, so this is a window rather than the whole register.` : '',
           s.failsErr ? `Failure detail is unavailable (${s.failsErr}), so a workflow's drawer shows its counts but not the text of what went wrong.` : '',
         ].filter(Boolean).map(esc).join('<br>')}</div>
@@ -1424,8 +1454,8 @@ SCREENS.settings = async host => {
             isPublicPage(w) ? ` <span class="chip" title="${esc(PAGE_NOTE)}">web page</span>` : ''}</div>
           <div class="cell-sub">${esc([str(w.category), str(w.trigger_type)].filter(Boolean).join(' · ') || 'no category recorded')}${
             w.is_active === false
-              ? ' · <span class="t-warm">inactive in n8n — its webhook is not live</span>'
-              : ' · <span class="t-muted" title="n8n will run this workflow. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
+              ? ' · <span class="t-warm">switched off — it will not run</span>'
+              : ' · <span class="t-muted" title="This workflow is switched on and will run. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
         { label: 'State', render: w => {
           const h = healthOf(w);
           return `<span title="${esc(h.blurb)}">${pill(h.label, h.t, { verbatim: false })}</span>${
@@ -1500,8 +1530,8 @@ SCREENS.settings = async host => {
           <div class="section">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${pill(h.label, h.t, { verbatim: false })}
               ${w.is_active === false
-                ? '<span class="chip" title="No live webhook in n8n. Anything posting to it gets a 404.">Inactive</span>'
-                : '<span class="chip" title="n8n will run this workflow. It is not a statement about whether the run succeeds.">Active in n8n</span>'}
+                ? '<span class="chip" title="Switched off. Nothing will trigger it.">Inactive</span>'
+                : '<span class="chip" title="Switched on and will run. It is not a statement about whether the run succeeds.">Active</span>'}
               ${w.writes_audit_log ? '' : '<span class="chip" title="No Audit Log node, so nothing it does reaches audit_log.">Writes no audit row</span>'}</div>
             <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(h.blurb)}</div>
             ${w.description ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(str(w.description))}</div>` : ''}
@@ -1567,7 +1597,7 @@ SCREENS.settings = async host => {
         <div class="drawer-foot">
           <button class="btn ghost" id="wfClose2">Close</button>
           <div style="flex:1"></div>
-          <button class="btn" disabled title="Running a workflow by hand needs an n8n endpoint for it. The HOOK map holds only the webhooks this dashboard is meant to call with a real subject record, and firing one from here to see whether it works would do real work — enrol a customer, send a message, spend tokens.">Run now</button>
+          <button class="btn" disabled title="This dashboard only starts a workflow when it has a real subject to start it against — a customer, a deal, a document. Firing one from here just to see whether it works would do real work: enrol a customer, send a message, bill a run.">Run now</button>
         </div>`);
       $('wfClose').addEventListener('click', closeDrawer);
       $('wfClose2').addEventListener('click', closeDrawer);
@@ -1578,7 +1608,7 @@ SCREENS.settings = async host => {
       b.addEventListener('click', () => setWfFilter(b.dataset.f)));
 
     credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
-      <div class="card-sub">Faults n8n reported in the text of a failed or half-landed run — the only credential evidence a browser can have. Nothing here claims a credential works: n8n exposes no credential state to a browser, so this panel reports faults and their age, and never a clean bill of health.</div></div></div>
+      <div class="card-sub">Faults named in the text of a failed or half-landed run — the only evidence about a connection this dashboard can have. Nothing here claims a connection works: this panel reports faults and their age, and never a clean bill of health.</div></div></div>
       <div class="pbody">${renderCreds()}</div>`;
     wireCreds();
   });

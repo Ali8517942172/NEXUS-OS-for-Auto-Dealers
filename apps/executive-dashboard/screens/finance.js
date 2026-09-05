@@ -388,8 +388,11 @@ const sevRank = s => (SEV_RANK[String(s || '').toUpperCase()] ?? 9);
    into that column and a quote inherits whatever it found. */
 const HANDLE = /@(lid|c\.us|s\.whatsapp\.net|g\.us)$/i;
 
-const NO_N8N = 'VITE_N8N_BASE_URL is not set in this build, so the Finance Calc '
-  + 'workflow cannot be reached from the browser. Set it and redeploy.';
+/* The deployment variable's NAME is NEXUS's configuration, not the
+   dealership's (CONTROL-PLANE.md Part 4). What is theirs is that the
+   capability is off and that only NEXUS can turn it on. */
+const NO_N8N = 'This deployment is not configured to reach the finance calculator, so no '
+  + 'quote can be produced here. Only NEXUS can change that, by redeploying.';
 
 /* There was a mean() here, used for the average indicative APR and the average
    loan to value on the strip. Both figures are gone and so is it: with every

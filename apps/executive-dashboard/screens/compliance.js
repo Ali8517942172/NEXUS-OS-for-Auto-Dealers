@@ -248,10 +248,20 @@ const GAP_LIMIT = 2000;
 /* Every write path this screen would need is service-role only. Stating the
    exact missing piece on the disabled control is the difference between "this
    product is broken" and "this step is not built yet". */
+/* These two are the evidence behind the em dash on the three verdict tiles: no
+   decision a person takes can be recorded from this dashboard, and no request
+   for another upload can be sent from it. The controls are rendered and
+   refused rather than hidden, so nobody is left wondering whether the feature
+   exists — but what the tooltip must NOT do is hand the dealership the reason
+   in the vendor's terms (which table, which role, which webhook path). That is
+   CONTROL-PLANE.md Part 4, and it is the same correction made to team.js's
+   NO_INVITE. If either capability is ever built, the tiles above stop printing
+   the dash on their own — they key on whether a decision is on file, not on
+   these constants. */
 const NO_DECISION_HOOK =
-  'No KYC decision endpoint exists yet. kyc_documents is service-role only, and the audit-kyc webhook audits a document — it does not accept a human verdict — so the browser cannot record an approval or a rejection.';
+  'Recording a decision here is not built yet. The document auditor is the only thing that can write a verdict, so an approval or a rejection taken by a person cannot be filed from this dashboard.';
 const NO_REASK_HOOK =
-  'No re-request endpoint exists yet. Asking the customer for another upload needs a KYC re-request webhook, and none is deployed.';
+  'Asking the customer for another upload is not built yet. Nothing here can send that request.';
 /* Said on every row with no file, so it says the whole thing rather than
    "nothing to open": what is missing and why no button here can fix it. Whether
    the database files this particular row as an archive gap is NOT stated here —
@@ -327,6 +337,27 @@ const key = v => String(v == null ? '' : v).trim().toLowerCase();
 /* A row is a compliance decision only if the backend did not void it. This is
    the single predicate the whole screen partitions on. */
 const isVoid = d => !!(d && d.void_reason);
+
+/* A run summary is written for whoever is on call, and whoever is on call is
+   NEXUS. Measured 5 Sep 2026 by rendering this screen against a failed KYC run:
+   the audit trail and the retention ledger both printed the summary verbatim,
+   and a summary the Error Handler wrote carries the execution's own URL, the
+   failing node's name, the execution id and the host's address — four items in
+   CONTROL-PLANE.md Part 4's table, on a screen that document did not audit.
+   What the run was doing stays; where inside the system it stopped does not.
+   Only the RENDERED text goes through here: every classifier on this screen
+   reads the raw column, because redacting the evidence a verdict is computed
+   from would change the verdict. Same function, same wording, as
+   screens/automation.js `dealerSummary`. */
+const dealerText = text => String(text || '')
+  .replace(/https?:\/\/[^\s·"'<>]+/g, '')
+  .replace(/\bexecution\s*(?:id\s*)?[#:]?\s*\d+/gi, '')
+  .replace(/\bfailed at node\s*:\s*[^·|\n]+/gi, 'failed inside the automation')
+  .replace(/\bnode\s*:\s*[^·|\n]+/gi, '')
+  .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\.nip\.io)?\b/g, '')
+  .replace(/\s+/g, ' ')
+  .replace(/[ \t]*·[ \t]*(?=·|$)/g, '')
+  .replace(/(^[\s·|]+)|([\s·|]+$)/g, '');
 
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
@@ -1296,6 +1327,54 @@ SCREENS.compliance = async host => {
        read. Saying so is the difference between "no older approval exists" and
        "we read the newest COMM_LIMIT rows and found none". */
     const commCapped = !!comms && comms.length >= COMM_LIMIT;
+
+    /* ── STAGE 1.9 · three zeros that were not measurements ────────────────
+       AUDIT-2026-09-04.md, the one frontend defect it found: this strip
+       rendered `Approved 0`, `Rejected 0` and `Escalated 0` as bare numbers
+       with no caption, and a dealer reads three zeros beside the word
+       "Compliance" as "no problems today".
+
+       They are not that. A verdict lands on a row here only when the document
+       auditor writes one; NOTHING IN THIS DASHBOARD CAN RECORD A KYC DECISION —
+       this screen makes no write and calls no endpoint, and there is no control
+       anywhere in the build that files one. So a zero on these three tiles is
+       the register holding no such row. It is not a count of documents that
+       were considered and not approved, and it is emphatically not evidence
+       that no decision was ever taken: `legacyApproved` and `legacyRejected`
+       below count decisions that WERE messaged to a customer and left no
+       register row at all, which is the same zero standing over real events.
+
+       PRODUCT.md forbids exactly this shape, and lib/health.js already carries
+       the rule in one line — "a rate may only be shown when something
+       qualified; zero qualifying runs is not 0% and it is not 100%". The same
+       reasoning applies to a count: with no decision on file there is nothing
+       to count, so the tile prints the em dash this screen already uses for an
+       unknown ("No archived file" does it three tiles along) and says which
+       absence it is.
+
+       The condition is deliberately "no decision of ANY kind is on file", not
+       "this particular verdict is zero". Once the auditor has decided anything,
+       the register is demonstrably being written and a zero on one of the three
+       is then a real measurement of that verdict — so it prints as a number
+       from that moment on, and this branch stops firing on its own. */
+    const decidedOnFile =
+      verdictCounts.APPROVED + verdictCounts.REJECTED + verdictCounts.ESCALATED;
+    const NO_DECISION_CAPABILITY =
+      'Not zero \u2014 nothing to count. No decision of any kind is on file, and nothing here can record one; the document auditor is the only writer.';
+    /* One tile builder for the three, so they cannot drift apart: the same
+       condition, the same words, the same em dash. */
+    const verdictTile = (label, k, caption, evidence) => kpi(
+      label,
+      decidedOnFile ? num(verdictCounts[k]) : '\u2014',
+      decidedOnFile
+        /* A real count, so the tile's own caption applies. */
+        ? caption
+        /* No count, so the caption written for one does not: "not 0 rejected
+           customers" beside an em dash is a sentence about a number that is not
+           there. Only the evidence that decisions DID happen off-register
+           survives, because that is the thing which makes the dash mean
+           something rather than look like a shrug. */
+        : `<span class="t-warm">${esc(NO_DECISION_CAPABILITY)}</span>${evidence ? ` ${evidence}` : ''}`);
     const commCap = commCapped ? ` <span class="t-muted">Counted within the ${num(COMM_LIMIT)} most recent message-log rows; older ones are not on this page.</span>` : '';
 
     strip.innerHTML = [
@@ -1325,22 +1404,31 @@ SCREENS.compliance = async host => {
          file an "approval rate" would be a statistic about a single person's
          paperwork dressed up as a statistic about the business, so no tile here
          divides by any other and the subtitle says why. */
-      kpi('Approved', num(verdictCounts.APPROVED),
+      verdictTile('Approved', 'APPROVED',
         legacyApproved
           ? `<span class="t-muted">${num(legacyApproved)} older approval${legacyApproved === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all.</span>${commCap}`
-          : (oneTrail ? `<span class="t-muted">Attempts by one customer — counted, not rated</span>` : '')),
-      kpi('Rejected', num(verdictCounts.REJECTED),
+          : (oneTrail ? `<span class="t-muted">Attempts by one customer — counted, not rated</span>` : ''),
+        legacyApproved
+          ? `<span class="t-muted">${num(legacyApproved)} approval${legacyApproved === 1 ? ' was' : 's were'} messaged to a contact with no row in this register at all.</span>${commCap}`
+          : ''),
+      verdictTile('Rejected', 'REJECTED',
         legacyRejected
           ? `<span class="t-muted">${num(legacyRejected)} older rejection${legacyRejected === 1 ? ' was messaged to a contact' : 's were messaged to contacts'} with no row in this register at all.</span>${commCap}`
-          : (oneTrail ? `<span class="t-muted">Re-uploads from the same person, not ${num(verdictCounts.REJECTED)} rejected customers</span>` : '')),
+          : (oneTrail ? `<span class="t-muted">Re-uploads from the same person, not ${num(verdictCounts.REJECTED)} rejected customers</span>` : ''),
+        legacyRejected
+          ? `<span class="t-muted">${num(legacyRejected)} rejection${legacyRejected === 1 ? ' was' : 's were'} messaged to a contact with no row in this register at all.</span>${commCap}`
+          : ''),
       /* The number is the REGISTER's, like every other verdict tile here, and
          the caption says so — a zero beside "2 escalations logged" reads as a
          contradiction until the two are named as counts of different things. */
-      kpi('Escalated to a human', num(verdictCounts.ESCALATED),
+      verdictTile('Escalated to a human', 'ESCALATED',
         escalations.length
-          ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor workflow${
-              verdictCounts.ESCALATED ? '' : `, and no escalated document appears among the ${num(docs.length)} register row${docs.length === 1 ? '' : 's'} loaded here`}.</span> <span class="t-muted">This tile counts rows in <span class="mono">kyc_documents</span>; the escalations are rows in <span class="mono">audit_log</span>. Where a case is escalated and this register holds no row for it, its register position is <strong>${esc(CASE_STATE.unknown.label)}</strong> — not proof the document does not exist. Set out case by case in the retention panel below.</span>`
-          : (auditErr ? '<span class="t-muted">Audit log could not be read</span>' : '')),
+          ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? '' : 's'} logged by the auditor${
+              verdictCounts.ESCALATED ? '' : `, and no escalated document appears among the ${num(docs.length)} register row${docs.length === 1 ? '' : 's'} loaded here`}.</span> <span class="t-muted">This tile counts rows in the register; the escalations are runs the auditor recorded. Where a case is escalated and this register holds no row for it, its register position is <strong>${esc(CASE_STATE.unknown.label)}</strong> — not proof the document does not exist. Set out case by case in the retention panel below.</span>`
+          : (auditErr ? '<span class="t-muted">The run history could not be read</span>' : ''),
+        escalations.length
+          ? `<span class="t-warm">${num(escalations.length)} escalation${escalations.length === 1 ? ' was' : 's were'} recorded by the auditor with no matching register row.</span>`
+          : (auditErr ? '<span class="t-muted">The run history could not be read either, so nothing rules an escalation in or out.</span>' : '')),
       /* One number, one source. This tile, the banner below it, the nav badge
          and the Overview panel all count the rows v_needs_attention files as
          kyc_archive_gap, and this screen no longer holds a predicate of its own
@@ -1595,7 +1683,7 @@ SCREENS.compliance = async host => {
             <span class="t-muted">audited</span> ${casePill(c.audit)}
             <span class="t-muted">register</span> ${casePill(c.register)}
           </div>
-          <div class="cell-sub" style="white-space:normal">${esc(String(a.summary || 'No summary on the run.').slice(0, 240))}</div>
+          <div class="cell-sub" style="white-space:normal">${esc(dealerText(a.summary).slice(0, 240) || 'No summary on the run.')}</div>
           <div class="cell-sub" style="white-space:normal">${esc(c.note)}</div>
           <div class="cell-sub mono" style="word-break:break-all">audit_log ${esc(a.id ?? 'no id')}${
             c.rows.length ? ` · kyc_documents ${c.rows.map(r => esc(String(r.id ?? ''))).join(', ')}` : ''}</div>
@@ -2478,7 +2566,7 @@ SCREENS.compliance = async host => {
                 ? ` <span class="t-warm" style="font-weight:400">recorded as ${esc(n.recorded)}</span>`
                 : ''}</div>
             <div class="cell-sub" style="white-space:normal">${n.name ? esc(n.note) + ' · ' : ''}${
-              n.phone ? '' : 'no phone stored · '}${esc(String(e.text || '').slice(0, 180))}</div>
+              n.phone ? '' : 'no phone stored · '}${esc(dealerText(e.text).slice(0, 180))}</div>
             ${e.blurb ? `<div class="cell-sub t-muted">${esc(e.blurb)}</div>` : ''}
             ${e.registerNote ? `<div class="cell-sub ${e.register === 'unknown' ? 't-warm' : 't-muted'}" style="white-space:normal">${esc(e.registerNote)}</div>` : ''}
             ${e.voided ? '<div class="cell-sub t-hot">Sent about a voided row — this was not a compliance decision, and the recipient was never a customer.</div>' : ''}
