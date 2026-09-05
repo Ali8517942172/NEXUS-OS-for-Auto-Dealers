@@ -1,0 +1,45 @@
+-- 5 Sep 2026. Correction to the migration immediately before this one.
+--
+-- The header of communication_logs_external_identity_is_the_providers_id says
+-- "Seven writer nodes across four n8n workflows". That number is WRONG, and it
+-- is corrected here rather than left standing, because a wrong measured figure
+-- in the permanent record is the failure mode this repository keeps paying for.
+--
+-- Recounted mechanically from the same source (the repo's n8n-workflows/*.json,
+-- excluding backup/ and _pre_sync_backup/), by selecting every node whose
+-- parameters.url contains 'communication_logs' with method POST:
+--
+--   7_day_warm_lead_drip_campaign            5  Log Welcome Email, Log Follow Up
+--                                               Email, Log Final Offer Email,
+--                                               Log WhatsApp Welcome,
+--                                               Log WhatsApp Check-in
+--   kyc_aml_document_auditor_..._phase_5      2  Log KYC Re-ask, Log KYC Approved
+--   whatsapp_bdc_ai_agent                     2  Log Incoming Message,
+--                                               Log Conversation
+--   whatsapp_send_dashboard_reply             1  Log Outbound
+--   phase_6_12_hour_silence_detector          1  Mark as Escalated
+--                                            --
+--                                            11  across FIVE workflows
+--
+-- All eleven carry retryOnFail:true and onError:continueRegularOutput, all
+-- eleven send `Prefer: return=minimal`, and none of them sends
+-- external_message_id. Everything the previous migration concluded from that
+-- holds; only the count was wrong, and it was wrong in the direction of
+-- understating the exposure.
+--
+-- Two qualifications that belong with the number, not underneath it:
+--
+--   * That export is dated 30 August. It is the only machine-readable record of
+--     the workflows available to this pass, and it is known stale -- it contains
+--     zero occurrences of `tenant_id` while the live box demonstrably resolves
+--     and stamps one. So 11/5 is a measurement OF THE EXPORT, not of the box.
+--     Nothing here should be read as a live census.
+--   * Of the five, phase_6_12_hour_silence_detector was read from the box on
+--     4 Sep 2026 as having no published version at all (activeVersionId null),
+--     so its writer has never run. Its row would be channel='system',
+--     direction='internal', and production holds zero rows with
+--     direction='internal' -- which is consistent with that, and is the closest
+--     thing to independent corroboration available without touching the box.
+
+comment on table public.communication_logs is
+  'Event log of communications with a customer. WRITERS (measured 5 Sep 2026 from the 30 Aug n8n export, which is stale -- treat as a floor, not a census): eleven HTTP POST nodes across five workflows, all with retryOnFail:true and onError:continueRegularOutput, none of which sends external_message_id today. The dashboard never writes this table; it reads it. Until a writer supplies external_message_id, communication_logs_external_identity_key constrains nothing and a redelivered or retried write still lands twice, so any count taken off this table over-reports by an unknown amount. See the column comment on external_message_id for what a writer must send, and the CHECK constraint for what it may not invent.';
