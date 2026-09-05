@@ -93,10 +93,30 @@ operational rather than structural:
   returns null for a `service_role` caller once more than one tenant is active,
   so the nightly batch syncs nobody and writes no audit row. Silent, not wrong,
   but it must iterate tenants before anyone is onboarded.
-- `tenants.is_unattributed_default` means an omitted `tenant_id` lands in
-  whichever dealership holds the flag. Harmless with one; wrong with two. Either
-  point it at a quarantine tenant or convert the remaining omissions to explicit
-  nulls.
+- `tenants.is_unattributed_default` **no longer points at a dealership.** Fixed
+  5 Sep 2026 (migrations `20260905201206`/`201227`/`201337`, evidence in
+  `/home/claude/out/unattributed-default-evidence.md`). It is held by a
+  quarantine tenant — slug `__unattributed__`, `status='quarantine'`,
+  `is_quarantine=true` — and a CHECK constraint
+  (`tenants_unattributed_default_must_be_quarantine`) makes re-pointing it at a
+  real dealership impossible without dropping that constraint by name. A backend
+  write that omits `tenant_id` is now **retained** under quarantine rather than
+  filed under ALBA: unreadable by any dealership session (no `tenant_members`
+  row, and `nexus_current_tenant_ids()` requires `status='active'` — both locks
+  measured, including against a forged membership row plus a forged JWT claim),
+  excluded from all 29 tenant-carrying views **in their own definitions**, and
+  findable by `service_role` via `nexus_quarantine_census()`.
+  `nexus_scoped_tenant_id()` was decoupled from the flag and still returns ALBA,
+  so Customer 360 did not go silent. **What this does not fix:** the four n8n
+  workflows that still omit `tenant_id` are not identified anywhere — the repo's
+  `n8n-workflows/*.json` is a 30 Aug export containing zero occurrences of
+  `tenant_id` and cannot answer it. Their rows now land in quarantine instead of
+  ALBA, which is visible and recoverable rather than silent. **Run
+  `select * from public.nexus_quarantine_census();` as `service_role` daily until
+  it is stable** — that census is the only measurement of which writers are
+  broken, and this is the cheapest moment to take it. Also: disabling
+  `Resolve Tenant` in n8n, the documented rollback, no longer falls back to ALBA;
+  see `/home/claude/out/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
 - **`workflow_registry` is readable by every signed-in user and is not
   tenant-scoped.** Its policy is `SELECT USING (true)` for `authenticated`, and
   the table has no `tenant_id` column — which is survivable only because there
@@ -109,10 +129,14 @@ operational rather than structural:
   `L2_EXEMPT_TABLES` so the finding stays visible instead of being absorbed
   into an exemption list.
 
-`select * from public.nexus_tenancy_readiness();` is the live gate — but note
-its remaining BLOCKER fires whenever any tenant holds the default flag and
-cannot see n8n at all, so it will not clear from workflow work. Read it with
-that in mind.
+`select * from public.nexus_tenancy_readiness();` is the live gate. The BLOCKER
+that "fires whenever any tenant holds the default flag" — i.e. could never clear
+— was replaced on 5 Sep 2026 by four measured branches, and **production now
+returns zero BLOCKERs**: two pre-existing WARNs on `policy_rule` and
+`policy_rule_event` (nullable by design, platform scope) and two INFO lines. It
+still cannot see n8n at all, so it will never report a workflow that omits
+`tenant_id` directly — but `nexus_quarantine_census()`, which it now surfaces as
+a WARN, measures exactly that from the rows those workflows write.
 
 ## What is actually proven
 
