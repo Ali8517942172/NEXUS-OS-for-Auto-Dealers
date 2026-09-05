@@ -109,6 +109,25 @@
  *   NEXUS_LIVE_INSECURE_TLS=1           accept a self-signed certificate on
  *                                       NEXUS_LIVE_URL. For a private staging
  *                                       endpoint only; never for production.
+ *
+ * THE BASELINE LANE — L12
+ *   L12 compares supabase/baseline/ with the database rather than checking that
+ *   a file is present. Its offline arm always runs; its seed and schema arms
+ *   need NEXUS_DB_URL. Its strongest arm needs somewhere to replay INTO:
+ *
+ *   NEXUS_BASELINE_REPLAY_URL=postgres://…  an EMPTY PostgreSQL 17. The harness,
+ *                                       the baseline, the history stamp and the
+ *                                       seed are replayed into it and the
+ *                                       generator is run against the result.
+ *                                       It CREATES objects, so it refuses to
+ *                                       run against NEXUS_DB_URL — by string
+ *                                       and by database fingerprint — and
+ *                                       refuses a target that is not empty.
+ *
+ *   NEXUS_SNAPSHOT_SOURCE_NOTE          a sentence recorded verbatim in the
+ *                                       snapshot's "source" field by
+ *                                       --refresh-schema. Say which project was
+ *                                       read and through what.
  */
 
 import { execFileSync, execSync } from 'node:child_process';
@@ -139,14 +158,20 @@ const opt  = n => { const i = ARGV.indexOf(n); return i >= 0 ? ARGV[i + 1] : nul
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-03T00:00:00Z",
-  "source": "live catalogue of Supabase project dsvuoovivysszdoiorch, read 3 Sep 2026 through mcp__Supabase__execute_sql (the SQL --print-sql emits, relations + functions) and fed back in via --catalogue; no NEXUS_DB_URL and no psql exist in that environment",
+  "takenAt": "2026-09-05T20:56:16Z",
+  "source": "--catalogue /home/claude/out/catalogue.prod.2026-09-05.json — live catalogue of Supabase production project dsvuoovivysszdoiorch, read 5 Sep 2026 through mcp__Supabase__execute_sql (the SQL --print-sql emits, split into two statements — everything but the function bodies, then the function bodies — each returned base64-encoded with its own length and md5, decoded and reassembled locally after both checks matched) and fed back in via --catalogue; no NEXUS_DB_URL and no psql credentials exist in that environment. The catalogue's own meta block re-verified the reassembly: 120 functions, 307642 characters of function source, 98 relations.",
   "relations": {
     "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
     "attribution_event_type": "event,seq,state,source_ref,finding",
     "attribution_link_basis": "basis,rank,is_evidence,default_confidence,label,description",
     "audit_log": "id,workflow,status,lead_name,lead_email,lead_score,intent,summary,logged_at,tenant_id",
-    "communication_logs": "id,lead_email,channel,direction,message,created_at,sent_by,tenant_id",
+    "channel_message_events": "event_id,tenant_id,integration_id,provider,channel_type,direction,external_message_id,customer_external_id,customer_phone,conversation_id,message_kind,media_ref,media_mime,media_sha256,provider_account_id,provider_delivery_ref,origin_verified,received_at,recorded_at",
+    "channel_provider_capability": "provider,send_form,support_state,basis,evidence,verified_at,set_by,created_at",
+    "channel_provider_rank": "provider,rank,is_official_platform,rationale,set_by,created_at",
+    "channel_registry": "integration_id,tenant_id,channel_type,external_identifier,credential_ref,status,created_at,updated_at",
+    "channel_send_directive": "directive_id,tenant_id,requested_by,request_ref,customer_external_id,intent,requested_send_form,directive,outcome,reason_code,reason,what_would_change_it,integration_id,provider,channel_type,external_identifier,credential_ref,carrier_rule,candidates_considered,resolved_send_form,message_body,template_ref,template_variables,template_category_required,template_verification,media_ref,media_mime,policy_decision,policy_reason_code,policy_applied_rule_id,policy_rule_verification_status,policy_window_state,policy_evaluated_at,capability_state,capability_basis,whatsapp_capability_state,routed_at,routed_by,send_result,provider_message_id,provider_error_code,provider_error_detail,result_recorded_at,tenant_slug,policy_reason,policy_what_would_change_it,policy_window_expires_at,capability_evidence,whatsapp_capability_note,template_verification_detail",
+    "channel_send_form": "code,label,description,requires_template_ref,is_media,is_business_safe_outside_window,sort,created_at",
+    "communication_logs": "id,lead_email,channel,direction,message,created_at,sent_by,tenant_id,external_message_id,channel_key,direction_key",
     "competitors": "id,competitor,model,price_aed,our_price_aed,price_diff_aed,ai_recommendation,scraped_at,listing_title,source_host,source_kind,offer_name,offer_condition,match_quality,match_note,tenant_id",
     "customer_360_profiles": "id,customer_id,name,email,phone,total_emails,total_slack_messages,last_synced_at,tenant_id",
     "daily_metrics": "snapshot_date,open_leads,hot_leads,warm_leads,cold_leads,avg_response_minutes,pipeline_aed,units_at_risk,holding_cost_aed,workflow_runs,workflow_failures,captured_at,workflow_failures_rule,workflow_failures_canonical,pipeline_aed_rule,open_leads_rule,tenant_id",
@@ -169,7 +194,9 @@ const SNAPSHOT = {
     "lead_recovery_settings": "tenant_id,sla_first_response_minutes,silence_hours,stale_silence_hours,engagement_window_days,detector_max_age_hours,set_by,set_at,note,reproposal_cooldown_days",
     "lead_recovery_states": "state,sort,meaning,engine_can_produce,blocked_by,requires",
     "leads": "id,name,email,phone,source,vehicle_interest,budget_aed,status,ai_score,assigned_to,response_time_minutes,created_at,assigned_to_id,escalated_at,bitrix_lead_id,crm_synced_at,tenant_id",
-    "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at",
+    "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
+    "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
+    "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
     "policy_rule_event": "id,rule_id,tenant_id,event,actor,actor_auth_user_id,at,from_status,to_status,from_verification,to_verification,detail",
     "policy_rule_type": "code,label,description,created_at",
     "policy_unit": "code,label,value_kind,description,created_at",
@@ -177,8 +204,12 @@ const SNAPSHOT = {
     "processed_messages": "message_id,source,chat_id,processed_at,tenant_id",
     "purchase_history": "id,customer_name,email,phone,vehicle,purchase_date,amount_aed,created_at,deal_id,lead_id,tenant_id",
     "rag_documents": "id,doc_title,section,content,source_file,page_number,search_vector,tenant_id",
+    "tenant_capability": "tenant_id,capability_key,state,evidence,source,set_by,verified_at,created_at,updated_at",
+    "tenant_capability_catalogue": "capability_key,label,what_it_unlocks,requires,absent_means,sort,created_at",
+    "tenant_configuration": "tenant_id,brand_name,default_language,timezone,currency,business_hours,business_hours_source,business_hours_set_by,business_hours_verified_at,business_hours_basis,ai_tone,ai_tone_source,ai_tone_set_by,ai_tone_verified_at,ai_tone_basis,followup_policy,followup_policy_source,followup_policy_set_by,followup_policy_verified_at,followup_policy_basis,approval_rules,approval_rules_source,approval_rules_set_by,approval_rules_verified_at,approval_rules_basis,created_at,updated_at",
+    "tenant_configuration_default": "setting_key,applies_to,value_kind,default_state,default_value,who_decides,provenance_required,rationale,engine_rule_when_absent,created_at",
     "tenant_members": "tenant_id,auth_user_id,role,staff_user_id,created_at",
-    "tenants": "id,slug,name,status,is_unattributed_default,created_at",
+    "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine",
     "users": "id,name,email,role,status,slack_user_id,created_at,tenant_id",
     "v_action_center_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,undecided_exposure_aed,undecided_with_no_figure,last_proposed_at,last_decided_at,last_executed_at,last_activity_at,newest_undecided_days,oldest_undecided_days,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
     "v_attribution_edges": "tenant_id,edge,from_kind,from_ref,to_kind,to_ref,basis,confidence,note",
@@ -187,6 +218,8 @@ const SNAPSHOT = {
     "v_attribution_link_map": "tenant_id,tenant_name,seq,edge,from_node,to_node,state,basis,basis_is_evidence,basis_confidence,source_ref,finding,unlocked_by,unlock_rank,instances_total,instances_evidenced,instances_refused,coverage_pct,coverage_note",
     "v_attribution_sale_chain": "tenant_id,sale_id,purchase_date,recorded_at,customer_name,vehicle_text,deal_id,revenue_aed,revenue_kind,gross_margin_aed,campaign_state,campaign_basis,campaign_note,lead_id,lead_name,lead_state,lead_basis,lead_confidence,lead_note,conversation_messages,conversation_state,conversation_basis,conversation_confidence,conversation_note,vehicle_unit_id,vehicle_text_candidates,vehicle_state,vehicle_basis,vehicle_confidence,vehicle_note,deal_record_state,deal_record_basis,deal_record_confidence,deal_record_note,finance_quotes_for_lead,finance_state,finance_basis,finance_note,revenue_state,revenue_basis,revenue_note,margin_state,margin_note,hops_total,hops_evidenced,first_break,chain",
     "v_audit_unregistered_writers": "tenant_id,workflow_written_in_audit_log,audit_rows,audit_rows_30d,first_written_at,last_written_at,statuses_seen,disposition",
+    "v_channel_provider_capability": "provider,provider_rank,is_official_platform,send_form,send_form_label,requires_template_ref,is_media,support_state,basis,verified_at,supported_but_never_exercised_here,evidence,set_by",
+    "v_channel_send_health": "tenant_id,integration_id,provider,external_identifier,routed_7d,sends_7d,accepted_7d,rejected_7d,transport_errors_7d,pending_now,last_accepted_at,last_failed_at,observed_state",
     "v_competitor_latest": "id,competitor,model,price_aed,our_price_aed,price_diff_aed,ai_recommendation,scraped_at,listing_title,source_host,source_kind,offer_name,offer_condition,match_quality,match_note",
     "v_conversations": "thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_status,display_name,identified,message_count,inbound_count,outbound_count,last_message_at,last_message,last_direction,awaiting_reply,msg_count,internal_count,msg_inbound_count,msg_outbound_count,last_msg_at,last_msg,last_msg_direction,awaiting_msg_reply,tenant_id",
     "v_customer_360": "email,name,phone,lead_count,best_ai_score,latest_status,purchase_count,lifetime_value_aed,last_purchase_date,is_vip,message_count,last_contact_at,total_emails,total_slack_messages,tenant_id",
@@ -212,8 +245,19 @@ const SNAPSHOT = {
     "v_policy_rule_history": "tenant_id,jurisdiction,rule_type,rule_name,version,id,supersedes_id,status,verification_status,value_numeric,value_text,unit,effective_from,effective_to,source_name,source_document,verification_date,verified_by,added_by,added_at,previous_value_numeric,previous_value_text,previous_effective_from,previous_effective_to,previous_source_name",
     "v_policy_unmigrated_constant": "layer,kind,location,snippet,current_value,reaches_a_customer,proposed_rule_type,proposed_rule_name,seeded_as_rule,rule_row_exists,rule_is_authoritative,migration_state,note,surveyed_on",
     "v_team_performance": "id,name,email,role,status,leads_assigned,hot_leads,avg_response_minutes,within_sla,breached_sla,pipeline_aed",
-    "v_workflow_health": "id,name,category,trigger_type,trigger_detail,description,is_active,writes_audit_log,runs,failures,escalations,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,success_rate,last_run,last_success,last_failure,last_partial,last_incomplete,health",
+    "v_whatsapp_conversation_window": "tenant_id,integration_id,channel_type,channel_identifier,customer_wa_id,last_customer_message_at,last_customer_message_external_id,last_customer_message_source,window_rule_id,window_hours,window_rule_verification_status,window_rule_authority,window_expires_at,window_state,opt_in_state,opt_in_last_event_at,opt_in_evidence_ref",
+    "v_whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,sent_at,message_category,template_required,template_id,template_name,template_language,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,template_provider_status_now,template_status_changed_since_send,latest_status,latest_status_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,cost_state,cost_answer,recorded_at,updated_at",
+    "v_whatsapp_messaging_usage_monthly": "tenant_id,month,message_category,messages,provider_billable_messages,provider_not_billable_messages,awaiting_provider_report,reported_without_pricing,provider_conversations_reported,template_messages,sent_under_a_verified_rule,sent_under_an_unverified_rule,sent_with_no_rule_applied,failed_messages,no_status_reported,cost_answer",
+    "v_whatsapp_template_registry": "template_id,tenant_id,integration_id,name,language,category,nexus_state,provider_status,provider_status_raw,provider_status_source,provider_status_observed_at,status_age,status_confidence,previous_provider_status,previous_status_observed_at,provider_rejected_reason,body_variable_count,variable_schema,body_text,body_text_source,what_this_row_claims,created_at,updated_at",
+    "v_workflow_health": "name,category,description,is_active,writes_audit_log,runs,failures,escalations,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,success_rate,last_run,last_success,last_failure,last_partial,last_incomplete,health",
     "whatsapp_contacts": "chat_id,phone,push_name,lead_email,first_seen,last_seen,message_count,tenant_id",
+    "whatsapp_conversation_state": "tenant_id,integration_id,customer_wa_id,last_customer_message_at,last_customer_message_external_id,last_customer_message_source,first_seen_at,created_at,updated_at",
+    "whatsapp_customer_message_seen": "tenant_id,integration_id,customer_wa_id,external_message_id,first_occurred_at,first_source,first_recorded_at",
+    "whatsapp_delivery_events": "delivery_event_id,tenant_id,integration_id,provider,provider_message_id,event_id,link_state,linked_at,status,status_raw,status_at,recipient_wa_id,conversation_id,conversation_origin_type,conversation_expiration_at,pricing_billable,pricing_model,pricing_category,pricing_type,pricing_reported,errors,provider_payload,received_at,recorded_at,status_key",
+    "whatsapp_message_intent": "code,label,description,is_business_initiated,template_category_if_required,created_at",
+    "whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,message_category,template_required,template_id,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,sent_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,provider_pricing_delivery_event_id,latest_status,latest_status_at,latest_status_delivery_event_id,cost_state,recorded_at,updated_at",
+    "whatsapp_opt_in_event": "id,tenant_id,integration_id,customer_wa_id,event,occurred_at,mechanism,evidence_kind,evidence_ref,recorded_by,recorded_at,notes,consent_rank",
+    "whatsapp_templates": "template_id,tenant_id,integration_id,provider,waba_ref,name,language,category,provider_template_id,nexus_state,nexus_state_at,nexus_state_by,provider_status,provider_status_raw,provider_status_observed_at,provider_status_source,provider_status_evidence_ref,provider_rejected_reason,previous_provider_status,previous_status_observed_at,variable_schema,body_variable_count,body_text,body_text_source,body_text_observed_at,created_at,updated_at",
     "workflow_registry": "id,name,audit_name,trigger_type,trigger_detail,category,is_active,description,writes_audit_log,audit_aliases"
   },
   "rpcs": {
@@ -302,6 +346,20 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "channel_registry_touch": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "channel_send_directive_guard_policy_citation": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "deal_rescue_recommended_action": {
       "secdef": false,
       "tenantArg": false,
@@ -322,6 +380,29 @@ const SNAPSHOT = {
       "secdef": false,
       "tenantArg": false,
       "grants": [
+        "service_role"
+      ]
+    },
+    "inventory_delete_unit": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "inventory_guard_cost_change": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "inventory_set_cost": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
         "service_role"
       ]
     },
@@ -412,6 +493,20 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_channel_capability_state": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_channel_send_candidates": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_comm_keys_for_lead": {
       "secdef": true,
       "tenantArg": true,
@@ -440,6 +535,34 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_guard_born_open_grants": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_is_approval_rules": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_is_business_hours": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_is_followup_policy": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -505,6 +628,30 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_my_staff_user_ids": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_tenant_capabilities": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_tenant_config": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_onboard_dealership": {
       "secdef": true,
       "tenantArg": false,
@@ -520,11 +667,88 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_provider_router_invariants": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_public_exposure_report": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_quarantine_census": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_record_channel_event": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_record_send_result": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_register_channel": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_request_send": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_require_security_invoker_views": {
       "secdef": false,
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_resolve_channel_tenant": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_resolve_tenant_capability": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_resolve_tenant_config": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_route_message": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
         "service_role"
       ]
     },
@@ -537,6 +761,38 @@ const SNAPSHOT = {
       ]
     },
     "nexus_tenancy_readiness": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_tenant_capability_core": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": []
+    },
+    "nexus_tenant_config_core": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": []
+    },
+    "nexus_tenant_ids_for_roles": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_verify_template_ref": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_whatsapp_cloud_canonical_events": {
       "secdef": true,
       "tenantArg": false,
       "grants": [
@@ -575,6 +831,27 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "policy_platform_attestation_append_only": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "policy_platform_supersede_rule": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "policy_platform_verify_rule": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "policy_propose_rule": {
       "secdef": true,
       "tenantArg": false,
@@ -588,6 +865,20 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "policy_refuse": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "policy_rule_derive_jurisdiction_owner": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -657,6 +948,181 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "tenant_capability_touch": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "tenant_configuration_validate": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_apply_delivery_to_usage": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_delivery_events_append_only": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_delivery_events_guard_link": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_delivery_status_rank": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_link_delivery_events": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_message_usage_touch": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_opt_in_event_append_only": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_opt_in_state": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_policy_decision": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_policy_decision_for_channel": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_policy_rule_lookup": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_record_customer_message": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_record_delivery_status": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_record_message_usage": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_record_opt_in_event": {
+      "secdef": false,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_refuse_end_user_role": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_template_declare": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_template_observe": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_template_retire": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_template_sendability": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_template_variable_schema_ok": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_templates_guard_channel": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "whatsapp_templates_touch": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     }
@@ -796,22 +1262,79 @@ select json_build_object(
        join pg_namespace pn on pn.oid = pc.relnamespace and pn.nspname = 'public'
       where c.table_schema = 'public' and pc.relkind in ('r','v','m','p')
       group by 1) t),
+  /* exec_anon / exec_auth are the EFFECT; acl is the mechanism. L4 and L5 used
+     to grep the ACL text for "anon=X" and "authenticated=X", which asks whether
+     a grant of that shape was WRITTEN — not whether the role can execute the
+     function. A PUBLIC grant (grantee "", rendered "=X/postgres") is inherited
+     by anon and authenticated and matches neither pattern, and so does a grant
+     held through role membership. CLAUDE.md records this as a known blindness
+     in L5; measured on production 5 Sep 2026 it is real and not hypothetical:
+     the "anon=X" pattern found 0 functions, has_function_privilege('anon', …)
+     found 1 — public.nexus_public_exposure_report, granted "=X/postgres".
+     has_function_privilege answers the question the check is actually asking. */
   'functions', (select json_agg(json_build_object(
        'name', p.proname,
        'args', pg_get_function_identity_arguments(p.oid),
        'secdef', p.prosecdef,
        'acl', coalesce(array_to_string(p.proacl::text[],' | '),'DEFAULT-NULL-ACL'),
+       'exec_anon', has_function_privilege('anon', p.oid, 'EXECUTE'),
+       'exec_auth', has_function_privilege('authenticated', p.oid, 'EXECUTE'),
        'body', p.prosrc))
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public'
         and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
-  'tables_no_rls', (select coalesce(json_agg(c.relname),'[]'::json)
+  /* relkind 'p' as well as 'r': a PARTITIONED table is a table a dealership's
+     rows can sit in, and RLS on it is declared on the parent. Reading only 'r'
+     would have called a partitioned parent with RLS off invisible rather than
+     failing it. There are none in public on either project today (measured
+     5 Sep 2026) — which is the reason to fix it now, while it costs nothing. */
+  'tables_no_rls', (select coalesce(json_agg(c.relname order by c.relname),'[]'::json)
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
-     where n.nspname='public' and c.relkind='r' and not c.relrowsecurity),
-  'views_no_invoker', (select coalesce(json_agg(c.relname),'[]'::json)
+     where n.nspname='public' and c.relkind in ('r','p') and not c.relrowsecurity),
+  /* THE OPTION'S VALUE, NOT THE OPTION'S PRESENCE.
+     Until 5 Sep 2026 this line read
+
+         coalesce(array_to_string(c.reloptions,','),'') not ilike '%security_invoker%'
+
+     which asks whether the OPTION IS MENTIONED, not whether it is TRUE. A view
+     created "with (security_invoker = false)" contains that substring, so it was
+     excluded from this list and L3 passed it — while behaving in exactly the way
+     L3 exists to forbid: RLS on its base tables evaluated as the view's owner
+     rather than as the caller. Measured on production the same day,
+     "select 'security_invoker=false' ilike '%security_invoker%'" is true. The
+     check tested that somebody had typed the word.
+
+     And "= 'true'" would be the same defect facing the other way. Postgres
+     stores the boolean as it was written and does not normalise it: production
+     holds security_invoker=true on 38 views and security_invoker=on on
+     v_competitor_latest, and both ARE true. A test for the literal 'true' would
+     fail that view and cry wolf, which is how a gate stops being read. So the
+     value is parsed out and compared against the spellings Postgres accepts.
+     Verified 5 Sep 2026: 39 of 39 views pass on production (dsvuoovivysszdoiorch)
+     and 39 of 39 on staging (wwspuxrbiyagnrnzgate).
+
+     views_invoker_test is a marker, not decoration: a catalogue dumped before
+     this fix carries a list produced by the substring test and is
+     indistinguishable from one produced by this test. L3 refuses to report PASS
+     on a list whose meaning it cannot establish. */
+  'views_invoker_test', 'boolean-value',
+  'views_no_invoker', (select coalesce(json_agg(c.relname order by c.relname),'[]'::json)
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname='public' and c.relkind='v'
-       and coalesce(array_to_string(c.reloptions,','),'') not ilike '%security_invoker%'),
+       and not exists (select 1 from unnest(coalesce(c.reloptions,'{}'::text[])) o
+                        where lower(split_part(o,'=',1)) = 'security_invoker'
+                          and lower(btrim(split_part(o,'=',2))) in ('true','on','1','yes'))),
+  /* The same guarantee in the shape L3 structurally cannot see. A MATERIALIZED
+     view reads its base tables as its owner and NO policy applies to it — there
+     is no security_invoker option to carry, and it is not relkind 'v', so it can
+     never appear in the list above. That is the L3 exposure with the mechanism
+     removed rather than mis-set. None exist in public on either project
+     (measured 5 Sep 2026); reported as a WARN when one does, because a
+     materialized view of tenant-owned data is a decision somebody should have
+     to defend, not a silent omission. */
+  'rls_incapable_relations', (select coalesce(json_agg(c.relname order by c.relname),'[]'::json)
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname='public' and c.relkind='m'),
   /* Every fact L2's exemption conjunction reads is selected HERE, in the same
      statement, from the catalogue. The exemption is a decision (a name in a map
      in this file); the property that decision is conditional on is a
@@ -822,6 +1345,30 @@ select json_build_object(
        'table', p.tablename, 'policy', p.policyname, 'roles', p.roles, 'cmd', p.cmd,
        'qual', p.qual, 'with_check', p.with_check,
        'table_acl', coalesce(array_to_string(c.relacl, E'\\n'), '(owner-only)'),
+       /* relacl is the mechanism; these two are the effect, and they are not the
+          same fact. A table can grant a role nothing in relacl and still hand it
+          columns: pg_attribute.attacl carries COLUMN-level grants, and relacl
+          cannot see them. That is not a hypothetical — measured on production
+          5 Sep 2026, public.workflow_registry's relacl names only postgres and
+          service_role, while seven of its columns carry authenticated=r. Read
+          through relacl alone the table looks service_role-only; every signed-in
+          user of every dealership can read it. CLAUDE.md records the same shape
+          on policy_platform_attestation and says in terms that the ACL query it
+          prescribes, and this gate's own l2AuthenticatedAclLetters, are blind to
+          it. has_table_privilege / has_any_column_privilege answer the question
+          the exemption conjunction is actually asking — may this role write to
+          this table — and they also see a grant held through PUBLIC or through
+          role membership, which no string match on relacl can.
+          DELETE and TRUNCATE have no column-level form, so they are asked of the
+          table only. */
+       'auth_privs', (select coalesce(array_agg(v order by v), '{}'::text[])
+            from unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) v
+           where has_table_privilege('authenticated', c.oid, v)
+              or (v in ('SELECT','INSERT','UPDATE') and has_any_column_privilege('authenticated', c.oid, v))),
+       'anon_privs', (select coalesce(array_agg(v order by v), '{}'::text[])
+            from unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE']) v
+           where has_table_privilege('anon', c.oid, v)
+              or (v in ('SELECT','INSERT','UPDATE') and has_any_column_privilege('anon', c.oid, v))),
        'has_tenant_id', exists (select 1 from pg_attribute a
             where a.attrelid = c.oid and a.attname = 'tenant_id'
               and a.attnum > 0 and not a.attisdropped),
@@ -869,6 +1416,19 @@ select json_build_object(
                       join public.audit_log a on a.id = x.audit_log_id
                      where a.tenant_id is distinct from x.tenant_id))
      from public.inventory_action_events e),
+  /* L10 counts rows and its evidence line then asserted "the CHECK
+     inventory_actions_recovered_needs_real_sale holds" — a claim about a
+     constraint it never read. Zero bad rows today is compatible with the
+     constraint having been dropped this morning; the count is the symptom, the
+     constraint is the guarantee, and only one of them was being measured. So
+     the constraint is selected here and L10 says which of the two it saw. */
+  'recovered_value_guard', (select coalesce(json_agg(json_build_object(
+       'name', con.conname, 'def', pg_get_constraintdef(con.oid))), '[]'::json)
+     from pg_constraint con
+     join pg_class c on c.oid = con.conrelid
+     join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where c.relname = 'inventory_actions' and con.contype = 'c'
+      and pg_get_constraintdef(con.oid) ilike '%recovered_value_aed%'),
   'bad_recovered', (select count(*) from public.inventory_actions
      where recovered_value_aed is not null
        and (outcome_state <> 'ATTRIBUTED' or outcome_purchase_id is null
@@ -1114,7 +1674,14 @@ if (flag('--refresh-schema')) {
   };
   const next = { ...SNAPSHOT,
     takenAt: (live.cat && live.cat.takenAt) || new Date().toISOString().replace(/\.\d+/, ''),
-    source: live.how || 'PostgREST OpenAPI root',
+    /* PROVENANCE, NOT A FILENAME. "--catalogue /tmp/x.json" says nothing about
+       WHICH database was read or how the file got there, and the next reader of
+       this snapshot has only this line to go on. NEXUS_SNAPSHOT_SOURCE_NOTE is
+       appended verbatim so the run can say it — the project ref, the channel,
+       and anything about the transfer that a later reader would need in order
+       to distrust it correctly. */
+    source: [live.how || 'PostgREST OpenAPI root', process.env.NEXUS_SNAPSHOT_SOURCE_NOTE]
+      .filter(Boolean).join(' — '),
     relations: Object.fromEntries(Object.entries(RELATIONS).map(([k, v]) => [k, v.join(',')])),
     rpcs: (live.cat && Array.isArray(live.cat.functions))
       ? rpcsFromCatalogue(live.cat.functions)
@@ -1612,6 +2179,11 @@ function fabricate(rel) {
    computable economic figure. Every field a screen might be tempted to render
    as zero is null here, and its state column says why. If a screen turns any of
    these into "AED 0" or "0.0%", R4 catches it. */
+/* The exact refusal sentence the stub serves for action_approver_context, named
+   here because R7 asserts this string reaches the screen rather than asserting
+   that some approver-ish word does. */
+const STUB_REFUSAL_REASON = 'This account is neither an account owner nor a manager, so it may not decide inventory actions.';
+
 const SENTINEL_UNKNOWN = {
   holding_cost_accrued_aed: null, holding_cost_state: 'NOT_COMPUTABLE',
   holding_cost_note: 'No holding rate is on record for this dealership.',
@@ -1640,6 +2212,9 @@ function stubRest(url, method, body) {
 
   if (name.startsWith('rpc/')) {
     const fn = name.slice(4);
+    /* Declared once, served by the stub and looked for by R7, so the two cannot
+       drift apart: R7's job is to prove the DATABASE'S OWN sentence reached the
+       reader, and a check that greps for a paraphrase proves something weaker. */
     if (!RPC_NAMES.has(fn)) return { status: 404, body: { code: 'PGRST202', message: `Could not find the function public.${fn}` } };
     if (fn === 'sentinel_inventory_actions')
       return { status: 200, body: [{ ...fabricate('v_inventory_profit_sentinel'), ...SENTINEL_UNKNOWN, id: 'NX-1011', vin: 'JTMHV05J104123999' }] };
@@ -1649,7 +2224,7 @@ function stubRest(url, method, body) {
       return { status: 200, body: [{ auth_user_id: 'u1', tenant_id: 't1', tenant_role: 'member',
         staff_id: 's1', staff_name: 'Ali Asgher', staff_role: 'senior_rep', may_decide: false,
         authority: null, refusal_code: 'NOT_AN_APPROVER',
-        refusal_reason: 'This account is neither an account owner nor a manager, so it may not decide inventory actions.',
+        refusal_reason: STUB_REFUSAL_REASON,
         tenant_has_any_approver: true, approver_tenant_roles: ['owner'], approver_staff_roles: ['manager'] }] };
     if (fn.startsWith('action_'))
       return { status: 200, body: [{ ok: false, idempotent: false, refusal_code: 'NOT_AUTHORISED',
@@ -1866,6 +2441,14 @@ try {
         cards: host.querySelectorAll('.card').length,
         buttons: host.querySelectorAll('button').length,
         disabledButtons: host.querySelectorAll('button[disabled]').length,
+        /* R7 asks whether the DECISION controls were rendered and refused. Any
+           disabled button on the page satisfies "a disabled control exists" —
+           including one a click handler disabled while it was saving — so the
+           count above is the presence of a mechanism, not the effect R7 claims.
+           screens/actions.js marks the three decision buttons with data-decide;
+           these two count those and only those. */
+        decideButtons: host.querySelectorAll('button[data-decide]').length,
+        decideDisabled: host.querySelectorAll('button[data-decide][disabled]').length,
         stuckLoading: host.querySelectorAll('.skeleton').length > 0,
         errored: /Couldn.t load/.test(h) };
     });
@@ -1990,11 +2573,26 @@ if (render.failed) {
   {
     const s = r.screens.actions || {};
     const bad = [];
-    if (!/not an approver|may not decide|account owner|manager/i.test(s.text || ''))
-      bad.push('actions: the database refusal reason does not appear on the screen');
-    if (!s.disabledButtons) bad.push('actions: no disabled control — the buttons were hidden rather than refused');
+    /* THE SERVED SENTENCE, NOT A FAMILY OF APPROVER-ISH WORDS. The old test was
+       /not an approver|may not decide|account owner|manager/i, and "manager"
+       appears in any list of staff roles — so a screen that never rendered the
+       refusal at all could satisfy it by naming a job title somewhere else. The
+       stub serves one exact sentence and that is the string this looks for. */
+    if (!(s.text || '').includes(STUB_REFUSAL_REASON))
+      bad.push(`actions: the database's own refusal sentence ("${STUB_REFUSAL_REASON}") does not appear on the screen — the operator is not being told why the control is refused`);
+    /* THE DECISION CONTROLS, NOT ANY DISABLED BUTTON. s.disabledButtons counts
+       every button[disabled] on the screen, so a button some other handler had
+       disabled would have satisfied this check while the Approve / Reject /
+       Defer controls were hidden — which is the exact failure R7 exists to
+       forbid. */
+    if (!s.decideButtons)
+      bad.push('actions: no decision control was rendered at all (no button[data-decide]) — with may_decide=false the controls were hidden rather than refused, which teaches the operator the feature does not exist');
+    else if (s.decideDisabled !== s.decideButtons)
+      bad.push(`actions: ${s.decideButtons} decision control(s) rendered and only ${s.decideDisabled} of them are disabled, on a session the database says may not decide — an enabled control here invites a call the database will refuse`);
     verdict('R7', LANE.RENDER, 'P0', 'Authorisation is shown and disabled, not hidden', bad,
-      [`served may_decide=false / NOT_AN_APPROVER; screen rendered ${s.disabledButtons} disabled controls and the refusal sentence`]);
+      [`served may_decide=false / NOT_AN_APPROVER; the screen rendered ${s.decideButtons} decision control(s) (button[data-decide]) and all ${s.decideDisabled} of them are disabled`,
+       'the refusal sentence checked is the exact string the stub served, not a family of approver-ish words',
+       `${s.disabledButtons} disabled buttons on the screen in total — reported for context and deliberately NOT the test`]);
   }
 }
 
@@ -2022,7 +2620,14 @@ if (render.failed) {
               ∧  neither anon nor PUBLIC is in its roles
               ∧  the table has no tenant_id column
               ∧  no tenant_id foreign key points AT the table
-              ∧  authenticated holds no write letter (a/w/d/D) on the table
+              ∧  authenticated cannot INSERT, UPDATE, DELETE or TRUNCATE it
+              ∧  anon cannot either
+
+   That last pair is a MEASUREMENT of what the roles may do — has_table_privilege
+   and has_any_column_privilege, taken in the same statement — not a reading of
+   the ACL text. Until 5 Sep 2026 it was the ACL text, which cannot see a
+   column-level grant: production's workflow_registry names nobody but postgres
+   and service_role in relacl and hands authenticated seven of its columns.
 
    The name is the decision. The five properties are the measurement, taken
    from the live catalogue in the same statement that found the policy. A named
@@ -2085,7 +2690,9 @@ const L2_NOT_EXEMPT_NOTES = {
 
 /* Write letters, per the table in CLAUDE.md. `D` is TRUNCATE and RLS does not
    filter it, so a policy is irrelevant to it — which is exactly why the grant,
-   not the policy, decides whether a USING(true) read policy is survivable. */
+   not the policy, decides whether a USING(true) read policy is survivable.
+   This alphabet belongs to the relacl FALLBACK path only; the primary witness is
+   the privilege the catalogue measured. See l2WritePrivileges below. */
 const L2_WRITE_LETTERS = { a: 'INSERT', w: 'UPDATE', d: 'DELETE', D: 'TRUNCATE (which no policy filters)' };
 
 /* Privileges an authenticated caller actually holds on a table, read from its
@@ -2109,6 +2716,46 @@ function l2AuthenticatedAclLetters(acl) {
   return letters;
 }
 
+/* WHAT A ROLE MAY ACTUALLY DO TO THE TABLE, in privilege words rather than ACL
+   letters. Prefers the measurement the catalogue took with has_table_privilege
+   and has_any_column_privilege; falls back to parsing relacl when the catalogue
+   predates it, and UNIONS the two when both are present so the fallback can only
+   ever add a privilege, never remove one.
+
+   The two are different facts, and the difference has already been paid for
+   twice. relacl cannot see a COLUMN-level grant: production's workflow_registry
+   names only postgres and service_role in relacl while seven of its columns
+   carry authenticated=r, and CLAUDE.md records the same shape on
+   policy_platform_attestation with the note that this gate's own
+   l2AuthenticatedAclLetters reports it as service_role-only. It also cannot see
+   a privilege held through role membership. An exemption that rests on "the
+   grant is not written here" rests on the mechanism; what it claims is about the
+   effect.
+
+   Returns { verbs, witness, unknown }. unknown is TRUE when neither source
+   carries evidence, which is not the same as "no privileges" and must never be
+   read as one. */
+const L2_WRITE_VERBS = {
+  INSERT: 'INSERT', UPDATE: 'UPDATE', DELETE: 'DELETE',
+  TRUNCATE: 'TRUNCATE (which no policy filters)',
+};
+function l2WritePrivileges(p, role) {
+  const measured = p && p[role === 'anon' ? 'anon_privs' : 'auth_privs'];
+  const fromMeasured = Array.isArray(measured)
+    ? measured.map(v => String(v).toUpperCase()).filter(v => L2_WRITE_VERBS[v])
+    : null;
+  const letters = role === 'anon' ? null : l2AuthenticatedAclLetters(p && p.table_acl);
+  const fromAcl = letters === null ? null
+    : [...letters].map(ch => ({ a: 'INSERT', w: 'UPDATE', d: 'DELETE', D: 'TRUNCATE' })[ch]).filter(Boolean);
+  if (fromMeasured === null && fromAcl === null) return { verbs: [], witness: null, unknown: true };
+  const verbs = [...new Set([...(fromMeasured || []), ...(fromAcl || [])])].sort();
+  const witness = fromMeasured && fromAcl
+    ? 'has_table_privilege / has_any_column_privilege, cross-checked against relacl'
+    : fromMeasured ? 'has_table_privilege / has_any_column_privilege'
+    : 'relacl text only — this catalogue predates the measured privilege, so a column-level grant or one held through role membership is not visible to this run';
+  return { verbs, witness, unknown: false };
+}
+
 /* Decide one open policy. Returns {exempt:true} only when the table is named
    AND every property still holds on evidence present in this catalogue.
    Otherwise returns the sentence L2 fails on. */
@@ -2126,9 +2773,12 @@ function l2PolicyVerdict(p, relations) {
   const hasTenantId = typeof (p && p.has_tenant_id) === 'boolean' ? p.has_tenant_id
     : (cols ? cols.includes('tenant_id') : null);
   const fkReferent = typeof (p && p.tenant_fk_referent) === 'boolean' ? p.tenant_fk_referent : null;
-  const aclLetters = l2AuthenticatedAclLetters(p && p.table_acl);
+  const authW = l2WritePrivileges(p, 'authenticated');
+  const anonW = l2WritePrivileges(p, 'anon');
+  const anonReads = Array.isArray(p && p.anon_privs) && p.anon_privs.map(String).includes('SELECT');
   const wideRoles = roles ? roles.filter(r => r === 'anon' || r.toLowerCase() === 'public') : [];
-  const writes = aclLetters === null ? [] : [...aclLetters].filter(ch => L2_WRITE_LETTERS[ch]);
+  const writes = authW.verbs.map(v => L2_WRITE_VERBS[v]);
+  const anonWrites = anonW.verbs.map(v => L2_WRITE_VERBS[v]);
 
   if (!named) {
     /* The ordinary failure: an open policy nobody has accepted. Say what is
@@ -2140,7 +2790,19 @@ function l2PolicyVerdict(p, relations) {
       : hasTenantId === false ? ' — the table carries no tenant_id column' : ' — whether it has a tenant_id column is not in this catalogue';
     if (fkReferent === true) line += ' — AND a tenant_id foreign key points at it, so it is the tenant dimension itself';
     if (wideRoles.length) line += ` — AND ${wideRoles.join(' and ')} is in its roles`;
-    if (writes.length) line += ` — AND authenticated holds ${writes.map(ch => L2_WRITE_LETTERS[ch]).join(', ')} on the table`;
+    if (writes.length) line += ` — AND authenticated holds ${writes.join(', ')} on the table`;
+    /* When relacl and the measured privilege disagree, print BOTH. The gap is
+       the finding: workflow_registry names nobody but postgres and service_role
+       in relacl and grants authenticated seven of its columns, and every
+       relacl-only sweep this project has run — including this file's own, until
+       5 Sep 2026 — called that table service_role-only. */
+    if (Array.isArray(p && p.auth_privs)) {
+      const aclSaid = l2AuthenticatedAclLetters(p && p.table_acl);
+      if (p.auth_privs.length && (aclSaid === null || aclSaid === ''))
+        line += ` — NOTE: relacl names no privilege for authenticated ("${String(p.table_acl).replace(/\n/g, ' | ')}") and authenticated nevertheless holds ${p.auth_privs.join(', ')}, measured with has_table_privilege / has_any_column_privilege. A column-level grant is invisible to relacl; read the ACL alone and this table looks service_role-only`;
+    }
+    if (anonWrites.length) line += ` — AND anon holds ${anonWrites.join(', ')} on it`;
+    else if (anonReads) line += ' — AND anon holds SELECT on it (a privilege, not necessarily reachability: anon holds no USAGE on schema public today, and that door — not this ACL — is what contains it)';
     if (L2_NOT_EXEMPT_NOTES[table]) line += ` — ${L2_NOT_EXEMPT_NOTES[table]}`;
     else if (cmd === 'SELECT' && !wideRoles.length && hasTenantId === false && fkReferent === false && !writes.length)
       line += ' — it satisfies every property an exemption requires, and it is still a failure: the exemption map is a decision a person makes, not a shape a table can adopt. If this deviation is accepted, add it BY NAME with a written reason; if it is not, scope the policy.';
@@ -2153,7 +2815,7 @@ function l2PolicyVerdict(p, relations) {
   if (roles === null) unknown.push('this catalogue carries no roles for the policy');
   if (hasTenantId === null) unknown.push('nothing in this catalogue says whether the table has a tenant_id column');
   if (fkReferent === null) unknown.push('nothing in this catalogue says whether a tenant_id foreign key points at the table');
-  if (aclLetters === null) unknown.push('this catalogue carries no ACL for the table, so what authenticated may write to it is unknown');
+  if (authW.unknown) unknown.push('this catalogue carries neither a measured privilege nor an ACL for the table, so what authenticated may write to it is unknown');
   if (unknown.length) return { exempt: false, line:
     `${table}/${policy}: exempt by name, but this catalogue cannot show the exemption still holds — ${unknown.join('; ')}. An exemption that cannot be re-checked is not an exemption, and a P0 must not pass on absent evidence. Re-dump the catalogue with the SQL --print-sql emits.` };
 
@@ -2167,7 +2829,9 @@ function l2PolicyVerdict(p, relations) {
   if (fkReferent) broke.push(
     'exempt by name, but a tenant_id foreign key now points AT this table — it has become the tenant dimension, and reading all of it is reading the list of dealerships');
   if (writes.length) broke.push(
-    `exempt by name, but authenticated now holds ${writes.map(ch => L2_WRITE_LETTERS[ch]).join(', ')} on the table (ACL "${String(p.table_acl).replace(/\n/g, ' | ')}") — the exemption was granted to a read-only grant`);
+    `exempt by name, but authenticated now holds ${writes.join(', ')} on the table — witness: ${authW.witness}; relacl reads "${String(p.table_acl).replace(/\n/g, ' | ')}" — the exemption was granted to a read-only grant`);
+  if (anonWrites.length) broke.push(
+    `exempt by name, but anon now holds ${anonWrites.join(', ')} on the table — the exemption was granted to a policy only signed-in staff could use, and a write privilege for the unauthenticated role is not a deviation anyone accepted here`);
 
   if (broke.length) return { exempt: false, line:
     `${table}/${policy}: ${broke.join('; AND ')}. The name stays in L2_EXEMPT_TABLES only while the property holds. It no longer does, so this is a failure, not a pass — either restore the property or delete the name and accept the finding.` };
@@ -2228,16 +2892,39 @@ if (!live.cat) {
       [`${(c.tables_no_rls || []).length} tables without RLS`,
        `${pols.length} policies in public are USING(true) or WITH CHECK(true) for a role other than service_role; ${exempted.length} are exempt and ${failures.length} are not`,
        exempted.length
-         ? `exempt, each by NAME and each re-measured against this catalogue as SELECT-only, no anon or PUBLIC in its roles, no tenant_id column, not the referent of any tenant_id foreign key, and no INSERT/UPDATE/DELETE/TRUNCATE letter for authenticated: ${exempted.sort().join(', ')}`
+         ? `exempt, each by NAME and each re-measured against this catalogue as SELECT-only, no anon or PUBLIC in its roles, no tenant_id column, not the referent of any tenant_id foreign key, and neither authenticated nor anon able to INSERT, UPDATE, DELETE or TRUNCATE it — that last pair measured with has_table_privilege and has_any_column_privilege rather than read out of relacl, which cannot see a column-level grant: ${exempted.sort().join(', ')}`
          : 'no policy was exempted',
        'The exemption list is hand-written in this file ON PURPOSE, and it is the one list here that should be. Every other list in this gate describes what the database CONTAINS, which goes stale and must be derived. This one records which deliberate deviations the owner accepts — a decision, not a description — and a decision must not be derived from the database, because the database is the thing under audit. Derive it and the check cannot fail: anyone with DDL writes USING(true) on a new table and it exempts itself, with no diff that mentions a grant or a policy. So the name is written down, matched exactly rather than by substring, and it only counts while the five properties above still measure true; when one stops, the table fails with a sentence naming what changed.']);
     if (stale.length) WARN('L2b', LANE.LIVE, 'P1', 'A name in the L2 exemption map no longer matches any open policy',
       stale.map(n => `${n}: named as an accepted deviation, but no USING(true) policy on it exists in this catalogue — either its policy was scoped (good: delete the name) or the table is gone`).concat([
         'Not exposure — an exemption that exempts nothing cannot open anything. It is rot, and rot in this map is how the old regex came to exempt three tables nobody had thought about since the engines shipped.']));
   }
-  /* L3 */ verdict('L3', LANE.LIVE, 'P0', LIVE_CHECKS[2][1],
-    (c.views_no_invoker || []).map(v => `${v}: no security_invoker — RLS on its base tables is evaluated as the view owner`),
-    ['every view in public carries security_invoker']);
+  /* L3 · THE VALUE OF THE OPTION, NOT ITS PRESENCE. The list this reads is now
+     built by testing what security_invoker is SET TO; see the long note beside
+     views_no_invoker in CATALOGUE_SQL for what it used to test and why a view
+     created "with (security_invoker = false)" passed.
+
+     A catalogue dumped before that fix carries a list produced by the substring
+     test, and nothing in the file distinguishes the two. Reporting PASS on it
+     would be reporting a result whose meaning is unknown, so this check reports
+     NOT RUN instead — the same rule the rest of this file is held to. */
+  {
+    const test = c.views_invoker_test;
+    if (test !== 'boolean-value') {
+      NOTRUN('L3', LANE.LIVE, 'P0', LIVE_CHECKS[2][1],
+        `this catalogue does not state how views_no_invoker was computed (views_invoker_test is ${JSON.stringify(test === undefined ? null : test)}). Until 5 Sep 2026 the gate asked whether the reloptions string CONTAINED "security_invoker", which a view created "with (security_invoker = false)" does — so a list built that way excludes exactly the views this check exists to catch, and cannot be told apart from a list built by reading the value. Re-dump the catalogue with the SQL --print-sql emits.`);
+    } else {
+      verdict('L3', LANE.LIVE, 'P0', LIVE_CHECKS[2][1],
+        (c.views_no_invoker || []).map(v => `${v}: security_invoker is absent or not true — RLS on its base tables is evaluated as the view owner, not as the caller`),
+        [`every view in public carries security_invoker with a TRUE value; the test parses the option out of reloptions and accepts true/on/1/yes, because Postgres stores what was written and production holds both "true" (38 views) and "on" (v_competitor_latest)`,
+         'this asserts the option is SET, not that it is merely mentioned — the previous substring test passed a view created with (security_invoker = false)']);
+    }
+    const mv = c.rls_incapable_relations;
+    if (Array.isArray(mv) && mv.length)
+      WARN('L3b', LANE.LIVE, 'P1', 'A relation exists in public that RLS cannot protect at all',
+        mv.map(v => `${v}: a materialized view — it reads its base tables as its owner, no policy applies to it, and it carries no security_invoker option for L3 to inspect`).concat([
+          'This is the exposure L3 forbids, in the one shape L3 structurally cannot see. Establish what it selects from before treating it as reportable data.']));
+  }
   /* L4 · the shape CLAUDE.md says has opened a hole three times, plus the
      stronger form: a definer function granted to authenticated whose body
      writes without a tenant predicate is a cross-tenant write. */
@@ -2246,7 +2933,13 @@ if (!live.cat) {
     let l4cand = 0, l4stmts = 0, l4chars = 0;
     for (const f of c.functions || []) {
       const acl = f.acl || '';
-      const toAuth = /(^|[|\s])authenticated=X/.test(acl) || /(^|[|\s])=X/.test(acl);
+      /* MEASURED reachability first. The regexes are the fallback for a
+         catalogue dumped before exec_auth existed, and they are kept because a
+         missing input must degrade to the stricter reading, not to silence:
+         they already matched the PUBLIC entry ("=X"), which L5's did not. */
+      const toAuth = typeof f.exec_auth === 'boolean'
+        ? f.exec_auth
+        : (/(^|[|\s])authenticated=X/.test(acl) || /(^|[|\s])=X/.test(acl));
       if (!f.secdef || !toAuth) continue;
       l4cand++; l4chars += String(f.body || '').length;
       if (/\bp_tenant\b/.test(f.args || ''))
@@ -2277,14 +2970,33 @@ if (!live.cat) {
          notice, which is exactly how this shape got in three times. */
   {
     const READS = /\b(from|join|update|insert\s+into|delete\s+from)\s+(public\.)?(leads|inventory|competitors|communication_logs|finance_quotes|kyc_documents|purchase_history|rag_documents|customer_360_profiles|audit_log|inventory_actions|inventory_action_events|users|tenants|tenant_members)\b/i;
-    const anonAll = (c.functions || []).filter(f => /(^|[|\s])anon=X/.test(f.acl || ''));
+    /* WHY THIS IS NOT A REGEX ANY MORE. The filter was /anon=X/ — the presence
+       of a grant written to anon by name. anon also inherits every PUBLIC grant,
+       whose ACL entry has an empty grantee and reads "=X/postgres", and it can
+       hold EXECUTE through role membership; neither matches. CLAUDE.md records
+       this as a known blindness in L5 ("a future CREATE OR REPLACE adding
+       SECURITY DEFINER to it would be invisible"), and on production 5 Sep 2026
+       it is measured, not predicted: /anon=X/ matched 0 functions and
+       has_function_privilege('anon', …, 'EXECUTE') matched 1 —
+       nexus_public_exposure_report, held through "=X/postgres". So the check now
+       asks whether anon CAN execute the function. The regex survives only as the
+       fallback for an older catalogue, widened to include the PUBLIC entry so
+       that the fallback is the stricter reading rather than the blinder one. */
+    const anonExec = f => typeof f.exec_anon === 'boolean'
+      ? f.exec_anon
+      : (/(^|[|\s])anon=X/.test(f.acl || '') || /(^|[|\s])=X/.test(f.acl || ''));
+    const anonWitness = (c.functions || []).some(f => typeof f.exec_anon === 'boolean')
+      ? 'has_function_privilege(anon, …, EXECUTE), which sees a direct grant, a PUBLIC grant and one held through role membership'
+      : 'the ACL text of each function — this catalogue predates the measured grant, so a grant reachable only through role membership is not visible to this run';
+    const anonAll = (c.functions || []).filter(anonExec);
     const anonFns = anonAll.filter(f => READS.test(String(f.body || '')));
     const holes = anonFns.filter(f => f.secdef).map(f => `${f.name}: SECURITY DEFINER, anon holds EXECUTE, and the body reads a tenant-owned table with RLS bypassed`);
     verdict('L5', LANE.LIVE, 'P0', LIVE_CHECKS[4][1], holes,
-      [`${anonAll.length} of ${(c.functions || []).length} functions in public hold EXECUTE for anon at all; ${anonFns.length} of those have a body that reads a tenant-owned table`,
+      [`${anonAll.length} of ${(c.functions || []).length} functions in public are EXECUTABLE by anon; ${anonFns.length} of those have a body that reads a tenant-owned table`,
+       `witness: ${anonWitness}`,
        anonAll.length === 0
-         ? 'This passes because the grant is absent everywhere, not because a grant was inspected and found harmless — which is the strongest form this result takes, and the one the 2 Sep revocation was aiming at.'
-         : 'no SECURITY DEFINER function granted to anon reads tenant-owned data',
+         ? 'This passes because anon can execute nothing here, not because a grant was inspected and found harmless — which is the strongest form this result takes, and the one the 2 Sep revocation was aiming at.'
+         : `no SECURITY DEFINER function anon can execute reads tenant-owned data; the ${anonAll.length} anon can execute are: ${anonAll.map(f => f.name).sort().join(', ')}`,
        'Supabase grants EXECUTE directly to anon and authenticated by default, and REVOKE ... FROM PUBLIC does not remove a direct grant — this check exists because that exact shape has opened three holes here']);
     const surface = anonFns.filter(f => !f.secdef).map(f => `${f.name}: anon holds EXECUTE and the body reads a tenant-owned table; SECURITY INVOKER, so RLS answers and anon reads nothing today`);
     if (surface.length) WARN('L5b', LANE.LIVE, 'P1', 'anon can reach a function that reads tenant-owned data', surface.concat([
@@ -2396,9 +3108,29 @@ if (!live.cat) {
     }
     verdict('L9', LANE.LIVE, 'P0', LIVE_CHECKS[8][1], bad, evidence);
   }
-  /* L10 */ verdict('L10', LANE.LIVE, 'P0', LIVE_CHECKS[9][1],
-    c.bad_recovered ? [`${c.bad_recovered} inventory_actions rows claim a recovered value with no attributed sale behind them`] : [],
-    ['0 rows; the CHECK inventory_actions_recovered_needs_real_sale holds']);
+  /* L10 · this counts ROWS. Its evidence line used to end "the CHECK
+     inventory_actions_recovered_needs_real_sale holds", which is a claim about
+     the CONSTRAINT — a different fact, and one it had not read. Zero bad rows is
+     exactly what a table with the constraint dropped this morning looks like.
+     The constraint is now selected in the same catalogue and reported for what
+     it is: the row count is the symptom, the constraint is the guarantee. */
+  {
+    const guard = c.recovered_value_guard;
+    const guarded = Array.isArray(guard) && guard.length > 0;
+    verdict('L10', LANE.LIVE, 'P0', LIVE_CHECKS[9][1],
+      c.bad_recovered ? [`${c.bad_recovered} inventory_actions rows claim a recovered value with no attributed sale behind them`] : [],
+      [`${c.bad_recovered} rows carry a recovered_value_aed without the four columns an attributed sale requires`,
+       Array.isArray(guard)
+         ? (guarded
+             ? `the CHECK constraint behind it is present and reads: ${guard.map(g => `${g.name} ${g.def}`).join(' ; ')}`
+             : 'AND NO CHECK constraint on inventory_actions mentions recovered_value_aed — see L10b')
+         : 'this catalogue does not carry the constraint, so this run measured the rows only and says nothing about whether the guarantee is still structural']);
+    if (Array.isArray(guard) && !guarded)
+      WARN('L10b', LANE.LIVE, 'P1', 'The row count is clean and the constraint that keeps it clean is gone',
+        ['no CHECK constraint on public.inventory_actions mentions recovered_value_aed',
+         `${c.bad_recovered} rows violate the rule today, so nothing is wrong on the screen yet — but the next write is unpoliced, and L10 counts rows, which is the symptom rather than the guarantee`,
+         'CLAUDE.md names this constraint (inventory_actions_recovered_needs_real_sale) as the reason a fabricated recovered value is unstorable. Restore it before the next release.']);
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -3344,6 +4076,336 @@ end $$;`;
           'Not drift in the dangerous direction — a file the database has not seen cannot make a restore incomplete. It is either a migration written by hand and not yet applied, or a file extracted from a DIFFERENT database than the one NEXUS_DB_URL names. The second is worth knowing about before a restore.']));
       verdict('L11', LANE.LIVE, L11_SEV, L11_TITLE, bad, ev);
     }
+  }
+}
+
+
+/* ══ L12 ═══════════════════════════════════════════════════════════════════
+   DOES supabase/baseline/ STILL REPRODUCE THE DATABASE?
+
+   L11 watches supabase/migrations/ against the history the database recorded,
+   and it works. NOTHING WATCHED supabase/baseline/, and that gap has already
+   cost something once. On 4 September the baseline went a day stale on the one
+   afternoon it mattered: it predated the twelve security migrations, so
+   restoring from it would have rebuilt the database with the born-open grants
+   and the open schema door. And the vocabulary seed beside it was silently
+   HTML-escaped — twenty characters stored as entities rather than as
+   themselves, so a restore seeded "purchase_history.lead_id -&gt; leads(id)"
+   where production holds "->".
+
+   THE SECOND ONE IS THE ONE TO DESIGN AGAINST. It survived a whole verification
+   pass because THE ROW COUNTS MATCHED, and counting rows is not reading them. A
+   check that lists the files, or counts the rows, or asserts that a baseline
+   "is present" — which is all L11 does, with its hasBaseline flag — cannot see
+   it. The baseline's claim is not "I exist". It is "replaying me reproduces the
+   database", and the honest witness for that claim is a FINGERPRINT COMPARISON:
+   derive the same fact from the file and from the database, and see whether the
+   two agree.
+
+   So this check compares content, in three places, and each is a different half
+   of the restore path:
+
+     A · THE FOLDER AGAINST ITSELF (runs with no database at all).
+         Restore = the baseline, then the history stamp, then every migration
+         file whose version is GREATER than the baseline's. That sentence is
+         falsifiable without a connection: every stamped version must have a
+         file, every file at or below the baseline version must be stamped, and
+         no stamped version may be above it. It also sweeps the seed's DATA for
+         HTML entities — the exact corruption of 4 September — ignoring the
+         comment header, which describes that corruption in entities and would
+         otherwise report the repair note as the defect.
+
+     B · THE SEED AGAINST THE DATABASE, BY VALUE.
+         Per table, a digest over the seed's own row values, compared with the
+         same digest computed by Postgres over the live rows. Column order comes
+         from the file's own INSERT, NULL is a sentinel rather than an absence,
+         and rows are sorted by digest so neither side depends on insertion
+         order or on collation. Row counts are reported and are NOT the test:
+         they matched all the way through the defect this arm exists to catch.
+         Validated against production 5 Sep 2026 — all 19 tables, 190 rows,
+         every digest equal — and against a deliberately re-escaped copy of the
+         file, where the counts still match and the digests do not.
+
+     C · THE SCHEMA AGAINST THE DATABASE, BY REGENERATION.
+         supabase/tools/generate-baseline.mjs derives the whole file from the
+         catalogue and is deterministic, so running it against the database and
+         comparing bytes answers "does this file still describe this database".
+         Version, name and date are taken from the committed file's own header
+         so that only real drift can move the bytes.
+
+         Given an EMPTY PostgreSQL 17 in NEXUS_BASELINE_REPLAY_URL this arm
+         becomes the real thing rather than a proxy: supabase/tools/
+         verification-harness.sql, then the baseline, the history stamp and the
+         seed are replayed into it, and the generator is run against the
+         REPLICA. If replaying the file reproduces the database, then the file
+         regenerated from the replica is the file. That is the folder's own
+         claim, executed.
+
+   SEVERITY IS P1, for the reason L11 is and with the same caveat: losing the
+   ability to rebuild is a business-continuity risk, not a wrong number in front
+   of a customer, and widening P0 to cover it would make P0 mean less everywhere
+   else. It fails visibly without blocking the exit code. If the owner decides
+   otherwise, change L12_SEV.
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const L12_TITLE = 'The baseline still reproduces the database it claims to reproduce';
+  const L12_SEV   = 'P1';
+  const SUPA      = join(HERE, '..', '..', 'supabase');
+  const md5of     = s => createHash('md5').update(s, 'utf8').digest('hex');
+  const NULLTOK   = '<<NULL>>';                 // the SQL below writes the same
+  const UNIT      = String.fromCharCode(31);    // sentinel, and chr(31) between fields
+
+  /* ── the seed, read as VALUES rather than as text ────────────────────────
+     A quoted literal is unquoted ('' becomes '), a trailing ::type cast is
+     dropped because it is type information rather than value, and NULL becomes
+     a sentinel so a null and the string "NULL" cannot hash alike. Anything else
+     — a number, true/false, an array literal — is kept verbatim, which is what
+     col::text returns for it on the other side. */
+  const seedValue = tok => {
+    const t = String(tok).trim();
+    if (t.startsWith("'")) {
+      let out = '';
+      for (let i = 1; i < t.length; i++) {
+        if (t[i] === "'") { if (t[i + 1] === "'") { out += "'"; i++; } else break; }
+        else out += t[i];
+      }
+      return out;
+    }
+    const bare = t.replace(/::\s*[A-Za-z_][A-Za-z0-9_ ]*(\(\s*\d+(\s*,\s*\d+)?\s*\))?(\[\])?\s*$/, '').trim();
+    return /^null$/i.test(bare) ? NULLTOK : bare;
+  };
+  const seedTuple = s => {
+    const out = []; let buf = '', depth = 0, q = false;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (q) { if (ch === "'") { if (s[i + 1] === "'") { buf += "''"; i++; } else { q = false; buf += ch; } } else buf += ch; continue; }
+      if (ch === "'") { q = true; buf += ch; continue; }
+      if (ch === '(') depth++;
+      if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) { out.push(buf); buf = ''; continue; }
+      buf += ch;
+    }
+    out.push(buf);
+    return out.map(seedValue);
+  };
+  const parseSeed = sql => {
+    const tables = [];
+    const re = /INSERT\s+INTO\s+public\.([a-z0-9_]+)\s*\(([^)]*)\)\s*VALUES\s*/gi;
+    let m;
+    while ((m = re.exec(sql))) {
+      const cols = m[2].split(',').map(x => x.trim()).filter(Boolean);
+      const rows = []; let depth = 0, q = false, cur = null, i = re.lastIndex;
+      for (; i < sql.length; i++) {
+        const ch = sql[i];
+        if (q) { if (ch === "'") { if (sql[i + 1] === "'") { cur.buf += "''"; i++; } else { q = false; cur.buf += ch; } } else cur.buf += ch; continue; }
+        if (ch === "'") { q = true; cur.buf += ch; continue; }
+        if (ch === '(') { depth++; if (depth === 1) { cur = { buf: '' }; continue; } }
+        if (ch === ')') { depth--; if (depth === 0) { rows.push(cur.buf); cur = null; continue; } }
+        if (depth === 0) { if (ch === ';' || /[A-Za-z]/.test(ch)) break; continue; }
+        cur.buf += ch;
+      }
+      tables.push({ table: m[1], cols, rows: rows.map(seedTuple) });
+    }
+    return tables;
+  };
+  const tableDigest = rows => md5of(rows.map(r => md5of(r.join(UNIT))).sort().join('\n'));
+
+  const bad = [], ev = [], ran = [], unrun = [];
+  let why = null, fBase = null, fHist = null, fSeed = null;
+  let baseText = '', baseVersion = null, baseName = null, baseTaken = null;
+  let stamp = [], stampDigest = null, seedTables = [];
+  const migs = new Map();
+
+  try {
+    const names = (await readdir(join(SUPA, 'baseline'))).sort();
+    const pick = re => names.find(f => re.test(f)) || null;
+    fBase = pick(/baseline\.sql$/); fHist = pick(/migration_history\.sql$/); fSeed = pick(/vocabulary_seed\.sql$/);
+
+    if (!fBase) bad.push('supabase/baseline/ holds no *_baseline.sql — there is no schema to restore from, and every other claim in this folder is about a file that does not exist');
+    if (!fHist) bad.push('supabase/baseline/ holds no *_migration_history.sql — a database restored from the baseline would carry no record of the migrations already inside it, and the next `supabase db push` would replay all of them against a schema that already has their effects');
+    if (!fSeed) bad.push('supabase/baseline/ holds no *_vocabulary_seed.sql — measured 4 Sep 2026, a schema-only restore fails on the first forward migration that INSERTs against a vocabulary table (policy_rule_rule_type_fkey), so the restore path stops there');
+
+    if (fBase) {
+      baseText = await readFile(join(SUPA, 'baseline', fBase), 'utf8');
+      const h = /--\s*BASELINE VERSION:\s*(\d{14})\s*\(([^)]*)\)/.exec(baseText.slice(0, 4000));
+      const d = /--\s*Taken\s+(\d{4}-\d{2}-\d{2})\b/.exec(baseText.slice(0, 4000));
+      if (!h) bad.push(`${fBase} carries no "-- BASELINE VERSION: <version> (<name>)" header, so nothing says which point in the migration history it is a snapshot OF — and without that, "every migration greater than the baseline" names no set`);
+      else { baseVersion = h[1]; baseName = h[2].trim(); }
+      baseTaken = d ? d[1] : null;
+    }
+
+    if (fHist) {
+      const t = await readFile(join(SUPA, 'baseline', fHist), 'utf8');
+      stamp = [...t.matchAll(/^\s*\('(\d{14})',\s*'((?:[^']|'')*)'\)/gm)].map(m => [m[1], m[2].replace(/''/g, "'")]);
+      if (!stamp.length) bad.push(`${fHist} contains no (version, name) pairs this gate can read — either it is empty or its shape changed, and either way a restore would stamp no history`);
+      stampDigest = md5of(stamp.slice().sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(p => p[0] + '|' + p[1]).join('\n'));
+    }
+
+    for (const f of (await readdir(join(SUPA, 'migrations'))).filter(x => x.endsWith('.sql'))) {
+      const m = /^(\d{14})_(.+)\.sql$/.exec(f);
+      if (m) migs.set(m[1], m[2]);
+    }
+
+    if (fSeed) {
+      const raw = await readFile(join(SUPA, 'baseline', fSeed), 'utf8');
+      /* Comment lines are stripped before the sweep. The header of that file
+         DESCRIBES the entity corruption, in entities; a sweep that read it would
+         report the repair note as the defect. */
+      const data = raw.split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+      const ents = ['&gt;', '&lt;', '&amp;', '&quot;', '&#39;']
+        .map(e => [e, data.split(e).length - 1]).filter(x => x[1] > 0);
+      if (ents.length) bad.push(`${fSeed}: ${ents.map(x => `${x[1]} x ${x[0]}`).join(', ')} in its DATA (comment lines excluded) — this is the 4 Sep corruption exactly: free text passed through an HTML-escaping step, row counts unchanged, and a restore then seeds "-&gt;" where production holds "->". Regenerate the file; do not hand-edit the entities out and leave the generator producing them.`);
+      seedTables = parseSeed(raw);
+      if (!seedTables.length) bad.push(`${fSeed}: no INSERT INTO public.<table> (...) VALUES statement could be parsed, so this gate cannot read what the seed claims and must not report that it agrees with anything`);
+      for (const t of seedTables) {
+        const wrong = t.rows.filter(r => r.length !== t.cols.length).length;
+        if (wrong) bad.push(`${fSeed}: ${wrong} row(s) of public.${t.table} carry a different number of values than the ${t.cols.length} columns its INSERT names — the file cannot be parsed with confidence, and no digest taken from it would mean anything`);
+      }
+    }
+
+    /* ── ARM A · the restore path, as falsifiable sentences ──────────────── */
+    if (baseVersion && stamp.length) {
+      const stamped = new Map(stamp);
+      for (const pair of stamp) {
+        const v = pair[0], n = pair[1];
+        if (!migs.has(v)) bad.push(`the history stamp records ${v}_${n} and supabase/migrations/ holds no file for it — a restore would tell the database that migration is already applied while the repository cannot show what it did`);
+        else if (migs.get(v) !== n) bad.push(`${v}: the history stamp calls it "${n}" and the file is named "${migs.get(v)}" — the two halves of the restore path disagree about the same migration`);
+        if (v > baseVersion) bad.push(`the history stamp records ${v}, NEWER than the baseline version ${baseVersion} — it tells a restored database that a migration the baseline does not carry is already applied, so the forward replay skips it`);
+      }
+      for (const v of [...migs.keys()].filter(x => x <= baseVersion && !stamped.has(x)).sort())
+        bad.push(`${v}_${migs.get(v)}.sql is at or below the baseline version ${baseVersion} and the history stamp does not record it — after a restore it would be replayed against a schema that already contains its effects`);
+      const forward = [...migs.keys()].filter(x => x > baseVersion).sort();
+      ev.push(`restore path: ${fBase} at version ${baseVersion} (${baseName})${baseTaken ? `, taken ${baseTaken}` : ''}, then ${stamp.length} stamped (version, name) pair(s), then ${forward.length} forward migration file(s)${forward.length ? ` from ${forward[0]} to ${forward[forward.length - 1]}` : ''}`);
+      ev.push(`history stamp fingerprint, md5 over "version|name" in version order = ${stampDigest}`);
+    }
+    if (seedTables.length) {
+      ev.push(`vocabulary seed: ${seedTables.length} table(s), ${seedTables.reduce((a, t) => a + t.rows.length, 0)} row(s), read as values and not as text`);
+      ev.push('seed fingerprints (md5 over the sorted per-row digests, columns in the file\'s own order): '
+        + seedTables.map(t => `${t.table}=${tableDigest(t.rows).slice(0, 8)}`).join(' '));
+    }
+  } catch (e) { why = `supabase/baseline/ could not be read: ${e.message}`; }
+
+  /* ── ARMS B and C · the halves that need the database ────────────────────── */
+  const url = process.env.NEXUS_DB_URL;
+  const replayUrl = process.env.NEXUS_BASELINE_REPLAY_URL;
+
+  /* Run the repository's own generator against a connection and hand back the
+     bytes. The header fields come from the committed file so that a matching
+     database produces a matching file and only real drift can move them. */
+  const regenerate = conn => {
+    try {
+      return { ok: true, out: execFileSync('node', [join(SUPA, 'tools', 'generate-baseline.mjs')], {
+        encoding: 'utf8', maxBuffer: 512 * 1024 * 1024, timeout: 600 * 1000,
+        env: { ...process.env, GEN_CONN: '', GEN_DB: conn,
+               GEN_VERSION: baseVersion || '', GEN_VERSION_NAME: baseName || '', GEN_DATE: baseTaken || '' } }) };
+    } catch (e) {
+      const raw = (e.stderr ? String(e.stderr) : '') || String(e.message || e);
+      return { ok: false, why: raw.trim().replace(/\s+/g, ' ').slice(0, 300) };
+    }
+  };
+  const firstDifference = (a, b) => {
+    const x = a.split('\n'), y = b.split('\n');
+    for (let i = 0; i < Math.max(x.length, y.length); i++)
+      if (x[i] !== y[i]) return `first difference at line ${i + 1}: committed "${String(x[i]).slice(0, 80)}" / regenerated "${String(y[i]).slice(0, 80)}"`;
+    return 'they differ in trailing bytes only';
+  };
+
+  if (!why && !url) {
+    unrun.push('B (the seed compared with the live rows) and C (the schema compared by regeneration) both need a SQL connection: no NEXUS_DB_URL');
+  } else if (!why && url) {
+    /* ARM B · the seed, by value. */
+    const safe = s => /^[a-z_][a-z0-9_]*$/.test(String(s));
+    const usable = seedTables.filter(t => safe(t.table) && t.cols.length && t.rows.length && t.cols.every(safe));
+    const skipped = seedTables.filter(t => !usable.includes(t));
+    if (!usable.length) unrun.push('B (the seed compared with the live rows): no table in the seed could be turned into a query this gate is willing to run');
+    else {
+      const q = "set time zone 'UTC';\nselect coalesce(json_agg(json_build_object('t',t,'n',n,'d',d)),'[]'::json)::text from (\n"
+        + usable.map(t => `select '${t.table}' t, count(*) n, md5(string_agg(rd, chr(10) order by rd)) d from (select md5(concat_ws(chr(31), `
+            + t.cols.map(c => `coalesce(${c}::text, '${NULLTOK}')`).join(', ') + `)) rd from public.${t.table}) z`).join('\nunion all\n')
+        + '\n) q;';
+      const r = psqlJson(url, q);
+      if (!r.ok) unrun.push(`B (the seed compared with the live rows): ${r.why}`);
+      else {
+        const liveRows = new Map(r.value.map(x => [x.t, x]));
+        for (const t of usable) {
+          const l = liveRows.get(t.table);
+          const fileD = tableDigest(t.rows);
+          if (!l) { bad.push(`public.${t.table} is seeded by supabase/baseline/ and this database could not report it — the seed writes a table the database does not have`); continue; }
+          if (l.d !== fileD) bad.push(`public.${t.table}: the seed's rows do not hash to the database's — file ${fileD}, database ${l.d}. `
+            + (Number(l.n) === t.rows.length
+                ? `THE ROW COUNTS MATCH (${l.n} both sides) AND THE CONTENT DOES NOT, which is the shape of the 4 Sep escaping defect: a restore would seed different text under the same keys.`
+                : `The counts differ too: ${t.rows.length} in the file, ${l.n} in the database.`)
+            + ' Regenerate the seed from this database; do not edit the file until it matches.');
+          else if (Number(l.n) !== t.rows.length) bad.push(`public.${t.table}: ${t.rows.length} row(s) in the file and ${l.n} in the database, and yet the digests agree — read that as a defect in this check before believing it`);
+        }
+        ran.push(`B: ${usable.length} seeded table(s), ${usable.reduce((a, t) => a + t.rows.length, 0)} row(s), compared with the live rows value by value rather than counted`);
+        if (skipped.length) ev.push(`B did not compare ${skipped.map(t => t.table).join(', ')} — a name in them is not a plain identifier and this gate will not build SQL out of one`);
+      }
+    }
+
+    /* ARM C · the schema, by regeneration. */
+    if (!baseVersion) unrun.push('C (the schema compared by regeneration): the committed baseline carries no version header, so a regeneration could not be made comparable to it');
+    else {
+      const g = regenerate(url);
+      if (!g.ok) unrun.push(`C (the schema compared by regeneration): supabase/tools/generate-baseline.mjs could not run — ${g.why}`);
+      else if (md5of(g.out) !== md5of(baseText)) {
+        bad.push('the committed baseline is NOT what this database generates today. supabase/tools/generate-baseline.mjs, re-run against NEXUS_DB_URL with the version, name and date taken from the committed file so that only real drift can move the bytes, produced a different file. '
+          + `${firstDifference(baseText, g.out)}. The file no longer describes the database, so a restore from it rebuilds something else — which is exactly what a baseline one afternoon stale did on 4 September.`);
+        ran.push(`C: regenerated ${g.out.length} bytes against NEXUS_DB_URL and compared with the ${baseText.length} committed — they differ`);
+      } else ran.push(`C: supabase/tools/generate-baseline.mjs re-run against NEXUS_DB_URL reproduces the committed file byte for byte (md5 ${md5of(baseText)}, ${baseText.length} bytes)`);
+    }
+
+    /* ARM C′ · the same comparison from a REPLAY, which is the claim itself. */
+    if (!replayUrl) unrun.push("C' (replay into an empty PostgreSQL 17 and regenerate from the replica — the folder's own claim, executed): no NEXUS_BASELINE_REPLAY_URL");
+    else if (replayUrl === url) bad.push('NEXUS_BASELINE_REPLAY_URL and NEXUS_DB_URL are the same connection string. The replay arm CREATES objects; it refuses to run against the database it is auditing.');
+    else {
+      const idA = psqlJson(url, IDENT_SQL), idB = psqlJson(replayUrl, IDENT_SQL);
+      const empty = psqlJson(replayUrl, "select json_build_object('rels',(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind in ('r','p','v','m')))::text;");
+      if (!idB.ok) unrun.push(`C': the replay target could not be read: ${idB.why}`);
+      else if (idA.ok && idA.value.fingerprint === idB.value.fingerprint)
+        bad.push("C': NEXUS_BASELINE_REPLAY_URL spells the same database as NEXUS_DB_URL by another name — two connection strings, one database fingerprint. Refusing to replay a baseline into the database it was taken from.");
+      else if (!empty.ok || Number(empty.value.rels) !== 0)
+        unrun.push(`C': the replay target is not empty (${empty.ok ? `${empty.value.rels} relation(s) in public` : 'it could not be read'}). A replay must start from nothing or it proves nothing about what the baseline creates.`);
+      else {
+        const load = [['tools/verification-harness.sql', 'the harness'], [`baseline/${fBase}`, 'the baseline'],
+                      [`baseline/${fHist}`, 'the history stamp'], [`baseline/${fSeed}`, 'the vocabulary seed']];
+        let failed = null;
+        for (const pair of load) {
+          if (failed) break;
+          try {
+            execFileSync('psql', [replayUrl, '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-f', join(SUPA, pair[0])],
+              { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: 900 * 1000 });
+          } catch (e) { failed = `${pair[1]} (${pair[0]}) did not replay: ${((e.stderr && String(e.stderr)) || String(e.message)).trim().replace(/\s+/g, ' ').slice(0, 300)}`; }
+        }
+        if (failed) {
+          bad.push(`the restore path does not replay into an empty PostgreSQL 17: ${failed}. A baseline that cannot be replayed is a file, not a restore.`);
+          ran.push("C': attempted the replay into NEXUS_BASELINE_REPLAY_URL and it did not complete");
+        } else {
+          const g2 = regenerate(replayUrl);
+          if (!g2.ok) unrun.push(`C': the replay loaded and the generator could not read it back — ${g2.why}`);
+          else if (md5of(g2.out) !== md5of(baseText)) {
+            bad.push(`replaying supabase/baseline/ into an empty database does not reproduce the committed baseline: regenerating from the replica gives a different file. ${firstDifference(baseText, g2.out)}.`);
+            ran.push("C': replayed and regenerated from the replica — it differs from the committed file");
+          } else ran.push("C': replayed the harness, the baseline, the history stamp and the seed into an empty database and regenerated from the replica — byte-identical to the committed file, which is the folder's own claim, executed");
+        }
+      }
+    }
+  }
+
+  const evidence = ev.concat(ran.map(x => `RAN — ${x}`), unrun.map(x => `NOT RUN — ${x}`));
+  if (why) {
+    FAIL('L12', LANE.LIVE, L12_SEV, L12_TITLE, [why,
+      'until this folder is readable there is no restore path to check, and none should be claimed']);
+  } else if (bad.length) {
+    FAIL('L12', LANE.LIVE, L12_SEV, L12_TITLE, bad.concat(evidence));
+  } else if (!ran.length) {
+    NOTRUN('L12', LANE.LIVE, L12_SEV, L12_TITLE,
+      `the folder is internally consistent and NOTHING in it was compared with a database. ${ev.join(' · ')}. ${unrun.join(' ; ')}. `
+      + 'A baseline nobody diffed against the database is a claim, not a check — so this is NOT RUN and not PASS: the 4 September baseline would have satisfied every offline test here on the afternoon it would have restored the schema door open.');
+  } else {
+    PASS('L12', LANE.LIVE, L12_SEV, L12_TITLE, evidence);
+    if (unrun.length) WARN('L12b', LANE.LIVE, 'P1', 'The baseline was checked, but not by every witness it has',
+      unrun.concat(['Each line above is an arm of L12 that did not run. L12 passed on the arms that did, and this exists so the ones that did not are visible in the tally rather than buried in an evidence list.']));
   }
 }
 
