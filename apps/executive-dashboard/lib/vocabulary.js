@@ -129,6 +129,21 @@ export const TERM = Object.freeze({
   processed_messages: 'the processed-message record',
   campaigns: 'campaigns',
   campaign_enrollments: 'the campaign enrolments',
+  /* where the enquiries came from. `phase` and `source` are deliberately NOT
+     in this table: they are ordinary English words as well as column names, and
+     an entry for either would have `plain()` rewriting the word "source" in
+     any sentence that passed through it. The mapping is for identifiers a
+     reader could only have got from our schema. */
+  v_lead_origin: 'where your enquiries came from',
+  lead_source_catalogue: 'the lead sources set up for this dealership',
+  source_key: 'the source\u2019s own name for itself',
+  channel_family: 'the kind of road the enquiry travelled',
+  integration_status: 'whether NEXUS can receive from that source at all',
+  disposition_reason: 'the reason recorded for what happened to it',
+  origin_strength: 'how much of the sender\u2019s claim about itself could be verified',
+  origin_explanation: 'why the origin is attested as well or as poorly as it is',
+  origin_cryptographically_verified: 'whether a signature over what was sent could be checked',
+  is_test_traffic: 'whether this is simulator output rather than business',
   /* documents and compliance */
   kyc_documents: 'the ID documents',
   rag_documents: 'your documents',
@@ -178,6 +193,131 @@ export const term = id => TERM[String(id || '')] || 'the record behind this';
 const IDENT_RE = new RegExp(
   '(?<![\\w.])(?:' + Object.keys(TERM).sort((a, b) => b.length - a.length)
     .map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\w])', 'g');
+
+/* ── 3b. Where a lead came from, and how well that origin is attested ───────
+   Added 6 September 2026 for screens/lead-sources.js, and held HERE rather
+   than in that screen for the reason this file exists: these are the words a
+   dealership reads for facts NEXUS measures about its own lead flow, and the
+   moment a second screen shows a source — Leads, Campaigns and Attribution
+   each plausibly could — a second copy of these sentences is a second thing to
+   keep true. The screen imports the words; it does not type them.
+
+   THREE OF THE FOUR VOCABULARIES BELOW ARE CLOSED SETS THE DATABASE OWNS, and
+   the lookups return NULL for a value outside them ON PURPOSE. `term()` above
+   may fall back to a vague noun, because a noun nobody recognises is harmless.
+   A STATE nobody recognises is not: it decides whether an arrival is a loss, a
+   duplicate or a lead that made it through. A screen handed null here has to
+   say it does not know, which is the only honest branch. */
+
+/* What happened to an arrival after it landed. `kind` is what the screen
+   counts on: ARRIVED and WORKED are arrivals still in play, DUPLICATE is one
+   we already had, and LOST is a lead this dealership HAD and no longer has —
+   which is never, on any screen, to be rendered as "nothing arrived". */
+export const LEAD_PHASE = Object.freeze({
+  RECEIVED:    { label: 'Arrived', tone: 'open', kind: 'ARRIVED',
+    blurb: 'The enquiry reached NEXUS and was recorded. Nothing has been added to it yet.' },
+  HYDRATED:    { label: 'Filled out', tone: 'open', kind: 'WORKED',
+    blurb: 'The enquiry arrived and NEXUS was able to attach the customer detail that came with it.' },
+  PROMOTED:    { label: 'Became an enquiry', tone: 'ok', kind: 'WORKED',
+    blurb: 'The arrival became a lead record the floor can work. This is the outcome the other six are measured against.' },
+  DUPLICATE:   { label: 'Already had it', tone: 'cold', kind: 'DUPLICATE',
+    blurb: 'The same enquiry had already been recorded, so this arrival was not counted a second time. It is not a lost lead and it is not a new one.' },
+  REJECTED:    { label: 'Refused at the door', tone: 'hot', kind: 'LOST',
+    blurb: 'NEXUS refused this arrival rather than passing it to the floor. The reason recorded against it is the whole of the explanation, and it is shown.' },
+  QUARANTINED: { label: 'Held back', tone: 'warm', kind: 'LOST',
+    blurb: 'The arrival was held rather than passed on, so nobody at this dealership has seen it. It is recoverable — but only if somebody looks.' },
+  EXPIRED:     { label: 'Ran out of time', tone: 'hot', kind: 'LOST',
+    blurb: 'A real enquiry arrived and the time to do anything with it ran out. This is a customer this dealership had. It is a loss, not an absence.' },
+});
+export const leadPhase = v => LEAD_PHASE[String(v || '').trim().toUpperCase()] || null;
+export const isLostPhase = v => (leadPhase(v) || {}).kind === 'LOST';
+
+/* Whether NEXUS can actually receive a lead from this source. Three of the
+   four are ROADMAP and must render as roadmap: an empty row under a source
+   nobody has connected reads as "this source is quiet" when the truth is that
+   nothing was ever plugged in. */
+export const INTEGRATION_STATUS = Object.freeze({
+  AVAILABLE: { label: 'Connected', tone: 'ok', roadmap: false,
+    blurb: 'This source can hand NEXUS an enquiry directly, and anything counted under it below arrived that way.' },
+  SIMULATED_ONLY: { label: 'Not carrying real enquiries yet', tone: 'warm', roadmap: true,
+    blurb: 'Nothing from a real customer has come through this source. Anything recorded under it is test traffic and is counted nowhere as business.' },
+  COMMERCIAL_CONVERSATION_REQUIRED: { label: 'Roadmap — there is no feed to connect to', tone: 'unknown', roadmap: true,
+    blurb: 'No lead feed exists for NEXUS to connect to, and no amount of engineering here produces one.' },
+  NOT_ESTABLISHED: { label: 'Not set up', tone: 'unknown', roadmap: true,
+    blurb: 'No connection to this source has been established, so nothing has ever arrived through it. That is a setup that has not happened, not a source that produced nothing.' },
+});
+export const integrationStatus = v => INTEGRATION_STATUS[String(v || '').trim().toUpperCase()] || null;
+
+/* The sentence for a marketplace that sells enquiries but publishes nothing to
+   connect to. It names the SOURCE the view named and nothing else — no
+   endpoint, no key, no workflow — because none of that is the dealership's
+   half, and the view does not carry it in any case. */
+export const noLeadFeedSentence = source =>
+  `${source || 'This source'} publishes no lead feed NEXUS can connect to, so nothing arrives from it automatically. `
+  + 'Its enquiries reach the dealership the way they always have — as WhatsApp messages, phone calls and emails — and '
+  + 'none of those is counted here as having come from it. Changing that is a commercial conversation with the '
+  + 'marketplace, not a piece of work that can be done from this side.';
+
+/* ── How much of "where this came from" NEXUS could actually verify ─────────
+   `origin_strength` is 0–100 and it is NOT a quality score for the lead. It
+   says how much of what the sender claimed about itself could be checked.
+
+   The distance between the top two bands is the whole reason this is on a
+   screen. An arrival authenticated by a secret sitting in the body of a
+   request — anybody holding that secret could have composed it — and one
+   carrying a signature computed over the exact bytes that were sent are not
+   the same fact, and rendering them identically is how a dashboard turns a
+   guess into evidence. Bands are read weakest-first by the screen, because a
+   source is only as attested as its worst arrival. */
+export const ORIGIN_STRENGTH_BANDS = Object.freeze([
+  { min: 80, key: 'SIGNED', label: 'Signed at source', tone: 'ok',
+    blurb: 'The arrival carried a signature computed over the exact bytes the sender sent. Nobody else could have composed it, and altering it in transit would have broken the signature.' },
+  { min: 50, key: 'CHECKED', label: 'Checked, not signed', tone: 'warm',
+    blurb: 'Something about this arrival could be checked against the sender, but not a signature over what was actually sent.' },
+  { min: 1, key: 'ASSERTED', label: 'Asserted with a shared secret', tone: 'warm',
+    blurb: 'The arrival carried a secret in the body of the request. Anybody holding that secret could have sent it, so the request proves that the secret is known and nothing about who used it.' },
+  { min: 0, key: 'UNATTESTED', label: 'Nothing attests it', tone: 'hot',
+    blurb: 'Nothing about this arrival attests where it came from beyond the name it gave itself.' },
+]);
+export const originBand = strength => {
+  const n = strength == null || strength === '' || Number.isNaN(Number(strength)) ? null : Number(strength);
+  if (n == null) return null;
+  return ORIGIN_STRENGTH_BANDS.find(b => n >= b.min) || ORIGIN_STRENGTH_BANDS[ORIGIN_STRENGTH_BANDS.length - 1];
+};
+export const ORIGIN_STRENGTH_SCALE =
+  'Origin strength runs 0–100 and is not a score for the lead. It says how much of what the sender claimed about '
+  + 'itself NEXUS could verify, and it is shown wherever a source is shown so that two sources are never made to '
+  + 'look equally attested when they are not.';
+export const ORIGIN_STRENGTH_NOT_STATED =
+  'This arrival records no origin strength, so how well it is attested is unknown — which is not the same as weak '
+  + 'and not the same as strong. Nothing is claimed about it in either direction.';
+export const SOURCE_IS_AS_ATTESTED_AS_ITS_WEAKEST =
+  'A source is shown at its WEAKEST arrival, never at an average. Averaging attestation would invent a number no '
+  + 'arrival carried and would hide the one that carried nothing.';
+
+/* ── Test traffic ──────────────────────────────────────────────────────────
+   The one rule on this subject that has no exceptions: simulator output is
+   never added into a figure a dealership reads as business. It is shown —
+   hiding it would be its own kind of lie — in a band of its own, labelled. */
+export const TEST_TRAFFIC_EXCLUDED =
+  'Arrivals marked as test traffic are excluded from every count on this screen and shown separately. They are '
+  + 'simulator output, not business, and a dealership must never be shown one as the other.';
+export const TEST_TRAFFIC_BAND =
+  'Everything in this band is test traffic. It is here so that it is visible and accounted for, and it is counted '
+  + 'nowhere else on this screen — not in the arrivals, not in the sources, and not in the losses.';
+export const TEST_TRAFFIC_UNCLASSIFIED =
+  'Some arrivals do not say whether they are test traffic. They are counted in neither figure: calling them business '
+  + 'would inflate the real number, and calling them test would hide a real enquiry.';
+
+/* ── Two refusals this screen makes in the dealership's own interest ───────*/
+export const NO_MONEY_ON_LEAD_SOURCES =
+  'No figure on this screen is money. What a lost enquiry would have been worth is recorded nowhere in this '
+  + 'database, so putting a currency value on one would be inventing it.';
+export const LOSS_IS_NOT_ABSENCE =
+  'An arrival that was refused, held back or left to expire is an enquiry this dealership HAD. It is reported as a '
+  + 'loss with the reason recorded against it, and never as "no enquiries arrived".';
+export const NO_REASON_RECORDED =
+  'No reason was recorded against this one, which is itself a gap — nobody can act on a refusal nobody explained.';
 
 /* ── 4. dealerText — the net over free text we did not write ────────────────
    Two jobs, in this order:

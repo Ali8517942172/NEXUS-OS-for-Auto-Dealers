@@ -45,6 +45,12 @@ import './screens/customers.js';
 import './screens/deals.js';
 import './screens/finance.js';
 import './screens/inventory.js';
+/* Lead Sources is a plain static import, not part of the import.meta.glob
+   block below: that block exists for the five Revenue Recovery engine
+   modules, which may legitimately not have landed yet. This one is on disk,
+   so it is listed here with the rest — and removing this line removes the
+   screen from the app exactly as it does for every other. */
+import './screens/lead-sources.js';
 import './screens/leads.js';
 import './screens/overview.js';
 import './screens/revenue.js';
