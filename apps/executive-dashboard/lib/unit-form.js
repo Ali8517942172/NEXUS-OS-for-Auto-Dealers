@@ -222,8 +222,20 @@ const daysInStock = (acquired) => {
    printing a holding cost nobody quoted. */
 function deriveUnit(u, cfg) {
   const c = (cfg && typeof cfg === 'object') ? { ...NO_RATE, ...cfg } : NO_RATE;
-  const price = n0(u.price_aed) || 0;
-  const cost = n0(u.cost_aed) || 0;
+  /* Both raw, and deliberately NOT coalesced to zero. `n0(x) || 0` turned
+     "nobody recorded this" into "this car cost nothing", and `price - cost`
+     then rendered the WHOLE ASKING PRICE as gross margin on a unit with no
+     acquisition cost - AED 235,000 on the demo dealership's DEMO-2130.
+     recompute_inventory_derived() carried the identical defect and was fixed in
+     the database on 6 Sep 2026 (migration 20260906065739, plus a CHECK that
+     refuses the write outright). This is that defect in the browser, and the
+     browser is the copy a dealership actually reads: every caller spreads
+     `...u` and then overwrites, so what this returns replaces what the database
+     sent. Missing either input is null with a state saying WHICH one, in the
+     vocabulary of inventory.gross_margin_state and
+     v_inventory_profit_sentinel. */
+  const price = n0(u.price_aed);
+  const cost = n0(u.cost_aed);
   const sold = String(u.status || '').toLowerCase() === 'sold';
   const storedDays = n0(u.days_in_stock);
   let days = daysInStock(u.acquired_at);
@@ -271,8 +283,15 @@ function deriveUnit(u, cfg) {
       ? (c.why || NO_RATE.why)
       : 'No acquisition date on record, so there is no day count to charge a holding rate against.';
 
-  const gross = price - cost;
-  const net = holding == null ? null : gross - holding;
+  const grossState = (price == null && cost == null) ? 'NOT_COMPUTABLE_NO_PRICE_NO_COST'
+    : price == null ? 'NOT_COMPUTABLE_NO_PRICE'
+      : cost == null ? 'NOT_COMPUTABLE_NO_COST' : 'COMPUTED';
+  const gross = grossState === 'COMPUTED' ? price - cost : null;
+  const grossWhy = grossState === 'COMPUTED' ? null
+    : 'Missing ' + (grossState === 'NOT_COMPUTABLE_NO_PRICE_NO_COST' ? 'both a list price and an acquisition cost'
+      : grossState === 'NOT_COMPUTABLE_NO_PRICE' ? 'a list price' : 'an acquisition cost')
+      + ', so margin cannot be computed and no recommendation is safe.';
+  const net = (holding == null || gross == null) ? null : gross - holding;
   return {
     ...u,
     days_in_stock: days,
@@ -284,15 +303,22 @@ function deriveUnit(u, cfg) {
     holding_cost_note: holdingWhy,
     holding_cost_basis: c.basis,
     holding_cost_per_day_aed: c.rate,
-    /* Price minus cost. Neither input has anything to do with the date or the
-       rate, so this stays a number whatever the two above say. */
+    /* Price minus cost, when both are on record - and null with a reason when
+       either is not. Neither input has anything to do with the date or the
+       rate, so this is unaffected by the two states above; it has a state of
+       its own because it has inputs of its own. */
     gross_margin: gross,
+    gross_margin_state: grossState,
+    gross_margin_note: grossWhy,
     net_margin: net,
-    net_margin_state: holdingState,
-    net_margin_note: holdingState === 'NOT_COMPUTABLE'
-      ? `Net margin is gross margin less holding cost. ${holdingWhy} Gross is shown; net is withheld rather than guessed.`
-      : null,
-    vat_amount: Math.round(price * INV.VAT_RATE),
+    net_margin_state: gross == null ? 'NOT_COMPUTABLE' : holdingState,
+    net_margin_note: gross == null ? grossWhy
+      : holdingState === 'NOT_COMPUTABLE'
+        ? `Net margin is gross margin less holding cost. ${holdingWhy} Gross is shown; net is withheld rather than guessed.`
+        : null,
+    /* Five per cent OF A PRICE. With no price on record there is no VAT figure,
+       and zero is not one. */
+    vat_amount: price == null ? null : Math.round(price * INV.VAT_RATE),
     recommended_commission: net == null ? null : Math.round(net * INV.COMMISSION_RATE),
     aging_alert: days == null ? null
       : sold ? 'HEALTHY'
@@ -554,12 +580,17 @@ function unitForm(existing, inv, onDone) {
       <dt>Aging alert</dt><dd>${d.aging_alert
         ? `<span title="${esc(bandWhy)}">${pill(d.aging_alert, undefined, { verbatim: false })}</span>`
         : NO_DATE}</dd>
-      <dt>Gross margin</dt><dd class="num ${d.gross_margin < 0 ? 't-hot' : ''}">${aed(d.gross_margin)}</dd>
+      <dt>Gross margin</dt><dd class="num ${d.gross_margin < 0 ? 't-hot' : ''}">${d.gross_margin_state !== 'COMPUTED'
+        ? notComputable(d.gross_margin_note, '')
+        : aed(d.gross_margin)}</dd>
       <dt>Holding cost</dt><dd class="num">${d.holding_cost_state === 'NOT_COMPUTABLE'
         ? notComputable(rateWhy, inputs)
         : placeholder ? assumed(aed(d.holding_cost_accrued), rateWhy) : aed(d.holding_cost_accrued)}</dd>
       <dt>Net margin</dt><dd class="num">${d.net_margin_state === 'NOT_COMPUTABLE'
-        ? notComputable(`Gross margin of ${aed(d.gross_margin)} is real; the holding cost that would be subtracted from it is not on record.`, inputs)
+        ? notComputable(d.gross_margin == null
+            ? d.net_margin_note
+            : `Gross margin of ${aed(d.gross_margin)} is real; the holding cost that would be subtracted from it is not on record.`,
+          d.gross_margin == null ? '' : inputs)
         : placeholder
           ? assumed(`<strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong>`, rateWhy)
           : `<strong class="${d.net_margin < 0 ? 't-hot' : ''}">${aed(d.net_margin)}</strong>`}</dd>

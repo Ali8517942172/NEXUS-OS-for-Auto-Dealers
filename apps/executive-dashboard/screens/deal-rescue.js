@@ -128,7 +128,7 @@ SCREENS.dealrescue = async host => {
     + '&order=candidate_kind.asc,observed_at.desc&limit=500'));
 
   const readReadiness = shared(() => db('v_deal_rescue_readiness'
-    + '?select=id,sort,requirement,kind,unlocks,unlocks_states,evidence_today,why_not_code,met_now,measured_now,'
+    + '?select=id,sort,requirement,kind,unlocks,unlocks_states,platform_evidence,why_not_code,met_now,measured_now,'
     + 'measured_at'
     + '&order=sort.asc&limit=100'));
 
@@ -426,8 +426,18 @@ SCREENS.dealrescue = async host => {
           <div class="label-caps">The live evidence behind each of those, as the engine measured it</div>
           ${table([
             { label: 'Requirement', strong: true, render: p => mono(p.id) },
-            { label: 'What is true today', render: p => wrap(muted(esc(str(p.evidence_today))
-                || 'No evidence is recorded against this requirement.')) },
+            /* Two rows, not one, and the split is the point. `platform_evidence`
+               is what is true of NEXUS for every dealership alike; `measured_now`
+               is what is true of THIS dealership, counted on this read through
+               its own row-level security. They used to be one column called
+               evidence_today, which stored ALBA CARS' counts and printed them to
+               whoever opened the screen - see migration 20260906070947. */
+            { label: 'What is true of NEXUS, for every dealership',
+              render: p => wrap(muted(esc(str(p.platform_evidence))
+                || 'The engine records nothing about the platform against this requirement.')) },
+            { label: 'What is true of this dealership, measured on this read',
+              render: p => wrap(muted(esc(str(p.measured_now))
+                || 'Not measured. That is not the same as met.')) },
           ], R.reqs)}
         </div>`;
 
