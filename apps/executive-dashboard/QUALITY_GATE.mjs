@@ -110,6 +110,18 @@
  *                                       NEXUS_LIVE_URL. For a private staging
  *                                       endpoint only; never for production.
  *
+ * THE ANCHOR — WHY THE SNAPSHOT CARRIES A MIGRATION VERSION
+ *   `takenAt` says when the snapshot was read. It does not say what the database
+ *   had applied when it was read, and only the second fact is checkable. A
+ *   catalogue taken eighteen minutes before a migration is not stale by any
+ *   clock and is still wrong about the schema; one 23.92 hours old passed the
+ *   24-hour tolerance and described a database with half the functions it had.
+ *   So the catalogue records the head of supabase_migrations.schema_migrations,
+ *   --refresh-schema copies it into the snapshot, L1 reports NOT RUN rather than
+ *   PASS when the two anchors disagree, and L13 reports NOT RUN when this
+ *   repository holds a migration the catalogue's database had not applied.
+ *   Freshness in versions, not in hours. The hour tolerance stays as a fuse.
+ *
  * THE BASELINE LANE — L12
  *   L12 compares supabase/baseline/ with the database rather than checking that
  *   a file is present. Its offline arm always runs; its seed and schema arms
@@ -158,8 +170,8 @@ const opt  = n => { const i = ARGV.indexOf(n); return i >= 0 ? ARGV[i + 1] : nul
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-05T20:56:16Z",
-  "source": "--catalogue /home/claude/out/catalogue.prod.2026-09-05.json — live catalogue of Supabase production project dsvuoovivysszdoiorch, read 5 Sep 2026 through mcp__Supabase__execute_sql (the SQL --print-sql emits, split into two statements — everything but the function bodies, then the function bodies — each returned base64-encoded with its own length and md5, decoded and reassembled locally after both checks matched) and fed back in via --catalogue; no NEXUS_DB_URL and no psql credentials exist in that environment. The catalogue's own meta block re-verified the reassembly: 120 functions, 307642 characters of function source, 98 relations.",
+  "takenAt": "2026-09-06T05:05:00Z",
+  "source": "--catalogue /home/claude/out/catalogue.prod.2026-09-06T0505Z.json — live catalogue of Supabase PRODUCTION project dsvuoovivysszdoiorch, read 6 Sep 2026 at 05:05:00Z, ANCHORED TO MIGRATION 20260906050249 (276 recorded). max(version) of supabase_migrations.schema_migrations was read at 05:03:04Z before this reading and again at 05:05:25Z after it, both 20260906050249. This is the THIRD attempt: catalogues taken at 04:54:31Z (head 20260906042024) and 04:58:58Z (head 20260906045700) were both discarded because another agent applied a migration minutes later, and the new L13 reported NOT RUN on each rather than a verdict — the failure mode this pass exists to end, caught twice while the pass was running. There is no NEXUS_DB_URL and no psql credential in this environment, so the catalogue was read through mcp__Supabase__execute_sql in two statements — everything except the function bodies, then the 122 function bodies keyed by (name, identity arguments) — each returned base64-encoded with its own length and md5, decoded and reassembled locally only after both matched (A: 73111 chars, md5 48743f853d7de025168bb0500b56081a; B: 335453 chars, md5 dc33c4dde7208b852db078a568dcb038). Bodies were spliced by function identity, never by position. The gate's own integrity seal then re-verified the reassembly against the counts Postgres computed for itself in the same statement: 122 functions, 314404 characters of function source, 98 relations.",
   "relations": {
     "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
     "attribution_event_type": "event,seq,state,source_ref,finding",
@@ -257,7 +269,7 @@ const SNAPSHOT = {
     "whatsapp_message_intent": "code,label,description,is_business_initiated,template_category_if_required,created_at",
     "whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,message_category,template_required,template_id,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,sent_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,provider_pricing_delivery_event_id,latest_status,latest_status_at,latest_status_delivery_event_id,cost_state,recorded_at,updated_at",
     "whatsapp_opt_in_event": "id,tenant_id,integration_id,customer_wa_id,event,occurred_at,mechanism,evidence_kind,evidence_ref,recorded_by,recorded_at,notes,consent_rank",
-    "whatsapp_templates": "template_id,tenant_id,integration_id,provider,waba_ref,name,language,category,provider_template_id,nexus_state,nexus_state_at,nexus_state_by,provider_status,provider_status_raw,provider_status_observed_at,provider_status_source,provider_status_evidence_ref,provider_rejected_reason,previous_provider_status,previous_status_observed_at,variable_schema,body_variable_count,body_text,body_text_source,body_text_observed_at,created_at,updated_at",
+    "whatsapp_templates": "template_id,tenant_id,integration_id,provider,waba_ref,name,language,category,provider_template_id,nexus_state,nexus_state_at,nexus_state_by,provider_status,provider_status_raw,provider_status_observed_at,provider_status_source,provider_status_evidence_ref,provider_rejected_reason,previous_provider_status,previous_status_observed_at,variable_schema,body_variable_count,body_text,body_text_source,body_text_observed_at,created_at,updated_at,language_key,waba_key",
     "workflow_registry": "id,name,audit_name,trigger_type,trigger_detail,category,is_active,description,writes_audit_log,audit_aliases"
   },
   "rpcs": {
@@ -489,6 +501,13 @@ const SNAPSHOT = {
     "lead_recovery_write_audit": {
       "secdef": true,
       "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_active_dealership_ids": {
+      "secdef": true,
+      "tenantArg": false,
       "grants": [
         "service_role"
       ]
@@ -796,6 +815,14 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_workflow_catalogue": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
         "service_role"
       ]
     },
@@ -1164,6 +1191,11 @@ const SNAPSHOT = {
     "tables_without_rls": 0,
     "views_without_security_invoker": 0,
     "policies": 69
+  },
+  "migration": {
+    "head": "20260906050249",
+    "count": 276,
+    "newest": "20260906050249,20260906045700,20260906042024,20260905211435,20260905211423"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */
@@ -1255,6 +1287,42 @@ const ECONOMIC_SCREENS_UNKNOWN = ECONOMIC_SCREEN_NAMES.filter(id => !NAV_IDS.inc
 const CATALOGUE_SQL = `
 select json_build_object(
   'takenAt', to_char(now() at time zone 'utc','YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+  /* THE VERSION ANCHOR — the fact that makes this catalogue's currency
+     checkable, and the one this file went two days without.
+
+     takenAt is a CLOCK, and a clock is the wrong witness. The catalogue read on
+     5 Sep 2026 at 20:56:16Z was minutes old when the gate consumed it and it was
+     already wrong: migration 20260905211435 added two columns to
+     whatsapp_templates at 21:14, eighteen minutes later. Nothing about eighteen
+     minutes is stale, and L1 reported PASS on a snapshot that no longer
+     described the database. CLAUDE.md records the same failure from the other
+     end — a catalogue 23.92 hours old was inside the tolerance and produced a
+     full live verdict for a database with 60 functions where live had 110.
+     Both readings were fresh by the clock and wrong about the schema.
+
+     What decides whether a reading is current is not how long ago it was taken.
+     It is whether the migration history has moved since. So the head of
+     supabase_migrations.schema_migrations is selected HERE, in the same
+     statement that builds everything else, and it travels with the catalogue.
+     --refresh-schema copies it into the snapshot, L1 refuses to report PASS when
+     the two anchors differ, and L13 refuses to call the catalogue current when
+     this repository holds a migration the catalogue's database had not applied.
+
+     to_regclass returns NULL rather than raising for a relation that is not
+     there, and CASE evaluates its branches lazily, so a connection that cannot
+     see the migrations schema yields readable:false and a NOT RUN rather than a
+     catalogue that fails to build. query_to_xml runs the read dynamically, which
+     is what keeps the missing-relation case out of the parse. */
+  'migration_history', (select case
+     when to_regclass('supabase_migrations.schema_migrations') is null
+       then json_build_object('readable', false,
+              'why', 'supabase_migrations.schema_migrations is not visible to this connection, so this catalogue carries no version anchor and nothing can establish that it describes the database as it stands now')
+     else (select json_build_object('readable', true,
+             'head',   (xpath('/row/h/text()', x))[1]::text,
+             'count',  (xpath('/row/n/text()', x))[1]::text::bigint,
+             'newest', (xpath('/row/l/text()', x))[1]::text)
+             from query_to_xml('select max(version) h, count(*) n, (select string_agg(v.version, '','') from (select version from supabase_migrations.schema_migrations order by version desc limit 5) v) l from supabase_migrations.schema_migrations', false, true, '') x)
+     end),
   'relations', (select json_object_agg(t.table_name, t.cols) from (
      select c.table_name, string_agg(c.column_name, ',' order by c.ordinal_position) cols
        from information_schema.columns c
@@ -1341,9 +1409,86 @@ select json_build_object(
      measurement, and a measurement must come from the database or it is a
      belief. Drop one of these keys and L2 fails the named table rather than
      passing it — an exemption that cannot be re-checked is not an exemption. */
+  /* A MARKER, NOT DECORATION — the same device as views_invoker_test above.
+     A catalogue dumped before the change below carries an open_policies list
+     built by the literal-string test, and it is indistinguishable from one built
+     by evaluating the predicate. L2 will not report PASS on a list whose meaning
+     it cannot establish. */
+  'policy_openness_test', 'unconditional-evaluated',
+  /* WHAT "OPEN" MEANS, AND WHY IT USED TO BE A TOKEN.
+     Until 6 Sep 2026 this WHERE clause read
+
+         (coalesce(p.qual,'')='true' or coalesce(p.with_check,'')='true')
+
+     which asks whether somebody TYPED the word true. CLAUDE.md lists that as one
+     of three P0s resting on a token, and it is not hypothetical: measured on
+     staging 6 Sep 2026 inside a DO block that ended in RAISE EXCEPTION, so
+     nothing persisted —
+
+         using (true)         -> pg_policies.qual = 'true'          caught
+         using ('t'::boolean) -> pg_policies.qual = 'true'          caught (folded)
+         using (1=1)          -> pg_policies.qual = '(1 = 1)'       INVISIBLE
+         using (not false)    -> pg_policies.qual = '(NOT false)'   INVISIBLE
+
+     Postgres does NOT constant-fold a policy expression into 'true', so a policy
+     that admits every row of a tenant-owned table could sit here unseen. The
+     test now asks the question the check is actually about — does this predicate
+     filter anything — in two steps, and Postgres answers both:
+
+       1. Does the expression reference a column of the row? The parse tree says
+          so directly: pg_policy.polqual::text contains a {VAR node for every
+          column reference. '(tenant_id IS NOT NULL)' has one; '(1 = 1)' does
+          not. A predicate that reads no column of the row cannot filter rows by
+          their content.
+       2. If it references no column, EVALUATE it. query_to_xml runs
+          'select (<the expression>)::bool' and the answer is Postgres's own, not
+          a pattern match.
+
+     Step 2 is fenced. It runs only when the tree contains no {VAR — so the
+     expression cannot reference the table — and no {FUNCEXPR, {SUBLINK,
+     {SUBPLAN, {AGGREF or {WINDOWFUNC, so no function of ours is called and no
+     subquery is run to satisfy a check. A predicate excluded by that fence is
+     NOT quietly treated as closed: it is reported separately in
+     policy_undecidable below, because "this gate declined to decide" and "this
+     policy is safe" are different sentences and only one of them is true.
+
+     The literal test is kept and OR-ed rather than replaced, so this change can
+     only ever add a policy to the list. Measured on production the same day:
+     12 open before, 12 open after, 0 gained, 0 lost, 0 undecidable — the check
+     is now real and today it changes nothing, which is the outcome to want. */
+  'policy_undecidable', (select coalesce(json_agg(json_build_object(
+       'table', p.tablename, 'policy', p.policyname, 'cmd', p.cmd, 'roles', p.roles,
+       'expr', coalesce(p.qual, p.with_check))), '[]'::json)
+     from pg_policies p
+     join pg_class c on c.relname = p.tablename
+     join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
+     join pg_policy pol on pol.polrelid = c.oid and pol.polname = p.policyname
+    where p.schemaname='public'
+      and array_to_string(p.roles,',') <> 'service_role'
+      and coalesce(p.qual,'') <> 'true' and coalesce(p.with_check,'') <> 'true'
+      and ((p.qual is not null
+            and coalesce(pol.polqual::text,'') not like '%{VAR %'
+            and (coalesce(pol.polqual::text,'') like '%{FUNCEXPR%'
+              or coalesce(pol.polqual::text,'') like '%{SUBLINK%'
+              or coalesce(pol.polqual::text,'') like '%{SUBPLAN%'
+              or coalesce(pol.polqual::text,'') like '%{AGGREF%'
+              or coalesce(pol.polqual::text,'') like '%{WINDOWFUNC%'))
+        or (p.with_check is not null
+            and coalesce(pol.polwithcheck::text,'') not like '%{VAR %'
+            and (coalesce(pol.polwithcheck::text,'') like '%{FUNCEXPR%'
+              or coalesce(pol.polwithcheck::text,'') like '%{SUBLINK%'
+              or coalesce(pol.polwithcheck::text,'') like '%{SUBPLAN%'
+              or coalesce(pol.polwithcheck::text,'') like '%{AGGREF%'
+              or coalesce(pol.polwithcheck::text,'') like '%{WINDOWFUNC%')))),
   'open_policies', (select coalesce(json_agg(json_build_object(
        'table', p.tablename, 'policy', p.policyname, 'roles', p.roles, 'cmd', p.cmd,
        'qual', p.qual, 'with_check', p.with_check,
+       'open_witness', (case
+            when coalesce(p.qual,'')='true' or coalesce(p.with_check,'')='true'
+              then 'the policy expression is the literal true'
+            when u.q then 'the USING expression references no column of the table and Postgres evaluates it to TRUE: ' || p.qual
+            when u.w then 'the WITH CHECK expression references no column of the table and Postgres evaluates it to TRUE: ' || p.with_check
+            else 'open by a witness this catalogue did not record' end),
        'table_acl', coalesce(array_to_string(c.relacl, E'\\n'), '(owner-only)'),
        /* relacl is the mechanism; these two are the effect, and they are not the
           same fact. A table can grant a role nothing in relacl and still hand it
@@ -1390,8 +1535,30 @@ select json_build_object(
      from pg_policies p
      join pg_class c on c.relname = p.tablename
      join pg_namespace n on n.oid = c.relnamespace and n.nspname = p.schemaname
+     join pg_policy pol on pol.polrelid = c.oid and pol.polname = p.policyname
+     cross join lateral (select
+        (case when p.qual is null then false
+              when coalesce(pol.polqual::text,'') like '%{VAR %'       then false
+              when coalesce(pol.polqual::text,'') like '%{FUNCEXPR%'   then false
+              when coalesce(pol.polqual::text,'') like '%{SUBLINK%'    then false
+              when coalesce(pol.polqual::text,'') like '%{SUBPLAN%'    then false
+              when coalesce(pol.polqual::text,'') like '%{AGGREF%'     then false
+              when coalesce(pol.polqual::text,'') like '%{WINDOWFUNC%' then false
+              else coalesce((select (xpath('/row/v/text()', x))[1]::text
+                               from query_to_xml('select ('||p.qual||')::bool as v', false, true, '') x) = 'true', false)
+         end) as q,
+        (case when p.with_check is null then false
+              when coalesce(pol.polwithcheck::text,'') like '%{VAR %'       then false
+              when coalesce(pol.polwithcheck::text,'') like '%{FUNCEXPR%'   then false
+              when coalesce(pol.polwithcheck::text,'') like '%{SUBLINK%'    then false
+              when coalesce(pol.polwithcheck::text,'') like '%{SUBPLAN%'    then false
+              when coalesce(pol.polwithcheck::text,'') like '%{AGGREF%'     then false
+              when coalesce(pol.polwithcheck::text,'') like '%{WINDOWFUNC%' then false
+              else coalesce((select (xpath('/row/v/text()', x))[1]::text
+                               from query_to_xml('select ('||p.with_check||')::bool as v', false, true, '') x) = 'true', false)
+         end) as w) u
      where p.schemaname='public'
-       and (coalesce(p.qual,'')='true' or coalesce(p.with_check,'')='true')
+       and (coalesce(p.qual,'')='true' or coalesce(p.with_check,'')='true' or u.q or u.w)
        and array_to_string(p.roles,',') <> 'service_role'),
   'sentinel', (select json_build_object(
        'units', count(*),
@@ -1570,6 +1737,11 @@ function catalogueIntegrity(cat) {
   const t = Date.parse(cat.takenAt || '');
   if (!Number.isFinite(t)) return 'it carries no readable takenAt, so nothing says how old the reading is';
   const ageH = (Date.now() - t) / 3.6e6;
+  /* A FUSE, NOT THE LOCK. CLAUDE.md's words, and they are right: a catalogue
+     23.92 hours old passed this and produced a full live verdict for a database
+     whose function count had nearly doubled, and a catalogue eighteen minutes
+     old was already behind a migration. This bound catches the grossly old file
+     and nothing finer. The lock is the migration anchor — L1 and L13. */
   if (ageH > CATALOGUE_MAX_AGE_H) return `taken ${ageH.toFixed(1)}h ago and the limit is ${CATALOGUE_MAX_AGE_H}h — the live lane asserts what the database is NOW, and a stale reading reported as a live PASS is the same untruth as a NOT RUN reported as a PASS`;
   if (ageH < -1) return `takenAt is ${(-ageH).toFixed(1)}h in the future — the clock on one side of this reading is wrong and its freshness cannot be established`;
   return null;
@@ -1682,6 +1854,19 @@ if (flag('--refresh-schema')) {
        to distrust it correctly. */
     source: [live.how || 'PostgREST OpenAPI root', process.env.NEXUS_SNAPSHOT_SOURCE_NOTE]
       .filter(Boolean).join(' — '),
+    /* THE ANCHOR. takenAt says WHEN this was read; `migration` says WHAT the
+       database had applied when it was read, and only the second is checkable.
+       A snapshot with no anchor is not refused — it is recorded as null, and L1
+       then reports NOT RUN rather than PASS, because a column map that happens
+       to match is not evidence that the two sides describe the same database.
+       Refreshing from a source that cannot read supabase_migrations (PostgREST's
+       OpenAPI root, for one) therefore costs L1 its PASS, deliberately. */
+    migration: (live.cat && live.cat.migration_history && live.cat.migration_history.readable
+                && live.cat.migration_history.head != null)
+      ? { head: String(live.cat.migration_history.head),
+          count: Number(live.cat.migration_history.count),
+          newest: live.cat.migration_history.newest || null }
+      : null,
     relations: Object.fromEntries(Object.entries(RELATIONS).map(([k, v]) => [k, v.join(',')])),
     rpcs: (live.cat && Array.isArray(live.cat.functions))
       ? rpcsFromCatalogue(live.cat.functions)
@@ -2784,7 +2969,11 @@ function l2PolicyVerdict(p, relations) {
     /* The ordinary failure: an open policy nobody has accepted. Say what is
        true about the table so the reader can judge the severity, and say
        plainly that having the right shape is not an exemption. */
-    let line = `${table}/${policy}: ${cmd || '(cmd unknown)'} USING(true) for ${roles ? roles.join(',') : '(roles unknown)'}`;
+    /* SAY WHICH WITNESS FIRED. The line used to read "USING(true)" whatever the
+       expression actually was, which stopped being true the moment the catalogue
+       started catching a predicate that admits every row without saying `true`. */
+    const witness = p && p.open_witness ? String(p.open_witness) : 'the policy expression is the literal true';
+    let line = `${table}/${policy}: ${cmd || '(cmd unknown)'} for ${roles ? roles.join(',') : '(roles unknown)'}, admitting every row — ${witness}`;
     line += hasTenantId === true
       ? ' — and this table HAS a tenant_id column, so a USING(true) policy on it crosses dealerships'
       : hasTenantId === false ? ' — the table carries no tenant_id column' : ' — whether it has a tenant_id column is not in this catalogue';
@@ -2862,16 +3051,98 @@ if (!live.cat) {
 } else {
   const c = live.cat;
 
-  /* L1 */ {
+  /* L1 · FRESHNESS IN VERSIONS, NOT IN HOURS.
+     ─────────────────────────────────────────
+     This check used to have exactly two outcomes: the column maps differ (FAIL)
+     or they do not (PASS). The second is where it went wrong, twice in two days,
+     and both times the clock said everything was fine.
+
+       · 5 Sep 2026, 20:56:16Z — a catalogue was read from production and the
+         snapshot was refreshed from it. Minutes old, and L1 was green. At
+         21:14, EIGHTEEN MINUTES LATER, migration 20260905211435 added
+         `language_key` and `waba_key` to whatsapp_templates. The snapshot was
+         then wrong, and by every clock in this file it was fresh.
+       · CLAUDE.md records the same failure from the other end: a catalogue
+         23.92 hours old passed the 24-hour tolerance and produced a full live
+         verdict for a database with 60 functions where live had 110. It calls
+         that tolerance "a fuse, not a lock", and it is right.
+
+     Age is a proxy, and it is a bad one in both directions — eighteen minutes
+     was too long and 23.92 hours was accepted. The fact that actually decides
+     whether a reading still describes the database is whether the MIGRATION
+     HISTORY has moved since it was taken. That is discrete, it is recorded by
+     Supabase itself, and it cannot drift silently the way a clock can.
+
+     So the catalogue now carries the head of supabase_migrations.schema_migrations
+     (see migration_history in CATALOGUE_SQL), --refresh-schema copies it into
+     the snapshot, and this check has THREE outcomes rather than two:
+
+         a column map differs                      -> FAIL   (as before)
+         no difference, and the two anchors agree  -> PASS
+         no difference, and they do not, or either
+           side carries no anchor at all           -> NOT RUN
+
+     The third case is the repair. A matching column map across two different
+     migration heads proves only that the migrations in between did not happen
+     to touch a column list — they may have changed a policy, a grant, a
+     function body or a constraint, all of which the offline lanes read out of
+     this same snapshot. "I cannot establish that this is current" is the true
+     answer there, and NOT RUN is the word this file uses for it.
+
+     It can only ever move a PASS to NOT RUN. A demonstrated difference is still
+     a FAIL, which is the stricter verdict and stays first. */
+  {
     const bad = [];
     for (const [rel, cols] of Object.entries(c.relations)) {
       const snap = SNAPSHOT.relations[rel];
       if (!snap) bad.push(`live has "${rel}" and the snapshot does not`);
-      else if (snap !== cols) bad.push(`"${rel}" columns differ between live and the snapshot`);
+      else if (snap !== cols) {
+        const a = new Set(String(snap).split(',')), b = new Set(String(cols).split(','));
+        const added = [...b].filter(x => !a.has(x)), gone = [...a].filter(x => !b.has(x));
+        bad.push(`"${rel}" columns differ between live and the snapshot`
+          + (added.length ? ` — live has ${added.join(', ')} and the snapshot does not` : '')
+          + (gone.length ? ` — the snapshot has ${gone.join(', ')} and live does not` : '')
+          + (added.length || gone.length ? '' : ' — the same column names in a different order'));
+      }
     }
     for (const rel of Object.keys(SNAPSHOT.relations)) if (!c.relations[rel]) bad.push(`the snapshot has "${rel}" and live does not`);
-    verdict('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1], bad.length ? bad.concat(['run --refresh-schema; a snapshot that drifts is how this gate started producing false failures']) : [],
-      [`${Object.keys(c.relations).length} relations, identical to the snapshot taken ${SNAPSHOT.takenAt}`]);
+
+    const mh = c.migration_history;
+    const catHead  = mh && mh.readable && mh.head != null ? String(mh.head) : null;
+    const snapHead = SNAPSHOT.migration && SNAPSHOT.migration.head != null ? String(SNAPSHOT.migration.head) : null;
+    const relN = Object.keys(c.relations).length;
+    const anchorLines = [
+      catHead ? `the catalogue was read at migration ${catHead}, with ${mh.count} recorded` : 'the catalogue carries no migration anchor',
+      snapHead ? `the snapshot is anchored to migration ${snapHead}${SNAPSHOT.migration.count ? `, with ${SNAPSHOT.migration.count} recorded` : ''}` : 'the snapshot carries no migration anchor',
+    ];
+    const WHY_ANCHOR = 'A matching column map is not evidence of currency. The snapshot taken 2026-09-05T20:56:16Z matched its own catalogue exactly and was already eighteen minutes short of migration 20260905211435, which added two columns to whatsapp_templates; the run before that accepted a catalogue 23.92 hours old for a database whose function count had nearly doubled. Time is the wrong witness — the migration head is the right one.';
+
+    if (bad.length) {
+      FAIL('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1], bad.concat(anchorLines).concat([
+        'run --refresh-schema; a snapshot that drifts is how this gate started producing false failures']));
+    } else if (!catHead) {
+      NOTRUN('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1],
+        `${relN} relations were compared column by column and every one matches, but ${mh ? `this catalogue could not read supabase_migrations.schema_migrations (${mh.why || 'no reason recorded'})` : 'this catalogue carries no migration_history key at all, so it predates the version anchor'}. ${WHY_ANCHOR} Re-dump the catalogue with the SQL --print-sql emits.`);
+    } else if (!snapHead) {
+      NOTRUN('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1],
+        `${relN} relations were compared column by column and every one matches, and the catalogue was read at migration ${catHead} — but the embedded snapshot carries no migration anchor, so nothing says which migration history IT describes. ${WHY_ANCHOR} Run --refresh-schema against a source that can read supabase_migrations.schema_migrations.`);
+    } else if (snapHead !== catHead) {
+      const behind = snapHead < catHead;
+      NOTRUN('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1],
+        `${relN} relations were compared column by column and every one matches, but the two readings are anchored to different migration heads: the snapshot to ${snapHead} and the catalogue to ${catHead}. `
+        + (behind
+            ? `The database moved on after the snapshot was taken, and the migrations in between did not happen to change a column list this check compares — they may still have changed a policy, a grant, a function body or a constraint, all of which the offline lanes read out of this same snapshot. `
+            : `The snapshot is anchored AHEAD of the catalogue, so the catalogue is the older reading and is not a live witness for anything. `)
+        + `${WHY_ANCHOR} Run --refresh-schema against a catalogue read at ${catHead} or later.`);
+    } else {
+      PASS('L1', LANE.LIVE, 'P0', LIVE_CHECKS[0][1], [
+        `${relN} relations, identical to the snapshot column for column`,
+        `both readings are anchored to the same migration head, ${catHead} — the snapshot describes the migration history the catalogue was taken from, which is the fact a clock cannot establish`,
+        `snapshot taken ${SNAPSHOT.takenAt}; catalogue taken ${c.takenAt}`,
+        mh.newest ? `the five newest migrations at that head: ${mh.newest}` : 'the catalogue records no migration list',
+        'This PASS says the snapshot matches THIS catalogue. Whether the catalogue itself is still current is L13.',
+      ]);
+    }
   }
   /* L2 · arm 1 is RLS presence, arm 2 is open policies. Arm 2 exempts only
      what is NAMED in L2_EXEMPT_TABLES and still MEASURES as safe; see the long
@@ -2887,14 +3158,50 @@ if (!live.cat) {
       else failures.push(v.line);
     }
     const stale = Object.keys(L2_EXEMPT_TABLES).filter(n => !pols.some(p => String(p.table) === n));
-    verdict('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1],
-      (c.tables_no_rls || []).map(t => `${t}: RLS is off`).concat(failures),
-      [`${(c.tables_no_rls || []).length} tables without RLS`,
-       `${pols.length} policies in public are USING(true) or WITH CHECK(true) for a role other than service_role; ${exempted.length} are exempt and ${failures.length} are not`,
+    /* HOW THIS CATALOGUE DECIDED A POLICY WAS OPEN.
+       Until 6 Sep 2026 arm 2 read a list built by asking whether the policy
+       expression was the literal string `true`. CLAUDE.md names that as one of
+       three P0s resting on a token, and it is measured rather than feared:
+       `USING (1=1)` is stored as `(1 = 1)` and `USING (NOT false)` as
+       `(NOT false)` — Postgres does not fold either into `true` — so a policy
+       admitting every row of a tenant-owned table was invisible to this check.
+       The catalogue now decides openness by asking Postgres: does the parse tree
+       reference a column of the row, and if it does not, what does the
+       expression evaluate to. `policy_openness_test` marks a catalogue built
+       that way.
+
+       A catalogue built the old way is not distinguishable from a new one by its
+       contents, so this check will not report PASS on it. It can still FAIL on
+       it — the old list is a subset of the new one, so anything it names is
+       genuinely open — but "no open policy" from a detector that cannot see
+       `1=1` is exactly the false green this file exists to refuse. */
+    const opennessReal = c.policy_openness_test === 'unconditional-evaluated';
+    const l2bad = (c.tables_no_rls || []).map(t => `${t}: RLS is off`).concat(failures);
+    const l2ev = [`${(c.tables_no_rls || []).length} tables without RLS`,
+       `${pols.length} policies in public admit every row for a role other than service_role; ${exempted.length} are exempt and ${failures.length} are not`,
+       opennessReal
+         ? 'openness was decided by Postgres, not by a string match: a policy counts as open when its expression is the literal true, OR when its parse tree references no column of the table (no {VAR node) and Postgres evaluates the expression to TRUE. Measured on staging inside a DO block that ended in RAISE EXCEPTION, so nothing persisted: USING (true) and USING (\'t\'::boolean) both store as `true` and were already caught; USING (1=1) stores as `(1 = 1)` and USING (NOT false) as `(NOT false)`, and both were invisible to the old test and are caught by this one. On production the two tests return the same 12 policies — 0 gained, 0 lost — so this changes nothing on today\'s board and closes the hole for tomorrow\'s.'
+         : 'WARNING: this catalogue does not state how its open-policy list was built, so it was built by the literal-string test, which cannot see USING (1=1) or USING (NOT false).',
        exempted.length
          ? `exempt, each by NAME and each re-measured against this catalogue as SELECT-only, no anon or PUBLIC in its roles, no tenant_id column, not the referent of any tenant_id foreign key, and neither authenticated nor anon able to INSERT, UPDATE, DELETE or TRUNCATE it — that last pair measured with has_table_privilege and has_any_column_privilege rather than read out of relacl, which cannot see a column-level grant: ${exempted.sort().join(', ')}`
          : 'no policy was exempted',
-       'The exemption list is hand-written in this file ON PURPOSE, and it is the one list here that should be. Every other list in this gate describes what the database CONTAINS, which goes stale and must be derived. This one records which deliberate deviations the owner accepts — a decision, not a description — and a decision must not be derived from the database, because the database is the thing under audit. Derive it and the check cannot fail: anyone with DDL writes USING(true) on a new table and it exempts itself, with no diff that mentions a grant or a policy. So the name is written down, matched exactly rather than by substring, and it only counts while the five properties above still measure true; when one stops, the table fails with a sentence naming what changed.']);
+       'The exemption list is hand-written in this file ON PURPOSE, and it is the one list here that should be. Every other list in this gate describes what the database CONTAINS, which goes stale and must be derived. This one records which deliberate deviations the owner accepts — a decision, not a description — and a decision must not be derived from the database, because the database is the thing under audit. Derive it and the check cannot fail: anyone with DDL writes USING(true) on a new table and it exempts itself, with no diff that mentions a grant or a policy. So the name is written down, matched exactly rather than by substring, and it only counts while the five properties above still measure true; when one stops, the table fails with a sentence naming what changed.'];
+    if (l2bad.length) FAIL('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1], l2bad.concat(l2ev));
+    else if (!opennessReal) NOTRUN('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1],
+      `${(c.tables_no_rls || []).length} tables have RLS off and ${failures.length} open policies are unaccounted for — nothing failed. But this catalogue carries no policy_openness_test marker, so its open-policy list was built by asking whether the expression is the literal string "true", and a list built that way cannot contain USING (1=1) or USING (NOT false): measured on staging 6 Sep 2026, Postgres stores those as "(1 = 1)" and "(NOT false)" and does not fold either. "No open policy" from a detector blind to the shape it is looking for is not a pass. Re-dump the catalogue with the SQL --print-sql emits.`);
+    else PASS('L2', LANE.LIVE, 'P0', LIVE_CHECKS[1][1], l2ev);
+    /* A policy that reads no column of the row but that this gate declined to
+       evaluate. It is not open — nothing here says it is — and it is not clean
+       either: it filters nothing by the row's content, and whatever it does
+       filter by, this run did not establish. The fence is deliberate (no
+       function of ours is called and no subquery is run to satisfy a check), so
+       the honest place for these is a named WARN rather than either verdict.
+       Production and staging both hold zero of them today. */
+    const undec = c.policy_undecidable;
+    if (Array.isArray(undec) && undec.length)
+      WARN('L2c', LANE.LIVE, 'P1', 'A policy filters nothing by the row, and the gate declined to evaluate what it does filter by',
+        undec.map(u => `${u.table}/${u.policy}: ${String(u.cmd || '(cmd unknown)')} for ${Array.isArray(u.roles) ? u.roles.join(',') : String(u.roles)} — the expression references no column of the table, so it admits or refuses every row alike, and it calls a function or runs a subquery, so this check would not evaluate it: ${u.expr}`)
+        .concat(['Decide it by hand. A predicate with no column reference has exactly two outcomes for the whole table, and which one it takes may depend on the session rather than the row — that is a per-caller switch, not a tenant filter.']));
     if (stale.length) WARN('L2b', LANE.LIVE, 'P1', 'A name in the L2 exemption map no longer matches any open policy',
       stale.map(n => `${n}: named as an accepted deviation, but no USING(true) policy on it exists in this catalogue — either its policy was scoped (good: delete the name) or the table is gone`).concat([
         'Not exposure — an exemption that exempts nothing cannot open anything. It is rot, and rot in this map is how the old regex came to exempt three tables nobody had thought about since the engines shipped.']));
@@ -4075,6 +4382,107 @@ end $$;`;
         extra.slice(0, 10).map(v => `${v}_${repo.get(v).name}.sql has no row in supabase_migrations.schema_migrations`).concat([
           'Not drift in the dangerous direction — a file the database has not seen cannot make a restore incomplete. It is either a migration written by hand and not yet applied, or a file extracted from a DIFFERENT database than the one NEXUS_DB_URL names. The second is worth knowing about before a restore.']));
       verdict('L11', LANE.LIVE, L11_SEV, L11_TITLE, bad, ev);
+    }
+  }
+}
+
+
+/* ══ L13 ═══════════════════════════════════════════════════════════════════
+   IS THE CATALOGUE STILL CURRENT? — FRESHNESS IN VERSIONS, NOT IN HOURS
+
+   L1 asks whether the embedded snapshot matches the catalogue. This asks the
+   question underneath it, and every other live verdict in this file rests on
+   the answer: does the catalogue describe the database AS IT STANDS, or as it
+   stood before something landed?
+
+   The gate had one answer to that and it was a clock — NEXUS_CATALOGUE_MAX_AGE_H,
+   24 hours by default, applied in catalogueIntegrity(). CLAUDE.md calls it "a
+   fuse, not a lock" and gives the case: a catalogue 23.92 hours old passed it
+   and produced a full live verdict for a database with 60 functions where live
+   had 110. The failure on 5 September 2026 was the same defect facing the other
+   way — a catalogue eighteen minutes ahead of migration 20260905211435, fresh by
+   any clock, describing a whatsapp_templates that had since gained two columns.
+   Neither reading was old. Both were wrong, and the clock could not say so.
+
+   The witness that can is the migration history. The catalogue records the head
+   of supabase_migrations.schema_migrations it was read at; this check compares
+   that head with the versions this repository holds in supabase/migrations/, and
+   reports NOT RUN when the repository knows of a migration the catalogue's
+   database had not applied.
+
+   WHY NOT RUN AND NOT FAIL. A repository migration newer than the catalogue's
+   head has two possible explanations and this check cannot tell them apart: it
+   was applied after the catalogue was read (the catalogue is stale), or it has
+   not been applied at all (the catalogue is fine and the repository is ahead).
+   Both mean the same thing for every verdict that rests on the catalogue —
+   currency is not established — and neither is a demonstrated defect. NOT RUN
+   is the word this file uses for that, and it carries the versions by name so
+   the reader can settle it in one look.
+
+   WHAT THIS CHECK CANNOT SEE, STATED PLAINLY. A migration applied to the
+   database that has no file in this repository is invisible here — the
+   comparison is against the repository, and a version that exists in neither
+   place cannot be missed by it. That is L11's question, it needs
+   NEXUS_DB_URL, and this check does not stand in for it. What this one catches
+   is the case that actually happened twice: the migration exists in the
+   repository, the catalogue was taken before it, and nothing in the gate
+   noticed.
+
+   P0, and the choice is arguable in the other direction from L11's. L11 is P1
+   because a repository that has fallen behind the database is a continuity risk
+   rather than a customer-facing one. This is P0 because it does not describe a
+   risk of its own: it says whether the ten P0 verdicts above it mean anything.
+   A false green on tenant isolation is the harm P0 names, and that is precisely
+   what a stale catalogue produces.
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const L13_TITLE = 'The live catalogue is anchored to the migration history, and none has landed past it';
+  const MIGDIR13  = join(HERE, '..', '..', 'supabase', 'migrations');
+
+  let repoVersions = null, repoWhy = null;
+  try {
+    repoVersions = (await readdir(MIGDIR13))
+      .filter(f => f.endsWith('.sql'))
+      .map(f => (/^(\d{14})_/.exec(f) || [])[1])
+      .filter(Boolean)
+      .sort();
+    if (!repoVersions.length) { repoVersions = null; repoWhy = 'supabase/migrations/ holds no file named <14-digit version>_<name>.sql'; }
+  } catch (e) { repoWhy = `supabase/migrations/ could not be read: ${e.message}`; }
+
+  const mh13 = live.cat && live.cat.migration_history;
+  const head13 = mh13 && mh13.readable && mh13.head != null ? String(mh13.head) : null;
+
+  if (!live.cat) {
+    NOTRUN('L13', LANE.LIVE, 'P0', L13_TITLE,
+      `${live.why || 'no live database connection'} — with no catalogue there is nothing whose currency could be established`);
+  } else if (!head13) {
+    NOTRUN('L13', LANE.LIVE, 'P0', L13_TITLE,
+      mh13 ? `this catalogue could not read supabase_migrations.schema_migrations (${mh13.why || 'no reason recorded'}), so it carries no version anchor and nothing establishes that it describes the database as it stands`
+           : 'this catalogue carries no migration_history key at all, so it predates the version anchor. Re-dump it with the SQL --print-sql emits; until then the ten live checks above rest on a reading whose currency is unknown, which is the shape that produced a green L1 for a schema that had already changed');
+  } else if (repoWhy) {
+    NOTRUN('L13', LANE.LIVE, 'P0', L13_TITLE,
+      `the catalogue is anchored to migration ${head13}, and ${repoWhy} — so there is nothing to compare it with. This check exists because a catalogue that is fresh by the clock can still be behind the schema.`);
+  } else {
+    const ahead = repoVersions.filter(v => v > head13);
+    const evidence = [
+      `the catalogue was read at migration ${head13}, with ${mh13.count} recorded in supabase_migrations.schema_migrations`,
+      `supabase/migrations/ holds ${repoVersions.length} migration file(s), the newest ${repoVersions[repoVersions.length - 1]}`,
+      mh13.newest ? `the five newest the database had applied when it was read: ${mh13.newest}` : 'the catalogue records no migration list',
+      'This compares the catalogue with THIS REPOSITORY. A migration applied to the database and never filed here is invisible to it — that is L11, and it needs NEXUS_DB_URL.',
+    ];
+    if (ahead.length) {
+      NOTRUN('L13', LANE.LIVE, 'P0', L13_TITLE,
+        `the catalogue was read at migration ${head13}, and this repository holds ${ahead.length} migration(s) newer than that: ${ahead.join(', ')}. `
+        + 'Either they were applied after this catalogue was taken — in which case it describes a database that no longer exists and every live verdict resting on it is a statement about the past — or they have not been applied at all, in which case the catalogue is current and the repository is ahead. This check cannot tell those apart, so it reports neither a pass nor a failure. '
+        + 'Settle it by re-taking the catalogue after reading max(version) from supabase_migrations.schema_migrations, and record the version the reading corresponds to.');
+    } else {
+      const behind = repoVersions.length && head13 > repoVersions[repoVersions.length - 1];
+      PASS('L13', LANE.LIVE, 'P0', L13_TITLE, evidence.concat([
+        behind
+          ? `the database is anchored AHEAD of this repository — ${head13} against ${repoVersions[repoVersions.length - 1]} — so the catalogue is current and it is the repository that has fallen behind. That is not this check's failure to report; it is L11's, and L11 needs NEXUS_DB_URL.`
+          : `no migration in this repository is newer than ${head13}, so nothing here shows the history moved past this reading`,
+        'Freshness is measured in versions, not in hours. The 24-hour tolerance in catalogueIntegrity() is still there and still a fuse; this is the lock.',
+      ]));
     }
   }
 }
