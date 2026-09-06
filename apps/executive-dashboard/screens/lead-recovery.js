@@ -68,6 +68,7 @@
 
 import { db } from '../lib/data.js';
 import { aed, dubaiDate, dubaiStamp, esc, mins, num, pct, pill } from '../lib/format.js';
+import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
@@ -607,7 +608,9 @@ SCREENS.leadrecovery = async host => {
                  ? 'Attributed by a named person to an executed action, against a confirmed sale.'
                  : 'Null until a person attributes a confirmed sale to an executed action. Null, not zero: nothing '
                    + 'has been recovered because nothing has been connected.'))}
-             ${kpi('Desk health', str(H.health) || 'not stated',
+             ${/* Was the engine's own token, e.g. "PRODUCING_NOTHING", in a KPI
+                  tile. lib/health.js holds the reader's words for all eight. */''}
+             ${kpi('Desk health', str(H.health) ? healthWords(H.health).label : 'not stated',
                muted(`${num(H.events_total)} recorded ${plural(H.events_total, 'step', 'steps')}, `
                  + `${num(H.events_without_audit)} without an audit row behind `
                  + `${plural(H.events_without_audit, 'it', 'them')}.`

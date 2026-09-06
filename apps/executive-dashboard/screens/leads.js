@@ -289,12 +289,12 @@ const ACTIONS = {
     title: 'Enrol in the 7-day warm drip',
     confirm: 'Start the drip',
     done: 'Drip started',
-    blurb: 'Day 1 welcome, day 3 follow-up, day 7 final offer — sent by n8n over the following week, not by this browser. '
+    blurb: 'Day 1 welcome, day 3 follow-up, day 7 final offer — sent by NEXUS over the following week, not by this browser. '
          + 'Starting it twice enrols the lead twice.',
     blocker: l => realEmail(l)
       ? null
       : str(l.email)
-        ? `The drip is addressed by email, and this lead's email column holds ${str(l.email)} — the key its messages are filed under, not an address. Enrolling it would point a Gmail node at something nobody can deliver to.`
+        ? `The drip is addressed by email, and this lead's email column holds ${str(l.email)} — the key its messages are filed under, not an address. Enrolling it would aim an email at something nobody can deliver to.`
         : 'The drip is addressed by email and this lead has no email address on record.',
     payload: l => ({
       lead_email: realEmail(l),
@@ -349,7 +349,7 @@ const nameAndPhone = l => `${leadName(l)} <span class="t-muted">·</span> ${phon
 SCREENS.leads = async host => {
   const alertCard = el('div', 'card flush'); host.appendChild(alertCard);
   alertCard.innerHTML = `<div class="card-head"><div><div class="card-title">Needs attention</div>
-    <div class="card-sub">v_needs_attention for this screen, plus four checks this screen runs on the leads it just read</div></div></div>
+    <div class="card-sub">The attention list for this screen, plus four checks this screen runs on the leads it just read</div></div></div>
     <div class="pbody">${stateLoading(2)}</div>`;
 
   const card = el('div', 'card flush'); card.style.marginTop = '16px'; host.appendChild(card);
@@ -587,7 +587,7 @@ SCREENS.leads = async host => {
       detail: `${num(hotNoRep.length)} of the ${num(hot.length)} HOT ${plural(hot.length, 'lead', 'leads')} read here `
         + `${plural(hotNoRep.length, 'carries', 'carry')} none of the three things that could name an owner — no assigned_to_id, no assigned_to name, and no rep on the joined users row. `
         + 'Nobody owns the follow-up.'
-        + (hotNoRepDup ? ` ${num(hotNoRepDup)} further unassigned HOT ${plural(hotNoRepDup, 'lead is', 'leads are')} already listed above by v_needs_attention and ${plural(hotNoRepDup, 'is', 'are')} not counted twice here.` : ''),
+        + (hotNoRepDup ? ` ${num(hotNoRepDup)} further unassigned HOT ${plural(hotNoRepDup, 'lead is', 'leads are')} already listed above by the attention list and ${plural(hotNoRepDup, 'is', 'are')} not counted twice here.` : ''),
       leads: hotNoRep,
     },
     {
@@ -597,7 +597,7 @@ SCREENS.leads = async host => {
       title: `${num(neverContacted.length)} ${plural(neverContacted.length, 'lead has', 'leads have')} no logged contact attempt`,
       detail: `Of the ${num(windowMatchable.length)} ${plural(windowMatchable.length, 'lead', 'leads')} created in the last `
         + `${CONTACT_WINDOW_DAYS} days that anything identifies, ${num(neverContacted.length)} ${plural(neverContacted.length, 'has', 'have')} `
-        + 'no row in communication_logs under any key they are filed under — not their email, not their WhatsApp chat id, not the synthetic address the router mints — inbound or outbound. '
+        + 'no row in the message history under any key they are filed under — not their email, not their WhatsApp chat id, not the synthetic address the router mints — inbound or outbound. '
         + `The oldest arrived ${ago(neverContacted[0]?.created_at)}. `
         + `Leads created before that ${CONTACT_WINDOW_DAYS}-day window are not judged by this check, because the log read covers the window only.`,
       leads: neverContacted,
@@ -627,7 +627,7 @@ SCREENS.leads = async host => {
       detail: `${num(staleLeads.length)} of the ${num(openMatchable.length)} open ${plural(openMatchable.length, 'lead', 'leads')} that anything identifies `
         + `${plural(staleLeads.length, 'has', 'have')} had no logged message and no escalation for ${STALE_DAYS} days `
         + `(${[...TERMINAL].slice(0, 4).join(', ')}… count as finished and are not open). `
-        + 'The leads table has no updated_at column at all, so this is measured from real events — the newest communication_logs row filed under any key '
+        + 'Your leads has no updated_at column at all, so this is measured from real events — the newest the message history row filed under any key '
         + 'that identifies the lead, and escalated_at on the row — and never from a row-modified timestamp, which does not exist here. '
         + (staleParts.measured
           ? `${num(staleParts.measured)} of them ${plural(staleParts.measured, 'has', 'have')} a real last-contact date; the ${plural(staleParts.measured, 'only one', 'oldest')} was last touched ${ago(oldestMeasured)}. `
@@ -652,31 +652,31 @@ SCREENS.leads = async host => {
      against. */
   const stripNotes = [
     leadsErr
-      ? `The leads read failed (${leadsErr.message}), so none of this screen's own checks could run. Only what v_needs_attention returned is shown above.`
+      ? `The leads read failed (${leadsErr.message}), so none of this screen's own checks could run. Only what the attention list returned is shown above.`
       : '',
     attnErr
-      ? `v_needs_attention could not be read (${attnErr.message}), so anything the database would have listed for this screen is missing from this strip. The checks below still ran.`
+      ? `The attention list could not be read (${attnErr.message}), so anything the database would have listed for this screen is missing from this strip. The checks below still ran.`
       : '',
     leadsCapped
       ? `The leads read stopped at ${num(LEAD_LIMIT)} rows, so every count below covers those ${num(LEAD_LIMIT)} leads and not necessarily the whole table.`
       : '',
     commsErr
-      ? `communication_logs could not be read (${commsErr.message}), so neither the "no logged contact attempt" check nor the staleness check ran. The leads table has no updated_at column, so those logs are the only record of a lead being touched — both checks are missing from this strip rather than shown as zero.`
+      ? `The message history could not be read (${commsErr.message}), so neither the "no logged contact attempt" check nor the staleness check ran. Your leads has no updated_at column, so those logs are the only record of a lead being touched — both checks are missing from this strip rather than shown as zero.`
       : '',
     commsCapped
       ? `The contact-log read hit its ${num(COMM_LIMIT)}-row ceiling, so a message may be missing from it. The contact and staleness checks are withheld rather than accusing a rep who did in fact reply.`
       : '',
     contactsErr
-      ? `whatsapp_contacts could not be read (${contactsErr.message}), so a lead's @lid messages cannot be attached to the lead — a LID carries no phone digits and can only be bridged through that table. The contact and staleness checks are withheld rather than run on a partial identity, because a lead whose whole conversation is LID-keyed would otherwise be named as never contacted.`
+      ? `The saved contact details could not be read (${contactsErr.message}), so a lead's @lid messages cannot be attached to the lead — a LID carries no phone digits and can only be bridged through that table. The contact and staleness checks are withheld rather than run on a partial identity, because a lead whose whole conversation is LID-keyed would otherwise be named as never contacted.`
       : '',
     contactsCapped
-      ? `The whatsapp_contacts read hit its ${num(CONTACT_LIMIT)}-row ceiling, so some chat-to-lead bridges are missing and the contact and staleness checks are withheld for the same reason.`
+      ? `The saved contact details read hit its ${num(CONTACT_LIMIT)}-row ceiling, so some chat-to-lead bridges are missing and the contact and staleness checks are withheld for the same reason.`
       : '',
     collided.length
       ? `${num(collided.length)} ${plural(collided.length, 'lead shares', 'leads share')} the last nine digits of a phone number with another lead. That is the rule the workflows matched on when they wrote these log rows, so their messages cannot be told apart here; ${plural(collided.length, 'that lead was', 'those leads were')} matched on exact keys only rather than merged with somebody else.`
       : '',
     contactUsable && openUnmatchable
-      ? `${num(openUnmatchable)} open ${plural(openUnmatchable, 'lead', 'leads')} ${plural(openUnmatchable, 'carries', 'carry')} nothing that identifies ${plural(openUnmatchable, 'it', 'them')} — no email, no phone number, no WhatsApp address. There is no key to look ${plural(openUnmatchable, 'it', 'them')} up in communication_logs by, so ${plural(openUnmatchable, 'it sits', 'they sit')} outside both the contact and the staleness check and ${plural(openUnmatchable, 'is', 'are')} in no count above.`
+      ? `${num(openUnmatchable)} open ${plural(openUnmatchable, 'lead', 'leads')} ${plural(openUnmatchable, 'carries', 'carry')} nothing that identifies ${plural(openUnmatchable, 'it', 'them')} — no email, no phone number, no WhatsApp address. There is no key to look ${plural(openUnmatchable, 'it', 'them')} up in the message history by, so ${plural(openUnmatchable, 'it sits', 'they sit')} outside both the contact and the staleness check and ${plural(openUnmatchable, 'is', 'are')} in no count above.`
       : '',
     contactUsable && inboundOnly.length
       ? `${num(inboundOnly.length)} further ${plural(inboundOnly.length, 'lead', 'leads')} in that window ${plural(inboundOnly.length, 'has', 'have')} inbound messages logged but no outbound one — the customer wrote and nothing went back. They are not counted above, which counts only leads with no log line at all.`
@@ -698,12 +698,12 @@ SCREENS.leads = async host => {
     !leadsErr && all.length && !measured.length
       ? `response_time_minutes is null on ${plural(all.length, 'the only lead on file', `all ${num(all.length)} leads on file`)}. `
         + `That column is the only record this database keeps of how long a lead waited for its first answer, so the ${SLA_MINUTES}-minute rule is currently being measured by nothing here: `
-        + `v_needs_attention can raise an sla_breach only against a lead that carries a figure, and no average response time anywhere in this dashboard has an input. `
-        + 'A null means the column was never stamped: nothing has gone back since the lead row was created, or the only reply on file predates the lead row, which the trigger declines to measure. Either way there is no measured wait. The column is written by a Postgres trigger on communication_logs and by nothing else — not by the router, and nothing in this browser can supply it.'
+        + `The attention list can raise an sla_breach only against a lead that carries a figure, and no average response time anywhere in this dashboard has an input. `
+        + 'A null means the column was never stamped: nothing has gone back since the lead row was created, or the only reply on file predates the lead row, which the trigger declines to measure. Either way there is no measured wait. It is measured by NEXUS at the moment a reply is recorded and by nothing else — not by the router, and nothing in this browser can supply it.'
       : '',
     !leadsErr && measured.length && measured.length < all.length
       ? `${num(all.length - measured.length)} of the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} read here ${plural(all.length - measured.length, 'carries', 'carry')} no response_time_minutes. `
-        + `Since 31 Aug that is a statement about the record, not about the instrument: the trigger on communication_logs stamps the column for the first reply it can match to the lead, and it has not stamped ${plural(all.length - measured.length, 'this one', 'these')}. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure — that is why lead 35 carries no figure despite having been answered. `
+        + `Since 31 Aug that is a statement about the record, not about the instrument: the trigger on the message history stamps the column for the first reply it can match to the lead, and it has not stamped ${plural(all.length - measured.length, 'this one', 'these')}. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure — that is why lead 35 carries no figure despite having been answered. `
         + `The ${SLA_MINUTES}-minute rule cannot be applied to ${plural(all.length - measured.length, 'it', 'them')} at all — there is no measured wait, which is not the same as a fast one.`
       : '',
     !leadsErr && measured.length
@@ -713,7 +713,7 @@ SCREENS.leads = async host => {
            without that caveat would look like a promise the strip above had
            broken. */
         + (breached.length !== breachedInViewWindow.length
-          ? ` v_needs_attention will raise ${num(breachedInViewWindow.length)} of ${plural(breached.length, 'it', 'them')}: its sla_breach arm also requires the lead to have been created in the last ${SLA_VIEW_WINDOW_DAYS} days, so ${num(breached.length - breachedInViewWindow.length)} older ${plural(breached.length - breachedInViewWindow.length, 'breach is', 'breaches are')} counted here and will never appear in the strip above.`
+          ? ` The attention list will raise ${num(breachedInViewWindow.length)} of ${plural(breached.length, 'it', 'them')}: its sla_breach arm also requires the lead to have been created in the last ${SLA_VIEW_WINDOW_DAYS} days, so ${num(breached.length - breachedInViewWindow.length)} older ${plural(breached.length - breachedInViewWindow.length, 'breach is', 'breaches are')} counted here and will never appear in the strip above.`
           : '')
         + (measured.length <= THIN
           ? ` ${num(measured.length)} ${plural(measured.length, 'measurement is', 'measurements are')} not a performance figure, so no average is taken from ${plural(measured.length, 'it', 'them')} on this screen.`
@@ -782,11 +782,11 @@ SCREENS.leads = async host => {
      states which of the two it is, from the rows it just read. */
   const nLeads = `${num(all.length)} ${plural(all.length, 'lead', 'leads')}`;
   const nothingLines = [
-    `v_needs_attention returned no row with screen = 'leads'. Its two branches here are lead_unassigned, which fires on a HOT lead with no assigned_to_id, and sla_breach, which fires on a first reply over ${SLA_MINUTES} minutes on a lead created in the last ${SLA_VIEW_WINDOW_DAYS} days — neither is filed against anything in the leads table right now.`,
+    `The attention list returned no row with screen = 'leads'. Its two branches here are lead_unassigned, which fires on a HOT lead with no assigned_to_id, and sla_breach, which fires on a first reply over ${SLA_MINUTES} minutes on a lead created in the last ${SLA_VIEW_WINDOW_DAYS} days — neither is filed against anything in your leads right now.`,
     leadsErr
       ? ''
       : !all.length
-      ? 'The leads table is empty, so the four checks this screen runs of its own had nothing to weigh — none of them passed, they simply did not apply.'
+      ? 'Your leads is empty, so the four checks this screen runs of its own had nothing to weigh — none of them passed, they simply did not apply.'
       : `Checked here, against the ${nLeads} read from the table: `
         + (hot.length
             ? `${plural(hot.length, 'the one HOT lead has', `all ${num(hot.length)} HOT leads have`)} a rep on the row; `
@@ -795,7 +795,7 @@ SCREENS.leads = async host => {
             ? `no lead scored ${HIGH_SCORE} or higher by the router is still sitting at NEW (${num(scored.length)} of ${nLeads} ${plural(scored.length, 'carries', 'carry')} a score); `
             : 'no lead carries a router score at all, so nothing could be untriaged by that check; ')
         + (contactUsable
-            ? `${plural(windowMatchable.length, 'the one lead', `each of the ${num(windowMatchable.length)} leads`)} created in the last ${CONTACT_WINDOW_DAYS} days that anything identifies has at least one line in communication_logs under one of their keys; and no open lead that anything identifies has gone ${STALE_DAYS} days without a logged message or an escalation (${num(openMatchable.length)} checked).`
+            ? `${plural(windowMatchable.length, 'the one lead', `each of the ${num(windowMatchable.length)} leads`)} created in the last ${CONTACT_WINDOW_DAYS} days that anything identifies has at least one line in the message history under one of their keys; and no open lead that anything identifies has gone ${STALE_DAYS} days without a logged message or an escalation (${num(openMatchable.length)} checked).`
             : `the contact and staleness checks could not run this time, so nothing was checked about who has been spoken to — see the note below.`),
     /* Reply speed, said as a separate sentence because it is the one thing the
        four checks above cannot speak for. Which of the three cases is printed
@@ -831,7 +831,7 @@ SCREENS.leads = async host => {
   if (leadsErr) {
     /* The strip above still says what the view reported and why the checks are
        missing; the table is the thing that is actually broken. */
-    card.innerHTML = stateError('leads', leadsErr.message);
+    card.innerHTML = stateError('leads', leadsErr);
     return;
   }
 
@@ -861,7 +861,7 @@ SCREENS.leads = async host => {
     const audit = await db('audit_log?select=workflow,status,summary,lead_email,logged_at'
       + `&order=logged_at.desc&limit=${AUDIT_LIMIT}`);
     if (audit.length >= AUDIT_LIMIT) {
-      notes.push(`The workflow-history read stopped at ${num(AUDIT_LIMIT)} audit_log rows, so an older escalation or drip may be missing from the Actions column. A missing line there means "not in the rows read", not "never happened".`);
+      notes.push(`The workflow-history read stopped at ${num(AUDIT_LIMIT)} activity-log rows, so an older escalation or drip may be missing from the Actions column. A missing line there means "not in the rows read", not "never happened".`);
     }
     /* Keyed on the canonical identity, not on lead_email. The audit log carries
        the same four key shapes communication_logs does — on 1 Sep 2026 its two
@@ -997,7 +997,7 @@ SCREENS.leads = async host => {
       <div class="t-muted num" id="resultCount"></div>
     </div>
     ${all.length && all.length <= THIN ? `<div class="cell-sub" style="padding:12px 20px 0;white-space:normal">${esc(
-      `Those counts are the whole leads table — ${num(all.length)} ${plural(all.length, 'row', 'rows')}, not a sample of it. `
+      `Those counts are the whole your leads — ${num(all.length)} ${plural(all.length, 'row', 'rows')}, not a sample of it. `
       + `${plural(all.length, 'One row', `${num(all.length)} rows`)} cannot carry a share, a conversion rate or a trend, so this screen prints none: every figure on it is a count of the rows above, and the segments are a tally rather than a distribution.`)}</div>` : ''}
     ${segNote ? `<div class="cell-sub" style="padding:10px 20px 0;white-space:normal">${esc(segNote)}</div>` : ''}
     <div id="focusNote" style="padding:0 20px"></div>
@@ -1008,7 +1008,7 @@ SCREENS.leads = async host => {
   function actionCell(r) {
     const buttons = [ACTIONS.escalate, ACTIONS.drip].map(a => {
       const blocked = !N8N_BASE
-        ? 'VITE_N8N_BASE_URL is not set in this build, so no n8n workflow can be called from the browser.'
+        ? 'This deployment is not configured to reach the automation service, so nothing can be started from here. Only NEXUS can change that.'
         : a.blocker(r);
       return `<button class="btn sm" data-act="${a.key}" data-id="${esc(r.id)}"
         aria-label="${esc(a.label)} — ${esc(r.name || r.email || 'this lead')}"
@@ -1031,7 +1031,7 @@ SCREENS.leads = async host => {
            that; the raw status stays on hover so the row can still be traced. */
         const w = outcomeWords(outcomeOf(past));
         lines.push(`${esc(past.workflow)} · <span class="t-${esc(w.tone)}" title="${esc(
-          `${w.blurb} audit_log.status on that row reads ${str(past.status) || '(empty)'}.`)}">${esc(w.label)}</span> · ${ago(past.logged_at)}`);
+          `${w.blurb} That run was recorded as ${str(past.status) || '(no status)'}.`)}">${esc(w.label)}</span> · ${ago(past.logged_at)}`);
       }
     }
     return `<div style="display:flex;gap:6px;justify-content:flex-end">${buttons}</div>
@@ -1112,10 +1112,10 @@ SCREENS.leads = async host => {
     { label:'First reply', align:'r', render: r => {
         const m = respOf(r);
         if (m == null) return `<span class="t-warm" title="${esc(
-          'response_time_minutes is null on this row. The trigger on communication_logs stamps it for the first reply it can match to this lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure. '
-          + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and v_needs_attention cannot raise an sla_breach for it either.`)}">No first reply timed</span>`;
+          'response_time_minutes is null on this row. The trigger on the message history stamps it for the first reply it can match to this lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure. '
+          + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and the attention list cannot raise an sla_breach for it either.`)}">No first reply timed</span>`;
         return `<span class="${m > SLA_MINUTES ? 't-hot' : 't-ok'}" title="${esc(
-          `response_time_minutes on this row: the minutes between the lead being created and the first outbound whatsapp, email or sms message the communication_logs trigger could attribute to it, rounded to the nearest whole minute. A reply logged up to 90 seconds before the lead row is recorded as 0 when no inbound message was already on file — a clock-skew allowance between n8n and Postgres — and anything earlier is left unmeasured rather than clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
+          `The minutes between the lead being created and the first outbound whatsapp, email or sms message the message history trigger could attribute to it, rounded to the nearest whole minute. A reply logged up to 90 seconds before the lead row is recorded as 0 when no inbound message was already on file — an allowance for the two clocks involved disagreeing — and anything earlier is left unmeasured rather than clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
       }},
     { label:'Actions', align:'r', render: actionCell },
   ];

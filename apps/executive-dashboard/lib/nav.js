@@ -9,6 +9,18 @@ import { extraTenants, hasNoTenant, loadTenant, tenantLabel, tenantState } from 
 
 const NAV = [
   { group: 'Work', items: [
+    /* ── Today's Money Leaks ─────────────────────────────────────────────────
+       First, and the app's default landing screen, because it is the only one
+       that answers a question rather than reporting a state: where is money
+       leaking right now, and what should be done about it. LAUNCH.md names it
+       "the primary owner view".
+
+       It sits ABOVE Overview rather than inside Revenue recovery on purpose.
+       Revenue recovery is the group of engines and Revenue Recovery is their
+       ledger, engine by engine; this screen is the morning order of work
+       assembled across all of them, and a reader looking for "what do I do
+       today" should not have to know which engine owns their problem. */
+    { id:'moneyleaks',    title:"Today's Money Leaks", icon:'water_drop' },
     { id:'overview',      title:'Overview',        icon:'dashboard' },
     { id:'leads',         title:'Leads',           icon:'person_search' },
     { id:'conversations', title:'Conversations',   icon:'forum' },
@@ -66,7 +78,9 @@ const NAV = [
 const SCREENS = {};
 const flatNav = () => NAV.flatMap(g => g.items);
 
-let current = 'overview';
+/* The screen the app opens on. Kept in step with app.js, which passes the same
+   id to go() when there is no hash to honour. */
+let current = 'moneyleaks';
 
 /* ── Which dealership is this? ───────────────────────────────────────────────
    Until 2 Sep 2026 there was one dealership and the question had no answer
@@ -197,7 +211,7 @@ function stateNoTenant() {
        database returns no leads, no inventory, no conversations and no deals to it. That is an unfinished
        account, not an empty business — nothing has been lost and nothing is shown here rather than showing
        zeros that would read as findings. Whoever set this account up needs to add it to a dealership
-       (a <span class="mono">tenant_members</span> row) before any screen can say anything true.</p></div>`;
+       (a <span class="mono">The account memberships</span> row) before any screen can say anything true.</p></div>`;
 }
 
 /* The navigation offers a screen this bundle does not contain.
@@ -228,10 +242,10 @@ function stateNotInBuild(id) {
 
 function go(id) {
   /* Two different misses, told apart deliberately. An id the navigation has
-     never heard of is a stale bookmark or a typed hash, and Overview is the
-     right answer for it. An id the navigation DOES offer, whose module is
+     never heard of is a stale bookmark or a typed hash, and the home screen is
+     the right answer for it. An id the navigation DOES offer, whose module is
      absent, gets said out loud above. */
-  if (!SCREENS[id] && !flatNav().some(i => i.id === id)) id = 'overview';
+  if (!SCREENS[id] && !flatNav().some(i => i.id === id)) id = 'moneyleaks';
   current = id;
   location.hash = id;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
@@ -244,7 +258,7 @@ function go(id) {
      longer on screen, and the one that is has done nothing wrong. */
   const fail = e => {
     if (staleRender(gen)) return;
-    host.innerHTML = stateError('this screen', (e && e.message) || String(e));
+    host.innerHTML = stateError('this screen', e);
   };
   const paint = () => {
     if (staleRender(gen)) return;

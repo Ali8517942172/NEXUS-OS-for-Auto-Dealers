@@ -1,0 +1,46 @@
+-- BUSINESS RULE: every logged message belongs to exactly one dealership. A
+-- communication_logs row with a NULL tenant_id is invisible to every signed-in
+-- user under RLS, so the message silently vanishes from the conversation thread
+-- it belongs to. There is no such thing as an ownerless customer message.
+--
+-- WHY THIS IS SAFE TO ENFORCE NOW — the previous pass declined because it could
+-- not read n8n and so could not rule out a branch that sends an empty value.
+-- All eleven live writers were read from their PUBLISHED bodies
+-- (versionId == activeVersionId on every one):
+--   WhatsApp BDC BiyHk9ZXxJUVGbf6 (167f824d-0a7e-4006-ad00-74b062239628):
+--     "Log Conversation", "Log Incoming Message"
+--   WhatsApp Send yx6m55p1Kj8V7koR (06e0490c-d210-4f45-b7a8-684594949235):
+--     "Log Outbound"
+--   7-Day Drip G7FhvMY2ucW5Fg7X (f94ff75f-a6b5-4cdc-b43f-90447d5f6629):
+--     "Log Welcome Email", "Log Follow Up Email", "Log Final Offer Email",
+--     "Log WhatsApp Welcome", "Log WhatsApp Check-in"
+--   KYC qTnh3nwWheFJbFkU (fe15c2e0-3067-4a6d-9765-ac269b2684c5):
+--     "Log KYC Re-ask", "Log KYC Approved"
+--   Silence Detector B3TcpfzOMWj8oWgF (currently inactive): "Mark as Escalated"
+--
+-- Every one builds its body as
+--     Object.assign({...}, X.tenant_id ? { tenant_id: X.tenant_id } : {})
+-- (or the equivalent ternary). That shape can only ever SUPPLY A UUID OR OMIT
+-- THE KEY — it can never transmit an explicit null. An omitted column takes the
+-- DEFAULT nexus_default_tenant_id(), which is non-null while an active tenant
+-- holds is_unattributed_default. Verified by executing both shapes under this
+-- very constraint inside a rolled-back transaction: the omitted-column insert
+-- succeeded and defaulted to ALBA CARS.
+--
+-- Today the omit branch is not even reachable: each writer falls back to the
+-- sole configured dealership when no other signal resolves, so a concrete UUID
+-- is always sent while one dealership is configured.
+--
+-- EXISTING DATA: 108 rows, 0 with a NULL tenant_id, so this validates without
+-- touching a row.
+--
+-- THE ONE FAILURE MODE, STATED RATHER THAN GLOSSED: if no ACTIVE tenant holds
+-- is_unattributed_default, the default evaluates to NULL and these inserts would
+-- be rejected instead of landing ownerless. That state is already a declared
+-- BLOCKER in nexus_tenancy_readiness(), and it cannot break the live customer
+-- path: all eleven writer nodes run with onError=continueRegularOutput and 3
+-- retries, so the WhatsApp/email message still reaches the customer and only the
+-- log row is lost — and lost loudly, in the workflow's own Delivery Report,
+-- rather than lost silently as an invisible row.
+alter table public.communication_logs
+  alter column tenant_id set not null;

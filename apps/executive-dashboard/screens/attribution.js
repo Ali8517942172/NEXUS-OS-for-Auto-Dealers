@@ -263,8 +263,8 @@ SCREENS.attribution = async host => {
         : (m.err
             ? `<div class="section">${readFailed('The attribution link map', m.err)}</div>`
             : `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">rule</span>
-                 <div>The link map returned no CAMPAIGN_TO_LEAD hop at all, so this screen cannot say what is known
-                 about the campaign link either way. That is a missing row in the map, not a campaign that resolved.</div>
+                 <div>Nothing at all is recorded about the step from a campaign to a lead, so this screen cannot say
+                 what is known about that link either way. That is a gap in the record, not a campaign that resolved.</div>
                </div>`);
 
       const hopTile = F
@@ -781,7 +781,7 @@ SCREENS.attribution = async host => {
         ['Evidence', F
           ? `${num(F.evidenced.length)} of ${num(F.hops.length)} hops can carry evidence at all; `
             + `${num(F.asEvidence)} of ${num(F.instances)} measured candidate links are evidence rather than a `
-            + 'recorded refusal. Read from <span class="mono">v_attribution_link_map</span> and '
+            + 'recorded refusal. Read from <span class="mono">The links between actions and sales</span> and '
             + '<span class="mono">attribution_link_basis</span>.'
           : 'The link map could not be read, so nothing is claimed about evidence on this page.'],
         ['Confidence', bases && bases.length

@@ -1,0 +1,12 @@
+-- daily_metrics already carried the correct tenant-scoped key,
+-- UNIQUE(tenant_id, snapshot_date) — it is the pattern the rest of this wave
+-- followed. But its tenant_id was NULLABLE, and NULLs do not collide in
+-- Postgres: two snapshot rows for the same date with a NULL tenant_id would
+-- both have been accepted, and the daily upsert in capture_daily_metrics()
+-- would have inserted a new row every run instead of refreshing one. The
+-- correct key was there; nothing was making it bind.
+--
+-- Safe: the sole writer, capture_daily_metrics(), takes tenant_id from
+-- `tenants.id` in its own FROM clause and can never produce a NULL, and all 15
+-- existing rows are populated.
+alter table public.daily_metrics alter column tenant_id set not null;

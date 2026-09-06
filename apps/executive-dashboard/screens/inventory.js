@@ -97,7 +97,7 @@
    which the view does not carry. It is fetched separately because the Edit form
    writes that column back and would blank it if the row it was handed did not
    hold it. That read adds no derivation and is reported if it fails. */
-import { db } from '../lib/data.js';
+import { canAddUnit, canEditUnit, db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, dubaiDate, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -262,7 +262,7 @@ SCREENS.inventory = async (host) => {
     all = await readSentinel();
   } catch (e) {
     provHost.remove(); strip.remove();
-    body.innerHTML = `<div class="card flush">${stateError('the Inventory Profit Sentinel', e.message, 'sentinel')}
+    body.innerHTML = `<div class="card flush">${stateError('the Inventory Profit Sentinel', e, 'sentinel')}
       <div class="cell-sub" style="white-space:normal;padding:0 20px 20px">Nothing on this screen is derived in the browser, so with the engine unreadable there is no partial view to fall back to. That is deliberate: a lot summary assembled from whatever happened to load is the failure this screen was rebuilt to end.</div></div>`;
     body.querySelector('[data-retry]')?.addEventListener('click', reload);
     return;
@@ -302,11 +302,11 @@ SCREENS.inventory = async (host) => {
     body.innerHTML = `<div class="card flush">
       <div class="card-head"><div><div class="card-title">Profit Sentinel</div>
         <div class="card-sub">The engine returned no units</div></div><div style="flex:1"></div>
-        <button class="btn primary sm" id="invAdd"><span class="material-symbols-outlined">add</span>Add vehicle</button></div>
+        ${canAddUnit() ? '<button class="btn primary sm" id="invAdd"><span class="material-symbols-outlined">add</span>Add vehicle</button>' : ''}</div>
       ${stateEmpty('No vehicles on the lot',
         'The Sentinel reads one row per unit in inventory. Add the first unit and it will start reporting ageing, margin and a recommendation for it.', 'directions_car')}
       ${why ? `<div class="cell-sub" style="white-space:normal;padding:0 20px 20px">${esc(why)}</div>` : ''}</div>`;
-    $('invAdd').addEventListener('click', () => unitForm(null, rows, reload));
+    $('invAdd')?.addEventListener('click', () => unitForm(null, rows, reload));
     return;
   }
 
@@ -440,7 +440,7 @@ SCREENS.inventory = async (host) => {
     <div style="padding:0 20px 18px"><div class="cell-sub" style="white-space:normal">
       <strong>No figure on this screen is derived in the browser.</strong>
       Every band, risk word, recommendation and money figure on a unit is read from
-      <span class="mono">v_inventory_profit_sentinel</span>, which is
+      <span class="mono">The margin review</span>, which is
       <span class="mono">security_invoker</span> — this is your lot and no one else's.
       The only arithmetic done here is in the three summary totals above, each of which
       adds up a column the engine produced and says how many units it had to leave out.
@@ -484,7 +484,20 @@ SCREENS.inventory = async (host) => {
      in the function body and would have to be duplicated here otherwise.
      Only the search box filters in the browser, and it matches text, not
      verdicts. */
-  const canEdit = !recErr;
+  /* Two independent reasons this screen may not open the edit form, and they
+     are different sentences to the person reading it:
+
+       recErr        the ai_recommendation column did not load, so saving would
+                     blank it — a data problem, fixed by reloading;
+       canEditUnit() this account is not owner, admin or manager at this
+                     dealership — an authority problem, and no reload fixes it.
+
+     rbac_02's inventory_role_update policy refuses the write either way. This
+     only decides whether the product offers a button that is going to fail.
+     canEditUnit() returns true when the membership read itself failed, so an
+     unknown answer still shows the button and lets the database reply. */
+  const mayEditUnits = canEditUnit();
+  const canEdit = !recErr && mayEditUnits;
   const RISK_FLOORS = [
     { v: '', label: 'Any risk' },
     { v: '1', label: `${RANK_WORD[1]} and worse` },
@@ -517,7 +530,7 @@ SCREENS.inventory = async (host) => {
         ${RISK_FLOORS.map(r => `<option value="${r.v}">${esc(r.label)}</option>`).join('')}
       </select>
       <div class="t-muted num" id="invCount"></div>
-      <button class="btn primary sm" id="invAdd"><span class="material-symbols-outlined">add</span>Add vehicle</button>
+      ${canAddUnit() ? '<button class="btn primary sm" id="invAdd"><span class="material-symbols-outlined">add</span>Add vehicle</button>' : ''}
     </div>
     <div id="invTable"></div>`;
   body.innerHTML = '';
@@ -617,7 +630,7 @@ SCREENS.inventory = async (host) => {
       const got = await readSentinel(f.rec || null, f.risk === '' ? null : Number(f.risk));
       paintTable(withRec(Array.isArray(got) ? got : []), null);
     } catch (e) {
-      paintTable([], e.message);
+      paintTable([], e);
     }
   }
 
@@ -764,7 +777,9 @@ SCREENS.inventory = async (host) => {
         </div>
       </div>
       <div class="drawer-foot">
-        <button class="btn primary" id="dEdit"${canEdit ? '' : ' disabled title="inventory.ai_recommendation did not load, so saving from here would blank it. Reload the screen before editing."'}>Edit</button>
+        <button class="btn primary" id="dEdit"${canEdit ? '' : ` disabled title="${esc(!mayEditUnits
+            ? 'Changing a vehicle is an owner, admin or manager decision at this dealership. Your account can read the Sentinel but not edit the unit.'
+            : 'inventory.ai_recommendation did not load, so saving from here would blank it. Reload the screen before editing.')}"`}>Edit</button>
         <button class="btn" id="dComp" title="${esc('The Competitors screen holds the scraped listings behind the market section above.')}">Open Competitors</button>
       </div>`);
     $('dClose').addEventListener('click', closeDrawer);
@@ -779,7 +794,7 @@ SCREENS.inventory = async (host) => {
     b.addEventListener('click', () => { f.rec = b.dataset.v; refilter(); }));
   $('invRisk').addEventListener('change', (e) => { f.risk = e.target.value; refilter(); });
   $('invQ').addEventListener('input', (e) => { f.q = e.target.value; paintTable(engineRows, null); });
-  $('invAdd').addEventListener('click', () => unitForm(null, rows, reload));
+  $('invAdd')?.addEventListener('click', () => unitForm(null, rows, reload));
 
   refilter();
 };

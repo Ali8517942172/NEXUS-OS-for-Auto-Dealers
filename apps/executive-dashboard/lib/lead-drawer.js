@@ -73,7 +73,7 @@
       and hiding them would be a different lie; they are labelled and they are
       not coloured by direction. */
 import { SILENCE_MARKER, isInternalRow, isMessageRow } from './comm-events.js';
-import { db, dbWrite } from './data.js';
+import { canReassignLead, db, dbWrite } from './data.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
 /* audit_log.status is not ours to read literally: lib/health.js mirrors
@@ -179,11 +179,11 @@ async function leadDrawer(lead) {
                logged" would be a false claim about lead 35, who was in fact
                answered 74 seconds before his lead row existed. What this cell can
                say is that nothing was timed. */
-            ? '<span class="t-warm">No first reply timed</span><span class="cell-sub"> · the trigger on communication_logs stamps this column for the first reply it can attribute to the lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the conversation started before the lead existed, which the trigger will not measure. Either way there is no measured wait here — it is not a fast reply — and v_needs_attention cannot raise an SLA breach for it</span>'
+            ? '<span class="t-warm">No first reply timed</span><span class="cell-sub"> · the trigger on the message history stamps this column for the first reply it can attribute to the lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the conversation started before the lead existed, which the trigger will not measure. Either way there is no measured wait here — it is not a fast reply — and the attention list cannot raise an SLA breach for it</span>'
             : `${mins(lead.response_time_minutes)} ${Number(lead.response_time_minutes) > SLA_MINUTES
                 ? `<span class="t-hot">· breaches the ${SLA_MINUTES}-minute rule</span>`
                   + (Date.now() - new Date(lead.created_at).getTime() > SLA_VIEW_WINDOW_DAYS * 86400000
-                    ? `<span class="cell-sub"> · v_needs_attention will not raise it: its sla_breach arm only covers leads created in the last ${SLA_VIEW_WINDOW_DAYS} days</span>`
+                    ? `<span class="cell-sub"> · the attention list will not raise it: its sla_breach arm only covers leads created in the last ${SLA_VIEW_WINDOW_DAYS} days</span>`
                     : '')
                 : `<span class="t-ok">· within the ${SLA_MINUTES}-minute rule</span>`}`}</dd>
           <dt>Created</dt><dd>${ago(lead.created_at)}</dd>
@@ -197,12 +197,17 @@ async function leadDrawer(lead) {
     </div>
     <div class="drawer-foot">
       <button class="btn" id="dWhats"><span class="material-symbols-outlined">chat</span>Open conversation</button>
-      <button class="btn" id="dAssign">Assign to…</button>
+      <button class="btn" id="dAssign"${canReassignLead(lead.tenant_id) ? '' : ' disabled title="Moving a lead to a different owner is an owner, admin or manager decision at this dealership. It moves commission and it moves who is answerable for the 5-minute rule."'}>Assign to…</button>
     </div>`);
 
   $('dClose').addEventListener('click', closeDrawer);
   $('dWhats').addEventListener('click', () => { closeDrawer(); go('conversations'); });
-  $('dAssign').addEventListener('click', () => assignDialog(lead));
+  /* rbac_04's leads_role_update policy carries assigned_to_id in BOTH its USING
+     and its WITH CHECK for a sales login, so a rep cannot move a lead to
+     anyone — not even one already theirs. The database refuses regardless of
+     this line; the point of the line is that the dialog is not offered and
+     then defeated. */
+  if (canReassignLead(lead.tenant_id)) $('dAssign').addEventListener('click', () => assignDialog(lead));
 
   /* Captured NOW, before any await. See note 2 in the file header: these used to
      be looked up by global id after the reads returned, so a second click within
@@ -297,8 +302,8 @@ async function leadDrawer(lead) {
   const purchase = purchR
     ? settle(purchR)
     : skipped(lead.email
-        ? `purchase_history is keyed on a real email address, and this lead's email column holds ${String(lead.email)}, which is not one.`
-        : 'purchase_history is keyed on email and this lead has none.');
+        ? `The recorded sales is keyed on a real email address, and this lead's email column holds ${String(lead.email)}, which is not one.`
+        : 'The recorded sales is keyed on email and this lead has none.');
   const comm = commsR ? settle(commsR) : skipped('Nothing identifies this lead — no email, no phone number, no WhatsApp address — so there is no key to read messages under.');
   const aud  = auditR ? settle(auditR)  : skipped('Nothing identifies this lead, so there is no key to read workflow activity under.');
   const purch = purchase.rows, comms = comm.rows, audit = aud.rows;
@@ -343,13 +348,13 @@ async function leadDrawer(lead) {
     ...comms.map(c => (isMessageRow(c) ? {
       at: c.created_at, kind: c.channel || 'message',
       tone: tone(c.direction) || 'neutral',
-      note: '', title: `communication_logs.direction on this row reads ${String(c.direction || '(empty)')}.`,
+      note: '', title: `This message is recorded as ${String(c.direction === 'inbound' ? 'from the customer' : (c.direction === 'outbound' ? 'sent by us' : 'having no direction'))}.`,
       text: c.message,
     } : {
       at: c.created_at, kind: String(c.channel || 'internal'),
       tone: 'neutral',
       note: 'Internal note',
-      title: 'Not a message to or from this customer. public.nexus_is_message() rejects this row — it is on '
+      title: 'Not a message to or from this customer. NEXUS’s own test for what counts as a message rejects this row — it is on '
         + `channel ${String(c.channel || '(empty)')} with direction ${String(c.direction || '(empty)')}`
         + `${String(c.message || '').startsWith(SILENCE_MARKER) ? `, and its body is the 12-hour silence detector's ${SILENCE_MARKER} marker, written because nobody was in touch` : ''}`
         + '. The same predicate is why nexus_is_reply() does not count it as a reply, so it never set this '
@@ -363,7 +368,7 @@ async function leadDrawer(lead) {
         at: a.logged_at, kind: a.workflow || 'workflow',
         tone: w.tone || 'neutral',
         note: w.label,
-        title: `${w.blurb} audit_log.status on this row reads ${String(a.status || '(empty)')}.`,
+        title: `${w.blurb} That run was recorded as ${String(a.status || '(no status)')}.`,
         text: a.summary,
       };
     }),
@@ -414,8 +419,8 @@ async function leadDrawer(lead) {
       !aud.ok ? `workflow activity ${aud.skipped ? 'was not read at all' : `could not be read (${aud.err})`}` : '',
       commCapped ? `the message read stopped at its ${EVENT_LIMIT}-row ceiling, so older messages are missing` : '',
       auditCapped ? `the workflow-activity read stopped at its ${EVENT_LIMIT}-row ceiling` : '',
-      linkErr ? 'whatsapp_contacts could not be read, so any @lid handle belonging to this person could not be bridged to them and messages filed under one are missing' : '',
-      poolErr ? `the leads table could not be read (${poolErr}), so whether another lead ends in the same nine digits was never checked — this history was matched on that rule anyway, and if two customers share those digits their messages are mixed together here` : '',
+      linkErr ? 'The saved contact details could not be read, so any @lid handle belonging to this person could not be bridged to them and messages filed under one are missing' : '',
+      poolErr ? `Your leads could not be read (${poolErr}), so whether another lead ends in the same nine digits was never checked — this history was matched on that rule anyway, and if two customers share those digits their messages are mixed together here` : '',
     ].filter(Boolean);
     if (events.length && gaps.length) {
       timelineBox.insertAdjacentHTML('afterbegin',
@@ -435,6 +440,9 @@ async function leadDrawer(lead) {
 }
 
 async function assignDialog(lead) {
+  /* Second lock on the same rule. The button above is disabled for a rep, and a
+     disabled attribute is one DOM edit away from gone. */
+  if (!canReassignLead(lead.tenant_id)) return;
   /* An empty roster with a live Save button was a trap: `#assignSel.value` is ''
      and Save issued PATCH {assigned_to_id: '', assigned_to: null}, silently
      UNASSIGNING the lead the operator was trying to assign. */
@@ -472,7 +480,19 @@ async function assignDialog(lead) {
     }
     const name = users.find(u => u.id === id)?.name || null;
     try {
-      await dbWrite('PATCH', `leads?id=eq.${lead.id}`, { assigned_to_id: id, assigned_to: name });
+      /* `dbWrite` sends `Prefer: return=representation`, so a PATCH the row
+         policy filters out is not an error — PostgREST answers 200 with [].
+         Since the role model landed on 5 Sep 2026 that is a reachable outcome
+         here: a rep may only reassign a lead that is theirs, and a lead that is
+         not theirs simply is not in the update's scope. Printing "Saved." on an
+         empty result tells somebody the owner changed when it did not, and the
+         table still shows the old one when they reload. */
+      const saved = await dbWrite('PATCH', `leads?id=eq.${lead.id}`, { assigned_to_id: id, assigned_to: name });
+      if (Array.isArray(saved) && saved.length === 0) {
+        box.querySelector('#assignMsg').innerHTML =
+          '<span class="t-hot">Nothing was saved — this lead is no longer there, or your account is not allowed to reassign it. The owner is unchanged.</span>';
+        return;
+      }
       box.querySelector('#assignMsg').innerHTML = '<span class="t-ok">Saved. Reopen the screen to see it in the table.</span>';
     } catch (e) {
       box.querySelector('#assignMsg').innerHTML = `<span class="t-hot">${esc(e.message)}</span>`;

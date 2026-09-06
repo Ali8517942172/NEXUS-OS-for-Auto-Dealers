@@ -1,0 +1,11 @@
+-- Regression introduced 24 Aug: bounding the sla_breach branch used
+-- `create or replace view`, which silently dropped the `security_invoker = on`
+-- setting an earlier migration had applied. A SECURITY DEFINER view runs with
+-- the permissions and RLS of whoever CREATED it, not of whoever queries it, so
+-- it becomes a hole straight through row-level security.
+--
+-- It is not exploitable today, because this database is single-tenant and every
+-- policy already lets any authenticated user read everything. It becomes
+-- exploitable the instant a second dealership exists — which is exactly the
+-- moment nobody will be re-reading this view's definition. Restore it now.
+alter view public.v_needs_attention set (security_invoker = on);

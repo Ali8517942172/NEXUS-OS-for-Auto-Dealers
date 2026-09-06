@@ -6,7 +6,7 @@
 > control. It replaces nothing. It reads from the systems the dealership
 > already trusts, reasons across them, and acts.
 
-This document describes the system **as it runs on 3 September 2026**. An
+This document describes the system **as it runs on 5 September 2026**. An
 earlier version of it described an architecture that was planned in July and
 never built — Make.com as a master router, Zapier catchers, MongoDB, Odoo,
 a Python FastAPI RAG service, a Node.js/Socket.io dashboard. None of those are
@@ -42,11 +42,22 @@ Four moving parts. There is no application server, no event bus, and no second
 data store.
 
 ### Supabase — the only data store
-Postgres 17. 40 tables, 33 views. Business data, the tenancy layer
-(`tenants`, `tenant_members`), the policy engine, and the engine tables and
-views. Row-Level Security is tenant-scoped; every public view carries
-`security_invoker`, enforced by an event trigger that fails the deploy without
-it.
+Postgres 17. Measured 5 September 2026: **59 tables, 39 views, 269 functions in
+`public`, 374 constraints, 169 indexes, 163 policies, RLS on 59 of 59 tables.**
+Business data, the tenancy layer (`tenants`, `tenant_members`), the policy
+engine, the messaging layer, and the engine tables and views. Row-Level Security
+is tenant-scoped; every public view carries `security_invoker` — **39 of 39**,
+enforced by an event trigger that fails the deploy without it, and by gate check
+`L3`, which since 5 September parses the option's *value* rather than testing for
+the string (a view created `(security_invoker = false)` used to pass the check
+that exists to forbid it).
+
+The repository can now rebuild this database. `supabase/` holds all **286**
+applied migrations (count and head re-measured 6 September 2026 against
+production; the byte-exact rollup was last verified at 273/273 on 5 September), a generated baseline and a vocabulary seed;
+`supabase/README.md` carries the restore path and the verification. That
+replaces the older claim, repeated below in §6, that there is no schema file you
+can run.
 
 ### n8n on a GCP VM — the execution layer
 `35.224.126.225`, reachable at `https://35.224.126.225.nip.io`. Docker, with a
@@ -105,6 +116,15 @@ nine prerequisites and which are met. That view is the honest demo.
 against synthetic tenants. The workflow side is not: `NEXUS_TENANT_MAP` is
 unset, so resolvers fall through to a single-tenant default.
 
+Since 5 September, a backend write that omits `tenant_id` no longer files under
+the real dealership. `tenants.is_unattributed_default` is held by a quarantine
+tenant (`__unattributed__`, `status='quarantine'`), pinned there by a CHECK
+constraint, and all 29 tenant-carrying views exclude quarantined rows **in their
+own definitions** rather than relying on RLS. `nexus_tenancy_readiness()`
+returns **zero BLOCKERs** as of 5 September; `nexus_quarantine_census()` returns
+**zero rows** so far, and it is the only measurement of which n8n writers are
+broken. Which workflows those are is still **UNKNOWN**.
+
 ---
 
 ## 4. What is not done
@@ -112,9 +132,18 @@ unset, so resolvers fall through to a single-tenant default.
 The project's own instruments say so, and they are the authority — not this
 document.
 
-- **The quality gate** (`npm run gate`) reads `PASS 26 · FAIL 2 · WARN 2 ·
-  NOT RUN 4`, exit 1. The four NOT RUN checks have **never been written**, not
-  merely never run.
+- **The quality gate** (`npm run gate`), definitive run 2026-09-06T06:51Z
+  against a production catalogue anchored to migration `20260906062139`, reads
+  `PASS 31 · FAIL 1 · WARN 2 · NOT RUN 3`, exit 1. The one failure is `L9` (one
+  unregistered `audit_log` writer, deliberately left red — it clears with a
+  disposition, never with an invented registry row). `L2` now **passes**:
+  `workflow_registry` left the dealer data plane entirely on 6 September. The
+  three NOT RUN are `B4`, which needs a browser with direct egress to the
+  Supabase host, and `L11`/`L12`, which need a database connection.
+  **A NOT RUN is not a PASS.** **Four migrations landed after that catalogue was
+  taken**, and against the stale snapshot the render lane reports red on
+  `v_deal_rescue_readiness.platform_evidence` — measured both ways, it is the
+  snapshot's age and not the product. See `STATUS-2026-09-06.md` §5.
 - **The production readiness verdict is NOT_READY.**
 - **`POST /webhook/whatsapp-inbound` accepts unauthenticated requests.**
   `WAHA_WEBHOOK_SECRET` is unset on the VM, so the secret gate reports
@@ -124,12 +153,28 @@ document.
   endpoints a shared-secret header would be worthless — the caller is a public
   JavaScript bundle — so the JWT is the correct control and edge-level JWT
   validation is the honest upgrade.
-- **A dashboard login is not read-only.** Any signed-in user can change asking
-  and cost price, delete a vehicle, and reassign any lead. There is no role
-  check in the database or the UI.
-- Three defects must be closed before a second dealership: unclaimed KYC files
-  fall to the default dealership, `leads.assigned_to_id` has a global foreign
-  key, and two reports go silent at two tenants.
+- ~~**A dashboard login is not read-only.**~~ **Closed 5 September 2026** by a
+  staff role model on `tenant_members.role`
+  (`owner | admin | manager | sales | technician | member`) and its dashboard
+  half. Three mechanisms: column GRANTs for machine-owned columns (`42501`,
+  before RLS), RESTRICTIVE RLS reading the role (0 rows), and a BEFORE UPDATE
+  trigger for the one question neither can ask — *did this figure move* (`NX001`).
+  Two things must be said with it. **`rbac_02`, which withheld
+  `UPDATE(cost_aed)` outright and is the stronger lock, is not what shipped** —
+  the deployed bundle sends `cost_aed` on every save, so it would 42501 every
+  "Save changes"; re-apply it in the same release as the rebuilt dashboard. And
+  **the model is inert today**: production has one login, already `owner`, and
+  no UI exists to add a colleague. The next login inherits `member`, which now
+  means own-leads-only.
+- Defects that fire on the day a second dealership is added:
+  `leads.assigned_to_id` has a global foreign key, and two reports go silent at
+  two tenants. **Unclaimed KYC files no longer fall to the default dealership** —
+  they fall to quarantine, which is visible and recoverable rather than silent.
+- **`workflow_registry` has no `tenant_id`** and its policy is still
+  `USING (true)`. Its `id`, `trigger_type` and `trigger_detail` columns were
+  taken off the dealer plane on 5 September and now return `42501`, but
+  `count(*)` reads no column: a dealership can still learn which automations
+  exist and which are switched off. Gate `L2` is red on exactly this.
 
 ---
 
@@ -143,8 +188,11 @@ document.
 - AI may summarise, classify, recommend, draft and trigger approved actions. It
   may not invent prices, finance numbers, availability, regulatory
   requirements, customer identity, discounts, margin or attribution.
-- A regulatory or finance claim requires a verified policy row. Today **0 of 7**
-  policy rules are verified against a source, and the Policy screen says so.
+- A regulatory or finance claim requires a verified policy row. Measured
+  5 September: **0 of 13** policy rules are verified against a source and there
+  are **zero** platform attestations, and the Policy screen says so. That rule
+  therefore currently forbids every regulatory claim, which is the engine being
+  honest rather than a defect.
 - Do not say enterprise-ready, globally compliant, zero-risk, or any guaranteed
   revenue increase. The honest commercial position is a **controlled dealership
   pilot**.
@@ -160,5 +208,10 @@ disagree with it:
 | `PRODUCT.md` | The thesis, the engines, and the data-led sequencing rule |
 | `NEXUS_INVARIANTS.md` | The invariants, and which mechanism enforces each |
 | `commercial/WHAT-WE-CLAIM.md` | The claims register — what may be said to a buyer |
-| `architecture/README.md` | **There is no schema file you can run.** The database is the record |
+| `supabase/README.md` | The migrations, the baseline, the restore path, and what was verified against production |
+| `architecture/README.md` | Historical. Its headline — *"there is no schema file you can run"* — was true until 4 September and is now superseded by `supabase/` |
+| `STATUS-2026-09-06.md` | **Current.** What moved on the night of 5–6 September, item by item, with five corrections to earlier claims |
+| `STATUS-2026-09-05.md` | Dated record. What moved since `AUDIT-2026-09-04.md`, item by item |
+| `OWNER-ACTIONS.md` | **What only Ali can do, in the order to do it** — what each unblocks, what "done" looks like, and what breaks if it is done out of order |
+| `VERSIONS.md` | V1–V4, and implemented / tested / production-proven / commercially validated per capability |
 | `apps/executive-dashboard/QUALITY_GATE.mjs` | The gate. Run it before believing anything above |

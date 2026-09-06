@@ -1,0 +1,51 @@
+-- tenantcfg_05_alba_cars_row
+--
+-- An EMPTY row, on purpose, and it is the whole argument of this migration.
+--
+-- Everything a seed could plausibly have put here was checked and rejected:
+--
+--   brand_name  'ALBA CARS' is on file as public.tenants.name. Writing it into
+--               this table would flip its state from INHERITED_FROM_TENANT to
+--               CONFIGURED - i.e. would claim the dealership chose a trading
+--               name distinct from their registered one. They have not. The
+--               resolver already returns 'ALBA CARS'; leaving the column null
+--               returns the same string with the true story attached.
+--
+--   timezone    Asia/Dubai is the PRODUCT DEFAULT and is already what the
+--               product does (every n8n workflow, lib/format.js). Writing it
+--               here would upgrade a shipped assumption into a dealership
+--               decision, which is laundering. Left null: the resolver returns
+--               Asia/Dubai with state PRODUCT_DEFAULT.
+--
+--   currency    Same. AED is the product default and very nearly a schema
+--               constraint; nobody at ALBA CARS has been asked.
+--
+--   ai_tone, default_language, business_hours, followup_policy
+--               Nobody has stated any of these. There is no source, no owner
+--               and no date, so the provenance CHECKs would reject a value
+--               anyway - which is the constraint working, not an obstacle.
+--
+--   approval_rules
+--               Left null so the resolver returns the restrictive product
+--               default {"default":{"requires_human":true}}. Writing an
+--               explicit rule would be NEXUS deciding, on ALBA CARS' behalf,
+--               what their software may do without a human.
+--
+-- What the row therefore says is: this dealership exists in configuration and
+-- has stated nothing. settings_not_stated comes back with all nine keys.
+-- Compare a tenant with NO row at all, which is also a defined state and
+-- resolves identically except that config_row_exists is false - the difference
+-- between "nobody has opened this dealership's configuration" and "it is open
+-- and empty".
+--
+-- NO tenant_capability rows are created either. Absence resolves to
+-- NOT_AVAILABLE for all ten catalogue entries, which is the correct and
+-- measured answer today: there is no service table, no appointment table, no
+-- deal record, no lender decision column, no competitor row at exact/strong
+-- match quality, and no stated holding rate. Writing ten NOT_AVAILABLE rows
+-- would claim ten assessments happened; the empty state claims nothing and
+-- answers the same.
+
+insert into public.tenant_configuration (tenant_id)
+select t.id from public.tenants t where t.slug = 'alba-cars'
+on conflict (tenant_id) do nothing;

@@ -1,0 +1,24 @@
+-- Found by the production/staging grant-divergence sweep of 4 Sep 2026, and
+-- worth writing down because of HOW it hid.
+--
+-- public.inventory_actions_touch() is a trigger function (returns trigger,
+-- bound to inventory_actions_touch@inventory_actions on both projects). Every
+-- other trigger function in this schema is postgres + service_role only. This
+-- one was missed, and the two projects recorded the same reach DIFFERENTLY:
+--
+--   production: proacl = "=X/postgres , postgres=X/postgres , service_role=X/postgres"
+--               -> the anon grant is the PUBLIC entry (grantee "")
+--   staging:    proacl = "postgres=X/postgres , service_role=X/postgres , anon=X/postgres , authenticated=X/postgres"
+--               -> the anon grant is a DIRECT entry
+--
+-- has_function_privilege('anon', ..., 'EXECUTE') = true on BOTH. A sweep
+-- written as `proacl like '%anon=%'` flags staging and clears production,
+-- while production is exactly as reachable. That is CLAUDE.md's direct-vs-
+-- PUBLIC rule showing up in the detection query rather than in a REVOKE.
+--
+-- Revoking is free: PostgreSQL does not check EXECUTE on a trigger function
+-- when the trigger fires, and a trigger function cannot be called any other
+-- way ("trigger functions can only be called as triggers"). Revoked from all
+-- three grantees so neither shape survives.
+
+revoke all on function public.inventory_actions_touch() from anon, authenticated, public;

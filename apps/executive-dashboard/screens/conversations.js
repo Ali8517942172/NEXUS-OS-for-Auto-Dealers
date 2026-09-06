@@ -445,9 +445,9 @@ function addressPhone(v) {
    against a leads read that succeeded. The allowlist half is unchanged and is
    still only half a rule, for the reason the last sentence gives. */
 const NOT_A_LEAD =
-  'No row in the leads table matches this contact — checked against every key this thread is filed under and '
-  + 'against the last nine digits of its number, which is the rule nexus_lead_for_comm_key() and the workflows '
-  + 'join a chat to a lead on, not only the exact address v_conversations matches. The WhatsApp bot replies '
+  'No row in your leads matches this contact — checked against every key this thread is filed under and '
+  + 'against the last nine digits of its number, which is the rule NEXUS and the workflows '
+  + 'join a chat to a lead on, not only the exact address NEXUS matches. The WhatsApp bot replies '
   + 'automatically only to numbers already in leads, or to messages containing dealership keywords — anything '
   + 'else is logged and left for a human on purpose, because the business number is a personal one. Whether a '
   + 'particular message hit a keyword is not recorded anywhere the dashboard can read, so this tells you one '
@@ -457,7 +457,7 @@ const NOT_A_LEAD =
    with a no — that is the shape of the bug §1b removed, arrived at from the
    other direction. */
 const LEADS_UNKNOWN =
-  'Whether this contact is in the leads table is not known right now: the leads read this screen matches '
+  'Whether this contact is in your leads is not known right now: the leads read this screen matches '
   + 'threads against did not come back. That is not the same as "not in leads", so nothing here says it is — '
   + 'and the bot’s reply rule turns on that answer, so no claim is made about why this thread has or has '
   + 'not been answered automatically either.';
@@ -465,8 +465,8 @@ const LEADS_UNKNOWN =
    so does this screen: opening the wrong customer's record from a thread is
    worse than opening none. */
 const LEADS_AMBIGUOUS =
-  'More than one row in the leads table has a phone number ending in this thread’s last nine digits. The '
-  + 'rule the backend joins on cannot tell them apart, so lib/identity.js matched neither and neither is '
+  'More than one row in your leads has a phone number ending in this thread’s last nine digits. The '
+  + 'rule the backend joins on cannot tell them apart, so NEXUS’s identity rules matched neither and neither is '
   + 'offered here. Merging on those digits would attach this conversation to a customer it may not belong to.';
 /* Rewritten 1 Sep 2026, and corrected again the same day. This used to say a
    blank number meant the 24 Aug WAHA backfill had missed the row. That was wrong
@@ -485,8 +485,8 @@ const LEADS_AMBIGUOUS =
    checked — and "we looked in one place" is a weaker claim than the one this
    sentence is making. */
 const NO_PHONE_WHY =
-  'Nothing on this thread carries a phone number: whatsapp_contacts has no row for it under either join the view '
-  + 'makes — on chat_id, which this thread has none of, or on lead_email — and the thread key itself contains no '
+  'Nothing on this thread carries a phone number: The saved contact details has no row for it under either join the view '
+  + 'makes — on WhatsApp address, which this thread has none of, or on the email on the lead record — and the thread key itself contains no '
   + 'dialable digits either. A LID handle is the usual case, because its digits are a machine id and reading them '
   + 'as a number would invent one.';
 
@@ -499,7 +499,7 @@ const IDENT = {
     short: 'Lead',
     tone: 'ok',
     named: true,
-    note: 'v_conversations matched this thread to a row in the leads table on an exact address — its key is '
+    note: 'NEXUS matched this thread to a row in your leads on an exact address — its key is '
         + 'the string in that lead’s email column.',
   },
   whatsapp_profile: {
@@ -516,7 +516,7 @@ const IDENT = {
        half stays here; the leads half is computed per thread by leadOf() and
        appended by identNote(), where it can be right. */
     note: 'The name below is whatever this contact typed into their own WhatsApp profile. Nobody has verified '
-        + 'it, and v_conversations found no leads row whose email column holds this thread’s key.',
+        + 'it, and NEXUS found no leads row whose email column holds this thread’s key.',
   },
   phone_only: {
     label: 'Number only',
@@ -528,7 +528,12 @@ const IDENT = {
     tone: 'cold',
     named: true,
     note: 'We hold this contact\u2019s phone number and nothing else — no lead record and no WhatsApp profile name. '
-        + 'The number itself is real: it came from WAHA\u2019s own contact lookup, not from parsing the chat id.',
+        /* Named the transport until 5 Sep 2026 ("WAHA's own contact lookup").
+           The transport is temporary and per-dealership; what makes the number
+           trustworthy is that WhatsApp itself returned it for this contact
+           rather than that it was parsed out of an address, and that is what
+           the reader needs. */
+        + 'The number itself is real: WhatsApp returned it for this contact, rather than it being read out of the chat address.',
   },
   unidentified: {
     label: 'Unidentified',
@@ -544,13 +549,13 @@ const IDENT = {
        explainable state is an anomaly to escalate is its own kind of false
        alarm. The one thing that must never happen — a bare chat handle shown as
        a person — is still enforced, in normalise() and titleOf(). */
-    note: 'v_conversations resolved no lead, no WhatsApp profile name and no phone number for this thread. It '
-        + 'tries three exact joins and no others — leads.email against the thread key, whatsapp_contacts.chat_id '
-        + 'against the thread’s chat_id, and whatsapp_contacts.lead_email against the thread key — so a key of the '
+    note: 'NEXUS resolved no lead, no WhatsApp profile name and no phone number for this thread. It '
+        + 'tries three exact joins and no others — The email on the lead record against the thread key, the WhatsApp address in the saved contact details '
+        + 'against the thread’s WhatsApp address, and the email in the saved contact details against the thread key — so a key of the '
         + 'synthetic +<digits>@whatsapp.lead shape lands here whatever else is known about the person: no leads '
-        + 'row carries that address, the thread has no chat_id, and no contact row carries it in lead_email '
-        + 'either. The last-9 rule in lib/identity.js is applied on top of this, against the other rows in this '
-        + 'list AND against the leads table, and says so wherever it finds something — so "unidentified" here '
+        + 'row carries that address, the thread has no WhatsApp address, and no contact row carries it in the email on the lead record '
+        + 'either. The last-9 rule in NEXUS’s identity rules is applied on top of this, against the other rows in this '
+        + 'list AND against your leads, and says so wherever it finds something — so "unidentified" here '
         + 'means the view could not resolve the thread, never that nobody knows who this is.',
   },
 };
@@ -573,14 +578,17 @@ function keyKind(key) {
   return describeKey(k);
 }
 
+/* The deployment variable's NAME is NEXUS's configuration, not the
+   dealership's (CONTROL-PLANE.md Part 4). What is theirs is that the
+   capability is off and that only NEXUS can turn it on. */
 const NO_N8N =
-  'VITE_N8N_BASE_URL is not set in this build, so the browser has no n8n host to call and the '
-  + 'whatsapp-send webhook cannot be reached. Replies have to go out from WhatsApp itself.';
+  'This deployment is not configured to reach the messaging service, so a reply cannot be sent '
+  + 'from here. Replies have to go out from WhatsApp itself until NEXUS redeploys it.';
 const noChatWhy = t =>
-  `This thread is keyed on "${t.key}" (${keyKind(t.key)}) and no chat_id is stored for it in `
-  + 'v_conversations, so WAHA has no WhatsApp address to send to. Replying needs a chat_id, which '
-  + 'only arrives when the contact messages the business number. If they are waiting, the reply has to be '
-  + 'typed inside WhatsApp itself — nothing on this screen can send it for you.';
+  `This thread is identified by "${t.key}" (${keyKind(t.key)}), and no WhatsApp address is on file for it, `
+  + 'so there is nothing here to send to. A WhatsApp address only arrives when the contact messages the '
+  + 'business number. If they are waiting, the reply has to be typed inside WhatsApp itself — nothing on '
+  + 'this screen can send it for you.';
 
 /* "Today" is today in Dubai. Comparing against the browser's own midnight put
    the separator in the wrong place for anyone outside the UAE — a message sent
@@ -844,7 +852,7 @@ const NAME_SOURCE = {
 const linkWhy = t => {
   const s = t.name ? null : namedSibling(t);
   if (!s) return '';
-  return `This name is not v_conversations\u2019 answer for this thread \u2014 the view resolved nothing for it. It is `
+  return `NEXUS did not resolve this name for this thread \u2014 it resolved nothing for it. It is `
     + `"${s.name}", taken from the thread keyed on "${s.key}", because both keys carry the same last ${SUFFIX_LEN} `
     + `digits (${t.suffix}) and that is the rule the backend joins a chat to a lead on. The two rows are one person; `
     + 'the view lists them separately because it matches on exact keys only. As for the name itself: '
@@ -860,7 +868,7 @@ const titleWhy = t => t.name
   ? ''
   : (linkWhy(t)
       || (anyPhone(t)
-          ? 'We have this contact\u2019s phone number but no name: v_conversations resolved no lead name for it and '
+          ? 'We have this contact\u2019s phone number but no name: NEXUS resolved no lead name for it and '
             + 'they have set no WhatsApp profile name. ' + leadWhy(t)
           : identNote(t)));
 /* Initials off a borrowed name would read as though the view had named the row,
@@ -876,7 +884,7 @@ const avatarOf = t => t.name ? esc(initials(t.name)) : '?';
 function phoneHtml(t, cls) {
   const c = cls == null ? 'cell-sub' : cls;
   const readable = addressPhone(t.phone);
-  if (readable) return `<span class="mono ${c}" title="Stored in v_conversations.phone as ${esc(t.phone)}">${esc(readable)}</span>`;
+  if (readable) return `<span class="mono ${c}" title="Saved for this contact as ${esc(t.phone)}">${esc(readable)}</span>`;
   /* Something is stored but it does not read as a number. Show it exactly as
      stored — formatting it would turn a handle into a phone number nobody has. */
   if (t.phone) return `<span class="mono ${c}" title="${esc('Stored in v_conversations.phone as-is. It reads as a ' + keyKind(t.phone) + ', not a dialable number, so it is shown exactly as stored and not formatted as one.')}">${esc(t.phone)}</span>`;
@@ -888,7 +896,7 @@ function phoneHtml(t, cls) {
      workflow which minted that key had the number right. */
   const fromKey = addressPhone(t.keyDigits);
   if (fromKey) {
-    return `<span class="mono ${c}" title="${esc('Not stored in v_conversations.phone — whatsapp_contacts has no row for this thread on either of the joins the view makes, chat_id or lead_email. These digits are read out of the thread key itself ("' + t.key + '", a ' + keyKind(t.key) + '), which the workflows synthesise from the number they were handed. Nobody has verified that number against WAHA the way a whatsapp_contacts row has been. It is the same last-' + SUFFIX_LEN + '-digit form the backend matches on.')}">${esc(fromKey)}</span>`;
+    return `<span class="mono ${c}" title="${esc('These digits are not from this contact\u2019s saved details — nothing is saved for this thread. They are read out of the thread\u2019s own identifier ("' + t.key + '", a ' + keyKind(t.key) + '), which NEXUS built from the number it was handed. WhatsApp has never confirmed this number for this contact, the way it has for a contact whose details are saved. It is the same last-' + SUFFIX_LEN + '-digit form NEXUS matches people on.')}">${esc(fromKey)}</span>`;
   }
   return `<span class="t-warm ${c}" title="${esc(NO_PHONE_WHY)}">No number on file</span>`;
 }
@@ -901,7 +909,7 @@ function phoneHtml(t, cls) {
 function chatHtml(t, cls) {
   const c = cls == null ? 'cell-sub' : cls;
   if (!t.chat_id) return `<span class="t-warm ${c}">no WhatsApp address stored</span>`;
-  return `<span class="mono ${c}" title="${esc('v_conversations.chat_id — the WhatsApp address WAHA sends to (' + keyKind(t.chat_id) + '). The thread itself is keyed on "' + t.key + '", which identifies the person; it is not an address and nothing is ever sent to it.')}">${esc(t.chat_id)}</span>`;
+  return `<span class="mono ${c}" title="${esc('The WhatsApp address a reply to this thread goes to (' + keyKind(t.chat_id) + '). The thread itself is identified by "' + t.key + '", which names the person; it is not an address and nothing is ever sent to it.')}">${esc(t.chat_id)}</span>`;
 }
 
 /* ── What this contact is in the leads table (§1b) ───────────────────────────
@@ -945,19 +953,19 @@ const leadWhy = t => {
   if (m.state === 'none') return NOT_A_LEAD + (m.capped ? ' ' + LEAD_POOL_CAP_WHY : '');
   const l = m.leads[0];
   const rest = m.leads.length - 1;
-  return `This contact is row ${str(l.id)} of the leads table`
+  return `This contact is row ${str(l.id)} of your leads`
     + (str(l.name) ? ` (${str(l.name)})` : '')
     + `, status ${str(l.status) || 'not recorded'}, phone ${str(l.phone) || 'not recorded'}, email `
     + `${str(l.email) || 'the empty string'}. `
     + (m.via === 'address'
         ? 'It was matched on an address this thread is already filed under.'
         : `It was matched on the last ${SUFFIX_LEN} digits of the phone number (${m.suffix}) — the rule `
-          + 'nexus_lead_for_comm_key() and every workflow that wrote these rows use to join a chat to a lead. '
-          + 'lib/identity.js applies it here. A @lid handle carries no phone digits of its own; the number came '
-          + 'from the whatsapp_contacts row v_conversations already read it out of.')
+          + 'NEXUS and every workflow that wrote these rows use to join a chat to a lead. '
+          + 'NEXUS’s identity rules applies it here. A @lid handle carries no phone digits of its own; the number came '
+          + 'from the saved contact details row NEXUS already read it out of.')
     + (t.lead_email
         ? ''
-        : ' v_conversations returned no lead_email for this thread, because it matches leads on an exact '
+        : ' NEXUS resolved no email address for this thread, because it matches leads on an exact '
           + 'address and this thread’s key is not one — so the view on its own would have reported this '
           + 'contact as unknown to the dealership.')
     + (rest > 0 ? ` ${num(rest)} further leads ${plural(rest, 'row matches', 'rows match')} the same person.` : '');
@@ -983,9 +991,9 @@ const leadBit = t => {
 const identNote = t => {
   const base = identOf(t).note;
   const m = leadOf(t);
-  if (m.state === 'matched') return `${base} The leads table itself, matched through lib/identity.js: ${leadWhy(t)}`;
+  if (m.state === 'matched') return `${base} Your leads itself, matched through NEXUS’s identity rules: ${leadWhy(t)}`;
   if (m.state === 'none') {
-    return `${base} lib/identity.js finds no leads row for it on the last-${SUFFIX_LEN}-digit rule either`
+    return `${base} NEXUS’s identity rules finds no leads row for it on the last-${SUFFIX_LEN}-digit rule either`
       + `${m.capped ? ', within the rows read. ' + LEAD_POOL_CAP_WHY : '.'}`;
   }
   return `${base} ${leadWhy(t)}`;
@@ -1004,11 +1012,11 @@ const leadStatusPill = t => {
   const s = leadStatusOf(t);
   if (!s) return '';
   const own = Boolean(str(t.lead_status));
-  const why = 'leads.status — this contact’s stage in the lead lifecycle. It is not the severity of any '
+  const why = 'The lead’s status — this contact’s stage in the lead lifecycle. It is not the severity of any '
     + 'alert; the two vocabularies share the words HOT, WARM and COLD. '
     + (own
-        ? 'Read from v_conversations.lead_status for this thread.'
-        : `v_conversations resolved no lead for this thread, so this is the status of the row lib/identity.js `
+        ? 'Read from the lead status NEXUS resolved for this thread.'
+        : `NEXUS resolved no lead for this thread, so this is the status of the row NEXUS’s identity rules `
           + `matched. ${leadWhy(t)}`);
   return `<span title="${esc(why)}">${pill(`${s} lead`, tone(s), { verbatim: false })}</span>`;
 };
@@ -1035,7 +1043,7 @@ function subLine(t) {
      explains why there are two rows on this screen at all. */
   else if (t.siblings.some(s => s.lead_email)) {
     const s = t.siblings.find(x => x.lead_email);
-    bits.push(`<span class="t-muted" title="${esc('v_conversations returned no lead_email for this thread, because it matches leads on an exact address and this thread is keyed on "' + t.key + '". The same person’s other thread is matched, to ' + s.lead_email + ', and the two share the last ' + SUFFIX_LEN + ' digits ' + t.suffix + '.')}">In leads as ${esc(s.lead_email)}, via the linked thread</span>`);
+    bits.push(`<span class="t-muted" title="${esc('NEXUS resolved no email address for this thread, because it matches leads on an exact address and this thread is keyed on "' + t.key + '". The same person’s other thread is matched, to ' + s.lead_email + ', and the two share the last ' + SUFFIX_LEN + ' digits ' + t.suffix + '.')}">In leads as ${esc(s.lead_email)}, via the linked thread</span>`);
   } else bits.push(leadBit(t));
   if (t.siblings.length) {
     bits.push(`<span class="chip" title="${esc(sameAsWhy(t))}">Same person as ${esc(t.siblings.map(s => titleOf(s)).join(', '))}</span>`);
@@ -1047,11 +1055,11 @@ function subLine(t) {
 /* Said once, so the list row, the pane banner and the send confirmation cannot
    describe the same link three different ways. */
 const sameAsWhy = t =>
-  `v_conversations lists ${num(1 + t.siblings.length)} separate threads for this person because it groups on exact `
+  `NEXUS lists ${num(1 + t.siblings.length)} separate threads for this person because it groups on exact `
   + `keys: this one on "${t.key}", ${t.siblings.map(s => '"' + s.key + '"').join(' and ')}. All of them carry the `
-  + `same last ${SUFFIX_LEN} phone digits (${t.suffix}), which is the rule nexus_lead_for_comm_key() and every `
-  + 'workflow that wrote these rows use to join a chat to a lead, and lib/identity.js applies it here. The rows are '
-  + 'left separate so the counts on this screen keep agreeing with v_needs_attention and the nav badge, which count '
+  + `same last ${SUFFIX_LEN} phone digits (${t.suffix}), which is the rule NEXUS and every `
+  + 'workflow that wrote these rows use to join a chat to a lead, and NEXUS’s identity rules applies it here. The rows are '
+  + 'left separate so the counts on this screen keep agreeing with the attention list and the nav badge, which count '
   + 'view rows — but the message pane reads the whole person, so opening either row shows the same history.';
 
 SCREENS.conversations = async host => {
@@ -1283,10 +1291,10 @@ SCREENS.conversations = async host => {
                 + 'rows rather than a message. Its body is not the silence detector’s, so what wrote it is not '
                 + 'named here — it is not a message to the customer and not a reply')
             + (t.last_direction === 'outbound'
-                ? ' — but because it sits in the direction column as an outbound, v_conversations reads this thread '
-                  + 'as answered and v_needs_attention.unanswered_chat, which keys on that, cannot list it at all.'
+                ? ' — but because it sits in the direction column as an outbound, NEXUS reads this thread '
+                  + 'as answered and the unanswered-chat alert, which keys on that, cannot list it at all.'
                 : `. The last thing anybody actually said on it was ${lastSaidAt(t) ? ago(lastSaidAt(t)) : 'never — no row on this thread is a message'}, `
-                  + 'and v_needs_attention.unanswered_chat keys on awaiting_reply, which this row makes false.'),
+                  + 'and the unanswered-chat alert keys on whether the newest message is theirs, which this row makes false.'),
         });
         return;
       }
@@ -1297,9 +1305,9 @@ SCREENS.conversations = async host => {
         out.push({
           kind: 'no_whatsapp_address', severity: 'HOT', ref: t.key, thread: t,
           title: titleOf(t), at: t.last_at, derived: true,
-          detail: `Waiting since ${ago(t.last_at)}, and this thread has no chat_id in v_conversations, so it `
-            + 'cannot be replied to from here at all and never reaches the unanswered_chat alert, whose ref is a '
-            + 'chat_id. Somebody has to answer it inside WhatsApp.',
+          detail: `Waiting since ${ago(t.last_at)}, and this thread has no WhatsApp address on file, so it `
+            + 'cannot be replied to from here at all and never reaches the unanswered-chat alert alert, whose ref is a '
+            + 'WhatsApp address. Somebody has to answer it inside WhatsApp.',
         });
         return;
       }
@@ -1308,7 +1316,7 @@ SCREENS.conversations = async host => {
           kind: 'waiting_past_window', severity: 'WARM', ref: t.chat_id, thread: t,
           title: titleOf(t), at: t.last_at, derived: true,
           detail: `Waiting ${Math.floor(d)} days — past the ${CHAT_WINDOW_DAYS}-day window that `
-            + 'v_needs_attention.unanswered_chat looks back over, so it has dropped off that list and off the nav '
+            + 'The unanswered-chat alert looks back over, so it has dropped off that list and off the nav '
             + 'badge. It is still unanswered.',
         });
       }
@@ -1350,7 +1358,7 @@ SCREENS.conversations = async host => {
       const icon = attnError ? 'error' : (waitingNow ? 'schedule' : 'check_circle');
       const cls  = attnError ? 't-warm' : (waitingNow ? 't-warm' : 't-ok');
       const why = attnError
-        ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnError)}), so whether anybody is `
+        ? `<span class="t-warm">The attention list could not be read (${esc(attnError)}), so whether anybody is `
           + 'waiting on a human is unknown right now. The conversations below are complete; none of them has been '
           + 'triaged.</span>'
         : !threads.length
@@ -1358,10 +1366,10 @@ SCREENS.conversations = async host => {
             + 'moment somebody messages the dealership number and no answer goes back.</span>'
           : waitingNow
             ? `<span class="t-warm">${num(waitingNow)} ${plural(waitingNow, 'conversation', 'conversations')} below `
-              + `${plural(waitingNow, 'ends', 'end')} on a message from the customer, but v_needs_attention has filed `
+              + `${plural(waitingNow, 'ends', 'end')} on a message from the customer, but the attention list has filed `
               + 'none of them against this screen.</span> <span class="t-muted">Nothing outside this page is '
               + 'reminding anyone about them — check the thread before assuming it is handled.</span>'
-            : `<span class="t-ok">Nobody is waiting on a reply.</span> <span class="t-muted">v_needs_attention lists `
+            : `<span class="t-ok">Nobody is waiting on a reply.</span> <span class="t-muted">The attention list lists `
               + `no unanswered chat for this screen, and ${threads.length === 1
                   ? 'the one conversation in the inbox does not end'
                   : `none of the ${num(threads.length)} conversations ends`} on a message from a customer that has `
@@ -1420,16 +1428,16 @@ SCREENS.conversations = async host => {
          anything. */
       const sevWhy = (a.derived
         ? 'The severity of this alert, decided by this screen from the kind of gap it is: nothing in '
-          + 'v_needs_attention covers this thread, so nothing outside this page has triaged it. '
+          + 'The attention list covers this thread, so nothing outside this page has triaged it. '
           + (a.kind === 'silence_escalated'
               ? 'A silence escalation is filed WARM rather than HOT because a human was pinged on Slack when the '
                 + 'marker was written — it is "check that landed", not "nobody knows".'
               : a.kind === 'no_whatsapp_address'
-                ? 'A thread with no chat_id is filed HOT: it cannot be answered from this dashboard at all, so '
+                ? 'A thread with no WhatsApp address is filed HOT: it cannot be answered from this dashboard at all, so '
                   + 'somebody has to be told to answer it inside WhatsApp.'
                 : 'A thread past the view\u2019s look-back window is filed WARM: it is still unanswered, but it '
                   + 'is not new.')
-        : 'v_needs_attention.severity — the view\u2019s triage of this alert. Every unanswered_chat row it emits '
+        : 'The severity on the attention list — the view\u2019s triage of this alert. Every the unanswered-chat alert row it emits '
           + 'is HOT; the value is a constant in the view, not a judgement about this particular person.')
         + ' It is not a lead status. HOT, WARM and COLD are words in both vocabularies and this product renders '
         + 'them with the same component, which is why this one carries the noun.';
@@ -1461,7 +1469,7 @@ SCREENS.conversations = async host => {
           <div>
             <div class="card-title">Waiting on a human</div>
             <div class="card-sub">${num(rows.length)} item${rows.length === 1 ? '' : 's'}${hot ? ` · ${num(hot)} urgent` : ''}
-              · ${num(fromView.length)} from v_needs_attention for this screen${derived.length
+              · ${num(fromView.length)} from the attention list for this screen${derived.length
                 ? `, ${num(derived.length)} this screen can see that the view cannot`
                 : ''}.
               A thread the bot chose not to answer is not a failure — that is the allowlist working — but somebody still has to reply.</div>
@@ -1469,7 +1477,7 @@ SCREENS.conversations = async host => {
         </div>
         ${attnError ? `<div style="padding:0 20px 12px"><div class="banner warm">
           <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">error</span>
-          <div>v_needs_attention could not be read (${esc(attnError)}), so only the items this screen derived for itself are listed. The triaged list is missing, not empty.</div>
+          <div>The attention list could not be read (${esc(attnError)}), so only the items this screen derived for itself are listed. The triaged list is missing, not empty.</div>
         </div></div>` : ''}
         ${items}
       </div>`;
@@ -1542,8 +1550,8 @@ SCREENS.conversations = async host => {
       attn = a.rows; attnError = a.error;
       renderAlerts();
       strip.className = 'card flush';
-      strip.innerHTML = stateError('the inbox summary', e.message);
-      wrap.innerHTML = stateError('conversations', e.message, 'reload');
+      strip.innerHTML = stateError('the inbox summary', e);
+      wrap.innerHTML = stateError('conversations', e, 'reload');
       wrap.querySelector('[data-retry]')?.addEventListener('click', boot);
       return;
     }
@@ -1572,9 +1580,9 @@ SCREENS.conversations = async host => {
       wrap.innerHTML = stateEmpty(
         dropped ? 'No conversation can be addressed' : 'No conversations yet',
         dropped
-          ? `${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread_key in v_conversations, so there is `
+          ? `${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread identifier on file, so there is `
             + 'no contact to attach those messages to and no thread that could be opened or replied to.'
-          : 'v_conversations returned no rows, so no message in communication_logs resolves to a person. A thread '
+          : 'NEXUS returned no rows, so no message in the message history resolves to a person. A thread '
             + 'appears here as soon as somebody messages the dealership WhatsApp number, or the agent sends its '
             + 'first message — the view groups every log row onto one contact, so the first message is also the '
             + 'first thread.',
@@ -1632,16 +1640,16 @@ SCREENS.conversations = async host => {
   function healthLine() {
     if (!healthRead) return '';
     if (healthError) {
-      return `<div style="margin-top:6px"><span class="t-warm">v_workflow_health could not be read `
+      return `<div style="margin-top:6px"><span class="t-warm">The automation health figures could not be read `
         + `(${esc(healthError)}), so whether the WhatsApp agent behind this inbox is working is unknown right `
         + 'now.</span> <span class="t-muted">The conversations above are unaffected — they come from '
-        + 'v_conversations, which loaded.</span></div>';
+        + 'NEXUS, which loaded.</span></div>';
     }
     if (!bdcHealth) {
-      return `<div style="margin-top:6px"><span class="t-warm">v_workflow_health has no row named `
+      return `<div style="margin-top:6px"><span class="t-warm">The automation health figures has no row named `
         + `<span class="mono">${esc(WF_BDC)}</span></span> <span class="t-muted">— it is the workflow that logs `
         + 'every message in this inbox, and nothing here can say whether it is running. Its absence from '
-        + 'workflow_registry is itself worth fixing.</span></div>';
+        + 'The automation register is itself worth fixing.</span></div>';
     }
     const h = str(bdcHealth.health).toUpperCase();
     const known = Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h);
@@ -1654,17 +1662,17 @@ SCREENS.conversations = async host => {
     const rateText = rate == null
       ? (Number.isFinite(eff) && eff === 0
           ? 'no rated runs in the last 30 days, so there is no success rate to report — every run in the window was refused by design or escalated on purpose'
-          : 'v_workflow_health did not return the counts a success rate is computed from, so none is shown')
+          : 'The automation health figures did not return the counts a success rate is computed from, so none is shown')
       : `${pct(rate)} of its ${num(eff)} rated ${plural(eff, 'run', 'runs')} succeeded in the last 30 days`;
     /* The screen's own arithmetic against the view's column, said aloud where
        they differ rather than one being quietly preferred. */
     const viewRate = bdcHealth.success_rate_30d == null ? null : Number(bdcHealth.success_rate_30d);
     const disagree = (rate != null && viewRate != null && Math.abs(rate - viewRate) >= 0.05)
-      ? ` <span class="t-warm">v_workflow_health’s own success_rate_30d column says ${esc(String(viewRate))}%, which is not what its counts come to.</span>`
+      ? ` <span class="t-warm">The automation health figures’s own the success rate it publishes column says ${esc(String(viewRate))}%, which is not what its counts come to.</span>`
       : '';
     const tone = h === 'HEALTHY' ? 't-ok' : (words.tone === 'ok' ? 't-ok' : (words.tone === 'hot' ? 't-hot' : 't-muted'));
     return `<div style="margin-top:6px"><span class="${tone}">The WhatsApp agent behind this inbox is `
-      + `${esc(known ? words.label : h)}.</span> <span class="t-muted">${esc(known ? words.blurb : 'v_workflow_health returned a health value lib/health.js does not define, so it is printed as it came rather than mapped to a verdict.')} `
+      + `${esc(known ? words.label : h)}.</span> <span class="t-muted">${esc(known ? words.blurb : 'The automation health figures returned a health value NEXUS does not define, so it is printed as it came rather than mapped to a verdict.')} `
       + `${esc(rateText)}${bad ? `, with ${num(bad)} ${plural(bad, 'run that failed or went out half-done', 'runs that failed or went out half-done')}` : ''}. `
       + `A thread with no reply in it may be the allowlist working as intended — but while this workflow is `
       + `${esc(known ? words.label.toLowerCase() : 'in this state')}, it may equally be a run that never finished.</span>${disagree}</div>`;
@@ -1686,7 +1694,7 @@ SCREENS.conversations = async host => {
       ? `<span class="t-warm">Only the newest ${num(THREAD_LIMIT)} threads were read, so this is not the whole inbox.</span>`
       : '';
     const dropNote = dropped
-      ? `<span class="t-warm">${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread_key in v_conversations and could not be attached to anybody.</span>`
+      ? `<span class="t-warm">${num(dropped)} ${plural(dropped, 'row has', 'rows have')} no thread identifier on file and could not be attached to anybody.</span>`
       : '';
 
     /* Zero threads. Filed as C1 by the 31 Aug audit and fixed here on 1 Sep:
@@ -1708,7 +1716,7 @@ SCREENS.conversations = async host => {
             <div class="label-caps">The whole inbox</div>
             <div class="kpi-value sm" style="white-space:normal">No conversations</div>
             <div class="kpi-sub" style="white-space:normal">
-              v_conversations returned no rows${dropped ? `, and ${num(dropped)} ${plural(dropped, 'row was', 'rows were')} dropped for having no thread_key` : ''}.
+              NEXUS returned no rows${dropped ? `, and ${num(dropped)} ${plural(dropped, 'row was', 'rows were')} dropped for having no thread identifier` : ''}.
               Nothing is claimed about reply times, phone coverage or whether anything is repliable — there is
               nothing to claim it about, and a tile reading 0 beside the words "every thread" is a statement about
               an empty set dressed as an all-clear.
@@ -1745,7 +1753,7 @@ SCREENS.conversations = async host => {
                 ? `The last real message was ours, ${esc(ago(lastSaidAt(t)))}, and the customer has not answered it.`
                 : t.last_msg_direction === 'inbound'
                   ? `The last real message was theirs, ${esc(ago(lastSaidAt(t)))}, and nothing has gone back.`
-                  : 'v_conversations returned no direction for the last message on this thread, so which side spoke last is not stated here.')
+                  : 'NEXUS returned no direction for the last message on this thread, so which side spoke last is not stated here.')
           : (realOutbound(t)
               ? '<span class="t-ok">No reply due.</span> The newest message in the thread is one the dealership sent.'
               : '<span class="t-muted">No reply due, and nothing has ever been sent to this contact either.</span>');
@@ -1753,7 +1761,7 @@ SCREENS.conversations = async host => {
         ? `<span class="t-hot">Sending is off.</span> ${esc(NO_N8N)}`
         : (t.chat_id
             ? `<span class="t-ok">Repliable from here.</span> Replies go to ${chatHtml(t, '')}.`
-            : '<span class="t-warm">Not repliable from here.</span> No chat_id is stored for this thread, so there is no WhatsApp address to send to.');
+            : '<span class="t-warm">Not repliable from here.</span> No WhatsApp address is stored for this thread, so there is no WhatsApp address to send to.');
       /* "Customer" is a claim about a person, not a synonym for "contact": it is
          only made when a row in leads matches. */
       const whole = (capped || dropped)
@@ -1772,9 +1780,9 @@ SCREENS.conversations = async host => {
             <div class="kpi-value sm" style="white-space:normal">${num(msgs)} ${plural(msgs, 'message', 'messages')}, <span title="${esc(leadWhy(t))}">${leadOf(t).state === 'matched' ? 'one customer' : 'one contact'}</span></div>
             <div class="kpi-sub" style="white-space:normal">
               ${num(realInbound(t))} from ${esc(who)}, ${num(realOutbound(t))} sent back${outboundIsFloor(t)
-                ? ` <span class="t-warm" title="${esc('v_conversations.outbound_count is ' + t.outbound + ' because it counts every row with direction \'outbound\', and the newest row here is the silence detector\'s ' + SILENCE_MARKER + ' marker, written with that direction before the detector was fixed. The view\'s msg_outbound_count column, which counts messages only, did not come back on this read — so one marker has been taken out here and any older marker in this history has not. This figure is a floor. Open the thread for the exact count.')}">(a floor — v_conversations says ${num(t.outbound)} and its message-only count did not load)</span>`
+                ? ` <span class="t-warm" title="${esc('The count of messages sent out is ' + t.outbound + ' because it counts every row with direction \'outbound\', and the newest row here is the silence detector\'s ' + SILENCE_MARKER + ' marker, written with that direction before the detector was fixed. The view\'s msg_outbound_count column, which counts messages only, did not come back on this read — so one marker has been taken out here and any older marker in this history has not. This figure is a floor. Open the thread for the exact count.')}">(a floor — NEXUS says ${num(t.outbound)} and its message-only count did not load)</span>`
                 : (t.internalCount
-                    ? ` <span class="t-muted" title="${esc('v_conversations counts ' + t.count + ' rows for this contact and ' + t.internalCount + ' of them are the dealership\'s own internal notes — the silence detector\'s ' + SILENCE_MARKER + ' marker and rows like it. The figures here are msg_inbound_count and msg_outbound_count, which count only rows public.nexus_is_message() accepts.')}">(${num(t.internalCount)} further ${plural(t.internalCount, 'row is', 'rows are')} an internal note, not a message)</span>`
+                    ? ` <span class="t-muted" title="${esc('NEXUS counts ' + t.count + ' rows for this contact and ' + t.internalCount + ' of them are the dealership\'s own internal notes — the silence detector\'s ' + SILENCE_MARKER + ' marker and rows like it. The figures here are msg_inbound_count and msg_outbound_count, which count only rows NEXUS’s own test for what counts as a message accepts.')}">(${num(t.internalCount)} further ${plural(t.internalCount, 'row is', 'rows are')} an internal note, not a message)</span>`
                     : '')}${lastSaidAt(t)
                 ? `, newest ${esc(ago(lastSaidAt(t)))}`
                 : ', and nothing in it is a message'}.
@@ -1843,15 +1851,15 @@ SCREENS.conversations = async host => {
          it fixed. */
       kpi('Conversations', num(threads.length),
         `<span title="${esc(msgsExact
-            ? `Summed from v_conversations.msg_count, which counts only rows public.nexus_is_message() accepts.${internalTotal ? ` A further ${internalTotal} row${internalTotal === 1 ? '' : 's'} across this inbox ${internalTotal === 1 ? 'is' : 'are'} the dealership's own internal notes — the 12-hour silence detector's markers and rows like them — and ${internalTotal === 1 ? 'is' : 'are'} not counted here.` : ''}`
-            : 'At least one thread fell back to v_conversations.message_count, which counts every row filed under a contact including the dealership\'s own internal notes, because the message-only column did not come back on this read. This total therefore mixes two populations.')}">${num(msgs)} ${plural(msgs, 'message', 'messages')} logged</span>`
+            ? `Summed from the message-only count, which counts only rows NEXUS’s own test for what counts as a message accepts.${internalTotal ? ` A further ${internalTotal} row${internalTotal === 1 ? '' : 's'} across this inbox ${internalTotal === 1 ? 'is' : 'are'} the dealership's own internal notes — the 12-hour silence detector's markers and rows like them — and ${internalTotal === 1 ? 'is' : 'are'} not counted here.` : ''}`
+            : 'At least one thread fell back to the count of every row filed under a contact, which counts every row filed under a contact including the dealership\'s own internal notes, because the message-only column did not come back on this read. This total therefore mixes two populations.')}">${num(msgs)} ${plural(msgs, 'message', 'messages')} logged</span>`
         + (msgsExact ? '' : ' <span class="t-warm">(not all message-only)</span>')
         + (linked.length
           ? ` · <span class="t-warm" title="${esc(sameAsWhy(linked[0]))}">${num(threads.length)} rows, ${num(people)} people — `
             + `${num(linked.length / 2)} ${plural(linked.length / 2, 'pair is', 'pairs are')} one customer filed under two keys</span>`
           : '')
         + (collisions.length
-          ? ` · <span class="t-hot" title="${esc('The last-' + SUFFIX_LEN + '-digit rule matched more than two threads to the same number. That is either one person filed three ways or two people whose numbers end in the same nine digits, and the rule cannot tell which — so none of them has been linked. lib/identity.js refuses the same merge for the same reason.')}">${num(collisions.length)} ${plural(collisions.length, 'group', 'groups')} share a number suffix and were deliberately not linked</span>`
+          ? ` · <span class="t-hot" title="${esc('The last-' + SUFFIX_LEN + '-digit rule matched more than two threads to the same number. That is either one person filed three ways or two people whose numbers end in the same nine digits, and the rule cannot tell which — so none of them has been linked. NEXUS’s identity rules refuses the same merge for the same reason.')}">${num(collisions.length)} ${plural(collisions.length, 'group', 'groups')} share a number suffix and were deliberately not linked</span>`
           : '')
         + (capped ? ` · ${capNote}` : '')
         + (dropped ? ` · ${dropNote}` : '')),
@@ -1871,7 +1879,7 @@ SCREENS.conversations = async host => {
               ? '<span class="t-muted">No thread ends on a customer message</span>'
               : '<span class="t-ok">Every thread ends with a message we sent</span>'))
         + (markerThreads.length
-          ? ` · <span class="t-warm" title="${esc('v_needs_attention.unanswered_chat is WHERE awaiting_reply, and awaiting_reply is last_direction = \'inbound\'. A thread whose newest row is a ' + SILENCE_MARKER + ' marker can never satisfy it, so these threads appear in no alert anywhere. They are listed in the strip above instead.')}">${num(markerThreads.length)} ${plural(markerThreads.length, 'thread sits', 'threads sit')} on a silence-escalation marker and ${plural(markerThreads.length, 'is', 'are')} in no alert</span>`
+          ? ` · <span class="t-warm" title="${esc('The unanswered-chat alert is WHERE whether the newest message is theirs, and whether the newest message is theirs is last_direction = \'inbound\'. A thread whose newest row is a ' + SILENCE_MARKER + ' marker can never satisfy it, so these threads appear in no alert anywhere. They are listed in the strip above instead.')}">${num(markerThreads.length)} ${plural(markerThreads.length, 'thread sits', 'threads sit')} on a silence-escalation marker and ${plural(markerThreads.length, 'is', 'are')} in no alert</span>`
           : ''),
         awaiting.length ? 't-hot' : ''),
 
@@ -1888,16 +1896,16 @@ SCREENS.conversations = async host => {
           ? `<span class="t-warm">${num(noPhone)} ${plural(noPhone, 'thread has', 'threads have')} none</span>`
           : '<span class="t-ok">Every thread has a number</span>')
         + (fromKeyOnly
-          ? ` · <span class="t-muted" title="${esc('v_conversations.phone comes from whatsapp_contacts, joined twice — on chat_id and on lead_email. A thread that matches neither has no row there and no phone from the view — but a key of the +<digits>@whatsapp.lead or <digits>@c.us shape carries the number itself, and those digits are read here. A LID is excluded: its digits are a machine id. A number read this way came from a workflow that minted the key; it has not been through WAHA’s contact lookup the way a stored one has.')}">${num(fromKeyOnly)} of them read out of the thread key, not from whatsapp_contacts</span>`
+          ? ` · <span class="t-muted" title="${esc('A contact\u2019s number is normally taken from their saved details. Some threads have none saved — but their own identifier carries the number inside it, and those digits are read here instead. A LID handle is excluded: its digits are a machine id, not a number anyone can dial. A number read this way came from NEXUS building the identifier; WhatsApp has not confirmed it for this contact the way it has for a saved one.')}">${num(fromKeyOnly)} of them read out of the thread\u2019s own identifier, not from saved contact details</span>`
           : '')
-        + ` · <span title="${esc('Threads whose contact lib/identity.js matches to a row in the leads table — on an address the '
+        + ` · <span title="${esc('Threads whose contact NEXUS’s identity rules matches to a row in your leads — on an address the '
               + 'thread is filed under, or on the last ' + SUFFIX_LEN + ' digits of its number, which is the rule '
-              + 'nexus_lead_for_comm_key() and the workflows join on. Threads, not people: a person filed under two keys '
+              + 'NEXUS and the workflows join on. Threads, not people: a person filed under two keys '
               + 'is two rows here, the same way every other count on this screen counts view rows.')}">${num(inLeads.length)} matched to a lead`
           + `${leadPeople && leadPeople !== inLeads.length ? ` (${num(leadPeople)} ${plural(leadPeople, 'person', 'people')})` : ''}</span>`
         + (leadUnknown
           ? ` · <span class="t-warm" title="${esc(LEADS_UNKNOWN)}">${num(leadUnknown)} unchecked — the leads read failed</span>`
-          : ` · <span class="t-muted" title="${esc('v_conversations resolves a thread to a lead with exact joins only — lower(leads.email) against the thread key, and whatsapp_contacts by chat_id or lead_email. The identified column is that answer and is left as that answer everywhere on this screen. The figure beside it is lib/identity.js applying the backend’s last-nine-digit rule on top, which is what reaches a lead whose email column is empty or whose thread is keyed on a @lid.')}">v_conversations itself resolved ${num(by.lead)} of ${plural(inLeads.length, 'it', 'them')}</span>`)
+          : ` · <span class="t-muted" title="${esc('NEXUS resolves a thread to a lead with exact joins only — lower(the email on the lead record) against the thread key, and the saved contact details by WhatsApp address or the email on the lead record. The identified column is that answer and is left as that answer everywhere on this screen. The figure beside it is NEXUS’s identity rules applying the backend’s last-nine-digit rule on top, which is what reaches a lead whose email column is empty or whose thread is keyed on a @lid.')}">NEXUS itself resolved ${num(by.lead)} of ${plural(inLeads.length, 'it', 'them')}</span>`)
         + (leadAmbiguous ? ` · <span class="t-warm" title="${esc(LEADS_AMBIGUOUS)}">${num(leadAmbiguous)} share a number suffix with more than one lead and were not matched</span>` : '')
         + (leadPoolCapped ? ` · <span class="t-warm">${esc(LEAD_POOL_CAP_WHY)}</span>` : '')
         + ` · ${num(notInLeads)} not in leads · ${num(by.whatsapp_profile)} WhatsApp name · ${num(by.phone_only)} number only`
@@ -1917,9 +1925,9 @@ SCREENS.conversations = async host => {
          here is the design and is said as the design, not as a blind spot. */
       kpi('Repliable from here', num(withChat),
         (!N8N_BASE
-          ? '<span class="t-hot">n8n host not configured — sending is off</span>'
+          ? '<span class="t-hot">Sending is not available on this installation</span>'
           : noChat
-            ? `<span class="t-warm">${num(noChat)} ${plural(noChat, 'thread has', 'threads have')} no chat_id and cannot be replied to</span>`
+            ? `<span class="t-warm">${num(noChat)} ${plural(noChat, 'thread has', 'threads have')} no WhatsApp address and cannot be replied to</span>`
             : '<span class="t-ok">Every thread has a WhatsApp address</span>')
         + sendHealthNote()),
     ].join('');
@@ -1932,15 +1940,15 @@ SCREENS.conversations = async host => {
   function sendHealthNote() {
     if (!healthRead || healthError) return '';
     if (!sendHealth) {
-      return ` · <span class="t-muted" title="${esc('workflow_registry has no row named "' + WF_SEND + '", so nothing describes the endpoint this button calls.')}">nothing registered for the send endpoint</span>`;
+      return ` · <span class="t-muted" title="${esc('The automation register has no row named "' + WF_SEND + '", so nothing describes the endpoint this button calls.')}">nothing registered for the send endpoint</span>`;
     }
     const h = str(sendHealth.health).toUpperCase();
     if (h === 'NOT_INSTRUMENTED' && sendHealth.writes_audit_log === false) {
-      return ` · <span class="t-muted" title="${esc('The send workflow is registered with writes_audit_log false. That is deliberate: it answers the dashboard directly and this screen reads {status:\'sent\'} or {status:\'error\'} out of that reply, so the outcome of every send is known at the moment it happens without an audit row. Its health being unrated is therefore not a gap in the monitoring.')}">the send endpoint reports its outcome in its reply, not to audit_log</span>`;
+      return ` · <span class="t-muted" title="${esc('The send workflow is registered with whether it records its runs false. That is deliberate: it answers the dashboard directly and this screen reads {status:\'sent\'} or {status:\'error\'} out of that reply, so the outcome of every send is known at the moment it happens without an audit row. Its health being unrated is therefore not a gap in the monitoring.')}">the send endpoint reports its outcome in its reply, not to the activity log</span>`;
     }
     const words = healthWords(h);
     if (h === 'HEALTHY') return '';
-    return ` · <span class="t-warm" title="${esc(words.blurb)}">v_workflow_health reports the send workflow ${esc(Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? words.label : h)}</span>`;
+    return ` · <span class="t-warm" title="${esc(words.blurb)}">The automation health figures reports the send workflow ${esc(Object.prototype.hasOwnProperty.call(HEALTH_WORDS, h) ? words.label : h)}</span>`;
   }
 
   /* ── Shell ───────────────────────────────────────────────────────────── */
@@ -1954,8 +1962,8 @@ SCREENS.conversations = async host => {
     { f: 'all', label: 'All', optional: false, count: () => threads.length, title: '' },
     { f: 'await', label: 'Reply due', optional: true,
       count: () => threads.filter(t => t.awaiting).length,
-      title: 'Threads whose newest message is inbound with nothing sent after it (awaiting_reply in '
-           + 'v_conversations). communication_logs has no read state, so this is derived from direction — it is not '
+      title: 'Threads whose newest message is inbound with nothing sent after it (whether the newest message is theirs in '
+           + 'NEXUS). The message history has no read state, so this is derived from direction — it is not '
            + 'an unread flag.' },
     /* Not in leads is the distinction that decides whether anyone is coming: a
        number in `leads` may get an automatic reply, a number that is not only
@@ -1975,7 +1983,7 @@ SCREENS.conversations = async host => {
          failed is NOT counted here, so the tab disappears rather than asserting
          a no it cannot support. */
       count: () => threads.filter(t => leadOf(t).state === 'none').length,
-      title: NOT_A_LEAD + ' Counted per thread through lib/identity.js, not from v_conversations.lead_email: a '
+      title: NOT_A_LEAD + ' Counted per thread through NEXUS’s identity rules, not from the email NEXUS resolved for a thread: a '
            + 'thread the view could not resolve — a @lid key, or a lead whose email column is empty — is still '
            + 'in leads if the last-nine-digit rule reaches one, and is not counted here. Threads whose lead '
            + 'match could not be checked at all are also not counted, because "unchecked" is not "no".' },
@@ -1988,7 +1996,7 @@ SCREENS.conversations = async host => {
          matches none of them by construction. "All we hold is the chat handle"
          was false too — for the one such thread live, the handle IS the
          number. */
-      title: 'Threads for which v_conversations resolved no lead, no WhatsApp profile name and no phone number. '
+      title: 'Threads for which NEXUS resolved no lead, no WhatsApp profile name and no phone number. '
            + 'That is a statement about its three exact joins, not about how much is knowable: a thread keyed on '
            + '+<digits>@whatsapp.lead matches none of them however well the dealership knows the person, and the '
            + 'number is inside the key. Where the last-9-digit rule links such a thread to a named one, the row '
@@ -2150,7 +2158,7 @@ SCREENS.conversations = async host => {
     const rows = visible();
     const notes = [];
     if (capped) notes.push(`Only the newest ${num(THREAD_LIMIT)} threads were read, so older conversations are missing from this list.`);
-    if (dropped) notes.push(`${num(dropped)} ${plural(dropped, 'row', 'rows')} in v_conversations ${plural(dropped, 'has', 'have')} no thread_key and cannot be opened.`);
+    if (dropped) notes.push(`${num(dropped)} ${plural(dropped, 'row', 'rows')} ${plural(dropped, 'has', 'have')} no thread identifier and cannot be opened.`);
     notes.push('Search covers names, numbers, handles, the matched lead’s row (id, name, email and status) and the '
       + 'newest message only — older message text is not loaded until a thread is opened. A number matches however '
       + 'it is typed: spaces, a leading + and a leading 0 are ignored.');
@@ -2188,8 +2196,8 @@ SCREENS.conversations = async host => {
                      marker's boilerplate is not repeated as message text. */
                   ? `<span class="material-symbols-outlined t-warm" style="font-size:14px;vertical-align:-2px" aria-hidden="true"
                            title="${esc(isMarkerText(t.last_message)
-                             ? 'The newest row on this thread is the 12-hour silence detector’s own ' + SILENCE_MARKER + ' marker. It is not a message to or from the customer, and public.nexus_is_message() rejects it.'
-                             : 'The newest row on this thread is one of the dealership’s own internal rows — public.nexus_is_message() rejects it, so v_conversations.last_msg_at skips past it. Its body is not the silence detector’s, so what wrote it is not named here.')}">notifications_paused</span>
+                             ? 'The newest row on this thread is the 12-hour silence detector’s own ' + SILENCE_MARKER + ' marker. It is not a message to or from the customer, and NEXUS’s own test for what counts as a message rejects it.'
+                             : 'The newest row on this thread is one of the dealership’s own internal rows — NEXUS’s own test for what counts as a message rejects it, so the newest-message time NEXUS holds skips past it. Its body is not the silence detector’s, so what wrote it is not named here.')}">notifications_paused</span>
                      <span class="t-warm">${isMarkerText(t.last_message) ? 'Escalated for silence' : 'Newest row is an internal note'}</span>
                      ${/* `t.last_at` is the MARKER's own timestamp, and this
                           sentence is about the last MESSAGE — two moments the
@@ -2204,7 +2212,7 @@ SCREENS.conversations = async host => {
                        : 'and nothing in this thread is a message — every row in it is an internal note'}</span>`
                   : `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px"
                       aria-hidden="true"
-                      title="${esc(t.last_direction === 'inbound' ? 'Newest message came from them' : (t.last_direction === 'outbound' ? 'Newest message was sent by us' : 'communication_logs recorded no direction on the newest message'))}"
+                      title="${esc(t.last_direction === 'inbound' ? 'Newest message came from them' : (t.last_direction === 'outbound' ? 'Newest message was sent by us' : 'The message history recorded no direction on the newest message'))}"
                       >${t.last_direction === 'inbound' ? 'south_west' : (t.last_direction === 'outbound' ? 'north_east' : 'help')}</span>
                 ${preview(t.last_message)}`}
               </div>
@@ -2217,8 +2225,8 @@ SCREENS.conversations = async host => {
                     was not a message. It is the message-only count now, with the
                     rows it leaves out named in the title. */''}
               ${t.awaiting ? pill('Reply due', 'hot', { verbatim: false }) : `<span class="cell-sub" title="${esc(figuresAreExact(t)
-                  ? `v_conversations.msg_count — rows public.nexus_is_message() accepts.${t.internalCount ? ` ${t.internalCount} further row${t.internalCount === 1 ? '' : 's'} on this thread ${t.internalCount === 1 ? 'is' : 'are'} an internal note and ${t.internalCount === 1 ? 'is' : 'are'} not counted here.` : ''}`
-                  : 'v_conversations.message_count. That column counts every row filed under this contact, internal notes included; the message-only count did not come back on this read.')}">${num(realCount(t))} msg</span>`}
+                  ? `The message-only count — rows NEXUS’s own test for what counts as a message accepts.${t.internalCount ? ` ${t.internalCount} further row${t.internalCount === 1 ? '' : 's'} on this thread ${t.internalCount === 1 ? 'is' : 'are'} an internal note and ${t.internalCount === 1 ? 'is' : 'are'} not counted here.` : ''}`
+                  : 'The count of every row filed under a contact. That column counts every row filed under this contact, internal notes included; the message-only count did not come back on this read.')}">${num(realCount(t))} msg</span>`}
               ${t.identified === 'lead' ? '' : `<span class="chip" title="${esc(id.label)} — ${esc(identNote(t))}">${esc(id.short)}</span>`}
               ${t.siblings.length ? `<span class="chip" title="${esc(sameAsWhy(t))}">Linked thread</span>` : ''}
             </div>
@@ -2314,12 +2322,12 @@ SCREENS.conversations = async host => {
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">schedule</span>
         <div>The newest message is inbound, logged ${esc(ago(t.last_at))}, and no outbound message has been recorded after it.
         ${stale
-          ? `That is more than ${esc(String(CHAT_WINDOW_DAYS))} days ago, so v_needs_attention has dropped it from `
-            + 'unanswered_chat and the nav badge no longer counts it. Nothing is reminding anyone about this thread except this screen.'
-          : `v_needs_attention lists this as an unanswered_chat at HOT severity until somebody answers it or it passes ${esc(String(CHAT_WINDOW_DAYS))} days old.`}
+          ? `That is more than ${esc(String(CHAT_WINDOW_DAYS))} days ago, so the attention list has dropped it from `
+            + 'The unanswered-chat alert and the nav badge no longer counts it. Nothing is reminding anyone about this thread except this screen.'
+          : `The attention list lists this as the unanswered-chat alert at HOT severity until somebody answers it or it passes ${esc(String(CHAT_WINDOW_DAYS))} days old.`}
         ${status
           ? `<span class="t-muted" title="${esc(leadWhy(t))}">This contact is a lead with status <strong>${esc(status)}</strong>. `
-            + 'unanswered_chat is computed from v_conversations.awaiting_reply alone and reads no lead status at all, '
+            + 'The unanswered-chat alert is computed from whether the newest message on a thread is theirs alone and reads no lead status at all, '
             + 'so a lead somebody has already closed or quarantined is still queued here for a reply.</span>'
           : ''}</div>
       </div>`);
@@ -2342,13 +2350,13 @@ SCREENS.conversations = async host => {
           ? `The 12-hour silence detector wrote its ${esc(SILENCE_MARKER)} marker at ${esc(stamp(t.last_at))} because the customer had not answered our last
              message, and escalated the thread to a person on Slack at the same time. It is on the
              <span class="mono">system</span> channel and is shown below as an internal note, never as an outbound bubble.`
-          : `One of the dealership’s own internal rows was written at ${esc(stamp(t.last_at))} — v_conversations counts it in
-             message_count and dates last_message_at from it, and public.nexus_is_message() does not accept it as a message.
+          : `One of the dealership’s own internal rows was written at ${esc(stamp(t.last_at))} — NEXUS counts it in
+             the count of every row filed under a contact and dates last_message_at from it, and NEXUS’s own test for what counts as a message does not accept it as a message.
              Its body is not the silence detector’s, so what wrote it is not named here; it is shown below as an internal
              note rather than as a bubble.`}${t.last_direction === 'outbound'
-          ? ' It was written with direction ‘outbound’, which is why v_conversations counts it in outbound_count and reads this thread as answered.'
+          ? ' It was written with direction ‘outbound’, which is why NEXUS counts it in the count of messages sent out and reads this thread as answered.'
           : ''}
-        Nothing in v_needs_attention covers this thread — unanswered_chat requires awaiting_reply, and this row
+        Nothing in the attention list covers this thread — The unanswered-chat alert requires whether the newest message is theirs, and this row
         makes that false — so this screen and the strip above it are the only things reporting it.</div>
       </div>`);
     }
@@ -2394,7 +2402,7 @@ SCREENS.conversations = async host => {
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">forum</span>
         <div>Nothing has ever been sent to this contact — every message here came from them.
         ${m.state === 'matched'
-          ? `<span title="${esc(leadWhy(t))}">They are in the leads table, so the bot is allowed to answer them automatically; it has not, and no human has either.</span>`
+          ? `<span title="${esc(leadWhy(t))}">They are in your leads, so the bot is allowed to answer them automatically; it has not, and no human has either.</span>`
           : m.state === 'none'
             ? esc(NOT_A_LEAD)
             : esc(leadWhy(t))}</div>
@@ -2519,7 +2527,7 @@ SCREENS.conversations = async host => {
            id, so nothing here depends on how an address is spelled. */
         const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(leadId)}&limit=1`);
         if (rows.length) { setNote(''); leadDrawer(rows[0]); }
-        else setNote(`<span class="t-warm">Lead ${esc(leadId)} was matched to this thread when the screen loaded but is not in the leads table now, so there is no record to open. It has been deleted or merged since.</span>`);
+        else setNote(`<span class="t-warm">Lead ${esc(leadId)} was matched to this thread when the screen loaded but is not in your leads now, so there is no record to open. It has been deleted or merged since.</span>`);
       } catch (e) {
         setNote(`<span class="t-hot">The lead record could not be read — ${esc(e.message)}</span>`);
       } finally {
@@ -2618,10 +2626,14 @@ SCREENS.conversations = async host => {
        would quietly match every row in the table, and this is the one branch
        that must never be confused with "this person has no messages". */
     if (!path) {
-      body.innerHTML = stateError('this conversation',
-        'No key on this thread can be matched against communication_logs.lead_email — the thread key identifies '
+      /* Passed as the note argument, not as an error: nothing failed and there
+         is no error to describe. This sentence is ours, and it is the whole
+         point of the branch — a blank panel here must not be read as "this
+         person has no history", because no query was ever issued. */
+      body.innerHTML = stateError('this conversation', null, 'thread',
+        'No key on this thread can be matched against the key each message is filed under — the thread key identifies '
         + 'nobody and there is no email, phone or chat id to read under. Nothing was queried, so nothing here is '
-        + 'evidence that this person has no history.', 'thread');
+        + 'evidence that this person has no history.');
       body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
       return;
     }
@@ -2629,7 +2641,7 @@ SCREENS.conversations = async host => {
     try {
       msgs = await db(path);
     } catch (e) {
-      body.innerHTML = stateError('this conversation', e.message, 'thread');
+      body.innerHTML = stateError('this conversation', e, 'thread');
       body.querySelector('[data-retry]')?.addEventListener('click', () => loadMessages(t));
       return;
     }
@@ -2641,8 +2653,8 @@ SCREENS.conversations = async host => {
 
     if (!list.length) {
       body.innerHTML = stateEmpty('No messages in this thread',
-        `v_conversations counts ${num(expected)} ${plural(expected, 'row', 'rows')} for this contact, but `
-        + `communication_logs returned none under ${plural(keys.length, 'the key', 'any of the keys')} this read `
+        `NEXUS counts ${num(expected)} ${plural(expected, 'row', 'rows')} for this contact, but `
+        + `The message history returned none under ${plural(keys.length, 'the key', 'any of the keys')} this read `
         + `matched on (${keys.join(', ')}${patterns.length ? `, and any key ending ${identity.suffix}` : ''}). `
         + 'Nothing is being shown rather than guessing at the history.',
         'forum');
@@ -2683,12 +2695,12 @@ SCREENS.conversations = async host => {
     const countNote = truncated
       ? ''
       : list.length < expected
-        ? `<div style="margin-top:6px"><span class="t-warm">v_conversations counts ${num(expected)} for this contact `
-          + `and ${num(list.length)} ${plural(list.length, 'was', 'were')} read from communication_logs, so this thread `
+        ? `<div style="margin-top:6px"><span class="t-warm">NEXUS counts ${num(expected)} for this contact `
+          + `and ${num(list.length)} ${plural(list.length, 'was', 'were')} read from the message history, so this thread `
           + 'is not the whole of it. The view resolves rows onto a person by something these keys do not cover'
           + `${collision ? ', and the last-nine-digit patterns were deliberately left out of this read because more than one lead ends in those digits' : ''}.</span></div>`
         : list.length > expected
-          ? `<div style="margin-top:6px"><span class="t-muted">v_conversations counts ${num(expected)} for `
+          ? `<div style="margin-top:6px"><span class="t-muted">NEXUS counts ${num(expected)} for `
             + `${t.siblings.length ? 'these ' + num(1 + t.siblings.length) + ' rows' : 'this row'} and ${num(list.length)} `
             + `${plural(list.length, 'was', 'were')} read. The extra ${num(list.length - expected)} `
             + `${plural(list.length - expected, 'row is', 'rows are')} filed under a key the view groups onto a `
@@ -2705,14 +2717,14 @@ SCREENS.conversations = async host => {
        that was actually issued, never re-derived here: a second derivation is a
        second chance to describe a read that did something else. */
     const keyNote = (keys.length > 1 || patterns.length)
-      ? `<div style="margin-top:6px">Assembled from ${num(keys.length)} ${plural(keys.length, 'key', 'keys')} in communication_logs.lead_email — `
+      ? `<div style="margin-top:6px">Assembled from ${num(keys.length)} ${plural(keys.length, 'key', 'keys')} in the key each message is filed under — `
         + keys.map(k => `<span class="mono">${esc(k)}</span> <span class="t-muted">(${esc(keyRole(t, k))})</span>`).join(', ')
         + (patterns.length
           ? ` — plus any key ending in the last ${SUFFIX_LEN} digits of the number `
             + `(<span class="mono">${esc(identity.suffix)}</span>) on ${num(patterns.length)} address `
             + `${plural(patterns.length, 'shape', 'shapes')}: `
             + patterns.map(p => `<span class="mono">${esc(p)}</span>`).join(', ')
-            + '. That is the rule the workflows and nexus_lead_for_comm_key() join on. A '
+            + '. That is the rule the workflows and NEXUS join on. A '
             + '<span class="mono">@lid</span> is never matched that way: its digits are a machine id.'
           : ' — which resolve onto the same person.')
         + '</div>'
@@ -2830,21 +2842,21 @@ SCREENS.conversations = async host => {
         <dt>Phone</dt><dd>${addressPhone(t.phone)
           ? `<span class="mono" title="Stored as ${esc(t.phone)}">${esc(addressPhone(t.phone))}</span>`
           : addressPhone(t.keyDigits)
-            ? `<span class="mono">${esc(addressPhone(t.keyDigits))}</span> <span class="t-muted">— not stored in v_conversations.phone; these digits are read out of the thread key <span class="mono">${esc(t.key)}</span>, which a workflow minted from the number it was given</span>`
+            ? `<span class="mono">${esc(addressPhone(t.keyDigits))}</span> <span class="t-muted">— not stored in the number saved for this contact; these digits are read out of the thread key <span class="mono">${esc(t.key)}</span>, which a workflow minted from the number it was given</span>`
             : (t.phone
                 ? `<span class="mono">${esc(t.phone)}</span> <span class="t-muted">— stored as something that does not read as a dialable number, so it is shown exactly as stored</span>`
                 : `<span class="t-warm">Not stored for this contact</span> <span class="t-muted">${esc(NO_PHONE_WHY)}</span>`)}</dd>
         <dt>In leads</dt><dd>${t.lead_email
           ? esc(t.lead_email)
           : (t.siblings.find(s => s.lead_email)
-              ? `${esc(t.siblings.find(s => s.lead_email).lead_email)} <span class="t-muted">— not on this thread’s own row. v_conversations matched it to the linked thread <span class="mono">${esc(t.siblings.find(s => s.lead_email).key)}</span>, which is the same person by the last ${SUFFIX_LEN} digits. The bot may therefore answer this number automatically.</span>`
+              ? `${esc(t.siblings.find(s => s.lead_email).lead_email)} <span class="t-muted">— not on this thread’s own row. NEXUS matched it to the linked thread <span class="mono">${esc(t.siblings.find(s => s.lead_email).key)}</span>, which is the same person by the last ${SUFFIX_LEN} digits. The bot may therefore answer this number automatically.</span>`
               /* The last branch used to be an unconditional "No — the bot does
                  not answer this number automatically", printed from a null
                  column, on the dialog that sends a real WhatsApp message. On
                  lead 35 it was a false statement about a customer, made at the
                  moment an operator was deciding what to say to them. */
               : (leadOf(t).state === 'matched'
-                  ? `${esc(str(leadRow(t).email) || 'lead ' + str(leadRow(t).id))} <span class="t-muted">— not on this thread’s own row and not resolved by v_conversations. ${esc(leadWhy(t))}</span>`
+                  ? `${esc(str(leadRow(t).email) || 'lead ' + str(leadRow(t).id))} <span class="t-muted">— not on this thread’s own row and not resolved by NEXUS. ${esc(leadWhy(t))}</span>`
                   : leadOf(t).state === 'none'
                     ? `<span class="t-muted" title="${esc(NOT_A_LEAD)}">No — the bot does not answer this number automatically, so this reply is the first one they get from a person.</span>`
                     : `<span class="t-warm">${esc(leadWhy(t))}</span>`))}</dd>

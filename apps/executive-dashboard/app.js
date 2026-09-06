@@ -26,7 +26,7 @@ import './styles.css';
 import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';
 import { envErrors } from './lib/env.js';
-import { ME, SESSION, db, sessionEnded, setMe, setMeReadFailed, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
+import { ME, SESSION, db, myRole, sessionEnded, setMe, setMeReadFailed, setMembership, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
@@ -75,6 +75,7 @@ import './screens/team.js';
    registration side effect only. lib/nav.js renders an explicit "not part of
    this build" state for an id whose module never arrived. */
 import.meta.glob([
+  './screens/money-leaks.js',
   './screens/attribution.js',
   './screens/lead-recovery.js',
   './screens/deal-rescue.js',
@@ -84,6 +85,13 @@ import.meta.glob([
 /* ==========================================================================
    Auth + boot
    ========================================================================== */
+/* The sub-line under the sign-in form named the identity supplier until 5 Sep
+   2026 ("Accounts are managed in Supabase Auth") — on the one card that
+   renders to a reader who is not signed in and may not be a customer at all.
+   Which supplier holds the password is NEXUS's implementation; who to ask for
+   an account is the reader's half. The note is a JS comment rather than an
+   HTML one on purpose: an HTML comment inside this template is shipped into
+   the page and readable with View Source, which is not a smaller audience. */
 function renderLogin(msg) {
   $('boot').classList.remove('hide');
   $('app').classList.add('hide');
@@ -98,7 +106,7 @@ function renderLogin(msg) {
         <div class="field"><label for="lp">Password</label><input type="password" id="lp" autocomplete="current-password" /></div>
         <button class="btn primary" id="lgo">Sign in</button>
       </div>
-      <div class="cell-sub" style="margin-top:14px">Accounts are managed in Supabase Auth.</div>
+      <div class="cell-sub" style="margin-top:14px">Accounts are created by NEXUS. Ask NEXUS support to add one, or to reset a password.</div>
     </div>`;
   const go2 = async () => {
     const btn = $('lgo'); btn.disabled = true; btn.textContent = 'Signing in…';
@@ -122,10 +130,36 @@ setSessionEndedHandler(msg => { stopBadges(); renderLogin(msg); });
 
 async function boot() {
   if (envErrors.length) {
+    /* ── The boundary, inverted, and put back the right way up ─────────────
+       Until 5 Sep 2026 this card printed each `envErrors` string — which
+       begins with the build-time VARIABLE NAME — and then said "Fix these
+       environment variables in Vercel, then redeploy."
+
+       Three things were wrong with that, and only the third is about vendor
+       names. It named the hosting supplier. It named NEXUS's own deployment
+       configuration. And it issued an instruction to a reader who cannot
+       carry it out: a dealership has no login to that account, no build to
+       redeploy, and this is the FIRST card they ever see — it renders before
+       the login form, so the person reading it may not even be signed in.
+       An unactionable instruction on a dead screen reads as "you have broken
+       this", which is the opposite of true.
+
+       What is theirs: the dashboard will not start, their data is untouched,
+       and the fix is a phone call. What is ours goes to the console, where a
+       support call can retrieve it, and is not painted. */
+    console.error('[NEXUS] This deployment is missing configuration it needs:', envErrors.join(' | '));
     $('boot').innerHTML = `<div class="card login-card">
-      <h2 style="font-size:16px;margin-bottom:10px">Configuration problem</h2>
-      ${envErrors.map(e => `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span><div>${esc(e)}</div></div>`).join('')}
-      <div class="cell-sub">Fix these environment variables in Vercel, then redeploy.</div></div>`;
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <div class="brand-mark">N</div><div class="brand-name">NEXUS OS</div>
+      </div>
+      <div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+        <div>NEXUS cannot start on this installation.</div></div>
+      <div class="cell-sub" style="margin-top:14px">A setting NEXUS needs in order to reach your data was not
+        supplied when this dashboard was installed, so no screen would be able to load anything and none is
+        offered. Nothing has happened to your data, and nothing has been lost.</div>
+      <div class="cell-sub" style="margin-top:10px">This is not something that can be corrected from this screen,
+        from this browser, or by signing in. Contact NEXUS support &mdash; the details they need are already
+        recorded.</div></div>`;
     return;
   }
 
@@ -154,11 +188,28 @@ async function boot() {
     setMeReadFailed(String(e.message || e).slice(0, 160));
   }
 
+  /* Account authority, read from the same table the database's own inventory
+     and leads policies read. `users.role` above is a job title and decides
+     nothing; this decides what the screens offer. tenant_members carries a
+     self-read policy, so this returns only this account's own row(s).
+
+     A FAILED read leaves membership unknown rather than empty, and unknown
+     means the screens keep offering the action and let the database answer.
+     Hiding a button on a failed read would tell an owner they are not one. */
+  try {
+    setMembership(await db('tenant_members?select=tenant_id,role,staff_user_id'));
+  } catch {
+    setMembership(null);
+  }
+
   $('boot').classList.add('hide');
   $('app').classList.remove('hide');
   $('userInitials').textContent = initials(ME?.name || SESSION.user.email);
   $('userName').textContent = ME?.name || SESSION.user.email;
-  $('userRole').textContent = ME?.role || 'signed in';
+  /* Two different facts, and the header used to show only the first. The job
+     title says what this person does; the account role says what the product
+     will let them do, and it is the one that explains a refused action. */
+  $('userRole').textContent = [ME?.role, myRole()].filter(Boolean).join(' · ') || 'signed in';
 
   buildNav();
   applyDensity();
@@ -172,9 +223,22 @@ async function boot() {
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) go(h); });
 
   const conn = $('connState');
+  /* The failure branch used to paint the first 40 characters of the error into
+     the header pill, on every screen, permanently. Those 40 characters are
+     whatever the data layer said — a PostgREST code, a relation name, a
+     permission-denied naming a table — and a truncated one at that, so the
+     reader got a fragment of our schema and no idea what to do. The pill has
+     room for the state; the tooltip carries the dealership's half, and the
+     diagnostic goes to the console for NEXUS. */
   db('leads?select=id&limit=1')
-    .then(() => { conn.className = 'pill ok'; conn.innerHTML = '<span class="dot"></span>Live'; })
-    .catch(e => { conn.className = 'pill hot'; conn.innerHTML = `<span class="dot"></span>${esc(String(e.message).slice(0,40))}`; });
+    .then(() => { conn.className = 'pill ok'; conn.title = 'The dashboard is reading your live data.'; conn.innerHTML = '<span class="dot"></span>Live'; })
+    .catch(e => {
+      console.error('[NEXUS] connection check failed:', e && e.message);
+      conn.className = 'pill hot';
+      conn.title = 'The dashboard cannot reach your data right now, so any screen that loads may be incomplete or empty. '
+        + 'Refresh once; if it stays this way, contact NEXUS support.';
+      conn.innerHTML = '<span class="dot"></span>No connection';
+    });
 
   /* Started after the nav exists — the badges write into spans lib/nav.js
      creates — and before the first screen renders, so the sidebar is already
@@ -182,7 +246,13 @@ async function boot() {
      by design: a badge that cannot be computed must not stop the app booting. */
   startBadges();
 
-  go(location.hash.slice(1) || 'overview');
+  /* The default landing screen. Changed from 'overview' to 'moneyleaks' on
+     6 Sep 2026: LAUNCH.md names Today's Money Leaks "the primary owner view",
+     and it is the only screen that answers a question rather than reporting a
+     state. Only the FALLBACK moved — a hash still wins, so every existing
+     bookmark and every deep link lands exactly where it did before, and
+     lib/nav.js holds the same id so the two cannot drift. */
+  go(location.hash.slice(1) || 'moneyleaks');
 }
 
 boot();

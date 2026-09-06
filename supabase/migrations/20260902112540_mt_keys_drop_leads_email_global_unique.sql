@@ -1,0 +1,21 @@
+-- BUSINESS RULE: an email address identifies a customer WITHIN ONE DEALERSHIP,
+-- not across the whole platform. Two dealerships may both legitimately hold a
+-- lead for the same person, and neither may see or overwrite the other's row.
+--
+-- leads_email_key was UNIQUE(email) across every tenant. Under an upsert with
+-- Prefer: resolution=merge-duplicates, a second dealership capturing a lead for
+-- an email the first dealership already held would not have inserted its own
+-- row; it would have UPDATED the first dealership's lead. That is a cross-tenant
+-- data leak and a silent loss of the second dealership's lead.
+--
+-- SAFE TO DROP because uniqueness is not being removed, only re-scoped:
+-- leads_tenant_email_key UNIQUE(tenant_id, email) already exists, is valid,
+-- ready and live, and leads.tenant_id is NOT NULL (default
+-- nexus_default_tenant_id()), so no NULL can defeat the composite.
+--
+-- The live writer agrees: published Master Router JnlZFAVmFAuNXVya
+-- (versionId 42e02abb-aa1d-4390-8a71-9ea86ae86711 == activeVersionId), node
+-- "Persist Lead (deterministic)", POSTs
+--   /rest/v1/leads?on_conflict=tenant_id,email
+-- so the conflict target it sends is served by the composite, not by this index.
+drop index if exists public.leads_email_key;

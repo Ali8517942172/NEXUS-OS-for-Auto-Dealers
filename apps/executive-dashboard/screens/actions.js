@@ -330,7 +330,7 @@ function decisionStrip(r, ctx) {
     bits.push(`<div><div class="label-caps">Decision</div>
       <div style="margin-top:6px">${esc(life(r.status).label)} by ${esc(str(r.decided_by_name) || 'an account with no staff record')}
         on ${esc(dubaiStamp(r.decided_at))}
-        <span class="chip" title="${esc('The basis on which this account was allowed to decide. TENANT_* is account authority from tenant_members.role; STAFF_ROLE_POLICY is a job title the dealership has granted approval to.')}">${esc(str(r.decided_by_authority) || 'authority not recorded')}</span></div>
+        <span class="chip" title="${esc('The basis on which this account was allowed to decide. a TENANT_ basis is authority from the account itself; STAFF_ROLE_POLICY is a job title the dealership has granted approval to.')}">${esc(str(r.decided_by_authority) || 'authority not recorded')}</span></div>
       ${r.decision_reason_label ? `<div class="cell-sub" style="white-space:normal;margin-top:4px"><strong>${esc(r.decision_reason_label)}</strong> — ${esc(str(r.decision_reason_meaning))}
          ${r.decision_says_engine_was_wrong === true ? '<span class="chip">recorded as the engine being wrong</span>' : ''}
          ${r.decision_says_engine_was_wrong === false ? '<span class="chip">the engine was right; the answer was still no</span>' : ''}</div>` : ''}
@@ -547,24 +547,24 @@ async function historyDrawer(r) {
     <div class="section"><div class="label-caps">What happened</div>
       <div class="cell-sub" style="white-space:normal;margin-bottom:10px">
         Two different words on every line. <strong>Step</strong> is what happened to this action.
-        <strong>Audit</strong> is how <span class="mono">nexus_outcome_class</span> classifies the row that was
-        written to <span class="mono">audit_log</span> for it — the same vocabulary the Automation screen uses.
+        <strong>Audit</strong> is how <span class="mono">NEXUS’s own rule for what a run achieved</span> classifies the row that was
+        written to <span class="mono">The activity log</span> for it — the same vocabulary the Automation screen uses.
         A rejection is a recorded SUCCESS: the system succeeded at recording that a person said no.</div>
       <div style="display:grid;gap:12px">${rows.map(t => `
         <div style="border-left:2px solid var(--border);padding-left:12px">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <strong>${esc(t.event)}</strong>
-            ${t.audit_outcome_class ? `<span class="chip" title="${esc(`audit_log.status is ${str(t.audit_status) || 'empty'}`)}">audit: ${esc(t.audit_outcome_class)}</span>` : '<span class="chip">no audit row linked</span>'}
+            ${t.audit_outcome_class ? `<span class="chip" title="${esc(`This run was recorded as ${str(t.audit_status) || 'having no status'}`)}">audit: ${esc(t.audit_outcome_class)}</span>` : '<span class="chip">no audit row linked</span>'}
             <div style="flex:1"></div><div class="cell-sub">${esc(dubaiStamp(t.at))}</div>
           </div>
           <div class="cell-sub" style="white-space:normal">${esc(str(t.actor_name) || 'no staff record')}${t.actor_authority ? ` · ${esc(t.actor_authority)}` : ''}</div>
           ${t.detail ? `<div style="margin-top:4px;white-space:normal">${esc(t.detail)}</div>` : ''}
         </div>`).join('')}</div></div>
     <div class="section"><div class="label-caps">Audit rows behind this</div>
-      <div class="cell-sub" style="white-space:normal">Every line above with an audit chip has a real row in
-        <span class="mono">public.audit_log</span> under the workflow <span class="mono">Inventory Action Center</span>.
-        It is deliberately not registered in <span class="mono">workflow_registry</span>: these are decisions taken by
-        people in this dashboard, not n8n runs, and mixing them into workflow health would make both numbers mean less.</div></div>`;
+      <div class="cell-sub" style="white-space:normal">Every line above with an audit chip is a real entry in the
+        activity log, filed under <span class="mono">Inventory Action Center</span>.
+        It is deliberately kept out of the automation register: these are decisions people took in this dashboard,
+        not automation runs, and mixing them into automation health would make both numbers mean less.</div></div>`;
 }
 
 /* ── Screen ──────────────────────────────────────────────────────────────── */
@@ -741,7 +741,7 @@ SCREENS.actions = async host => {
       onRow: null,
     }) + `<div class="cell-sub" style="padding:12px 16px;white-space:normal;border-top:1px solid var(--border-subtle)">
       The Recovered column is empty on every row until somebody links a real recorded sale to an action.
-      <span class="mono">purchase_history</span> holds no reference to an inventory unit — not a VIN, not a stock
+      <span class="mono">The recorded sales</span> holds no reference to an inventory unit — not a VIN, not a stock
       number — so NEXUS cannot tie a sale to a car by itself, and it will not guess. Approving something does not
       recover money and neither does carrying it out. A figure only appears where the row carries all four of
       <span class="mono">outcome_state = ATTRIBUTED</span>, <span class="mono">outcome_purchase_id</span>,

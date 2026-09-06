@@ -48,13 +48,16 @@ Four questions the product must answer, in this order:
 
 Nothing gets thrown away. The screens change what they are *for*.
 
-**Measured 2026-09-03: the branch now carries 20 screens, not 14.** The six
+**Re-counted 2026-09-06: the branch carries 21 screens, not 14.** The seven
 added are `revenue` (Revenue Recovery), `leadrecovery`, `dealrescue`,
-`attribution`, `policy` and `actions` (the Action Center). The fourteen
-commercial roles above are unchanged — the new screens are the engines below
-given a surface of their own rather than new modules. **`origin/main`, which is
-what production builds, still carries the original 14**; the six are on
-`wip/platform-truth-2026-09-01` only.
+`attribution`, `policy`, `actions` (the Action Center) and — since 6 September —
+`moneyleaks` (Today's Money Leaks), which is now the default landing screen. The
+fourteen commercial roles above are unchanged: the new screens are the engines
+below given a surface of their own rather than new modules. **`origin/main`,
+which is what production builds, still carries the original 14** — counted in
+`lib/nav.js` on both refs on 6 September, 14 against 21, with the branch **75
+commits** ahead. **A rebuild from `main` today ships without the Action Center,
+the five revenue engines, Today's Money Leaks and the honesty machinery.**
 
 ---
 
@@ -67,19 +70,19 @@ year, so it is set by one test only:
 
 An engine that renders "no data" in front of a paying dealership is worse
 than an engine that does not exist, because it teaches them the product is
-empty. **Re-measured 2026-09-03 against the live database** (the previous
-edition of this table was measured 2 September; the figures that moved are
-marked):
+empty. **Measured 2026-09-03 against the live database and re-measured
+2026-09-05**; each row carries the date of the figure it states, so movement is
+auditable rather than overwritten:
 
-| Data | State 2026-09-03 | What it unlocks |
+| Data | State | What it unlocks |
 |---|---|---|
 | `inventory` — 12 units, **12 with `cost_aed`, 12 with `days_in_stock`** | complete, unchanged | **Profit Sentinel — built and shipped** |
-| `competitors` — **14 rows** *(was 11)*, all priced, but `v_competitor_latest` resolves only **6** | present, thin, and **not refreshing** | market position, with caveats |
+| `competitors` — **19 rows** *(5 Sep; was 14 on 3 Sep, 11 on 2 Sep)*, all priced, but `v_competitor_latest` resolved only **6** when last checked | present, thin, and **not refreshing** | market position, with caveats |
 | `leads` — **3**, of which **1 assigned**; `response_time_minutes` on 2 of 3 | works, no volume | Lead Recovery mechanics |
-| `communication_logs` — **108** | real | AI BDC, silence detection |
-| `purchase_history` — **1** *(a real closed-won deal, recorded 2 Sep through the dashboard)* | one real sale | attribution starts here |
+| `communication_logs` — **115** *(re-measured 6 Sep; still taking traffic)*, **0** carrying a provider message id | real, and not deduplicable retrospectively | AI BDC, silence detection |
+| `purchase_history` — **1** *(recorded 2 Sep through the dashboard; still 1 on 5 Sep)*. **It is the owner's own test lead, not a customer sale** | one row, one mechanism proven | attribution starts here |
 | `finance_quotes` — **0 live rows**, but **25 inserts / 15 deletes** in `pg_stat_all_tables` | the insert path has worked repeatedly; a teardown script clears it | Deal Finance |
-| `policy_rule` — **7 rows, 0 `VERIFIED`**; 21 constants still unmigrated | shipped, **unverified** | see the Policy Engine caveat below |
+| `policy_rule` — **13 rows, 0 `VERIFIED`** *(5 Sep)*, and **0** platform attestations; 21 constants still unmigrated | shipped, **unverified** | see the Policy Engine caveat below |
 | `deal_rescue_states` — 7 state definitions, **`v_deal_rescue` = 0 rows** | **structurally empty by design** | Deal Rescue — blocked on a deal record |
 | **service records** | **no table exists** *(re-checked: 0 tables matching service/appointment)* | Service Retention — blocked |
 | **appointments** | **no table exists** | no-show recovery, Deal Rescue stages — blocked |
@@ -87,10 +90,12 @@ marked):
 | **DMS / accounting integration** | **does not exist** | most of the Leak Radar — blocked |
 
 **The competitor feed is the figure that got worse and should not be sold.**
-`v_workflow_health` reads Competitor Price Scraping as `PRODUCING_NOTHING`:
-**151 no-result runs out of 168 in 30 days, 10.1% success rate.** There are 14
-rows on file and they are stale. Market Intelligence is a screen, not a
-capability, until that scraper produces prices.
+`v_workflow_health` read Competitor Price Scraping as `PRODUCING_NOTHING` on
+3 September: **151 no-result runs out of 168 in 30 days, 10.1% success rate.**
+There are **19** rows on file as of 5 September and they are stale. The run
+statistics have not been re-measured since 3 September and should be re-read
+before they are quoted. Market Intelligence is a screen, not a capability, until
+that scraper produces prices.
 
 So the roadmap is not "ten engines this sprint". It is:
 
@@ -125,8 +130,12 @@ which of the two it is.
    VEHICLE hop on the single sale reads `UNKNOWN_TEXT_ONLY` and its margin
    `NOT_COMPUTABLE`, because nothing links `purchase_history` to a unit. That
    refusal is the feature.
-5. **Policy Engine** — `screens/policy.js` over `v_policy_rule`: **7 rules, and
-   `0` of them `VERIFIED`**, with 21 hard-coded constants still unmigrated.
+5. **Policy Engine** — `screens/policy.js` over `v_policy_rule`: **13 rules
+   (5 Sep), and `0` of them `VERIFIED`**, with `0` platform attestations on file
+   and 21 hard-coded constants still unmigrated. A platform-verification path
+   now exists (`policy_platform_verify_rule()`, `service_role` only, demanding a
+   named attestation); nobody has used it. A jurisdiction is now a namespace
+   with an owner, so a dealership can no longer legislate as Meta.
    **So the rule this document sets — "a customer-facing regulatory claim
    requires a verified policy row" — currently forbids every regulatory claim.**
    The engine is built; the evidence is not in it yet.

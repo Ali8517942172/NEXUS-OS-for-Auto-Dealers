@@ -227,7 +227,7 @@
    wiring itself after `const card = await panel(...)`, which panel() cannot
    replay on retry; it is on the `.then` form the two panels at the foot of this
    file already use. */
-import { db } from '../lib/data.js';
+import { canEditUnit, db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, aedSigned, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
@@ -1037,7 +1037,7 @@ const deltaCell = c => {
    absent button reads as "not possible", a disabled one as "not wired yet". */
 const NO_SCRAPE_HOOK = {
   label: 'Re-run scrape',
-  why: 'No webhook exists for the price scrape. The competitors table is written by a scheduled workflow that has no manual trigger in the HOOK map, so it cannot be re-run from the browser.',
+  why: 'The competitor listings are collected on a schedule, and that job has no manual start — nothing in this dashboard can make it run early. Ask NEXUS support if it needs running now.',
 };
 
 /* Icons for the kinds `v_needs_attention` routes to this screen. `undercut` is
@@ -1099,7 +1099,7 @@ SCREENS.competitors = async host => {
      down" — and the view's answer is PRODUCING_NOTHING: it runs, it does not
      fail, and most runs end with no usable price. The columns the view already
      computes are read as they are; nothing here classifies a status itself. */
-  const healthP = db('v_workflow_health?select=name,trigger_detail,health,runs_30d,successes_30d,'
+  const healthP = db('v_workflow_health?select=name,health,runs_30d,successes_30d,'
     + `no_result_30d,failures_30d,partials_30d,effective_runs_30d,success_rate_30d,last_run,last_success&name=eq.${encodeURIComponent(SCRAPE_WORKFLOW)}`);
   logP.catch(() => {}); invP.catch(() => {}); attnP.catch(() => {}); healthP.catch(() => {});
 
@@ -1124,7 +1124,7 @@ SCREENS.competitors = async host => {
   try { rows = await db(`v_competitor_latest?select=*&limit=${ROW_LIMIT}`); }
   catch (e) {
     strip.remove(); below.remove(); alertHost.remove();
-    body.innerHTML = `<div class="card">${stateError('competitor pricing', e.message, 'competitors')}</div>`;
+    body.innerHTML = `<div class="card">${stateError('competitor pricing', e, 'competitors')}</div>`;
     body.querySelector('[data-retry]')?.addEventListener('click', () => go('competitors'));
     return;
   }
@@ -1170,8 +1170,8 @@ SCREENS.competitors = async host => {
   const healthLine = healthErr
     ? `The scrape's health could not be read (${esc(healthErr.message)}), so nothing on this screen says whether the job is working — only what it has written.`
     : !health
-      ? `v_workflow_health carries no row named "${esc(SCRAPE_WORKFLOW)}", so how the scrape itself is doing is unknown here — the rows below are all this screen can speak for.`
-      : `v_workflow_health rates the scrape ${esc(hWords.label)} — ${esc(hWords.blurb)}${runs30 ? ` ${num(runs30)} ${plural(runs30, 'run', 'runs')} in 30 days, ${num(success30)} ${plural(success30, 'success', 'successes')}, ${num(noResult30)} producing no usable price.` : ''}`;
+      ? `The automation health figures carries no row named "${esc(SCRAPE_WORKFLOW)}", so how the scrape itself is doing is unknown here — the rows below are all this screen can speak for.`
+      : `The automation health figures rates the scrape ${esc(hWords.label)} — ${esc(hWords.blurb)}${runs30 ? ` ${num(runs30)} ${plural(runs30, 'run', 'runs')} in 30 days, ${num(success30)} ${plural(success30, 'success', 'successes')}, ${num(noResult30)} producing no usable price.` : ''}`;
   /* The registry's recorded schedule against the one the workflow is running.
      They disagreed until 1 Sep 2026, when the registry was corrected: it now
      reads "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00
@@ -1184,7 +1184,7 @@ SCREENS.competitors = async host => {
      place. It reports a disagreement; it does not assert one. */
   const regHours = health ? registryHoursUtc(health.trigger_detail) : null;
   const scheduleDrift = regHours && regHours.join(',') !== SCRAPE_HOURS_UTC.join(',')
-    ? `workflow_registry records this job's trigger as "${esc(String(health.trigger_detail))}" — ${num(regHours.length)} ${plural(regHours.length, 'run', 'runs')} a day, where the deployed cron is "${esc(SCRAPE_CRON)}" in Asia/Dubai and audit_log carries runs at both hours. The schedule stated here follows the deployed cron; the registry entry is out of date.`
+    ? `The automation register records this job's trigger as "${esc(String(health.trigger_detail))}" — ${num(regHours.length)} ${plural(regHours.length, 'run', 'runs')} a day, where the deployed cron is "${esc(SCRAPE_CRON)}" in Asia/Dubai and the activity log carries runs at both hours. The schedule stated here follows the deployed cron; the registry entry is out of date.`
     : '';
 
   /* One re-issuable inventory read, for the two blind-spot panels below.
@@ -1334,7 +1334,7 @@ SCREENS.competitors = async host => {
     /* The literal 24 is history, not the current cadence: the interval that
        drifted really was a 24-hour one. It is deliberately not derived from
        SCRAPE_EVERY_HOURS, which now describes the cron that replaced it. */
-    const cronLine = 'Its trigger used to be an n8n "every 24 hours" interval, which drifts on restart and then stops firing without failing — which is why nothing refreshed for weeks and no run was ever recorded as broken. It is on a cron now.';
+    const cronLine = 'It used to run on a rolling "every 24 hours" timer, which drifts whenever the service restarts and then stops firing without ever failing — which is why nothing refreshed for weeks and no run was ever recorded as broken. It runs at fixed times now.';
 
     /* Unsold stock, and the honest reason none of it has a market reference.
        This is not "we checked and found no cheaper rival": nothing has been
@@ -1387,13 +1387,13 @@ SCREENS.competitors = async host => {
       emptyAlerts.push({
         source: 'view', tone: 'warm', icon: 'rule',
         title: `${num(attn.length)} ${plural(attn.length, 'alert is', 'alerts are')} filed against this screen, with no price behind ${plural(attn.length, 'it', 'them')}`,
-        detailHtml: `v_needs_attention still returns ${plural(attn.length, 'this row', 'these rows')} for screen = competitors, but the competitors table returned ${allJunk ? 'nothing usable' : 'nothing at all'}, so ${plural(attn.length, 'it cannot', 'none of them can')} be shown against the price ${plural(attn.length, 'it was', 'they were')} raised on: ${esc((attn || []).map(it => it.title || 'untitled').join('; '))}.`,
+        detailHtml: `The attention list still returns ${plural(attn.length, 'this row', 'these rows')} for screen = competitors, but the competitors table returned ${allJunk ? 'nothing usable' : 'nothing at all'}, so ${plural(attn.length, 'it cannot', 'none of them can')} be shown against the price ${plural(attn.length, 'it was', 'they were')} raised on: ${esc((attn || []).map(it => it.title || 'untitled').join('; '))}.`,
       });
     } else {
       emptyAlerts.push({
         tone: 'ok', icon: 'task_alt',
         title: 'Nothing is filed against this screen',
-        detailHtml: 'v_needs_attention returns no row where screen = competitors. The undercut alerts it carried until tonight were each computed from a seed price that has now been deleted, so they were withdrawn with the data rather than worked through — nothing was fixed and nothing is outstanding.',
+        detailHtml: 'The attention list returns no row where screen = competitors. The undercut alerts it carried until tonight were each computed from a seed price that has now been deleted, so they were withdrawn with the data rather than worked through — nothing was fixed and nothing is outstanding.',
       });
     }
 
@@ -1447,8 +1447,8 @@ SCREENS.competitors = async host => {
       <div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
         <div class="cell-sub" style="white-space:normal">${attnErr
-          ? 'Nothing could be read from v_needs_attention.'
-          : `${num((attn || []).length)} ${plural((attn || []).length, 'row', 'rows')} from v_needs_attention where screen = competitors${(attn || []).length ? '' : ' (it returned none for this screen)'}, and ${num(emptyAlerts.length - fromView)} ${plural(emptyAlerts.length - fromView, 'line', 'lines')} written here off ${num(all.length)} scraped ${plural(all.length, 'row', 'rows')} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`}.`}
+          ? 'Nothing could be read from the attention list.'
+          : `${num((attn || []).length)} ${plural((attn || []).length, 'row', 'rows')} from the attention list where screen = competitors${(attn || []).length ? '' : ' (it returned none for this screen)'}, and ${num(emptyAlerts.length - fromView)} ${plural(emptyAlerts.length - fromView, 'line', 'lines')} written here off ${num(all.length)} scraped ${plural(all.length, 'row', 'rows')} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`}.`}
           The checks that run on scraped rows — what each match is matched on, rows the last scrape did not refresh, rows that are not a dealership at all, sources that sent no price — have no rows to run against and are absent from this list rather than sitting in it at zero.</div>
       </div></div>`;
 
@@ -1634,8 +1634,8 @@ SCREENS.competitors = async host => {
     kpi('Listings priced', num(live.length),
       `${num(competitorCount)} source${competitorCount === 1 ? '' : 's'} · ${num(modelCount)} vehicle${modelCount === 1 ? '' : 's'}${capped ? ` · capped at ${num(ROW_LIMIT)} rows` : ''}`
       + (logErr
-        ? ` · <span class="t-muted" title="${esc(`The append-only log did not load (${logErr.message}). Every figure on this screen comes from v_competitor_latest and is unaffected; what is missing is the scrape history in the drawer.`)}">history unavailable</span>`
-        : supersededCount ? ` · <span class="t-muted" title="v_competitor_latest returns the newest snapshot of each listing. competitors itself is an append-only log on purpose — the price history over time is worth keeping — so these older rows are still on file and are shown in the drawer, they are simply not counted as listings.">${num(supersededCount)} older ${plural(supersededCount, 'snapshot', 'snapshots')} in the log</span>` : '')
+        ? ` · <span class="t-muted" title="${esc(`The append-only log did not load (${logErr.message}). Every figure on this screen comes from the competitor listings and is unaffected; what is missing is the scrape history in the drawer.`)}">history unavailable</span>`
+        : supersededCount ? ` · <span class="t-muted" title="the competitor listings returns the newest snapshot of each listing. competitors itself is an append-only log on purpose — the price history over time is worth keeping — so these older rows are still on file and are shown in the drawer, they are simply not counted as listings.">${num(supersededCount)} older ${plural(supersededCount, 'snapshot', 'snapshots')} in the log</span>` : '')
       + (junk.length ? ` · <span class="t-hot">${num(junk.length)} more ${plural(junk.length, 'row is', 'rows are')} a scrape failure, not a listing</span>` : '')),
     /* When inventory did not load nothing could be compared, so the honest
        value is "—", not the zero that arithmetic over an empty list produces.
@@ -1771,7 +1771,7 @@ SCREENS.competitors = async host => {
       /* The literal 24 is history: the interval that drifted really was a
          24-hour one. It must not be derived from SCRAPE_EVERY_HOURS, which now
          describes the twice-daily cron that replaced it. */
-      detailHtml: `${freshLine} It is a cron now, firing ${SCRAPE_SCHEDULE} — the trigger that drifted was an n8n "every 24 hours" interval, which stops firing after a restart without ever failing, and that is not what is happening today. ${healthLine} Until a run lands a price, every gap on this screen is measured against figures that old and none of them is safe to quote at a customer without being re-checked first.`,
+      detailHtml: `${freshLine} It is a cron now, firing ${SCRAPE_SCHEDULE} — what drifted before was a rolling "every 24 hours" timer, which stops firing after a restart without ever failing, and that is not what is happening today. ${healthLine} Until a run lands a price, every gap on this screen is measured against figures that old and none of them is safe to quote at a customer without being re-checked first.`,
       agoHtml: `<span title="${esc(dt(newest))}">price ${esc(dayWord(daysOld))} old</span>`,
       noHook: NO_SCRAPE_HOOK,
       actLabel: 'Oldest first',
@@ -2052,7 +2052,7 @@ SCREENS.competitors = async host => {
       at: it.at,
       actLabel: 'Open row',
       act: c ? () => focusRow(c) : null,
-      why: c ? null : `v_needs_attention raised this against ref ${esc(String(it.ref == null ? '—' : it.ref))}, and no row loaded here carries that id or that vehicle name — so there is no comparison row on this screen to open.`,
+      why: c ? null : `The attention list raised this against ref ${esc(String(it.ref == null ? '—' : it.ref))}, and no row loaded here carries that id or that vehicle name — so there is no comparison row on this screen to open.`,
     });
   });
 
@@ -2071,7 +2071,7 @@ SCREENS.competitors = async host => {
         + (blocked.length
           ? `${[...new Set(blocked.map(c => `"${c.name}"`))].join(', ')} ${plural(blocked.length, 'is the heading', 'are the headings')} of a bot-detection page rather than a dealership: the scraper was blocked, stored the block page as a competitor, and never read the listing it was sent to read — so this feed is quietly missing whatever ${plural(blocked.length, 'that run was', 'those runs were')} meant to collect. `
           : '')
-        + `${junkPriced ? 'They are excluded' : 'None of them carries a price, and all are excluded'} from every count, gap and comparison on this screen, including "Listings priced" above — v_competitor_latest returned ${all.length} ${plural(all.length, 'listing', 'listings')} and ${live.length} of them ${plural(live.length, 'is', 'are')} usable.`),
+        + `${junkPriced ? 'They are excluded' : 'None of them carries a price, and all are excluded'} from every count, gap and comparison on this screen, including "Listings priced" above — The competitor listings returned ${all.length} ${plural(all.length, 'listing', 'listings')} and ${live.length} of them ${plural(live.length, 'is', 'are')} usable.`),
       agoHtml: newestJunk
         ? `<span title="${esc(dt(newestJunk.at))}">written ${esc(ago(newestJunk.at))}</span>`
         : '<span class="t-muted">no scrape date</span>',
@@ -2161,8 +2161,8 @@ SCREENS.competitors = async host => {
      obvious are "why is this list this long" and "what is missing from it". */
   const notes = [
     attnErr
-      ? `v_needs_attention did not load (${esc(attnErr.message)}), so alerts raised centrally for this screen — the nightly undercut check among them — are missing from this list entirely. The ${num(localCount)} above ${plural(localCount, 'was', 'were')} derived here from the ${num(live.length)} ${plural(live.length, 'listing', 'listings')} this screen loaded.`
-      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(live.length)} ${plural(live.length, 'listing', 'listings')} v_competitor_latest returned${junk.length ? ` (${num(junk.length)} more set aside as ${plural(junk.length, 'a scrape failure', 'scrape failures')})` : ''} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
+      ? `The attention list did not load (${esc(attnErr.message)}), so alerts raised centrally for this screen — the nightly undercut check among them — are missing from this list entirely. The ${num(localCount)} above ${plural(localCount, 'was', 'were')} derived here from the ${num(live.length)} ${plural(live.length, 'listing', 'listings')} this screen loaded.`
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from the attention list where screen = competitors${viewCount ? '' : ' (it returned none for this screen)'}, and ${num(localCount)} derived here from the ${num(live.length)} ${plural(live.length, 'listing', 'listings')} in the competitor listings returned${junk.length ? ` (${num(junk.length)} more set aside as ${plural(junk.length, 'a scrape failure', 'scrape failures')})` : ''} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`} loaded.`,
     unresolved
       ? `${num(unresolved)} of the view's ${plural(unresolved, 'alert', 'alerts')} could not be matched to a row loaded here, so ${plural(unresolved, 'it opens', 'they open')} nothing.`
       : '',
@@ -2170,7 +2170,7 @@ SCREENS.competitors = async host => {
       ? `The listing read was capped at ${num(ROW_LIMIT)} rows, so every count on this screen — these alerts included — may be short.`
       : '',
     logErr
-      ? `The append-only log did not load (${esc(logErr.message)}). No figure here depends on it — every count comes from v_competitor_latest — but the drawer cannot show what a listing's price has done over time, and an alert raised against a superseded scrape row will not resolve to its listing.`
+      ? `The append-only log did not load (${esc(logErr.message)}). No figure here depends on it — every count comes from the competitor listings — but the drawer cannot show what a listing's price has done over time, and an alert raised against a superseded scrape row will not resolve to its listing.`
       : logCapped
         ? `The history read was capped at ${num(ROW_LIMIT)} log rows, so a drawer's scrape history may be shorter than the listing's real one. No count on this screen is affected.`
         : '',
@@ -2208,7 +2208,7 @@ SCREENS.competitors = async host => {
       <span class="material-symbols-outlined t-${sevTone(a.sev)}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          ${a.titleHtml}${pill(a.sev, sevTone(a.sev), { verbatim: a.sevFromRow === true })}${a.source === 'view' ? '<span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
+          ${a.titleHtml}${pill(a.sev, sevTone(a.sev), { verbatim: a.sevFromRow === true })}${a.source === 'view' ? '<span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
         <div class="cell-sub" style="white-space:normal">${a.detailHtml}${a.why ? ` <span class="t-muted">${a.why}</span>` : ''}</div>
       </div>
@@ -2339,7 +2339,7 @@ SCREENS.competitors = async host => {
          the row says so, rather than letting a listing scraped this morning
          read as one whose age is simply unknown. */
       return c.viewPickedUndated
-        ? `<div class="cell-sub t-hot" title="${esc(`The log holds ${c.datedSnapshots} dated ${plural(c.datedSnapshots, 'snapshot', 'snapshots')} of this listing, but v_competitor_latest returned an undated one: it orders scraped_at DESC and Postgres sorts nulls first under DESC, so an undated row wins. The price beside it may not be the newest one collected.`)}">no scrape date · the view picked an undated row over ${num(c.datedSnapshots)} dated ${plural(c.datedSnapshots, 'one', 'ones')}</div>`
+        ? `<div class="cell-sub t-hot" title="${esc(`The log holds ${c.datedSnapshots} dated ${plural(c.datedSnapshots, 'snapshot', 'snapshots')} of this listing, but the newest-first ordering returned an undated one, because a row with no collection date sorts ahead of a dated one. The price beside it may not be the newest one collected.`)}">no scrape date · the view picked an undated row over ${num(c.datedSnapshots)} dated ${plural(c.datedSnapshots, 'one', 'ones')}</div>`
         : '<div class="cell-sub t-warm" title="This row carries no scrape timestamp, so its age is unknown.">no scrape date</div>';
     }
     const cls = staleSet.has(c) ? 't-hot' : stale ? 't-warm' : 't-muted';
@@ -2397,7 +2397,7 @@ SCREENS.competitors = async host => {
   const card = el('div', 'card flush');
   card.innerHTML = `
     <div class="card-head"><div><div class="card-title">Price comparison</div>
-      <div class="card-sub" style="white-space:normal">One row per listing, from <span class="mono">v_competitor_latest</span>, against the cheapest unit we hold whose <strong>model name</strong> matches. ${unratedRows.length === live.length
+      <div class="card-sub" style="white-space:normal">One row per listing, from <span class="mono">The competitor listings</span>, against the cheapest unit we hold whose <strong>model name</strong> matches. ${unratedRows.length === live.length
       ? `Read the Match column before trusting any gap here: ${plural(live.length, 'this listing predates', 'all of these listings predate')} the 1 Sep 2026 provenance fix, so ${plural(live.length, 'it carries', 'they carry')} no listing title of the page’s own to check our model string against, and ${plural(live.length, 'its', 'their')} figure is the lowest AED price over 20,000 found anywhere on the page — no year, trim, mileage or condition matched. How well ${plural(live.length, 'it is', 'they are')} tied to our car was never rated, which is not the same as being rated badly.`
       : `Each row states what it compared: our model string against the page’s own listing title, the price taken from a named offer, and the scraper’s own rating of how well that offer ties to our unit.${untied.length ? ` ${num(untied.length)} of them ${plural(untied.length, 'is', 'are')} rated weak — nothing on the page tied the price to our car — so ${plural(untied.length, 'it shows', 'they show')} the figure as context and no gap is drawn from ${plural(untied.length, 'it', 'them')}.` : ''}${unratedRows.length ? ` ${num(unratedRows.length)} ${plural(unratedRows.length, 'predates', 'predate')} the fix and ${plural(unratedRows.length, 'is', 'are')} unrated.` : ''}`}${oemRows.length ? ` ${oemRows.length === gapRows.length ? (gapRows.length === 1 ? 'That page is' : 'Every one of those pages is') : `${num(oemRows.length)} of those pages ${plural(oemRows.length, 'is', 'are')}`} a manufacturer’s own site, so the number is a new-car list price rather than a rival’s asking price.` : ''} A positive gap means we are asking more than the page quotes${stale && daysOld != null ? `, against a price collected ${esc(dayWord(daysOld))} ago` : ''}.</div></div></div>
     <div class="toolbar">
@@ -2595,7 +2595,7 @@ SCREENS.competitors = async host => {
         </div>
 
         ${c.snapshotCount > 1 ? `<div style="margin-top:20px"><div class="label-caps">Scrape history · ${num(c.snapshotCount)}</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">competitors is an append-only log on purpose — what a price has done over time is worth keeping — so this listing carries one row per run that covered it. The comparison above is the row v_competitor_latest returns, which is the newest; the rest are counted nowhere else on this screen and are here because history is what this block is for.</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:8px">competitors is an append-only log on purpose — what a price has done over time is worth keeping — so this listing carries one row per run that covered it. The comparison above is the row the competitor listings returns, which is the newest; the rest are counted nowhere else on this screen and are here because history is what this block is for.</div>
           ${c.history.map(h => `<div class="list-item" style="cursor:default">
             <div style="flex:1;min-width:0" class="cell-sub">${esc(dt(h.at))}</div>
             <div style="text-align:right;flex-shrink:0" class="num">${h.price == null ? '<span class="t-muted">no price</span>' : aed(h.price)}</div></div>`).join('')}
@@ -2616,12 +2616,14 @@ SCREENS.competitors = async host => {
           <div class="cell-sub t-muted" style="white-space:normal;margin-top:6px">Written by the scrape when the row was stored, and shown as stored. It calls the source a competitor and its figure a competitor's price; both are qualified above, and it was composed from the same ${esc(aedSigned(c.storedDiff == null ? 0 : c.storedDiff))} the workflow signs the other way round.</div></div>` : ''}
       </div>
       <div class="drawer-foot">
-        <button class="btn primary" id="dPrice"${best ? '' : ' disabled title="No comparable unit with a list price is in stock, so there is nothing here to re-price."'}>Adjust our list price</button>
+        <button class="btn primary" id="dPrice"${best && canEditUnit(best.tenant_id) ? '' : ` disabled title="${esc(!best
+          ? 'No comparable unit with a list price is in stock, so there is nothing here to re-price.'
+          : 'Changing a list price is an owner, admin or manager decision at this dealership.')}"`}>Adjust our list price</button>
         <button class="btn" id="dInv">Open Inventory</button>
       </div>`);
     $('dClose').addEventListener('click', closeDrawer);
     $('dInv').addEventListener('click', () => { closeDrawer(); go('inventory'); });
-    if (best) $('dPrice').addEventListener('click', () => { closeDrawer(); unitForm(best, inv, reload); });
+    if (best && canEditUnit(best.tenant_id)) $('dPrice').addEventListener('click', () => { closeDrawer(); unitForm(best, inv, reload); });
   }
 
   function draw() {

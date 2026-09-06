@@ -46,6 +46,98 @@ stale wherever it disagrees. Figures added on 2026-09-03 are dated inline as
 such; where a 2 September figure and a 3 September figure sit side by side, both
 are kept and the newer one is marked, so the movement is auditable.
 
+## Re-check 2026-09-05 — five new mechanisms, and the figures that moved
+
+Measured 5 September 2026 against production `dsvuoovivysszdoiorch` through the
+read-only SQL channel. **All eight invariants still hold.** The 2026-09-03
+section below is kept as the record of that day and is superseded wherever the
+two disagree.
+
+The important change is not a figure. **Five things this file recorded as held
+by review are now held by a mechanism**, and two mechanisms it recorded were
+found to be checking the wrong thing.
+
+### New mechanisms, and what each one can now refuse
+
+| what is enforced | mechanism | kind |
+|---|---|---|
+| A dashboard user may only write the columns and rows their staff role allows | three, deliberately: **column GRANTs** on machine-owned columns (`42501`, before RLS); **RESTRICTIVE RLS** reading `tenant_members.role` through `nexus_tenant_ids_for_roles()` (0 rows); and the **BEFORE UPDATE trigger `inventory_guard_cost_change`** for the one question neither can ask — *did this figure move* (`NX001`) | database, blocking |
+| A backend write that omits `tenant_id` is never filed under a dealership | the `is_unattributed_default` flag is held by a **quarantine tenant**, pinned by CHECK `tenants_unattributed_default_must_be_quarantine`; all 29 tenant-carrying views exclude quarantined rows **in their own definitions**, not via RLS | database, blocking |
+| A SEND may not cite a policy rule that is not on file | **foreign key** `channel_send_directive.policy_applied_rule_id → policy_rule(id)`. It replaces a bare uuid — verified present, 1 constraint | database, blocking |
+| A carrier belongs to one dealership on every table that names both | **eight composite foreign keys** to `channel_registry(integration_id, tenant_id)` — verified, 8 | database, blocking |
+| A message identity may not be an id minted per attempt | CHECKs on `processed_messages`, `communication_logs`, `whatsapp_customer_message_seen`, `channel_message_events`, `whatsapp_delivery_events` refusing `nokey:`, `outreach:`, `exec-`, `run-`, `job-` and bare 10-/13-digit epochs (`23514`). **`service_role` does not bypass a CHECK, so it bites n8n** | database, blocking |
+| A delivery fact's identity includes its carrier and is case-insensitive | generated `status_key` plus `integration_id` in the key | database, blocking |
+| The baseline still reproduces the database it claims to reproduce | gate check **`L12`**, four arms — the restore path as falsifiable sentences, the seed compared with live rows **by value**, `generate-baseline.mjs` re-run and diffed byte for byte, and at its strongest the whole folder replayed into an empty PostgreSQL 17 | gate |
+
+### Two mechanisms were checking that a mechanism was *present*, not that it *worked*
+
+Recorded because it is the more useful of the two findings.
+
+- **`L3`** asked whether `reloptions` contained the string `security_invoker`. A
+  view created `(security_invoker = false)` contains that string, so it was
+  excluded from the offenders list and **passed the check that exists to forbid
+  it** — proved on production. It now parses the option's *value*, accepting
+  `true/on/1/yes` because Postgres stores what was written: production has 38
+  views storing `'true'` and `v_competitor_latest` storing `'on'`. **39 of 39
+  today.**
+- **`L2`** read `relacl`, which cannot see column-level grants. Live on
+  `workflow_registry`, `relacl` named only `postgres` and `service_role` while
+  seven columns carried `authenticated=r`. It now measures effective privilege.
+
+Three more P0s in the gate were **found and deliberately not fixed**, because a
+wrong fix is worse than a named gap: `L4`'s tenant predicate is a
+900-character substring search for `tenant_id`; `L5`'s "reads tenant-owned data"
+is a regex over function text; `L2` arm 2 detects an open policy by the literal
+string `true`, so `USING (1=1)` is invisible to it. The honest witness for all
+three is a probe as a real role, which is `B3`'s shape — and `B3` has never run.
+
+### Figures that moved
+
+| figure | 2026-09-03 | 2026-09-05 |
+|---|---|---|
+| tables / views in `public` | 40 / 33 | **59 / 39** |
+| views carrying `security_invoker` | 33 of 33 | **39 of 39** |
+| policies in `public` | 120, 25 tenant-scoped | **163**, 34 whose predicate names a tenant |
+| constraints / indexes | 359 / 168 *(4 Sep)* | **374 / 169** |
+| functions in `public` | — | **269** |
+| applied migrations | 181, max `20260903180749` | **273**, max `20260905211435` — and the repository now holds all 273 byte-for-byte |
+| `audit_log` rows / distinct `(status, summary)` pairs | 687 / 340 | **742 / 345** |
+| `communication_logs` rows | 108 | **114**, and **0** carry an `external_message_id` |
+| `processed_messages` | 76 *(claims register, 3 Sep)* | **73** — it went **down**, which a teardown explains and nothing in this repository measures. Do not quote it as a message count |
+| `competitors` | 14 | **19** |
+| `policy_rule` / verified | 7 / 0 | **13 / 0**, and **0** platform attestations |
+| `purchase_history` | 1 | **1**, unchanged — the owner's own test lead |
+| `finance_quotes` live rows / inserts / deletes | 0 / 25 / 15 | **0 / 25 / 15**, unchanged |
+| `kyc_documents` | 3 rows, 0 verified | **3 rows, all verdict `REJECTED`** |
+| tenants | 1 | **2** — one dealership, one non-dealership quarantine tenant with `status='quarantine'` |
+
+### One correction earned by measurement, and it is about evidence rather than a rule
+
+**`relacl` is now a misleading witness on `inventory` and `leads`, in both
+directions.** `leads` reads `authenticated=r` — "read-only" — while eight
+columns are writable through `pg_attribute.attacl`; `inventory` reads `rd`,
+which understates the column grants and *overstates* what can be done to
+`cost_aed`, where the real lock is the trigger. Measured today: **no table in
+`public` grants `authenticated` a table-level UPDATE at all.** The ACL query
+prescribed in `CLAUDE.md` must be read alongside `pg_attribute.attacl` or it
+answers the wrong question — the same lesson `channel_registry` taught on
+4 September, now true of two more tables.
+
+### Still aspirational — and one item leaves the list
+
+`INV-005`'s guarantee is still source-level: `finance_quotes` holds **0 live
+rows** today, unchanged. `INV-001`'s read path, `INV-003`'s single writer,
+`INV-004`'s marker rule and `INV-008`'s `pill()` provenance are all still held
+by review and by gate checks in CI, not by anything at runtime.
+
+What leaves the list is not an invariant but the *authority model underneath
+them*: "any signed-in user can change any figure on `inventory` and `leads`" was
+true when the 3 September section was written and is false now. It is held by
+three mechanisms, and it is **inert**, because production has one login and it
+is the owner's.
+
+---
+
 ## Re-check 2026-09-03 — what moved, and what is now held up by a mechanism
 
 Measured 18:3x–18:5x UTC on 2026-09-03 against the same project, through the
@@ -96,7 +188,7 @@ are different products.
 | what is enforced | mechanism | kind |
 |---|---|---|
 | Every view in `public` carries `security_invoker` | **event trigger `nexus_guard_security_invoker_views`** on `ddl_command_end`, running `nexus_require_security_invoker_views()` — a `CREATE OR REPLACE VIEW` that drops the option now fails the statement | database, blocking |
-| the same, at release | gate check **`L3`** — verified 2026-09-03: **0 of 33 views** lack the option | gate |
+| the same, at release | gate check **`L3`** — verified 2026-09-03: **0 of 33 views** lack the option. **Corrected 2026-09-05: `L3` was testing for the string `security_invoker`, so a view created `(security_invoker = false)` passed the check that forbids it. It parses the value now; 39 of 39.** | gate |
 | No recovered revenue without a real sale behind it | CHECK **`inventory_actions_recovered_needs_real_sale`** and **`lead_recovery_actions_recovered_needs_real_sale`**: `recovered_value_aed IS NULL OR (outcome_state = 'ATTRIBUTED' AND outcome_purchase_id IS NOT NULL AND attribution_basis IS NOT NULL AND recovered_value_basis IS NOT NULL)`. Postgres refuses the row. | database, blocking |
 | the same, at the screen | gate checks **`R5`**, **`S9`**, **`L10`** — `R5` serves a fabricated `recovered_value_aed` of 250 000 with all four evidence columns absent and fails if it renders as a figure | gate |
 | An action decision is stamped, reasoned and its execution timestamped | CHECKs `*_decision_stamped`, `*_rejection_needs_reason`, `*_deferral_needs_reason`, `*_execution_stamped` on both action tables | database, blocking |
@@ -131,23 +223,49 @@ Say these are conventions, not controls, whenever they are quoted:
 
 ### Two gate checks are FAILING, and neither is fixed by this file
 
-Latest gate run 2026-09-03T11:45Z: **PASS 26 · FAIL 2 · WARN 2 · NOT RUN 4,
-exit 1.** J1's verdict is **NOT_READY**. The two failures are open findings, not
-paperwork:
+*Written against the 2026-09-03T11:45Z run and re-measured on 5 September. Both
+runs read `PASS 26 · FAIL 2 · WARN 2`, exit 1, and J1's verdict is still
+**NOT_READY** — but the failing rows are not the same rows, and the NOT RUN
+count moved from four to six.*
 
-- **`L2`** — ten policies are `SELECT USING(true)` for `authenticated` on tables
-  carrying no `tenant_id` column, all of them reference or lookup tables added
-  with the engines (`deal_rescue_states`, `attribution_edge_type`,
-  `policy_rule_type`, and seven more). Whether a shared vocabulary table should
-  be tenant-scoped is a real decision and it has not been made.
-- **`L9`** — a writer calling itself `"Example Workflow"` put one `FAILED` row
-  into `audit_log` and resolves to no `workflow_registry` entry, so its runs sit
-  on no health surface. **Do not invent a registry row to clear this.**
+Latest full-lane run **2026-09-06T04:33Z**, catalogue taken from production at
+04:29:01Z: **PASS 26 · FAIL 2 · WARN 2 · NOT RUN 6, exit 1.** The count is the
+same and the rows have changed again: **`L2` now PASSES**, and `L1` has taken
+its place — `whatsapp_templates` gained `language_key` and `waba_key` in
+production migration `20260905211435`, which landed eighteen minutes after the
+snapshot embedded in `QUALITY_GATE.mjs` was taken, so the snapshot is stale by
+exactly two columns. The remedy is `node QUALITY_GATE.mjs --refresh-schema`,
+which rewrites that snapshot in place; the 6 September pass was forbidden to
+edit `QUALITY_GATE.mjs` and left it. **`L9` is unchanged and still red.**
 
-Four checks report **NOT RUN** (`B1`–`B4`) because they need a second dealership
-or a writable session against production. **A NOT RUN is not a PASS**, and the
-2 September adversarial two-tenant evidence in `CLAUDE.md` is not carried forward
-as one.
+- **`L2`** — on 3 September this was **ten** policies, `SELECT USING(true)` for
+  `authenticated` on reference and lookup tables carrying no `tenant_id`
+  (`deal_rescue_states`, `attribution_edge_type`, `policy_rule_type` and seven
+  more). That decision was made: the shipped-vocabulary tables are exempt, and
+  `policy_jurisdiction` and `policy_platform_attestation` were revoked outright
+  on 4 September rather than exempted. **The last remaining row closed on
+  6 September 2026:** `workflow_registry` left the dealer data plane entirely
+  (migration
+  `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`)
+  — no table grant, no column grant, `workflow_registry_read` dropped, every
+  read by `authenticated` now `42501`, and the dealer-safe naming projection
+  served by the `SECURITY DEFINER` accessor `public.nexus_workflow_catalogue()`.
+  It did **not** get a `tenant_id`: the rows are the vendor's register and no
+  measurement maps an automation to a dealership, so a `tenant_id` could only
+  have been an invented mapping. **L2 passes with 12 exempt and 0 not exempt,
+  and nothing was added to `L2_EXEMPT_TABLES`** — the name stays out of it.
+- **`L9`** — unchanged. A writer calling itself `"Example Workflow"` put one
+  `FAILED` row into `audit_log` and resolves to no `workflow_registry` entry, so
+  its runs sit on no health surface. **Do not invent a registry row to clear
+  this.**
+
+**Six** checks report NOT RUN: `B1`–`B4`, which need a second dealership, a
+staging connection or a live render credential, and `L11`/`L12`, which need a
+database connection this environment does not have. **A NOT RUN is not a PASS**,
+and the 2 September adversarial two-tenant evidence in `CLAUDE.md` is not
+carried forward as one. `L12`'s offline arm ran and the folder is internally
+consistent — which is precisely what the 4 September baseline would also have
+reported on the afternoon it would have restored the schema door open.
 
 ---
 
@@ -248,10 +366,19 @@ views** against **40 and 33** live.
 
 Its own header still reads "THIS FILE IS AUTHORITATIVE". **It is not, and
 running it against production would replay a much older database over a much
-newer one.** `architecture/README.md` was corrected on 2026-09-03 to say so, and
-to say that the authoritative schema is the live catalogue and nothing in this
-repository. Do not regenerate-and-trust either: regenerate only if you need a
-snapshot, and date it.
+newer one.** Re-measured 2026-09-05: production is at **273** migrations, max
+`20260905211435`, so that file is roughly two hundred behind.
+
+**The second half of that 3 September ruling is now out of date, and in the
+useful direction.** It said the authoritative schema is the live catalogue and
+*nothing in this repository*. Since 4 September there is something in this
+repository: `supabase/` holds all 273 applied migrations byte-for-byte
+(1,809,043 bytes, rollup `4f9bd21234f8cfe6079184432d6120ad`, verified against
+production on both sides), a generated baseline at version `20260904142907`, the
+vocabulary seed, and the 18 forward migrations the baseline does not yet carry.
+`supabase/README.md` states the restore path and what was verified. Gate checks
+`L11` and `L12` are what keep it from going stale. `architecture/schema.sql`
+remains a dated snapshot and nothing more.
 
 ## Runnable evidence
 
@@ -893,9 +1020,10 @@ invariant is about there being only one.
 recomputed, by the frontend. A figure computed in the frontend has no database
 twin.
 
-**Frontend consumers.** All twenty screens on this branch (fourteen on
-`origin/main`, which is what production builds — see
-`apps/executive-dashboard/README.md`).
+**Frontend consumers.** All twenty-one screens on this branch (fourteen on
+`origin/main`, which is what production builds — re-counted 6 September 2026;
+the twenty-first is `moneyleaks`, Today's Money Leaks, which is also the default
+landing screen — see `apps/executive-dashboard/README.md`).
 
 **Regression test.** SQL probes plus greps for the same business number computed
 twice. **Three of the previous revision's four violations are now closed. One is
@@ -1216,3 +1344,41 @@ frontend grep and every `pill()` call-site count under INV-008, and the
 `nexus_lead_is_open` 25-value parity comparison. Those are source-level
 measurements over files this pass did not re-read. The database figures above
 are current; the frontend figures are 2 September.
+
+---
+
+## Last check — 2026-09-05
+
+Read through the read-only SQL channel on **2026-09-05**, after that evening's
+eighteen migrations. No writes were made; no migration was applied by this pass.
+Where a row is unchanged from 3 September it says so.
+
+| object | state |
+|---|---|
+| views in `public` | **39**, `security_invoker` on every one — 0 exceptions, and `L3` now measures the option's value rather than its presence |
+| tables in `public` / with RLS | **59 / 59** |
+| functions / constraints / indexes / policies in `public` | **269 / 374 / 169 / 163** |
+| `purchase_history` | **1 row**, unchanged — the owner's own test lead |
+| `kyc_documents` | **3 rows, all verdict `REJECTED`**, 0 verified |
+| `finance_quotes` | **0 live rows**; 25 inserts / 15 deletes lifetime, unchanged |
+| `communication_logs` | **114 rows**, and **0** carry an `external_message_id`. The new identity index is live and inert until a writer sends the column |
+| `processed_messages` | **73** — down from 76 on 3 Sep and 100 on 2 Sep. Not a message count |
+| `audit_log` | **742 rows / 345 pairs** |
+| `competitors` | **19** |
+| `policy_rule` / verified / attestations | **13 / 0 / 0** |
+| the messaging layer | `channel_message_events`, `whatsapp_delivery_events`, `whatsapp_opt_in_event`, `whatsapp_templates`, `whatsapp_message_usage` — **0 rows each**. `channel_registry` = 1 |
+| `tenants` | **2** — one dealership, one quarantine tenant holding `is_unattributed_default` behind a CHECK |
+| `nexus_tenancy_readiness()` | **0 BLOCKER**, 2 WARN (`policy_rule`, `policy_rule_event`, nullable by design), 2 INFO |
+| `nexus_quarantine_census()` | **0 rows** |
+| `tenant_members` / `users` | **1 / 1**, the one membership `role='owner'` |
+| tables `authenticated` may UPDATE at table level | **none.** Column grants only: 8 named columns on `inventory`, 8 on `leads` |
+| `max(schema_migrations.version)` / applied | `20260905211435`, **273 applied** — and the repository holds all 273, verified byte-for-byte both sides |
+| `architecture/schema.sql` | generated 05:01 on 2026-09-02 — roughly **200 migrations behind. Do not run it.** Use `supabase/` |
+| quality gate | PASS 26 · FAIL 2 (`L2`, `L9`) · WARN 2 · **NOT RUN 6**, exit 1 |
+
+**What was NOT re-run on 2026-09-05, and must not be quoted as if it were:** every
+workflow run statistic (they come from the n8n box and `v_workflow_health`, and
+this pass did not read either), `health_parity.mjs`, every frontend grep and
+every `pill()` call-site count under INV-008, and staging parity. The database
+figures above are current; the workflow and frontend figures in this file are
+3 September or older.

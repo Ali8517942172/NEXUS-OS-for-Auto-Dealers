@@ -22,20 +22,24 @@ what follows is honest about which is which.
 
 ---
 
-## Status, measured 3 September 2026
+## Status, measured 5 September 2026
 
 | | |
 |---|---|
-| Dealerships on the system | 1 |
-| Dashboard logins | 1 |
-| Customer sales recorded through the system | **0** |
-| Finance quotes produced | **0** |
-| ID documents successfully verified | **0** |
+| Paying customers | **0** |
+| Dealerships on the system | 1 (plus one non-dealership quarantine tenant, `status='quarantine'`) |
+| Dashboard logins | 1, role `owner` |
+| Customer sales recorded through the system | **0** — the one `purchase_history` row is the owner's own test lead |
+| Finance quotes produced | **0** live rows (25 inserts / 15 deletes in `pg_stat_all_tables` — the path has fired and a teardown clears it) |
+| ID documents successfully verified | **0** — 3 submitted, all 3 verdict `REJECTED` |
 | Vehicles in stock | 12 |
-| Messages on record | 108 (83 inbound WhatsApp, 18 automated replies) |
-| Run records in `audit_log` | 687, first row 14 August 2026 |
-| Registered workflows | 18 — 2 healthy, 11 degraded, 1 producing nothing, 1 never run, 3 not instrumented |
-| Quality gate | 26 pass, **2 P0 fail, 2 warn, 4 P0 not run** — exits non-zero |
+| Messages on record | **115** in `communication_logs` (re-measured 6 Sep — the table is still taking traffic), **0** of them carrying a provider message id |
+| Messages the messaging layer has carried | **0**. `channel_message_events`, `whatsapp_delivery_events`, `whatsapp_opt_in_event`, `whatsapp_templates`, `whatsapp_message_usage` are all empty |
+| Run records in `audit_log` | **758** *(re-measured 6 Sep)*, first row 14 August 2026 |
+| Registered workflows | 18 |
+| Policy rules verified against a source | **0 of 13**, and **0** platform attestations |
+| Applied migrations | **286**, head `20260906071310`, and `supabase/migrations/` holds 286 files with the same newest version (count and head re-measured 6 Sep; the byte-exact rollup comparison was last run at 273/273 on 5 Sep) |
+| Quality gate | definitive run 2026-09-06T06:51Z, anchored to migration `20260906062139`: **31 pass, 1 P0 fail, 2 warn, 3 not run** — exits non-zero. **Four migrations have landed since that catalogue was taken**, so the render lane goes red against the stale snapshot; see `STATUS-2026-09-06.md` §5 |
 
 Re-run these before quoting them; they move. Scope every count to the real
 dealership (`tenants.slug = 'alba-cars'`) — a raw `count(*)` has included another
@@ -65,8 +69,9 @@ Each of these has run on real data and left a record.
   owner's own lead — **it is not a customer sale**.
 - **Tenant isolation at the database layer.** Every table holding customer data
   carries a dealership id and every access rule checks it. Tested 2 September with
-  two synthetic dealerships and re-tested 3 September across all tables and all 33
-  views, as real Postgres roles with real JWT claims, including as the system
+  two synthetic dealerships and re-tested 3 September across all tables and all
+  33 views live at the time — there are **39** today — as real Postgres roles
+  with real JWT claims, including as the system
   account that bypasses row-level security, and including a deliberate
   same-email/same-phone collision. Zero cross-tenant rows in either direction.
   Evidence: `apps/executive-dashboard/SECURITY_REGRESSION_REPORT.md`.
@@ -107,7 +112,8 @@ for a feature.
 - **Trade-in mining and trade-in valuation.**
 - **Multi-bank finance comparison.**
 - **Dealer benchmarking.** It needs several dealerships. There is one.
-- **Per-role permissions.** See the limits below.
+- **Inviting a colleague.** Roles now exist (limit 2 below); there is no UI to
+  create a second login, so the role model is inert until one exists.
 - **Automatic inventory feed.** Stock is loaded and refreshed by hand.
 
 ---
@@ -125,14 +131,30 @@ here so an engineer does not accidentally close one and assume it was never open
    Closing it is a configuration change on the box, in this order: set the secret,
    make WAHA send the header, confirm in MONITOR mode, then enforce. Setting the
    secret first would silently drop every real customer message.
-2. **A dashboard login is not read-only and carries no role.** Any signed-in user
-   can change a vehicle's asking and cost price, delete a vehicle record, and
-   reassign any lead. Neither the database nor the interface gates it.
+2. **A dashboard login now carries a role — and the model is inert.** Closed
+   5 September 2026: `tenant_members.role` is
+   `owner | admin | manager | sales | technician | member`, enforced by column
+   GRANTs, RESTRICTIVE RLS and a cost-change trigger, with the dashboard half
+   shipped so the UI stops offering an action the database will refuse.
+   **Production has exactly one login and it is `owner`, and there is no UI to
+   add a colleague**, so nothing is gated in practice yet. The next login
+   inherits `member`, which means own-leads-only. Separately, the stronger
+   version of the cost lock (`rbac_02`, withholding `UPDATE(cost_aed)` outright)
+   is **not** what shipped — it must be re-applied in the same release as the
+   rebuilt dashboard.
 3. **One dealership per system.** The database layer separates dealerships and is
    tested; the automation layer does not — every n8n workflow writes as a system
-   account with no dealership attached. Three further defects fire on the day a
-   second dealership is added. `select * from public.nexus_tenancy_readiness();`
-   reports the database half; the security regression report covers the rest.
+   account with no dealership attached, and `NEXUS_TENANT_MAP` is unset on the
+   box. `select * from public.nexus_tenancy_readiness();` reports the database
+   half and returns **zero BLOCKERs** as of 5 September; the security regression
+   report covers the rest. Since 5 September a backend write that omits
+   `tenant_id` lands in a quarantine tenant rather than under the real
+   dealership — visible and recoverable rather than silent. Run
+   `select * from public.nexus_quarantine_census();` as the system account daily
+   until it is stable; it returned **zero rows** on 5 September, and it is the
+   only measurement of which workflows are broken. **Which workflows those are
+   is UNKNOWN** and cannot be answered from `n8n-workflows/`, which is a
+   30 August export.
 4. **Four launch-critical checks have never been run.** Non-approver refusal,
    decision idempotency, cross-dealership denial through the real signed-in path,
    and rendered-vs-live parity all need a second dealership and a non-approving
@@ -170,7 +192,7 @@ from one Supabase project.
 
 | Layer | Technology |
 |---|---|
-| Dashboard | Vanilla JS modules, Vite, Tailwind CSS, `@supabase/supabase-js`. **No React.** |
+| Dashboard | Vanilla JS modules, Vite, plain CSS with design tokens, `@supabase/supabase-js`. **No React, and no Tailwind** — it was removed because its `content` scanning silently dropped classes built at runtime (`postcss.config.js` records why). It survives as an unused `devDependency` in `package.json` only. |
 | Database, auth, vectors | Supabase (Postgres, Auth, pgvector) — the single source of truth |
 | Automation | n8n (self-hosted, Docker) using its LangChain-based AI agent nodes |
 | WhatsApp | WAHA, an unofficial client — to be replaced by the WhatsApp Cloud API |
@@ -181,8 +203,10 @@ from one Supabase project.
 `apps/ai-crm/backend/server.js` is a small unused Express service that exposes
 `/api/health` and `/api/v1/*`. It is not deployed and nothing depends on it.
 
-There is no CI pipeline in this repository, no OpenAPI document, no rate limiting
-and no role-based access control. Do not describe any of them as present.
+There is no CI pipeline in this repository, no OpenAPI document and no rate
+limiting. Do not describe any of them as present. Role-based access control
+**does** now exist at the database and in the UI (see limit 2 above); it is not
+exercised, because there is one login.
 
 ---
 
@@ -199,8 +223,9 @@ nexus-os/
 │   ├── PILOT-OFFER.md
 │   ├── PILOT-ONBOARDING.md
 │   └── DEMO-SCRIPT.md
-├── architecture/                # schema.sql, transcribed from the live catalogue
-├── supabase/                    # some SQL; migrations are applied to the live project, not kept here in full
+├── architecture/                # schema.sql — historical, ~200 migrations behind
+├── supabase/                    # ALL 286 applied migrations, a generated baseline,
+│                                #   the vocabulary seed and the restore path
 ├── n8n-workflows/               # exported workflow definitions (an export, not the source of truth)
 ├── docs/
 └── apps/
@@ -220,12 +245,23 @@ behaviour. That directory is an export and it goes stale.
   the evidence and the date beside each claim.
 - `NEXUS_INVARIANTS.md` — the business rules, who owns each, and the query that
   proves it. Open violations are recorded as open.
+- `OWNER-ACTIONS.md` — **read this first.** What only Ali can do, in order,
+  with what each unblocks and what breaks if it is done out of order.
+- `STATUS-2026-09-06.md` — what moved on the night of 5–6 September, item by
+  item, including five places an earlier claim turned out to be wrong.
+- `STATUS-2026-09-05.md` — a dated record: what moved since `AUDIT-2026-09-04.md`.
+- `VERSIONS.md` — V1–V4, and implemented / tested / production-proven /
+  commercially validated for every capability.
+- `supabase/README.md` — the migrations, the baseline and the restore path.
 - `apps/executive-dashboard/QUALITY_GATE_REPORT.md` — the generated gate result.
-  Read it rather than any narrative summary of it.
+  Read it rather than any narrative summary of it. **The committed copy is from
+  2026-09-03**; the 5 September run is written up in
+  `/home/claude/out/gate-2026-09-05.md`.
 - `apps/executive-dashboard/SECURITY_REGRESSION_REPORT.md` — the 3 September
   security sweep and its open findings.
 - `apps/executive-dashboard/J1_PRODUCTION_READINESS_REPORT.md` — release
   readiness. It contains at least one arithmetic error about the gate's own
   counts, so cross-check it against the generated report.
-- `architecture/schema.sql` — a transcription of the live catalogue; it goes stale
-  within days.
+- `architecture/schema.sql` — a transcription of the live catalogue taken on
+  2 September; it is roughly two hundred migrations behind and its own header
+  still says `AUTHORITATIVE`. It is not. Use `supabase/`.

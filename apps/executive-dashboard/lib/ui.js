@@ -134,7 +134,7 @@ function panel(host, { title, sub, actions, load, render, cols = '' }) {
       const data = await load();
       body.innerHTML = render(data, card);
     } catch (e) {
-      body.innerHTML = stateError(title || 'data', e.message, 'x');
+      body.innerHTML = stateError(title || 'data', e, 'x');
       body.querySelector('[data-retry]')?.addEventListener('click', () => {
         /* Retry calls `load` again — which only retries anything if `load`
            actually re-issues the request. A caller that shares one promise

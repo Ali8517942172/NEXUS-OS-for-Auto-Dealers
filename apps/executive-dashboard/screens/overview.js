@@ -358,9 +358,9 @@ const muted = msg => `<span class="t-muted">${esc(msg)}</span>`;
    purpose: it means some chat-to-lead bridges are missing and nothing on this
    screen can say which. */
 const bridgeWhy = (err, capped) => (err
-  ? `whatsapp_contacts could not be read (${err.message}), and that table is the only thing that can attach a @lid-keyed message to a lead — a LID carries no phone digits, so the handle can only be looked up, never derived.`
+  ? `The saved contact details could not be read (${err.message}), and that table is the only thing that can attach a @lid-keyed message to a lead — a LID carries no phone digits, so the handle can only be looked up, never derived.`
   : capped
-    ? `The whatsapp_contacts read hit its ${CONTACT_LIMIT}-row ceiling, so some chat-to-lead bridges are missing and there is no way to tell from here which leads are affected.`
+    ? `The saved contact details read hit its ${CONTACT_LIMIT}-row ceiling, so some chat-to-lead bridges are missing and there is no way to tell from here which leads are affected.`
     : '');
 
 /* `isHandle` is imported from lib/identity.js above rather than restated here.
@@ -405,7 +405,7 @@ const str = v => String(v == null ? '' : v).trim();
    This is the whole of the arithmetic this screen performs on money. Every
    figure inside it — margin, exposure, the impact of an action — was computed
    by public.v_inventory_profit_sentinel and is copied, never recomputed. */
-const expose = (rows, getValue, getKind) => {
+export const expose = (rows, getValue, getKind) => {
   let total = 0, n = 0;
   const kinds = new Set();
   for (const r of rows) {
@@ -427,10 +427,10 @@ const expose = (rows, getValue, getKind) => {
 const IMPACT_WORDS = {
   MARGIN_EXPOSED: 'of gross margin exposed',
 };
-const impactPhrase = kind => IMPACT_WORDS[str(kind).toUpperCase()]
+export const impactPhrase = kind => IMPACT_WORDS[str(kind).toUpperCase()]
   || `of impact the engine labels ${str(kind) || 'nothing recognisable'}, which this dashboard has no wording for`;
 /* One tally, rendered. Every branch names its denominator. */
-const exposureLine = (t, what) => {
+export const exposureLine = (t, what) => {
   if (t.kinds.length > 1) {
     return `No total is shown across ${what}: they do not carry one kind of impact — ${t.kinds.join(', ')} — and figures of different kinds are not added together. The per-unit figures are on Inventory.`;
   }
@@ -445,8 +445,15 @@ const exposureLine = (t, what) => {
         ? `, ${num(t.missing)} ${plural(t.missing, 'carries', 'carry')} no impact figure and ${plural(t.missing, 'is', 'are')} not in that total`
         : ', none omitted');
 };
-/* Said once wherever an exposure figure appears, and never abbreviated. */
-const EXPOSURE_CAVEAT = 'Exposure is gross margin — list price minus what the dealership paid — sitting in a unit that has not sold. It is the amount AT RISK. It is not an expected loss, not revenue, not money saved and not money recovered, and it is never added to anything that is.';
+/* Said once wherever an exposure figure appears, and never abbreviated.
+
+   EXPORTED, together with expose(), impactPhrase() and exposureLine() above, on
+   6 Sep 2026 when screens/money-leaks.js landed. That screen totals the same
+   exposure under the same rules, and a second copy of a money derivation is a
+   second thing that has to be kept true — this file already imports
+   recoveryEvidence() from screens/actions.js for exactly that reason. Nothing
+   about the four moved or changed; only the keyword in front of them. */
+export const EXPOSURE_CAVEAT = 'Exposure is gross margin — list price minus what the dealership paid — sitting in a unit that has not sold. It is the amount AT RISK. It is not an expected loss, not revenue, not money saved and not money recovered, and it is never added to anything that is.';
 
 /* What `identified` means, in the operator's words. `lead` is the only value
    that means "we know who this is"; the rest are named as the weaker thing they
@@ -544,7 +551,7 @@ const failureState = w => {
    row per run that COMPLETED, so "it has succeeded since" is evidence about the
    last run that finished — not proof of health, and a workflow hung right now
    writes no row at all and is indistinguishable from an idle one from here. */
-const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from v_workflow_health: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never read off last_run: that column is the newest row of ANY status, and a run that produced nothing is not a recovery.';
+const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from the automation health figures: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never read off last_run: that column is the newest row of ANY status, and a run that produced nothing is not a recovery.';
 /* Said wherever a row is amber rather than green. */
 const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newest run is stating arithmetic, not a diagnosis: last_success is the newest success by construction, so a later last_run is a run that was not one. What it was instead — half-done, no result, refused by design or escalated to a person — is in the counts beside it and in full on Automation.';
 
@@ -733,7 +740,7 @@ SCREENS.overview = async host => {
      puts failures_30d or partials_30d above zero, and v_workflow_health raises
      DEGRADED on either, so the item's workflow is inside this set. An item with
      no match here is still reported as unmatched rather than assumed healthy. */
-  const readHealth = shared(() => db('v_workflow_health?select=id,name,category,health,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,last_run,last_success,last_failure,last_partial,last_incomplete,is_active'
+  const readHealth = shared(() => db('v_workflow_health?select=name,category,health,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,last_run,last_success,last_failure,last_partial,last_incomplete,is_active'
     + '&health=in.(DEGRADED,PRODUCING_NOTHING,UNKNOWN_OUTCOME)'
     + '&order=failures_30d.desc,partials_30d.desc,name.asc&limit=50'));
   /* Read for one reason only: to explain an absence. `undercut` is one of the
@@ -886,7 +893,7 @@ SCREENS.overview = async host => {
       + ` (HOT and WARM only)`
       + (homeless ? `, ${homeless} of which belong to no screen and can only be seen here` : '')
       + `, plus ${extra} KYC archive gap${extra === 1 ? '' : 's'}`
-      + ` that v_needs_attention does not list`;
+      + ` that the attention list does not list`;
   };
 
   /* ── Core read ──────────────────────────────────────────────────────────
@@ -1324,8 +1331,8 @@ SCREENS.overview = async host => {
   const requireCore = () => { if (coreErr) throw coreErr; return core; };
 
   if (coreErr) {
-    strip.innerHTML = stateError('the overview', coreErr.message);
-    pipeCard.innerHTML = stateError('pipeline by stage', coreErr.message);
+    strip.innerHTML = stateError('the overview', coreErr);
+    pipeCard.innerHTML = stateError('pipeline by stage', coreErr);
   } else {
     const { leads, sentinel, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
             openCount, terminalCount, terminalNames,
@@ -1381,9 +1388,9 @@ SCREENS.overview = async host => {
           ? `<br>${muted(`${num(terminalCount)} further ${plural(terminalCount, 'lead is', 'leads are')} closed — ${terminalNames.join(', ')} — and ${plural(terminalCount, 'is', 'are')} not counted above. The table holds ${num(leads.length)} ${plural(leads.length, 'row', 'rows')} in total.`)}`
           : '')
       + (leadsCapped
-          ? `<br>${warn(`Capped at ${num(LEAD_LIMIT)} rows — the leads table holds more than this.`)}`
+          ? `<br>${warn(`Capped at ${num(LEAD_LIMIT)} rows — Your leads holds more than this.`)}`
           : leads.length <= THIN
-            ? `<br>${warn(`That is the whole leads table — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it.`)}`
+            ? `<br>${warn(`That is the whole your leads — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it.`)}`
             : '')
       + (snapshotShrank
           ? `<br>${warn(`${snapshotWhen} counted ${num(prevOpen)} open leads and the table now holds ${num(leads.length)} in total, so it was counting rows that have since gone. Every comparison against it on this strip inherits that.`)}`
@@ -1401,7 +1408,7 @@ SCREENS.overview = async host => {
     const untestedNote = (untestable || recentTerminal)
       ? `<br>${warn([
           untestable
-            ? `${num(untestable)} open ${plural(untestable, 'lead', 'leads')} in this window could not be checked${unkeyed ? ` — ${num(unkeyed)} ${plural(unkeyed, 'carries', 'carry')} no address, no phone number and no chat id, so there is nothing to match ${plural(unkeyed, 'it', 'them')} to communication_logs on` : ''}, so ${plural(untestable, 'it is', 'they are')} not in the figure above either way.`
+            ? `${num(untestable)} open ${plural(untestable, 'lead', 'leads')} in this window could not be checked${unkeyed ? ` — ${num(unkeyed)} ${plural(unkeyed, 'carries', 'carry')} no address, no phone number and no chat id, so there is nothing to match ${plural(unkeyed, 'it', 'them')} to the message history on` : ''}, so ${plural(untestable, 'it is', 'they are')} not in the figure above either way.`
             : '',
           recentTerminal
             ? `${num(recentTerminal)} further ${plural(recentTerminal, 'lead in this window is', 'leads in this window are')} already closed and ${plural(recentTerminal, 'is', 'are')} not counted as waiting.`
@@ -1689,7 +1696,7 @@ SCREENS.overview = async host => {
               + (otherStatus.length
                   ? ` That is not the same as unprocessed: ${stageRest[0]}`
                   : '')
-            : 'The leads table is empty, so there are no stages to chart. The first row arrives when the router webhook receives an enquiry.',
+            : 'Your leads is empty, so there are no stages to chart. The first row arrives when the router webhook receives an enquiry.',
           'donut_small');
   }
 
@@ -1714,7 +1721,7 @@ SCREENS.overview = async host => {
          rejection would land in the console instead of in the row that was
          clicked. */
       if (rows.length) { say(''); await leadDrawer(rows[0]); }
-      else say(`<span class="t-warm">${esc('That lead is no longer in the leads table, so there is nothing to open.')}</span>`);
+      else say(`<span class="t-warm">${esc('That lead is no longer in your leads, so there is nothing to open.')}</span>`);
     } catch (e) {
       say(`<span class="t-hot">${esc(`Could not open this lead — ${e.message}`)}</span>`);
     }
@@ -1754,7 +1761,7 @@ SCREENS.overview = async host => {
   /* Staff numbers. `users` has no phone column — probed live — so a rep's name
      is the whole of what can be shown, and the screen says that rather than
      printing an empty field next to it. */
-  const NO_STAFF_PHONE = 'Staff phone numbers are stored nowhere the dashboard can read: the users table has no phone column, so a rep is named but cannot be called from here. Customer numbers below come from leads.phone and v_conversations.phone, which do exist.';
+  const NO_STAFF_PHONE = 'Staff phone numbers are stored nowhere the dashboard can read: the users table has no phone column, so a rep is named but cannot be called from here. Customer numbers below come from the phone number on the lead record and the number saved for this contact, which do exist.';
 
   /* ── Triage row ─────────────────────────────────────────────────────────── */
 
@@ -2033,7 +2040,7 @@ SCREENS.overview = async host => {
           const t = expose(attributed, a => a.recovered_value_aed, () => 'ATTRIBUTED_MARGIN');
           notes.push(`${num(attributed.length)} of ${num(q.length)} ${plural(q.length, 'action', 'actions')} ${plural(attributed.length, 'has', 'have')} a recorded sale tied to ${plural(attributed.length, 'it', 'them')} by a person: ${aed(t.total)} of realised gross margin, ATTRIBUTED and not confirmed as caused. NEXUS does not claim the action produced the sale.`);
         } else if (q.length) {
-          notes.push(`No action has an attributed outcome. Recovered value is not zero on ${num(q.length)} ${plural(q.length, 'action', 'actions')} — it is not recorded, and it stays that way until a person ties a real recorded sale to a unit, which today they must do by hand because purchase_history carries no reference to an inventory unit at all.`);
+          notes.push(`No action has an attributed outcome. Recovered value is not zero on ${num(q.length)} ${plural(q.length, 'action', 'actions')} — it is not recorded, and it stays that way until a person ties a real recorded sale to a unit, which today they must do by hand because the recorded sales carries no reference to an inventory unit at all.`);
         }
         /* A row carrying an amount the evidence does not support. The database
            CHECK inventory_actions_recovered_needs_real_sale makes it unstorable,
@@ -2102,7 +2109,7 @@ SCREENS.overview = async host => {
             head: `${num(core.waiting.length)} open ${plural(core.waiting.length, 'enquiry has', 'enquiries have')} had no reply since ${plural(core.waiting.length, 'it', 'they')} arrived`,
             badge: pill('No reply sent', 'hot', { verbatim: false }),
             lines: [
-              muted(`Out of ${num(core.testedCount)} open ${plural(core.testedCount, 'enquiry', 'enquiries')} from the last ${WINDOW_DAYS} days that could be checked against communication_logs. The oldest arrived ${ago(core.waiting[0].created_at)}.`),
+              muted(`Out of ${num(core.testedCount)} open ${plural(core.testedCount, 'enquiry', 'enquiries')} from the last ${WINDOW_DAYS} days that could be checked against the message history. The oldest arrived ${ago(core.waiting[0].created_at)}.`),
               core.untestable ? warn(`${num(core.untestable)} could not be checked at all and ${plural(core.untestable, 'is', 'are')} in neither figure.`) : '',
             ],
             right: num(core.waiting.length),
@@ -2148,7 +2155,7 @@ SCREENS.overview = async host => {
          them customers is not, and on this box not one of them resolves to a
          lead. That distinction is the whole of this row. */
       if (attErr || !threads) {
-        notes.push('v_conversations did not load, so waiting WhatsApp threads could not be counted. That is a missing read, not a quiet inbox.');
+        notes.push('NEXUS did not load, so waiting WhatsApp threads could not be counted. That is a missing read, not a quiet inbox.');
       } else if (threads.length) {
         const known = threads.filter(t => str(t.identified) === 'lead').length;
         const inWindow = (attItems || []).filter(i => i.kind === 'unanswered_chat').length;
@@ -2274,14 +2281,14 @@ SCREENS.overview = async host => {
   /* 1 · Leads nobody has replied to. */
   panels.push(panel(replyHost, {
     title: 'No reply sent',
-    sub: `Open leads created in the last ${WINDOW_DAYS} days with no outbound message in communication_logs sent after they arrived. A message counts for a lead when it is filed under any key that lead resolves to — lib/identity.js, the same last-nine-digit rule the workflows used to write those keys. Internal markers do not count as a reply, and closed leads are not listed`,
+    sub: `Open leads created in the last ${WINDOW_DAYS} days with no outbound message in the message history sent after they arrived. A message counts for a lead when it is filed under any key that lead resolves to — NEXUS’s identity rules, the same last-nine-digit rule the workflows used to write those keys. Internal markers do not count as a reply, and closed leads are not listed`,
     actions: `<button class="btn sm" data-act="leads">Open Leads</button>`,
     load: async () => requireCore(),
     render: d => {
       const noPhone = d.waiting.filter(l => !str(l.phone)).length;
       const notes = [
         d.untestable
-          ? `${num(d.untestable)} of the ${num(d.recentCount)} leads in this window could not be checked at all${d.unkeyed ? ` — ${num(d.unkeyed)} of them ${plural(d.unkeyed, 'carries', 'carry')} no address, no phone number and no chat id, so there is nothing to match ${plural(d.unkeyed, 'it', 'them')} to communication_logs on` : ''}. They are neither listed above nor counted as answered.`
+          ? `${num(d.untestable)} of the ${num(d.recentCount)} leads in this window could not be checked at all${d.unkeyed ? ` — ${num(d.unkeyed)} of them ${plural(d.unkeyed, 'carries', 'carry')} no address, no phone number and no chat id, so there is nothing to match ${plural(d.unkeyed, 'it', 'them')} to the message history on` : ''}. They are neither listed above nor counted as answered.`
           : '',
         d.recentTerminal
           ? `${num(d.recentTerminal)} lead${d.recentTerminal === 1 ? '' : 's'} in this window ${plural(d.recentTerminal, 'is', 'are')} already closed — won, lost or disqualified — and ${plural(d.recentTerminal, 'is', 'are')} not listed as waiting for a reply.`
@@ -2291,7 +2298,7 @@ SCREENS.overview = async host => {
            rows disappearing from a join is the kind of thing that should be
            visible on the screen that depends on it. */
         d.internalMarkers
-          ? `${num(d.internalMarkers)} outbound row${d.internalMarkers === 1 ? '' : 's'} in this window ${plural(d.internalMarkers, 'is', 'are')} an internal row rather than a message to a customer. A message is on whatsapp, email or sms and does not begin with one of this system's own markers, [system] or [SILENCE- — which is public.nexus_is_message() in the database, mirrored in lib/comm-events.js and applied here unchanged. The silence detector writes such a row when a thread has gone quiet; it exists because nobody replied, so ${plural(d.internalMarkers, 'it is', 'they are')} not counted as a reply.`
+          ? `${num(d.internalMarkers)} outbound row${d.internalMarkers === 1 ? '' : 's'} in this window ${plural(d.internalMarkers, 'is', 'are')} an internal row rather than a message to a customer. A message is on whatsapp, email or sms and does not begin with one of this system's own markers, [system] or [SILENCE- — which is NEXUS’s own test for what counts as a message in the database, mirrored in this browser and applied here unchanged. The silence detector writes such a row when a thread has gone quiet; it exists because nobody replied, so ${plural(d.internalMarkers, 'it is', 'they are')} not counted as a reply.`
           : '',
         /* How incomplete this panel's join is, measured on the join's own
            output. Until 1 Sep 2026 this counted `isHandle(lead_email)` — a key
@@ -2303,7 +2310,7 @@ SCREENS.overview = async host => {
         d.unmatchedReplies
           ? `${num(d.unmatchedReplies)} of the ${num(d.outboundCount)} outbound messages read in this window could not be matched to any lead. ${d.bridgeOk
               ? 'They belong to WhatsApp threads with no lead record behind them. A lead answered on such a thread before it was identified would still be listed above as unanswered.'
-              : 'Some of those threads do have a lead behind them — without the whatsapp_contacts bridge this screen cannot tell which, so this number is larger than it would otherwise be.'}`
+              : 'Some of those threads do have a lead behind them — without the saved contact details bridge this screen cannot tell which, so this number is larger than it would otherwise be.'}`
           : '',
         d.outboundCapped ? `Outbound history was capped at ${num(OUTBOUND_LIMIT)} messages for this window, so this list may be incomplete.` : '',
         !d.bridgeOk ? `${bridgeWhy(d.contactsErr, d.contactsCapped)} The check above was withheld rather than run without it — a lead whose whole conversation is filed under a @lid would otherwise be named here as never answered.` : '',
@@ -2329,7 +2336,7 @@ SCREENS.overview = async host => {
             : d.testedCount
             ? `All ${d.testedCount} open ${plural(d.testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(d.testedCount, 'has', 'have')} an outbound message filed under one of the keys ${plural(d.testedCount, 'it resolves', 'they resolve')} to, sent after ${plural(d.testedCount, 'it', 'they')} arrived.`
             : d.recentCount
-              ? `${d.recentCount} ${plural(d.recentCount, 'lead was', 'leads were')} created in the last ${WINDOW_DAYS} days and none of them could be matched to communication_logs, so this list is empty for want of evidence rather than because everyone was answered.`
+              ? `${d.recentCount} ${plural(d.recentCount, 'lead was', 'leads were')} created in the last ${WINDOW_DAYS} days and none of them could be matched to the message history, so this list is empty for want of evidence rather than because everyone was answered.`
               : `No lead was created in the last ${WINDOW_DAYS} days, so there is nothing to answer.`, 'mark_email_read') + foot;
       }
       const shown = d.waiting.slice(0, 8);
@@ -2342,7 +2349,7 @@ SCREENS.overview = async host => {
               <span>${esc(str(l.name) || 'Unnamed lead')}</span>
               ${str(l.phone)
                 ? `<span class="mono cell-sub">${esc(str(l.phone))}</span>`
-                : `<span class="cell-sub t-warm" title="The router captured no phone number for this lead. leads.phone is empty on this row.">No phone on the lead</span>`}
+                : `<span class="cell-sub t-warm" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
             </div>
             <div class="cell-sub">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
             <div class="cell-sub" aria-live="polite" data-leadmsg></div>
@@ -2401,7 +2408,7 @@ SCREENS.overview = async host => {
       const notes = [
         recovered ? RECOVERY_CAVEAT : '',
         stale ? STALE_CAVEAT : '',
-        `A row here means a run failed, went out half-done or produced nothing usable inside the 30-day window that v_workflow_health.health is computed over. All-time failures are not used: they would keep a workflow that was fixed in June red forever. What each status means is decided in one place — public.nexus_outcome_class(), mirrored in lib/health.js — and never on this screen.`,
+        `A row here means a run failed, went out half-done or produced nothing usable inside the 30-day window the automation health figures are computed over. All-time failures are not used: they would keep a workflow that was fixed in June red forever. What each status means is decided in one place — public.nexus_outcome_class(), mirrored in NEXUS — and never on this screen.`,
         /* Stated as a rule, not as tonight's example. An earlier draft of this
            note named a workflow and quoted its live figures in words; a
            hardcoded number in a footnote is the "-18s vs last week" this file
@@ -2543,7 +2550,7 @@ SCREENS.overview = async host => {
           ? `${num(voided.length)} further ${plural(voided.length, 'row has', 'rows have')} no stored file but ${plural(voided.length, 'carries', 'carry')} a void_reason — ${plural(voided.length, 'it was', 'they were')} never a KYC submission, so ${plural(voided.length, 'it is', 'they are')} not counted as an audit gap here. Compliance shows ${plural(voided.length, 'it', 'them')} in full.`
           : '',
         !att
-          ? 'Needs attention did not load, so these could not be cross-checked against v_needs_attention.'
+          ? 'Needs attention did not load, so these could not be cross-checked against the attention list.'
           : live.length && extra.length === live.length
             ? `None of these appear in Needs attention — the view's kyc_archive_gap branch applies a recency cut-off of its own, so older gaps are visible only here.`
             : extra.length
@@ -2560,12 +2567,12 @@ SCREENS.overview = async host => {
         /* Rule: where a person is shown, show their phone. This table does not
            hold one — it holds lead_email and chat_id — so the address is shown
            instead and the absence is stated rather than left as a blank field. */
-        live.length ? 'kyc_documents stores no phone number, so these contacts are shown by the address the submission was filed under. Their number, if there is one, is on the lead record in Leads.' : '',
+        live.length ? 'The ID documents stores no phone number, so these contacts are shown by the address the submission was filed under. Their number, if there is one, is on the lead record in Leads.' : '',
       ].filter(Boolean);
 
       const foot = `<div class="list-item" style="cursor:default">
           <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-          <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}${esc('Repairing these needs a service-role job. There is also nothing here to open: signing a private-bucket file is possible now (signedUrl in lib/data.js mints a 60-second link), but storage_path is null on every row in this list — the missing file is the gap.')}</div>
+          <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}${esc('Repairing these is NEXUS’s to do. There is also nothing here to open: this dashboard can open a stored document, but no archived file was ever recorded for any row in this list — the missing file is the gap.')}</div>
         </div>`;
 
       if (!live.length) {
@@ -2603,7 +2610,7 @@ SCREENS.overview = async host => {
               : '<span class="t-warm">No address on the submission</span>'}</div>
           </div>
           <button class="btn sm" disabled
-            title="No re-archive endpoint exists. kyc_documents and the private kyc-documents bucket are service-role only, and there is no n8n webhook for re-running the archive step, so the browser cannot repair this row.">Re-archive</button>
+            title="Re-archiving is not something this dashboard can start. The documents and the store they live in are NEXUS’s to write, and there is nothing here that can re-run the archive step. Ask NEXUS support.">Re-archive</button>
         </div>`;
       }).join('')}${rest > 0
         ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${esc(`${num(rest)} older ${plural(rest, 'gap is', 'gaps are')} not listed here — all ${num(live.length)} are counted above and every one of them is in Compliance.`)}</div></div>`
@@ -2689,7 +2696,7 @@ SCREENS.overview = async host => {
        open on the showroom floor was showing a list from whenever the tab was
        opened under a word that says otherwise. The word is gone and the read
        time is printed in the notes, where it can be checked. */
-    sub: `Union of v_needs_attention — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock. The view bounds two of these itself: unanswered threads to ${CHAT_WINDOW_DAYS} days and SLA breaches to ${SLA_WINDOW_DAYS}, so this is what is still open, not everything that ever slipped`,
+    sub: `Union of the attention list — unanswered WhatsApp threads first, then unassigned HOT leads, SLA breaches, KYC archive gaps, workflow failures, undercuts and aging stock. The view bounds two of these itself: unanswered threads to ${CHAT_WINDOW_DAYS} days and SLA breaches to ${SLA_WINDOW_DAYS}, so this is what is still open, not everything that ever slipped`,
     load: async () => {
       const readAt = new Date().toISOString();
       const { items, threads } = await readAttention();
@@ -2801,7 +2808,7 @@ SCREENS.overview = async host => {
         const phone = t ? str(t.phone) : '';
         const chips = [];
         if (!t) {
-          chips.push(`<span class="chip" title="v_conversations did not load, so this thread's identity could not be resolved. The label shown is the view's display_name, which falls back to the raw chat handle.">Identity unresolved</span>`);
+          chips.push(`<span class="chip" title="NEXUS did not load, so this thread's identity could not be resolved. The label shown is the view's display_name, which falls back to the raw chat handle.">Identity unresolved</span>`);
         } else if (meta) {
           chips.push(`<span class="chip" title="${esc(meta.note)}">${esc(meta.short)}</span>`);
         }
@@ -2866,7 +2873,7 @@ SCREENS.overview = async host => {
           const fc = flow ? runCounts(flow) : null;
           sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
             flowState ? flowState.text
-              : '<span class="t-muted">no row in v_workflow_health matched this item, so whether it has succeeded since cannot be told from here</span>'
+              : '<span class="t-muted">no row in the automation health figures matched this item, so whether it has succeeded since cannot be told from here</span>'
           }${fc && fc.notClean != null
             ? ` <span class="t-muted">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
             : ''}</div>`;
@@ -2950,9 +2957,9 @@ SCREENS.overview = async host => {
       const notes = [
         /* First, because it governs how everything under it should be read. */
         `Read once at ${clock(readAt)}, when this screen opened. Nothing on this screen refreshes on a timer, so an item resolved since then is still listed and one raised since then is not — reopen Overview for a fresh read. The nav badges are the part that does poll, every 60 seconds.`,
-        !threads ? 'v_conversations did not load, so WhatsApp threads above could not be checked against their contact records, and threads waiting outside this list could not be counted.' : '',
+        !threads ? 'NEXUS did not load, so WhatsApp threads above could not be checked against their contact records, and threads waiting outside this list could not be counted.' : '',
         stale ? `${num(stale)} further ${plural(stale, 'thread is', 'threads are')} awaiting a reply but older than the ${CHAT_WINDOW_DAYS}-day window this list uses — see Conversations.` : '',
-        other ? `${num(other)} further ${plural(other, 'thread is', 'threads are')} marked awaiting_reply in v_conversations but ${plural(other, 'does', 'do')} not appear above.` : '',
+        other ? `${num(other)} further ${plural(other, 'thread is', 'threads are')} marked whether the newest message is theirs in NEXUS but ${plural(other, 'does', 'do')} not appear above.` : '',
         items.length >= ATTN_LIMIT ? `This read was capped at ${num(ATTN_LIMIT)} items, so there may be more than are listed.` : '',
         coreErr
           ? 'The leads read failed, so SLA and unassigned-lead items above are shown as the view worded them, without a phone number or a link into the record.'
@@ -2967,9 +2974,9 @@ SCREENS.overview = async host => {
            proof of. */
         recoveredFlows ? RECOVERY_CAVEAT : '',
         health == null && items.some(i => i.kind === 'workflow_failure')
-          ? 'v_workflow_health did not load, so the workflow items above are shown as the view worded them — this screen cannot say which of them have run cleanly since they failed.'
+          ? 'The automation health figures did not load, so the workflow items above are shown as the view worded them — this screen cannot say which of them have run cleanly since they failed.'
           : unmatchedFlows
-            ? `${num(unmatchedFlows)} workflow ${plural(unmatchedFlows, 'item', 'items')} above could not be matched to a row in v_workflow_health, so nothing is claimed about whether ${plural(unmatchedFlows, 'it has', 'they have')} run since.`
+            ? `${num(unmatchedFlows)} workflow ${plural(unmatchedFlows, 'item', 'items')} above could not be matched to a row in the automation health figures, so nothing is claimed about whether ${plural(unmatchedFlows, 'it has', 'they have')} run since.`
             : '',
         /* An absence an operator would otherwise read as an all-clear. The
            undercut branch of the view compares competitors.our_price_aed
@@ -2984,7 +2991,7 @@ SCREENS.overview = async host => {
            labelled, or the next person to read this list cannot reconcile it
            against v_needs_attention. */
         agedFromEngine
-          ? `${num(agedFromEngine)} aging-stock ${plural(agedFromEngine, 'item', 'items')} above arrived from v_needs_attention with an empty detail: its branch prints the unit's accrued holding cost and there is none on record, so the whole sentence came back null. The days in stock shown ${plural(agedFromEngine, 'is', 'are')} the Profit Sentinel's, joined on the same unit id. No holding cost is stated, because none exists.`
+          ? `${num(agedFromEngine)} aging-stock ${plural(agedFromEngine, 'item', 'items')} above arrived from the attention list with an empty detail: its branch prints the unit's accrued holding cost and there is none on record, so the whole sentence came back null. The days in stock shown ${plural(agedFromEngine, 'is', 'are')} the Profit Sentinel's, joined on the same unit id. No holding cost is stated, because none exists.`
           : '',
         unmatchedUnits
           ? `${num(unmatchedUnits)} aging-stock ${plural(unmatchedUnits, 'item', 'items')} above arrived with no detail and could not be matched to a unit${
@@ -3004,9 +3011,9 @@ SCREENS.overview = async host => {
            they are computed identically, teaches them to distrust a badge that
            is right. */
         collapsed
-          ? `The view returned ${num(items.length)} rows to get there: ${num(collapsed)} of them ${plural(collapsed, 'is a repeat', 'are repeats')} of a price undercut already listed, one row per nightly scrape of the same vehicle at the same price, and ${plural(collapsed, 'it is', 'they are')} shown once. The nav badge does not double-count ${plural(collapsed, 'it', 'them')}: badges.js collapses the same way before it counts. As of 1 Sep 2026 v_needs_attention de-duplicates its undercut branch itself, so anything collapsing here means that has regressed and the raw table is being read unguarded again.`
+          ? `The view returned ${num(items.length)} rows to get there: ${num(collapsed)} of them ${plural(collapsed, 'is a repeat', 'are repeats')} of a price undercut already listed, one row per nightly scrape of the same vehicle at the same price, and ${plural(collapsed, 'it is', 'they are')} shown once. The nav badge does not double-count ${plural(collapsed, 'it', 'them')}: badges.js collapses the same way before it counts. As of 1 Sep 2026 the attention list de-duplicates its undercut branch itself, so anything collapsing here means that has regressed and the raw table is being read unguarded again.`
           : '',
-        `Nav badges are painted by lib/badges.js from one read of v_needs_attention every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading. Items the view files against no screen have no nav item to sit on, so they are counted into the Overview badge and nowhere else.`,
+        `Nav badges are painted from one read of the attention list every 60 seconds and count HOT and WARM only — COLD is left out on purpose so a badge stays worth reading. Items the view files against no screen have no nav item to sit on, so they are counted into the Overview badge and nowhere else.`,
         gapRows == null
           ? `The KYC archive-gap read failed, so the badge is the shared count alone${need.floor == null ? '' : ` (${num(need.floor)})`} and any gap it would have added is missing from it.`
           : need.kycExtra
@@ -3014,7 +3021,7 @@ SCREENS.overview = async host => {
                cannot reconstruct from the screen under it is a number they
                learn to ignore — and this one is now mostly made of rows that
                are not on this list at all. */
-            ? `The Overview badge reads ${num(need.badge)} = ${num(need.floor)} + ${num(need.kycExtra)}: ${num(need.floor)} HOT or WARM ${plural(need.floor, 'item', 'items')} in v_needs_attention across every screen${
+            ? `The Overview badge reads ${num(need.badge)} = ${num(need.floor)} + ${num(need.kycExtra)}: ${num(need.floor)} HOT or WARM ${plural(need.floor, 'item', 'items')} in the attention list across every screen${
                 need.floorFrom === 'own' ? ', counted from this panel because the shared badge read has not returned yet' : ''
               }, plus ${num(need.kycExtra)} KYC archive ${plural(need.kycExtra, 'gap', 'gaps')} from the KYC archive-gaps panel above, which the view does not list at all. badges.js repaints the ${num(need.floor)} on its own next poll; the gaps are added back the next time this screen renders, and the KYC panel above lists them either way.`
             : `Nothing here is missing from that count, so the Overview badge is left exactly as badges.js painted it${need.floor == null ? '' : ` — ${num(need.floor)}`}.`,
@@ -3063,14 +3070,14 @@ SCREENS.overview = async host => {
       card.__rows = rows;
       if (!rows.length) {
         return stateEmpty('No leads yet',
-          `Nothing in the leads table as of ${clock(readAt)}, when this panel read it. New enquiries appear here on the next read, not as they arrive — reopen Overview to check.`);
+          `Nothing in your leads as of ${clock(readAt)}, when this panel read it. New enquiries appear here on the next read, not as they arrive — reopen Overview to check.`);
       }
       /* Fewer rows than the page size means this is not the top of a long list,
          it is the whole list — which reads very differently. */
       const notes = [
         `Read once at ${clock(readAt)}, when this screen opened. This table does not update on its own — a lead that arrived since is not on it. Reopen Overview for a fresh read.`,
         rows.length < FEED_LIMIT
-          ? `The query asked for the newest ${FEED_LIMIT} leads and got ${rows.length}, so this is the whole leads table, not the top of it.`
+          ? `The query asked for the newest ${FEED_LIMIT} leads and got ${rows.length}, so this is the whole your leads, not the top of it.`
           : '',
         'A row opens that lead. Leads has no last-modified timestamp, so this is ordered by when each one arrived, which is the only time the table records.',
       ].filter(Boolean);

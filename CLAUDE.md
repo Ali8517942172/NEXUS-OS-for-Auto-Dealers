@@ -92,27 +92,150 @@ operational rather than structural:
 - Customer 360 goes *silent* at two dealerships — `nexus_scoped_tenant_id()`
   returns null for a `service_role` caller once more than one tenant is active,
   so the nightly batch syncs nobody and writes no audit row. Silent, not wrong,
-  but it must iterate tenants before anyone is onboarded.
-- `tenants.is_unattributed_default` means an omitted `tenant_id` lands in
-  whichever dealership holds the flag. Harmless with one; wrong with two. Either
-  point it at a quarantine tenant or convert the remaining omissions to explicit
-  nulls.
-- **`workflow_registry` is readable by every signed-in user and is not
-  tenant-scoped.** Its policy is `SELECT USING (true)` for `authenticated`, and
-  the table has no `tenant_id` column — which is survivable only because there
-  is one dealership. It holds the real n8n workflow ids, names, trigger detail
-  and `is_active` flags, i.e. which automations a dealership runs and which are
-  switched off: operational configuration, not shipped vocabulary. Give it a
-  `tenant_id` and a scoped policy before onboarding a second dealership.
-  Measured and left failing on purpose: `QUALITY_GATE.mjs` check **L2** is red
-  on exactly this row, and `workflow_registry` is deliberately excluded from
-  `L2_EXEMPT_TABLES` so the finding stays visible instead of being absorbed
-  into an exemption list.
+  but it must iterate tenants before anyone is onboarded. **Measured, not
+  predicted, on 6 Sep 2026** (staging, two active dealerships, one transaction),
+  and **it is not only Customer 360.** Five things read their scope from that
+  function and all five go quiet together:
 
-`select * from public.nexus_tenancy_readiness();` is the live gate — but note
-its remaining BLOCKER fires whenever any tenant holds the default flag and
-cannot see n8n at all, so it will not clear from workflow work. Read it with
-that in mind.
+  | consumer | at 1 dealership | at 2 |
+  |---|---|---|
+  | `v_customer_directory` to `service_role` | 4 rows | **0** |
+  | `v_inventory_sales` to `service_role` | 3 rows | **0** |
+  | `search_rag_documents(q, limit)` — the 2-arg form | 1 row | **0** |
+  | `nexus_comm_keys_for_lead(email, phone)` | 3 keys | **0** |
+  | `nexus_lead_for_comm_key(key)` | lead 1 | **NULL** |
+
+  Positive control on every line: the 3-argument forms, given an explicit tenant
+  in the same transaction, returned 1 row, 3 keys and lead 1; both dealerships'
+  own signed-in sessions still saw their own view rows (Alpha 3/2, Bravo 1/1).
+  So the zeros are a scope that resolved to nothing, not an empty database.
+  Re-proved on **production** on 6 Sep in an aborted transaction: with a second
+  tenant made active, `v_inventory_sales` to `service_role` went **12 → 0** and
+  RAG **5 → 0**, against a live control of 12 `inventory` rows.
+
+  The identity helpers are the worst of the five and were not on anyone's list:
+  they fail closed *by design* at more than one tenant (`return '{}'` / `return
+  null`), so inbound WhatsApp stops matching known customers and starts creating
+  duplicate people. `nexus_scoped_tenant_id()` was **not** widened to fix this —
+  handing a batch some dealership when the caller named none is how one
+  dealership's job writes another's data. `public.nexus_active_dealership_ids()`
+  (added 6 Sep, `service_role` only) is the plural answer the consumers should
+  be driven over instead.
+- `tenants.is_unattributed_default` **no longer points at a dealership.** Fixed
+  5 Sep 2026 (migrations `20260905201206`/`201227`/`201337`, evidence in
+  `/home/claude/out/unattributed-default-evidence.md`). It is held by a
+  quarantine tenant — slug `__unattributed__`, `status='quarantine'`,
+  `is_quarantine=true` — and a CHECK constraint
+  (`tenants_unattributed_default_must_be_quarantine`) makes re-pointing it at a
+  real dealership impossible without dropping that constraint by name. A backend
+  write that omits `tenant_id` is now **retained** under quarantine rather than
+  filed under ALBA: unreadable by any dealership session (no `tenant_members`
+  row, and `nexus_current_tenant_ids()` requires `status='active'` — both locks
+  measured, including against a forged membership row plus a forged JWT claim),
+  excluded from all 29 tenant-carrying views **in their own definitions**, and
+  findable by `service_role` via `nexus_quarantine_census()`.
+  `nexus_scoped_tenant_id()` was decoupled from the flag and still returns ALBA,
+  so Customer 360 did not go silent. **What this does not fix:** the four n8n
+  workflows that still omit `tenant_id` are not identified anywhere — the repo's
+  `n8n-workflows/*.json` is a 30 Aug export containing zero occurrences of
+  `tenant_id` and cannot answer it. Their rows now land in quarantine instead of
+  ALBA, which is visible and recoverable rather than silent. **Run
+  `select * from public.nexus_quarantine_census();` as `service_role` daily until
+  it is stable** — that census is the only measurement of which writers are
+  broken, and this is the cheapest moment to take it. Also: disabling
+  `Resolve Tenant` in n8n, the documented rollback, no longer falls back to ALBA;
+  see `/home/claude/out/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
+- ~~**`workflow_registry` is readable by every signed-in user and is not
+  tenant-scoped.**~~ **Closed 6 September 2026** — migration
+  `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`,
+  applied to staging then production, evidence in
+  `/home/claude/out/workflow-registry-scoping-evidence.md`. **`QUALITY_GATE`
+  check L2 now PASSES** (12 open policies, 12 exempt, 0 not) and nothing was
+  added to `L2_EXEMPT_TABLES`.
+
+  **It did not get a `tenant_id`, and that was the finding.** The 18 rows are
+  the *vendor's* register of the automations NEXUS runs. Nothing in this
+  database maps an automation to a dealership, and three of the registered
+  workflows are NEXUS's own public pages, which serve none — so a `tenant_id`
+  could only have been filled by inventing that mapping, and a
+  nullable-meaning-platform one would have been a predicate that filters
+  nothing while reading like a scope. The table left the dealer data plane
+  instead: **no table grant, no column grant, no `authenticated` policy**
+  (`workflow_registry_read` dropped; the anon-deny and service_role policies
+  untouched). Measured on production as the ALBA owner with a real JWT claim:
+  `count(*)`, `select name`, `select *` and `select id` on the table all return
+  **42501**; as `anon` over the live REST API, `42501 permission denied for
+  schema public`.
+
+  The one thing CONTROL-PLANE.md Part 4 says a dealership *is* entitled to now
+  arrives through `public.nexus_workflow_catalogue()` — `SECURITY DEFINER`,
+  `STABLE`, owned by `postgres`, EXECUTE to `authenticated` and `service_role`
+  and revoked from `anon` and PUBLIC. It returns the naming projection only
+  (`name, audit_name, audit_aliases, category, description, is_active,
+  writes_audit_log`) and **cannot** return `id`, `trigger_type` or
+  `trigger_detail`: those are absent from the function's own result type rather
+  than merely unprojected, so re-opening the leak needs a deliberate edit, not
+  a forgotten revoke. The four `security_invoker` views —
+  `v_workflow_health`, `v_lead_recovery`, `v_needs_attention`,
+  `v_audit_unregistered_writers` — read that function, which is why they still
+  work with the table closed. Their outputs were diffed against their
+  pre-change bodies: **symmetric difference 0 rows on all four**.
+  `v_workflow_health` still returns **18 rows to a dealership session**.
+
+  **A caller acting as `authenticated` gets rows only as a member of an active
+  dealership**, so a signed-in session belonging to no dealership now gets zero
+  from the accessor and zero from `v_workflow_health` — it used to enumerate
+  all 18. **What is still disclosed, deliberately:** a real member can count
+  the 18 automations through `v_workflow_health`, because that view is the
+  sanctioned projection. The accessor is now the single place a per-dealership
+  filter goes when a fact exists to filter on.
+
+`select * from public.nexus_tenancy_readiness();` is the live gate. The BLOCKER
+that "fires whenever any tenant holds the default flag" — i.e. could never clear
+— was replaced on 5 Sep 2026 by four measured branches, and **production returns
+zero BLOCKERs**: two WARNs on `policy_rule` and `policy_rule_event` (nullable by
+design, platform scope) and INFO lines. It still cannot see n8n at all, so it
+will never report a workflow that omits `tenant_id` directly — but
+`nexus_quarantine_census()`, which it surfaces as a WARN, measures exactly that
+from the rows those workflows write.
+
+**It was also green over the one thing it exists to catch, until 6 Sep 2026.**
+Run on a two-dealership staging database it returned **zero BLOCKERs** while
+`nexus_scoped_tenant_id()` returned **NULL in the same transaction** — the
+Customer 360 silence above, unreported. Migration
+`20260906045700_tenancy_readiness_blocker_for_silent_backend_scope` adds a
+BLOCKER that **measures** the resolver rather than assuming it: it fires on
+`active dealerships > 1 AND nexus_scoped_tenant_id() IS NULL`, names all five
+consumers that go quiet, and says both what would clear it (drive them over
+`nexus_active_dealership_ids()`) and what would only look like clearing it
+(widening the resolver). Proved both directions: red at two dealerships on
+staging and on production; **quiet the moment one is suspended**, and quiet on
+production as it stands.
+
+**Every branch of that gate was then fired deliberately, because a gate that
+cannot go red is decoration and this file has now found two of them.** Nine
+branches, staging, each in its own rolled-back transaction, 6 Sep 2026:
+
+| branch | fired by | result |
+|---|---|---|
+| BLOCKER default flag on a real dealership | dropping `tenants_unattributed_default_must_be_quarantine`, moving the flag | **fires** |
+| BLOCKER nobody holds the flag | clearing `is_unattributed_default` | **fires** |
+| BLOCKER backend scope resolves to no dealership | two active dealerships (new) | **fires** |
+| WARN rows sitting in quarantine | one `rag_documents` row under the quarantine tenant | **fires** |
+| BLOCKER natural key globally unique, workflow-pinned | `create unique index on deals_embeddings(deal_id)` | **fires** |
+| WARN natural key globally unique, unpinned | `create unique index on purchase_history(deal_id)` | **fires** |
+| BLOCKER `tenant_id` nullable AND defaulted | `alter table competitors alter tenant_id drop not null` | **fires** |
+| BLOCKER `tenant_id` nullable and orphaning | …then `drop default` | **fires** |
+| INFO natural keys correctly scoped | live state | fires (true today) |
+
+**The tenth could never fire and has been replaced.** The final INFO counted
+`tenant_id IS NULL` on `leads`, `communication_logs`, `audit_log`, `inventory`
+and `whatsapp_contacts` — all five are `NOT NULL` on both projects, so it was
+decoration that read like coverage. It now counts the two tables that genuinely
+can hold a NULL (`policy_rule`, `policy_rule_event`) and calls those rows what
+they are: **platform scope, not orphans.** Detecting a *newly* nullable table
+remains the job of the three catalogue-driven branches, which read
+`pg_attribute` rather than a list maintained by hand.
 
 ## What is actually proven
 
@@ -128,8 +251,8 @@ row, an audit row, and the Deals screen showing it. Submitted four times, one
 row — idempotency is proven, not assumed.
 
 Finance is subtler than "never exercised", and the earlier claim in this file
-was wrong. `finance_quotes` shows 16 inserts and 13 deletes in
-`pg_stat_all_tables` — the insert path has worked repeatedly and a journey
+was wrong. `finance_quotes` shows **25 inserts and 15 deletes** in
+`pg_stat_all_tables` (re-measured 5 Sep 2026; this file said 16 and 13) — the insert path has worked repeatedly and a journey
 teardown script deletes the rows after every test. "Empty" means cleared, not
 never. What is genuinely unproven is whether it works *today*: the fix to the
 constraint that broke it is nine minutes younger than the last failure and has
@@ -179,9 +302,12 @@ One trap: that workflow has `saveDataSuccessExecution:"none"`, so MONITOR-mode
 executions are never saved and the monitoring window is unobservable — flip it
 to `"all"` for the rollout or you will enforce blind.
 
-Also: `slack-command` is closed **by accident**, not by design — its
-`Tenant For JWT User` lacks `alwaysOutputData:true`, so the chain halts before
-`Auth Gate` runs, and unauthenticated probing records SUCCESS with no audit row.
+~~Also: `slack-command` is closed by accident, not by design.~~ **Retracted
+6 Sep 2026, measured against the live published definition.**
+`Tenant For JWT User` **has** `alwaysOutputData: true`. Execution `9325` shows it
+emitting one empty item, `Auth Gate` running, and throwing — status `error`, not
+`success`. `slack-command` is closed **by design**. The claim above was read from
+the 30 August repo export, which is stale; the box is the witness.
 
 ## House rules that exist because something broke
 
@@ -209,15 +335,43 @@ Also: `slack-command` is closed **by accident**, not by design — its
   fails the deploy without it; `CREATE OR REPLACE VIEW` silently drops the
   option and did so three times.
 
-## The default-grant check: `anon` **and** `authenticated` (six holes)
+## The default-grant check: `anon` **and** `authenticated`, at TABLE **and** COLUMN level
 
-> Read the heading. This section used to be called "the `anon` grant check", and
-> that title is the direct cause of failure number four. `anon` was closed on
-> 2 Sep 2026 and everyone who opened this file afterwards read the section as
-> *done* — while **32 objects sat wide open to `authenticated`**, including
-> `leads`, `inventory`, `users`, `audit_log`, `finance_quotes` and
-> `purchase_history`. The default grant lands on **both roles**. Closing one says
-> nothing about the other.
+> Read the heading, and read both halves of it. The title has now been the direct
+> cause of a failure **twice**.
+>
+> It used to say "the `anon` grant check". `anon` was closed on 2 Sep 2026 and
+> everyone who opened this file afterwards read the section as *done* — while
+> **32 objects sat wide open to `authenticated`**, including `leads`, `inventory`,
+> `users`, `audit_log`, `finance_quotes` and `purchase_history`. The default grant
+> lands on **both roles**. Closing one says nothing about the other.
+>
+> Then it said "`anon` **and** `authenticated`" — naming the roles and saying
+> nothing about the *level* — and the query underneath it read `pg_class.relacl`
+> and `has_table_privilege` only. **That is the third time a column-level grant
+> has hidden from this file's own check**, and the third is the one that proves
+> the pattern rather than the accident:
+>
+> 1. **`channel_registry`** (4 Sep) — `authenticated=r` on seven of eight columns,
+>    `credential_ref` deliberately withheld. Correct design; the check reported
+>    the table as `service_role`-only.
+> 2. **`policy_platform_attestation`** (4 Sep) — ten column-level `authenticated=r`
+>    grants and **no `authenticated` entry in `relacl` at all**. The check, and
+>    `QUALITY_GATE`'s `l2AuthenticatedAclLetters` with it, called it closed.
+>    Every signed-in dealership user could read who attested a global rule.
+> 3. **`inventory` and `leads`** (6 Sep) — this time the check hid *live write
+>    paths*, not reads. Measured on **both** projects: the query below returned
+>    **zero rows**, while in the same pass a signed-in dealership owner
+>    **successfully INSERTed a row into `inventory`**. The grants are on
+>    `pg_attribute.attacl`, nine columns for `inventory` INSERT/UPDATE and eight
+>    for `leads` UPDATE, plus a table-level `authenticated=rd` on `inventory` —
+>    and `d` is DELETE, which the old query also missed because it tested
+>    `UPDATE` and nothing else.
+>
+> Three incidents, one shape: **`relacl` is not the ACL. It is one of two ACLs**,
+> and the one a careful person is *more* likely to have used, because a
+> column-level grant is what you write when you are being precise. So the check
+> was blindest exactly where somebody had taken the most care.
 
 Supabase ships default privileges that grant **directly to `anon` and
 `authenticated`** on everything created in `public` — `EXECUTE` on every new
@@ -254,21 +408,119 @@ functions, not over-wide table privileges. Treat a clean advisors run as
 evidence about RLS and nothing else; the ACL query below is the only check that
 answers this question.
 
-**The one query. Run it; do not reason about it.**
+**The one query. Run it; do not reason about it.** Corrected 6 Sep 2026 — the
+version this file carried until then returned **zero rows on both projects**
+while four live write paths were open.
 
 ```sql
-select c.relkind, c.relname, coalesce(array_to_string(c.relacl, E'\n'), '(owner-only)') acl
-from pg_class c join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public' and c.relkind in ('r','v','m','p','S')
-  and (has_table_privilege('authenticated', c.oid, 'UPDATE')
-    or has_table_privilege('anon',          c.oid, 'UPDATE'))
-order by 1, 2;
+-- Every write privilege reachable by anon or authenticated in `public`,
+-- at TABLE level or at COLUMN level, for every verb -- not just UPDATE.
+select c.relkind, c.relname, g.grantee, p.priv,
+       has_table_privilege(g.grantee, c.oid, p.priv)                      as at_table_level,
+       case when p.priv in ('INSERT','UPDATE')
+            then has_any_column_privilege(g.grantee, c.oid, p.priv) end   as at_column_level,
+       coalesce(array_to_string(c.relacl, ' | '), '(no table-level ACL)') as relacl,
+       coalesce((select string_agg(a.attname || '=' || array_to_string(a.attacl, ','),
+                                   ' | ' order by a.attnum)
+                   from pg_attribute a
+                  where a.attrelid = c.oid and a.attnum > 0
+                    and not a.attisdropped and a.attacl is not null),
+                '(no column-level ACL)')                                  as attacl
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ cross join (values ('anon'),('authenticated')) g(grantee)
+ cross join (values ('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE')) p(priv)
+ where n.nspname = 'public' and c.relkind in ('r','v','m','p')
+   and (has_table_privilege(g.grantee, c.oid, p.priv)
+     or (p.priv in ('INSERT','UPDATE')
+         and has_any_column_privilege(g.grantee, c.oid, p.priv)))
+union all
+-- Sequences take has_sequence_privilege, not has_table_privilege, and USAGE is
+-- a write on one: nextval(). UPDATE is setval().
+select c.relkind, c.relname, g.grantee, p.priv,
+       has_sequence_privilege(g.grantee, c.oid, p.priv), null,
+       coalesce(array_to_string(c.relacl, ' | '), '(no table-level ACL)'),
+       '(sequences have no column ACL)'
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+ cross join (values ('anon'),('authenticated')) g(grantee)
+ cross join (values ('USAGE'),('UPDATE')) p(priv)
+ where n.nspname = 'public' and c.relkind = 'S'
+   and has_sequence_privilege(g.grantee, c.oid, p.priv)
+ order by 2, 3, 4;
 ```
 
-Anything it returns that is not a deliberate, named write path is a hole. Note
-it covers **sequences** too: `authenticated` held `rwU` on `leads_id_seq`, and
-UPDATE on a sequence is `setval()` — rewinding the counter to collide primary
-keys on the dealership's next real insert.
+Anything it returns that is not a deliberate, named write path is a hole.
+
+**Why every clause is there — each replaces a specific blindness measured on
+6 Sep 2026:**
+
+- `has_any_column_privilege` — sees `pg_attribute.attacl`. Postgres allows
+  column-level grants for `SELECT`, `INSERT`, `UPDATE` and `REFERENCES` **only**;
+  `DELETE` and `TRUNCATE` are table-level by nature, which is why the `case`
+  above returns NULL for them rather than pretending to have checked.
+- **All four verbs, not just `UPDATE`.** The old query tested `UPDATE` alone, so
+  a table granting only `DELETE` or only `TRUNCATE` was invisible — including
+  **`D`, the letter this very section calls "the one that matters most"**.
+  `inventory` carries a real table-level `authenticated=rd` on both projects and
+  the old query did not return it.
+- **`attacl` printed, not just tested.** `relacl` alone tells a reader "closed"
+  about a table with nine column grants on it.
+- **Sequences split out.** `has_table_privilege` has no `USAGE` privilege type;
+  reaching a sequence through the table branch silently under-reports it.
+
+**What the corrected query returns today**, identically on staging
+(`wwspuxrbiyagnrnzgate`) and production (`dsvuoovivysszdoiorch`) — and all four
+of these were reported as **closed** by the old one:
+
+| object | grantee | verb | table level | column level |
+|---|---|---|---|---|
+| `inventory` | `authenticated` | DELETE | **true** | n/a |
+| `inventory` | `authenticated` | INSERT | false | **true** (9 cols) |
+| `inventory` | `authenticated` | UPDATE | false | **true** (8 cols) |
+| `leads` | `authenticated` | UPDATE | false | **true** (8 cols) |
+
+Those are the two deliberate dashboard write paths (`lib/unit-form.js`,
+`lib/lead-drawer.js`), so the *grants* are right and narrow. The defect was the
+check.
+
+**Proved adversarially, 6 Sep 2026**, in a rolled-back transaction on staging:
+four holes were planted — `grant update (amount_aed) on purchase_history to anon`,
+`grant insert (doc_title) on rag_documents to authenticated`,
+`grant truncate on competitors to authenticated`,
+`grant delete on audit_log to authenticated`. The **old query still returned zero
+rows**. The corrected query returned all eight rows (the four planted plus the
+four real). A check that cannot go red over an `anon` UPDATE grant and a
+`TRUNCATE` grant is not a check.
+
+**And the read side is a separate query, because this one is write-only.** Both
+of the earlier column-grant incidents were `SELECT` grants, and nothing above
+would have found either. Run this too:
+
+```sql
+select c.relkind, c.relname, g.grantee,
+       (select string_agg(a.attname, ', ' order by a.attnum) from pg_attribute a
+         where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+           and has_column_privilege(g.grantee, c.oid, a.attnum, 'SELECT')) as readable_columns
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ cross join (values ('anon'),('authenticated')) g(grantee)
+ where n.nspname = 'public' and c.relkind in ('r','v','m','p')
+   and not has_table_privilege(g.grantee, c.oid, 'SELECT')
+   and has_any_column_privilege(g.grantee, c.oid, 'SELECT')
+ order by 2, 3;
+```
+
+It returns exactly one row on each project today: `channel_registry` /
+`authenticated`, seven of eight columns, `credential_ref` withheld — the
+deliberate design. `policy_platform_attestation` no longer appears, because it
+was revoked on 4 Sep. **A correction while we are here:** this file says staging
+"carries none" of `channel_registry`'s column grants. Re-measured 6 Sep 2026 —
+**staging carries the same seven**, so that particular gap in the rehearsal is
+closed.
+
+Note the write query covers **sequences** too: `authenticated` held `rwU` on
+`leads_id_seq`, and UPDATE on a sequence is `setval()` — rewinding the counter to
+collide primary keys on the dealership's next real insert.
 
 Three more things follow, and each has already cost this project:
 
@@ -437,10 +689,50 @@ would refuse an unknown sender — `WAHA Auth Gate` — is measured `DORMANT` on
 that same traffic.
 
 Two things follow. Any count of "messages" taken from the execution list is
-roughly double the truth. And an external host is posting genuine WhatsApp
-traffic into production through an open door; find out what `2.50.10.149` is
-before arming the gate, because arming it will cut off whichever sender is not
-configured with the secret.
+roughly double the truth. And an external host is posting WhatsApp traffic into
+production through an open door.
+
+### `2.50.10.149` is identified — 6 September 2026
+
+It is **not a stranger.** Executions 10322 and 10323 carry the same `payload.id`
+and the same body, and differ like this:
+
+| | 10322 | 10323 |
+|---|---|---|
+| `x-forwarded-for` | `35.224.126.225` (the box) | `2.50.10.149` |
+| build | WAHA/2026.7.2 | WAHA/**2026.7.1** |
+| `me.jid` | `971526647253:**12**@…` | `971526647253:**8**@…` |
+| `me.id`, `me.lid`, `pushName` | identical | identical |
+| `x-webhook-timestamp` | 1788664766034 | 1788664807464 — **41 s later** |
+
+The same WhatsApp account, on a **different device index**, served by a
+**second, older WAHA instance on a non-GCP (UAE) host**, running about forty
+seconds behind. `reachoutTimelock` is present on one and absent on the other,
+which is the build difference showing through the payload.
+
+**And it is never the only sender.** 102 executions sampled over 8h56m
+(5 Sep 18:23 → 6 Sep 03:19 UTC), grouped by `payload.id`: **51 distinct
+messages, 51 arrived from both sources, 0 from the box only, 0 from `.149`
+only.** Headers were read on both halves of 9 of the 51 pairs, spread across the
+window; for the other 42 two deliveries were confirmed but not both headers.
+Not extrapolated to the full 988.
+
+So on this evidence **arming the gate without configuring `.149` would have
+dropped nothing** — with three limits that belong in the runbook: the sample is
+nine hours with both hosts up; it contains zero customer conversations; and the
+box's WAHA is also the *send* path, so `.149` surviving a box outage would
+produce an unanswerable inbound rather than a rescue.
+
+What is still Ali's: **which machine** it is. WhatsApp → Linked Devices will show
+device 8 beside device 12.
+
+### And none of this traffic is a customer
+
+Read from `Is Real Inbound?`'s own output rather than judged by eye: **0 of 102
+executions — 0 of 51 messages — were genuine customer conversation.** All 51 were
+`@g.us` groups, `status@broadcast` or `@newsletter` on Ali's personal handset.
+The audit said most of the traffic is not customer conversation; in this window
+**none** of it was.
 
 ## Corrections to what this file used to say
 
@@ -700,7 +992,9 @@ operator's instrumentation accumulated inside the customer's product.*
 `settings.js:1402` tells a dealership that one n8n instance serves every
 dealership; `workflow_registry` is `SELECT USING (true)` for `authenticated`
 with no `tenant_id` and 18 rows of workflow ids, cron expressions and webhook
-paths; `automation.js` renders n8n execution deep links, node names and
+paths (**that one is closed — see the `workflow_registry` bullet above; it is
+off the dealer plane entirely as of 6 Sep 2026**); `automation.js` renders n8n
+execution deep links, node names and
 "spends OpenRouter tokens"; `ask.js` prints the model ladder and the prompt
 budget. The operating rule is: **symptom and impact to the dealership;
 mechanism and location to the vendor.**
@@ -790,6 +1084,13 @@ filter was the substring regex `/reason_codes|workflow_registry/`, so
 failures**. The claim was true of the intent and false of the artefact. It
 fails by name now, with its reason.
 
+**And on 6 September 2026 it stopped failing, by being fixed rather than
+named.** The table is off the dealer data plane and `workflow_registry_read`
+no longer exists, so it is not an open policy for the gate to judge. Nothing
+was added to `L2_EXEMPT_TABLES`; `L2_NOT_EXEMPT_NOTES['workflow_registry']` is
+left in place and is now dormant — it only prints if somebody re-creates a
+`USING (true)` policy on that table, which is exactly when it should.
+
 ### `policy_platform_attestation` is on the wrong plane
 
 Ten column-level `authenticated=r` grants and a `USING (true)` policy, with
@@ -819,6 +1120,328 @@ plane, and this is the dealer data plane.
 ### Staging is not yet a faithful rehearsal
 
 Semantic parity is exact — 110 functions, 356 constraints, 167 indexes, 161
-policies, identical. But production carries seven `channel_registry` **column**
+policies, identical. ~~But production carries seven `channel_registry` **column**
 grants and staging carries none, and that is the table the tenant resolver
-reads. Rehearsing the tenant-map switch there proves less than it appears to.
+reads.~~ **Corrected 6 Sep 2026: staging now carries the same seven**
+(`integration_id, tenant_id, channel_type, external_identifier, status,
+created_at, updated_at` to `authenticated`, `credential_ref` withheld), measured
+with the column-level query in the default-grant section. That particular gap in
+the rehearsal is closed. What still makes staging an imperfect rehearsal is the
+n8n box, which is not staged at all.
+
+### The consent table was closed by an accident, not by a decision — 6 Sep 2026
+
+The two-dealership proof reported that a dealership gets **42501** on
+`whatsapp_opt_in_event`, `channel_message_events` and `whatsapp_delivery_events`
+and cannot see its own consent, message or delivery records.
+
+**Measured, the refusal is correct and no grant was opened.** The Conversations
+screen reads `v_conversations` and nothing else — `grep -rn` across
+`apps/executive-dashboard/screens` and `lib` finds zero queries against those
+three tables; the one mention of `channel_message_events` is a glossary entry in
+`lib/vocabulary.js`. A dealership already sees its own WhatsApp history today:
+production `v_conversations` = 13 rows and `communication_logs` = 114, both
+`authenticated=r` behind a tenant-scoped RLS policy. All three refused tables
+hold **zero rows** on both projects. Opening a grant would have been designing a
+projection against no rows, for no caller, to fix no symptom — and when a caller
+does exist the right shape is `channel_registry`'s: a **column-level** grant
+withholding what is mechanism rather than symptom.
+
+**What the sweep did find is worth more.** `channel_message_events`,
+`whatsapp_delivery_events` and `whatsapp_customer_message_seen` each carry a
+RESTRICTIVE `_deny_end_users` policy naming `anon` **and** `authenticated`.
+Seven sibling tables in the same never-fired layer carried **no such floor** —
+including `whatsapp_opt_in_event`, the consent record. They were closed only
+because no grant existed and no permissive policy named `authenticated`: RLS
+default-deny. That is an incidental lock, and this file already records what
+those are worth.
+
+Closed by `20260906050648_messaging_layer_deny_end_users_is_designed_not_incidental`
+on both projects: the same explicit RESTRICTIVE deny on all seven
+(`whatsapp_opt_in_event`, `whatsapp_conversation_state`, `whatsapp_message_intent`,
+`channel_provider_capability`, `channel_provider_rank`, `channel_send_directive`,
+`channel_send_form`). The migration **refuses to run** if any of them has grown
+an end-user `SELECT` grant in the meantime — a floor is only safe to lay where
+nobody is standing.
+
+Proved by counterfactual rather than asserted, in one rolled-back staging
+transaction: a real consent row written by `whatsapp_record_opt_in_event`, then
+the pre-migration shape reconstructed (floor dropped, `grant select` added, a
+permissive `using (true)` policy added) — **the Bravo owner read Alpha's consent
+row, 1 row.** With the floor back and the same accident in place: **0**, while
+`service_role` saw 1 throughout. Before and after the real change, all seven
+tables return `42501` to `authenticated` and unchanged row counts to
+`service_role` on both projects, and the engine's own writer still works.
+
+**Still true and still the honest position:** a dealership has no way to see the
+consent state its sends are being refused on. That is a screen that has not been
+designed, not a grant that is missing, and it should be designed the day a
+caller exists.
+
+### A refusal rendered an empty date, and its hint led nowhere — 6 Sep 2026
+
+`policy_verify_rule` on a rule with `effective_from` NULL returned, verbatim:
+
+    MESSAGE  This version has been in force since  and that date cannot move.
+    HINT     Verify it as it stands (pass no p_effective_from, or ), or supersede
+             it with a version that starts on the new date.
+
+The blank is a NULL interpolated raw — the thing this project says it never
+does. The worse half is the hint: "pass no `p_effective_from`" then fails
+`NO_EFFECTIVE_FROM`, so **both routes it offered refuse**, and a dealership
+following it has nowhere to go. `policy_platform_verify_rule` carried the
+identical branch and the identical dead end.
+
+Fixed by `20260906050249_policy_refusals_say_what_they_mean_when_a_date_is_absent`
+on both projects. The NULL case is now its own refusal — `EFFECTIVE_FROM_NOT_RECORDED`
+— which says the version left DRAFT without ever recording a start date, that
+`policy_rule_guard_immutability()` freezes `effective_from` outside DRAFT so one
+cannot be set now, and that superseding is the **only** route. `ALREADY_VERIFIED`
+in both functions interpolated `verified_by` and `verification_date` raw as well;
+neither column is NOT NULL, and both now print "(not recorded)".
+
+Positive control held on both projects: with a real `effective_from`, the
+original `EFFECTIVE_FROM_IS_FROZEN` still renders the real date (`2026-09-04`),
+`NO_EFFECTIVE_FROM` still fires when no date is supplied, and
+`GLOBAL_RULE_NOT_TENANT_VERIFIABLE` still refuses a dealership approver on a
+global rule. No guard was added, removed, reordered or relaxed; no refusal
+became an acceptance; both functions' ACLs are unchanged and byte-identical
+across the two projects.
+
+## anon read 8,500 rows, and the guard does not cover the door it came through
+
+4 Sep 2026, proved by execution, not inferred.
+
+The 2 September closure revoked default privileges for role **`postgres`
+only**. Supabase carries a second line for **`supabase_admin`** in `public`,
+and it was never closed. `CREATE EXTENSION … SCHEMA public` — run *by
+postgres* — produces objects *owned by supabase_admin*, so a probe table
+arrived with `anon=arwdDxtm` and **RLS off**, and `anon` then read **8,500
+rows from it**. `REVOKE … FROM anon` as postgres returned SUCCESS and changed
+nothing: the non-grantor no-op, exactly as this file warns.
+
+The `postgres` line was also only half closed — a table created by an ordinary
+migration was born with `authenticated` holding **TRUNCATE and DELETE**, and a
+sequence with `setval()`. The 3 Sep pass narrowed the objects that existed and
+never touched the default, so the defect was set to recur on every migration.
+
+Both are closed now. The `postgres` line is narrowed to `SELECT` for
+`authenticated` on tables and nothing on sequences — the FUNCTIONS line is
+deliberately left, because every `rpc/*` the dashboard calls depends on it.
+The line postgres does not own is handled by an event trigger,
+`nexus_guard_born_open_grants()`, which is **`SECURITY INVOKER` on purpose**:
+an event-trigger function runs as the role that ran the DDL, so the REVOKE
+inside it executes *as the grantor* and bites. `SECURITY DEFINER` would run it
+as postgres and turn it straight back into the proved no-op.
+
+**Three things are not closed, and pretending otherwise would be worse than
+the defect:**
+
+- **The guard does not fire for `CREATE EXTENSION`** — measured with an
+  instrumented trigger, which logged `CREATE TABLE` and `CREATE SEQUENCE` and
+  logged nothing for `create extension`. That is the exact path that produced
+  the 8,500-row read. **Operational rule: install extensions into
+  `extensions`, never `public`.**
+- **The one lever that would close it — `revoke usage on schema public from
+  anon, public` — was not pulled.** Revoking from `anon` alone changes nothing
+  (PUBLIC still holds `=U`); revoking from PUBLIC too returns 42501. Eleven
+  roles hold that USAGE only through PUBLIC, including **`authenticator`, the
+  role PostgREST logs in as**. That is a plausible whole-API outage and needs a
+  rehearsal against a live REST endpoint first.
+- **A third default-ACL line nobody has looked at:** `postgres` / `storage`
+  still grants `anon` ALL on new tables and `rwU` on new sequences. Postgres
+  owns that one, so it *can* be closed.
+
+`policy_jurisdiction` and `policy_platform_attestation` are off the dealer data
+plane now — revoked, not viewed, because `v_policy_rule` already carries the
+verification facts a dealership legitimately needs and a second view would be a
+second derivation of the same figure. Neither was added to the exemption map.
+L2 is down from three failures to one, and the one left is the one deliberately
+left red.
+
+And a detection lesson: `inventory_actions_touch()` reached `anon` on both
+projects, but via a **direct** grant on staging and via **PUBLIC** on
+production. A sweep written as `proacl like '%anon=%'` flags staging and clears
+production, which is exactly as reachable. The direct-vs-PUBLIC rule applies to
+the *detection query*, not only to the REVOKE.
+
+## The consent fix was half done, and messaging must not be switched on
+
+Adversarial regression, 4 Sep. `recorded_by` was correctly removed from
+`whatsapp_opt_in_event`'s identity — and **two other caller-controlled fields
+were left in it**: `evidence_kind` and `evidence_ref`, both free text. So a
+conversation that reached `BLOCKED / CUSTOMER_OPTED_OUT` returns to
+`FREEFORM_ALLOWED` by three routes, none involving the customer:
+
+- the same consent replayed under a different `evidence_ref`
+- the same consent replayed under a different `evidence_kind`
+- an OPT_IN dated 2099 — there is no temporal CHECK
+
+And the tiebreak at an identical `occurred_at` **is not deterministic and
+resolves toward consent**: `recorded_at` defaults to transaction time, so a
+writer recording both events in one transaction ties on both sort keys and heap
+order decides. Proved concurrently too — two OPT_INs racing an OPT_OUT across
+three real backends returned `OPTED_IN`.
+
+Today, with the window rule `NOT_VERIFIED`, that forgery sends a **marketing
+template to someone who sent STOP**. After attestation it sends a free-form
+message.
+
+Compare `whatsapp_record_customer_message`, which refuses a null id and carries
+a 400-character hint warning against per-delivery ids. The consent writer has
+no equivalent discipline, and **no caller exists yet** — which is exactly why
+the discipline must be structural before one is written.
+
+**The window fix holds against every stable-id replay, including A→B→A — and
+was defeated by the live `nokey:` shape, and is not any more** (5 Sep 2026: a
+CHECK on `whatsapp_customer_message_seen`, `processed_messages`,
+`channel_message_events` and `whatsapp_delivery_events` refuses ids minted per
+attempt — `nokey:`, `outreach:`, `exec-`, `run-`, `job-`, and bare numeric ids.
+The **node** still mints them, so the writer change in
+`ops/n8n-bundle-NOT-DEPLOYED/04-*` is still owed).** `whatsapp_bdc_ai_agent.json:713`
+mints `'nokey:' + $now.toMillis()` when the message id is absent: a
+per-delivery id that changes on every retry, which is precisely what the
+function's own hint warns against. Two `nokey:` ids for one message jump the
+window to now.
+
+**`nexus_request_send` is the one of the six that is properly finished** — all
+five attacks held, including a genuine two-backend race.
+
+Six more found by looking where nobody had: `whatsapp_delivery_events` keys on
+unnormalised `status_raw`, so `delivered` and `DELIVERED` double-count, and its
+key **omits `integration_id`** — the defect just fixed one table over — so a
+second integration's genuine delivery report is silently dropped. Template
+identity duplicates through a nullable `waba_ref`. And **seven of nine tables
+carrying both `tenant_id` and `integration_id` accept a mismatched pairing** —
+the functions check `channel_registry`, the tables do not, and `service_role`
+writes tables directly.
+
+A SEND can also cite a decision belonging to a different customer, or the
+finance `MAX_LTV_PCT` rule, or a rule id that exists nowhere — because
+`policy_applied_rule_id` is a bare uuid. **The cheapest real fix is one
+constraint:** a foreign key to `policy_rule(id)`.
+
+**Verdict: the idempotency family is not safe enough to switch WhatsApp
+messaging on.**
+
+## Consent identity, closed
+
+4 Sep 2026. Five migrations, both projects, fingerprint identical across 279
+objects. Production held zero consent rows before and after — no backfill,
+nothing deleted.
+
+**The key is now two constraints, not one.** `UNIQUE (tenant, integration,
+customer, event, occurred_at)` is the act — "this customer said yes or no at
+this moment on this channel", and nothing a caller invents is in it. A second
+constraint pins evidence as a *property*: one reference attests one act,
+normalised by `lower(btrim(…))`, with **`evidence_kind` deliberately absent**
+so relabelling cannot mint a row and **`event` absent** so one reference cannot
+attest both a yes and a no.
+
+Dropping evidence from the key alone would have re-opened "identical evidence
+at a bumped timestamp"; keeping it in the key was the original defect. It takes
+both constraints to close both directions.
+
+**`occurred_at` is bounded, asymmetrically, and the asymmetry is the point.** A
+future OPT_IN is **refused** — a stored-but-ignored row reads as consent to
+anyone auditing the table, and this codebase has already paid repeatedly for
+"unknown rendered as a fact". A future OPT_OUT is **clamped to now** with the
+stated time kept in notes, because a clock disagreement must never be the
+reason a customer who sent STOP keeps being messaged.
+
+**The tiebreak is structural and can only fall one way.** A generated,
+unwritable `consent_rank` column puts OPT_OUT ahead of OPT_IN, and the
+canonical order is `occurred_at desc, consent_rank asc, recorded_at desc,
+id desc`. The two hand-written ORDER BYs that had to agree are gone — both
+consumers now call one function. **The answer no longer depends on commit
+order**, proved with five separate `pg_cron` backends whose execution windows
+overlapped: two OPT_INs racing an OPT_OUT now returns `OPTED_OUT`.
+
+**Overturning a STOP is held to a higher standard than granting consent in the
+first place.** A first opt-in may rest on the recording system's word. A
+reversal may not use `OPERATOR_RECORDED` or an import, and must cite evidence
+NEXUS can resolve **to a row it already holds, dated after the withdrawal** —
+the customer's own measured inbound message, or an audit row of that tenant's.
+A bare uuid, a bare epoch, an `exec-`/`run-`/`job-`/`nokey:` prefix, or a
+`wamid` NEXUS never observed are all refused by name.
+
+All three original forgery routes, the tie, and the concurrent race now return
+`BLOCKED / CUSTOMER_OPTED_OUT` — including with the platform rule attested
+inside the transaction, which is the severity that will actually matter.
+
+**What is left is not a consent defect.** There is no `SECURITY DEFINER` here,
+so `service_role` writing the table directly bypasses the writer's checks; the
+CHECKs and the derivation's own future-filter still bite, but a direct insert
+of an OPT_IN one microsecond after an OPT_OUT still reads as consent. n8n holds
+`service_role`. **The writer is the disciplined door, not the only door**, and
+closing it properly means moving consent reversal onto a named-human path
+rather than the n8n key — an authority question, the same lesson as
+`policy_verify_rule`, and it deserves its own pass.
+
+## The door was the schema, not the ACL
+
+4 Sep 2026. The exposure was reproduced exactly: `CREATE EXTENSION postgis
+SCHEMA public` as **postgres** produced `public.spatial_ref_sys` owned by
+`supabase_admin`, RLS off, `anon=arwdDxtm` — and `anon` read **8,500 rows**,
+inserted, updated and deleted. **Not read-only. Writable.**
+
+**Root cause: `supautils`.** Supabase re-runs `CREATE EXTENSION` as
+`supabase_admin` for the 70 names in `supautils.privileged_extensions`, and it
+**skips non-superuser event triggers** — there is a
+`supautils.log_skipped_evtrigs` setting for exactly this. Proved with three
+triggers running simultaneously (untagged `ddl_command_start`, tagged
+`ddl_command_start`, tagged `ddl_command_end`): all three logged a `CREATE
+TABLE` in the same transaction, **none logged the `CREATE EXTENSION`**.
+
+So the answer to "can the guard be made to cover it" is **no**, and a
+scheduled sweep would not have been an answer either — a sweep cannot
+remediate what it cannot out-race.
+
+**The earlier 42501 on revoking schema USAGE did not reproduce.** `postgres`
+is a member of `pg_database_owner`, which is the grantor. So the door that was
+thought shut was open. `USAGE` is now revoked from `PUBLIC` and `anon` and
+re-granted **by name** to the eleven service roles that held it only through
+PUBLIC; the thirteen `pg_*` roles need no grant, because
+`pg_read_all_data`/`pg_write_all_data` confer schema USAGE implicitly.
+
+### The verification that matters, and the lesson in it
+
+With the door shut, postgis was installed **for real** on staging.
+`relacl` still read `anon=arwdDxtm`. `has_table_privilege('anon', …)` still
+returned **true**. And `GET`/`POST /rest/v1/spatial_ref_sys` with the anon key
+both returned **401, `42501 permission denied for schema public`** — `42501`
+and not `PGRST205`, which proves PostgREST had the table cached and refused
+anyway.
+
+**ACL metadata was the wrong witness.** Every ACL sweep this project has run —
+including the ones in this file — would have called that table exposed. The
+reachability probe is the one that told the truth.
+
+### Extensions are contained, not migrated — and the reason matters
+
+`ALTER EXTENSION … SET SCHEMA extensions` succeeds, and doing it would break
+the RAG path: `search_rag_documents` is pinned `search_path='public'` and its
+trigram tier calls `word_similarity()` unqualified, so after the move that is
+`42883 function does not exist`. A first test appeared to pass only on a cached
+plan. Production holds 15 live `rag_documents` rows.
+
+**Prerequisite for any later migration pass:** change `search_rag_documents`
+and `nexus_tenancy_readiness` to `search_path = public, extensions` *first*.
+
+The rule, written down: **extensions belong in `extensions`, never `public`.**
+
+### What is still open, and it needs Supabase
+
+**`authenticated` still reaches born-open objects** — measured live: SELECT
+8,500 rows, UPDATE one row. It cannot lose `USAGE` on `public`, because the
+dashboard lives there. Closing it needs Supabase to either close the
+`supabase_admin` default-ACL line for `public` or pin extensions via
+`supautils.extensions_parameter_overrides`. Both are config-file settings and
+both return **55P02 "cannot be changed now"** from SQL.
+
+`nexus_public_exposure_report()` reports reachability rather than ACL —
+currently **anon 0, authenticated 149**. It reports and does not remediate,
+because here a sweep genuinely cannot.
+
+Reversal, if the schema revoke ever needs undoing, is one statement:
+`grant usage on schema public to public;`
