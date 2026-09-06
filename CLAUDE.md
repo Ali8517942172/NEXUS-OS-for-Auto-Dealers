@@ -237,6 +237,157 @@ they are: **platform scope, not orphans.** Detecting a *newly* nullable table
 remains the job of the three catalogue-driven branches, which read
 `pg_attribute` rather than a list maintained by hand.
 
+## The lead `source` column recorded the writer, not the origin
+
+6 September 2026. `select source, count(*) from leads group by 1` on production
+returns exactly one row:
+
+    nexus-master-router   3
+
+That is the name of the workflow that wrote the rows. The column that would
+answer *"did this customer come from Facebook, or Dubizzle, or the website?"*
+has been recording the writer. So attribution across sources was not unbuilt —
+it was **structurally impossible**, and the Attribution screen has been reading
+a field that never held an origin. Six migrations, `leadingest_01` …
+`leadingest_06`, answer that **on staging only**. `LEAD-INGESTION.md` is the
+full account; what is below is the part that changes how work is done here.
+
+### Three provider facts, checked rather than assumed, that changed the schema before it was written
+
+- **Meta's Lead Ads webhook carries no customer data at all.** Six ids —
+  `leadgen_id`, `page_id`, `form_id`, `ad_id`, `adgroup_id`, `created_time` —
+  and the fields themselves arrive only from a second `GET /v25.0/<leadgen_id>`
+  on the Graph API, which expires. A one-shot "here is a lead" table could not
+  have held that arrival, which is why the event has phases.
+- **Google Ads sends the whole lead in one hop**, authenticated by `google_key`:
+  a plaintext shared secret **inside the JSON body**, not a signature over the
+  bytes. Delivery is at-least-once, and a **4XX permanently discards the lead** —
+  so a processing failure must answer 5XX, and a redelivery must come back as a
+  duplicate rather than as an exception. A refusal shaped as a 4XX here does not
+  reject a request; it destroys a customer.
+- **Dubizzle Motors has no public leads-out API, no webhook, no developer portal
+  and no Zapier integration.** Its enquiries reach a UAE dealer as a WhatsApp
+  message from the listing, a phone call, a seller-dashboard entry or a
+  notification email. It can be **simulated, intercepted or negotiated — never
+  integrated**, and no amount of engineering time produces an API that does not
+  exist. YallaMotor and CarSwitch look the same. Sell it as roadmap.
+
+Meta's Lead Ads Testing Tool and Google's "send test data" button both fire the
+**real** webhook, cost nothing and need no ad spend — so two of the four
+integrable sources are testable end to end at **AED 0**.
+
+### The endpoint decides the dealership, and that is the whole point
+
+Read this next to `POST /webhook/whatsapp-inbound`, which is the shape it exists
+to avoid. That webhook takes its tenant from `body.session` — a field the
+**caller** supplies — and n8n then writes as `service_role`, which is
+`BYPASSRLS`, so one JSON field chooses whose data is written and nothing in the
+database filters it.
+
+A lead endpoint takes its tenant from a **registered row** in
+`lead_ingest_endpoint`, resolved by `public_key`. And `public_key`
+**identifies; it does not authenticate** — it says which endpoint was addressed
+and nothing about whether the caller was entitled to address it. The secret that
+answers that question is named by `secret_ref` and stored elsewhere. Anyone
+reading this later should not upgrade "resolved by public key" into "verified".
+
+### Three structural decisions, each replacing a rule somebody would otherwise have to remember
+
+- **The simulator cannot reach production numbers.** Not a flag a job checks: a
+  production endpoint carrying unattestable provenance is **a row that cannot
+  exist**, and a `lead_event` is pinned to its endpoint's `environment` by
+  composite foreign key. Simulator output labelled production is refused
+  `23514`.
+- **The Google secret cannot be stored.** `payload_raw` is kept verbatim and
+  Google puts `google_key` inside the body, so every Google lead would otherwise
+  have filed the endpoint's own authentication secret into a table the
+  dealership can read. `lead_event_payload_carries_no_shared_secret` refuses
+  the row, which forces the adapter to redact **before** writing rather than
+  after somebody notices.
+- **A cross-tenant promotion is refused by a trigger, not by a composite
+  foreign key — and the reason belongs in this file.** The clean answer would
+  be a unique `(id, tenant_id)` on `leads` to point a composite FK at. That
+  means `ALTER TABLE` on `leads`, which fires `nexus_guard_born_open_grants()`,
+  which strips the two live dashboard write paths (`lib/unit-form.js` →
+  `inventory`, `lib/lead-drawer.js` → `leads`). **That has already happened
+  once this week.** A trigger buys the same guarantee without touching the
+  table: `service_role` bypasses RLS, it does not bypass a trigger. Treat this
+  as the worked example — when the guard stands between you and the tidy
+  constraint, route around it rather than firing it again and re-opening two
+  screens' worth of grants.
+
+### What was proven adversarially, and what the sabotage showed
+
+Two passes on staging, both inside transactions that were rolled back.
+
+**Registration attacks, all refused `23514`:** a production endpoint claiming
+simulated provenance; a Meta endpoint downgraded to a shared header; an HMAC
+endpoint naming no secret; a website form with no Origin allowlist; an
+eight-character public key. **Ingestion attacks, all refused:** an unregistered
+endpoint (`LEAD_ENDPOINT_UNRESOLVED`), a `nokey:`-prefixed identity, a 13-digit
+clock reading used as an id, a Meta lead presented on a weaker proof, a lead
+dated forty days in the future, a Bravo event citing Alpha's endpoint (`23503`),
+a `PROMOTED` row with no lead behind it.
+
+**The positive controls held**, which is the half that is easy to skip: the Meta
+two-hop recorded `RECEIVED` with no customer data and reached a lead only after
+hydration; a redelivery returned `was_duplicate = true` **and did not raise**,
+which is precisely what stops Google discarding a real lead; promoting twice
+produced one lead; and `leads.source` came out as `meta_lead_ads_facebook` — the
+origin, not the writer.
+
+On the read path, as real signed-in sessions: Alpha's owner sees one row in
+`v_lead_origin` and none of Bravo's, and the mirror holds. Raw payload, endpoint
+id and endpoint keys are refused **`42501` — by grant, not by a row filter**,
+which is the distinction this codebase has paid for three times. `anon` is
+refused `42P01` at the schema level by the 4 September `public` USAGE revoke —
+**a stronger lock than the view's own grant, and it must not be read later as
+"the view is missing".**
+
+**The invariants gate was then sabotaged on purpose and went red:** zero FAILs
+before, one after planting an unattributed promotion. This file has now twice
+found gates that could not go red, so a new gate does not get to be trusted
+until it has been made to fail.
+
+### A defect in my own design: one flag was answering two questions
+
+`operator_recorded` carried `counts_as_real = false`, and the production
+endpoint CHECK reads that flag — so **a `walk_in` or `phone_call` endpoint was a
+row that could not exist in production.** The layer could record Facebook and
+could not record the largest lead source in a UAE showroom.
+
+"Did an external system attest this?" and "is this real business?" are not the
+same question: a salesperson vouching for a customer they met in the showroom is
+real and unattested at once. `leadingest_06` splits them — `counts_as_real`
+(commercial) from `is_externally_attested` (cryptographic). A production walk-in
+endpoint now registers; a manual-entry endpoint holding a secret or a public
+Origin is refused; the simulator is still refused.
+
+Worth recording *how* it was found: the Journey Lab refused to write a verdict it
+had not earned, and the contradiction surfaced instead of being rounded to a
+pass.
+
+### What is NOT proven — and this half is not smaller than the half above
+
+- **Nothing has carried a real lead.** Zero rows on both projects. Every result
+  in this section is staging, in transactions that were rolled back.
+- **No HTTP endpoint exists yet.** There is no receiver for any of it — no n8n
+  workflow, no signature verifier, no rate limit and no honeypot enforcement in
+  a running service. The database contract is built; the transport is not. Do
+  not describe this layer as "lead ingestion works".
+- **The Meta signature verifier is the highest-risk unwritten piece.** Meta
+  computes `X-Hub-Signature-256` over an **escaped-unicode** form of the body, so
+  a verifier that parses and re-serialises the JSON **will pass an ASCII test
+  suite and fail every Arabic customer name in Dubai.** Scenario J in the
+  simulator exists for this and derives both encodings live.
+- **All twenty Journey Lab verdicts are `NOT RUN`**, and none of them is L4.
+- **The six migrations are on staging and deliberately not on production**,
+  because nothing calls `nexus_record_lead_event` yet and promoting new tables,
+  new RLS and a new dealer-facing view in front of paying customers to no
+  purpose is a cost with no buyer. Repo↔production parity is **byte-exact over
+  the 288 shared migrations**, and these six are the whole of the remaining
+  difference — see `ops/PARITY-2026-09-06.md`.
+
 ## What is actually proven
 
 Proven live on 2 Sep 2026, with a real inbound WhatsApp message:
@@ -334,6 +485,13 @@ the 30 August repo export, which is stale; the box is the witness.
 - **Every public view needs `security_invoker`.** A database event trigger now
   fails the deploy without it; `CREATE OR REPLACE VIEW` silently drops the
   option and did so three times.
+- **One boolean answering two questions will eventually make a legitimate row
+  impossible to write.** `operator_recorded` carried `counts_as_real = false`,
+  and a production endpoint CHECK read that one flag as if it answered both
+  "is this real business?" and "did an external system attest this?" — so a
+  `walk_in` endpoint, the largest lead source in a UAE showroom, was a row that
+  could not exist. Split the commercial question from the attestation question
+  *before* a constraint starts reading either.
 
 ## The default-grant check: `anon` **and** `authenticated`, at TABLE **and** COLUMN level
 
