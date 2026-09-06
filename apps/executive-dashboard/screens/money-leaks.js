@@ -828,23 +828,63 @@ SCREENS.moneyleaks = async host => {
       const items = a.v || [];
       const engine = e.err ? null : (e.v || []);
       const queue  = q.err ? null : (q.v || []);
+
+      /* Measured, not asserted. If the engine could not be read, the sentence
+         says that rather than standing in for it — an unreadable engine is not
+         evidence that every unit is UNKNOWN. */
+      function engineMarketNote(units) {
+        if (!Array.isArray(units) || !units.length)
+          return 'The inventory engine could not be read on this pass, so nothing is claimed about market position. '
+               + 'A price difference is only a finding once a competitor row meets the match quality this dealership '
+               + 'accepts, and that has not been checked here.';
+        const known = units.filter(u => {
+          const m = up(u.market_position);
+          return m && m !== 'UNKNOWN' && m !== 'NOT_COMPUTABLE' && m !== 'UNKNOWN_NO_COMPARABLES';
+        });
+        if (!known.length)
+          return `The inventory engine grades market position UNKNOWN on all ${num(units.length)} `
+               + `${plural(units.length, 'unit', 'units')}, because no competitor row meets the match quality this `
+               + 'dealership accepts. A price difference measured against a listing nobody can tie to our car is '
+               + 'arithmetic, not a finding — and the competitor rows say so themselves.';
+        return `The inventory engine grades market position on ${num(known.length)} of ${num(units.length)} `
+             + `${plural(units.length, 'unit', 'units')}, so some of these differences may be real. They are still `
+             + 'refused HERE, because this alert compares a listing price rather than the engine’s graded '
+             + 'position — the engine’s own REPRICE recommendation is the finding, and it is in the register '
+             + 'above with its evidence.';
+      }
       const ranked = (engine && queue) ? new Set(buildLeaks(engine, queue).map(x => str(x.what))) : null;
 
       /* One verdict per alert KIND, because the reason is a property of the
          kind and not of the row. Each verdict is a statement about evidence, not
          about the customer or the car. */
       const VERDICT = {
+        /* ── Two of these were asserted, and one of them was false ──────────
+           `unanswered_chat` said "Not one WhatsApp thread in this database
+           resolves to a lead record". That is true of ALBA CARS today and false
+           of a dataset where fourteen of seventeen resolve — a caption asserting
+           a database-wide fact from inside a static map, which is the thing
+           CLAUDE.md's "check captions against the branch they sit in" rule
+           exists to catch, found seven times here before this one.
+
+           `v_needs_attention` carries only kind, severity, ref, title, detail,
+           at and screen — no resolution field — so this panel cannot measure
+           that claim and must not make it. The rewritten reason says only what
+           is true of any unanswered thread: the alert names a THREAD, and a
+           money figure needs a linked lead carrying an opportunity value. That
+           holds whatever the resolution rate is.
+
+           `undercut` DOES have its evidence to hand — the engine rows are
+           loaded on this panel — so it is measured rather than asserted. */
         unanswered_chat: {
           verdict: 'REFUSED',
-          why: 'Not one WhatsApp thread in this database resolves to a lead record. "A customer is waiting" is '
-             + 'therefore not a claim this data supports, and there is nothing to put a figure on. The threads are '
-             + 'real and are listed on Conversations; calling them a money leak would be inventing the customer.',
+          why: 'This alert names a conversation thread, not a customer with a value. Putting money against it needs '
+             + 'a lead the thread resolves to AND an opportunity value on that lead, and this screen does not have '
+             + 'the second one for any lead on file. The threads are real and are listed on Conversations; calling '
+             + 'them a money leak would be inventing the amount, and possibly the customer.',
         },
         undercut: {
           verdict: 'REFUSED',
-          why: 'The inventory engine grades market position UNKNOWN on every unit, because no competitor row meets '
-             + 'the match quality this dealership accepts. A price difference measured against a listing nobody can '
-             + 'tie to our car is arithmetic, not a finding — and the competitor rows say so themselves.',
+          why: engineMarketNote(engine),
         },
         inventory_aging: {
           verdict: 'ALREADY RANKED',
@@ -1030,11 +1070,62 @@ function measuredClear(engine, queue, leads) {
       out.push({ what: 'No open enquiry carries a recommended recovery action',
                  over: `${num(open.length)} open ${plural(open.length, 'enquiry', 'enquiries')} of ${num(lds.length)} on file. `
                      + 'Read it as a record and not as a rate — this is not lead volume' });
-    const late = open.filter(l => up(l.sla_state) === 'BREACHED' || up(l.sla_state) === 'BREACH');
-    if (open.length && !late.length)
+    /* ── This line was a false CLEAR for its first hour of life ────────────
+       It tested `sla_state === 'BREACHED'` and `=== 'BREACH'`. `v_lead_recovery`
+       emits neither: its vocabulary is WITHIN_SLA | BREACHED_SLA, plus UNKNOWN
+       and UNKNOWN_NO_LINK. So the filter was structurally incapable of matching
+       and the screen printed "no open enquiry missed the first-response target"
+       unconditionally — while naming the same breached enquiries by name in
+       register 4 on the same page. It was invisible on production, which has one
+       open lead and has never emitted BREACHED_SLA; it was caught on a
+       twenty-four-lead demo dataset where six of eleven open enquiries were
+       breached.
+
+       So this is not a string fix. Two changes, and the second is the one that
+       matters:
+
+       1. The vocabulary is NAMED, and a value outside it is a fault rather than
+          a silent miss. A view that renames its states must break this line
+          loudly.
+       2. The verdict is decided by COMPLEMENT, not by matching the bad value.
+          "Within the target" is a positive assertion the view has to make;
+          everything else is either a breach or an unknown, and neither may be
+          rendered as clear. That is the same rule S6 already enforces on
+          holding_cost_state, applied here.
+
+       And the denominator is now what was actually MEASURABLE, not what was
+       open — claiming eleven enquiries were checked when the view could only
+       speak for five is the "unknown rendered as a fact" this project exists to
+       refuse. */
+    const SLA_OK = 'WITHIN_SLA';
+    const SLA_BREACHED = 'BREACHED_SLA';
+    const SLA_UNKNOWN = ['UNKNOWN', 'UNKNOWN_NO_LINK', ''];
+
+    const slaOf = l => up(l.sla_state);
+    const strange = open.filter(l => {
+      const s = slaOf(l);
+      return s !== SLA_OK && s !== SLA_BREACHED && !SLA_UNKNOWN.includes(s);
+    });
+    const measurable = open.filter(l => slaOf(l) === SLA_OK || slaOf(l) === SLA_BREACHED);
+    const late = measurable.filter(l => slaOf(l) !== SLA_OK);
+
+    if (strange.length) {
+      /* Not a clear line and not a leak line — a named fault, because the screen
+         no longer knows what the engine is saying. */
+      out.push({ what: 'FAULT — the first-response target is reporting a state this screen does not know',
+                 over: `${num(strange.length)} open ${plural(strange.length, 'enquiry', 'enquiries')} carry `
+                     + `sla_state values outside WITHIN_SLA / BREACHED_SLA / UNKNOWN. `
+                     + 'Nothing is claimed about first response until this is reconciled' });
+    } else if (measurable.length && !late.length) {
       out.push({ what: 'No open enquiry is recorded as having missed the first-response target',
-                 over: `${num(open.length)} open ${plural(open.length, 'enquiry', 'enquiries')} checked against this `
-                     + 'dealership’s own first-response target' });
+                 over: `${num(measurable.length)} of ${num(open.length)} open `
+                     + `${plural(open.length, 'enquiry', 'enquiries')} could be checked against this `
+                     + 'dealership’s own first-response target'
+                     + (measurable.length < open.length
+                        ? `. The other ${num(open.length - measurable.length)} carry no measurable first `
+                          + 'response and are counted nowhere — not as clear and not as late'
+                        : '') });
+    }
   }
   return out;
 }
