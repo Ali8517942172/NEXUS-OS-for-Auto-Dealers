@@ -472,16 +472,51 @@ Two clarifications, because the boundary is not "hide everything technical":
 
 ---
 
-# Part 5 — Audit: what the dashboard shows today
+# Part 5 — Audit: what the dashboard showed on 4 September, and what it shows now
 
 Read against `apps/executive-dashboard/` on branch
-`wip/platform-truth-2026-09-01`. Everything below is visible to **any signed-in
-dealership user** — there is no role check in the database or the UI, which
-`ARCHITECTURE.md` records independently.
+`wip/platform-truth-2026-09-01`.
+
+**This part was worked through item by item on 5 September 2026 and every one of
+its predictions held.** It is now partly historical, and each finding below
+carries its status. The file-and-line references are kept as written, because
+they are the record of where each leak was and they are how the fix can be
+audited; several line numbers have since moved.
+
+| finding | status, 5 Sep 2026 |
+|---|---|
+| 5.1 the dashboard tells the dealership other dealerships exist | **CLOSED** — and it existed on a second screen the audit did not name |
+| 5.2 `workflow_registry` is a platform table with no tenant scope | **NARROWED, NOT CLOSED** |
+| 5.3 infrastructure topology on Settings | **CLOSED** |
+| 5.4 Automation is a vendor operations console | **CLOSED** |
+| 5.5 the vendor's third-party stack listed by name | **CLOSED for the chip list; open elsewhere** |
+| 5.6 model behaviour described to the dealership | **CLOSED** |
+| 5.7 credential state and the vendor's operational history | **CLOSED** — split as this section proposed |
+| 5.8 smaller items | **CLOSED except `settings.js:1091`/`:1400`, deliberately** |
+| 5.9 what the audit did not find | **still holds** as far as the 5 Sep pass could see |
+
+**Two things this part got wrong about its own premise.** It opens by saying
+there is no role check in the database or the UI. That was true on 4 September
+and is false now — see `ARCHITECTURE.md` §4 and `STATUS-2026-09-05.md` §4 — though
+the model is inert while there is one login. And **eight leaks it did not
+predict were found by rendering the screens rather than reading them**, the
+worst of which is recorded under 5.8 below. Reading a screen finds the sentences
+somebody wrote; rendering it finds the ones the data wrote.
+
+Full evidence, including what was deliberately left:
+`/home/claude/out/control-plane-frontend-evidence.md`.
 
 Findings are ordered by how much they cost if a dealership reads them.
 
-## 5.1 The dashboard tells the dealership that other dealerships exist
+## 5.1 The dashboard tells the dealership that other dealerships exist — CLOSED
+
+**Closed 5 September 2026.** `settings.js:1402` (now `:1432`) reads *"This list
+is the register of the automations NEXUS runs for you. Every count beside them
+is this dealership's alone… A few entries are pages NEXUS publishes rather than
+automations."* The same sentence was also live on a **second screen**,
+`automation.js:1520`, which this section did not name; that copy is gone too.
+
+The original finding, kept because the reasoning is the rule:
 
 `apps/executive-dashboard/screens/settings.js:1402`
 
@@ -504,9 +539,39 @@ policy. Every clause is a control-plane fact.
 "these are the automations running for you", with no claim about who else runs
 on the same machine.
 
-## 5.2 `workflow_registry` is a platform table with no tenant scope
+## 5.2 `workflow_registry` is a platform table with no tenant scope — NARROWED, NOT CLOSED
 
-Measured in production, 4 September 2026:
+**Half closed, 5 September 2026, and the half that is left is the one that
+blocks a second dealership.** Migration
+`20260905194717_workflow_registry_ids_and_crons_off_the_dealer_plane` took the
+columns off the dealer plane. Measured in production today, `authenticated`
+reads **7 of 10** columns — `name, audit_name, category, is_active, description,
+writes_audit_log, audit_aliases` — and `id`, `trigger_type` and `trigger_detail`
+return `42501`. No surviving column carries the same content: zero cron-shaped
+strings, URLs or hostnames across all 18 rows.
+
+**Still open, exactly as this section demands.** There is no `tenant_id`, the
+policy is still `SELECT USING (true)`, and `count(*)` reads no column — so a
+dealership can still learn *which* automations exist and which are switched off,
+which is 18 rows of operational configuration. Gate check `L2` is red on this
+row and nothing was added to `L2_EXEMPT_TABLES`. **The destination this section
+names — a tenant-scoped view, not the table — is still the destination.**
+
+The RLS policy was deliberately left alone: dropping it would have returned 0
+rows to three surviving views and broken them silently, which is worse than the
+leak it would close.
+
+**And withholding the columns made the screen lie.** Six paths in
+`automation.js` read nothing afterwards and four of them told the dealership
+that none of its workflows records a cadence and that entering one would turn
+the panel on. Fixed the same day by `triggerReadable()`, which tests key
+**presence** rather than truthiness, so "the column was withheld", "the register
+recorded nothing" and "the view returned nothing" stay three different findings
+and the panel relights by itself if a scoped view ever restores the columns.
+**A withheld fact must never be rendered as an absent one** — that is the same
+rule as `NOT_COMPUTABLE`, applied to the vendor boundary.
+
+The original measurement, 4 September 2026:
 
 ```
 workflow_registry_read | PERMISSIVE | {authenticated} | SELECT | qual: true
@@ -534,7 +599,16 @@ table.
 Consumers to change when it moves: `screens/ask.js:1444`, `screens/ask.js:1611`,
 `screens/automation.js` (via `v_workflow_health`), `screens/settings.js:756`.
 
-## 5.3 Infrastructure topology is printed in full on Settings
+## 5.3 Infrastructure topology is printed in full on Settings — CLOSED
+
+**Closed 5 September 2026.** The Environment card became a three-row
+**Connection** card — `NEXUS data`, `Automation`, `Credentials`, each
+`configured` or a red not-configured line. The *consequence* of a missing value
+survives; the variable name and the value do not. The endpoint chip list became
+a count and a sentence: *"Their addresses are not shown: where an automation
+lives is NEXUS's operational configuration."*
+
+The original finding:
 
 `apps/executive-dashboard/screens/settings.js:596-601`:
 
@@ -569,7 +643,17 @@ correct standard for the control plane too.
 control-plane diagnostics. On the dealership's Settings, replace with a
 connection state — connected / degraded / down — and nothing else.
 
-## 5.4 The dealership's Automation screen is a vendor operations console
+## 5.4 The dealership's Automation screen is a vendor operations console — CLOSED
+
+**Closed 5 September 2026.** `EXEC_URL_RE` now **removes** the execution URL
+from a summary rather than rendering it as a working deep link into the vendor's
+n8n (`dealerSummary`, `automation.js:200`); a disabled **Inspect this run**
+control replaces the link. Trigger chips are gone with 5.2. The
+nip.io / Google-OAuth / `vercel.app` explanation is gone from both places it
+appeared. *"spends OpenRouter tokens"* became *"a question to answer"*.
+`VITE_N8N_BASE_URL` became *"That is a NEXUS-side setting."*
+
+The original finding:
 
 `apps/executive-dashboard/screens/automation.js`:
 
@@ -596,7 +680,31 @@ should be lifted to Ali's dashboard, and the dealership should be left with a
 much smaller screen: which automations are running for me, are they working,
 what is the business impact when they are not, and who do I contact.
 
-## 5.5 The vendor's third-party stack is listed by name
+## 5.5 The vendor's third-party stack is listed by name — CLOSED for the chip list, OPEN elsewhere
+
+**The chip list is closed, 5 September 2026**: the supplier names became
+capability names — `Finance calculations`, `WhatsApp messaging`, `CRM sync`,
+`Team notifications`, `Email delivery`, `AI answers`. The *probed* tiles were
+named after suppliers too, which this section's unprobed-only list did not
+catch; they were renamed with it.
+
+**Still open, and it is the largest remaining leak of this class.** `WAHA` is
+named to the dealership in `screens/conversations.js` — 6 occurrences when the
+5 September pass counted them, 7 when this section was re-measured a few hours
+later — and `Bitrix24` in `screens/customers.js`. These files are being edited
+concurrently by other agents, so **count them rather than quoting this line**:
+`grep -c WAHA screens/conversations.js`. `screens/finance.js` named Bitrix in
+the 5 September pass and no longer does. In `conversations.js` the
+names are load-bearing inside long identity-resolution explanations, and
+rewriting them safely means understanding that screen's identity model. It was
+not attempted, and it is exactly the harm this section describes — *"can
+discover from one search that their WhatsApp is running through an unofficial
+client"*. Two further items were left with reasons: internal table and view
+names across roughly twenty screens, which needs a vocabulary decision first,
+and `app.js`'s boot card naming the hosting provider and the environment
+variables.
+
+The original finding:
 
 `apps/executive-dashboard/lib/integrations.js:134`:
 
@@ -617,7 +725,16 @@ on Ali's terms.
 real query — spends tokens and logs a run"*, exposing the vendor's cost model
 in the dealership's UI.
 
-## 5.6 Model behaviour is described to the dealership
+## 5.6 Model behaviour is described to the dealership — CLOSED
+
+**Closed 5 September 2026**, and closed the way this section asked: the
+dealership still learns how much to trust the answer, and no longer learns the
+mechanism. The model name is gone from the meta line, *"backup ladder"* became
+*"this screen cannot confirm the answer came from the intended path — judge it
+on the grounding above, which is checked rather than claimed"*, and *"no model
+tier having answered at all"* became *"nothing having answered at all"*.
+
+The original finding:
 
 `apps/executive-dashboard/screens/ask.js:750` renders, under every answer:
 
@@ -638,7 +755,17 @@ grounded, partly grounded, ungrounded — which the screen computes beautifully.
 It does not need to know the mechanism that produced that state. Model names,
 tier structure and prompt budgets move to Ali's side.
 
-## 5.7 Credential state and the vendor's operational history
+## 5.7 Credential state and the vendor's operational history — CLOSED, split as proposed
+
+**Closed 5 September 2026**, and it is worth noting *how*, because this section
+called the split correctly. The dealership's half was already right and was left
+untouched — *"Email delivery is broken right now — every 'Enrolled' row on this
+screen means queued, not delivered"*. The vendor's half — the verbatim n8n error
+naming the credential — became *"The connection this campaign sends email
+through is not working, and NEXUS is the only one who can restore it. What broke
+it, and where it is fixed, is on NEXUS's side."*
+
+The original finding:
 
 `screens/campaigns.js:1094`, `:1162`, `:1671` and the surrounding panel render
 the Gmail OAuth2 credential's failure history in the dealership's words —
@@ -656,7 +783,34 @@ boundary rule:
   `invalid_grant`, it is reconnected in the n8n UI under Credentials, and the
   same credential serves N other tenants.
 
-## 5.8 Smaller items, same class
+## 5.8 Smaller items, same class — CLOSED, except one left deliberately
+
+**Closed 5 September 2026:** the n8n repair runbook in the Reconnect tooltip;
+the raw `audit_log.summary` in the Automation run drawer, the activity-log
+Summary cell and its search box, all three now through `dealerSummary()`; and
+`team.js`'s `NO_INVITE`, which had listed **every deployed webhook path** plus
+the table and its RLS posture, now *"Inviting somebody is not built yet. Ask
+NEXUS to add the account and it will appear here."* The controls stay rendered
+and disabled, per Part 4 and gate check `R7`.
+
+**Worse than anything this section listed, and found by rendering rather than
+reading:** `compliance.js` printed raw `audit_log.summary` **verbatim in two
+places**, and the harness rendered a node name, an execution id, a workflow id, a
+host and the VM's bare public IP onto a dealership screen. `campaigns.js:2074`
+did the same. Both are closed.
+
+**Left deliberately, and the disagreement is recorded rather than resolved
+silently:** `settings.js:1091` and `:1400`. This section calls "which of our
+workflows are not instrumented" Ali's backlog. The 5 September pass rewrote the
+vendor-ish half and kept the finding, on the grounds that a dealership reading
+*"this figure could not be read, so its absence means nothing"* is being
+protected from a false zero, which is this project's first rule. Two rules meet
+here and the boundary rule does not automatically win.
+
+`lib/tenant.js:49` was read and left exactly as it is, for the reason the table
+below gives.
+
+The original findings:
 
 | File:line | What leaks |
 |---|---|
@@ -667,7 +821,15 @@ boundary rule:
 | `screens/team.js:195-198`, rendered as button tooltips at `:1225`, `:1645-1646` | Explains that `users` is service-role-only and that no invite endpoint exists — an unbuilt-feature disclosure in the dealership's UI. |
 | `lib/tenant.js:49` (`TENANT_PATH`) | Reads `tenants?select=id,name,slug,status` unfiltered. **Currently safe** — verified 4 Sep: `tenants_member_read` scopes SELECT to `nexus_current_tenant_ids()`. Recorded here because the safety is entirely the policy's, and the request shape is the one that would leak a dealership list the moment that policy changes. |
 
-## 5.9 What the audit did *not* find, and should be said
+## 5.9 What the audit did *not* find, and should be said — still holds
+
+*Re-checked 5 September 2026 by the frontend pass: all four negatives still hold
+as far as that pass could see. One of them changed shape — `policy_platform_attestation`
+was found on 4 September to be readable by every signed-in user through ten
+column-level grants that a `relacl`-only sweep could not see, and was revoked
+rather than viewed. "No other dealership's data is reachable" survived; "no
+control-plane row is readable" was never claimed and would have been false.*
+
 
 - **No other dealership's data is reachable.** `tenants` and `tenant_members`
   are RLS-scoped correctly (verified 4 Sep). The tenant pill in
@@ -745,22 +907,40 @@ Three notes, each earned by something in this repo:
 
 # Part 7 — What to build first, and what waits
 
-**None of this exists.** Not a table, not a screen, not a licence service, not
-an event collector. Measured 4 September 2026 against production: zero
-control-plane objects. The current state of the world is one dealership, one
-user, and a dashboard that is doing double duty as Ali's operations console.
+**Item 1 is mostly done. Items 2–5 do not exist.** Not a table, not a screen,
+not a licence service, not an event collector — re-measured 5 September 2026
+against production: **zero control-plane objects.** The state of the world is
+one dealership, one user, and a dashboard that is no longer doing quite so much
+double duty as Ali's operations console.
 
 ## Build first
 
-1. **Move the boundary in the existing dashboard.** This needs no new
-   infrastructure, it is the finding that costs money soonest, and it is
-   blocking the second dealership regardless. Concretely: give
-   `workflow_registry` a `tenant_id` and a scoped policy (closing `QUALITY_GATE`
-   check **L2**); delete or gate the Environment card and endpoint chips
-   (`settings.js:596-646`); rewrite `settings.js:1402`; remove `N8N_BASE`,
-   node names and execution URLs from anything a dealership renders; drop the
-   `unprobed` supplier chips (`lib/integrations.js:134`). This is a week, and
-   it is the prerequisite for onboarding anyone.
+1. **Move the boundary in the existing dashboard.** ***Frontend half done
+   5 September 2026; the database half is not.*** Taken in the order this item
+   listed them:
+   - `workflow_registry` `tenant_id` and a scoped policy — **NOT DONE.** Its
+     `id`, `trigger_type` and `trigger_detail` are off the dealer plane and
+     return `42501`, which is a narrowing, not the fix. `L2` is still red and
+     **this is still the prerequisite for onboarding anyone.**
+   - the Environment card and endpoint chips (`settings.js:596-646`) — **done**,
+     replaced by a three-row Connection card and a count.
+   - `settings.js:1402` — **done**, and the same sentence was found and removed
+     from a second screen.
+   - `N8N_BASE`, node names and execution URLs — **done**, including two raw
+     `audit_log.summary` renders on Compliance and one on Campaigns that this
+     document did not predict, which between them put a node name, an execution
+     id, a workflow id, a host and the VM's bare public IP onto a dealership
+     screen.
+   - the `unprobed` supplier chips (`lib/integrations.js:134`) — **done**, and
+     the probed tiles with them.
+
+   **What remains of item 1**, and it should be scheduled rather than
+   rediscovered: the `workflow_registry` scoped view; `WAHA` and `Bitrix24`
+   still named to the dealership in `conversations.js`, `finance.js` and
+   `customers.js`; internal table and view names across roughly twenty screens,
+   which needs a vocabulary decision before a rewrite; and `app.js`'s boot card.
+   Evidence and reasons:
+   `/home/claude/out/control-plane-frontend-evidence.md` §2d.
 2. **The tenant registry and subscription state.** A separate Supabase project,
    one row per dealership, one row per subscription, wired to whatever payment
    processor the marketplace uses. This alone answers "who is paying" and "who
@@ -814,6 +994,8 @@ user, and a dashboard that is doing double duty as Ali's operations console.
 evidence rule; benchmarking sequencing), `CLAUDE.md` (`workflow_registry` and
 gate check L2; the `anon`/`authenticated` default-grant check and its blindness
 to column-level ACLs; the open WhatsApp webhook), `ARCHITECTURE.md` (the stack
-as measured; no role check in the database or the UI),
+as measured; the staff role model that replaced "no role check in the database
+or the UI" on 5 September), `STATUS-2026-09-05.md` (what closed and what did
+not), `VERSIONS.md` (the control plane is V4, and V4 is unstarted),
 `commercial/DEMO-SCRIPT.md` (the DO NOT SHOW list, which is Part 4 applied to a
 sales meeting).*

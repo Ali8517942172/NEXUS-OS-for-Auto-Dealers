@@ -39,9 +39,14 @@ real and expensive slice. It is not the dealership.
 ## Honest state of each capability
 
 Green here means *built and honest about its own limits* — it does **not** mean
-proven at a dealership. Production holds one tenant, twelve vehicles, three
-leads (two junk, one Ali), one real sale and 108 messages. Nothing below has
-carried a paying dealership's traffic.
+proven at a dealership. Production, measured 5 September 2026: one dealership
+tenant (plus a non-dealership quarantine tenant), twelve vehicles, three leads
+(two junk, one Ali), **one `purchase_history` row that is the owner's own test
+lead and not a customer sale**, and **114** messages. **Nothing below has
+carried a paying dealership's traffic, and there are zero paying customers.**
+`VERSIONS.md` states each capability against four separate columns —
+implemented, tested, production-proven, commercially validated — because "Built"
+in this table answers only the first.
 
 | Capability | State |
 |---|---|
@@ -100,33 +105,54 @@ into a market that already has vendors, and turn it into an ERP project.
 
 Nothing on the expansion list is started until this is done. The goal at this
 stage is not feature-completeness; it is **reproducible, tenant-safe,
-idempotent, auditable, deployable.**
+idempotent, auditable, deployable.** Items 1–6 as written on 4 September are
+**closed**, and the list is kept with each one's outcome rather than deleted,
+because what closed an item is the evidence that it is closed.
 
-1. **Consent identity — P0.** `evidence_kind` and `evidence_ref` are
-   caller-supplied and are still in the consent identity, so a conversation
-   that reached `CUSTOMER_OPTED_OUT` returns to `FREEFORM_ALLOWED` by three
-   routes with no customer involved. Same-timestamp ordering must become
-   deterministic and must **never** bias toward OPT_IN.
-2. **The anonymous object-creation path — P0.** The default-privilege lines are
-   closed; `CREATE EXTENSION … SCHEMA public` is not, and that is the path that
-   produced a proved 8,500-row anonymous read. Close it without breaking
-   PostgREST's `authenticator`. Establish the invariant: **no newly created
-   application object may be anonymously readable by default** — tested for
-   both migration-created and extension-created objects.
-3. **Finish the idempotency family — P0.** The live `nokey:` id shape still
-   extends the customer service window. Re-run every previous attack and hunt
-   for remaining caller-controlled fields that affect identity, ordering or a
-   state transition.
-4. **`policy_applied_rule_id` foreign key, and `integration_id` in the
-   delivery-events key — P1.** One constraint closes three defects; the other
-   stops a second integration's genuine delivery report being silently dropped.
-5. **The stale gate snapshot — P1.** A stale catalogue must never produce a
-   PASS, and PASS / FAIL / BLOCKED / NOT RUN must stay four distinct answers.
-6. **Staging parity — P1.**
-7. Then `2.50.10.149`, then the Meta attestation, then Meta Cloud.
+1. ~~**Consent identity — P0.**~~ **CLOSED 4 Sep 2026.** Two constraints, not
+   one: the act (tenant, integration, customer, event, `occurred_at`) and
+   evidence-once as a separate property. A future OPT_IN is refused; a future
+   OPT_OUT is clamped. The tiebreak is a generated, unwritable `consent_rank`,
+   so the answer no longer depends on commit order — proved with five
+   overlapping `pg_cron` backends. **Not fully closed:** there is no
+   `SECURITY DEFINER` here, so `service_role` writing the table directly
+   bypasses the writer's checks, and n8n holds `service_role`.
+2. ~~**The anonymous object-creation path — P0.**~~ **CLOSED 4 Sep 2026**, and
+   the closure is the schema door, not the ACL: `USAGE` on `public` is revoked
+   from `PUBLIC` and `anon` and re-granted by name to eleven service roles.
+   `supautils` re-runs `CREATE EXTENSION` as `supabase_admin` and skips
+   non-superuser event triggers, so a guard **cannot** cover it — proved with
+   three simultaneous triggers. **Open:** `authenticated` still reaches
+   born-open objects (measured: SELECT 8,500 rows, UPDATE one row) and closing
+   that needs Supabase to change a config-file setting. **Operational rule:
+   install extensions into `extensions`, never `public`.**
+3. ~~**Finish the idempotency family — P0.**~~ **Closed at the database
+   5 Sep 2026.** `whatsapp_customer_message_seen`, `channel_message_events`,
+   `whatsapp_delivery_events` and `processed_messages.message_id` now refuse an
+   id minted per attempt (`nokey:`, `outreach:`, `exec-`, `run-`, `job-`, bare
+   epochs) with `23514`. **Open, and it is the half that matters operationally:**
+   the n8n writers were not changed, `Claim Message Id` is fail-open, and the
+   `communication_logs` identity has no writer at all — 114 rows, 0 external
+   ids.
+4. ~~**`policy_applied_rule_id` foreign key, and `integration_id` in the
+   delivery-events key — P1.**~~ **CLOSED 5 Sep 2026**, together with
+   `status_raw` case normalisation and eight composite tenant/carrier foreign
+   keys, all verified in production's catalogue.
+5. ~~**The stale gate snapshot — P1.**~~ **CLOSED 5 Sep 2026.** Regenerated from
+   production at `20:56:16Z`, 98 relations, provenance written by the run. The
+   same pass fixed three checks that tested for a mechanism's *presence* rather
+   than its *effect*, and added `L12` to watch the baseline.
+6. ~~**Staging parity — P1.**~~ Achieved 4 Sep and **not re-measured since the
+   eighteen migrations of 5 September**. Treat parity as **UNKNOWN** until a
+   fingerprint comparison is run.
+7. **Still open, in this order:** identify `2.50.10.149`; the WAHA secret
+   rollout; the Meta attestation (13 rules, 0 verified, 0 attestations); Meta
+   Cloud. Then give `workflow_registry` a `tenant_id`, publish the Infra Health
+   Probe, and rehearse the `NEXUS_TENANT_MAP` switch on staging.
 
-**PR #7 is not merged and WhatsApp messaging is not switched on until all of
-the above is done.**
+**PR #7 is not merged and WhatsApp messaging is not switched on until item 7 is
+done and the n8n writers in item 3 are deployed.** `STATUS-2026-09-05.md`
+carries the full open list.
 
 ## Next — the seven capability gaps, in priority order
 

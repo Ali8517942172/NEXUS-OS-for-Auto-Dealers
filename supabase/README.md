@@ -2,9 +2,10 @@
 
 Until 4 September 2026 this repository could not rebuild its own database.
 `architecture/README.md` said so in as many words — *"There is no schema file you
-can run. The database is the record."* — and it was right. 255 migrations
-existed in exactly one place, Supabase project `dsvuoovivysszdoiorch`. If that
-project had been lost, the schema was gone.
+can run. The database is the record."* — and it was right. The 255 migrations
+that existed then lived in exactly one place, Supabase project
+`dsvuoovivysszdoiorch`. If that project had been lost, the schema was gone.
+(There are **273** as of 5 September; the count moves, the argument does not.)
 
 That sentence is now false. This folder is why.
 
@@ -12,9 +13,9 @@ That sentence is now false. This folder is why.
 
 | path | what it is | generated? |
 |---|---|---|
-| `migrations/` | 255 files, one per row of `supabase_migrations.schema_migrations`, each containing the statements production actually applied, **verbatim** | yes — `tools/extract-migrations.mjs` |
+| `migrations/` | **273** files, one per row of `supabase_migrations.schema_migrations`, each containing the statements production actually applied, **verbatim** | yes — `tools/extract-migrations.mjs` |
 | `baseline/00000000000000_baseline.sql` | the schema of production at version `20260904142907`, read out of the live catalogue | yes — `tools/generate-baseline.mjs` |
-| `baseline/00000000000001_migration_history.sql` | stamps the 255 versions into `supabase_migrations.schema_migrations` so a restored project knows what it already has | yes |
+| `baseline/00000000000001_migration_history.sql` | stamps the **255 versions up to and including the baseline's own version** into `supabase_migrations.schema_migrations`, so a restored project knows what it already has. The 18 later ones are files, not stamps — that is the point of step 4 below | yes |
 | `baseline/00000000000002_vocabulary_seed.sql` | the shipped vocabulary — reason codes, state models, units, jurisdictions. 190 rows across 19 tables. **Not** dealership data | yes |
 | `tools/extract-migrations.mjs` | re-reads the history and rewrites `migrations/` | — |
 | `tools/generate-baseline.mjs` | re-reads the catalogue and rewrites the baseline | — |
@@ -62,7 +63,11 @@ schema, `auth.uid()`, `pg_cron` and `supabase_vault`):
 2. `baseline/00000000000001_migration_history.sql` — history stamp.
 3. `baseline/00000000000002_vocabulary_seed.sql` — shipped vocabulary.
 4. Every file in `migrations/` whose version is **greater than `20260904142907`**
-   (the version stamped in the baseline's first line). Today that is none.
+   (the version stamped in the baseline's first line). **Measured 5 September
+   2026: that is 18 files, 106,698 bytes** — `20260905192903` through
+   `20260905211435`, the whole of that evening's constraint, tenancy-quarantine,
+   role-model and message-identity work. It was none on 4 September and it will
+   not stay 18; count it rather than quoting this line.
    `supabase db push` will do exactly this and skip the rest, because step 2
    told the project it already has them.
 5. Re-create the one scheduled job, which is neither schema nor data:
@@ -70,12 +75,16 @@ schema, `auth.uid()`, `pg_cron` and `supabase_vault`):
    Section 22 of the baseline carries this and says why omitting it fails
    silently.
 
-**Steps 1 and 2 have to move together.** The baseline now carries the effects of
-the 4 September migrations, so a history stamp that still claimed only 243
-versions would send `supabase db push` off to replay twelve migrations whose work
-is already in the file — and several of them (`drop constraint`, `drop index`)
-would fail on the second application. Both files are regenerated together or
-neither is.
+**Steps 1 and 2 have to move together, and step 4 is not optional.** The
+baseline carries the effects of the 4 September migrations, so a history stamp
+that still claimed only 243 versions would send `supabase db push` off to replay
+twelve migrations whose work is already in the file — and several of them
+(`drop constraint`, `drop index`) would fail on the second application. Both
+files are regenerated together or neither is. Equally: the baseline is **18
+migrations behind production** as of 5 September, so a restore that stops after
+step 3 rebuilds the database *without* the policy-citation foreign key, the
+quarantine tenant, the staff role model and the message identities. Steps 1–3
+are not a restore on their own any more.
 
 **A restored database has no dealership data.** No `tenants` row, no leads, no
 inventory, no `workflow_registry`. That is deliberate — see below — and it means
@@ -121,12 +130,19 @@ The line between the two kinds of rows is the one `CLAUDE.md` already draws:
 
 Everything below was run. None of it is inferred.
 
-**The extraction is byte-exact.** The 255 files total **1,702,345 bytes**, which
-is exactly `sum(octet_length(statements[1]))` on production. Independently, a
-per-migration md5 rollup — `md5` over `version:md5(body)` lines in version order
-— computed locally over the files and by Postgres over the table both give
-`3946a4fe5fdfed86041e83cbd6a0eb91`. `ls migrations | wc -l` is **255**, and
-`select count(*) from supabase_migrations.schema_migrations` is **255**.
+**The extraction is byte-exact. Re-measured 5 September 2026, after that
+evening's eighteen further migrations.** The **273** files total
+**1,809,043 bytes**, which is exactly `sum(octet_length(statements[1]))` on
+production. Independently, a per-migration md5 rollup — `md5` over
+`version:md5(body)` lines in version order, newline-joined with no trailing
+newline — computed locally over the files and by Postgres over the table both
+give `4f9bd21234f8cfe6079184432d6120ad`. `ls migrations | wc -l` is **273**,
+`select count(*) from supabase_migrations.schema_migrations` is **273**, and
+`max(version)` is `20260905211435` on both sides.
+
+The figures this paragraph carried before — 255 files, 1,702,345 bytes, rollup
+`3946a4fe5fdfed86041e83cbd6a0eb91` — were true on 4 September and are recorded
+here because a rollup that changes is the mechanism working, not a defect.
 
 The twelve migrations of 4 September were the ones missing, 72,578 bytes of
 them, and they are the whole of that day's security and consent hardening:
@@ -135,12 +151,28 @@ five consent-identity P0s, and the schema-door closure. Each was fetched as
 base64, decoded, and checked against the recorded `octet_length` and `md5`
 before and after being written to disk.
 
-**The migration history stamp matches the table.** The 255 `(version, name)`
-pairs in `baseline/00000000000001_migration_history.sql` hash to
-`7a5968e5668b6b64a1ebe255a3773bdc`, which is what production gives for
-`md5(string_agg(version||'|'||name, …))` over all 255 rows.
+**The migration history stamp matches the table, for the versions it covers.**
+The stamp holds the **255** `(version, name)` pairs up to the baseline's own
+version `20260904142907` — not all 273, deliberately, because the later 18 are
+step 4's job. Re-measured 5 September: `md5` over `version|name` joined by
+newline in version order gives `8d5ecffc85e7d8c12848cf9c2b092a49` from the file,
+and the identical value from production over
+`where version <= '20260904142907'`. The gate's own `L12` offline arm published
+the same digest independently.
 
-**The baseline reproduces production.** A fingerprint query covering columns,
+One correction rather than a silent overwrite: this paragraph previously
+published `7a5968e5668b6b64a1ebe255a3773bdc` for the same claim. That value
+**could not be reproduced** on 5 September from the stamp file or from
+production under any separator tried, over either 243 or 255 pairs. The digest
+above is the one that was measured on both sides today; the older one is
+unverified and should not be quoted.
+
+**The baseline reproduced production at the version it was taken from.**
+Measured 5 September 2026 against production **as it stood at
+`20260904142907`**. Production has since applied 18 more migrations, so the
+left-hand column below is a record of that comparison and not a description of
+production today — for today's catalogue, read the paragraph after the table.
+A fingerprint query covering columns,
 constraints, indexes, views, function bodies, triggers, event triggers, RLS
 flags, policies, and *effective* privileges for `anon`, `authenticated` and
 `service_role` at schema, table, column and function level, plus default
@@ -174,6 +206,14 @@ responsible for and must not invent: `pgrst_ddl_watch`, `pgrst_drop_watch`,
 both `nexus_guard_born_open_grants` and `nexus_guard_security_invoker_views`,
 and all nine `postgres`/`supabase_admin` default-ACL lines for `public` and
 `storage`.
+
+**What production carries today, and therefore how far the baseline is behind.**
+Re-measured 5 September 2026 after the evening's eighteen migrations: **59
+tables, 39 views (39 of 39 `security_invoker`), 269 functions in `public`, 374
+constraints, 169 indexes, 163 policies, RLS on 59 of 59 tables.** Set against
+the table above, that is the size of the gap step 4 of the restore path closes.
+Regenerating the baseline would move it; that has not been done, and this
+paragraph exists so nobody reads the table above as current.
 
 One further difference is recorded rather than rounded away: `pg_namespace.nspacl`
 on `public` contains the **same fifteen entries** on both sides, in a different
@@ -269,11 +309,18 @@ git add supabase/migrations && git commit
 `--check` does the same comparison, writes nothing, and exits 1 on
 disagreement — the form to put in front of a commit or in CI.
 
-**L11 does not watch the baseline, and that gap has now cost something once.**
-The twelve migrations of 4 September were recorded in the database and absent
-from `migrations/`, which `L11` is built to catch; but the *baseline* had also
-gone stale on the same afternoon, and nothing checks that at all. A baseline one
-day behind is not a nuisance — for one afternoon it was the difference between
+**`L11` watches `migrations/`; `L12` now watches the baseline.** For one
+afternoon nothing watched it, and that gap cost something. The twelve migrations
+of 4 September were recorded in the database and absent from `migrations/`,
+which `L11` is built to catch; but the *baseline* had gone stale on the same
+afternoon, and no check looked at it at all. Worse, the vocabulary seed had been
+written out HTML-escaped, and every row count still matched — because counting
+rows is not reading them. `L12` compares the seed with the live rows **by
+value**, re-runs `generate-baseline.mjs` and diffs it byte for byte, and at its
+strongest replays the whole folder into an empty PostgreSQL 17 and regenerates
+from the replica. Validated against a deliberately re-escaped seed: every row
+count stays identical and three digests change. A baseline one day behind is not
+a nuisance — for one afternoon it was the difference between
 restoring a database with the schema door shut and restoring one with it open.
 Regenerating is now a script rather than a remembered query:
 
@@ -312,13 +359,14 @@ Found while doing this. Nothing here was written to either database.
    `relacl`-only check could not see. `workflow_registry` remains the one
    documented `L2` row.
 
-3. **`QUALITY_GATE.mjs`'s embedded `SNAPSHOT` is stale.** Its `takenAt` is
-   3 September and it does not know `channel_message_events`,
+3. **`QUALITY_GATE.mjs`'s embedded `SNAPSHOT` was stale. Closed 5 September
+   2026.** It was taken 3 September and did not know `channel_message_events`,
    `channel_registry`, `channel_send_form`, `channel_provider_capability`,
    `channel_provider_rank`, `channel_send_directive` or the other 4 September
-   tables, so `L1` fails against production too — not only against a replica.
-   Fixed by `node QUALITY_GATE.mjs --refresh-schema` with a connection. Not done
-   here.
+   tables, so `L1` failed against production as well as against a replica. It
+   was regenerated from production at `2026-09-05T20:56:16Z`, 98 relations,
+   with `NEXUS_SNAPSHOT_SOURCE_NOTE` making the run write its own provenance
+   rather than somebody typing it in later.
 
 4. **The 4 September vocabulary seed had HTML-escaped text, and it has been
    repaired.** The generation of that file passed its free text through an

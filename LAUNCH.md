@@ -1,8 +1,14 @@
 # NEXUS Launch Week
 
-Decided 4 September 2026. `ROADMAP.md` holds the market position and the long
-route; this file holds what ships now, what does not, and the two tracks that
-run at the same time.
+Decided 4 September 2026; **Track A re-measured 5 September 2026**.
+`ROADMAP.md` holds the market position and the long route; `VERSIONS.md` maps
+this launch story onto V1–V4 with a measured status per capability; this file
+holds what ships now, what does not, and the two tracks that run at the same
+time.
+
+**None of the six thin additions below exists yet.** They are the launch plan,
+not the launch. Everything in "The thin additions" is V2 in `VERSIONS.md` and
+none of it is implemented.
 
 ## The reframing
 
@@ -17,15 +23,16 @@ who already sell one.
 
 ## The five revenue-control loops
 
-This is the launch story, and each is mostly built already.
+This is the launch story. "Mostly built already" was the 4 September framing;
+measured against the branch on 5 September it holds for two of the five.
 
-| Loop | The dealer's problem |
-|---|---|
-| **Lead Recovery** | An enquiry arrived, somebody replied late, the customer went elsewhere |
-| **Stock Recovery** | A car has been standing 30, 60, 90, 150 days |
-| **Deal Recovery** | A hot buyer is stuck behind a finance blocker or a missing document |
-| **Marketing Recovery** | The dealer has stock and does not know which vehicle to push |
-| **Customer Recovery** | Someone enquired and never bought, or bought and was forgotten |
+| Loop | The dealer's problem | Where it actually is |
+|---|---|---|
+| **Lead Recovery** | An enquiry arrived, somebody replied late, the customer went elsewhere | Screen ships and draws real rows; queue = 0 because there are 3 leads. The silence detector it depends on last succeeded 26 Aug |
+| **Stock Recovery** | A car has been standing 30, 60, 90, 150 days | Ships, on 12 of 12 units with real cost and days in stock. The strongest thing in the product |
+| **Deal Recovery** | A hot buyer is stuck behind a finance blocker or a missing document | Screen ships and is **structurally empty by design** — no deal record exists before a sale closes. Demo the refusal, not the engine |
+| **Marketing Recovery** | The dealer has stock and does not know which vehicle to push | **Not built.** The drip campaign it would ride on has 8 runs and 8 failures |
+| **Customer Recovery** | Someone enquired and never bought, or bought and was forgotten | **Not built.** Customer 360 is a once-daily batch with 2 profiles on file |
 
 ## The thin additions
 
@@ -66,7 +73,11 @@ is table stakes. NEXUS differentiates by naming the **economic consequence**:
 ## The screen that is the product
 
 **Today's Money Leaks** — the primary owner view. Not "AI Insights", not
-"Analytics", not "AI Assistant".
+"Analytics", not "AI Assistant". **It does not exist yet**: there is no such
+screen on either branch, and the AED figure it opens with is exactly the
+aggregate `screens/revenue.js` currently refuses to produce. Building it means
+deciding what that number is a derivation of, and the answer must not be a sum
+of estimates presented as money.
 
 > AED X exposed today.
 > Five leads have no response. Two hot leads have finance blockers. Three
@@ -106,10 +117,24 @@ integrations rather than on AI conversation count.
 
 They run at the same time and **neither waits for the other.**
 
-**Track A — make it safe.** Consent identity P0 → the anonymous
-object-creation path → the idempotency family → the policy foreign key and the
-delivery-events key → the stale gate snapshot → staging parity → full security
-regression. No shortcuts. WhatsApp does not switch on until this is done.
+**Track A — make it safe.** Measured 5 September 2026, in the order it was
+written:
+
+| step | status |
+|---|---|
+| Consent identity P0 | **closed** 4 Sep |
+| The anonymous object-creation path | **closed** 4 Sep at the schema door; `authenticated` still reaches born-open objects and that needs Supabase |
+| The idempotency family | **closed at the database** 5 Sep; **the n8n writers are not deployed**, and `communication_logs` still has no writer for its identity |
+| The policy foreign key and the delivery-events key | **closed** 5 Sep, with eight composite tenant/carrier foreign keys |
+| The stale gate snapshot | **closed** 5 Sep |
+| Staging parity | achieved 4 Sep, **UNKNOWN since the eighteen migrations of 5 Sep** |
+| Full security regression | **not run** since 3 Sep |
+
+Still standing between here and switching WhatsApp on: the open inbound webhook
+and its dormant WAHA gate, the unidentified second sender `2.50.10.149`, the
+Meta attestation (13 rules, 0 verified), the unpublished Infra Health Probe, and
+the n8n writer changes above. No shortcuts. **WhatsApp does not switch on until
+those are done**, and `STATUS-2026-09-05.md` is the list.
 
 **Track B — make it sellable.** Three to five UAE dealers. Show the real Profit
 Sentinel on ALBA's own honest data and Today's Money Leaks. Ask **what they
@@ -122,6 +147,11 @@ ERP.
 WhatsApp, no consent fix, no Meta attestation. So the dealer conversations
 happen this week regardless of where the engineering stands, and what those
 dealers say reorders everything below them.
+
+**Track B has produced nothing measurable yet.** Zero dealer conversations are
+recorded anywhere in this repository, and there are zero paying customers. Until
+one of those numbers moves, every price and every unbuilt capability in this
+file is a hypothesis.
 
 ## The agent structure
 
