@@ -2593,6 +2593,113 @@ SCREENS.compliance = async host => {
   /* The escalation banner's fallback target. Assigned after the card exists;
      the banner's handler cannot run before this line. */
   focusTrail = () => hist.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  /* ── WhatsApp consent ─────────────────────────────────────────────────────
+     Built 6 Sep 2026, and it is the answer to a question a UAE dealership WILL
+     be asked: who agreed to be messaged, when, and on what.
+
+     WHERE THIS COMES FROM AND WHY IT IS NOT A TABLE READ. `whatsapp_opt_in_event`
+     answers a signed-in dealership user with SQLSTATE 42501 — no table grant,
+     no column grant, and a RESTRICTIVE deny naming `authenticated` that was laid
+     deliberately on 6 Sep 2026 so the closure would be a decision rather than an
+     accident. That floor was NOT lifted to build this. Both reads go through
+     SECURITY DEFINER accessors whose RESULT TYPE is the projection, scoped by
+     `nexus_current_tenant_ids()` — the same key every tenant policy uses — so a
+     column that is not shown here is absent by construction rather than by
+     whichever grant nobody revoked.
+
+     THE CURRENT STATE IS NOT DERIVED HERE AND MUST NOT BE. Working out whether
+     a customer is opted in from a list of events means choosing an order, and
+     choosing an order is where a replayed OPT_IN overturned a later OPT_OUT
+     once already. `nexus_whatsapp_consent_current()` calls the database's own
+     `whatsapp_opt_in_state()`, which carries the OPT_OUT-wins tie-break and the
+     future-dated filter with it. This screen renders that answer; it does not
+     compute one.
+
+     AND EMPTY IS NOT AN ANSWER ABOUT ANYBODY. Production holds zero rows today.
+     That means nothing has been recorded — not that nobody has opted out, and
+     not that everybody has agreed. The empty state below says exactly that, and
+     the counts are counts of RECORDS rather than of people or of permissions. */
+  const consent = el('div', 'card flush'); consent.style.marginTop = '16px'; body.appendChild(consent);
+  consent.innerHTML = `<div class="card-head"><div><div class="card-title">WhatsApp consent</div>
+      <div class="card-sub">Reading what this dealership has recorded about who may be messaged.</div></div></div>${stateLoading(3)}`;
+
+  const CONSENT_LIMIT = 200;
+  const CONSENT_NOTHING =
+    'Nothing has been recorded here yet. Read that as the absence of a record and nothing else: it is not a statement that nobody has opted out, and it is not a statement that anybody has agreed. NEXUS writes a row here when a customer opts in or out through a channel it is watching, and no such row exists for this dealership.';
+  /* Said beneath the current-state list. The window rule is a separate control
+     and this screen does not restate its verdict — but a reader looking at an
+     empty consent register must not conclude that messaging is therefore
+     unconstrained. */
+  const CONSENT_SCOPE =
+    'This register is the record of what a customer said. It is not the whole of whether a message may be sent — the platform’s own rules apply on top of it — and a customer who appears nowhere on this list has said neither yes nor no.';
+
+  const [conEvR, conStR] = await Promise.allSettled([
+    db(`rpc/nexus_whatsapp_consent_events?p_limit=${CONSENT_LIMIT}`),
+    db('rpc/nexus_whatsapp_consent_current'),
+  ]);
+  const conEv = conEvR.status === 'fulfilled' ? conEvR.value : null;
+  const conEvErr = conEvR.status === 'rejected' ? conEvR.reason : null;
+  const conSt = conStR.status === 'fulfilled' ? conStR.value : null;
+  const conStErr = conStR.status === 'rejected' ? conStR.reason : null;
+  const conCapped = !!conEv && conEv.length >= CONSENT_LIMIT;
+
+  /* OPT_OUT is not a failure and OPT_IN is not a success — a customer
+     withdrawing consent is the system working. `dead` and `ok` are the two
+     tones that read as "ended" and "in force" rather than as bad and good. */
+  const consentChip = ev => pill(ev === 'OPT_OUT' ? 'Opted out' : 'Opted in', ev === 'OPT_OUT' ? 'dead' : 'ok');
+  const stateChip = st => pill(st === 'OPTED_OUT' ? 'Opted out' : 'Opted in', st === 'OPTED_OUT' ? 'dead' : 'ok');
+
+  const conCurrentBody = conStErr
+    ? stateError('the current consent position', conStErr, null,
+        'Nobody’s consent has changed — this is a read that failed. The history below is read separately and may still have loaded.')
+    : (conSt && conSt.length)
+      ? `<div>${conSt.map(c => `<div style="padding:12px 20px;border-top:1px solid var(--line);display:flex;gap:16px;flex-wrap:wrap;align-items:baseline">
+          <div style="flex:1;min-width:180px"><span class="mono">${esc(c.customer_wa_id)}</span>
+            ${c.channel_identifier ? `<div class="cell-sub">on ${esc(c.channel_identifier)}</div>` : ''}</div>
+          <div style="flex:0 0 auto">${stateChip(c.state)}</div>
+          <div style="flex:2;min-width:240px">
+            <div class="cell-sub">${esc(ago(c.occurred_at))}${c.mechanism ? ` · ${esc(String(c.mechanism).toLowerCase().replace(/_/g, ' '))}` : ''}</div>
+            <div class="cell-sub mono" style="white-space:normal">${esc(c.evidence_kind || 'no evidence kind recorded')}: ${esc(c.evidence_ref || 'no reference recorded')}</div>
+          </div>
+        </div>`).join('')}`
+      : stateEmpty('No customer has a recorded position', CONSENT_NOTHING, 'contact_support');
+
+  const conHistoryBody = conEvErr
+    ? stateError('the consent history', conEvErr, null,
+        'This is the history read only; the current position above is read separately.')
+    : (conEv && conEv.length)
+      ? `<div>${conEv.map(e => `<div style="padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;align-items:baseline">
+          <div style="flex:0 0 auto">${consentChip(e.event)}</div>
+          <div style="flex:1;min-width:170px"><span class="mono">${esc(e.customer_wa_id)}</span></div>
+          <div style="flex:2;min-width:260px">
+            <div class="cell-sub">${esc(clock(e.occurred_at))}${e.mechanism ? ` · ${esc(String(e.mechanism).toLowerCase().replace(/_/g, ' '))}` : ''}${
+              e.channel_identifier ? ` · ${esc(e.channel_identifier)}` : ''}</div>
+            <div class="cell-sub mono" style="white-space:normal">${esc(e.evidence_kind || 'no evidence kind recorded')}: ${esc(e.evidence_ref || 'no reference recorded')}</div>
+            ${/* Two different instants, and a reviewer asks about both: when the
+                  customer said it, and when this system wrote it down. */''}
+            <div class="cell-sub">Recorded ${esc(ago(e.recorded_at))} by ${esc(e.recorded_by || 'an unnamed writer')}${
+              e.notes ? ` — ${esc(e.notes)}` : ''}</div>
+          </div>
+        </div>`).join('')}`
+      : stateEmpty('Nothing has been recorded', CONSENT_NOTHING, 'history');
+
+  consent.innerHTML = `<div class="card-head"><div>
+      <div class="card-title">WhatsApp consent</div>
+      <div class="card-sub">Who has agreed to be messaged on WhatsApp, who has withdrawn, when, and on what evidence.
+        Every line is a record this dealership holds; nothing on this card is inferred, and a customer who is absent has said neither yes nor no.</div>
+    </div></div>
+    <div style="padding:14px 20px 4px"><div class="label-caps">Where each customer stands now</div>
+      <div class="cell-sub" style="white-space:normal">The database’s own answer, not one worked out here — the order that decides it lives in one place so a replayed message cannot overturn a withdrawal.</div></div>
+    ${conCurrentBody}
+    <div style="padding:14px 20px 4px;border-top:1px solid var(--line)"><div class="label-caps">Everything recorded${
+      conEv && conEv.length ? ` · ${num(conEv.length)}` : ''}</div>
+      <div class="cell-sub" style="white-space:normal">Newest first.${conCapped
+        ? ` <span class="t-warm">This read stopped at ${num(CONSENT_LIMIT)} records, so there are older ones this page has not looked at.</span>`
+        : ''}</div></div>
+    ${conHistoryBody}
+    <div style="padding:14px 20px"><div class="cell-sub" style="white-space:normal">${esc(CONSENT_SCOPE)}</div></div>`;
+
 };
 
 /* ==========================================================================

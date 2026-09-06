@@ -153,14 +153,51 @@
       the three leads read carry a figure, so all of it is shown. Nothing here
       is disabled by hand and nothing waits on a date.
 
-   There is still no endpoint that can invite anybody — `users` is service-role
-   only from the browser and none of the deployed n8n webhooks sends an
-   invitation — so the invite control stays built and disabled with the reason on
-   it. Nothing here is estimated: every number comes off a row — and where a row
+   6. WHO HAS ACCESS IS A DIFFERENT QUESTION FROM WHO IS ON THE ROSTER, and as
+      of 6 Sep 2026 this screen answers both, in two cards, from two sources
+      that are not interchangeable.
+
+      `public.users` is the STAFF DIRECTORY — the people the dealership employs,
+      what they are called, and whose name goes on a lead. A row there confers
+      nothing: it is not a login and it grants no access. `public.tenant_members`
+      is ACCESS — one row per Supabase Auth account that may open this
+      dashboard, carrying the account role the database's own policies read.
+      A person can exist in one and not the other, and both of those are real
+      conditions rather than data errors: a staff record with no login is
+      somebody who works here and does not use NEXUS; a login with no staff link
+      is somebody who can sign in and, under rbac_04, can edit no leads at all.
+      The access card names that second case rather than leaving it blank.
+
+      The three tooltips this file used to carry — no invite, no role write, no
+      delete — were true until this morning and two of them are not any more.
+      Adding a colleague, changing a role and taking access away are live, and
+      each goes through a named function that refuses by name: team_02's
+      nexus_team_invite, team_03/team_05's nexus_team_set_role,
+      nexus_team_link_staff and nexus_team_revoke_access. Every control on the
+      access card is gated on lib/data.js's canManageAccess / canGrantOwner,
+      which read `tenant_members.role` — THE SAME COLUMN the functions read.
+      That is a courtesy, not a control: the refusal happens in the database
+      against the same JWT, and PostgREST is reachable without this bundle.
+
+      WHAT IS STILL NOT BUILT, and the card says so where somebody would look
+      for it: NEXUS cannot send anybody a sign-in link. It holds no credential
+      and must not — the browser carries the anon key, Supabase's own invite
+      call needs the service_role key, and this project has no Edge Function to
+      put one in. So adding a colleague records the ROLE, and the login is
+      Supabase Auth's to create. The two outcomes are rendered differently
+      because they are different: MEMBER_ADDED means that address already had a
+      NEXUS login and access is live now; PENDING_FIRST_SIGN_IN means the role
+      is waiting and somebody still has to give that person a way in.
+
+      Removing a person from `users` is still not offered, for the reason
+      NO_DELETE gives — that is the staff directory, and it is unchanged.
+      Removing their ACCESS is offered, and is a different act.
+
+   Nothing here is estimated: every number comes off a row — and where a row
    holds something other than what its column is named, item 5 says so and the
    number is withheld rather than printed under the wrong name. A panel whose
    table failed to load says so rather than showing a plausible blank. */
-import { db } from '../lib/data.js';
+import { canGrantOwner, canManageAccess, db, dbWrite } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -192,17 +229,21 @@ import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
    figure. Live 1 Sep 2026 `leads` holds 3 rows, so raising it changes nothing
    on screen today. */
 
-/* CONTROL-PLANE.md 5.8. These three tooltips said WHY the control is dead in
-   the vendor's terms — which table, which role, which policy, and the full list
-   of deployed webhook paths. That is an unbuilt-feature disclosure and an
-   inventory of the vendor's endpoints, rendered in the dealership's UI. The
-   control still shows and is still refused, which is the part that matters:
-   hiding it would teach the operator the feature does not exist. What it says
-   now is the fact and who owns it. */
+/* CONTROL-PLANE.md 5.8. These tooltips said WHY the control was dead in the
+   vendor's terms — which table, which role, which policy, and the full list of
+   deployed webhook paths. That is an unbuilt-feature disclosure and an
+   inventory of the vendor's endpoints, rendered in the dealership's UI.
+
+   Two of them stopped describing an unbuilt feature on 6 Sep 2026 and now point
+   at the card that does the job, because a control that says "not built" beside
+   a card that does it is worse than either. They still live on the STAFF
+   directory row, where the act genuinely is different: giving somebody access
+   is done by the address they will sign in with, not by picking a staff record,
+   and a staff record is not a login. */
 const NO_INVITE =
-  'Inviting somebody is not built yet. Ask NEXUS to add the account and it will appear here.';
+  'This is a staff record, not a login. Access is granted by the email address the person will sign in with — use "Add a colleague" under Who has access, below.';
 const NO_ROLE_WRITE =
-  'Roles cannot be changed from this dashboard yet. Ask NEXUS to change it and it will appear here.';
+  'This is the job title on the staff record, and it grants nothing. The account role that decides what somebody may do is changed under Who has access, below.';
 const NO_DELETE =
   'Removing a person is deliberately not offered here, and the reason is not that their leads would be orphaned — those would simply become unassigned. It is that the record of who owned a lead carries nothing about how or when they got it, so after a removal a lead that was never assigned and a lead whose rep was removed would be indistinguishable. Ask NEXUS to remove somebody and it can be done without losing that.';
 
@@ -698,6 +739,10 @@ SCREENS.team = async host => {
      had grown a private severity map to work around that; this one does not add
      a sixth. */
   let focusRoster = () => {};
+  /* Assigned when the access card exists, at the bottom of this screen. Until
+     then it is a no-op rather than undefined, so a click that lands during the
+     first paint does nothing instead of throwing. */
+  let focusAccess = () => {};
   const alerts = [];
   const add = a => alerts.push({ source: 'local', ...a });
 
@@ -1222,14 +1267,20 @@ SCREENS.team = async host => {
           ? `<span class="t-muted">No budget on file</span><div class="cell-sub">${num(open)} open ${plural(open, 'lead', 'leads')}, none carrying a budget_aed</div>`
           : '<span class="t-muted">No open lead held</span>';
       } },
-    /* The invite column exists only while somebody is waiting on one. Kept in
-       the list rather than deleted — the day a seat is created it comes back by
-       itself — but a column of dashes across a roster where nobody is pending is
-       a control that looks available and is not, and it pushes the columns that
-       carry something off the width. */
-    ...(pending.length ? [{ label: 'Invite', align: 'r', render: r => isPending(r)
-        ? `<button class="btn sm" disabled aria-label="Send an invite to ${esc(r.name || 'this team member')}"
-             title="${esc(NO_INVITE)}">Invite</button>`
+    /* The access column exists only while somebody on the STAFF directory is
+       marked pending. Kept in the list rather than deleted — the day a seat is
+       created it comes back by itself — but a column of dashes across a roster
+       where nobody is pending pushes the columns that carry something off the
+       width.
+
+       The button is live now and it does one honest thing: it takes you to the
+       card that can actually grant access. It deliberately does NOT pre-fill
+       anything, because a `users` row at pending_invite has a NULL email (that
+       is why nobody was ever invited) and a control that looked like it knew
+       the address would be inventing one. */
+    ...(pending.length ? [{ label: 'Access', align: 'r', render: r => isPending(r)
+        ? `<button class="btn sm" data-goaccess aria-label="Give ${esc(r.name || 'this team member')} access to NEXUS"
+             title="${esc(NO_INVITE)}">Give access</button>`
         : '<span class="t-muted">—</span>' }] : []),
   ];
 
@@ -1326,6 +1377,13 @@ SCREENS.team = async host => {
     });
     decorateHeaders();
     wireRows(th, rows, openRep);
+    /* Wired after wireRows, and stopPropagation is load-bearing: the whole row
+       opens the drawer, so without it "Give access" would open the drawer AND
+       jump the page, and the drawer would win the scroll. */
+    th.querySelectorAll('[data-goaccess]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      focusAccess();
+    }));
   }
 
   card.querySelectorAll('#tSegView button').forEach(b => b.addEventListener('click', () => {
@@ -1499,6 +1557,387 @@ SCREENS.team = async host => {
           : 'Nobody on the roster is unmeasured.'}</div>`;
   }
 
+  /* ── Who has access ───────────────────────────────────────────────────────
+     Built 6 Sep 2026. The role model landed on 5 September — column grants,
+     RESTRICTIVE RLS and a trigger, proved against 37 adversarial cases — and
+     its own closing note was that it had no product surface, so a dealership
+     could not add a colleague, see who had access, change a role, or take
+     access away when a rep left. That last one is not a nicety: a dealership
+     that cannot revoke a departed employee's access does not pass its own
+     procurement review.
+
+     WHY THIS IS A SEPARATE READ FROM THE ROSTER ABOVE. `public.tenant_members`
+     is not readable from the browser as a table — its only `authenticated`
+     policy is `auth_user_id = auth.uid()`, so a signed-in owner sees exactly
+     one row, their own — and `auth.users`, which holds the address a colleague
+     signs in with, is not readable at all. Both are deliberate and neither was
+     widened. `rpc/nexus_team_roster` is a SECURITY DEFINER projection scoped by
+     `nexus_current_tenant_ids()`, the same key every tenant policy uses; it is
+     the same pattern `nexus_workflow_catalogue()` set that morning, and it is
+     what lets a column be absent by construction rather than by whichever
+     grant nobody revoked.
+
+     EVERY CONTROL IS GATED ON THE SAME AUTHORITY THE DATABASE ENFORCES —
+     `tenant_members.role`, read through lib/data.js's canManageAccess and
+     canGrantOwner. Not on `users.role`, which is a job title and confers
+     nothing. Two sources would drift, and the one that lost would be this one.
+     None of it is a security control: the refusal happens in the database
+     against the same JWT and PostgREST is reachable without this bundle.
+     Unknown authority shows the control, for the reason lib/data.js gives.
+
+     AND A WRITE THAT COMES BACK EMPTY IS NOT A SAVE. Every handler below checks
+     what came back before it says anything happened — the lesson lib/unit-form.js
+     and lib/lead-drawer.js were both fixed for. These particular writes are RPCs
+     that raise on refusal rather than returning [], so an empty array here means
+     something unexpected; it is still reported as "nothing was saved" rather
+     than as success, because the alternative is telling somebody their rep is
+     locked out when they are not. */
+  const access = el('div', 'card flush'); access.style.marginTop = '16px'; body.appendChild(access);
+  focusAccess = () => access.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  /* The vocabulary the database enforces, in the dealership's words. The
+     database is the authority — these are migrations rbac_02/rbac_04/rbac_05 —
+     and this is a description of them, not a second copy of the rule: nothing
+     on this screen decides anything from these strings. */
+  const ROLE_ORDER = ['owner', 'admin', 'manager', 'sales', 'technician', 'member'];
+  const ROLE_WHAT = {
+    owner:      'Everything, including cost price, deleting a vehicle, and who else has access.',
+    admin:      'Everything an owner can do, except that only an owner may grant or remove the owner role.',
+    manager:    'Edit vehicles and their asking price, and reassign any lead. Not cost price, not adding or deleting a vehicle.',
+    sales:      'Their own leads only. Vehicles are read-only.',
+    technician: 'Read-only. No lead and no vehicle can be changed.',
+    member:     'The floor, and what a new account gets if nobody chooses: their own leads only, vehicles read-only.',
+  };
+  /* Every role gets an EXPLICIT tone. pill() falls back to tone(label) when
+     none is given, and tone() guesses from the words it knows about leads and
+     deals — 'sales' is not one of them and a wrong guess would colour an
+     account role as though it were a lead temperature. */
+  const ROLE_TONE = { owner: 'vip', admin: 'vip', manager: 'cold', sales: 'unknown', technician: 'unknown', member: 'unknown' };
+  const roleChip = k => pill(k || 'unknown', ROLE_TONE[k] || 'unknown');
+
+  /* Said wherever somebody would look for "send them an invitation". NEXUS
+     holds no credential and must not: the browser carries the anon key,
+     Supabase's own invite call needs the service_role key, and there is no
+     server-side place in this deployment to put one. */
+  const NO_CREDENTIAL =
+    'NEXUS cannot send a sign-in link and never handles a password or an invitation token. Recording somebody here decides their role; creating their login is Supabase Auth’s job, and whoever administers the NEXUS account has to invite the address there or give them a sign-in route another way.';
+  const REVOKE_MEANS =
+    'Removing access deletes this person’s membership of the dealership, so every screen and every row goes to nothing for them immediately. It does NOT delete their NEXUS login — that is Supabase Auth’s and NEXUS holds no credential — so they can still sign in and will see an empty product. It does not touch their staff record and it does not reassign their leads.';
+
+  /* Only an NX001 refusal carrying a machine code this screen recognises is
+     shown to the user; anything else falls back to the user-safe clause
+     lib/errors.js wrote. `.technical` is read rather than `.message` for the
+     same reason screens/finance.js reads it: since 5 Sep 2026 `.message` is a
+     generic sentence, and the refusal a person needs is inside the wire body.
+     Nothing else in that body reaches the screen. */
+  const TEAM_CODE = /^NX_TEAM_[A-Z_]+$/;
+  function accessRefusal(e) {
+    const raw = String(e && e.technical || '');
+    const i = raw.indexOf('{');
+    if (i < 0) return null;
+    try {
+      const j = JSON.parse(raw.slice(i));
+      if (!j || j.code !== 'NX001' || !TEAM_CODE.test(String(j.details || ''))) return null;
+      return { line: String(j.message || ''), next: String(j.hint || '') };
+    } catch { return null; }
+  }
+  const accessError = e => {
+    const r = accessRefusal(e);
+    return r ? `${r.line}${r.next ? ' ' + r.next : ''}` : String(e && e.message || 'The change did not go through.');
+  };
+
+  /* Nulls, not empty arrays, until a read has answered: a directory that failed
+     and a dealership with nobody in it are opposite statements, and this card
+     must never render the second when the first is true. */
+  let acRows = null, acRowsErr = null, acPend = null, acPendErr = null;
+  let acMsg = '', acMsgTone = 'ok', acConfirm = null, acBusy = false;
+
+  const acLeadsFor = staffId => (staffId && leads)
+    ? leads.filter(l => String(l.assigned_to_id || '') === String(staffId)).length
+    : null;
+
+  async function acLoad() {
+    const [rosterR, pendR] = await Promise.allSettled([
+      db('rpc/nexus_team_roster'),
+      db('rpc/nexus_team_pending'),
+    ]);
+    acRows = rosterR.status === 'fulfilled' ? rosterR.value : null;
+    acRowsErr = rosterR.status === 'rejected' ? rosterR.reason : null;
+    acPend = pendR.status === 'fulfilled' ? pendR.value : null;
+    acPendErr = pendR.status === 'rejected' ? pendR.reason : null;
+    acDraw();
+  }
+
+  function acRoleCell(r, mayManage, mayOwner) {
+    const roleWord = roleChip(r.account_role);
+    if (!mayManage) {
+      return `${roleWord}<div class="cell-sub" style="white-space:normal">${esc(ROLE_WHAT[r.account_role] || 'This role is not one this screen has words for; the database is the authority on what it allows.')}</div>`;
+    }
+    /* An admin may set any role below owner, their own included, and may not
+       set or remove owner. That is team_05's NX_TEAM_OWNER_ROLE_IS_OWNER_ONLY,
+       which tests the roles rather than the people — so the option is dropped
+       rather than shown and refused, and the sentence under the control says
+       why it is missing. */
+    const opts = ROLE_ORDER
+      .filter(k => mayOwner || (k !== 'owner' && r.account_role !== 'owner'))
+      .map(k => `<option value="${esc(k)}"${k === r.account_role ? ' selected' : ''}>${esc(k)}</option>`).join('');
+    if (!opts) {
+      return `${roleWord}<div class="cell-sub" style="white-space:normal">Only an account owner may change an owner’s role.</div>`;
+    }
+    return `<select data-acrole="${esc(r.auth_user_id)}" aria-label="Account role for ${esc(r.email || 'this person')}">${opts}</select>
+      <button class="btn sm" data-acsave="${esc(r.auth_user_id)}">Save role</button>
+      ${mayOwner ? '' : '<div class="cell-sub" style="white-space:normal">The owner role is not on this list because only an account owner may grant or remove it.</div>'}`;
+  }
+
+  function acStaffCell(r, mayManage) {
+    const linked = r.staff_user_id
+      ? `${esc(r.staff_name || 'a staff record with no name on it')}${r.staff_job_title ? ` <span class="cell-sub">· ${esc(r.staff_job_title)}</span>` : ''}`
+      : '<span class="t-warm">Not linked to a staff record</span>';
+    /* The unlinked case is rbac open item 4 and it is a working defect, not a
+       cosmetic gap: leads.assigned_to_id points at the STAFF id, so a sales
+       login with no link matches no lead and can edit none of them. It presents
+       as "the product is broken" unless something says otherwise, so something
+       does. */
+    const why = r.staff_user_id ? '' :
+      `<div class="cell-sub" style="white-space:normal"><span class="t-warm">This account can sign in but is not connected to anybody on the staff directory.</span>
+         Leads are filed against a staff record, so ${esc(r.account_role === 'sales' || r.account_role === 'member' ? 'this person can currently edit no leads at all' : 'nothing on this screen can attribute work to them')}.</div>`;
+    if (!mayManage) return linked + why;
+    const opts = ['<option value="">Not linked</option>'].concat(
+      (users || []).map(u => `<option value="${esc(u.id)}"${String(u.id) === String(r.staff_user_id || '') ? ' selected' : ''}>${esc(u.name || u.email || u.id)}</option>`)).join('');
+    return `${linked}${why}
+      <div style="margin-top:6px">
+        <select data-acstaff="${esc(r.auth_user_id)}" aria-label="Staff record for ${esc(r.email || 'this person')}">${opts}</select>
+        <button class="btn sm" data-aclink="${esc(r.auth_user_id)}">Link</button>
+        ${usersErr ? '<div class="cell-sub t-warm" style="white-space:normal">The staff directory could not be read on this page load, so this list is empty rather than short.</div>' : ''}
+      </div>`;
+  }
+
+  function acDraw() {
+    const mayManage = canManageAccess();
+    const mayOwner = canGrantOwner();
+    const rows = acRows || [];
+    const pend = acPend || [];
+
+    const head = `<div class="card-head"><div>
+        <div class="card-title">Who has access</div>
+        <div class="card-sub">Every NEXUS login that can open this dealership’s data, and what the database lets each of them do.
+          This is not the staff directory above: a staff record is not a login and grants nothing.
+          ${mayManage ? '' : 'Changing any of this is an owner or admin decision, so the controls are not offered on this account.'}</div>
+      </div></div>`;
+
+    const msg = acMsg
+      ? `<div style="padding:0 20px 12px"><div class="banner ${acMsgTone === 'ok' ? 'ok' : 'hot'}">
+           <span class="material-symbols-outlined">${acMsgTone === 'ok' ? 'check_circle' : 'error'}</span>
+           <div style="white-space:normal">${esc(acMsg)}</div></div></div>`
+      : '';
+
+    let list;
+    if (acRowsErr) {
+      list = stateError('who has access', acRowsErr, null,
+        'Nobody has been removed and nothing has changed — this is a read that failed, not an empty dealership.');
+    } else if (!rows.length) {
+      /* Structurally almost impossible: the caller is reading through their own
+         membership, so a successful read returns at least themselves. Said as
+         what it is rather than as "no team". */
+      list = stateEmpty('No access records came back',
+        'The read succeeded and returned nobody — not even the account you are signed in as, which should always appear. Nothing has been changed; report this rather than acting on it.', 'help');
+    } else {
+      list = `<div>${rows.map(r => {
+        const n = acLeadsFor(r.staff_user_id);
+        const confirming = acConfirm === r.auth_user_id;
+        return `<div style="padding:14px 20px;border-top:1px solid var(--line)">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+            <div style="flex:2;min-width:220px">
+              <div style="font-weight:500">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="cell-sub">· you</span>' : ''}</div>
+              <div class="cell-sub mono">${esc(r.email || 'no address on the account')}</div>
+              <div class="cell-sub">Added ${esc(dubaiStamp(r.member_since))} · ${r.last_sign_in_at
+                ? `last signed in ${esc(ago(r.last_sign_in_at))}`
+                : 'has never signed in'}</div>
+            </div>
+            <div style="flex:2;min-width:240px">${acRoleCell(r, mayManage, mayOwner)}</div>
+            <div style="flex:2;min-width:240px">${acStaffCell(r, mayManage)}</div>
+            <div style="flex:1;min-width:150px">
+              ${/* NULL is not false. No inventory_action_policy row means nobody
+                    has STATED who may approve, which is a different answer from
+                    "this person may not". */''}
+              ${r.is_approver === true
+                ? `${pill('Can approve', 'ok')}<div class="cell-sub">by their account role</div>`
+                : r.is_approver === false
+                  ? '<span class="t-muted">Not an approver</span>'
+                  : `<span class="t-muted">Not stated</span><div class="cell-sub" style="white-space:normal">This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.</div>`}
+            </div>
+            <div style="flex:0 0 auto">
+              ${mayManage && !confirming
+                ? `<button class="btn sm ghost" data-acrevoke="${esc(r.auth_user_id)}">Remove access</button>`
+                : mayManage ? '' : '<span class="cell-sub">—</span>'}
+            </div>
+          </div>
+          ${confirming ? `<div class="banner hot" style="margin-top:10px">
+            <span class="material-symbols-outlined">warning</span>
+            <div style="white-space:normal">
+              <div style="font-weight:500">Remove ${esc(r.email || r.staff_name || 'this account')} from ${esc(r.tenant_name || 'this dealership')}?</div>
+              <div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(REVOKE_MEANS)}</div>
+              <div class="cell-sub" style="white-space:normal;margin-top:6px">${n == null
+                ? 'They are not linked to a staff record, so no lead on this screen is filed against them.'
+                : `${num(n)} of the ${num((leads || []).length)} leads read on this screen ${n === 1 ? 'is' : 'are'} assigned to their staff record and will stay assigned${leadsCapped ? ', and that read is capped so there may be more' : ''}.`}</div>
+              <div style="margin-top:10px">
+                <button class="btn sm" data-acrevokeyes="${esc(r.auth_user_id)}">Confirm removal</button>
+                <button class="btn sm ghost" data-acrevokeno>Cancel</button>
+              </div>
+            </div></div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    /* Pending is its own list because a pending person is NOT a member: they
+       hold no role in the database yet and appear nowhere above. Rendering them
+       in the same list would say somebody has access who does not. */
+    const pendBox = acPendErr
+      ? `<div style="padding:0 20px 16px">${stateError('who is waiting to join', acPendErr, null,
+          'This is the pending list only; the access list above is unaffected.')}</div>`
+      : pend.length
+        ? `<div style="border-top:1px solid var(--line)">
+            <div style="padding:14px 20px 4px"><div class="label-caps">Waiting for a first sign-in</div>
+              <div class="cell-sub" style="white-space:normal">${esc(NO_CREDENTIAL)}</div></div>
+            ${pend.map(p => `<div style="padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+              <div style="flex:2;min-width:220px"><span class="mono">${esc(p.email)}</span>
+                <div class="cell-sub">Recorded ${esc(ago(p.recorded_at))} as ${roleChip(p.account_role)}${
+                  p.staff_name ? ` · to be linked to ${esc(p.staff_name)}` : ''}</div>
+                ${p.has_login ? `<div class="cell-sub t-warm" style="white-space:normal">A NEXUS login already exists for this address but the role has not been taken up. That should not happen through this screen; report it rather than re-adding them.</div>` : ''}
+              </div>
+              ${mayManage ? `<div><button class="btn sm ghost" data-accancel="${esc(p.email)}">Cancel</button></div>` : ''}
+            </div>`).join('')}
+          </div>`
+        : '';
+
+    /* The add form is rendered only where it can be used. On an account that
+       may not manage access it is left out entirely rather than shown disabled:
+       the card subtitle already says whose decision this is, and a dead form is
+       a worse way to say the same thing than a sentence. */
+    const staffOpts = ['<option value="">Link to a staff record later</option>'].concat(
+      (users || []).map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email || u.id)}</option>`)).join('');
+    const addBox = !mayManage ? '' : `<div style="border-top:1px solid var(--line);padding:16px 20px">
+        <div class="label-caps" style="margin-bottom:8px">Add a colleague</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+          <div style="flex:2;min-width:240px">
+            <input type="email" id="acEmail" placeholder="the address they will sign in with" aria-label="Email address" style="width:100%" />
+          </div>
+          <div>
+            <select id="acAddRole" aria-label="Account role">
+              ${ROLE_ORDER.filter(k => mayOwner || k !== 'owner')
+                .map(k => `<option value="${esc(k)}"${k === 'sales' ? ' selected' : ''}>${esc(k)}</option>`).join('')}
+            </select>
+          </div>
+          <div><select id="acAddStaff" aria-label="Staff record">${staffOpts}</select></div>
+          <div><button class="btn primary" id="acAdd">Add</button></div>
+        </div>
+        <div class="cell-sub" style="white-space:normal;margin-top:12px">
+          ${ROLE_ORDER.filter(k => mayOwner || k !== 'owner')
+            .map(k => `<div style="margin-bottom:4px">${roleChip(k)} ${esc(ROLE_WHAT[k])}</div>`).join('')}
+        </div>
+        ${mayOwner ? '' : '<div class="cell-sub" style="white-space:normal;margin-top:6px">The owner role is not on this list because only an account owner may grant it.</div>'}
+        <div class="cell-sub" style="white-space:normal;margin-top:10px">${esc(NO_CREDENTIAL)}</div>
+      </div>`;
+
+    access.innerHTML = head + msg + list + pendBox + addBox;
+    acWire();
+  }
+
+  function acSay(text, tone) { acMsg = text; acMsgTone = tone || 'hot'; acDraw(); }
+
+  async function acCall(path, body, onRow) {
+    if (acBusy) return;
+    acBusy = true;
+    try {
+      const back = await dbWrite('POST', path, body);
+      /* An RPC that did nothing still answers 200. Check the payload before
+         claiming anything happened — the rule lib/unit-form.js and
+         lib/lead-drawer.js were both fixed for. */
+      if (!Array.isArray(back) || !back.length) {
+        acMsg = 'Nothing came back from that change, so nothing is claimed to have happened. Reload the screen before trying again.';
+        acMsgTone = 'hot';
+      } else {
+        onRow(back[0]);
+      }
+    } catch (e) {
+      acMsg = accessError(e);
+      acMsgTone = 'hot';
+    } finally {
+      acBusy = false;
+      acConfirm = null;
+      await acLoad();
+    }
+  }
+
+  function acWire() {
+    access.querySelectorAll('[data-acsave]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.acsave;
+      /* The id is an auth.users uuid — hex and hyphens only — and it sits
+         inside a quoted attribute selector, so nothing here needs escaping.
+         CSS.escape is deliberately not used: it is not present in every
+         environment this bundle is rendered in, and a missing global would take
+         the whole card down rather than one lookup. */
+      const sel = access.querySelector(`[data-acrole="${id}"]`);
+      if (!sel) return;
+      acCall('rpc/nexus_team_set_role', { p_auth_user_id: id, p_role: sel.value }, row => {
+        acMsg = row.changed === false
+          ? `${row.email || 'That account'} was already ${row.new_role}, so nothing changed.`
+          : `${row.email || 'That account'} is now ${row.new_role} — they were ${row.previous_role}.`;
+        acMsgTone = 'ok';
+      });
+    }));
+    access.querySelectorAll('[data-aclink]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.aclink;
+      const sel = access.querySelector(`[data-acstaff="${id}"]`);
+      if (!sel) return;
+      acCall('rpc/nexus_team_link_staff', { p_auth_user_id: id, p_staff_user_id: sel.value || null }, row => {
+        acMsg = row.staff_user_id
+          ? `${row.email || 'That account'} is now linked to ${row.staff_name || 'that staff record'}.`
+          : `${row.email || 'That account'} is no longer linked to a staff record, so no lead can be filed against them.`;
+        acMsgTone = 'ok';
+      });
+    }));
+    access.querySelectorAll('[data-acrevoke]').forEach(b => b.addEventListener('click', () => {
+      acConfirm = b.dataset.acrevoke; acMsg = ''; acDraw();
+    }));
+    access.querySelectorAll('[data-acrevokeno]').forEach(b => b.addEventListener('click', () => {
+      acConfirm = null; acDraw();
+    }));
+    access.querySelectorAll('[data-acrevokeyes]').forEach(b => b.addEventListener('click', () => {
+      acCall('rpc/nexus_team_revoke_access', { p_auth_user_id: b.dataset.acrevokeyes }, row => {
+        acMsg = `${row.email || 'That account'} no longer has access to this dealership. Their NEXUS login still exists — removing it is done in the NEXUS account, not here — and ${
+          row.leads_still_assigned ? `${row.leads_still_assigned} lead${row.leads_still_assigned === 1 ? '' : 's'} remain assigned to their staff record` : 'no lead was left pointing at them'}.`;
+        acMsgTone = 'ok';
+      });
+    }));
+    access.querySelectorAll('[data-accancel]').forEach(b => b.addEventListener('click', () => {
+      acCall('rpc/nexus_team_cancel_invite', { p_email: b.dataset.accancel }, row => {
+        acMsg = `${row.email} is no longer waiting to join. If they sign in now they will see nothing.`;
+        acMsgTone = 'ok';
+      });
+    }));
+    const add = access.querySelector('#acAdd');
+    if (add) add.addEventListener('click', () => {
+      const email = (access.querySelector('#acEmail')?.value || '').trim();
+      const role = access.querySelector('#acAddRole')?.value || 'member';
+      const staff = access.querySelector('#acAddStaff')?.value || null;
+      if (!email) { acSay('Enter the email address this person will sign in with. It is the only thing that links the role you are granting to the login they will eventually have.', 'hot'); return; }
+      acCall('rpc/nexus_team_invite', { p_email: email, p_role: role, p_staff_user_id: staff || null }, row => {
+        /* The two outcomes are different facts and are said differently. The
+           function's own `detail` is the sentence about what NEXUS did and did
+           not do, and it is rendered rather than paraphrased. */
+        acMsg = row.outcome === 'MEMBER_ADDED'
+          ? `${row.email} has access now, as ${row.role}. ${row.detail}`
+          : `${row.email} is recorded as ${row.role}. ${row.detail}`;
+        acMsgTone = 'ok';
+      });
+    });
+  }
+
+  access.innerHTML = `<div class="card-head"><div><div class="card-title">Who has access</div>
+      <div class="card-sub">Reading the accounts that can open this dealership’s data.</div></div></div>${stateLoading(3)}`;
+  await acLoad();
+
   /* ── One rep, in full ──────────────────────────────────────────────────── */
   function openRep(r) {
     const owned = ownedBy(r);
@@ -1649,11 +2088,14 @@ SCREENS.team = async host => {
         </div>
       </div>
       <div class="drawer-foot">
-        <button class="btn primary" disabled title="${esc(NO_INVITE)}">${isPending(r) ? 'Send invite' : 'Resend invite'}</button>
-        <button class="btn" disabled title="${esc(NO_ROLE_WRITE)}">Change role</button>
+        <button class="btn primary" id="tGoAccessDrawer" title="${esc(isPending(r) ? NO_INVITE : NO_ROLE_WRITE)}">Manage access</button>
         <button class="btn ghost" id="tGoLeadsDrawer">Open the leads screen</button>
       </div>`);
     $('tClose').addEventListener('click', closeDrawer);
+    /* One button, because "send invite" and "change role" were two dead
+       controls for one live card. It closes the drawer first: scrolling a card
+       into view behind an open drawer moves something the reader cannot see. */
+    $('tGoAccessDrawer').addEventListener('click', () => { closeDrawer(); focusAccess(); });
     $('tGoLeadsDrawer').addEventListener('click', () => go('leads'));
   }
 };

@@ -176,6 +176,19 @@ function canEditUnit(tenantId)     { return held(MANAGER_UP, tenantId); }
    assigned_to_id inside both USING and WITH CHECK for a sales login, so a rep
    cannot reassign a lead — not even one of their own. */
 function canReassignLead(tenantId) { return held(MANAGER_UP, tenantId); }
+/* Adding a colleague, changing somebody's role, linking them to a staff record,
+   or taking their access away. team_02 and team_03/team_05 all begin with the
+   same lookup — the target's membership row intersected with
+   nexus_tenant_ids_for_roles(['owner','admin']) — so this predicate mirrors one
+   rule and not a family of them. */
+function canManageAccess(tenantId)  { return held(OWNER_ADMIN, tenantId); }
+/* Granting or removing the OWNER role specifically. team_05's
+   NX_TEAM_OWNER_ROLE_IS_OWNER_ONLY tests the roles rather than the people, so
+   it covers an admin naming itself as well as an admin naming a colleague —
+   which is what stops an admin promoting itself. Unknown authority answers true
+   here for the same reason as the rest: the database gets to say no, not this
+   file. */
+function canGrantOwner(tenantId)    { return held(['owner'], tenantId); }
 
 /* Once, per expiry. A screen fires four or five reads in parallel and the badge
    poller adds its own, so an expired token produces six simultaneous 401s —
@@ -367,4 +380,4 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead };
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner };
