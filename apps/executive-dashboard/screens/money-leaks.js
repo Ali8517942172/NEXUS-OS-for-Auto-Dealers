@@ -117,7 +117,7 @@
    lead; 0 of 9 Deal Rescue prerequisites met; 0 comparables of accepted match
    quality on any unit. Two leak lines. That is the correct output. */
 
-import { db } from '../lib/data.js';
+import { db, onIdentityChange } from '../lib/data.js';
 import { aed, ago, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -150,13 +150,40 @@ const readFailed = (what, err) =>
   hot(`${esc(what)} could not be read (${esc(str(err && err.message) || 'no reason given')}), so nothing is claimed `
     + 'here and nothing is ruled out. An unread check is not a clear one.');
 
+/* ── The memo is per RENDER, not per page load, and that distinction is a bug
+      this screen shipped with ──────────────────────────────────────────────
+   Eight panels share these reads, so a memo is right: without it one visit
+   issues eight identical requests. But the memo was held at module scope and
+   cleared only on rejection, which made it permanent for the life of the tab.
+   Three consequences, all measured on the live site:
+
+     - Navigating back to this screen issued ZERO requests and re-rendered
+       yesterday's numbers under a caption saying "re-read on this load".
+     - Refresh did nothing to the screen.
+     - Worse: lib/data.js records that module state survives the re-auth path
+       that does not reload the page, which is why six other modules register
+       onIdentityChange. This one did not. A second dealership signing in on
+       the same machine could therefore have been shown the FIRST dealership's
+       leak register — the whole screen, under their own name.
+
+   That last one is the reason this is not a caching nicety. It is the same
+   class as every other finding here: a thing that looked measured and was
+   remembered. So the memo now lives for one render — reset() runs at the top
+   of the mount function, and again whenever the signed-in identity changes,
+   which is belt and braces on purpose because the two events are not the same
+   and only one of them is under this file's control. */
+const MEMOS = new Set();
 const shared = make => {
   let p = null;
-  return () => {
+  const f = () => {
     if (!p) { p = make(); p.catch(() => { p = null; }); }
     return p;
   };
+  MEMOS.add(() => { p = null; });
+  return f;
 };
+const resetReads = () => { MEMOS.forEach(reset => reset()); };
+onIdentityChange(resetReads);
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
 const linkBtn = (id, label) => (SCREENS[id]
@@ -586,6 +613,10 @@ function buildLeadLeaks(leads) {
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.moneyleaks = async host => {
+  /* Every visit re-reads. See the note on `shared` above for what this is
+     repairing and why a stale register here is worse than a slow one. */
+  resetReads();
+
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */

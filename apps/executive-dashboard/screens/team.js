@@ -1071,8 +1071,38 @@ SCREENS.team = async host => {
        failed to render. v_needs_attention contributes nothing here in any case
        (it has no branch that emits screen = 'team'), so everything this heading
        covers was derived on this screen and the CHECKED line below is the whole
-       of it. */
-    alertHost.innerHTML = `<div class="card">
+       of it.
+
+       AND THE HEADLINE HAS TO ASK WHETHER THE READS HAPPENED, which until
+       6 Sep 2026 it did not. Every derived alert on this strip comes from
+       `users`, `v_team_performance` and `leads`. If any of the three failed,
+       `alerts` is empty for the same reason an unplugged smoke detector is
+       silent — and this card printed a green tick and "Nothing on the team
+       screen needs a human right now" over it. Reproduced under an injected
+       403 with all three reads failing.
+
+       The qualifying prose underneath was already correct and already named
+       each failed read; it was the heading that was wrong, and a heading beats
+       a footnote. So an empty strip now has two different headlines, and the
+       zero is only called a clear when all three reads came back. */
+    const readsFailed = [
+      usersErr ? 'the roster' : '',
+      perfErr ? 'the performance view' : '',
+      leadsErr ? 'leads' : '',
+    ].filter(Boolean);
+
+    alertHost.innerHTML = readsFailed.length
+      ? `<div class="card">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <span class="material-symbols-outlined t-warm" style="font-size:20px" aria-hidden="true">help</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500">Nothing could be checked on this screen — this is not an all-clear</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">Every check in this strip is derived from
+            ${esc(readsFailed.join(', '))}, and ${readsFailed.length === 1 ? 'that read' : 'those reads'} did not come
+            back. An empty list here means nothing was looked at, not that nothing was found.</div>
+          <div class="cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
+        </div></div></div>`
+      : `<div class="card">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <span class="material-symbols-outlined t-ok" style="font-size:20px" aria-hidden="true">task_alt</span>
         <div style="flex:1;min-width:0">
