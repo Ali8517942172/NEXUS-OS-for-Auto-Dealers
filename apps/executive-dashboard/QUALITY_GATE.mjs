@@ -197,8 +197,8 @@ const opt  = n => { const i = ARGV.indexOf(n); return i >= 0 ? ARGV[i + 1] : nul
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-06T05:05:00Z",
-  "source": "--catalogue /home/claude/out/catalogue.prod.2026-09-06T0505Z.json — live catalogue of Supabase PRODUCTION project dsvuoovivysszdoiorch, read 6 Sep 2026 at 05:05:00Z, ANCHORED TO MIGRATION 20260906050249 (276 recorded). max(version) of supabase_migrations.schema_migrations was read at 05:03:04Z before this reading and again at 05:05:25Z after it, both 20260906050249. This is the THIRD attempt: catalogues taken at 04:54:31Z (head 20260906042024) and 04:58:58Z (head 20260906045700) were both discarded because another agent applied a migration minutes later, and the new L13 reported NOT RUN on each rather than a verdict — the failure mode this pass exists to end, caught twice while the pass was running. There is no NEXUS_DB_URL and no psql credential in this environment, so the catalogue was read through mcp__Supabase__execute_sql in two statements — everything except the function bodies, then the 122 function bodies keyed by (name, identity arguments) — each returned base64-encoded with its own length and md5, decoded and reassembled locally only after both matched (A: 73111 chars, md5 48743f853d7de025168bb0500b56081a; B: 335453 chars, md5 dc33c4dde7208b852db078a568dcb038). Bodies were spliced by function identity, never by position. The gate's own integrity seal then re-verified the reassembly against the counts Postgres computed for itself in the same statement: 122 functions, 314404 characters of function source, 98 relations.",
+  "takenAt": "2026-09-06T06:51:14Z",
+  "source": "--catalogue /home/claude/out/catalogue.prod.2026-09-06T0651Z.json — live catalogue of Supabase PRODUCTION project dsvuoovivysszdoiorch, read 6 Sep 2026 at 06:51:14Z, ANCHORED TO MIGRATION 20260906062139 (282 recorded). max(version) of supabase_migrations.schema_migrations was read at 06:49:54Z before this reading and again at 06:51:49Z after it, both 20260906062139 with count 282 — so no migration landed across the reading. There is no NEXUS_DB_URL and no psql credential in this environment, so the catalogue was read through mcp__Supabase__execute_sql in TWO statements: (A) the whole catalogue with function bodies blanked, and (B) the 132 function bodies keyed by (name, identity arguments). Each was returned base64-encoded alongside the length and md5 Postgres computed for the same text, decoded locally and accepted only after BOTH matched (A: 75452 chars, md5 88184bb2f4f5fce297dd29c7aa776cb8; B: 361798 chars, md5 95d6a852b522079124f438f8286f077e). Bodies were spliced by function identity, never by position, and a duplicate identity would have aborted the splice. Statement A is CATALOGUE_SQL with its /* */ comments stripped and whitespace collapsed, to fit the tool's request limit — no clause was altered; the reassembly was then re-verified against the counts Postgres computed for itself in the same statement: 132 functions, 339333 characters of function source, 99 relations, all three matching meta.*_expected.",
   "relations": {
     "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
     "attribution_event_type": "event,seq,state,source_ref,finding",
@@ -247,6 +247,7 @@ const SNAPSHOT = {
     "tenant_capability_catalogue": "capability_key,label,what_it_unlocks,requires,absent_means,sort,created_at",
     "tenant_configuration": "tenant_id,brand_name,default_language,timezone,currency,business_hours,business_hours_source,business_hours_set_by,business_hours_verified_at,business_hours_basis,ai_tone,ai_tone_source,ai_tone_set_by,ai_tone_verified_at,ai_tone_basis,followup_policy,followup_policy_source,followup_policy_set_by,followup_policy_verified_at,followup_policy_basis,approval_rules,approval_rules_source,approval_rules_set_by,approval_rules_verified_at,approval_rules_basis,created_at,updated_at",
     "tenant_configuration_default": "setting_key,applies_to,value_kind,default_state,default_value,who_decides,provenance_required,rationale,engine_rule_when_absent,created_at",
+    "tenant_member_invite": "id,tenant_id,email,role,staff_user_id,created_by,created_at,revoked_at,revoked_by,claimed_at,claimed_auth_user_id",
     "tenant_members": "tenant_id,auth_user_id,role,staff_user_id,created_at",
     "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine",
     "users": "id,name,email,role,status,slack_user_id,created_at,tenant_id",
@@ -553,6 +554,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_claim_pending_membership": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_comm_keys_for_lead": {
       "secdef": true,
       "tenantArg": true,
@@ -806,6 +814,62 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_team_cancel_invite": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_team_invite": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_team_link_staff": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_team_pending": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_team_revoke_access": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_team_roster": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_team_set_role": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_tenancy_readiness": {
       "secdef": true,
       "tenantArg": false,
@@ -842,6 +906,22 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_whatsapp_consent_current": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_whatsapp_consent_events": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
         "service_role"
       ]
     },
@@ -1220,9 +1300,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260906050249",
-    "count": 276,
-    "newest": "20260906050249,20260906045700,20260906042024,20260905211435,20260905211423"
+    "head": "20260906062139",
+    "count": 282,
+    "newest": "20260906062139,20260906062049,20260906062019,20260906061916,20260906061806"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */
@@ -1835,6 +1915,82 @@ const SCHEMA_TAKEN   = live.cat ? live.cat.takenAt : (pgrstRelations ? 'this run
 const RPC_NAMES = new Set(
   live.cat ? live.cat.functions.map(f => f.name) : Object.keys(SNAPSHOT.rpcs));
 
+/* ── AN UNKNOWN RPC HAS TWO EXPLANATIONS, AND THE GATE MUST NAME BOTH ─────
+   RPC_NAMES is the offline render stub's allow-list AND S3's function map, and
+   it is ALREADY DERIVED — from live.cat.functions when a catalogue is supplied,
+   from SNAPSHOT.rpcs otherwise, and SNAPSHOT.rpcs is itself written by
+   --refresh-schema out of the catalogue (see rpcsFromCatalogue below). Nobody
+   hand-types a function name into this file and nobody has since 3 Sep 2026.
+
+   That removed the hand-maintenance and left the currency. The list inherits the
+   catalogue's anchor exactly, so it goes stale at the same instant the schema
+   does — and the symptom is the worst-shaped one this gate can produce. On
+   6 Sep 2026 five team_0* migrations created new RPCs after the morning's
+   catalogue was taken; the stub answered every screen that called one with
+   404 PGRST202; R2 and R3 went red as P0 failures reading exactly like broken
+   screens, and an hour went into the screens before anybody read the anchor.
+
+   So for a name the catalogue does not know, ask the one question that separates
+   the two explanations, and derive the answer from the two things this gate
+   already holds: the catalogue's own migration anchor, and supabase/migrations/.
+   If a migration file NEWER than the anchor creates a function of that name, the
+   catalogue predating it is a complete explanation and the reader is handed the
+   file name. If no such file exists, the name is unaccounted for and that is a
+   real finding about the source.
+
+   THIS CHANGES NO VERDICT, ON PURPOSE. A screen calling a function that does not
+   exist and a screen calling one the catalogue predates produce an identical
+   symptom, and letting the render lane decide between them and clear its own red
+   would be a second exemption list — quieter than the first and derived from the
+   artefact under audit. The lever that detects the staleness is L13; the lever
+   that clears it is re-taking the catalogue. What this adds is the sentence that
+   points at the lever instead of at the screens. */
+const MIGDIR_RPC = join(HERE, '..', '..', 'supabase', 'migrations');
+const CATALOGUE_ANCHOR = (() => {
+  const mh = live.cat && live.cat.migration_history;
+  return mh && mh.readable && mh.head != null ? String(mh.head) : null;
+})();
+const RPC_CREATED_AFTER_ANCHOR = await (async () => {
+  const out = new Map();
+  if (!CATALOGUE_ANCHOR) return out;
+  let files = [];
+  try {
+    files = (await readdir(MIGDIR_RPC))
+      .filter(f => /^\d{14}_.*\.sql$/.test(f) && f.slice(0, 14) > CATALOGUE_ANCHOR).sort();
+  } catch { return out; }
+  for (const f of files) {
+    let sql = '';
+    try { sql = await readFile(join(MIGDIR_RPC, f), 'utf8'); } catch { continue; }
+    for (const m of sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+(?:public\s*\.\s*)?"?([a-z0-9_]+)"?\s*\(/gi))
+      if (!out.has(m[1].toLowerCase())) out.set(m[1].toLowerCase(), f);
+  }
+  return out;
+})();
+const rpcMissingWhy = fn => {
+  const src = live.cat
+    ? `the catalogue this run was given (taken ${SCHEMA_TAKEN}${CATALOGUE_ANCHOR ? `, anchored to migration ${CATALOGUE_ANCHOR}` : ', carrying NO migration anchor'})`
+    : `the schema snapshot embedded in this file (taken ${SCHEMA_TAKEN})`;
+  const mig = RPC_CREATED_AFTER_ANCHOR.get(String(fn).toLowerCase());
+  return mig
+    ? `this RPC is not in ${src}, and supabase/migrations/${mig} — NEWER than that anchor — creates a function of that name. On this evidence the snapshot is behind the database, not the screen ahead of it: re-take the catalogue and re-run. This sentence explains a red; it does not clear one.`
+    : `this RPC is not in ${src}, and no migration in supabase/migrations/ newer than that anchor creates a function of that name, so snapshot staleness does not explain it.`;
+};
+/* Every name the stub had to refuse, so R2 and R3 can carry the explanation
+   into their own failure lines instead of leaving it in a 404 body. */
+const STUB_UNKNOWN_RPCS = new Map();
+const stubUnknownRpcNote = () => {
+  if (!STUB_UNKNOWN_RPCS.size) return [];
+  const ex = [...STUB_UNKNOWN_RPCS.entries()];
+  const staleCount = ex.filter(([, m]) => m).length;
+  return ['NOTE, and it does not clear this failure — the OFFLINE STUB refused '
+    + `${ex.length} RPC name(s) with 404 PGRST202 because ${live.cat ? 'the catalogue this run was given' : 'this file\'s embedded snapshot'} does not contain them: `
+    + ex.map(([fn, mig]) => mig
+        ? `${fn} (created by supabase/migrations/${mig}, NEWER than the catalogue anchor ${CATALOGUE_ANCHOR})`
+        : `${fn} (NO repository migration newer than the anchor creates it)`).join('; ')
+    + `. ${staleCount} of ${ex.length} are explained by the snapshot being behind the database — for those the red belongs to this gate's currency, not to the screen, and re-taking the catalogue is what clears it. `
+    + 'Any name not so marked is unaccounted for and is a real finding about the source.'];
+};
+
 /* --refresh-schema: rewrite the snapshot block in this very file. The whole
    point is that nobody ever hand-types a column list into this gate again. */
 if (flag('--refresh-schema')) {
@@ -1996,7 +2152,7 @@ const REST_PATHS = [];
     if (rel === 'rpc' || rel === 'rpc/') continue;   // dbWrite('POST', `rpc/${fn}`) — the name is a variable
     if (rel.startsWith('rpc/')) {
       const fn = rel.slice(4);
-      if (!RPC_NAMES.has(fn)) bad.push(`${path}: rpc/${fn} is not a function in this database`);
+      if (!RPC_NAMES.has(fn)) bad.push(`${path}: rpc/${fn} — ${rpcMissingWhy(fn)}`);
       continue;
     }
     if (!RELATIONS[rel]) { bad.push(`${path}: relation "${rel}" does not exist`); continue; }
@@ -2427,7 +2583,18 @@ function stubRest(url, method, body) {
     /* Declared once, served by the stub and looked for by R7, so the two cannot
        drift apart: R7's job is to prove the DATABASE'S OWN sentence reached the
        reader, and a check that greps for a paraphrase proves something weaker. */
-    if (!RPC_NAMES.has(fn)) return { status: 404, body: { code: 'PGRST202', message: `Could not find the function public.${fn}` } };
+    /* The 404 the stub serves for a name it does not hold used to read exactly
+       like PostgREST refusing a call the database would refuse. It is not that:
+       it is THIS GATE'S schema map declining a name, and the two are read very
+       differently by somebody deciding whether a screen is broken. The hint says
+       which, and says it from the anchor and the repository rather than from a
+       judgement. */
+    if (!RPC_NAMES.has(fn)) {
+      STUB_UNKNOWN_RPCS.set(fn, RPC_CREATED_AFTER_ANCHOR.get(fn.toLowerCase()) || null);
+      return { status: 404, body: { code: 'PGRST202',
+        message: `the gate's offline stub has no function public.${fn}`,
+        hint: rpcMissingWhy(fn) } };
+    }
     if (fn === 'sentinel_inventory_actions')
       return { status: 200, body: [{ ...fabricate('v_inventory_profit_sentinel'), ...SENTINEL_UNKNOWN, id: 'NX-1011', vin: 'JTMHV05J104123999' }] };
     if (fn === 'action_approver_context')
@@ -2615,7 +2782,7 @@ try {
   await page.route(`${STUB_URL}/rest/v1/**`, r => {
     restCalls++;
     const out = stubRest(r.request().url(), r.request().method(), r.request().postData());
-    if (out.status !== 200) rejections.push(`${out.status} ${out.body.code || ''} ${out.body.message}`);
+    if (out.status !== 200) rejections.push(`${out.status} ${out.body.code || ''} ${out.body.message}${out.body.hint ? ` — ${out.body.hint}` : ''}`);
     r.fulfill({ status: out.status, contentType: 'application/json', body: JSON.stringify(out.body) });
   });
   await page.route('https://example.invalid/**', r => r.fulfill({ status: 200, contentType: 'application/json',
@@ -2693,7 +2860,10 @@ if (render.failed) {
 
   const broken = NAV_IDS.filter(id => { const s = r.screens[id]; return s.len < 200 || s.errored || s.newErrors > 0 || s.stuckLoading; });
   verdict('R2', LANE.RENDER, 'P0', 'Every screen renders real content with no page errors',
-    broken.map(id => { const s = r.screens[id]; return `${id}: chars=${s.len} errState=${s.errored} stuck=${s.stuckLoading} newErrors=${s.newErrors}`; }),
+    broken.length
+      ? broken.map(id => { const s = r.screens[id]; return `${id}: chars=${s.len} errState=${s.errored} stuck=${s.stuckLoading} newErrors=${s.newErrors}`; })
+          .concat(stubUnknownRpcNote())
+      : [],
     [`${NAV_IDS.length}/${NAV_IDS.length} screens rendered`,
      NAV_IDS.map(id => `${id}:${r.screens[id].len}c/${r.screens[id].cards}cards`).join('  ')]);
 
@@ -2704,7 +2874,8 @@ if (render.failed) {
   const uniq = [...new Set(r.rejections)];
   const MIN_CALLS = 30;
   verdict('R3', LANE.RENDER, 'P0', 'No query the database would reject — and the check is not vacuous',
-    uniq.concat(r.restCalls < MIN_CALLS ? [`only ${r.restCalls} PostgREST calls were observed (expected at least ${MIN_CALLS}); a clean result here would mean nothing was checked`] : []),
+    uniq.concat(r.restCalls < MIN_CALLS ? [`only ${r.restCalls} PostgREST calls were observed (expected at least ${MIN_CALLS}); a clean result here would mean nothing was checked`] : [])
+        .concat(uniq.length || r.restCalls < MIN_CALLS ? stubUnknownRpcNote() : []),
     [`${r.restCalls} PostgREST calls observed across ${NAV_IDS.length} screens; 0 rejected`]);
 
   /* R4 · the whole point of the Profit Sentinel gate. Every economic figure the

@@ -281,8 +281,11 @@ const readCoverage = shared(() => db('v_lead_recovery_coverage?select=leads_tota
   + 'message_events_resolved_to_a_lead,identity_resolution_pct,unresolved_whatsapp_handles,silence_detector_state,'
   + 'silence_detector_last_success_at,recovery_actions_total,settings_are_defaults,sla_first_response_minutes,'
   + 'what_this_engine_cannot_tell_you,computed_at&limit=5'));
+/* evidence_today is gone from the projection: nothing on this screen read it,
+   and what it held was one dealership's stored counts (migration
+   20260906070947). met_now / measured_now are the live, per-caller figures. */
 const readReadiness = shared(() => db('v_deal_rescue_readiness?select=id,sort,requirement,kind,unlocks,'
-  + 'evidence_today,why_not_code,met_now,measured_now,measured_at&order=sort.asc&limit=100'));
+  + 'why_not_code,met_now,measured_now,measured_at&order=sort.asc&limit=100'));
 const readAttention = shared(() => db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen&limit=200'));
 const readWorkflows = shared(() => db('v_workflow_health?select=name,category,is_active,health,runs_30d,'
   + 'successes_30d,failures_30d,no_result_30d,effective_runs_30d,success_rate_30d,last_run,last_success&limit=200'));
