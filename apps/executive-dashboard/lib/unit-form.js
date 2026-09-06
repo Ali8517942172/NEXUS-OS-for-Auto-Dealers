@@ -619,8 +619,22 @@ function unitForm(existing, inv, onDone) {
     const btn = m.wrap.querySelector('#uSave');
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
-      if (isNew) await dbWrite('POST', 'inventory', unitRow(v, true));
-      else await dbWrite('PATCH', `inventory?id=eq.${encodeURIComponent(v.id)}`, unitRow(v, mayCost));
+      /* Same reasoning as the delete branch below, and it became true of the
+         save path on 5 Sep 2026 when the role model gave `inventory` a
+         RESTRICTIVE write policy. A PATCH the policy filters out is not an
+         error: PostgREST answers 200 with [], which is indistinguishable from
+         success until the screen reloads and the change is not there. So check
+         what came back before closing the modal and telling the operator it
+         saved. Three explanations fit an empty result and the message names all
+         three rather than guessing between them. */
+      const saved = isNew
+        ? await dbWrite('POST', 'inventory', unitRow(v, true))
+        : await dbWrite('PATCH', `inventory?id=eq.${encodeURIComponent(v.id)}`, unitRow(v, mayCost));
+      if (Array.isArray(saved) && saved.length === 0) {
+        btn.disabled = false; btn.textContent = isNew ? 'Add vehicle' : 'Save changes';
+        return m.msg(`<span class="t-hot">Nothing was saved. No row in stock has stock number ${esc(v.id)} any more,
+          or your account is not allowed to change this vehicle. Nothing was changed either way.</span>`);
+      }
       m.close(); onDone();
     } catch (e) {
       btn.disabled = false; btn.textContent = isNew ? 'Add vehicle' : 'Save changes';
