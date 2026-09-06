@@ -48,17 +48,16 @@ Four questions the product must answer, in this order:
 
 Nothing gets thrown away. The screens change what they are *for*.
 
-**Measured 2026-09-03 and re-counted 2026-09-05: the branch carries 20 screens,
-not 14.** The six
+**Re-counted 2026-09-06: the branch carries 21 screens, not 14.** The seven
 added are `revenue` (Revenue Recovery), `leadrecovery`, `dealrescue`,
-`attribution`, `policy` and `actions` (the Action Center). The fourteen
-commercial roles above are unchanged — the new screens are the engines below
-given a surface of their own rather than new modules. **`origin/main`, which is
-what production builds, still carries the original 14** — re-counted in
-`lib/nav.js` on both refs on 5 September, 14 against 20; the six are on
-`wip/platform-truth-2026-09-01` only. **A rebuild from `main` today ships
-without the Action Center, the five revenue engines and the honesty
-machinery.**
+`attribution`, `policy`, `actions` (the Action Center) and — since 6 September —
+`moneyleaks` (Today's Money Leaks), which is now the default landing screen. The
+fourteen commercial roles above are unchanged: the new screens are the engines
+below given a surface of their own rather than new modules. **`origin/main`,
+which is what production builds, still carries the original 14** — counted in
+`lib/nav.js` on both refs on 6 September, 14 against 21, with the branch **75
+commits** ahead. **A rebuild from `main` today ships without the Action Center,
+the five revenue engines, Today's Money Leaks and the honesty machinery.**
 
 ---
 
@@ -80,7 +79,7 @@ auditable rather than overwritten:
 | `inventory` — 12 units, **12 with `cost_aed`, 12 with `days_in_stock`** | complete, unchanged | **Profit Sentinel — built and shipped** |
 | `competitors` — **19 rows** *(5 Sep; was 14 on 3 Sep, 11 on 2 Sep)*, all priced, but `v_competitor_latest` resolved only **6** when last checked | present, thin, and **not refreshing** | market position, with caveats |
 | `leads` — **3**, of which **1 assigned**; `response_time_minutes` on 2 of 3 | works, no volume | Lead Recovery mechanics |
-| `communication_logs` — **114** *(re-measured 5 Sep)*, **0** carrying a provider message id | real, and not deduplicable retrospectively | AI BDC, silence detection |
+| `communication_logs` — **115** *(re-measured 6 Sep; still taking traffic)*, **0** carrying a provider message id | real, and not deduplicable retrospectively | AI BDC, silence detection |
 | `purchase_history` — **1** *(recorded 2 Sep through the dashboard; still 1 on 5 Sep)*. **It is the owner's own test lead, not a customer sale** | one row, one mechanism proven | attribution starts here |
 | `finance_quotes` — **0 live rows**, but **25 inserts / 15 deletes** in `pg_stat_all_tables` | the insert path has worked repeatedly; a teardown script clears it | Deal Finance |
 | `policy_rule` — **13 rows, 0 `VERIFIED`** *(5 Sep)*, and **0** platform attestations; 21 constants still unmigrated | shipped, **unverified** | see the Policy Engine caveat below |

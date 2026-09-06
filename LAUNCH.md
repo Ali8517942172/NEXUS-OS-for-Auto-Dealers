@@ -73,11 +73,14 @@ is table stakes. NEXUS differentiates by naming the **economic consequence**:
 ## The screen that is the product
 
 **Today's Money Leaks** — the primary owner view. Not "AI Insights", not
-"Analytics", not "AI Assistant". **It does not exist yet**: there is no such
-screen on either branch, and the AED figure it opens with is exactly the
-aggregate `screens/revenue.js` currently refuses to produce. Building it means
-deciding what that number is a derivation of, and the answer must not be a sum
-of estimates presented as money.
+"Analytics", not "AI Assistant". **Built 6 September 2026** (`710817a`) and now
+the default landing screen — but on `wip/platform-truth-2026-09-01` only, and
+that branch is not deployed, so it is not yet on any site a buyer can open. The
+AED figure it opens with states its own derivation on the screen — the sum of
+`engine_impact_aed` over the first register, one impact kind, one engine, two
+stored columns — and it is never called revenue. Measured on ALBA's real data
+when it was built: **2 leaks · AED 66,000 gross margin exposed · 8 checks clear ·
+9 checks that could not run.**
 
 > AED X exposed today.
 > Five leads have no response. Two hot leads have finance blockers. Three
@@ -127,14 +130,17 @@ written:
 | The idempotency family | **closed at the database** 5 Sep; **the n8n writers are not deployed**, and `communication_logs` still has no writer for its identity |
 | The policy foreign key and the delivery-events key | **closed** 5 Sep, with eight composite tenant/carrier foreign keys |
 | The stale gate snapshot | **closed** 5 Sep |
-| Staging parity | achieved 4 Sep, **UNKNOWN since the eighteen migrations of 5 Sep** |
+| Staging parity | achieved 4 Sep, **re-measured and holding 6 Sep 00:0x UTC** — columns 1731, constraints 374, functions 269, indexes 169, policies 163, tables 59, views 39, triggers 19, identical on both projects. Function *bodies* were not compared. **And staging is a worse rehearsal than it looks**: six platform reference tables are empty there, so Deal Rescue cannot be walked on it at all |
 | Full security regression | **not run** since 3 Sep |
 
 Still standing between here and switching WhatsApp on: the open inbound webhook
-and its dormant WAHA gate, the unidentified second sender `2.50.10.149`, the
-Meta attestation (13 rules, 0 verified), the unpublished Infra Health Probe, and
-the n8n writer changes above. No shortcuts. **WhatsApp does not switch on until
-those are done**, and `STATUS-2026-09-05.md` is the list.
+and its dormant WAHA gate; the second sender `2.50.10.149`, **now identified as
+Ali's own WhatsApp account on device 8, an older WAHA on a UAE host** — which
+machine it is remains his to find; the Meta attestation (13 rules, 0 verified,
+0 attestations, re-measured 6 Sep); the unpublished Infra Health Probe; and the
+n8n writer changes above. No shortcuts. **WhatsApp does not switch on until those
+are done.** `STATUS-2026-09-06.md` is the current list and `OWNER-ACTIONS.md` is
+the ordered set of steps.
 
 **Track B — make it sellable.** Three to five UAE dealers. Show the real Profit
 Sentinel on ALBA's own honest data and Today's Money Leaks. Ask **what they

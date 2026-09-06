@@ -42,7 +42,7 @@ Green here means *built and honest about its own limits* — it does **not** mea
 proven at a dealership. Production, measured 5 September 2026: one dealership
 tenant (plus a non-dealership quarantine tenant), twelve vehicles, three leads
 (two junk, one Ali), **one `purchase_history` row that is the owner's own test
-lead and not a customer sale**, and **114** messages. **Nothing below has
+lead and not a customer sale**, and **115** messages *(re-measured 6 Sep)*. **Nothing below has
 carried a paying dealership's traffic, and there are zero paying customers.**
 `VERSIONS.md` states each capability against four separate columns —
 implemented, tested, production-proven, commercially validated — because "Built"
@@ -132,7 +132,7 @@ because what closed an item is the evidence that it is closed.
    id minted per attempt (`nokey:`, `outreach:`, `exec-`, `run-`, `job-`, bare
    epochs) with `23514`. **Open, and it is the half that matters operationally:**
    the n8n writers were not changed, `Claim Message Id` is fail-open, and the
-   `communication_logs` identity has no writer at all — 114 rows, 0 external
+   `communication_logs` identity has no writer at all — 115 rows, 0 external
    ids.
 4. ~~**`policy_applied_rule_id` foreign key, and `integration_id` in the
    delivery-events key — P1.**~~ **CLOSED 5 Sep 2026**, together with
@@ -151,8 +151,17 @@ because what closed an item is the evidence that it is closed.
    Probe, and rehearse the `NEXUS_TENANT_MAP` switch on staging.
 
 **PR #7 is not merged and WhatsApp messaging is not switched on until item 7 is
-done and the n8n writers in item 3 are deployed.** `STATUS-2026-09-05.md`
-carries the full open list.
+done and the n8n writers in item 3 are deployed.** `STATUS-2026-09-06.md`
+carries the current open list; `OWNER-ACTIONS.md` carries the ordered steps and
+which of them only Ali can take.
+
+One correction to the item above, measured on 6 September 2026:
+**`workflow_registry` did not get a `tenant_id`, and that was the finding.**
+Nothing in this database maps an automation to a dealership, and three of the 18
+rows are NEXUS's own public pages, which serve none — so the table left the
+dealer data plane entirely (no table grant, no column grant, no `authenticated`
+policy) and the naming projection a dealership is entitled to now arrives through
+`nexus_workflow_catalogue()`. Gate check `L2` **passes**.
 
 ## Next — the seven capability gaps, in priority order
 

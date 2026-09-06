@@ -33,13 +33,13 @@ what follows is honest about which is which.
 | Finance quotes produced | **0** live rows (25 inserts / 15 deletes in `pg_stat_all_tables` — the path has fired and a teardown clears it) |
 | ID documents successfully verified | **0** — 3 submitted, all 3 verdict `REJECTED` |
 | Vehicles in stock | 12 |
-| Messages on record | **114** in `communication_logs`, **0** of them carrying a provider message id |
+| Messages on record | **115** in `communication_logs` (re-measured 6 Sep — the table is still taking traffic), **0** of them carrying a provider message id |
 | Messages the messaging layer has carried | **0**. `channel_message_events`, `whatsapp_delivery_events`, `whatsapp_opt_in_event`, `whatsapp_templates`, `whatsapp_message_usage` are all empty |
-| Run records in `audit_log` | **742**, first row 14 August 2026 |
+| Run records in `audit_log` | **758** *(re-measured 6 Sep)*, first row 14 August 2026 |
 | Registered workflows | 18 |
 | Policy rules verified against a source | **0 of 13**, and **0** platform attestations |
-| Applied migrations | **273**, and the repository holds all 273 byte-for-byte |
-| Quality gate | last full-lane run 2026-09-05T21:01Z: 26 pass, **2 P0 fail, 2 warn, 6 not run** — exits non-zero |
+| Applied migrations | **286**, head `20260906071310`, and `supabase/migrations/` holds 286 files with the same newest version (count and head re-measured 6 Sep; the byte-exact rollup comparison was last run at 273/273 on 5 Sep) |
+| Quality gate | definitive run 2026-09-06T06:51Z, anchored to migration `20260906062139`: **31 pass, 1 P0 fail, 2 warn, 3 not run** — exits non-zero. **Four migrations have landed since that catalogue was taken**, so the render lane goes red against the stale snapshot; see `STATUS-2026-09-06.md` §5 |
 
 Re-run these before quoting them; they move. Scope every count to the real
 dealership (`tenants.slug = 'alba-cars'`) — a raw `count(*)` has included another
@@ -224,7 +224,7 @@ nexus-os/
 │   ├── PILOT-ONBOARDING.md
 │   └── DEMO-SCRIPT.md
 ├── architecture/                # schema.sql — historical, ~200 migrations behind
-├── supabase/                    # ALL 273 applied migrations, a generated baseline,
+├── supabase/                    # ALL 286 applied migrations, a generated baseline,
 │                                #   the vocabulary seed and the restore path
 ├── n8n-workflows/               # exported workflow definitions (an export, not the source of truth)
 ├── docs/
@@ -245,7 +245,11 @@ behaviour. That directory is an export and it goes stale.
   the evidence and the date beside each claim.
 - `NEXUS_INVARIANTS.md` — the business rules, who owns each, and the query that
   proves it. Open violations are recorded as open.
-- `STATUS-2026-09-05.md` — what moved since `AUDIT-2026-09-04.md`, item by item.
+- `OWNER-ACTIONS.md` — **read this first.** What only Ali can do, in order,
+  with what each unblocks and what breaks if it is done out of order.
+- `STATUS-2026-09-06.md` — what moved on the night of 5–6 September, item by
+  item, including five places an earlier claim turned out to be wrong.
+- `STATUS-2026-09-05.md` — a dated record: what moved since `AUDIT-2026-09-04.md`.
 - `VERSIONS.md` — V1–V4, and implemented / tested / production-proven /
   commercially validated for every capability.
 - `supabase/README.md` — the migrations, the baseline and the restore path.

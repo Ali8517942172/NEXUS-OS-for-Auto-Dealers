@@ -52,8 +52,9 @@ enforced by an event trigger that fails the deploy without it, and by gate check
 the string (a view created `(security_invoker = false)` used to pass the check
 that exists to forbid it).
 
-The repository can now rebuild this database. `supabase/` holds all **273**
-applied migrations byte-for-byte, a generated baseline and a vocabulary seed;
+The repository can now rebuild this database. `supabase/` holds all **286**
+applied migrations (count and head re-measured 6 September 2026 against
+production; the byte-exact rollup was last verified at 273/273 on 5 September), a generated baseline and a vocabulary seed;
 `supabase/README.md` carries the restore path and the verification. That
 replaces the older claim, repeated below in §6, that there is no schema file you
 can run.
@@ -131,13 +132,18 @@ broken. Which workflows those are is still **UNKNOWN**.
 The project's own instruments say so, and they are the authority — not this
 document.
 
-- **The quality gate** (`npm run gate`), last full-lane run 2026-09-05T21:01Z
-  against a production catalogue taken 20:56:16Z, reads
-  `PASS 26 · FAIL 2 · WARN 2 · NOT RUN 6`, exit 1. The two failures are `L2`
-  (`workflow_registry`, deliberately left red) and `L9` (one unregistered
-  `audit_log` writer). The six NOT RUN are `B1`–`B4`, which need a second
-  dealership or a live render credential, and `L11`/`L12`, which need a database
-  connection. **A NOT RUN is not a PASS.**
+- **The quality gate** (`npm run gate`), definitive run 2026-09-06T06:51Z
+  against a production catalogue anchored to migration `20260906062139`, reads
+  `PASS 31 · FAIL 1 · WARN 2 · NOT RUN 3`, exit 1. The one failure is `L9` (one
+  unregistered `audit_log` writer, deliberately left red — it clears with a
+  disposition, never with an invented registry row). `L2` now **passes**:
+  `workflow_registry` left the dealer data plane entirely on 6 September. The
+  three NOT RUN are `B4`, which needs a browser with direct egress to the
+  Supabase host, and `L11`/`L12`, which need a database connection.
+  **A NOT RUN is not a PASS.** **Four migrations landed after that catalogue was
+  taken**, and against the stale snapshot the render lane reports red on
+  `v_deal_rescue_readiness.platform_evidence` — measured both ways, it is the
+  snapshot's age and not the product. See `STATUS-2026-09-06.md` §5.
 - **The production readiness verdict is NOT_READY.**
 - **`POST /webhook/whatsapp-inbound` accepts unauthenticated requests.**
   `WAHA_WEBHOOK_SECRET` is unset on the VM, so the secret gate reports
@@ -204,6 +210,8 @@ disagree with it:
 | `commercial/WHAT-WE-CLAIM.md` | The claims register — what may be said to a buyer |
 | `supabase/README.md` | The migrations, the baseline, the restore path, and what was verified against production |
 | `architecture/README.md` | Historical. Its headline — *"there is no schema file you can run"* — was true until 4 September and is now superseded by `supabase/` |
-| `STATUS-2026-09-05.md` | What moved since `AUDIT-2026-09-04.md`, item by item |
+| `STATUS-2026-09-06.md` | **Current.** What moved on the night of 5–6 September, item by item, with five corrections to earlier claims |
+| `STATUS-2026-09-05.md` | Dated record. What moved since `AUDIT-2026-09-04.md`, item by item |
+| `OWNER-ACTIONS.md` | **What only Ali can do, in the order to do it** — what each unblocks, what "done" looks like, and what breaks if it is done out of order |
 | `VERSIONS.md` | V1–V4, and implemented / tested / production-proven / commercially validated per capability |
 | `apps/executive-dashboard/QUALITY_GATE.mjs` | The gate. Run it before believing anything above |

@@ -1020,9 +1020,10 @@ invariant is about there being only one.
 recomputed, by the frontend. A figure computed in the frontend has no database
 twin.
 
-**Frontend consumers.** All twenty screens on this branch (fourteen on
-`origin/main`, which is what production builds — see
-`apps/executive-dashboard/README.md`).
+**Frontend consumers.** All twenty-one screens on this branch (fourteen on
+`origin/main`, which is what production builds — re-counted 6 September 2026;
+the twenty-first is `moneyleaks`, Today's Money Leaks, which is also the default
+landing screen — see `apps/executive-dashboard/README.md`).
 
 **Regression test.** SQL probes plus greps for the same business number computed
 twice. **Three of the previous revision's four violations are now closed. One is
