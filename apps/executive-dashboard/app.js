@@ -75,6 +75,7 @@ import './screens/team.js';
    registration side effect only. lib/nav.js renders an explicit "not part of
    this build" state for an id whose module never arrived. */
 import.meta.glob([
+  './screens/money-leaks.js',
   './screens/attribution.js',
   './screens/lead-recovery.js',
   './screens/deal-rescue.js',
@@ -245,7 +246,13 @@ async function boot() {
      by design: a badge that cannot be computed must not stop the app booting. */
   startBadges();
 
-  go(location.hash.slice(1) || 'overview');
+  /* The default landing screen. Changed from 'overview' to 'moneyleaks' on
+     6 Sep 2026: LAUNCH.md names Today's Money Leaks "the primary owner view",
+     and it is the only screen that answers a question rather than reporting a
+     state. Only the FALLBACK moved — a hash still wins, so every existing
+     bookmark and every deep link lands exactly where it did before, and
+     lib/nav.js holds the same id so the two cannot drift. */
+  go(location.hash.slice(1) || 'moneyleaks');
 }
 
 boot();

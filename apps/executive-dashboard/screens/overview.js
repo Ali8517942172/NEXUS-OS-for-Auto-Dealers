@@ -405,7 +405,7 @@ const str = v => String(v == null ? '' : v).trim();
    This is the whole of the arithmetic this screen performs on money. Every
    figure inside it — margin, exposure, the impact of an action — was computed
    by public.v_inventory_profit_sentinel and is copied, never recomputed. */
-const expose = (rows, getValue, getKind) => {
+export const expose = (rows, getValue, getKind) => {
   let total = 0, n = 0;
   const kinds = new Set();
   for (const r of rows) {
@@ -427,10 +427,10 @@ const expose = (rows, getValue, getKind) => {
 const IMPACT_WORDS = {
   MARGIN_EXPOSED: 'of gross margin exposed',
 };
-const impactPhrase = kind => IMPACT_WORDS[str(kind).toUpperCase()]
+export const impactPhrase = kind => IMPACT_WORDS[str(kind).toUpperCase()]
   || `of impact the engine labels ${str(kind) || 'nothing recognisable'}, which this dashboard has no wording for`;
 /* One tally, rendered. Every branch names its denominator. */
-const exposureLine = (t, what) => {
+export const exposureLine = (t, what) => {
   if (t.kinds.length > 1) {
     return `No total is shown across ${what}: they do not carry one kind of impact — ${t.kinds.join(', ')} — and figures of different kinds are not added together. The per-unit figures are on Inventory.`;
   }
@@ -445,8 +445,15 @@ const exposureLine = (t, what) => {
         ? `, ${num(t.missing)} ${plural(t.missing, 'carries', 'carry')} no impact figure and ${plural(t.missing, 'is', 'are')} not in that total`
         : ', none omitted');
 };
-/* Said once wherever an exposure figure appears, and never abbreviated. */
-const EXPOSURE_CAVEAT = 'Exposure is gross margin — list price minus what the dealership paid — sitting in a unit that has not sold. It is the amount AT RISK. It is not an expected loss, not revenue, not money saved and not money recovered, and it is never added to anything that is.';
+/* Said once wherever an exposure figure appears, and never abbreviated.
+
+   EXPORTED, together with expose(), impactPhrase() and exposureLine() above, on
+   6 Sep 2026 when screens/money-leaks.js landed. That screen totals the same
+   exposure under the same rules, and a second copy of a money derivation is a
+   second thing that has to be kept true — this file already imports
+   recoveryEvidence() from screens/actions.js for exactly that reason. Nothing
+   about the four moved or changed; only the keyword in front of them. */
+export const EXPOSURE_CAVEAT = 'Exposure is gross margin — list price minus what the dealership paid — sitting in a unit that has not sold. It is the amount AT RISK. It is not an expected loss, not revenue, not money saved and not money recovered, and it is never added to anything that is.';
 
 /* What `identified` means, in the operator's words. `lead` is the only value
    that means "we know who this is"; the rest are named as the weaker thing they
