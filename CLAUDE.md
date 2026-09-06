@@ -723,8 +723,40 @@ nine hours with both hosts up; it contains zero customer conversations; and the
 box's WAHA is also the *send* path, so `.149` surviving a box outage would
 produce an unanswerable inbound rather than a rescue.
 
-What is still Ali's: **which machine** it is. WhatsApp → Linked Devices will show
-device 8 beside device 12.
+### And it is gone — 6 September 2026, evening
+
+Ali identified it: **it was his own local Docker WAHA**, run before the move to
+GCP. He deleted it there and has now logged his WhatsApp account out of it.
+
+Verified from the box rather than taken on trust, because "logged out" and "no
+longer posting" are different facts and the whole rollout depends on which is
+true. Five executions spanning 15:58 -> 19:09 UTC:
+
+| execution | interval | `payload.id` | source |
+|---|---|---|---|
+| 10555 / 10556 | 0.38 s apart | `A591527F…` / `A50C03B9…` — **different** | — |
+| 10580 | — | `ACA18E5D…` | — |
+| 10581 | 46 s later | `AC2A799E…` | — |
+| 10582 | 39 s later | `AC4392C3…` | `35.224.126.225`, WAHA/2026.7.2, jid `:12` |
+
+**Five consecutive executions, five distinct message ids, no pair.** Even the
+0.38-second gap — the exact signature that used to mean a duplicate — is two
+different messages from the same group. The doubling has stopped and every
+sampled header is the GCP box.
+
+**Two consequences, and the second is a new hazard rather than a relief:**
+
+- **The "execution count is roughly double the truth" caveat no longer applies**
+  to traffic after 6 September. It still applies to everything before, so any
+  historical figure taken from the execution list keeps its factor of two.
+- **Arming the gate is now more dangerous, not less.** With two senders, setting
+  `WAHA_WEBHOOK_ENFORCE=true` before the header was configured would have cut
+  off whichever sender lacked it and the other would have carried on — the
+  damage was survivable and visible. With **one** sender, the same mistake drops
+  **100% of inbound messages** and the channel goes silent. The order is
+  therefore not advice: `WAHA_WEBHOOK_SECRET` on the VM, then make the GCP WAHA
+  send `x-nexus-webhook-secret`, then confirm in MONITOR on a genuine 1:1
+  message, and only then enforce.
 
 ### And none of this traffic is a customer
 
