@@ -152,8 +152,8 @@ row, an audit row, and the Deals screen showing it. Submitted four times, one
 row — idempotency is proven, not assumed.
 
 Finance is subtler than "never exercised", and the earlier claim in this file
-was wrong. `finance_quotes` shows 16 inserts and 13 deletes in
-`pg_stat_all_tables` — the insert path has worked repeatedly and a journey
+was wrong. `finance_quotes` shows **25 inserts and 15 deletes** in
+`pg_stat_all_tables` (re-measured 5 Sep 2026; this file said 16 and 13) — the insert path has worked repeatedly and a journey
 teardown script deletes the rows after every test. "Empty" means cleared, not
 never. What is genuinely unproven is whether it works *today*: the fix to the
 constraint that broke it is nine minutes younger than the last failure and has
@@ -203,9 +203,12 @@ One trap: that workflow has `saveDataSuccessExecution:"none"`, so MONITOR-mode
 executions are never saved and the monitoring window is unobservable — flip it
 to `"all"` for the rollout or you will enforce blind.
 
-Also: `slack-command` is closed **by accident**, not by design — its
-`Tenant For JWT User` lacks `alwaysOutputData:true`, so the chain halts before
-`Auth Gate` runs, and unauthenticated probing records SUCCESS with no audit row.
+~~Also: `slack-command` is closed by accident, not by design.~~ **Retracted
+6 Sep 2026, measured against the live published definition.**
+`Tenant For JWT User` **has** `alwaysOutputData: true`. Execution `9325` shows it
+emitting one empty item, `Auth Gate` running, and throwing — status `error`, not
+`success`. `slack-command` is closed **by design**. The claim above was read from
+the 30 August repo export, which is stale; the box is the witness.
 
 ## House rules that exist because something broke
 
@@ -461,10 +464,50 @@ would refuse an unknown sender — `WAHA Auth Gate` — is measured `DORMANT` on
 that same traffic.
 
 Two things follow. Any count of "messages" taken from the execution list is
-roughly double the truth. And an external host is posting genuine WhatsApp
-traffic into production through an open door; find out what `2.50.10.149` is
-before arming the gate, because arming it will cut off whichever sender is not
-configured with the secret.
+roughly double the truth. And an external host is posting WhatsApp traffic into
+production through an open door.
+
+### `2.50.10.149` is identified — 6 September 2026
+
+It is **not a stranger.** Executions 10322 and 10323 carry the same `payload.id`
+and the same body, and differ like this:
+
+| | 10322 | 10323 |
+|---|---|---|
+| `x-forwarded-for` | `35.224.126.225` (the box) | `2.50.10.149` |
+| build | WAHA/2026.7.2 | WAHA/**2026.7.1** |
+| `me.jid` | `971526647253:**12**@…` | `971526647253:**8**@…` |
+| `me.id`, `me.lid`, `pushName` | identical | identical |
+| `x-webhook-timestamp` | 1788664766034 | 1788664807464 — **41 s later** |
+
+The same WhatsApp account, on a **different device index**, served by a
+**second, older WAHA instance on a non-GCP (UAE) host**, running about forty
+seconds behind. `reachoutTimelock` is present on one and absent on the other,
+which is the build difference showing through the payload.
+
+**And it is never the only sender.** 102 executions sampled over 8h56m
+(5 Sep 18:23 → 6 Sep 03:19 UTC), grouped by `payload.id`: **51 distinct
+messages, 51 arrived from both sources, 0 from the box only, 0 from `.149`
+only.** Headers were read on both halves of 9 of the 51 pairs, spread across the
+window; for the other 42 two deliveries were confirmed but not both headers.
+Not extrapolated to the full 988.
+
+So on this evidence **arming the gate without configuring `.149` would have
+dropped nothing** — with three limits that belong in the runbook: the sample is
+nine hours with both hosts up; it contains zero customer conversations; and the
+box's WAHA is also the *send* path, so `.149` surviving a box outage would
+produce an unanswerable inbound rather than a rescue.
+
+What is still Ali's: **which machine** it is. WhatsApp → Linked Devices will show
+device 8 beside device 12.
+
+### And none of this traffic is a customer
+
+Read from `Is Real Inbound?`'s own output rather than judged by eye: **0 of 102
+executions — 0 of 51 messages — were genuine customer conversation.** All 51 were
+`@g.us` groups, `status@broadcast` or `@newsletter` on Ali's personal handset.
+The audit said most of the traffic is not customer conversation; in this window
+**none** of it was.
 
 ## Corrections to what this file used to say
 
@@ -932,7 +975,12 @@ no equivalent discipline, and **no caller exists yet** — which is exactly why
 the discipline must be structural before one is written.
 
 **The window fix holds against every stable-id replay, including A→B→A — and
-is defeated by the live `nokey:` shape.** `whatsapp_bdc_ai_agent.json:713`
+was defeated by the live `nokey:` shape, and is not any more** (5 Sep 2026: a
+CHECK on `whatsapp_customer_message_seen`, `processed_messages`,
+`channel_message_events` and `whatsapp_delivery_events` refuses ids minted per
+attempt — `nokey:`, `outreach:`, `exec-`, `run-`, `job-`, and bare numeric ids.
+The **node** still mints them, so the writer change in
+`ops/n8n-bundle-NOT-DEPLOYED/04-*` is still owed).** `whatsapp_bdc_ai_agent.json:713`
 mints `'nokey:' + $now.toMillis()` when the message id is absent: a
 per-delivery id that changes on every retry, which is precisely what the
 function's own hint warns against. Two `nokey:` ids for one message jump the
