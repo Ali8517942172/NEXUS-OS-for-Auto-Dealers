@@ -867,7 +867,16 @@ SCREENS.automation = async host => {
   const [healthR, auditR, regR, leadR] = await Promise.allSettled([
     db('v_workflow_health?select=*'),
     db(`audit_log?select=workflow,status,lead_name,lead_email,lead_score,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`),
-    db('workflow_registry?select=name,audit_name,audit_aliases'),
+    /* rpc/nexus_workflow_catalogue, not the workflow_registry table. 6 Sep 2026:
+       the register is a vendor table and `authenticated` now holds no privilege
+       on it at all — reading it returns 42501, not 0 rows. The accessor is the
+       vendor-owned door and returns only the dealer-safe naming projection
+       (name, audit_name, audit_aliases, category, description, is_active,
+       writes_audit_log); it can never return the n8n id, the trigger kind or the
+       cron. It returns nothing at all to a session that belongs to no
+       dealership, so an empty result here is "not yours to see", which the
+       existing registry-unavailable wording already covers. */
+    db('rpc/nexus_workflow_catalogue?select=name,audit_name,audit_aliases'),
     /* audit_log holds a customer's name and email but no phone. `leads.phone`
        is where the number lives, so it is joined here on email — a person shown
        with no way to reach them is half a record. There is deliberately no staff

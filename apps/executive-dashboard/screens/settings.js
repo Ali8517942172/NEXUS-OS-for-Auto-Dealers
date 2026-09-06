@@ -800,7 +800,7 @@ SCREENS.settings = async host => {
        audit_log. Without it the failure list falls back to matching on the
        display name, which is a weaker join — so the difference is stated rather
        than hidden behind a suspiciously short failure history. */
-    settle(db('workflow_registry?select=name,audit_name,audit_aliases')),
+    settle(db('rpc/nexus_workflow_catalogue?select=name,audit_name,audit_aliases')),
   ]).then(([attn, health, fails, reg]) => {
     sysState = {
       attn: attn.ok ? attn.value : null, attnErr: attn.ok ? null : attn.err,

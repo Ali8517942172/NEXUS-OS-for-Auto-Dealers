@@ -1462,7 +1462,7 @@ SCREENS.ask = async host => {
      distinction; this screen only reads the columns it publishes. */
   const healthP = settled(db('v_workflow_health?select=name,category,description,is_active,writes_audit_log,runs,failures,success_rate,last_run,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,successes_30d,effective_runs_30d,success_rate_30d,last_failure,health&limit=200'));
   const auditP  = settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`));
-  const regP    = settled(db('workflow_registry?select=name,audit_name,audit_aliases'));
+  const regP    = settled(db('rpc/nexus_workflow_catalogue?select=name,audit_name,audit_aliases'));
 
   /* One round trip, no probe, no order-by. The probe existed to discover the
      column names and a date column; the names are now known (KB_COLS) and the
@@ -1629,7 +1629,7 @@ SCREENS.ask = async host => {
         ? await Promise.all([auditP, regP, healthP])
         : await Promise.all([
             settled(db(`audit_log?select=workflow,status,lead_name,lead_email,intent,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`)),
-            settled(db('workflow_registry?select=name,audit_name,audit_aliases')),
+            settled(db('rpc/nexus_workflow_catalogue?select=name,audit_name,audit_aliases')),
             healthP,
           ]);
       if (!audit.ok) throw new Error(audit.err);

@@ -117,17 +117,50 @@ operational rather than structural:
   broken, and this is the cheapest moment to take it. Also: disabling
   `Resolve Tenant` in n8n, the documented rollback, no longer falls back to ALBA;
   see `/home/claude/out/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
-- **`workflow_registry` is readable by every signed-in user and is not
-  tenant-scoped.** Its policy is `SELECT USING (true)` for `authenticated`, and
-  the table has no `tenant_id` column — which is survivable only because there
-  is one dealership. It holds the real n8n workflow ids, names, trigger detail
-  and `is_active` flags, i.e. which automations a dealership runs and which are
-  switched off: operational configuration, not shipped vocabulary. Give it a
-  `tenant_id` and a scoped policy before onboarding a second dealership.
-  Measured and left failing on purpose: `QUALITY_GATE.mjs` check **L2** is red
-  on exactly this row, and `workflow_registry` is deliberately excluded from
-  `L2_EXEMPT_TABLES` so the finding stays visible instead of being absorbed
-  into an exemption list.
+- ~~**`workflow_registry` is readable by every signed-in user and is not
+  tenant-scoped.**~~ **Closed 6 September 2026** — migration
+  `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`,
+  applied to staging then production, evidence in
+  `/home/claude/out/workflow-registry-scoping-evidence.md`. **`QUALITY_GATE`
+  check L2 now PASSES** (12 open policies, 12 exempt, 0 not) and nothing was
+  added to `L2_EXEMPT_TABLES`.
+
+  **It did not get a `tenant_id`, and that was the finding.** The 18 rows are
+  the *vendor's* register of the automations NEXUS runs. Nothing in this
+  database maps an automation to a dealership, and three of the registered
+  workflows are NEXUS's own public pages, which serve none — so a `tenant_id`
+  could only have been filled by inventing that mapping, and a
+  nullable-meaning-platform one would have been a predicate that filters
+  nothing while reading like a scope. The table left the dealer data plane
+  instead: **no table grant, no column grant, no `authenticated` policy**
+  (`workflow_registry_read` dropped; the anon-deny and service_role policies
+  untouched). Measured on production as the ALBA owner with a real JWT claim:
+  `count(*)`, `select name`, `select *` and `select id` on the table all return
+  **42501**; as `anon` over the live REST API, `42501 permission denied for
+  schema public`.
+
+  The one thing CONTROL-PLANE.md Part 4 says a dealership *is* entitled to now
+  arrives through `public.nexus_workflow_catalogue()` — `SECURITY DEFINER`,
+  `STABLE`, owned by `postgres`, EXECUTE to `authenticated` and `service_role`
+  and revoked from `anon` and PUBLIC. It returns the naming projection only
+  (`name, audit_name, audit_aliases, category, description, is_active,
+  writes_audit_log`) and **cannot** return `id`, `trigger_type` or
+  `trigger_detail`: those are absent from the function's own result type rather
+  than merely unprojected, so re-opening the leak needs a deliberate edit, not
+  a forgotten revoke. The four `security_invoker` views —
+  `v_workflow_health`, `v_lead_recovery`, `v_needs_attention`,
+  `v_audit_unregistered_writers` — read that function, which is why they still
+  work with the table closed. Their outputs were diffed against their
+  pre-change bodies: **symmetric difference 0 rows on all four**.
+  `v_workflow_health` still returns **18 rows to a dealership session**.
+
+  **A caller acting as `authenticated` gets rows only as a member of an active
+  dealership**, so a signed-in session belonging to no dealership now gets zero
+  from the accessor and zero from `v_workflow_health` — it used to enumerate
+  all 18. **What is still disclosed, deliberately:** a real member can count
+  the 18 automations through `v_workflow_health`, because that view is the
+  sanctioned projection. The accessor is now the single place a per-dealership
+  filter goes when a fact exists to filter on.
 
 `select * from public.nexus_tenancy_readiness();` is the live gate. The BLOCKER
 that "fires whenever any tenant holds the default flag" — i.e. could never clear
@@ -767,7 +800,9 @@ operator's instrumentation accumulated inside the customer's product.*
 `settings.js:1402` tells a dealership that one n8n instance serves every
 dealership; `workflow_registry` is `SELECT USING (true)` for `authenticated`
 with no `tenant_id` and 18 rows of workflow ids, cron expressions and webhook
-paths; `automation.js` renders n8n execution deep links, node names and
+paths (**that one is closed — see the `workflow_registry` bullet above; it is
+off the dealer plane entirely as of 6 Sep 2026**); `automation.js` renders n8n
+execution deep links, node names and
 "spends OpenRouter tokens"; `ask.js` prints the model ladder and the prompt
 budget. The operating rule is: **symptom and impact to the dealership;
 mechanism and location to the vendor.**
@@ -856,6 +891,13 @@ filter was the substring regex `/reason_codes|workflow_registry/`, so
 `workflow_registry` **was being silently exempted and was not among the
 failures**. The claim was true of the intent and false of the artefact. It
 fails by name now, with its reason.
+
+**And on 6 September 2026 it stopped failing, by being fixed rather than
+named.** The table is off the dealer data plane and `workflow_registry_read`
+no longer exists, so it is not an open policy for the gate to judge. Nothing
+was added to `L2_EXEMPT_TABLES`; `L2_NOT_EXEMPT_NOTES['workflow_registry']` is
+left in place and is now dormant — it only prints if somebody re-creates a
+`USING (true)` policy on that table, which is exactly when it should.
 
 ### `policy_platform_attestation` is on the wrong plane
 

@@ -486,7 +486,7 @@ audited; several line numbers have since moved.
 | finding | status, 5 Sep 2026 |
 |---|---|
 | 5.1 the dashboard tells the dealership other dealerships exist | **CLOSED** — and it existed on a second screen the audit did not name |
-| 5.2 `workflow_registry` is a platform table with no tenant scope | **NARROWED, NOT CLOSED** |
+| 5.2 `workflow_registry` is a platform table with no tenant scope | **CLOSED 6 Sep 2026** — off the dealer plane entirely; not by a `tenant_id` |
 | 5.3 infrastructure topology on Settings | **CLOSED** |
 | 5.4 Automation is a vendor operations console | **CLOSED** |
 | 5.5 the vendor's third-party stack listed by name | **CLOSED for the chip list; open elsewhere** |
@@ -539,7 +539,7 @@ policy. Every clause is a control-plane fact.
 "these are the automations running for you", with no claim about who else runs
 on the same machine.
 
-## 5.2 `workflow_registry` is a platform table with no tenant scope — NARROWED, NOT CLOSED
+## 5.2 `workflow_registry` is a platform table with no tenant scope — CLOSED
 
 **Half closed, 5 September 2026, and the half that is left is the one that
 blocks a second dealership.** Migration
@@ -550,16 +550,58 @@ writes_audit_log, audit_aliases` — and `id`, `trigger_type` and `trigger_detai
 return `42501`. No surviving column carries the same content: zero cron-shaped
 strings, URLs or hostnames across all 18 rows.
 
-**Still open, exactly as this section demands.** There is no `tenant_id`, the
-policy is still `SELECT USING (true)`, and `count(*)` reads no column — so a
-dealership can still learn *which* automations exist and which are switched off,
-which is 18 rows of operational configuration. Gate check `L2` is red on this
-row and nothing was added to `L2_EXEMPT_TABLES`. **The destination this section
-names — a tenant-scoped view, not the table — is still the destination.**
+**Closed 6 September 2026**, by migration
+`20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`
+(staging first, then production; evidence
+`/home/claude/out/workflow-registry-scoping-evidence.md`). Gate check `L2`
+**passes** and nothing was added to `L2_EXEMPT_TABLES`.
 
-The RLS policy was deliberately left alone: dropping it would have returned 0
-rows to three surviving views and broken them silently, which is worse than the
-leak it would close.
+**It was not closed with a `tenant_id`, and that is the part worth carrying.**
+This section asked for "a `tenant_id` and a scoped policy", and that request was
+wrong about the data. The 18 rows are the **vendor's** register: no measurement
+anywhere in the database maps an automation to a dealership, and three of the
+registered workflows are NEXUS's own public home/privacy/terms pages, which
+serve no dealership at all. A `tenant_id` could only have been populated by
+inventing that mapping; a nullable-meaning-platform one would have been NULL on
+every row forever, so `tenant_id is null or tenant_id in (…)` would have
+filtered nothing while reading like a scope. Splitting the table into a vendor
+half and a dealer-safe half was rejected for the same reason in a different
+shape: the dealer-safe half would still have needed its own `USING (true)`
+policy, which relocates the finding rather than closing it, and it would have
+created a second derivation of the same names.
+
+**What was done instead.** The table left the dealer data plane completely — no
+table privilege, no column privilege, and `workflow_registry_read` dropped (the
+anon-deny and `service_role` policies are untouched). The dealer-safe naming
+projection is served by `public.nexus_workflow_catalogue()`, `SECURITY DEFINER`,
+`STABLE`, owned by `postgres`, EXECUTE to `authenticated` and `service_role`,
+revoked from `anon` and PUBLIC. It returns `name, audit_name, audit_aliases,
+category, description, is_active, writes_audit_log` and **cannot** return `id`,
+`trigger_type` or `trigger_detail` — they are absent from its result type, so
+the withholding is structural rather than a column grant somebody has to
+remember. That is the destination this section named, arrived at as a function
+rather than a view because a `security_invoker` view is checked against the
+caller's privileges on every base column its body reads, and the caller now has
+none.
+
+**The RLS policy could be dropped once the views stopped reading the table.**
+The 5 September reasoning for leaving it was correct and is preserved by the
+design, not overruled: `v_lead_recovery`, `v_needs_attention` and
+`v_audit_unregistered_writers` read `name` / `audit_name` / `audit_aliases`, and
+dropping the policy underneath them would have broken them silently — the first
+by returning NULL "the silence detector never ran", the third by declaring every
+audit writer unregistered. All four views now read the accessor instead, and
+their outputs were diffed against their own pre-change bodies: **symmetric
+difference 0 rows on all four.**
+
+**What is still disclosed, deliberately.** A dealership session that is a member
+of an active dealership still sees **18 rows** through `v_workflow_health` and
+can count them; that view is the sanctioned projection and Part 4 says a
+dealership is entitled to know whether its automations are running. What changed
+is that a signed-in session belonging to **no** dealership now gets zero rows
+from both the accessor and the view, where it previously enumerated all 18 — and
+that the accessor is the single place a per-dealership filter goes if a fact ever
+exists to filter on.
 
 **And withholding the columns made the screen lie.** Six paths in
 `automation.js` read nothing afterwards and four of them told the dealership
@@ -916,12 +958,14 @@ double duty as Ali's operations console.
 ## Build first
 
 1. **Move the boundary in the existing dashboard.** ***Frontend half done
-   5 September 2026; the database half is not.*** Taken in the order this item
-   listed them:
-   - `workflow_registry` `tenant_id` and a scoped policy — **NOT DONE.** Its
-     `id`, `trigger_type` and `trigger_detail` are off the dealer plane and
-     return `42501`, which is a narrowing, not the fix. `L2` is still red and
-     **this is still the prerequisite for onboarding anyone.**
+   5 September 2026; the database half done 6 September 2026.*** Taken in the
+   order this item listed them:
+   - `workflow_registry` `tenant_id` and a scoped policy — **DONE 6 Sep 2026,
+     and deliberately NOT with a `tenant_id`.** The whole table is off the
+     dealer plane: no grant, no `authenticated` policy, every read `42501`, and
+     the dealer-safe naming projection served by
+     `public.nexus_workflow_catalogue()`. `L2` passes. See 5.2 for why a
+     `tenant_id` on a vendor register would have been an invented mapping.
    - the Environment card and endpoint chips (`settings.js:596-646`) — **done**,
      replaced by a three-row Connection card and a count.
    - `settings.js:1402` — **done**, and the same sentence was found and removed
@@ -935,7 +979,7 @@ double duty as Ali's operations console.
      the probed tiles with them.
 
    **What remains of item 1**, and it should be scheduled rather than
-   rediscovered: the `workflow_registry` scoped view; `WAHA` and `Bitrix24`
+   rediscovered: `WAHA` and `Bitrix24`
    still named to the dealership in `conversations.js`, `finance.js` and
    `customers.js`; internal table and view names across roughly twenty screens,
    which needs a vocabulary decision before a rewrite; and `app.js`'s boot card.

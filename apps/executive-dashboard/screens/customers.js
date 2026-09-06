@@ -552,7 +552,7 @@ SCREENS.customers = async host => {
     db(`whatsapp_contacts?select=${CONTACT_COLS}&limit=${CONTACT_LIMIT}`),
     db(`leads?select=id,name,email,phone,created_at&limit=${SOURCE_LIMIT}`),
     db(`purchase_history?select=*&limit=${SOURCE_LIMIT}`),
-    db(`workflow_registry?select=name,audit_name,audit_aliases,writes_audit_log&name=ilike.${AGG_MATCH}`),
+    db(`rpc/nexus_workflow_catalogue?select=name,audit_name,audit_aliases,writes_audit_log&name=ilike.${AGG_MATCH}`),
     db(`v_workflow_health?select=${HEALTH_COLS}&name=ilike.${AGG_MATCH}`),
     db(`audit_log?select=status,summary,logged_at,lead_email,workflow&workflow=ilike.${AGG_MATCH}&order=logged_at.desc&limit=${AGG_LOG_LIMIT}`),
   ]);

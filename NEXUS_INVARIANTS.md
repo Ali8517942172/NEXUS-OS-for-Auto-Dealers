@@ -228,20 +228,32 @@ runs read `PASS 26 · FAIL 2 · WARN 2`, exit 1, and J1's verdict is still
 **NOT_READY** — but the failing rows are not the same rows, and the NOT RUN
 count moved from four to six.*
 
-Latest full-lane run **2026-09-05T21:01Z**, catalogue taken from production at
-20:56:16Z: **PASS 26 · FAIL 2 · WARN 2 · NOT RUN 6, exit 1.**
+Latest full-lane run **2026-09-06T04:33Z**, catalogue taken from production at
+04:29:01Z: **PASS 26 · FAIL 2 · WARN 2 · NOT RUN 6, exit 1.** The count is the
+same and the rows have changed again: **`L2` now PASSES**, and `L1` has taken
+its place — `whatsapp_templates` gained `language_key` and `waba_key` in
+production migration `20260905211435`, which landed eighteen minutes after the
+snapshot embedded in `QUALITY_GATE.mjs` was taken, so the snapshot is stale by
+exactly two columns. The remedy is `node QUALITY_GATE.mjs --refresh-schema`,
+which rewrites that snapshot in place; the 6 September pass was forbidden to
+edit `QUALITY_GATE.mjs` and left it. **`L9` is unchanged and still red.**
 
 - **`L2`** — on 3 September this was **ten** policies, `SELECT USING(true)` for
   `authenticated` on reference and lookup tables carrying no `tenant_id`
   (`deal_rescue_states`, `attribution_edge_type`, `policy_rule_type` and seven
   more). That decision was made: the shipped-vocabulary tables are exempt, and
   `policy_jurisdiction` and `policy_platform_attestation` were revoked outright
-  on 4 September rather than exempted. **One row remains and it is deliberate:
-  `workflow_registry`**, which has no `tenant_id` and whose policy is still
-  `USING (true)`. Its `id`, `trigger_type` and `trigger_detail` columns were
-  taken off the dealer plane on 5 September, but `count(*)` reads no column, so
-  a dealership can still learn which automations exist and which are off. It is
-  **not** in `L2_EXEMPT_TABLES` and must not be put there.
+  on 4 September rather than exempted. **The last remaining row closed on
+  6 September 2026:** `workflow_registry` left the dealer data plane entirely
+  (migration
+  `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`)
+  — no table grant, no column grant, `workflow_registry_read` dropped, every
+  read by `authenticated` now `42501`, and the dealer-safe naming projection
+  served by the `SECURITY DEFINER` accessor `public.nexus_workflow_catalogue()`.
+  It did **not** get a `tenant_id`: the rows are the vendor's register and no
+  measurement maps an automation to a dealership, so a `tenant_id` could only
+  have been an invented mapping. **L2 passes with 12 exempt and 0 not exempt,
+  and nothing was added to `L2_EXEMPT_TABLES`** — the name stays out of it.
 - **`L9`** — unchanged. A writer calling itself `"Example Workflow"` put one
   `FAILED` row into `audit_log` and resolves to no `workflow_registry` entry, so
   its runs sit on no health surface. **Do not invent a registry row to clear

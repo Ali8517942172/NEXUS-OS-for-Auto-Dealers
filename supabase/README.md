@@ -123,8 +123,10 @@ The line between the two kinds of rows is the one `CLAUDE.md` already draws:
 * **Not in the seed** — `tenants` (the dealership's own identity) and
   `workflow_registry`, which holds this box's real n8n workflow ids, trigger
   detail and `is_active` flags. `CLAUDE.md` calls that operational
-  configuration, not shipped vocabulary, and it is the subject of a live
-  tenancy finding. Plus every tenant-scoped table.
+  configuration, not shipped vocabulary. It is now a control-plane table, off
+  the dealer data plane entirely (6 Sep 2026); dealerships reach its naming
+  projection only through `public.nexus_workflow_catalogue()`. Plus every
+  tenant-scoped table.
 
 ## What was verified, and how
 
@@ -356,8 +358,11 @@ Found while doing this. Nothing here was written to either database.
    `policy_jurisdiction` and `policy_platform_attestation` were `SELECT
    USING(true)` for `authenticated`; `20260904112412` revoked both, including the
    ten `pg_attribute.attacl` column grants on the attestation table that a
-   `relacl`-only check could not see. `workflow_registry` remains the one
-   documented `L2` row.
+   `relacl`-only check could not see. `workflow_registry` was the one remaining
+   documented `L2` row and closed on 6 September 2026 (migration
+   `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`):
+   the table is off the dealer data plane, `workflow_registry_read` is dropped,
+   and **`L2` now passes with nothing added to `L2_EXEMPT_TABLES`**.
 
 3. **`QUALITY_GATE.mjs`'s embedded `SNAPSHOT` was stale. Closed 5 September
    2026.** It was taken 3 September and did not know `channel_message_events`,

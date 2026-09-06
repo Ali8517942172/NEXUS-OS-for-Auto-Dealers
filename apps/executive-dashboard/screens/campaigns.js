@@ -625,7 +625,7 @@ SCREENS.campaigns = async host => {
     let registry = null;
     const notes = [];
     try {
-      registry = await db('workflow_registry?select=name,audit_name,audit_aliases,category,is_active,writes_audit_log');
+      registry = await db('rpc/nexus_workflow_catalogue?select=name,audit_name,audit_aliases,category,is_active,writes_audit_log');
     } catch (e) {
       notes.push(`The automation register could not be read (${e.message}), so drip runs are matched on the workflow name instead of the registry's audit aliases.`);
     }
