@@ -99,6 +99,23 @@ const readFailed = (what, err) =>
    blank. */
 const VERIFICATION_WORDS = ['VERIFIED', 'NOT_VERIFIED', 'UNKNOWN', 'DISPUTED'];
 const LIFECYCLE_WORDS = ['DRAFT', 'ACTIVE', 'SUPERSEDED', 'WITHDRAWN'];
+/* ── The reader's word for each state ───────────────────────────────────────
+   Added 5 Sep 2026. The State column printed the database's own token —
+   `NOT_VERIFIED`, `SUPERSEDED` — as the row label, which is our vocabulary and
+   not a dealership's. The verbatim principle this file is built on stays
+   intact and is the reason this is a LABEL map rather than a rewrite: a state
+   nobody here has heard of still appears, still under its own stored spelling,
+   because a token with no entry falls through to itself. `verbatim` on the
+   pill is a claim about PROVENANCE, so it is now true only where the label IS
+   the stored word — a translated one is our wording, not the database's. */
+const VERIFICATION_LABEL = {
+  VERIFIED: 'Checked', NOT_VERIFIED: 'Not checked', UNKNOWN: 'Never stated', DISPUTED: 'Disputed',
+};
+const LIFECYCLE_LABEL = {
+  DRAFT: 'Draft', ACTIVE: 'In force', SUPERSEDED: 'Replaced', WITHDRAWN: 'Withdrawn',
+};
+const stateLabel = (w, map) => map[w] || w;
+
 const VERIFICATION_MEANS = {
   VERIFIED: 'A person read the named source, cited it, dated it and signed for it. Only these reach the safe read.',
   NOT_VERIFIED: 'A value is recorded and nobody has checked it against a source. It describes what this system does, '
@@ -310,11 +327,10 @@ SCREENS.policy = async host => {
           <span class="material-symbols-outlined" style="font-size:20px">rule</span>
           <div>
             ${bold('&ldquo;In force&rdquo; and &ldquo;checked&rdquo; are two different questions, and this engine keeps them apart.')}
-            ${muted('A rule version&rsquo;s <span class="mono">status</span> says whether it is in force. Its '
-              + '<span class="mono">verification_status</span> says whether a human has checked it against the source '
-              + 'it names. A rule can be ACTIVE and NOT_VERIFIED at the same time — that is the honest description of '
-              + 'a constant the code already obeys and nobody has sourced — so the two are counted separately below '
-              + 'and never folded into one badge.')}
+            ${muted('One answer says whether a rule is in force. A separate one says whether a person has checked '
+              + 'it against the source it names. A rule can be in force and unchecked at the same time — that is the '
+              + 'honest description of a rule NEXUS already obeys and nobody has sourced — so the two are counted '
+              + 'separately below and never folded into one badge.')}
           </div>
         </div>`;
 
@@ -339,7 +355,7 @@ SCREENS.policy = async host => {
           + 'and this engine cannot say what any of them should be.', 'gavel');
       }
 
-      const axis = (words, counts, means, strange, title, caption) => `<div class="section">
+      const axis = (words, counts, means, strange, title, caption, labels) => `<div class="section">
           <div class="label-caps">${esc(title)}</div>
           ${table([
             /* `verbatim` is a claim about PROVENANCE — that this label is a
@@ -347,7 +363,11 @@ SCREENS.policy = async host => {
                actually carries the word. A vocabulary state with no rows is
                this screen naming a state that exists and is unoccupied, and
                claiming otherwise would put a false hover note on it. */
-            { label: 'State', strong: true, render: w => pill(w.k, w.n ? '' : 'unknown', { verbatim: w.n > 0 }) },
+            /* Shown as words. `verbatim` now also requires that the word IS
+               the stored one — for a state we have translated, the pill is our
+               label and must not claim the database's provenance. */
+            { label: 'State', strong: true,
+              render: w => pill(w.label, w.n ? '' : 'unknown', { verbatim: w.n > 0 && w.label === w.k }) },
             { label: 'Versions', align: 'r', render: w => (w.n
                 ? num(w.n)
                 /* A real zero, and it says what it is a zero OF. Not a dash:
@@ -355,8 +375,8 @@ SCREENS.policy = async host => {
                    nothing in it right now. */
                 : `<span class="t-muted">none of ${num(F.rules.length)}</span>`) },
             { label: 'What it means', render: w => wrap(muted(esc(w.means))) },
-          ], words.map(k => ({ k, n: counts.get(k) || 0, means: means[k] || 'No meaning is recorded for this state.' }))
-            .concat(strange.map(k => ({ k, n: counts.get(k) || 0,
+          ], words.map(k => ({ k, label: stateLabel(k, labels), n: counts.get(k) || 0, means: means[k] || 'No meaning is recorded for this state.' }))
+            .concat(strange.map(k => ({ k, label: stateLabel(k, labels), n: counts.get(k) || 0,
               means: 'The database holds this value and this screen has no wording for it. It is shown exactly as '
                 + 'stored rather than folded into a state it might mean.' }))))}
           ${muted(caption)}
@@ -365,15 +385,15 @@ SCREENS.policy = async host => {
       const left = axis(VERIFICATION_WORDS, F.byVerification, VERIFICATION_MEANS, F.strangeV,
         'Has anybody checked it?',
         'Counted over the ' + num(F.rules.length) + ' ' + plural(F.rules.length, 'version', 'versions')
-          + ' this account can read. Only VERIFIED reaches the safe read, and a rule that is missing, unverified, '
+          + ' this account can read. Only a checked rule reaches the safe read, and a rule that is missing, unchecked, '
           + 'expired or disputed is simply absent from it — so a consumer finds nothing rather than a value it should '
-          + 'not trust.');
+          + 'not trust.', VERIFICATION_LABEL);
 
       const right = axis(LIFECYCLE_WORDS, F.byLifecycle, LIFECYCLE_MEANS, F.strangeS,
         'Is it in force?',
         'The same ' + num(F.rules.length) + ' ' + plural(F.rules.length, 'version', 'versions')
           + ', counted on the other axis. A version is never edited in place: superseding inserts a new row and closes '
-          + 'the old one, so the evidence behind a quote issued last March survives this March&rsquo;s rule change.');
+          + 'the old one, so the evidence behind a quote issued last March survives this March&rsquo;s rule change.', LIFECYCLE_LABEL);
 
       const cross = `<div class="banner ${F.reliable.length ? 'info' : 'warm'}">
           <span class="material-symbols-outlined" style="font-size:20px">fact_check</span>
@@ -430,12 +450,18 @@ SCREENS.policy = async host => {
             : `<span class="pill unknown"><span class="dot"></span>NO VALUE STATED</span>`
               + muted('Registered as a question rather than an answer. Nothing may be computed from it and no claim '
                 + 'may be made on it.')) },
-        { label: 'Checked', render: k => pill(str(k.verification_status) || 'NOT RECORDED', '', { verbatim: true })
+        /* The reader's word, with the stored token preserved as the pill's
+           title so the provenance is still one hover away. `verbatim` claims
+           the label came from the database, so it is asserted only where the
+           translation left it unchanged. */
+        { label: 'Checked', render: k => pill(stateLabel(str(k.verification_status) || 'NOT RECORDED', VERIFICATION_LABEL), '',
+            { verbatim: !VERIFICATION_LABEL[str(k.verification_status)] })
             + muted(str(k.verification_date)
                 ? `verified ${esc(dubaiDate(k.verification_date))} by `
                   + `${esc(str(k.verified_by) || 'nobody named')}`
                 : 'no verification date, and nobody has signed for it') },
-        { label: 'In force', render: k => pill(str(k.status) || 'NOT RECORDED', '', { verbatim: true })
+        { label: 'In force', render: k => pill(stateLabel(str(k.status) || 'NOT RECORDED', LIFECYCLE_LABEL), '',
+            { verbatim: !LIFECYCLE_LABEL[str(k.status)] })
             + muted(str(k.effective_from)
                 ? `from ${esc(dubaiDate(k.effective_from))}`
                   + (str(k.effective_to) ? ` to ${esc(dubaiDate(k.effective_to))}` : ', open-ended')
@@ -655,8 +681,8 @@ SCREENS.policy = async host => {
             + 'that cite this codebase rather than an authority.'
           : 'The rule versions could not be read, so nothing on this page is evidenced.'],
         ['Confidence', confidences
-          ? `As graded on each version: ${esc(confidences)}. A rule may not be VERIFIED at all while its confidence is `
-            + 'UNKNOWN — the constraint behind this table enforces that, so an unchecked rule cannot quietly acquire a '
+          ? `As graded on each version: ${esc(confidences)}. A rule cannot be marked checked at all while its confidence `
+            + 'is unstated — that is enforced where the rule is stored, so an unchecked rule cannot quietly acquire a '
             + 'confidence it has not earned.'
           : 'No rule version was read on this render, so no confidence is stated.'],
         ['Data coverage', F && K
@@ -680,8 +706,8 @@ SCREENS.policy = async host => {
         ['Action', K && K.facingLaw.length
           ? `Verify or withdraw the ${num(K.facingLaw.length)} customer-facing `
             + `${plural(K.facingLaw.length, 'claim', 'claims')} that assert somebody else&rsquo;s rule. Verifying one `
-            + 'means reading the instrument, citing the article and dating it — which is exactly what the VERIFIED '
-            + 'state requires and why nothing has reached it yet.'
+            + 'means reading the instrument, citing the article and dating it — which is exactly what being checked '
+            + 'requires, and why nothing has reached it yet.'
           : auth && auth.length === 0
             ? 'Nothing on record can be quoted. The first useful step is verifying one rule end to end, so the safe '
               + 'read stops being empty.'

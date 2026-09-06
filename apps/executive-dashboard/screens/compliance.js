@@ -268,7 +268,7 @@ const NO_REASK_HOOK =
    that is the view's verdict, it is carried on the row's retention state, and
    this constant would be a second, unchecked assertion of the same fact. */
 const NO_FILE_LINK =
-  'This record has no storage_path and no purged_at, so nothing was deleted on schedule — the file was simply never archived, and there is nothing to open. Re-running the archive step needs a service-role job and no webhook exists for it, so the browser cannot repair it either.';
+  'No archived file was ever recorded for this document and none was deleted, so nothing was removed on schedule — the file was simply never archived, and there is nothing to open. Re-running the archive step is NEXUS’s to do; nothing in this dashboard can repair it.';
 const PURGED_FILE =
   'This file was deleted on schedule under the retention policy. There is nothing left to open.';
 /* Signing is deliberately short-lived: long enough to click through, short
@@ -332,6 +332,8 @@ const expiryUnreadable = d => {
    What is left for this is the one lookup where an exact match is the whole
    truth — `kyc_documents.reviewed_by` against `users.id`, a uuid on both sides,
    where a near miss is a different person and must stay one. */
+import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
+
 const key = v => String(v == null ? '' : v).trim().toLowerCase();
 
 /* A row is a compliance decision only if the backend did not void it. This is
@@ -349,15 +351,16 @@ const isVoid = d => !!(d && d.void_reason);
    reads the raw column, because redacting the evidence a verdict is computed
    from would change the verdict. Same function, same wording, as
    screens/automation.js `dealerSummary`. */
-const dealerText = text => String(text || '')
-  .replace(/https?:\/\/[^\s·"'<>]+/g, '')
-  .replace(/\bexecution\s*(?:id\s*)?[#:]?\s*\d+/gi, '')
-  .replace(/\bfailed at node\s*:\s*[^·|\n]+/gi, 'failed inside the automation')
-  .replace(/\bnode\s*:\s*[^·|\n]+/gi, '')
-  .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\.nip\.io)?\b/g, '')
-  .replace(/\s+/g, ' ')
-  .replace(/[ \t]*·[ \t]*(?=·|$)/g, '')
-  .replace(/(^[\s·|]+)|([\s·|]+$)/g, '');
+/* One redactor, held in lib/vocabulary.js. Until 5 Sep 2026 this screen carried
+   its own byte-similar copy, and so did two others — and all three stripped
+   WHERE a run stopped (the URL, the node, the execution id, the host) while
+   leaving WHO we buy from standing in the sentence. Measured by rendering: a
+   failing mail credential printed the supplier's name and its API host to the
+   dealership, who can act on neither. Three copies is how that divergence
+   happened; there is now one. Only the RENDERED text goes through it — every
+   classifier below reads the raw column, because redacting the evidence a
+   verdict is computed from would change the verdict. */
+const dealerText = vocabDealerText;
 
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
 
@@ -514,7 +517,7 @@ const casePill = k => {
    for a missing register row cannot be told apart from the browser or from the
    database, and neither may be printed as the answer. */
 const NOT_RECORDED =
-  'The register holds no row for this case. Nothing this page can read says whether a row was never written or was written and later removed: no deletion appears in audit_log, and the schema carries no deletion log at all. That is unknown — which is not the same as nothing having happened, because the auditor’s own run for this case is on file.';
+  'The register holds no row for this case. Nothing this page can read says whether a row was never written or was written and later removed: no deletion appears in the activity log, and the schema carries no deletion log at all. That is unknown — which is not the same as nothing having happened, because the auditor’s own run for this case is on file.';
 
 /* Audit-side. `outcomeOf` is lib/health.js's call and no status string is
    compared here; this table only decides what its answer means for a DOCUMENT.
@@ -615,7 +618,7 @@ const retentionPill = r => pill(RETENTION[r.key].label, RETENTION[r.key].tone, {
 function makeRetentionVerdict({ gapRefs, gapKnown }) {
   return function retentionOf(d) {
     if (d.purged_at) {
-      return { key: 'purged', detail: `The file was deleted ${ago(d.purged_at)} and purged_at was written only because Supabase Storage confirmed the object was gone. This is the retention policy working.` };
+      return { key: 'purged', detail: `The file was deleted ${ago(d.purged_at)}, and the deletion was recorded only after the stored file was confirmed gone. This is the retention policy working.` };
     }
     if (d.storage_path) {
       if (!d.retain_until) {
@@ -629,10 +632,10 @@ function makeRetentionVerdict({ gapRefs, gapKnown }) {
     /* No file and no purge. Whether that is a compliance gap is the view's call,
        not this screen's, so the view is consulted before anything else. */
     if (!gapKnown) {
-      return { key: 'gap_unknown', detail: 'This row has no storage_path and no purged_at. Whether the database files it as kyc_archive_gap could not be checked, because v_needs_attention did not load on this page — so it is not claimed either way.' };
+      return { key: 'gap_unknown', detail: 'No archived file was ever recorded for this document and none was deleted. Whether NEXUS files it as an archive gap could not be checked, because the attention list did not load on this page — so it is not claimed either way.' };
     }
     if (gapRefs.has(String(d.id))) {
-      return { key: 'gap', detail: 'The document was audited but never written to Storage, and it was not purged either. v_needs_attention files this row as kyc_archive_gap: retention cannot be proven for a document whose file does not exist.' };
+      return { key: 'gap', detail: 'The document was audited but its file was never archived, and it was not deleted either. NEXUS files it as an archive gap: retention cannot be proven for a document whose file does not exist.' };
     }
     if (isVoid(d)) {
       return { key: 'voided', detail: 'No file was stored for this row, and the view excludes it from the archive gap because it is voided — it was never a KYC submission, so there is no retention obligation to fail. The image itself was not archived.' };
@@ -642,9 +645,9 @@ function makeRetentionVerdict({ gapRefs, gapKnown }) {
       return { key: 'undated', detail: 'This row has no readable created_at timestamp, so it cannot be placed either side of the archive cut-over and nothing is claimed about why the view does not file it as a gap.' };
     }
     if (t <= ARCHIVE_EPOCH_MS) {
-      return { key: 'pre_archive', detail: `Audited before archiving shipped (${ARCHIVE_EPOCH_LABEL}), so no file was ever stored for it. v_needs_attention excludes rows older than that instant from the archive gap on the ground that they predate the feature. The document is still unprovable; it is simply not counted as a failure of a step that did not exist yet.` };
+      return { key: 'pre_archive', detail: `Audited before archiving shipped (${ARCHIVE_EPOCH_LABEL}), so no file was ever stored for it. The attention list excludes rows older than that instant from the archive gap on the ground that they predate the feature. The document is still unprovable; it is simply not counted as a failure of a step that did not exist yet.` };
     }
-    return { key: 'unfiled', detail: 'This row has no storage_path and no purged_at and is newer than the archive cut-over, yet v_needs_attention does not file it as kyc_archive_gap. Nothing here explains that, and it is deliberately not folded into either side. The most ordinary cause is timing — the row was written between the view read and the register read on this page load.' };
+    return { key: 'unfiled', detail: 'No archived file was ever recorded for this document and none was deleted, and it is newer than the archive cut-over, yet the attention list does not file it as an archive gap. Nothing here explains that, and it is deliberately not folded into either side. The most ordinary cause is timing — the row was written between the view read and the register read on this page load.' };
   };
 }
 
@@ -757,7 +760,7 @@ function makeResolver({ personOf, canonOf, contacts, contactsErr, leads, leadsEr
         : 'matched to a lead record that carries no address at all');
     } else if (kind === 'email_only') {
       bits.push(email);
-      bits.push(leadsErr ? 'the leads table could not be read, so this email is unconfirmed' : 'no matching row in leads');
+      bits.push(leadsErr ? 'Your leads could not be read, so this email is unconfirmed' : 'no matching row in leads');
     } else {
       bits.push(push
         ? 'WhatsApp profile name — not a customer record'
@@ -765,7 +768,7 @@ function makeResolver({ personOf, canonOf, contacts, contactsErr, leads, leadsEr
           ? 'name taken from the KYC row, which for these is the sender’s WhatsApp profile name — not a customer record'
           : 'no name captured for this contact');
       bits.push(leadsErr
-        ? 'the leads table could not be read, so whether there is a lead behind this row is unconfirmed'
+        ? 'Your leads could not be read, so whether there is a lead behind this row is unconfirmed'
         : 'no lead behind this row');
     }
     /* PROVENANCE. The name shown is the one the customer record carries, but a
@@ -907,8 +910,8 @@ SCREENS.compliance = async host => {
      every value v_workflow_health can return, including the three that are
      absences of evidence rather than health. */
   const wfLine = (w, label) => {
-    if (healthErr) return `<span class="t-warm">v_workflow_health could not be read (${esc(healthErr)}), so nothing is known here about ${esc(label)}.</span>`;
-    if (!w) return `<span class="t-warm">No row in v_workflow_health names ${esc(label)}, so its health is not known from here — which is itself worth fixing.</span>`;
+    if (healthErr) return `<span class="t-warm">The automation health figures could not be read (${esc(healthErr)}), so nothing is known here about ${esc(label)}.</span>`;
+    if (!w) return `<span class="t-warm">No row in the automation health figures names ${esc(label)}, so its health is not known from here — which is itself worth fixing.</span>`;
     const hw = healthWords(w.health);
     const rate = successRate(w.successes_30d, w.effective_runs_30d);
     const runs = n0(w.runs_30d);
@@ -1114,7 +1117,7 @@ SCREENS.compliance = async host => {
     }
     if (audit === 'unknown') {
       return { audit, register: 'unknown', rows,
-        note: 'This run carries a status lib/health.js does not define, so what it reached is unrecognised — and with it unknown whether anything was ever due in the register. Nothing is claimed either way.' };
+        note: 'This run carries a status NEXUS does not define, so what it reached is unrecognised — and with it unknown whether anything was ever due in the register. Nothing is claimed either way.' };
     }
     /* The ONLY branch allowed to say a document is not in the register, and it
        says it from the run rather than from the register's silence: the audit
@@ -1271,7 +1274,7 @@ SCREENS.compliance = async host => {
          would turn a failed read into an assertion about a customer, on the
          screen where that is least acceptable. */
       const noLead = leadsErr
-        ? 'the leads table could not be read, so whether there is a lead record is unknown here'
+        ? 'Your leads could not be read, so whether there is a lead record is unknown here'
         : 'no lead record';
       if (lead) return { name: String(lead.name || '').trim() || k, phone,
                          note: 'lead on file' + (amb ? ' · ' + amb : ''), recorded: rec };
@@ -1435,9 +1438,9 @@ SCREENS.compliance = async host => {
          that could return a different answer. */
       kpi('No archived file', gapKnown ? num(gapTotal) : '—',
         !gapKnown
-          ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnErr || 'unknown error')}), so how many documents cannot be produced is not known on this page. That is not zero.</span>`
+          ? `<span class="t-warm">The attention list could not be read (${esc(attnErr || 'unknown error')}), so how many documents cannot be produced is not known on this page. That is not zero.</span>`
           : gapTotal
-            ? `<span class="t-hot">Filed by v_needs_attention as kyc_archive_gap — audited and never written to Storage, so retention cannot be proven for ${plural(gapTotal, 'it', 'them')}.</span>${
+            ? `<span class="t-hot">Filed as an archive gap — audited, and its file was never archived, so retention cannot be proven for ${plural(gapTotal, 'it', 'them')}.</span>${
                 gapsOffPage ? ` <span class="t-muted">${num(gapsOffPage)} of ${plural(gapTotal, 'it', 'them')} ${plural(gapsOffPage, 'is', 'are')} older than the ${num(ROW_LIMIT)} rows this page loads and ${plural(gapsOffPage, 'is', 'are')} not in the table below.</span>` : ''}`
             : (live.length
                 ? '<span class="t-ok">The database files no document as an archive gap</span>'
@@ -1464,7 +1467,7 @@ SCREENS.compliance = async host => {
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">report</span>
       <div style="flex:1">
-        <strong>${num(voided.length)} row${voided.length === 1 ? '' : 's'} in kyc_documents ${voided.length === 1 ? 'was' : 'were'} never a KYC submission.</strong>
+        <strong>${num(voided.length)} row${voided.length === 1 ? '' : 's'} in the ID documents ${voided.length === 1 ? 'was' : 'were'} never a KYC submission.</strong>
         Uncaptioned WhatsApp images were auto-routed to the auditor, so the table holds machine verdicts on pictures nobody asked for${
           chats ? `, from ${num(chats)} chat${chats === 1 ? '' : 's'}` : ''}.
         They carry <span class="mono">void_reason</span> and are excluded from every count, rate, verdict and retention figure on this screen.
@@ -1488,7 +1491,7 @@ SCREENS.compliance = async host => {
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">help</span>
       <div style="flex:1"><strong>How many documents have no archived file is not known on this page.</strong>
-      <span class="mono">v_needs_attention</span> is the register of archive gaps and it could not be read (${esc(attnErr || 'unknown error')}).
+      <span class="mono">The attention list</span> is the register of archive gaps and it could not be read (${esc(attnErr || 'unknown error')}).
       This screen deliberately holds no second way of counting them, so there is nothing here to fall back on and nothing below claims a document is provable.</div>`;
     banners.appendChild(b);
   } else if (gapTotal) {
@@ -1502,10 +1505,10 @@ SCREENS.compliance = async host => {
     b.style.marginBottom = '12px';
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">folder_off</span>
       <div style="flex:1">
-        <strong>${num(gapTotal)} document${gapTotal === 1 ? '' : 's'} in <span class="mono">kyc_documents</span> ${plural(gapTotal, 'has', 'have')} no archived file.</strong>
-        <span class="mono">storage_path</span> is null and there is no <span class="mono">purged_at</span>, so nothing was deleted on schedule —
+        <strong>${num(gapTotal)} document${gapTotal === 1 ? '' : 's'} in <span class="mono">The ID documents</span> ${plural(gapTotal, 'has', 'have')} no archived file.</strong>
+        No archived file was ever recorded for it and none was deleted, so nothing was removed on schedule —
         the file simply was never stored, and retention cannot be proven for a document whose file does not exist.
-        This count is <span class="mono">v_needs_attention.kyc_archive_gap</span> itself, which is also what the Overview panel and the sidebar badge show;
+        This count is the attention list's own, which is also what the Overview panel and the sidebar badge show;
         the screen holds no second count of its own to disagree with it.
         ${oldestAt ? `Oldest audited ${esc(ago(oldestAt))}.` : ''}
         The view excludes voided rows and rows audited before the archive step shipped (${esc(ARCHIVE_EPOCH_LABEL)}) — those documents are equally unprovable, and the register below labels them for what they are rather than folding them into this number.
@@ -1532,9 +1535,9 @@ SCREENS.compliance = async host => {
          workflow's own record is quoted rather than guessed at. */
       b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">schedule</span>
         <div style="flex:1"><strong>${num(overdueRows.length)} archived file${overdueRows.length === 1 ? ' is' : 's are'} past retain_until and still stored.</strong>
-        The nightly purge selects exactly these rows and writes <span class="mono">purged_at</span> only for objects Storage confirms it deleted, so a row in this state is one it either never reached or could not verify.
+        The nightly purge selects exactly these documents and records a deletion only once the stored file is confirmed gone, so a document in this state is one it either never reached or could not verify.
         ${wfLine(purgeWf, 'NEXUS Retention Purge')}
-        Deleting stored documents is a service-role job; nothing in the browser can do it.</div>
+        Deleting stored documents is NEXUS’s to do; nothing in this dashboard can.</div>
         <button class="btn sm" id="cShowOverdue">Show ${overdueRows.length === 1 ? 'it' : 'them'}</button>`;
       banners.appendChild(b);
       b.querySelector('#cShowOverdue').addEventListener('click', () => focusRegister({ flag: 'overdue' }));
@@ -1685,8 +1688,8 @@ SCREENS.compliance = async host => {
           </div>
           <div class="cell-sub" style="white-space:normal">${esc(dealerText(a.summary).slice(0, 240) || 'No summary on the run.')}</div>
           <div class="cell-sub" style="white-space:normal">${esc(c.note)}</div>
-          <div class="cell-sub mono" style="word-break:break-all">audit_log ${esc(a.id ?? 'no id')}${
-            c.rows.length ? ` · kyc_documents ${c.rows.map(r => esc(String(r.id ?? ''))).join(', ')}` : ''}</div>
+          <div class="cell-sub mono" style="word-break:break-all">The activity log ${esc(a.id ?? 'no id')}${
+            c.rows.length ? ` · the ID documents ${c.rows.map(r => esc(String(r.id ?? ''))).join(', ')}` : ''}</div>
         </div>
         <div class="cell-sub">${esc(ago(a.logged_at))}</div>
       </div>`;
@@ -1759,7 +1762,7 @@ SCREENS.compliance = async host => {
               counts.purged ? ` (${num(counts.purged)} of those by having been purged on schedule, which is the policy working)` : ''}; ${num(unprovable)} ${plural(unprovable, 'has', 'have')} no stored file at all.`
           : `Every one of the ${num(total)} ${plural(total, 'document', 'documents')} on this page is either archived or purged on schedule.`}
         ${gaps
-          ? `${num(gaps)} of ${plural(unprovable, 'it', 'them')} ${plural(gaps, 'is the row', 'are the rows')} <span class="mono">v_needs_attention</span> files as an archive gap.`
+          ? `${num(gaps)} of ${plural(unprovable, 'it', 'them')} ${plural(gaps, 'is the row', 'are the rows')} <span class="mono">The attention list</span> files as an archive gap.`
           : gapKnown
             ? 'The database files none of them as an archive gap.'
             : '<span class="t-warm">Which of them the database files as an archive gap could not be checked on this page.</span>'}
@@ -1898,7 +1901,7 @@ SCREENS.compliance = async host => {
           oneTrail ? ' Every row in it belongs to the same customer, so the columns read as one person\u2019s attempts rather than as a comparison between people.' : ''}${
           voided.length ? ` <span class="t-warm">${num(voided.length)} voided row${voided.length === 1 ? ' is' : 's are'} excluded from this table and every count on it — they are listed separately below.</span>` : ''}${
           capped ? ` <span class="t-warm">The underlying read is capped at the ${num(ROW_LIMIT)} most recent rows, so older documents are not on this page.</span>` : ''}${
-          gapKnown ? '' : ' <span class="t-warm">v_needs_attention did not load, so the archive-gap finding is not offered as a filter here — an empty result from it would read as an all-clear.</span>'}</div>
+          gapKnown ? '' : ' <span class="t-warm">The attention list did not load, so the archive-gap finding is not offered as a filter here — an empty result from it would read as an all-clear.</span>'}</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="cSegVerdict" role="group" aria-label="Filter by verdict">
@@ -2145,7 +2148,7 @@ SCREENS.compliance = async host => {
             ${withLead
               ? `<span class="t-warm">${num(withLead)} of them ${withLead === 1 ? 'does' : 'do'} resolve to a lead on file — read ${withLead === 1 ? 'that row' : 'those rows'} carefully before assuming the void was correct.</span>`
               : leadsErr
-                ? '<span class="t-warm">The leads table could not be read, so whether any of these resolves to a lead on file is not known on this page — the absence of a match here is not evidence there is none.</span>'
+                ? '<span class="t-warm">Your leads could not be read, so whether any of these resolves to a lead on file is not known on this page — the absence of a match here is not evidence there is none.</span>'
                 : 'None of them resolves to a lead on file.'}
           </div>
         </div>
@@ -2157,7 +2160,7 @@ SCREENS.compliance = async host => {
                 : 'No customer-facing KYC message to these chats appears in the message log read here.')
             : `The message log could not be read (${esc(commsErr || 'unknown error')}), so what was sent to these chats is unknown on this page.`}
           ${stillStored
-            ? ` ${num(stillStored)} of these images ${stillStored === 1 ? 'is' : 'are'} still held in the private kyc-documents bucket. Deleting a stored object is a service-role job; nothing in the browser can do it.`
+            ? ` ${num(stillStored)} of these images ${stillStored === 1 ? 'is' : 'are'} still held in NEXUS’s private document store. Deleting a stored file is NEXUS’s to do; nothing in this dashboard can.`
             : ' None of these images is still held in storage.'}
         </div>
       </div>
@@ -2224,12 +2227,12 @@ SCREENS.compliance = async host => {
                     : `<span class="t-ok">Matched in leads.</span> <span class="t-warm">The lead row's address column holds <span class="mono">${esc(w.leadAddress)}</span>, a routing key rather than somewhere this customer can be written to.</span>`)
                 : '<span class="t-ok">Matched in leads.</span> <span class="t-warm">That lead row carries no address at all, so there is nothing here to write to.</span>')
             : w.kind === 'email_only'
-              ? `${esc(w.email)} <span class="t-warm">· ${leadsErr ? 'the leads table could not be read, so this is unconfirmed' : 'no matching row in leads'}</span>`
-              : `<span class="t-warm">${leadsErr ? 'The leads table could not be read, so whether there is a lead behind this row is unknown here.' : 'No lead behind this row'}</span>`}</dd>
+              ? `${esc(w.email)} <span class="t-warm">· ${leadsErr ? 'Your leads could not be read, so this is unconfirmed' : 'no matching row in leads'}</span>`
+              : `<span class="t-warm">${leadsErr ? 'Your leads could not be read, so whether there is a lead behind this row is unknown here.' : 'No lead behind this row'}</span>`}</dd>
           <dt>WhatsApp profile name</dt><dd>${w.contact && w.contact.push_name
             ? `${esc(w.contact.push_name)} <span class="t-muted">· the name this person set on WhatsApp, not a customer record</span>`
             : (w.contactMissing
-                ? '<span class="t-muted">No whatsapp_contacts row for this chat id</span>'
+                ? '<span class="t-muted">No the saved contact details row for this chat id</span>'
                 : '<span class="t-muted">Not captured</span>')}</dd>
           <dt>Phone</dt><dd>${w.phone
             ? `<span class="mono">${esc(w.phone)}</span> <span class="t-muted">· ${esc(w.phoneFrom)}</span>`
@@ -2291,7 +2294,7 @@ SCREENS.compliance = async host => {
               ${retentionPill(r)}
             </div>
             <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(r.detail)}
-              This is a private photograph somebody sent to a business number, not a KYC document. It is retained as evidence of the routing fault; purging it is a service-role job.</div>
+              This is a private photograph somebody sent to a business number, not an ID document. It is retained as evidence of the routing fault; deleting it is NEXUS’s to do.</div>
             <dl class="kv" style="margin-top:12px">
               <dt>storage_path</dt><dd class="mono" style="word-break:break-all">${d.storage_path ? esc(d.storage_path) : '<span class="t-muted">null</span>'}</dd>
               <dt>retain_until</dt><dd>${d.retain_until ? esc(d.retain_until) : '<span class="t-muted">null</span>'}</dd>
@@ -2378,7 +2381,7 @@ SCREENS.compliance = async host => {
                   ? 'This row is in the register with the column default still on it. No decision has been recorded against it — which is not the same as a decision to hold it.'
                   : VERDICTS[verdictKey(d)]
                     ? 'This row is in the register and carries a decided verdict, so what the auditor did with this document is on file.'
-                    : `This row carries a verdict the CHECK constraint on kyc_documents does not permit, so this screen has no wording for its position and claims none.`}</div>
+                    : `This row carries a verdict the CHECK constraint on the ID documents does not permit, so this screen has no wording for its position and claims none.`}</div>
           <dl class="kv" style="margin-top:12px">
             <dt>Confidence</dt><dd class="num">${conf == null ? '<span class="t-muted">Not scored</span>' : num(conf) + '%'}</dd>
             <dt>Attempt</dt><dd class="num">${a == null ? '<span class="t-muted">—</span>' : num(a) + (mx != null ? ` of ${num(mx)}` : '')}</dd>
@@ -2575,11 +2578,11 @@ SCREENS.compliance = async host => {
         </div>`;
         }).join('')
       : stateEmpty('No KYC activity on this page',
-          `No run by the KYC auditor appears in the ${num(AUDIT_LIMIT)} most recent audit_log rows read here, and no [KYC-…] line appears in the ${num(COMM_LIMIT)} most recent message-log rows. That is what these two reads found; it is not a statement that nothing has ever run, because anything older than those windows is not on this page. Both lists fill the moment a customer sends an identity document on WhatsApp and the audit-kyc workflow runs.`,
+          `No run by the KYC auditor appears in the ${num(AUDIT_LIMIT)} most recent the activity log rows read here, and no [KYC-…] line appears in the ${num(COMM_LIMIT)} most recent message-log rows. That is what these two reads found; it is not a statement that nothing has ever run, because anything older than those windows is not on this page. Both lists fill the moment a customer sends an identity document on WhatsApp and the audit-kyc workflow runs.`,
           'history');
 
   hist.innerHTML = `<div class="card-head"><div><div class="card-title">KYC activity</div>
-      <div class="card-sub">Auditor runs from audit_log and customer-facing KYC messages from communication_logs.${
+      <div class="card-sub">Auditor runs from the activity log and customer-facing KYC messages from the message history.${
         voided.length ? ' Messages sent about voided rows are shown — they were really sent — but marked as void so they are never read as decisions.' : ''}${
         voidFilterKnown ? '' : ' <span class="t-warm">The register could not be read on this page load, so nothing here could be checked against void_reason and no row is marked.</span>'}</div></div></div>
     ${down.length && !(auditErr && commsErr) ? `<div style="padding:14px 20px 0"><div class="banner warm">

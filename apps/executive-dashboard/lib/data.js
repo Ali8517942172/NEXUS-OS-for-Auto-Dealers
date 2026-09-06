@@ -328,7 +328,7 @@ async function n8n(path, payload) {
    — signing that path returns a URL that 404s. Callers must skip those rows
    rather than offering a link that breaks. */
 async function signedUrl(path, expiresIn = 60) {
-  if (!supabase) throw new Error('Supabase is not configured in this build.');
+  if (!supabase) throw new Error('This installation is not configured to reach your data. Only NEXUS can correct that.');
   if (!path) throw new Error('No storage path on this record.');
   const { data, error } = await supabase.storage
     .from('kyc-documents').createSignedUrl(path, expiresIn);
@@ -341,7 +341,7 @@ async function signedUrl(path, expiresIn = 60) {
     logError(`storage sign ${path}`, err, error);
     throw err;
   }
-  if (!data?.signedUrl) throw new Error('Storage returned no URL for that path.');
+  if (!data?.signedUrl) throw new Error('The stored file could not be opened.');
   return data.signedUrl;
 }
 

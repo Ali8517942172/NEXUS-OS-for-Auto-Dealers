@@ -75,6 +75,7 @@
 
 import { db } from '../lib/data.js';
 import { aed, dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
+import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
@@ -594,7 +595,12 @@ SCREENS.revenue = async host => {
           });
 
       const foot = H
-        ? muted(`Lane health: ${esc(str(H.health) || 'not stated')}. ${num(H.events_total)} recorded `
+        /* Printed the engine's own token — "Lane health: PRODUCING_NOTHING" —
+           until 5 Sep 2026. lib/health.js already holds the sentence for every
+           one of these states and every other screen uses it; this one had a
+           raw enum where the words were. An unrecognised value still falls
+           through to itself, which is healthWords' own rule. */
+        ? muted(`Lane health: ${esc(str(H.health) ? healthWords(H.health).label : 'not stated')}. ${num(H.events_total)} recorded `
             + `${plural(H.events_total, 'step', 'steps')}, ${num(H.events_without_audit)} without an audit row behind `
             + `${plural(H.events_without_audit, 'it', 'them')}. `
             + (H.last_activity_at ? `Last activity ${esc(dubaiStamp(H.last_activity_at))}.` : 'No activity recorded.'))

@@ -123,6 +123,7 @@
 
    Nothing here is estimated. A count the database did not return is an em dash. */
 import { db } from '../lib/data.js';
+import { term } from '../lib/vocabulary.js';
 import { $, el } from '../lib/dom.js';
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
@@ -222,8 +223,8 @@ const HEALTH_COLS = 'name,category,health,runs_30d,successes_30d,failures_30d,pa
 /* Neither the aggregation nor the credential behind it can be repaired from the
    browser. Spelled out once so the disabled control and the prose agree. */
 const NO_SYNC_HOOK =
-  'customer_360_profiles is written by the nightly aggregation job and is service-role only. The HOOK map in ' +
-  'lib/data.js exposes no webhook for that job, so the browser cannot make it run early. The Gmail credential ' +
+  'The customer profiles are written by NEXUS\u2019s own nightly job, which nothing in this browser is allowed to start. ' +
+  'There is no way to start that job from here, so it cannot be made to run early. The mail connection ' +
   'behind it has already been repaired in the Google console — that was never something this button could have ' +
   'done — and the figures will change when the next scheduled run completes. This stays disabled until a ' +
   'run-now endpoint exists.';
@@ -234,15 +235,15 @@ const NO_SYNC_HOOK =
    and a reader told only "it is fixed" will trust a zero that is still an
    outage. */
 const AGG_ZERO_CAUSE =
-  'Customer 360 aggregates Gmail through an OAuth2 credential that had stopped working: its consent screen was ' +
+  'Customer 360 reads the dealership’s mail through a connection that had stopped working: its consent screen was ' +
   'left in Testing, and Google expires a Testing app’s refresh token after seven days, so the job authenticated ' +
   'with a dead token and counted nothing. The app has since been published and the credential re-authorised — ' +
   'and that did not fix the read. The newest aggregation row naming a customer with a real address, logged ' +
-  '28 Aug 2026 and four days after the re-authorisation, still reads “Gmail history for this customer - ' +
+  '28 Aug 2026 and four days after the re-authorisation, still reads “no mail history for this customer - ' +
   'Forbidden - perhaps check your credentials?”. So a figure here is whatever the last run managed to write, a 0 ' +
   'is not evidence that the customer never wrote to us, and the only thing that says which is the run’s own ' +
-  'audit_log row, quoted beside each figure. The message counts elsewhere on this screen come from ' +
-  'communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
+  'The activity log row, quoted beside each figure. The message counts elsewhere on this screen come from ' +
+  'The message history — directly, or through the customer record’s count over that same table — and were never affected.';
 
 /* The paragraph for a run that logged no step it failed to land. This is the
    only wording on the screen that is allowed to call a zero an answer, and it is
@@ -254,16 +255,16 @@ const AGG_ZERO_CAUSE =
 const AGG_ZERO_SUCCESS =
   'This is an answer, not a gap. The run that wrote these figures logged no step that failed to land, so the job ' +
   'reached its sources and found nothing for this address. A 0 here means no mail, not no count. The message ' +
-  'counts elsewhere on this screen come from communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
+  'counts elsewhere on this screen come from the message history — directly, or through the customer record’s count over that same table — and were never affected.';
 
 /* And the case that is actually live: the run finished, wrote a profile row, and
    said in its own summary that part of what it claimed did not happen. */
 const AGG_ZERO_HALF =
-  'The run that wrote these figures did not finish the job it claimed, and its own audit_log row is quoted above. ' +
+  'The run that wrote these figures did not finish the job it claimed, and its own the activity log row is quoted above. ' +
   'Where that row says a count is UNKNOWN, or that a step did not land, the number stored here is whatever an ' +
   'earlier run left behind rather than something this run counted — the workflow says so itself: “previous ' +
   'stored value left intact”. A 0 under those words is a read that failed, not a customer with no mail. The ' +
-  'message counts elsewhere on this screen come from communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
+  'message counts elsewhere on this screen come from the message history — directly, or through the customer record’s count over that same table — and were never affected.';
 
 /* No audit row sits beside this write, so the only evidence is the timestamp —
    and a timestamp is not a record of what a run collected. Said as the inference
@@ -277,13 +278,13 @@ const AGG_ZERO_HALF =
    was written when his profile was. Nor does it say "this 0": the figures this
    paragraph sits under can be any value, and it was appearing beneath a 1. */
 const AGG_ZERO_UNRECORDED =
-  'The write that produced these figures landed after the Gmail credential was re-authorised. That is a ' +
+  'The write that produced these figures landed after the mail connection was restored. That is a ' +
   'timestamp, not a record: the aggregation logged no audit row beside it, so what that run reached is written ' +
-  'down nowhere this screen can read, and comparable runs on other customers were still logging “Gmail read ' +
+  'down nowhere this screen can read, and comparable runs on other customers were still logging “mail read ' +
   'failed” four days after that re-authorisation. Nothing here is therefore being called counted, a 0 included. ' +
-  'The message counts elsewhere on this screen come from communication_logs — directly, or through v_customer_360’s count over that same table — and were never affected.';
+  'The message counts elsewhere on this screen come from the message history — directly, or through the customer record’s count over that same table — and were never affected.';
 
-/* When the Gmail credential was re-authorised, in UTC. This constant used to
+/* When the mail connection was restored, in UTC. This constant used to
    decide every touch count on the screen: written before it meant "not counted",
    written after it meant "counted, and it is none". Both halves of that are gone
    now, and the second half is why — the 24 Aug re-authorisation did not restore
@@ -315,18 +316,27 @@ const aggNote = (syncedAt, run) => {
 };
 
 /* Where this screen's customers come from, and — just as important — where they
-   do not. Both halves of the Bitrix position are stated, because "Bitrix is
-   down" and "Bitrix is synced" are each half-true and both misleading. */
-const BITRIX_NOTE =
-  'Read from Supabase, never from Bitrix24. Bitrix’s crm.* read methods answer 403 on the dealership’s current ' +
-  'plan, so no customer record on this screen came from Bitrix and none can. Writes into Bitrix do succeed — ' +
-  'leads raised and updated by the workflows reach it — so this is a plan restriction on reading, not a broken ' +
-  'integration, and nothing here reflects what Bitrix itself holds.';
+   do not. Both halves are stated, because "the CRM sync is down" and "the CRM
+   is synced" are each half-true and both misleading.
+
+   Rewritten 5 Sep 2026. It named the CRM product, its API method family and
+   the HTTP status its plan returns, four times in four sentences. Which CRM a
+   dealership runs is theirs to know; that NEXUS integrates with it through a
+   supplier's API, on a plan whose read methods are refused, is NEXUS's
+   implementation and changes with the contract. The dealership's half is the
+   one thing that decides whether they can trust this screen: the records here
+   are NEXUS's own, the flow outward works and the flow inward does not, and
+   this screen is therefore not a mirror of their CRM. */
+const CRM_NOTE =
+  'Every customer on this screen is NEXUS’s own record. Nothing here was read back from your CRM, and nothing ' +
+  'here can be: the sync runs one way only. Leads and updates NEXUS raises do reach your CRM, so the outward ' +
+  'direction is working — but a record created or edited in the CRM itself will not appear on this screen, and ' +
+  'this screen is not a picture of what the CRM holds. Restoring the inward direction is NEXUS’s to arrange.';
 
 /* Said wherever a purchase is shown, because the obvious next question is "which
    car?" and the honest answer is a string somebody typed. */
 const NO_INVENTORY_LINK =
-  'purchase_history stores the car as free text in `vehicle` and carries no reference to an inventory unit, so a ' +
+  'The recorded sales stores the car as free text in `vehicle` and carries no reference to an inventory unit, so a ' +
   'purchase cannot be tied to a stock number. Which unit was sold, what it cost us and how long it sat are not ' +
   'answerable from here — and inventory records no sale date either, so they are not answerable from that side.';
 
@@ -355,7 +365,7 @@ function touchCell(v, syncedAt, run) {
   const why = run ? ` title="${esc(str(run.summary) || 'This run logged no summary.')}"` : '';
   const when = ` title="Inferred by comparing this row's last_synced_at against ${esc(GMAIL_FIXED_AT)}, a timestamp written into this screen and not read from the database. The aggregation logged no audit row beside this write, so there is no record of what the run actually collected."`;
   const unaccounted = str(syncedAt)
-    ? `<span class="t-warm"${when}>· which run collected this is not recorded — the aggregation logged nothing beside the write, only that it landed ${syncedAfterFix(syncedAt) ? 'after' : 'before'} the Gmail credential was re-authorised</span>`
+    ? `<span class="t-warm"${when}>· which run collected this is not recorded — the aggregation logged nothing beside the write, only that it landed ${syncedAfterFix(syncedAt) ? 'after' : 'before'} the mail connection was restored</span>`
     : '<span class="t-warm">· which run collected this is not recorded — this source carries no sync timestamp either, so nothing places it against a run</span>';
   if (x > 0) {
     /* A number greater than zero is still only as good as the run that wrote it:
@@ -372,7 +382,7 @@ function touchCell(v, syncedAt, run) {
       : `<span class="num">0</span> <span class="t-muted"${why}>· counted — the run that wrote it (${esc(ago(run.logged_at))}) logged no step that failed to land</span>`;
   }
   if (str(syncedAt) && !syncedAfterFix(syncedAt)) {
-    return `<span class="num">0</span> <span class="t-warm"${when}>· not counted — the run that wrote this finished before the Gmail credential was re-authorised</span>`;
+    return `<span class="num">0</span> <span class="t-warm"${when}>· not counted — the run that wrote this finished before the mail connection was restored</span>`;
   }
   return `<span class="num">0</span> ${unaccounted}`;
 }
@@ -459,18 +469,21 @@ const nameOf = c => c.name || (c.view && str(c.view.name)) || (c.profile && str(
    the dashboard can see, which is a fact about this dealership's records and is
    said as one rather than left as a blank cell. */
 function phoneOf(c) {
-  if (str(c.phone)) return { phone: str(c.phone), from: 'v_customer_directory' };
-  if (c.view && str(c.view.phone)) return { phone: str(c.view.phone), from: 'v_customer_360' };
-  if (c.profile && str(c.profile.phone)) return { phone: str(c.profile.phone), from: 'customer_360_profiles' };
+  /* `from` is RENDERED — "found on <from>" — so it holds the dealership's word
+     for the place, taken from lib/vocabulary.js rather than typed here. Five
+     relation names used to reach the screen through this one object. */
+  if (str(c.phone)) return { phone: str(c.phone), from: term('v_customer_directory') };
+  if (c.view && str(c.view.phone)) return { phone: str(c.view.phone), from: term('v_customer_directory') };
+  if (c.profile && str(c.profile.phone)) return { phone: str(c.profile.phone), from: term('The customer profiles') };
   const bought = (c.purchases || []).map(p => str(p.phone)).filter(Boolean)[0];
-  if (bought) return { phone: bought, from: 'purchase_history' };
+  if (bought) return { phone: bought, from: term('purchase_history') };
   const wa = (c.contacts || []).map(x => str(x.phone)).filter(Boolean)[0];
-  if (wa) return { phone: wa, from: 'whatsapp_contacts' };
+  if (wa) return { phone: wa, from: term('whatsapp_contacts') };
   return { phone: '', from: '' };
 }
 const phoneStr = c => phoneOf(c).phone;
 const NO_PHONE_LONG =
-  'No phone number on the v_customer_directory row, on v_customer_360, on the unified profile, on any purchase ' +
+  'No phone number on the customer list row, on the customer record, on the unified profile, on any purchase ' +
   'row or on any linked WhatsApp contact. This customer cannot be called from anything the dashboard reads.';
 
 /* `whatsapp_contacts.message_count` is a counter on the contact row, and it is
@@ -487,9 +500,9 @@ const NO_PHONE_LONG =
    and Conversations reads per thread. */
 const waCount = w => {
   const n = n0(w.message_count);
-  if (n == null) return '<span class="t-muted">no message_count on this contact row</span>';
-  if (n === 0) return '<span class="t-muted" title="whatsapp_contacts.message_count. On 1 Sep 2026 this column was 0 on every row in the table, including chats that hold messages in communication_logs, so a 0 here is not evidence that nothing was said.">whatsapp_contacts.message_count is 0 — not a message count</span>';
-  return `${num(n)} <span class="t-muted">on whatsapp_contacts.message_count</span>`;
+  if (n == null) return '<span class="t-muted">no message count on this contact row</span>';
+  if (n === 0) return '<span class="t-muted" title="The counter on this contact\u2019s saved details. On 1 Sep 2026 this column was 0 on every row in the table, including chats that hold messages in the message history, so a 0 here is not evidence that nothing was said.">The saved contact details.message_count is 0 — not a message count</span>';
+  return `${num(n)} <span class="t-muted">on this contact\u2019s saved details</span>`;
 };
 
 /* How a WhatsApp row is allowed to be labelled. Never the chat id — a LID
@@ -638,12 +651,12 @@ SCREENS.customers = async host => {
   let spine = null, spineSource = '', spineNote = '';
   if (dirRows) {
     spine = spineFromDirectory(dirRows);
-    spineSource = 'v_customer_directory';
+    spineSource = term('v_customer_directory');
     spineNote = 'A row exists here for every address with a lead or a purchase behind it.';
   } else if (leadRows || buyRows) {
     spine = spineFromSources(leadRows, buyRows);
-    spineSource = 'leads + purchase_history';
-    spineNote = 'Rebuilt from the two tables v_customer_directory is defined over, because the view itself could not be read.';
+    spineSource = 'leads + the recorded sales';
+    spineNote = 'Rebuilt from the two tables the customer list is defined over, because the view itself could not be read.';
   }
 
   const customers = spine ? [...spine.values()] : [];
@@ -663,8 +676,8 @@ SCREENS.customers = async host => {
     const hit = spine && spine.get(key);
     if (hit) { if (!hit.view) hit.view = r; return; }
     const o = other(key, { name: str(r.name), email: str(r.email), phone: str(r.phone) });
-    o.sources.add('v_customer_360');
-    if (!o.basis) o.basis = 'In v_customer_360 but with no lead and no purchase behind the address, so the directory does not carry it.';
+    o.sources.add('The customer record');
+    if (!o.basis) o.basis = 'In the customer record but with no lead and no purchase behind the address, so the directory does not carry it.';
   });
 
   profiles.forEach((p, i) => {
@@ -672,7 +685,7 @@ SCREENS.customers = async host => {
     const hit = spine && spine.get(key);
     if (hit) { if (!hit.profile) hit.profile = p; return; }
     const o = other(key, { name: str(p.name), email: str(p.email), phone: str(p.phone) });
-    o.sources.add('customer_360_profiles');
+    o.sources.add('The customer profiles');
     if (!o.basis) o.basis = 'The nightly aggregation wrote a profile for this address, but there is no lead and no purchase behind it.';
   });
 
@@ -734,15 +747,15 @@ SCREENS.customers = async host => {
     const leadInList = !!(leadEmail && spine && spine.get(leadEmail));
     o.leadRef = asLead || null;
     o.basis = !leadRows
-      ? 'Messaged this WhatsApp number. The leads table could not be read here, so whether a lead exists for them is not known and nothing is claimed about it.'
+      ? 'Messaged this WhatsApp number. Your leads could not be read here, so whether a lead exists for them is not known and nothing is claimed about it.'
       : asLead && asLead.ambiguous
         ? 'Messaged this WhatsApp number. More than one lead answers to the last nine digits of this number, so which lead this is — or whether it is any of them — cannot be told from here, and no claim either way is made.'
         : !asLead
           ? 'Messaged this WhatsApp number. There is no lead and no purchase for them, so they are not a customer.'
           : !leadEmail
-            ? `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'}${str(asLead.lead.name) ? ', ' + str(asLead.lead.name) : ''}, whose email column is empty. v_customer_directory and v_customer_360 both require leads.email <> '', so the customer list cannot carry them and they arrive here instead. They are not on this list because they are not a customer; they are on it because a view drops a lead with no email address.`
+            ? `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'}${str(asLead.lead.name) ? ', ' + str(asLead.lead.name) : ''}, whose email column is empty. The customer list and the customer record both require an email address on the lead, so the customer list cannot carry them and they arrive here instead. They are not on this list because they are not a customer; they are on it because a view drops a lead with no email address.`
             : leadInList
-              ? `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'} under ${leadEmail} — and that address is a customer in the list above. This messaging row carries no lead_email of its own, so it could not be attached to them; it is the same person's WhatsApp channel, shown here only because the link is missing on the row.`
+              ? `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'} under ${leadEmail} — and that address is a customer in the list above. This messaging row carries no email address of its own, so it could not be attached to them; it is the same person's WhatsApp channel, shown here only because the link is missing on the row.`
               : `A lead IS on file for this number — lead ${str(asLead.lead.id) || '(no id)'} under ${leadEmail} — and that address is not in the customer list above. Why it is not is not answerable from this screen, and no claim is made that this person is not a customer.`;
     o.idBasis = lab.basis;
     const m = n0(w.message_count);
@@ -835,13 +848,13 @@ SCREENS.customers = async host => {
       return `<span class="t-warm">The aggregation's own log could not be read (${esc(aggLogErr)}), so nothing is claimed about the run that wrote these figures</span>`;
     }
     if (aggAmbiguous) {
-      return `<span class="t-warm">${esc(String(regRows.length))} workflow_registry rows match “360”, so which job wrote these profiles cannot be told from here</span>`;
+      return `<span class="t-warm">${esc(String(regRows.length))} entries in the automation register match “360”, so which job wrote these profiles cannot be told from here</span>`;
     }
     if (!aggReg) {
-      return '<span class="t-muted">No workflow_registry row matches the Customer 360 aggregation, so its runs cannot be looked up</span>';
+      return '<span class="t-muted">No the automation register row matches the Customer 360 aggregation, so its runs cannot be looked up</span>';
     }
     if (!aggLog.length) {
-      return '<span class="t-muted">The aggregation has written no audit_log row under any of its registered names, so what its runs did is not recorded</span>';
+      return '<span class="t-muted">The aggregation has written no activity-log row under any of its registered names, so what its runs did is not recorded</span>';
     }
     const w = outcomeWords(newestOutcome);
     return newestOutcome === OUTCOME.SUCCESS
@@ -880,16 +893,16 @@ SCREENS.customers = async host => {
          ${dirCapped ? CAPPED(DIR_LIMIT) : ''}`),
       kpi('Recorded purchase value', aed(purchaseValue),
         buyErr
-          ? '<span class="t-warm">purchase_history could not be read</span>'
+          ? '<span class="t-warm">The recorded sales could not be read</span>'
           : purchaseRows
-            ? `<span class="t-muted">amount_aed summed over ${num(purchaseRows)} purchase row${purchaseRows === 1 ? '' : 's'} from ${num(buyers)} customer${buyers === 1 ? '' : 's'}</span>${buysCapped
-                ? `<div><span class="t-warm">purchase_history came back at the ${num(SOURCE_LIMIT)}-row read limit, so this is a floor, not the total</span></div>`
+            ? `<span class="t-muted">Summed over ${num(purchaseRows)} recorded purchase${purchaseRows === 1 ? '' : 's'} from ${num(buyers)} customer${buyers === 1 ? '' : 's'}</span>${buysCapped
+                ? `<div><span class="t-warm">The recorded sales came back at the ${num(SOURCE_LIMIT)}-row read limit, so this is a floor, not the total</span></div>`
                 : ''}`
             : '<span class="t-muted">No purchase recorded against any customer</span>'),
       kpi('Contacts who are not customers', waErr && !otherList.length ? '—' : num(otherList.length),
         waErr
-          ? '<span class="t-warm">whatsapp_contacts could not be read, so this is incomplete</span>'
-          : `<span class="t-muted">${num(contacts.length)} whatsapp_contacts row${contacts.length === 1 ? '' : 's'} read · ${num(linkedContacts)} linked to a customer</span>`
+          ? '<span class="t-warm">The saved contact details could not be read, so this is incomplete</span>'
+          : `<span class="t-muted">${num(contacts.length)} saved contact record${contacts.length === 1 ? '' : 's'} read · ${num(linkedContacts)} linked to a customer</span>`
             /* The tile's own label is a claim about every row it counts, and on
                1 Sep 2026 one of them is lead 35. The count that contradicts the
                label travels with it rather than being left in the table below
@@ -907,7 +920,7 @@ SCREENS.customers = async host => {
             + (waCapped ? CAPPED(CONTACT_LIMIT) : '')),
       kpi('Unified profiles', profErr ? '—' : num(profiles.length),
         profErr
-          ? '<span class="t-warm">customer_360_profiles could not be read</span>'
+          ? '<span class="t-warm">The customer profiles could not be read</span>'
           : `<span class="t-muted">${num(withProfile)} of ${num(customers.length)} customer${customers.length === 1 ? '' : 's'} ${withProfile === 1 ? 'has' : 'have'} one${orphanProfiles ? ` · ${num(orphanProfiles)} belong${orphanProfiles === 1 ? 's' : ''} to somebody who is not a customer` : ''}</span>`
             + (profCapped ? CAPPED(PROFILE_LIMIT) : '')),
       kpi('Last aggregation run', profErr ? '—' : ago(newest),
@@ -918,7 +931,7 @@ SCREENS.customers = async host => {
                apart as the same phrase, so this printed "11 h ago · oldest 11 h
                ago" and invented a spread that is not there. Only shown when the
                two actually read differently. */
-            ? `<span class="t-muted">Newest last_synced_at${oldest && ago(oldest) !== ago(newest) ? ` · oldest ${esc(ago(oldest))}` : ''}</span>
+            ? `<span class="t-muted">Newest run${oldest && ago(oldest) !== ago(newest) ? ` · oldest ${esc(ago(oldest))}` : ''}</span>
                <div>${aggRunSub}</div>`
             : '<span class="t-muted">No profile carries a last_synced_at value, so when this last ran is not knowable</span>'),
     ].join('');
@@ -941,16 +954,16 @@ SCREENS.customers = async host => {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
       <div>The Customer 360 aggregation's own run log could not be read (${esc(aggLogErr)}), so this
       screen cannot say whether the run behind each email and Slack figure below completed or went out half-done.
-      The figures are shown exactly as customer_360_profiles holds them, with no claim about how they were
+      The figures are shown exactly as the customer profiles holds them, with no claim about how they were
       collected.</div></div>`);
   } else if (aggAmbiguous) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
-      <div>${esc(String(regRows.length))} rows in workflow_registry match “360”, so which job writes the email and
+      <div>${esc(String(regRows.length))} rows in the automation register match “360”, so which job writes the email and
       Slack figures on this screen cannot be determined from here. No run is attributed to any figure below.</div></div>`);
   }
   if (healthErr) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
-      <div>v_workflow_health could not be read (${esc(healthErr)}), so how the Customer 360 aggregation has been
+      <div>The automation health figures could not be read (${esc(healthErr)}), so how the Customer 360 aggregation has been
       doing over the last thirty days is not stated on this screen — neither well nor badly.</div></div>`);
   } else if (aggHealth && String(aggHealth.health || '').toUpperCase() !== 'HEALTHY') {
     const hw = healthWords(aggHealth.health);
@@ -959,7 +972,7 @@ SCREENS.customers = async host => {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">rule</span>
       <div><strong>The job behind every email and Slack figure on this screen is ${esc(hw.label.toLowerCase())}.</strong>
       ${esc(hw.blurb)} ${eff
-        ? `v_workflow_health reports ${esc(String(succ))} of ${esc(String(eff))} qualifying run${eff === 1 ? '' : 's'}
+        ? `The automation health figures reports ${esc(String(succ))} of ${esc(String(eff))} qualifying run${eff === 1 ? '' : 's'}
            succeeded outright in the last 30 days (${esc(pct(aggRate))})${parts ? `, ${esc(String(parts))} went out half-done` : ''}${fails ? `, ${esc(String(fails))} failed` : ''}.`
         : 'No run in the 30-day window counted toward a rate, so there is no success rate to report — that is not 0% and not 100%.'}
       A run that went out half-done still writes a profile row, holding whatever it managed to collect and leaving
@@ -968,13 +981,13 @@ SCREENS.customers = async host => {
   }
   if (dirErr && spine) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
-      <div>v_customer_directory could not be read (${esc(dirErr)}), so this list was rebuilt from leads and
-      purchase_history — the two tables that view is defined over. It should match, but it has not been
+      <div>The customer list could not be read (${esc(dirErr)}), so this list was rebuilt from leads and
+      the recorded sales — the two tables that view is defined over. It should match, but it has not been
       confirmed against the view. Nothing from the aggregation tables was used to fill the gap.</div></div>`);
   }
   if (profErr) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
-      <div>customer_360_profiles could not be read (${esc(profErr)}), so no email or Slack touch counts and no
+      <div>The customer profiles could not be read (${esc(profErr)}), so no email or Slack touch counts and no
       sync times are shown. Identity, leads, purchases and messages below are read live and are current.</div></div>`);
   } else if (profiles.length && !anyTouch) {
     /* Which of these zeros is an answer is decided by the runs that wrote them,
@@ -1054,9 +1067,9 @@ SCREENS.customers = async host => {
   }
   if (viewErr) {
     notes.push(`<div class="banner warm"><span class="material-symbols-outlined">warning</span>
-      <div>v_customer_360 could not be read (${esc(viewErr)}), so no lifetime value, VIP flag or aggregate count
+      <div>The customer record could not be read (${esc(viewErr)}), so no lifetime value, VIP flag or aggregate count
       comes from it. Where the same figure can be rebuilt from a table this screen reads directly — leads,
-      purchase_history, communication_logs — the detail pane does that and says so on the figure itself; where it
+      the recorded sales, the message history — the detail pane does that and says so on the figure itself; where it
       cannot, it shows an em dash rather than a guess. The customer list itself is unaffected.</div></div>`);
   }
   noteHost.innerHTML = notes.join('');
@@ -1091,22 +1104,22 @@ SCREENS.customers = async host => {
             <button type="button" data-f="all" class="on" aria-pressed="true">All ${num(customers.length)}</button>
             <button type="button" data-f="buyers" aria-pressed="false" ${buyErr || !buyers ? 'disabled' : ''}
               title="${buyErr
-                ? esc('purchase_history could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
-                : buyers ? 'Customers with at least one row in purchase_history.'
+                ? esc('The recorded sales could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
+                : buyers ? 'Customers with at least one row in the recorded sales.'
                          : 'No customer has a purchase recorded, so this filter would come back empty.'}">Buyers ${buyErr ? '—' : num(buyers)}</button>
             <button type="button" data-f="enquiry" aria-pressed="false" ${buyErr || customers.length === buyers ? 'disabled' : ''}
               title="${buyErr
-                ? esc('purchase_history could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
+                ? esc('The recorded sales could not be read (' + buyErr + '), so buyers cannot be separated from enquiries.')
                 : customers.length === buyers ? 'Every customer on file has bought, so this filter would come back empty.'
                                               : 'Customers with a lead on file but no purchase recorded.'}">Enquiries ${buyErr ? '—' : num(customers.length - buyers)}</button>
             <button type="button" data-f="nophone" aria-pressed="false" ${noPhone ? '' : 'disabled'}
-              title="${esc(noPhone ? 'Customers with no phone number on v_customer_directory, v_customer_360, customer_360_profiles, purchase_history or whatsapp_contacts — nothing the dashboard reads can call them.' : 'Every customer has a phone number on at least one source, so there is nothing to filter to.')}">No phone ${num(noPhone)}</button>
+              title="${esc(noPhone ? 'Customers with no phone number on the customer list, the customer record, the customer profiles, the recorded sales or the saved contact details — nothing the dashboard reads can call them.' : 'Every customer has a phone number on at least one source, so there is nothing to filter to.')}">No phone ${num(noPhone)}</button>
           </div>
           <button class="btn sm" disabled title="${esc(NO_SYNC_HOOK)}">Re-run sync</button>
         </div>
         <div id="custList" style="overflow-y:auto;flex:1"></div>
         <div class="cell-sub" style="padding:12px 20px;border-top:1px solid var(--border-subtle);white-space:normal">
-          ${esc(BITRIX_NOTE)}
+          ${esc(CRM_NOTE)}
         </div>
       </div>
       <div id="custPane" style="overflow-y:auto;min-width:0"></div>`;
@@ -1305,8 +1318,8 @@ SCREENS.customers = async host => {
        that column null" are different facts and lead to different next steps.
        Every substitution below names the one that actually happened. */
     const viewGap = c.view
-      ? 'v_customer_360 has a row for this customer but no value in that column'
-      : 'v_customer_360 has no row for this customer';
+      ? 'The customer record has a row for this customer but no value in that column'
+      : 'The customer record has no row for this customer';
 
     /* v_customer_360 is the preferred source for these three because it counts
        across everything, not just the capped page just read. When it has no row
@@ -1323,12 +1336,12 @@ SCREENS.customers = async host => {
     const leadSub = viewLeads != null
       ? (v.latest_status ? pill(v.latest_status, undefined, { verbatim: true }) : '<span class="t-muted">No status on the latest lead</span>')
         + (leads.rows && leads.rows.length !== viewLeads
-            ? `<div><span class="t-warm">v_customer_360 counts ${esc(String(viewLeads))}; the leads table returned ${esc(String(leads.rows.length))} for this address. The two disagree and this screen cannot say which is right.</span></div>`
+            ? `<div><span class="t-warm">The customer record counts ${esc(String(viewLeads))}; your leads returned ${esc(String(leads.rows.length))} for this address. The two disagree and this screen cannot say which is right.</span></div>`
             : '')
       : leads.rows
-        ? `<span class="t-warm">Counted from the leads table — ${esc(viewGap)}</span>`
+        ? `<span class="t-warm">Counted from your leads — ${esc(viewGap)}</span>`
         : leads.err
-          ? '<span class="t-warm">Neither v_customer_360 nor the leads table could be read</span>'
+          ? '<span class="t-warm">Neither the customer record nor your leads could be read</span>'
           : '<span class="t-muted">Not countable — this directory row has no email to match on</span>';
 
     const viewScore = n0(v.best_ai_score);
@@ -1338,8 +1351,8 @@ SCREENS.customers = async host => {
       ? (leadCount === 1
           /* A maximum over one row is that row. Calling it "highest across their
              leads" dresses a single score up as a comparison. */
-          ? '<span class="t-muted">The score on their only lead · v_customer_360</span>'
-          : '<span class="t-muted">Highest score across this customer’s leads · v_customer_360</span>')
+          ? '<span class="t-muted">The score on their only lead · the customer record</span>'
+          : '<span class="t-muted">Highest score across this customer’s leads · the customer record</span>')
       : leadScores.length
         ? `<span class="t-warm">${leadScores.length === 1 ? 'The ai_score on the one lead read here' : 'Highest ai_score on the leads read here'} — ${esc(viewGap)}</span>`
         : '<span class="t-muted">No lead of this customer’s carries an ai_score</span>';
@@ -1498,7 +1511,7 @@ SCREENS.customers = async host => {
         if (msgCapped) {
           bits.push(`The history read here stopped at its ${esc(String(MSG_LIMIT))}-row cap, so the ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} in it are a floor and cannot be checked against the figure above.`);
         } else if (viewMsgs === readMsgs) {
-          bits.push(`The ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} read here under lib/comm-events.js — this browser’s mirror of public.nexus_is_message() — come to the same number, so both spellings of the rule select the same rows.`);
+          bits.push(`The ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} read here under this browser’s mirror of NEXUS’s own test for what counts as a message — come to the same number, so both spellings of the rule select the same rows.`);
         } else {
           bad = true;
           bits.push(`The history read here counts ${esc(String(readMsgs))} message${readMsgs === 1 ? '' : 's'} under the same predicate, ${esc(String(Math.abs(readMsgs - viewMsgs)))} ${readMsgs > viewMsgs ? 'more' : 'fewer'} than the figure above. One rule, two key expansions, and they are not selecting the same rows — this screen cannot say which set is right.`);
@@ -1512,7 +1525,7 @@ SCREENS.customers = async host => {
         bits.push(`The newest message read here is ${esc(dubaiStamp(readLast))}, not the moment above. Both sides exclude internal rows with the same predicate, so that is not the reason, and this screen cannot say what is.`);
       } else if (msgSource === 'view' && viewLast == null && msgCount) {
         bad = true;
-        bits.push(`v_customer_360 reports ${esc(String(msgCount))} message${msgCount === 1 ? '' : 's'} for this customer but carries no last_contact_at, which its own definition should not allow — the two are computed from one subquery over one predicate.`);
+        bits.push(`The customer record reports ${esc(String(msgCount))} message${msgCount === 1 ? '' : 's'} for this customer but carries no last_contact_at, which its own definition should not allow — the two are computed from one subquery over one predicate.`);
       }
       if (!bits.length) return '';
       return `<div><span class="${bad ? 't-warm' : 't-muted'}">${bits.join(' ')}</span></div>`;
@@ -1524,17 +1537,17 @@ SCREENS.customers = async host => {
        said". */
     const msgReadNote = msgSource === 'view' && comms.rows == null
       ? (comms.err
-          ? `<div><span class="t-warm">communication_logs could not be read — ${esc(comms.err)} — so the figure above could not be checked against the rows themselves, and the section below is empty for that reason and not because nothing was said.</span></div>`
+          ? `<div><span class="t-warm">The message history could not be read — ${esc(comms.err)} — so the figure above could not be checked against the rows themselves, and the section below is empty for that reason and not because nothing was said.</span></div>`
           : `<div><span class="t-warm">No history was read: ${esc(commsFilter.note)} So the figure above could not be checked against the rows themselves.</span></div>`)
       : '';
     const msgSub = msgSource == null
       ? (comms.err
-          ? `<span class="t-warm">communication_logs could not be read — ${esc(comms.err)}</span>`
+          ? `<span class="t-warm">The message history could not be read — ${esc(comms.err)}</span>`
             + `<div><span class="t-muted">${esc(viewGap)}, so there is no second source to fall back to and no figure is shown.</span></div>`
           : `<span class="t-muted">Not countable — ${esc(commsFilter.note)} ${esc(viewGap)}.</span>`)
       : `<span class="${msgSource === 'view' ? 't-muted' : 't-warm'}">${msgSource === 'view'
-            ? 'Every message on file · v_customer_360.message_count, counted with public.nexus_is_message()'
-            : `Counted here from communication_logs across ${esc(String(commsFilter.keys.length))} recorded key${commsFilter.keys.length === 1 ? '' : 's'}${commsFilter.patterns.length ? ' and the last-nine-digit rule the backend matches on' : ''} — ${esc(viewGap)}${msgCapped ? `, and the read stops at ${esc(String(MSG_LIMIT))} rows, so this is a floor` : ''}`}${
+            ? 'Every message on file, counted with NEXUS’s own test for what counts as a message'
+            : `Counted here from the message history across ${esc(String(commsFilter.keys.length))} recorded key${commsFilter.keys.length === 1 ? '' : 's'}${commsFilter.patterns.length ? ' and the last-nine-digit rule the backend matches on' : ''} — ${esc(viewGap)}${msgCapped ? `, and the read stops at ${esc(String(MSG_LIMIT))} rows, so this is a floor` : ''}`}${
             lastContact
               ? ` · last contact ${esc(ago(lastContact))}`
               : msgCount === 0
@@ -1602,9 +1615,9 @@ SCREENS.customers = async host => {
            honest statement is that the two are not over the same set. The
            agreement is the null case, and it is now the one that says so. */
         + (ltvFromView != null
-            ? `<div><span class="t-warm">v_customer_360 reports ${esc(aed(ltvFromView))} for this customer and purchase_history returned no row for the address this screen read, so the two are not over the same set of rows and this screen cannot say which set is right.</span></div>`
+            ? `<div><span class="t-warm">The customer record reports ${esc(aed(ltvFromView))} for this customer and the recorded sales returned no row for the address this screen read, so the two are not over the same set of rows and this screen cannot say which set is right.</span></div>`
             : c.view
-              ? `<div><span class="t-muted">v_customer_360 leaves lifetime_value_aed null for this customer too. Until 1 Sep 2026 it COALESCE’d its sum to zero, so somebody who had never bought and somebody who bought at no charge were the same AED 0 to it; the two sides agree here because it no longer does that.</span></div>`
+              ? `<div><span class="t-muted">The customer record leaves lifetime_value_aed null for this customer too. Until 1 Sep 2026 it COALESCE’d its sum to zero, so somebody who had never bought and somebody who bought at no charge were the same AED 0 to it; the two sides agree here because it no longer does that.</span></div>`
               : '');
     } else if (purchTotal != null) {
       ltvValue = aed(purchTotal);
@@ -1612,14 +1625,14 @@ SCREENS.customers = async host => {
         + (ltvFromView == null
             ? `<div><span class="t-muted">${esc(viewGap)}</span></div>`
             : ltvFromView === purchTotal
-              ? '<div><span class="t-muted">v_customer_360 agrees</span></div>'
-              : `<div><span class="t-warm">v_customer_360 reports ${esc(aed(ltvFromView))}. ${esc(DISTINCT_CAVEAT)}</span></div>`);
+              ? '<div><span class="t-muted">The customer record agrees</span></div>'
+              : `<div><span class="t-warm">The customer record reports ${esc(aed(ltvFromView))}. ${esc(DISTINCT_CAVEAT)}</span></div>`);
     } else if (purch.rows) {
       ltvValue = '—';
       ltvSub = `<span class="t-warm">${esc(String(purch.rows.length))} purchase row${purch.rows.length === 1 ? '' : 's'} on file, none carrying an amount_aed, so there is nothing to sum</span>`;
     } else if (ltvFromView != null) {
       ltvValue = aed(ltvFromView);
-      ltvSub = `<span class="t-warm">Every purchase amount on file, summed · v_customer_360${viewPurchases == null ? '' : ` · ${num(viewPurchases)} purchase${viewPurchases === 1 ? '' : 's'}`} — purchase_history could not be read here, so it could not be checked against the rows themselves</span>`
+      ltvSub = `<span class="t-warm">Every purchase amount on file, summed · the customer record${viewPurchases == null ? '' : ` · ${num(viewPurchases)} purchase${viewPurchases === 1 ? '' : 's'}`} — The recorded sales could not be read here, so it could not be checked against the rows themselves</span>`
         + `<div class="cell-sub" style="white-space:normal">${esc(DISTINCT_CAVEAT)}</div>`;
     } else {
       ltvValue = '—';
@@ -1627,7 +1640,7 @@ SCREENS.customers = async host => {
     }
 
     const waHtml = waErr
-      ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">whatsapp_contacts could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
+      ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">The saved contact details could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
       : c.contacts.length
         ? `<div style="margin-top:8px">${c.contacts.map(w => {
             const lab = contactLabel(w);
@@ -1635,7 +1648,7 @@ SCREENS.customers = async host => {
               <span class="material-symbols-outlined t-muted" style="font-size:18px">chat</span>
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500">${lab.name ? esc(lab.name) : '<span class="t-muted">No name captured on this chat</span>'}</div>
-                <div class="cell-sub" style="white-space:normal">${esc(lab.basis)} · linked to this customer by lead_email.</div>
+                <div class="cell-sub" style="white-space:normal">${esc(lab.basis)} · linked to this customer by the email on the lead record.</div>
                 <div class="cell-sub mono" style="word-break:break-all">${esc(str(w.chat_id) || 'no chat id')}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
@@ -1644,7 +1657,7 @@ SCREENS.customers = async host => {
               </div>
             </div>`;
           }).join('')}</div>`
-        : '<div class="cell-sub" style="margin-top:8px;white-space:normal">No whatsapp_contacts row is linked to this email. Most of the WhatsApp contacts in this system are not customers, so the absence of one here is normal.</div>';
+        : '<div class="cell-sub" style="margin-top:8px;white-space:normal">No the saved contact details row is linked to this email. Most of the WhatsApp contacts in this system are not customers, so the absence of one here is normal.</div>';
 
     pane.innerHTML = `
       <div class="card-head">
@@ -1674,8 +1687,8 @@ SCREENS.customers = async host => {
           <div class="label-caps">Why this person is a customer</div>
           <dl class="kv" style="margin-top:8px">
             <dt>Directory</dt><dd>${dirErr
-              ? '<span class="t-warm">Rebuilt from leads and purchase_history — v_customer_directory could not be read</span>'
-              : 'In v_customer_directory <span class="t-ok">· leads UNION purchase_history</span>'}</dd>
+              ? '<span class="t-warm">Rebuilt from leads and the recorded sales — The customer list could not be read</span>'
+              : 'In the customer list <span class="t-ok">· leads UNION the recorded sales</span>'}</dd>
             <dt>Leads on file</dt><dd>${leads.err
               ? `<span class="t-warm">Could not be read — ${esc(leads.err)}</span>`
               : leads.rows == null
@@ -1687,30 +1700,30 @@ SCREENS.customers = async host => {
                 ? '<span class="t-muted">Cannot be matched without an email address</span>'
                 : `${esc(String(purch.rows.length))}${foreignNote(purch)}`}</dd>
             <dt>Directory row</dt><dd>${c.id
-              ? `<span class="mono">${esc(c.id)}</span> <span class="cell-sub">· v_customer_directory.id</span>`
-              : '<span class="t-muted">Rebuilt from leads and purchase_history — there is no directory row behind it</span>'}</dd>
+              ? `<span class="mono">${esc(c.id)}</span> <span class="cell-sub">· their id in the customer list</span>`
+              : '<span class="t-muted">Rebuilt from leads and the recorded sales — there is no directory row behind it</span>'}</dd>
             <dt>Underlying records</dt><dd>${dirErr
               ? '<span class="t-muted">Not available — the view that reports it could not be read</span>'
               : c.sourceRecords == null
-                ? '<span class="t-muted">v_customer_directory returned no source_records value for this address</span>'
+                ? '<span class="t-muted">The customer list returned no source_records value for this address</span>'
                 : n0(c.sourceRecords) != null
-                  ? `${num(c.sourceRecords)} <span class="cell-sub">source_records, as v_customer_directory counts them</span>`
-                  : `<span class="mono">${esc(String(c.sourceRecords))}</span> <span class="cell-sub">source_records, exactly as v_customer_directory reports it</span>`}</dd>
+                  ? `${num(c.sourceRecords)} <span class="cell-sub">source_records, as the customer list counts them</span>`
+                  : `<span class="mono">${esc(String(c.sourceRecords))}</span> <span class="cell-sub">source_records, exactly as the customer list reports it</span>`}</dd>
             <dt>Last seen</dt><dd>${c.lastSeen
               ? `${esc(ago(c.lastSeen))} <span class="cell-sub">· the newest last_seen_at on this address</span>`
               : '<span class="t-muted">No last_seen_at on this row</span>'}</dd>
             <dt>Email key</dt><dd class="mono" style="word-break:break-all">${esc(c.email || '—')}</dd>
             <dt>Message keys</dt><dd>${commsFilter.ok
               ? `<span class="mono" style="word-break:break-all">${esc(commsFilter.keys.join(', '))}</span>
-                 <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)} communication_logs.lead_email holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
+                 <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)} The key each message is filed under holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
               : `<span class="t-warm">None</span>
                  <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
             <dt>Phone</dt><dd>${ph.phone
               ? `<span class="mono">${esc(ph.phone)}</span> <span class="cell-sub">· found on ${esc(ph.from)}</span>`
               : `<span class="t-warm">Not recorded</span>
                  <div class="cell-sub" style="white-space:normal">${esc(NO_PHONE_LONG)}</div>`}</dd>
-            <dt>Source system</dt><dd>Supabase <span class="t-muted">· not Bitrix24</span>
-              <div class="cell-sub" style="white-space:normal">${esc(BITRIX_NOTE)}</div></dd>
+            <dt>Source system</dt><dd>NEXUS <span class="t-muted">· not your CRM</span>
+              <div class="cell-sub" style="white-space:normal">${esc(CRM_NOTE)}</div></dd>
           </dl>
         </div>
 
@@ -1720,7 +1733,7 @@ SCREENS.customers = async host => {
         </div>
 
         <div class="section">
-          <div class="label-caps">Unified profile · customer_360_profiles</div>
+          <div class="label-caps">Unified profile · the customer profiles</div>
           ${profErr
             ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">The profile table could not be read (${esc(profErr)}).</div>`
             : c.profile
@@ -1730,22 +1743,22 @@ SCREENS.customers = async host => {
                    <dt>Slack messages</dt><dd>${touchCell(c.profile.total_slack_messages, c.profile.last_synced_at, custRun)}</dd>
                    <dt>Last synced</dt><dd>${esc(ago(c.profile.last_synced_at))}${c.profile.last_synced_at
                      ? ` <span class="cell-sub">· ${syncedAfterFix(c.profile.last_synced_at)
-                          ? 'after the Gmail credential was re-authorised'
-                          : 'before the Gmail credential was re-authorised'}</span>`
+                          ? 'after the mail connection was restored'
+                          : 'before the mail connection was restored'}</span>`
                      : ' <span class="t-muted">(the row exists but carries no timestamp, so which run wrote it is unknown)</span>'}</dd>
                    <dt>Run that wrote it</dt><dd>${aggLogErr
                      ? `<span class="t-warm">Unknown — the aggregation's log could not be read (${esc(aggLogErr)})</span>`
                      : !aggReg
-                       ? '<span class="t-muted">Unknown — no workflow_registry row identifies the aggregation</span>'
+                       ? '<span class="t-muted">Unknown — no entry in the automation register identifies the aggregation</span>'
                        : custRun
                          ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone, { verbatim: false })}
                             <span class="cell-sub">· ${esc(ago(custRun.logged_at))} · logged beside this row’s last_synced_at · ${esc(String(custRuns.length))} logged run${custRuns.length === 1 ? '' : 's'} in all name this customer</span>
                             <div class="cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
                          : custLatestRun
                            ? `<span class="t-warm">Not recorded</span>
-                              <div class="cell-sub" style="white-space:normal">No audit_log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced the figures above is not on record. The aggregation has logged ${esc(String(custRuns.length))} run${custRuns.length === 1 ? '' : 's'} naming this customer, the newest ${esc(ago(custLatestRun.logged_at))} — that run is older than this row and did not write it, so its outcome is deliberately not shown against these numbers. Its summary read: ${esc(str(custLatestRun.summary) || 'no summary.')}</div>`
-                           : `<span class="t-warm">No audit_log row names this customer</span>
-                              <div class="cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the audit_log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
+                              <div class="cell-sub" style="white-space:normal">No the activity log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced the figures above is not on record. The aggregation has logged ${esc(String(custRuns.length))} run${custRuns.length === 1 ? '' : 's'} naming this customer, the newest ${esc(ago(custLatestRun.logged_at))} — that run is older than this row and did not write it, so its outcome is deliberately not shown against these numbers. Its summary read: ${esc(str(custLatestRun.summary) || 'no summary.')}</div>`
+                           : `<span class="t-warm">No the activity log row names this customer</span>
+                              <div class="cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the activity log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
                    <dt>Name on profile</dt><dd>${esc(str(c.profile.name) || '—')}</dd>
                    <dt>Phone on profile</dt><dd>${str(c.profile.phone)
                      ? `<span class="mono">${esc(str(c.profile.phone))}</span>`
@@ -1753,15 +1766,15 @@ SCREENS.customers = async host => {
                  </dl>
                  <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))}</div>`
               : (n0(v.total_emails) != null || n0(v.total_slack_messages) != null)
-                ? `<div class="cell-sub" style="white-space:normal">The nightly job has written no customer_360_profiles row for this customer.
-                     v_customer_360 carries the same two counters for them and they are shown here — but that view records no sync
-                     timestamp, so when these were collected, and therefore whether they predate the Gmail fix, cannot be told from it.</div>
+                ? `<div class="cell-sub" style="white-space:normal">The nightly job has written no customer profile for this customer.
+                     The customer record carries the same two counters for them and they are shown here — but it records no time of
+                     collection, so when these were counted, and therefore whether they predate the mail connection being restored, cannot be told from it.</div>
                    <dl class="kv" style="margin-top:8px">
                      <dt>Email touches</dt><dd>${touchCell(v.total_emails, null, custRun)}</dd>
                      <dt>Slack messages</dt><dd>${touchCell(v.total_slack_messages, null, custRun)}</dd>
                    </dl>
                    <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
-                : noSource('The nightly Customer 360 aggregation has not written a row for this customer, and v_customer_360 reports no touch counts for them either, so there are no email or Slack figures to show and no last_synced_at. Identity, phone, leads, purchases and logged messages on this screen are read live and are current.')}
+                : noSource('The nightly Customer 360 aggregation has not written a row for this customer, and the customer record reports no touch counts for them either, so there are no email or Slack figures to show and no last_synced_at. Identity, phone, leads, purchases and logged messages on this screen are read live and are current.')}
         </div>
 
         ${section('Purchase history', purch, 'No purchase recorded for this customer.', rows => `
@@ -1827,7 +1840,7 @@ SCREENS.customers = async host => {
                every row in this list a message, which is the same conflation the
                count itself was making until 2 Sep 2026. */
             ? `${esc(String(events.count))} of the rows read here ${events.count === 1 ? 'is a message' : 'are messages'} and ${esc(String(events.internalCount))} ${events.internalCount === 1 ? 'is one of the dealership’s own internal notes' : 'are the dealership’s own internal notes'}, listed here because the read returned them and not counted in the figure above. `
-            : ''}These come from communication_logs and are counted independently of the aggregation's email and Slack figures above.
+            : ''}These come from the message history and are counted independently of the aggregation's email and Slack figures above.
           ${esc(commsFilter.note)} ${esc(identKeyLine)}</div>
           ${ident.ambiguity.length
             ? ident.ambiguity.map(a => `<div class="banner warm" style="margin-top:10px"><span class="material-symbols-outlined">warning</span>
@@ -1901,10 +1914,10 @@ SCREENS.customers = async host => {
        the same chat ids. A column headed "Messages" showing 0 for a person with
        23 of them is an absence rendered as a fact, so the heading names the
        counter and the cell says when the counter is empty. */
-    { label: 'whatsapp_contacts.message_count', align: 'r', render: o => o.messages == null
+    { label: 'Messages on the contact record', align: 'r', render: o => o.messages == null
       ? '<span class="t-muted">—</span>'
       : o.messages === 0
-        ? '<span class="t-muted" title="Not a count of this contact’s messages. communication_logs is where those are, and Conversations reads it per thread.">0 — the counter, not the conversation</span>'
+        ? '<span class="t-muted" title="Not a count of this contact’s messages. The message history is where those are, and Conversations reads it per thread.">0 — the counter, not the conversation</span>'
         : num(o.messages) },
     { label: 'Last seen', align: 'r', render: o => esc(ago(o.lastSeen)) },
   ];
@@ -1913,7 +1926,7 @@ SCREENS.customers = async host => {
     <div class="card-head">
       <div>
         <div class="card-title">Contacts who are not customers</div>
-        <div class="card-sub">Everyone who appears in whatsapp_contacts, customer_360_profiles or v_customer_360
+        <div class="card-sub">Everyone who appears in the saved contact details, the customer profiles or the customer record
         and not in the customer list above. Most are people who messaged the owner's WhatsApp number and have
         neither a lead nor a purchase. They are listed so nobody has to guess where a name came from, and none
         of them has a lifetime value or can be actioned from here. Read the reason on each row before treating
@@ -1927,12 +1940,12 @@ SCREENS.customers = async host => {
     <div class="pbody">${allOtherSourcesDown
       ? stateError('the contact directory', waErr)
       : `${waErr ? `<div class="banner warm" style="margin-bottom:12px"><span class="material-symbols-outlined">warning</span>
-          <div>whatsapp_contacts could not be read (${esc(waErr)}), so WhatsApp-only contacts are missing from this list.</div></div>` : ''}
+          <div>The saved contact details could not be read (${esc(waErr)}), so WhatsApp-only contacts are missing from this list.</div></div>` : ''}
         ${table(otherCols, otherSorted, {
           /* Marks the rows clickable; wireRows() below is what binds them. */
           onRow: true,
           empty: stateEmpty('Nothing outside the customer list',
-            'Every row in whatsapp_contacts, customer_360_profiles and v_customer_360 matches a customer in the directory, so nothing is being presented as a customer that is not one. '
+            'Every row in the saved contact details, the customer profiles and the customer record matches a customer in the directory, so nothing is being presented as a customer that is not one. '
             + 'A row appears here the moment somebody messages the WhatsApp number, or the nightly job writes a profile, for an address with no lead and no purchase behind it — which is how thirteen people from a personal phone book once ended up on this screen.',
             'done_all'),
         })}`}</div>`;

@@ -440,7 +440,7 @@ SCREENS.inventory = async (host) => {
     <div style="padding:0 20px 18px"><div class="cell-sub" style="white-space:normal">
       <strong>No figure on this screen is derived in the browser.</strong>
       Every band, risk word, recommendation and money figure on a unit is read from
-      <span class="mono">v_inventory_profit_sentinel</span>, which is
+      <span class="mono">The margin review</span>, which is
       <span class="mono">security_invoker</span> — this is your lot and no one else's.
       The only arithmetic done here is in the three summary totals above, each of which
       adds up a column the engine produced and says how many units it had to leave out.

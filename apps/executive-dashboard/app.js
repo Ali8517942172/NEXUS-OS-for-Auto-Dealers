@@ -84,6 +84,13 @@ import.meta.glob([
 /* ==========================================================================
    Auth + boot
    ========================================================================== */
+/* The sub-line under the sign-in form named the identity supplier until 5 Sep
+   2026 ("Accounts are managed in Supabase Auth") — on the one card that
+   renders to a reader who is not signed in and may not be a customer at all.
+   Which supplier holds the password is NEXUS's implementation; who to ask for
+   an account is the reader's half. The note is a JS comment rather than an
+   HTML one on purpose: an HTML comment inside this template is shipped into
+   the page and readable with View Source, which is not a smaller audience. */
 function renderLogin(msg) {
   $('boot').classList.remove('hide');
   $('app').classList.add('hide');
@@ -98,7 +105,7 @@ function renderLogin(msg) {
         <div class="field"><label for="lp">Password</label><input type="password" id="lp" autocomplete="current-password" /></div>
         <button class="btn primary" id="lgo">Sign in</button>
       </div>
-      <div class="cell-sub" style="margin-top:14px">Accounts are managed in Supabase Auth.</div>
+      <div class="cell-sub" style="margin-top:14px">Accounts are created by NEXUS. Ask NEXUS support to add one, or to reset a password.</div>
     </div>`;
   const go2 = async () => {
     const btn = $('lgo'); btn.disabled = true; btn.textContent = 'Signing in…';
@@ -122,10 +129,36 @@ setSessionEndedHandler(msg => { stopBadges(); renderLogin(msg); });
 
 async function boot() {
   if (envErrors.length) {
+    /* ── The boundary, inverted, and put back the right way up ─────────────
+       Until 5 Sep 2026 this card printed each `envErrors` string — which
+       begins with the build-time VARIABLE NAME — and then said "Fix these
+       environment variables in Vercel, then redeploy."
+
+       Three things were wrong with that, and only the third is about vendor
+       names. It named the hosting supplier. It named NEXUS's own deployment
+       configuration. And it issued an instruction to a reader who cannot
+       carry it out: a dealership has no login to that account, no build to
+       redeploy, and this is the FIRST card they ever see — it renders before
+       the login form, so the person reading it may not even be signed in.
+       An unactionable instruction on a dead screen reads as "you have broken
+       this", which is the opposite of true.
+
+       What is theirs: the dashboard will not start, their data is untouched,
+       and the fix is a phone call. What is ours goes to the console, where a
+       support call can retrieve it, and is not painted. */
+    console.error('[NEXUS] This deployment is missing configuration it needs:', envErrors.join(' | '));
     $('boot').innerHTML = `<div class="card login-card">
-      <h2 style="font-size:16px;margin-bottom:10px">Configuration problem</h2>
-      ${envErrors.map(e => `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span><div>${esc(e)}</div></div>`).join('')}
-      <div class="cell-sub">Fix these environment variables in Vercel, then redeploy.</div></div>`;
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <div class="brand-mark">N</div><div class="brand-name">NEXUS OS</div>
+      </div>
+      <div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+        <div>NEXUS cannot start on this installation.</div></div>
+      <div class="cell-sub" style="margin-top:14px">A setting NEXUS needs in order to reach your data was not
+        supplied when this dashboard was installed, so no screen would be able to load anything and none is
+        offered. Nothing has happened to your data, and nothing has been lost.</div>
+      <div class="cell-sub" style="margin-top:10px">This is not something that can be corrected from this screen,
+        from this browser, or by signing in. Contact NEXUS support &mdash; the details they need are already
+        recorded.</div></div>`;
     return;
   }
 
@@ -189,9 +222,22 @@ async function boot() {
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) go(h); });
 
   const conn = $('connState');
+  /* The failure branch used to paint the first 40 characters of the error into
+     the header pill, on every screen, permanently. Those 40 characters are
+     whatever the data layer said — a PostgREST code, a relation name, a
+     permission-denied naming a table — and a truncated one at that, so the
+     reader got a fragment of our schema and no idea what to do. The pill has
+     room for the state; the tooltip carries the dealership's half, and the
+     diagnostic goes to the console for NEXUS. */
   db('leads?select=id&limit=1')
-    .then(() => { conn.className = 'pill ok'; conn.innerHTML = '<span class="dot"></span>Live'; })
-    .catch(e => { conn.className = 'pill hot'; conn.innerHTML = `<span class="dot"></span>${esc(String(e.message).slice(0,40))}`; });
+    .then(() => { conn.className = 'pill ok'; conn.title = 'The dashboard is reading your live data.'; conn.innerHTML = '<span class="dot"></span>Live'; })
+    .catch(e => {
+      console.error('[NEXUS] connection check failed:', e && e.message);
+      conn.className = 'pill hot';
+      conn.title = 'The dashboard cannot reach your data right now, so any screen that loads may be incomplete or empty. '
+        + 'Refresh once; if it stays this way, contact NEXUS support.';
+      conn.innerHTML = '<span class="dot"></span>No connection';
+    });
 
   /* Started after the nav exists — the badges write into spans lib/nav.js
      creates — and before the first screen renders, so the sidebar is already

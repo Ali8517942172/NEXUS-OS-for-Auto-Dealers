@@ -214,7 +214,7 @@ const NO_DELETE =
    being true that morning. It is now about what a missing measurement is,
    which is the only thing this constant is ever shown for. */
 const NO_TIMING =
-  'leads.response_time_minutes is written by one trigger and nothing else: nexus_mark_first_response, AFTER INSERT on communication_logs, which stamps the minutes between the lead row and the first reply it can attribute to that lead. A null means it never stamped — usually nothing has gone back since the lead row was created, and sometimes the only reply on file predates the lead row, which it declines to measure because that reply belongs to the conversation that produced the lead rather than to answering it. A null is therefore not a statement that nobody replied. Until 31 Aug 2026 a second, BEFORE INSERT trigger on leads clamped that negative interval to 0 and locked this writer out; it has been deleted, and the three live leads read 1 minute, null and 4 minutes (1 Sep 2026). within_sla and breached_sla in v_team_performance are count(*) FILTER on response_time_minutes at <= 5 and > 5, so a null lead counts in neither and their sum is the number of leads a rep was actually timed on. Wherever this note appears, that sum has nothing behind it in the leads read here, so nobody is scored against the 5-minute rule in either direction.';
+  'leads.response_time_minutes is written by one trigger and nothing else: nexus_mark_first_response, AFTER INSERT on the message history, which stamps the minutes between the lead row and the first reply it can attribute to that lead. A null means it never stamped — usually nothing has gone back since the lead row was created, and sometimes the only reply on file predates the lead row, which it declines to measure because that reply belongs to the conversation that produced the lead rather than to answering it. A null is therefore not a statement that nobody replied. Until 31 Aug 2026 a second, BEFORE INSERT trigger on leads clamped that negative interval to 0 and locked this writer out; it has been deleted, and the three live leads read 1 minute, null and 4 minutes (1 Sep 2026). within_sla and breached_sla in the team figures are count(*) FILTER on response_time_minutes at <= 5 and > 5, so a null lead counts in neither and their sum is the number of leads a rep was actually timed on. Wherever this note appears, that sum has nothing behind it in the leads read here, so nobody is scored against the 5-minute rule in either direction.';
 
 /* Said on a lead whose response_time_minutes is null. Deliberately the same
    account leads.js, lib/lead-drawer.js and screens/customers.js give for the
@@ -491,7 +491,7 @@ SCREENS.team = async host => {
       ? `Leads could not be read here (${leadsErr || 'unknown error'}), so nothing could be checked against the response-time column and nothing derived from it is claimed.`
       : !leads.length
         ? 'No lead was read here at all, so there was nothing to check the response-time column against.'
-        : `Not one of the ${num(leads.length)} leads read here carries a response_time_minutes: the trigger on communication_logs has stamped none of them, so there is no measured wait to score anybody on. That is a statement about the record and not about the customers — a lead nobody answered and a lead whose only reply predates its own row are indistinguishable here.`;
+        : `Not one of the ${num(leads.length)} leads read here carries a response_time_minutes: the trigger on the message history has stamped none of them, so there is no measured wait to score anybody on. That is a statement about the record and not about the customers — a lead nobody answered and a lead whose only reply predates its own row are indistinguishable here.`;
 
   const pending = roster.filter(isPending);
   const withAccount = roster.filter(hasAccount);
@@ -677,7 +677,7 @@ SCREENS.team = async host => {
             ? `<span class="t-hot">Nobody owns these</span>${unassignedHot.length ? ` · <span class="t-hot">${num(unassignedHot.length)} HOT</span>` : ' · none of them HOT'}`
             : '<span class="t-ok">Every lead read here has an owner</span>'
               + (leads.length <= THIN
-                  ? `<div class="t-muted">That is the whole leads table — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it</div>`
+                  ? `<div class="t-muted">That is the whole your leads — ${num(leads.length)} ${plural(leads.length, 'row', 'rows')}, not a sample of it</div>`
                   : ''),
         leads && unassigned.length ? 't-hot' : ''),
     ].join('');
@@ -734,7 +734,7 @@ SCREENS.team = async host => {
       icon: KIND_ICON[low(it.kind)] || 'rule',
       at: it.at,
       titleHtml,
-      detailHtml: (str(it.detail) ? esc(str(it.detail)) : 'v_needs_attention recorded no detail on this row.')
+      detailHtml: (str(it.detail) ? esc(str(it.detail)) : 'The attention list recorded no detail on this row.')
         + (who || it.ref == null ? ''
           : ` <span class="t-muted">Raised against <span class="mono">${esc(str(it.ref))}</span>, which matches nobody on the roster read here, so there is no row on this screen for it to open.</span>`),
       act: who ? () => openRep(who) : null,
@@ -782,7 +782,7 @@ SCREENS.team = async host => {
       sev: 'WARM', icon: 'work_off',
       titleHtml: `${num(idle.length)} ${plural(idle.length, 'rep is', 'reps are')} holding no leads at all`,
       detailHtml: `${nameList(idle)} ${plural(idle.length, 'has', 'have')} an active account and no lead against ${plural(idle.length, 'their name', 'their names')} — `
-        + `neither in <span class="mono">v_team_performance</span> nor in the ${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here` : 'leads table, which did not load'}. `
+        + `neither in <span class="mono">The team figures</span> nor in the ${leads ? `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} read here` : 'Your leads, which did not load'}. `
         /* This branch runs only when no HOT lead is unassigned, and it used to
            conclude from that alone that "nothing is going unworked". Unowned
            WARM and COLD leads are also work, and on this table there are three
@@ -886,7 +886,7 @@ SCREENS.team = async host => {
     add({
       sev: 'COLD', icon: 'person_search',
       titleHtml: `${num(unlinkedReps.length)} ${plural(unlinkedReps.length, 'person has', 'people have')} activity but no row in the user directory`,
-      detailHtml: `${nameList(unlinkedReps)} ${plural(unlinkedReps.length, 'appears', 'appear')} in <span class="mono">v_team_performance</span> and ${plural(unlinkedReps.length, 'matches', 'match')} nobody in <span class="mono">users</span> by id, email or name. `
+      detailHtml: `${nameList(unlinkedReps)} ${plural(unlinkedReps.length, 'appears', 'appear')} in <span class="mono">The team figures</span> and ${plural(unlinkedReps.length, 'matches', 'match')} nobody in <span class="mono">users</span> by id, email or name. `
         + 'They are shown on the roster below, labelled as unlinked rather than dropped — but they have no account record, so their role and status are unknown and no invite or role control can apply to them.',
       act: () => focusRoster('ALL'),
       actLabel: 'Show roster',
@@ -898,7 +898,7 @@ SCREENS.team = async host => {
       sev: 'WARM', icon: 'person_off',
       atHtml: '<span class="t-muted" title="This is the state of this page load, not a stored condition.">this page load</span>',
       titleHtml: 'The user directory could not be read',
-      detailHtml: `${esc(usersErr)}. Roles and account status below are whatever <span class="mono">v_team_performance</span> carries, `
+      detailHtml: `${esc(usersErr)}. Roles and account status below are whatever <span class="mono">The team figures</span> carries, `
         + 'anyone with no leads at all is missing from this page entirely, and pending invites cannot be counted at all.',
     });
   }
@@ -932,8 +932,8 @@ SCREENS.team = async host => {
        rule cannot reach this strip through the view no matter what the column
        holds. */
     attnErr
-      ? `<span class="t-warm">v_needs_attention could not be read (${esc(attnErr)}), so anything the database had filed against this screen is missing from this strip. It files nothing against this screen as the view is currently defined, so that is likely to be nothing — but it could not be confirmed on this page load. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
-      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from v_needs_attention where screen = ${SCREEN_ID}`
+      ? `<span class="t-warm">The attention list could not be read (${esc(attnErr)}), so anything the database had filed against this screen is missing from this strip. It files nothing against this screen as the view is currently defined, so that is likely to be nothing — but it could not be confirmed on this page load. The ${num(derivedCount)} ${plural(derivedCount, 'alert', 'alerts')} above ${plural(derivedCount, 'was', 'were')} derived here.</span>`
+      : `${num(viewCount)} ${plural(viewCount, 'row', 'rows')} from the attention list where screen = ${SCREEN_ID}`
         + (viewCount ? '' : ', which is every row it can ever return here: none of its branches emits that screen name, so this is the view filing nothing about the team rather than the view finding nothing wrong with it')
         + `. ${num(derivedCount)} derived here from `
         + `${users ? `${num(users.length)} directory ${plural(users.length, 'row', 'rows')}` : 'no directory rows'}, `
@@ -1009,7 +1009,7 @@ SCREENS.team = async host => {
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev), { verbatim: a.sevFromRow === true })}
-          ${a.source === 'view' ? '<span class="chip" title="Raised by v_needs_attention, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
+          ${a.source === 'view' ? '<span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
         <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
       </div>
@@ -1245,9 +1245,9 @@ SCREENS.team = async host => {
 
   card.innerHTML = `<div class="card-head"><div>
       <div class="card-title">Roster &amp; performance</div>
-      <div class="card-sub">Who exists comes from <span class="mono">users</span>; what they did comes from
-        <span class="mono">v_team_performance</span>. Sort by any column header. Click a row for the full record.
-        ${perfErr ? `<span class="t-warm">The performance view could not be read (${esc(perfErr)}), so only the roster is shown.</span>` : ''}</div>
+      <div class="card-sub">Who exists comes from the accounts NEXUS holds for this dealership; what they did is
+        measured from their own leads and replies. Sort by any column header. Click a row for the full record.
+        ${perfErr ? '<span class="t-warm">The performance figures could not be read, so only the roster is shown. That is a read that failed, not a team with nothing to show.</span>' : ''}</div>
     </div></div>
     ${oneRow
       /* Nothing at all when the roster is empty — the table's own empty state
@@ -1577,7 +1577,7 @@ SCREENS.team = async host => {
             <dt>Account created</dt><dd>${r.created_at ? `${esc(ago(r.created_at))} <span class="t-muted">(${esc(dt(r.created_at))})</span>` : '<span class="t-muted">Not recorded on this row</span>'}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_STAFF_PHONE)}
-            Their leads below each show their own number, because <span class="mono">leads.phone</span> does exist.</div>
+            Their leads below each show their own number, because <span class="mono">The phone number on the lead record</span> does exist.</div>
         </div>
 
         <div class="section">
@@ -1590,7 +1590,7 @@ SCREENS.team = async host => {
             <div>This person cannot sign in, cannot be alerted and cannot be assigned a lead until the account exists.
             Sending the invitation is not built yet.</div></div>` : ''}
           ${r.unlinked ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">
-            This row came from <span class="mono">v_team_performance</span> and matched nobody in <span class="mono">users</span> by id,
+            This row came from <span class="mono">The team figures</span> and matched nobody in <span class="mono">users</span> by id,
             email or name. They have activity against their name but no account record.</div>` : ''}
         </div>
 
@@ -1626,7 +1626,7 @@ SCREENS.team = async host => {
                 manager checks one person's number against what they believe. */''}
           <div class="cell-sub" style="margin-top:12px;white-space:normal">Open pipeline is <span class="mono">budget_aed</span> summed over the
             leads read on this screen that are assigned to this person and are not in a won or dead state${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads` : ''}.
-            <span class="mono">v_team_performance.pipeline_aed</span> is not shown in its place. Until 2 Sep 2026 it summed every lead ever assigned,
+            the team's own pipeline figure is not shown in its place. Until 2 Sep 2026 it summed every lead ever assigned,
             disqualified and lost ones included; it now counts open leads only, on the same rule as the figure above. It is still not the number shown
             here, because this one can be traced to the leads listed below and says when its read was capped.</div>
           ${!r.perf ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">

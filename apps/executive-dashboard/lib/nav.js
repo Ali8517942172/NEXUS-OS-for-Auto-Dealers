@@ -197,7 +197,7 @@ function stateNoTenant() {
        database returns no leads, no inventory, no conversations and no deals to it. That is an unfinished
        account, not an empty business — nothing has been lost and nothing is shown here rather than showing
        zeros that would read as findings. Whoever set this account up needs to add it to a dealership
-       (a <span class="mono">tenant_members</span> row) before any screen can say anything true.</p></div>`;
+       (a <span class="mono">The account memberships</span> row) before any screen can say anything true.</p></div>`;
 }
 
 /* The navigation offers a screen this bundle does not contain.

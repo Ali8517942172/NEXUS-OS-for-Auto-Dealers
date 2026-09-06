@@ -116,6 +116,7 @@
        path is guessed, and nothing here writes to a service-role table. */
 import { HOOK, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
+import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pct, pill } from '../lib/format.js';
 import {
@@ -197,16 +198,14 @@ const TRIGGER_NOT_AVAILABLE =
    looksGuardRejected, missedCustomer, and nexus_outcome_class's own rule 1 in
    lib/health.js — reads the raw column, because redacting the evidence a
    verdict is computed from would change the verdict. */
-const dealerSummary = (text) => String(text || '')
-  .replace(EXEC_URL_RE, '')
-  .replace(/https?:\/\/[^\s·"'<>]+/g, '')
-  .replace(/\bexecution\s*(?:id\s*)?[#:]?\s*\d+/gi, '')
-  .replace(/\bfailed at node\s*:\s*[^·|\n]+/gi, 'failed inside the automation')
-  .replace(/\bnode\s*:\s*[^·|\n]+/gi, '')
-  .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\.nip\.io)?\b/g, '')
-  .replace(/[ \t]*·[ \t]*(?=·|$)/g, '')
-  .replace(/(^[\s·|]+)|([\s·|]+$)/g, '')
-  .replace(/[ \t]{2,}/g, ' ');
+/* One redactor, held in lib/vocabulary.js — this screen, Compliance and
+   Campaigns each carried their own copy until 5 Sep 2026, and all three
+   stripped WHERE a run stopped while leaving WHO we buy from standing in the
+   sentence: a failing mail credential printed the supplier's name and its API
+   host to a dealership that can act on neither. EXEC_URL_RE still runs first;
+   the shared function removes any URL, but this screen also classifies on that
+   match, so the constant stays. */
+const dealerSummary = (text) => vocabDealerText(String(text || '').replace(EXEC_URL_RE, ''));
 
 /* ── Health vocabulary ─────────────────────────────────────────────────────
    The label, the tone and the sentence under it all come from lib/health.js,
@@ -251,7 +250,7 @@ const NEEDS_ATTENTION = ['DEGRADED', 'PRODUCING_NOTHING', 'UNKNOWN_OUTCOME'];
    verbatim beside this sentence rather than folded into a state it might mean. */
 const UNKNOWN_HEALTH = {
   ...healthState('UNKNOWN_OUTCOME'),
-  detail: 'v_workflow_health returned a health state that neither this screen nor lib/health.js knows how to describe. It is shown verbatim rather than folded into one of the states it might mean.',
+  detail: 'The automation health figures returned a health state that neither this screen nor NEXUS knows how to describe. It is shown verbatim rather than folded into one of the states it might mean.',
 };
 
 /* A pill whose words come from the canonical layer (lib/health.js), carrying
@@ -289,7 +288,7 @@ const outcomePill = a => {
   const same = raw === up(outcomeOf(a));
   return `${wordPill(words.label, words.tone, words.blurb)}${
     raw && !same
-      ? `<span class="chip mono" title="${esc(`audit_log.status holds "${a.status}" for this run. nexus_outcome_class reads it as ${words.label}, classifying from the summary as well as the status word.`)}">${esc(a.status)}</span>`
+      ? `<span class="chip mono" title="${esc(`This run was recorded as "${a.status}". NEXUS’s own rule for what a run achieved reads it as ${words.label}, classifying from the summary as well as the status word.`)}">${esc(a.status)}</span>`
       : ''}`;
 };
 
@@ -313,7 +312,7 @@ const RESPONDS_TO_CALLER = {
   [HOOK.whatsappSend]: {
     answer: "{ status: 'sent' | 'error' }",
     where: 'Conversations',
-    line: 'Replies sent from Conversations post here and wait for the answer, so the operator is told at that moment whether the message actually left WAHA.',
+    line: 'Replies sent from Conversations post here and wait for the answer, so the operator is told at that moment whether the message actually went out.',
   },
   [HOOK.askAi]: {
     answer: 'the answer and the documents it consulted',
@@ -481,7 +480,7 @@ const NO_SUBJECT_HOOKS = { [HOOK.erpSync]: 'Sync now' };
    Conversations, so that is where the button belongs. */
 const NO_MANUAL_RUN = {
   [HOOK.whatsappSend]:
-    'This screen deliberately offers no manual run for whatsapp-send. It sends a WhatsApp message to a real person and needs a chat_id and the message text; firing it with an empty body would accomplish nothing. It is driven from the Conversations screen, which holds the thread, supplies both fields and shows whether the message left.',
+    'This screen deliberately offers no manual run for whatsapp-send. It sends a WhatsApp message to a real person and needs a WhatsApp address and the message text; firing it with an empty body would accomplish nothing. It is driven from the Conversations screen, which holds the thread, supplies both fields and shows whether the message left.',
 };
 
 const NEEDS_SUBJECT = {
@@ -598,7 +597,7 @@ const exemptFrom = w => CEILING_EXEMPT.find(e => e.test(w)) || null;
 const SCRAPE_GUARD_RE = /competitor|scrap/i;
 const looksGuardRejected = a =>
   outcomeOf(a) === OUTCOME.NO_RESULT && SCRAPE_GUARD_RE.test(String(a.workflow || ''));
-const GUARD_NOTE = 'Read as the Is This Real Intel? gate refusing a scrape rather than the workflow breaking: since 24 Aug the scraper checks what Parse AI Price produced before inserting it, and writes a REJECTED audit row instead of storing a bot-detection page or the string \u201cnull\u201d as a rival dealership. The run completed. It is still a run that produced no price and is counted as one \u2014 the gate working correctly and the dealership having competitor intel are two different findings. audit_log has no reason column, so this is read off the workflow name and the run\u2019s outcome class \u2014 the summary above is the thing that says what was refused.';
+const GUARD_NOTE = 'Read as the Is This Real Intel? gate refusing a scrape rather than the workflow breaking: since 24 Aug the scraper checks what Parse AI Price produced before inserting it, and writes a REJECTED audit row instead of storing a bot-detection page or the string \u201cnull\u201d as a rival dealership. The run completed. It is still a run that produced no price and is counted as one \u2014 the gate working correctly and the dealership having competitor intel are two different findings. The activity log has no reason column, so this is read off the workflow name and the run\u2019s outcome class \u2014 the summary above is the thing that says what was refused.';
 
 /* A run whose summary reads like the ceiling stopping it. Matched on the summary
    text because audit_log has no separate reason column — so this is worded as a
@@ -647,7 +646,7 @@ const looksTimedOut = a =>
        compound value does appear, the fix is a case in the SQL function and its
        mirror — not a private split re-grown here. */
 const missedCustomer = a => outcomeOf(a) === OUTCOME.PARTIAL;
-const PARTIAL_NOTE = 'A Delivery Report node writes PARTIAL when the run completed but a step it was about to claim did not land — in these workflows that is normally the WhatsApp message to the customer. It is not a success: somebody was waiting for a reply and did not get one. Some of these rows say FAILED rather than PARTIAL and are classified from the “did not land” phrase in their own summary, because the writers mislabel them; that correction is made in nexus_outcome_class in Postgres, which is what every count on this screen is built from. audit_log has no dropped-steps column, so which step it was is only in the summary text.';
+const PARTIAL_NOTE = 'A run is recorded as partly landed when it completed but a step it was about to claim did not land — in these workflows that is normally the WhatsApp message to the customer. It is not a success: somebody was waiting for a reply and did not get one. Some runs are labelled a failure instead, and are re-read as partly landed from the “did not land” phrase in their own summary, because the label was wrong; that correction is made once, by NEXUS’s own rule for what a run achieved, which is what every count on this screen is built from. Which step it was is not recorded separately, so it is only in the summary text.';
 
 /* The colour of one run's dot in the history timeline, taken from the same table
    that words its pill so that the two can never say different things about the
@@ -796,7 +795,7 @@ const SCHEDULE_CHANGED = [
   {
     test: w => /competitor\s*price\s*scraping/.test(low(w.name)),
     at: '2026-08-24T17:05:00Z',
-    what: 'moved off an n8n \u201cevery 24 hours\u201d interval onto cron 0 5 * * * \u2014 05:00 UTC daily',
+    what: 'moved off a rolling \u201cevery 24 hours\u201d timer onto a fixed daily time \u2014 05:00 UTC',
   },
 ];
 const scheduleChange = w => SCHEDULE_CHANGED.find(c => c.test(w)) || null;
@@ -816,7 +815,7 @@ function scheduleOf(w) {
   if (!c) return null;
   if (!w.writes_audit_log) {
     return { c, state: 'UNCHECKABLE', ageH: null,
-      why: `This job is on a ${fmtHours(c.hours)} cadence but writes nothing to audit_log, so there is no last run to measure and this screen cannot tell whether it is still firing. Only NEXUS can answer it, from the automation host itself.` };
+      why: `This job is on a ${fmtHours(c.hours)} cadence but writes nothing to the activity log, so there is no last run to measure and this screen cannot tell whether it is still firing. Only NEXUS can answer it, from the automation host itself.` };
   }
   const t = w.last_run ? Date.parse(w.last_run) : NaN;
   if (Number.isNaN(t)) {
@@ -1009,7 +1008,7 @@ SCREENS.automation = async host => {
   } else if (!rows.length) {
     strip.classList.remove('grid', 'g5');
     strip.innerHTML = stateEmpty('No workflows registered',
-      'v_workflow_health returned no rows, so there is nothing to report on. workflow_registry is what populates it.', 'account_tree');
+      'The automation health figures returned no rows, so there is nothing to report on. The automation register is what populates it.', 'account_tree');
   } else {
     /* Every figure in this strip is a sum of the view's own outcome columns. The
        version this replaced summed runs_30d and failures_30d and divided one by
@@ -1052,7 +1051,7 @@ SCREENS.automation = async host => {
         return `<span class="t-hot">${esc(names)}${attention.length > 2 ? ` +${attention.length - 2} more` : ''}</span>
           <br><span class="t-muted">${esc(kinds)}</span>`;
       }
-      if (!logged) return '<span class="t-muted">Nothing writes to audit_log, so nothing can be measured</span>';
+      if (!logged) return '<span class="t-muted">Nothing writes to the activity log, so nothing can be measured</span>';
       /* Three separate ways this can be a true statement and still not mean
          "everything is fine", each said out loud rather than left to the green.
          A stopped schedule fails nothing by definition; a workflow with no
@@ -1067,7 +1066,7 @@ SCREENS.automation = async host => {
 
     strip.innerHTML = [
       kpi('Workflows registered', num(rows.length),
-        `${active} active · ${logged} of ${rows.length} write to audit_log${
+        `${active} active · ${logged} of ${rows.length} write to the activity log${
           byDesign.length ? ` · ${num(byDesign.length)} answer${byDesign.length === 1 ? 's' : ''} the caller instead` : ''}${
           pages.length ? ` · ${num(pages.length)} ${pages.length === 1 ? 'is a web page' : 'are web pages'}, not automations` : ''}`),
       /* "Degraded now" until 31 Aug, which could only ever count one of the three
@@ -1174,8 +1173,8 @@ SCREENS.automation = async host => {
       <div style="flex:1">
         <strong>${num(unknownOutcome.length)} workflow${one ? '' : 's'} logged a status this system does not define.</strong>
         ${esc(unknownOutcome.map(w => w.name).filter(Boolean).join(', ') || (one ? 'It' : 'They'))} wrote a value
-        <span class="mono">nexus_outcome_class</span> has no case for, so ${one ? 'its' : 'their'} health cannot be stated either way and no rate is claimed for ${one ? 'it' : 'them'}.
-        <div class="cell-sub" style="margin-top:6px;white-space:normal">Adding the value to <span class="mono">nexus_outcome_class</span> and to <span class="mono">lib/health.js</span> together is what resolves this. Guessing at it on the screen is what this rebuild removed.</div>
+        <span class="mono">NEXUS’s own rule for what a run achieved</span> has no case for, so ${one ? 'its' : 'their'} health cannot be stated either way and no rate is claimed for ${one ? 'it' : 'them'}.
+        <div class="cell-sub" style="margin-top:6px;white-space:normal">Adding the value to <span class="mono">NEXUS’s own rule for what a run achieved</span> and to <span class="mono">NEXUS</span> together is what resolves this. Guessing at it on the screen is what this rebuild removed.</div>
       </div>
       <button class="btn sm" id="aShowUnknown">Show ${one ? 'it' : 'them'}</button>`;
     banners.appendChild(b);
@@ -1191,7 +1190,7 @@ SCREENS.automation = async host => {
     const b = el('div', 'banner info');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">check_circle</span>
       <div>No instrumented workflow failed, went out half-done, produced nothing usable or logged an unreadable status inside the 30-day window.
-      This statement only covers the ${num(rows.filter(w => w.writes_audit_log).length)} of ${num(rows.length)} workflows that write to audit_log${
+      This statement only covers the ${num(rows.filter(w => w.writes_audit_log).length)} of ${num(rows.length)} workflows that write to the activity log${
         noQualifying.length ? `, and ${num(noQualifying.length)} of those had no qualifying run in the window, so ${noQualifying.length === 1 ? 'it is' : 'they are'} covered by the sentence without being evidence for it` : ''}.</div>`;
     banners.appendChild(b);
   }
@@ -1260,7 +1259,7 @@ SCREENS.automation = async host => {
   if (blind.length) {
     const b = el('div', 'banner warm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">visibility_off</span>
-      <div style="flex:1"><strong>${num(blind.length)} workflow${blind.length === 1 ? '' : 's'} write${blind.length === 1 ? 's' : ''} nothing to audit_log.</strong>
+      <div style="flex:1"><strong>${num(blind.length)} workflow${blind.length === 1 ? '' : 's'} write${blind.length === 1 ? 's' : ''} nothing to the activity log.</strong>
       ${blind.length === 1 ? 'It' : 'They'} may be running perfectly or failing every time — the dashboard cannot tell, because there is no Audit Log node to read.
       Only NEXUS can close that gap, by instrumenting the workflow.</div>
       <button class="btn sm" id="aShowBlind">Show ${blind.length === 1 ? 'it' : 'them'}</button>`;
@@ -1277,7 +1276,7 @@ SCREENS.automation = async host => {
     const names = byDesign.map(w => w.name).filter(Boolean);
     const b = el('div', 'banner info');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">sync_alt</span>
-      <div style="flex:1"><strong>${num(byDesign.length)} workflow${one ? '' : 's'} answer${one ? 's' : ''} the caller instead of writing to audit_log.</strong>
+      <div style="flex:1"><strong>${num(byDesign.length)} workflow${one ? '' : 's'} answer${one ? 's' : ''} the caller instead of writing to the activity log.</strong>
       ${names.length ? `${esc(names.join(', '))} ${names.length === 1 ? 'is' : 'are'}` : `${one ? 'It is' : 'They are'}`} called by the dashboard and read on the spot,
       so ${one ? 'the' : 'each'} outcome is shown by the screen that made the call. For a request/response endpoint that is the right design,
       so ${one ? 'it is' : 'they are'} not counted as a blind spot above. It does mean no run history is kept here — this screen cannot tell you
@@ -1319,7 +1318,7 @@ SCREENS.automation = async host => {
           ${orphans.length > 6 ? `<span class="cell-sub">and ${orphans.length - 6} more</span>` : ''}
         </div>
         <div class="cell-sub" style="margin-top:6px;white-space:normal">Runs logged under ${orphans.length === 1 ? 'that name' : 'those names'} are not counted in any health figure above until
-        workflow_registry records ${orphans.length === 1 ? 'it' : 'them'} as an <span class="mono">audit_name</span> or in <span class="mono">audit_aliases</span> —
+        the automation register records ${orphans.length === 1 ? 'it' : 'them'} as an <span class="mono">audit_name</span> or in <span class="mono">audit_aliases</span> —
         which is the join every figure on this screen uses, precisely because the name a run logs under can drift from the name the workflow is registered with.</div></div>`;
       banners.appendChild(b);
       b.querySelectorAll('[data-orphan]').forEach(btn =>
@@ -1330,7 +1329,7 @@ SCREENS.automation = async host => {
   if (!registry) {
     const b = el('div', 'banner warm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">warning</span>
-      <div>workflow_registry could not be read (${esc(regR.status === 'rejected' ? (regR.reason?.message || 'Unknown error') : 'no rows')}),
+      <div>The automation register could not be read (${esc(regR.status === 'rejected' ? (regR.reason?.message || 'Unknown error') : 'no rows')}),
       so a workflow's run history is matched on its display name alone. A workflow that logs under an alias will look quieter than it is.</div>`;
     banners.appendChild(b);
   }
@@ -1489,7 +1488,7 @@ SCREENS.automation = async host => {
       ${stateError('workflow health', healthErr)}`;
   } else if (!rows.length) {
     healthCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflow health</div></div></div>
-      ${stateEmpty('No workflows registered', 'workflow_registry is empty, so v_workflow_health has nothing to report.', 'account_tree')}`;
+      ${stateEmpty('No workflows registered', 'The automation register is empty, so the automation health figures has nothing to report.', 'account_tree')}`;
   } else {
     const f = { health: 'ALL', q: '' };
     const hCount = k => rows.filter(w => stateKey(w) === k).length;
@@ -1517,7 +1516,7 @@ SCREENS.automation = async host => {
 
     healthCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Workflow health by category</div>
-        <div class="card-sub">This list is the register of the automations NEXUS runs for you. The run figures beside each row are counted from this dealership's own record, so a workflow reading “never logged a run” here has never run for you. A handful of entries are pages NEXUS publishes rather than automations, and they are labelled where they appear. Headline figures are the rolling 30-day window from <span class="mono">v_workflow_health</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
+        <div class="card-sub">This list is the register of the automations NEXUS runs for you. The run figures beside each row are counted from this dealership's own record, so a workflow reading “never logged a run” here has never run for you. A handful of entries are pages NEXUS publishes rather than automations, and they are labelled where they appear. Headline figures are the rolling 30-day window from <span class="mono">The automation health figures</span>, and every one of them is a count of run <em>outcomes</em> rather than of the status word a workflow wrote: a rate here is outright successes over the runs the workflow was expected to deliver on, with anything refused by design or handed to a person left out of the denominator entirely. A run that finished half-done is not in the numerator. The all-time totals sit underneath as context and are labelled where the two appear together. Click a workflow for its full record and recent runs. The dashboard starts, stops and retries nothing: the only live control anywhere on this screen posts to a workflow's own webhook, and every other button is disabled with the reason in its tooltip.</div>
       </div></div>
       <div class="toolbar">
         <div class="seg" id="aSegHealth" role="group" aria-label="Filter workflows by health">
@@ -1526,7 +1525,7 @@ SCREENS.automation = async host => {
                 than only in a banner somebody may have scrolled past. */ ''}
           ${segs.map(([k, c], i) => {
             const title = k === 'SCHED_LATE'
-              ? 'Not a health state — these are scheduled jobs whose last logged run is older than their own cadence allows. v_workflow_health cannot express this: a job that stops firing logs no failures.'
+              ? 'Not a health state — these are scheduled jobs whose last logged run is older than their own cadence allows. The automation health figures cannot express this: a job that stops firing logs no failures.'
               : (STATES[k] ? STATES[k].detail : '');
             return `<button data-h="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
               title ? ` title="${esc(title)}"` : ''
@@ -1589,7 +1588,7 @@ SCREENS.automation = async host => {
                  once, on the Scheduled jobs card, not eighteen times here. */ ''}
             ${ceilingChip(w)}
           </div>
-          <div class="cell-sub" style="margin-top:4px;white-space:normal">${esc(w.description || 'No description in workflow_registry.')}</div>
+          <div class="cell-sub" style="margin-top:4px;white-space:normal">${esc(w.description || 'No description in the automation register.')}</div>
           ${runBar(w)}
           <div class="cell-sub" style="margin-top:6px;white-space:normal">
             ${runs30 == null || runs30 === 0
@@ -1597,7 +1596,7 @@ SCREENS.automation = async host => {
                   ? 'No runs logged in the last 30 days.'
                   : answers
                     ? `Answers its caller in the reply instead of logging, so there is no run count here by design — ${esc(answers.where)} reports each call as it happens.`
-                    : 'Not instrumented — nothing reaches audit_log, so no run can be counted.')
+                    : 'Not instrumented — nothing reaches the activity log, so no run can be counted.')
               : `${num(runs30)} run${runs30 === 1 ? '' : 's'} in the window · ${mixLine}`}
             ${w.runs ? ` · <span class="t-muted">all-time ${num(w.runs)} run${(n0(w.runs) || 0) === 1 ? '' : 's'}, ${num(n0(w.failures) || 0)} failed${
               rAll == null ? ', no all-time rate' : ` (${pct(rAll)} of the runs that qualified)`}</span>` : ''}
@@ -1756,7 +1755,7 @@ SCREENS.automation = async host => {
     const exempt = exemptFrom(w);
     const t = triggerState(w);
     const history = auditFor(w);
-    const known = registry ? 'workflow_registry aliases' : 'the display name only';
+    const known = registry ? 'The automation register aliases' : 'the display name only';
     const answers = respondsToCaller(w) ? callerInfo(w) : null;
 
     openDrawer(`
@@ -1854,9 +1853,9 @@ SCREENS.automation = async host => {
           </dl>
           ${drift ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">warning</span>
             <div>This screen and the view disagree about this workflow's 30-day rate. The view reports
-            <span class="mono">success_rate_30d</span> ${esc(viewRate30 == null ? 'null' : pct(viewRate30))}; the same arithmetic run here over
+            <span class="mono">The success rate it publishes</span> ${esc(viewRate30 == null ? 'null' : pct(viewRate30))}; the same arithmetic run here over
             <span class="mono">successes_30d</span> and <span class="mono">effective_runs_30d</span> gives ${esc(r30 == null ? 'no rate' : pct(r30))}.
-            Both are meant to be successes over qualifying runs, so one of them has drifted from <span class="mono">nexus_outcome_class</span>.
+            Both are meant to be successes over qualifying runs, so one of them has drifted from <span class="mono">NEXUS’s own rule for what a run achieved</span>.
             Neither figure should be relied on until somebody says which — the difference is shown rather than resolved, because picking one silently
             is what this screen was rebuilt to stop doing.</div></div>` : ''}
         </div>
@@ -1901,7 +1900,7 @@ SCREENS.automation = async host => {
                  <div class="cell-sub" style="margin-top:10px;white-space:normal">${num(history.length)} run${history.length === 1 ? '' : 's'} for this workflow inside the ${num(AUDIT_LIMIT)} most recent audit rows, matched on ${esc(known)}.</div>`
               : (w.writes_audit_log
                   ? stateEmpty('No runs in the loaded window',
-                      `This workflow writes to audit_log but none of the ${AUDIT_LIMIT} most recent rows belong to it.`, 'history')
+                      `This workflow writes to the activity log but none of the ${AUDIT_LIMIT} most recent rows belong to it.`, 'history')
                   : answers
                     ? stateEmpty('No history, by design',
                         `This endpoint returns its result to whoever called it rather than logging, so it will never appear in the activity log. ${answers.where} shows the outcome of each call at the moment it is made; nothing is retained for it here, and this screen cannot say how it has been behaving.`, 'sync_alt')
@@ -1911,9 +1910,9 @@ SCREENS.automation = async host => {
       </div>
       <div class="drawer-foot">
         <button class="btn primary" id="aRunDrawer" ${t.can ? '' : 'disabled'}
-          title="${esc(t.can ? `POSTs to the ${t.hook} webhook with your session token. That is this workflow's own production trigger — the dashboard is not driving n8n, it is doing what the caller normally does.` : t.why)}">${esc(t.label)}</button>
+          title="${esc(t.can ? 'Starts this automation the same way it normally starts itself, signed in as you. The dashboard is not reaching around it — it is doing what the caller would do.' : t.why)}">${esc(t.label)}</button>
         <button class="btn ghost" disabled
-          title="The dashboard cannot stop a run. HOOK in lib/data.js is the complete list of endpoints this build can call and none of them starts, stops or retries a workflow — the only live trigger anywhere on this screen is a POST to a workflow's own webhook. Stopping an execution is POST /api/v1/executions/{id}/stop on n8n, which needs an N8N_API_KEY; that key is not in the browser bundle and must not be, because anything shipped to the browser is public.">Stop a run</button>
+          title="The dashboard cannot stop a run that is already going. Starting one is the only thing it can do; nothing in it can stop or retry one, and that is a deliberate limit rather than a missing button — stopping a run needs a credential that would have to be shipped into this browser to be used here, and anything shipped to a browser is public. Ask NEXUS support to stop a run.">Stop a run</button>
         ${t.hook && !t.can && SUBJECT_SCREEN[t.hook]
           ? `<button class="btn" id="aGoSubject">Open ${esc(SUBJECT_SCREEN[t.hook].title)}</button>`
           : ''}
@@ -1936,8 +1935,8 @@ SCREENS.automation = async host => {
     const m = openModal(`${t.label} — ${w.name || 'workflow'}`, `
       <div class="banner info">
         <span class="material-symbols-outlined">bolt</span>
-        <div>This posts to <span class="mono">/webhook/${esc(t.hook)}</span> with your Supabase session token attached.
-        The workflow decides what it does with an empty body; the dashboard does not choose records for it.</div>
+        <div>This starts <span class="mono">${esc(w.name || t.hook)}</span>, signed in as you.
+        The automation decides what it does; this dashboard does not choose records for it.</div>
       </div>
       <dl class="kv">
         <dt>Workflow</dt><dd>${esc(w.name || '—')}</dd>
@@ -1954,7 +1953,7 @@ SCREENS.automation = async host => {
         })()}</dd>
       </dl>
       <div class="cell-sub" style="margin-top:12px;white-space:normal">
-        The counts on this screen come from audit_log. They will not change until the workflow writes a row and the screen is reloaded.
+        The counts on this screen come from the activity log. They will not change until the workflow writes a row and the screen is reloaded.
       </div>
       <div class="cell-sub" style="margin-top:8px;white-space:normal">
         This run is capped at ${CEILING_SECONDS / 60} minutes of wall-clock time like every other execution on the instance. If it hits that ceiling it is stopped
@@ -2024,7 +2023,7 @@ SCREENS.automation = async host => {
 
     logCard.innerHTML = `<div class="card-head"><div>
         <div class="card-title">Activity log</div>
-        <div class="card-sub">Every row <span class="mono">audit_log</span> holds for the ${num(AUDIT_LIMIT)} most recent runs, newest first. A run stopped by the ${CEILING_SECONDS / 60}-minute ceiling arrives here as a failure with its data kept, so failures on this list are two different findings and are labelled as such.${
+        <div class="card-sub">Every row <span class="mono">The activity log</span> holds for the ${num(AUDIT_LIMIT)} most recent runs, newest first. A run stopped by the ${CEILING_SECONDS / 60}-minute ceiling arrives here as a failure with its data kept, so failures on this list are two different findings and are labelled as such.${
           auditCapped ? ` <span class="t-warm">This read is capped at ${num(AUDIT_LIMIT)} rows, so anything older is not on this page.</span>` : ''}</div>
       </div></div>
       <div class="toolbar">
@@ -2039,8 +2038,8 @@ SCREENS.automation = async host => {
               : k === 'TIMEOUT' ? 'Hit the ceiling'
               : outcomeWords(k).label;
             const title = k === 'TIMEOUT'
-              ? `Runs whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping them. audit_log has no reason column, so this is a reading of the summary, not something the database asserts. They also appear under their own outcome.`
-              : k === 'NONE' ? 'Rows where audit_log holds no status at all. Nothing is claimed about these runs — a missing status is not a pass.'
+              ? `Runs whose summary text reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping them. The activity log has no reason column, so this is a reading of the summary, not something the database asserts. They also appear under their own outcome.`
+              : k === 'NONE' ? 'Rows where the activity log holds no status at all. Nothing is claimed about these runs — a missing status is not a pass.'
               : known ? outcomeWords(k).blurb : '';
             return `<button data-s="${esc(k)}" class="${i === 0 ? 'on' : ''}"${
               title ? ` title="${esc(title)}"` : ''}>${esc(label)} · ${num(c)}</button>`;
@@ -2162,7 +2161,7 @@ SCREENS.automation = async host => {
         ${num(failed)} failed outright and ${num(half)} finished with a claimed step undone.
         Counted across the ${num(audit.length)} most recent audit rows loaded here, not the 30-day window used by the health figures above.
         ${timedOut.length
-          ? `<div class="cell-sub" style="margin-top:6px;white-space:normal"><strong>${num(timedOut.length)} of them read as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run</strong> rather than the workflow breaking — since 24 Aug those executions are saved with their data, so what made the run slow is still in n8n to look at. Filter to “Hit the ceiling” below to see them. audit_log has no reason column, so this is read off the summary text and is worth confirming on the execution itself.</div>`
+          ? `<div class="cell-sub" style="margin-top:6px;white-space:normal"><strong>${num(timedOut.length)} of them read as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run</strong> rather than the workflow breaking. Filter to “Hit the ceiling” below to see them. The activity log records no reason, so this is read off the summary text; NEXUS can confirm it against the run itself.</div>`
           : ''}</div>
         <button class="btn sm" id="aShowFailed">Show the failures</button>`;
       banners.appendChild(b);
@@ -2244,18 +2243,18 @@ SCREENS.automation = async host => {
           <div class="cell-sub" style="margin-top:8px;white-space:normal">${
             a.status
               ? esc(words.blurb)
-              : 'audit_log holds no status for this run, so nothing is claimed about it either way. A blank status is not a pass.'}</div>
+              : 'The activity log holds no status for this run, so nothing is claimed about it either way. A blank status is not a pass.'}</div>
           <div class="quote" style="margin-top:12px;white-space:pre-wrap">${esc(dealerSummary(a.summary) || 'The workflow wrote no summary for this run.')}</div>
           ${guarded ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">shield</span>
             <div><strong>This run refused a scrape rather than failing — and came away with no price.</strong> ${esc(GUARD_NOTE)}</div></div>` : ''}
           ${ceilingHit ? `<div class="banner warm" style="margin-top:12px"><span class="material-symbols-outlined">timer_off</span>
             <div><strong>This reads as the ${CEILING_SECONDS / 60}-minute ceiling stopping the run.</strong> ${esc(CEILING.onTimeout)}
-            <div class="cell-sub" style="margin-top:6px;white-space:normal">audit_log records a status and a summary but no reason code, so this is read off the summary text above.
+            <div class="cell-sub" style="margin-top:6px;white-space:normal">The activity log records a status and a summary but no reason code, so this is read off the summary text above.
             The execution itself is the place that says for certain.</div></div></div>` : ''}
           ${undelivered ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">forward_to_inbox</span>
             <div><strong>This run completed, but its customer-facing step did not land.</strong> ${esc(PARTIAL_NOTE)}${
               up(a.status) !== outcome
-                ? `<div class="cell-sub" style="margin-top:6px;white-space:normal">This row's own status says <span class="mono">${esc(a.status)}</span>. It is counted as a partial delivery because its summary states which claimed steps did not land, and that structured phrase is the more specific evidence. The classification is made by <span class="mono">nexus_outcome_class</span> in Postgres, so the counts above and this drawer cannot disagree about it.</div>`
+                ? `<div class="cell-sub" style="margin-top:6px;white-space:normal">This row's own status says <span class="mono">${esc(a.status)}</span>. It is counted as a partial delivery because its summary states which claimed steps did not land, and that structured phrase is the more specific evidence. The classification is made once, by NEXUS’s own rule for what a run achieved, so the counts above and this drawer cannot disagree about it.</div>`
                 : ''}</div></div>` : ''}
           ${bad ? `<div class="banner hot" style="margin-top:12px"><span class="material-symbols-outlined">error</span>
             <div>This run did not complete. What it was trying to do, and what did not get done, is above. Where inside the automation it stopped is NEXUS's to diagnose and is not shown here — report the run by its workflow and time and NEXUS can find it.</div></div>` : ''}
@@ -2268,7 +2267,7 @@ SCREENS.automation = async host => {
             <dt>Email</dt><dd>${a.lead_email ? esc(a.lead_email) : '<span class="t-muted">—</span>'}</dd>
             <dt>Lead score</dt><dd class="num">${n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score)}</dd>
           </dl>
-          <div class="cell-sub" style="margin-top:8px;white-space:normal">The phone number is read from <span class="mono">leads.phone</span> matched on this run's email — audit_log carries no phone of its own.
+          <div class="cell-sub" style="margin-top:8px;white-space:normal">The phone number is read from <span class="mono">The phone number on the lead record</span> matched on this run's email — The activity log carries no phone of its own.
           No member of staff appears here at all: <span class="mono">users</span> has no phone column, so whoever owns this workflow has no number recorded anywhere the dashboard can read.</div>
         </div>
         <div class="section">
@@ -2278,7 +2277,7 @@ SCREENS.automation = async host => {
                  ${wordPill(healthLabel(wf), healthOf(wf).tone, healthOf(wf).detail)}
                  <span class="chip">${esc(wf.category || 'Uncategorised')}</span>
                </div>
-               <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(wf.description || 'No description in workflow_registry.')}</div>`
+               <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(wf.description || 'No description in the automation register.')}</div>`
             : `<div class="cell-sub" style="margin-top:8px;white-space:normal">No registered workflow claims the name
                <span class="mono">${esc(a.workflow || '')}</span>, so this run is not counted in any health figure on this screen.</div>`}
         </div>

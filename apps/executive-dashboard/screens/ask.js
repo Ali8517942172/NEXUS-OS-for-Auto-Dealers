@@ -738,7 +738,7 @@ function entryBody(e) {
                ${s.snippet ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
              </div></div>`).join('')}
       <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(`This list is ${g.cited} distinct [S#] marker${plural(g.cited, '', 's')} the MODEL emitted that named a section the search really returned${g.unreadable.length ? `, plus ${g.unreadable.length} entr${plural(g.unreadable.length, 'y', 'ies')} printed verbatim because nothing in ${plural(g.unreadable.length, 'it', 'them')} could be read as a document` : ''}. It is a count of the model's claims, not proof that any sentence came from the section it points at — the workflow's own note says so: a marker is the model claiming a source. What is checked deterministically is the figures, and that check is reported above.`)}</div>
-      <div class="cell-sub" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: rag_documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
+      <div class="cell-sub" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: Your documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
     </div>` : '';
 
   /* Printed on every answered turn that carried grounding, whatever the
@@ -925,7 +925,7 @@ SCREENS.ask = async host => {
           durable: true,
           title: str(it.title) || str(it.kind) || 'Needs attention',
           badge: str(it.kind),
-          detail: esc(str(it.detail) || 'v_needs_attention recorded no detail for this row.'),
+          detail: esc(str(it.detail) || 'The attention list recorded no detail for this row.'),
           /* No jump target on purpose. The view emits nothing for this screen
              today, so what its `ref` would point at here is unknown — a chevron
              that scrolled back to this same strip would be an affordance that
@@ -938,7 +938,7 @@ SCREENS.ask = async host => {
     } else if (attnState?.err) {
       out.push({
         id: 'view-failed', tone: 'warm', icon: 'cloud_off', durable: true,
-        title: 'v_needs_attention did not load',
+        title: 'The attention list did not load',
         detail: `${esc(attnState.err)}<br>Anything that view would have raised for this screen is missing from the list below. The knowledge-base and workflow checks under it are unaffected — they read different tables.`,
         target: 'askAlerts',
       });
@@ -959,7 +959,7 @@ SCREENS.ask = async host => {
       out.push({
         id: 'kb-failed', tone: 'warm', icon: 'quiz', durable: true,
         title: 'The knowledge base could not be counted',
-        detail: `${esc(kbState.err)}<br>So this screen cannot say how many sections Ask AI can reach, or which documents they came from. When they were ingested was never knowable — rag_documents keeps no date — so that much is unchanged. Ask is deliberately left enabled: a failed read here says nothing about whether the workflow works. Judge each answer by its citations instead.`,
+        detail: `${esc(kbState.err)}<br>So this screen cannot say how many sections Ask AI can reach, or which documents they came from. When they were ingested was never knowable — Your documents keeps no date — so that much is unchanged. Ask is deliberately left enabled: a failed read here says nothing about whether the workflow works. Judge each answer by its citations instead.`,
         target: 'askComposer', settings: true,
       });
     } else if (kbState) {
@@ -967,7 +967,7 @@ SCREENS.ask = async host => {
         out.push({
           id: 'kb-empty', tone: 'hot', icon: 'folder_off', durable: true,
           title: 'The knowledge base is empty',
-          detail: 'rag_documents holds no rows, so retrieval can return nothing and every answer would be the model guessing from its training data. Ask is disabled until a document is ingested — an ungrounded answer that looks grounded is worse than no answer at all.',
+          detail: 'Your documents holds no rows, so retrieval can return nothing and every answer would be the model guessing from its training data. Ask is disabled until a document is ingested — an ungrounded answer that looks grounded is worse than no answer at all.',
           target: 'askComposer', settings: true,
         });
       } else {
@@ -981,8 +981,8 @@ SCREENS.ask = async host => {
         out.push({
           id: 'kb-undated', tone: 'cold', icon: 'help', durable: true,
           title: 'We cannot know when this knowledge base was last updated',
-          detail: `<span class="mono">rag_documents</span> stores no timestamp of any kind — the table is <span class="mono">id, doc_title, source_file, section, page_number, content, search_vector</span> and none of those records when a section was ingested. So the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} below could have been written last night or two years ago, and this screen will not guess: row order is insertion order at best and arbitrary at worst, so "the newest document" is not a thing that can be computed here. Every answer on this screen is therefore grounded in documents of unknown vintage. Before repeating a finance rate, a warranty term or a policy to a customer, open the cited document and check its own date.`,
-          foot: 'Fixing this needs a timestamp column on rag_documents and a re-ingest. Nothing in the browser can add one, and no webhook accepts a document.',
+          detail: `<span class="mono">Your documents</span> stores no timestamp of any kind — the table is <span class="mono">id, doc_title, source_file, section, page_number, content, search_vector</span> and none of those records when a section was ingested. So the ${esc(num(kbState.count))} indexed section${plural(kbState.count, '', 's')} below could have been written last night or two years ago, and this screen will not guess: row order is insertion order at best and arbitrary at worst, so "the newest document" is not a thing that can be computed here. Every answer on this screen is therefore grounded in documents of unknown vintage. Before repeating a finance rate, a warranty term or a policy to a customer, open the cited document and check its own date.`,
+          foot: 'Fixing this needs a timestamp column on your documents and a re-ingest. Nothing in the browser can add one, and no webhook accepts a document.',
           target: 'askComposer', settings: true,
         });
       }
@@ -1002,14 +1002,14 @@ SCREENS.ask = async host => {
       out.push({
         id: 'wf-failed', tone: 'warm', icon: 'cloud_off', durable: true,
         title: "The workflow's health could not be read",
-        detail: `${esc(healthState.err)}<br>v_workflow_health is what says whether ask-ai is active and whether it has been failing, so none of that is known right now. The Ask button is unaffected: pressing it is still the direct test.`,
+        detail: `${esc(healthState.err)}<br>The automation health figures is what says whether ask-ai is active and whether it has been failing, so none of that is known right now. The Ask button is unaffected: pressing it is still the direct test.`,
         target: 'askComposer',
       });
     } else if (healthState && !healthState.row) {
       out.push({
         id: 'wf-missing', tone: 'warm', icon: 'search_off', durable: true,
         title: 'No registered workflow matches ask-ai',
-        detail: `v_workflow_health returned ${esc(num(healthState.rows.length))} workflow${plural(healthState.rows.length, '', 's')} and none names the <span class="mono">${esc(HOOK.askAi)}</span> webhook in its trigger detail or mentions Ask AI. So nothing here can report this endpoint's health, and its absence from workflow_registry is itself worth fixing.`,
+        detail: `The automation health figures returned ${esc(num(healthState.rows.length))} workflow${plural(healthState.rows.length, '', 's')} and none names the <span class="mono">${esc(HOOK.askAi)}</span> webhook in its trigger detail or mentions Ask AI. So nothing here can report this endpoint's health, and its absence from the automation register is itself worth fixing.`,
         target: 'askComposer',
       });
     } else if (healthState?.row) {
@@ -1035,7 +1035,7 @@ SCREENS.ask = async host => {
           /* Failures and partials together, over the effective denominator. A
            half-landed run is not a success and a refusal-by-design is not a
            miss; lib/health.js is the only thing allowed to draw either line. */
-        detail: `v_workflow_health reports ${esc(num(f30 + p30))} run${plural(f30 + p30, '', 's')} that failed or went out half-done${eff30 != null ? ` out of the ${esc(num(eff30))} rated run${plural(eff30, '', 's')}` : ` out of ${esc(num(r30))} logged run${plural(r30, '', 's')}`} in the last 30 days${rej30 ? `, with ${esc(num(rej30))} further request${plural(rej30, '', 's')} refused by design and deliberately not counted against it` : ''}. An answer that does come back is still worth reading — the failures are the runs that never produced one.`,
+        detail: `The automation health figures reports ${esc(num(f30 + p30))} run${plural(f30 + p30, '', 's')} that failed or went out half-done${eff30 != null ? ` out of the ${esc(num(eff30))} rated run${plural(eff30, '', 's')}` : ` out of ${esc(num(r30))} logged run${plural(r30, '', 's')}`} in the last 30 days${rej30 ? `, with ${esc(num(rej30))} further request${plural(rej30, '', 's')} refused by design and deliberately not counted against it` : ''}. An answer that does come back is still worth reading — the failures are the runs that never produced one.`,
           foot: w.last_failure ? `Last recorded failure ${esc(ago(w.last_failure))}` : '',
           target: 'askRuns',
         });
@@ -1057,7 +1057,7 @@ SCREENS.ask = async host => {
         out.push({
           id: 'wf-blind', tone: 'warm', icon: 'visibility_off', durable: true,
           title: 'The Ask-AI workflow is not instrumented',
-          detail: 'The registry says this workflow should write an audit row and v_workflow_health has none from it. It could be running perfectly or failing every time; from here the two are indistinguishable.',
+          detail: 'The registry says this workflow should write an audit row and the automation health figures has none from it. It could be running perfectly or failing every time; from here the two are indistinguishable.',
           target: 'askRuns',
         });
       } else if (h !== 'HEALTHY') {
@@ -1080,8 +1080,8 @@ SCREENS.ask = async host => {
           detail: h
             ? (known
                 ? `${esc(hw.blurb)} An answer that does come back is still worth reading on its own citations — that verdict is computed per turn in the thread below and does not depend on this.`
-                : `v_workflow_health returned <span class="mono">${esc(h)}</span> for <span class="mono">${esc(str(w.name) || 'this workflow')}</span>, which is not in the closed set lib/health.js defines. It is printed verbatim above rather than mapped to a verdict it may not mean.`)
-            : `v_workflow_health matched <span class="mono">${esc(str(w.name) || 'this workflow')}</span> but left its <span class="mono">health</span> column empty, so whether ask-ai is healthy or failing is not known from here. Pressing Ask remains the direct test.`,
+                : `The automation health figures returned <span class="mono">${esc(h)}</span> for <span class="mono">${esc(str(w.name) || 'this workflow')}</span>, which is not in the closed set NEXUS defines. It is printed verbatim above rather than mapped to a verdict it may not mean.`)
+            : `The automation health figures matched <span class="mono">${esc(str(w.name) || 'this workflow')}</span> but left its <span class="mono">health</span> column empty, so whether ask-ai is healthy or failing is not known from here. Pressing Ask remains the direct test.`,
           target: 'askComposer',
         });
       }
@@ -1185,8 +1185,8 @@ SCREENS.ask = async host => {
     /* What was actually checked, and what could not be. A screen that quietly
        drops a failed read reports fewer alerts and looks healthier for it. */
     const checked = [
-      attnState?.rows ? `v_needs_attention: ${num(attnState.rows.length)} row${plural(attnState.rows.length, '', 's')} for this screen`
-        : attnState?.err ? 'v_needs_attention: unreadable' : 'v_needs_attention: still reading',
+      attnState?.rows ? `The attention list: ${num(attnState.rows.length)} row${plural(attnState.rows.length, '', 's')} for this screen`
+        : attnState?.err ? 'The attention list: unreadable' : 'The attention list: still reading',
       kbState?.err ? 'knowledge base: unreadable'
         : kbState ? `knowledge base: ${num(kbState.count)}${kbState.capped ? '+' : ''} section${plural(kbState.count, '', 's')}`
         : 'knowledge base: still reading',
@@ -1205,10 +1205,10 @@ SCREENS.ask = async host => {
 
     const notes = [
       attnState?.rows && !attnState.rows.length
-        ? 'v_needs_attention has no branch that targets this screen today, so an empty result from it is expected rather than evidence that nothing is wrong. Everything else above is computed here, from reads this screen already makes.'
+        ? 'The attention list has no branch that targets this screen today, so an empty result from it is expected rather than evidence that nothing is wrong. Everything else above is computed here, from reads this screen already makes.'
         : '',
-      `${num(durable.length)} of the ${num(alerts.length)} row${plural(alerts.length, '', 's')} above ${plural(durable.length, 'is', 'are')} durable and worth acting on — a fact about the system, read from v_needs_attention, the knowledge base or v_workflow_health, that will still be true after a reload. The rest are shown and deliberately not counted: session alerts (a question that failed, an answer that cited nothing) exist only in this tab and vanish when it reloads, and informational rows state something that cannot be fixed from here.`,
-      'The sidebar badge over Ask AI is not this number and is not written by this screen. Nav badges are painted centrally from v_needs_attention alone, and that view has no branch that files anything against this screen — so the sidebar is silent here even when the list above is not, and this strip is the only place these are reported.',
+      `${num(durable.length)} of the ${num(alerts.length)} row${plural(alerts.length, '', 's')} above ${plural(durable.length, 'is', 'are')} durable and worth acting on — a fact about the system, read from the attention list, the knowledge base or the automation health figures, that will still be true after a reload. The rest are shown and deliberately not counted: session alerts (a question that failed, an answer that cited nothing) exist only in this tab and vanish when it reloads, and informational rows state something that cannot be fixed from here.`,
+      'The sidebar badge over Ask AI is not this number and is not written by this screen. Nav badges are painted centrally from the attention list alone, and that view has no branch that files anything against this screen — so the sidebar is silent here even when the list above is not, and this strip is the only place these are reported.',
       waiting ? `${num(waiting)} of the three checks ${plural(waiting, 'has', 'have')} not finished reading, so this list is not final yet.` : '',
     ].filter(Boolean);
     const foot = `<div class="list-item" style="cursor:default;align-items:flex-start">
@@ -1224,12 +1224,12 @@ SCREENS.ask = async host => {
        that was actually read, quoting what it said. */
     const cleared = [
       kbState && !kbState.err
-        ? `${num(kbState.count)}${kbState.capped ? '+' : ''} indexed section${plural(kbState.count, '', 's')} in the knowledge base, of unknown vintage — rag_documents keeps no ingest date, so nothing here can say whether they are current.`
+        ? `${num(kbState.count)}${kbState.capped ? '+' : ''} indexed section${plural(kbState.count, '', 's')} in the knowledge base, of unknown vintage — Your documents keeps no ingest date, so nothing here can say whether they are current.`
         : '',
       healthState?.row
-        ? `v_workflow_health reports the ask-ai workflow ${str(healthState.row.health) || 'with no health value'}.`
+        ? `The automation health figures reports the ask-ai workflow ${str(healthState.row.health) || 'with no health value'}.`
         : '',
-      attnState?.rows ? 'v_needs_attention returned no row filed against this screen.' : '',
+      attnState?.rows ? 'The attention list returned no row filed against this screen.' : '',
       /* This sentence asserted that every answer "came back answered" and
          "cited at least one document" without consulting a single turn, so a
          turn with status ok and an empty answer would have been covered by it.
@@ -1272,7 +1272,7 @@ SCREENS.ask = async host => {
           <div class="cell-sub" style="white-space:normal">${a.detail}</div>
           ${a.foot ? `<div class="cell-sub">${a.foot}</div>` : ''}
         </div>
-        ${a.settings ? `<button class="btn sm ghost" data-goto="settings" title="Settings lists every indexed document and the columns rag_documents actually returned.">Knowledge base</button>` : ''}
+        ${a.settings ? `<button class="btn sm ghost" data-goto="settings" title="Settings lists every indexed document and the columns your documents actually returned.">Knowledge base</button>` : ''}
         ${a.target ? '<span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>' : ''}
       </div>`).join('') + foot;
 
@@ -1500,11 +1500,11 @@ SCREENS.ask = async host => {
        the count is the number an operator reads just before deciding to trust
        an answer. */
     $('askKb').innerHTML = kb.count
-      ? `${esc(kb.capped ? 'At least ' : '')}${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')} across ${esc(num(kb.titles.length))} document${plural(kb.titles.length, '', 's')} · answers are drawn only from these · <span class="t-muted">rag_documents records no ingest date, so how current they are cannot be known from here</span>`
+      ? `${esc(kb.capped ? 'At least ' : '')}${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')} across ${esc(num(kb.titles.length))} document${plural(kb.titles.length, '', 's')} · answers are drawn only from these · <span class="t-muted">Your documents records no ingest date, so how current they are cannot be known from here</span>`
       : 'No documents are indexed';
 
     if (!kb.count) {
-      blocked = 'rag_documents is empty, so the ask-ai workflow has nothing to answer from. Add a document to the knowledge base first.';
+      blocked = 'Your documents is empty, so the ask-ai workflow has nothing to answer from. Add a document to the knowledge base first.';
       $('askChips').innerHTML = stateEmpty('The knowledge base is empty',
         'Ask AI answers only from indexed documents, and there are none. Settings lists what is indexed.', 'description');
     } else if (kb.titles.length) {
@@ -1547,7 +1547,7 @@ SCREENS.ask = async host => {
     const line = $('askEndpoint');
     if (!res.ok) {
       healthState = { err: res.err };
-      if (line) line.innerHTML = `<span class="t-warm">${esc('Workflow health unknown — v_workflow_health did not load')}</span>`;
+      if (line) line.innerHTML = `<span class="t-warm">${esc('Workflow health unknown — The automation health figures did not load')}</span>`;
       renderAlerts();
       return;
     }
@@ -1622,7 +1622,7 @@ SCREENS.ask = async host => {
   let runsAttempt = 0;
   panel($('askRuns'), {
     title: 'Ask-AI run history',
-    sub: 'Rows the workflow itself wrote to audit_log — no screen in this dashboard writes an Ask-AI row',
+    sub: 'Rows the workflow itself wrote to the activity log — no screen in this dashboard writes an Ask-AI row',
     load: async () => {
       const first = runsAttempt++ === 0;
       const [audit, reg, health] = first
@@ -1683,12 +1683,12 @@ SCREENS.ask = async host => {
       /* Every count on this panel names the window it came from. "No runs" out
          of a 200-row scan is a different statement from "no runs, ever". */
       const provenance = [
-        `Matched against the newest ${num(scanned)} audit_log row${plural(scanned, '', 's')}${scanned >= AUDIT_LIMIT ? ' — the read is capped there, so an older run is outside this window rather than absent' : ''}.`,
+        `Matched against the newest ${num(scanned)} activity-log row${plural(scanned, '', 's')}${scanned >= AUDIT_LIMIT ? ' — the read is capped there, so an older run is outside this window rather than absent' : ''}.`,
         regFailed
-          ? 'workflow_registry did not load, so matching fell back to the workflow name alone. A run logged under an alias is missing from this list.'
+          ? 'The automation register did not load, so matching fell back to the workflow name alone. A run logged under an alias is missing from this list.'
           : regRow
             ? `Registry names matched on: ${names.length ? names.join(', ') : 'none recorded'}.`
-            : 'No workflow_registry row could be tied to Ask AI, so matching fell back to the workflow name alone.',
+            : 'No the automation register row could be tied to Ask AI, so matching fell back to the workflow name alone.',
         healthRow && healthRow.writes_audit_log === false
           ? 'The registry records this workflow as writing no audit row — it answers its caller instead, and this dashboard shows that answer in the thread above. An empty list here is the design rather than a gap; the cost is that nothing can tell you how it behaved yesterday.'
           : '',
@@ -1703,7 +1703,7 @@ SCREENS.ask = async host => {
 
       if (!rows.length) {
         return stateEmpty('No Ask-AI runs recorded',
-          'No audit_log row inside the window described below matches an Ask-AI workflow.', 'history') + foot;
+          'No the activity log row inside the window described below matches an Ask-AI workflow.', 'history') + foot;
       }
 
       /* `rows.filter(status === 'SUCCESS').length / rows.length` is what stood
@@ -1757,7 +1757,7 @@ SCREENS.ask = async host => {
            in the hover so nothing is hidden by the translation. */
         { label: 'Outcome', render: r => {
             const w = outcomeWords(outcomeOf(r));
-            return `<span title="${esc(`audit_log.status is ${str(r.status) || 'empty'}. ${w.blurb}`)}">${pill(w.label, w.tone, { verbatim: false })}</span>`;
+            return `<span title="${esc(`This run was recorded as ${str(r.status) || 'having no status'}. ${w.blurb}`)}">${pill(w.label, w.tone, { verbatim: false })}</span>`;
           } },
         { label: 'Workflow', render: r => esc(str(r.workflow) || '—') },
         { label: 'Lead', render: who },

@@ -111,7 +111,7 @@ export const HEALTH_WORDS = {
   PRODUCING_NOTHING:  { label: 'No output',      tone: 'hot',     blurb: 'It runs without failing, but more than half its runs produce nothing usable.' },
   UNKNOWN_OUTCOME:    { label: 'Unrecognised',   tone: 'unknown', blurb: 'It logged a status this system does not define, so its health cannot be stated.' },
   NO_QUALIFYING_RUNS: { label: 'Nothing to rate',tone: 'unknown', blurb: 'Every run in the window was refused by design, so there is no rate to report.' },
-  NOT_INSTRUMENTED:   { label: 'Not logged',     tone: 'unknown', blurb: 'This workflow does not write to the audit log, so its health is unknown - not good.' },
+  NOT_INSTRUMENTED:   { label: 'Not logged',     tone: 'unknown', blurb: 'This workflow records nothing about its own runs, so its health is unknown - not good.' },
   NEVER_RAN:          { label: 'No runs yet',    tone: 'unknown', blurb: 'Nothing has been logged for it, so there is nothing to report.' },
 };
 

@@ -747,9 +747,10 @@ function expandIdentity(seed, opts = {}) {
     || id.chatIds[0]
     || (id.suffix ? `phone:${id.suffix}` : '')
     || id.keys[0] || '';
-  id.personKeyBasis = id.email ? 'lower(email)'
-    : id.threadKey ? 'v_conversations.thread_key'
-    : id.chatIds[0] ? 'v_conversations.chat_id'
+  /* RENDERED, wherever a screen says how a person was identified. */
+  id.personKeyBasis = id.email ? 'their email address'
+    : id.threadKey ? 'the identifier this conversation is filed under'
+    : id.chatIds[0] ? 'their WhatsApp address'
     : id.suffix ? `the last ${SUFFIX_LEN} digits of the phone number`
     : id.keys[0] ? 'the only key this person is filed under' : '';
   /* `phone_only` is the view's word for "we have a number and nothing else". It
