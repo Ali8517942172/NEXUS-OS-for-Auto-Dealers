@@ -2601,8 +2601,25 @@ SCREENS.conversations = async host => {
     body.innerHTML = stateLoading(5);
     const identity = groupIdentity(t);
     const collision = (identity.ambiguityCodes || []).includes(AMBIGUITY.PHONE_SUFFIX_COLLISION);
+    /* Read through v_communication_log_evidence rather than communication_logs
+       directly, added 6 Sep 2026.
+
+       On 31 Aug the bot sent this dealership's customers six messages NEXUS has
+       since ruled inadmissible as evidence — a fabricated AED 11,200 instalment,
+       four unevidenced APR figures, and a deliberation dump that leaked the
+       vehicle's internal cost. Those rows are excluded from what any AI reads
+       (v_lead_timeline_admissible), and they are DELIBERATELY NOT excluded here.
+
+       They were really sent. The customer received them and may quote them back
+       on the phone. Hiding them from the dealership would be a second lie on top
+       of the first, and it would leave a rep arguing with a customer about a
+       message the rep cannot see. So the row is shown in full, and marked.
+
+       The view carries the reason, the actor and the time alongside the message,
+       so the marking states WHY rather than just flagging it. */
     const readOpts = {
-      select: 'id,direction,message,channel,created_at',
+      select: 'id,direction,message,channel,created_at,evidence_state,evidence_flagged,'
+        + 'evidence_reason_code,evidence_reason,evidence_actor,evidence_at',
       order: 'created_at.desc',
       limit: MSG_LIMIT,
     };
@@ -2621,7 +2638,7 @@ SCREENS.conversations = async host => {
     const matched = personFilter(identity, readOpts);
     const keys = matched.keys || [];
     const patterns = matched.patterns || [];
-    const path = personQuery('communication_logs', identity, readOpts);
+    const path = personQuery('v_communication_log_evidence', identity, readOpts);
     /* No usable key at all. personQuery returns '' rather than a filter that
        would quietly match every row in the table, and this is the one branch
        that must never be confused with "this person has no messages". */
@@ -2742,6 +2759,18 @@ SCREENS.conversations = async host => {
        own marker on the system channel" — two claims about rows it had not
        looked at. A row is internal by its channel, its direction OR its body,
        and only the body says which workflow wrote it. */
+    /* Messages ruled inadmissible, counted in the footer as well as banded on
+       the bubble. A rep who scrolls past the band should still learn from the
+       summary that part of this thread cannot be relied on. */
+    const flaggedRows = list.filter(m => m.evidence_flagged === true
+      || (m.evidence_state && m.evidence_state !== 'ADMISSIBLE'));
+    const flaggedNote = flaggedRows.length
+      ? `<div style="margin-top:6px"><span class="t-warm">${num(flaggedRows.length)} of these `
+        + `${plural(flaggedRows.length, 'message has', 'messages have')} been marked invalid evidence and `
+        + `${plural(flaggedRows.length, 'is', 'are')} withheld from everything NEXUS\u2019s AI reads. `
+        + `${plural(flaggedRows.length, 'It was', 'They were')} still sent to the customer and `
+        + `${plural(flaggedRows.length, 'is', 'are')} shown above in full, banded, with the reason. Nothing has been deleted.</span></div>`
+      : '';
     const silenceN = silenceCount(markers);
     const otherN = markers.length - silenceN;
     const markerChannels = [...new Set(markers.map(m => str(m.channel) || 'no channel recorded'))];
@@ -2791,10 +2820,43 @@ SCREENS.conversations = async host => {
             </div>`;
           }
           const inbound = low(m.direction) === 'inbound';
-          return `${sep}<div class="bubble ${inbound ? 'in' : 'out'}">${text ? esc(text) : '<span class="t-muted">No message text recorded</span>'}
+          /* A message NEXUS has ruled inadmissible as evidence. It is shown in
+             full — it was really sent — but it must never read as an ordinary
+             message the rep can stand behind, so it is banded before the text
+             and the reason is stated in the dealership's own words rather than
+             as a status code on its own.
+
+             `evidence_flagged` comes off the view, which derives it from the
+             state column, which is derived from the provenance table. This
+             screen renders that answer; it never decides it. */
+          const flagged = m.evidence_flagged === true || (m.evidence_state && m.evidence_state !== 'ADMISSIBLE');
+          const why = {
+            FABRICATED_FIGURE_NO_CALCULATION:
+              'it states a figure that no calculation ever produced, so the number in it is not a NEXUS quote and must not be repeated or confirmed',
+            INTERNAL_DATA_DISCLOSED:
+              'it disclosed information that should never have left the dealership',
+            MODEL_DELIBERATION_SENT:
+              'it is the assistant\u2019s working-out, sent by mistake instead of a reply',
+            SUPERSEDED_BY_CORRECTION:
+              'it has been superseded by a corrected record',
+          }[str(m.evidence_reason_code)] || 'NEXUS has ruled its contents unreliable';
+          const flagBand = flagged
+            ? `<div class="banner warm" style="margin:0 0 8px;padding:8px 10px">
+                 <span class="material-symbols-outlined" style="font-size:18px" aria-hidden="true">report</span>
+                 <div><strong>This message was sent, and it is not reliable.</strong>
+                 NEXUS has marked it as invalid evidence because ${esc(why)}.
+                 It is shown here in full because the customer received it and may refer to it.
+                 It is withheld from everything NEXUS\u2019s AI reads, so no reply or briefing is built on it.
+                 ${m.evidence_reason ? `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(str(m.evidence_reason))}</div>` : ''}
+                 <div class="cell-sub" style="margin-top:4px">Marked by <span class="mono">${esc(str(m.evidence_actor) || 'not recorded')}</span>${m.evidence_at ? ` \u00b7 ${esc(ago(m.evidence_at))}` : ''}. The message itself has not been altered or deleted.</div>
+                 </div>
+               </div>`
+            : '';
+          return `${sep}<div class="bubble ${inbound ? 'in' : 'out'}"${flagged ? ' style="border:1px solid var(--warm,#b46b00)"' : ''}>${flagBand}${text ? esc(text) : '<span class="t-muted">No message text recorded</span>'}
             <div class="bubble-meta">
               <span class="chip">${esc(str(m.channel) || 'unrecorded channel')}</span>
               <span>${esc(low(m.direction) || 'direction not recorded')}</span>
+              ${flagged ? '<span class="t-warm">invalid evidence</span>' : ''}
               <span title="${esc(stamp(m.created_at))}">${esc(ago(m.created_at))}</span>
             </div>
           </div>`;
@@ -2803,6 +2865,7 @@ SCREENS.conversations = async host => {
       <div class="cell-sub" style="padding:0 20px 16px;text-align:center">
         ${num(real.length)} ${plural(real.length, 'message', 'messages')} shown · ${num(inboundReal)} inbound · ${num(outboundReal)} outbound${markers.length ? ` · ${num(markers.length)} internal ${plural(markers.length, 'note', 'notes')}` : ''}
         ${countNote}
+        ${flaggedNote}
         ${markerNote}
         ${collisionNote}
         ${keyNote}
