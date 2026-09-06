@@ -95,6 +95,33 @@
  *   measured — against production. B3 needs a second dealership to exist. B4
  *   needs a real signed-in session.
  *
+ *   THE SIGNED-IN CALLER (added 6 Sep 2026). B1..B3 have a second transport,
+ *   and for B3 it is the only one that can produce a PASS: the gate signs in
+ *   through GoTrue's password grant and calls PostgREST with `apikey` and
+ *   `Authorization: Bearer`, exactly as the dashboard does. The psql arms above
+ *   reach Postgres with set_config('request.jwt.claims'), which is how
+ *   PostgREST PRESENTS a JWT and is not a signed JWT that travelled through it
+ *   — the gap two-tenant-proof-2026-09-06.md §8.4 records. B1 and B2 write, and
+ *   over HTTP there is no ROLLBACK, so the write arms refuse to run unless the
+ *   target is a different Supabase project from NEXUS_DB_URL and NEXUS_LIVE_URL
+ *   AND the configured accounts MEASURE two distinct dealerships. Production is
+ *   a single-dealership project with one user, who is an approver, so it cannot
+ *   satisfy either condition.
+ *
+ *   NEXUS_STAGING_REST_URL              https://<ref>.supabase.co of a STAGING
+ *   NEXUS_STAGING_ANON_KEY              project carrying this schema.
+ *   NEXUS_STAGING_APPROVER_EMAIL / _PASSWORD      an approver at dealership A
+ *   NEXUS_STAGING_APPROVER2_EMAIL / _PASSWORD     a second approver at A
+ *   NEXUS_STAGING_NONAPPROVER_EMAIL / _PASSWORD   a member of A who may not
+ *                                       approve — B1 has nobody to refuse
+ *                                       without one
+ *   NEXUS_STAGING_OTHER_EMAIL / _PASSWORD         a member of dealership B
+ *
+ *   What the write arms leave behind on staging is stated in their own evidence
+ *   lines, with the DELETE statements that remove it. They re-use a PROPOSED
+ *   GATE-PROBE-% action if one is there, so an interrupted run does not add a
+ *   second fixture.
+ *
  *   NEXUS_STAGING_DB_URL=postgres://…   a staging Postgres carrying this schema.
  *                                       Every probe statement runs inside a
  *                                       transaction that ends in ROLLBACK, and
@@ -3661,6 +3688,434 @@ const PROBE_GUARD = `
   end if;
   select approver_tenant_roles into v_approvers from public.inventory_action_policy where tenant_id = v_tenant;`;
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SIGNED-IN CALLER — why this exists and what it is allowed to touch
+   ──────────────────────────────────────────────────────────────────────────
+   B1..B3 are assertions about what Postgres does WITH A CALLER, and until
+   6 September 2026 this gate had no way to be one. The psql probes above set
+   `request.jwt.claims` and `role` with set_config(). That is how PostgREST
+   PRESENTS a JWT to Postgres, and it is not a signed JWT that travelled
+   through PostgREST: it skips GoTrue, the anon key, the API gateway, PostgREST's
+   own role switch and its own query construction. The two-tenant proof
+   (two-tenant-proof-2026-09-06.md §8.4) stops at exactly that line and records
+   B3 as NOT RUN for exactly that reason. So does VERSIONS.md.
+
+   This lane closes it by signing in. It calls GoTrue's password grant, holds
+   the real access token, and makes every subsequent call as an ordinary REST
+   client with `apikey` and `Authorization: Bearer` — the same two headers the
+   dashboard sends. Nothing here sets a GUC and nothing here holds a Postgres
+   role.
+
+   WHAT IT MAY WRITE, AND WHERE. B1 and B2 are state changes by definition, and
+   over HTTP there is no transaction to roll back — so this lane writes, and
+   what it writes persists. That is only acceptable on a fixture database, and
+   four things have to be true at once before a single write is attempted:
+
+     1. NEXUS_STAGING_REST_URL is set by name. The variable that may point at
+        production is NEXUS_LIVE_URL, and this lane never reads it for a write.
+     2. That URL's Supabase project ref differs from NEXUS_DB_URL's and from
+        NEXUS_LIVE_URL's. Two spellings of one project are refused.
+     3. Every identity signs in. Production carries one user, who is an
+        approver; it has no non-approver and no member of a second dealership,
+        so the credentials themselves cannot exist there.
+     4. MEASURED, not configured: the "other dealership" identity must resolve
+        — through action_approver_context(), as itself — to a DIFFERENT
+        dealership from the approver. A single-dealership database cannot
+        satisfy this, and production is a single-dealership database. This is
+        the guard that does not depend on somebody naming a variable correctly.
+
+   If any of those is not true the lane writes nothing and says which one.
+
+   WHAT IT LEAVES BEHIND. It creates one inventory unit (`GATE-PROBE-<ms>`) on
+   the approver's dealership and proposes one action against it, then decides
+   that action. The rows persist: the unit, the action, and the audit and event
+   rows the decision path writes. Every gate run re-uses a `GATE-PROBE-%` action
+   that is still PROPOSED and only creates a new one when there is none, so the
+   residue does not grow once per run unless a run is interrupted. The exact
+   ids are printed in the evidence, and the removal statement is printed with
+   them, because a fixture nobody can find is litter.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const SIGNED_IDENTITIES = [
+  ['approver',    'NEXUS_STAGING_APPROVER_EMAIL',    'NEXUS_STAGING_APPROVER_PASSWORD',    'an account this dealership\'s own policy admits as an approver'],
+  ['approver2',   'NEXUS_STAGING_APPROVER2_EMAIL',   'NEXUS_STAGING_APPROVER2_PASSWORD',   'a SECOND approving account, so B2 can tell a double-click from another person overturning a decision'],
+  ['nonapprover', 'NEXUS_STAGING_NONAPPROVER_EMAIL', 'NEXUS_STAGING_NONAPPROVER_PASSWORD', 'an account at the SAME dealership whose role the policy does not admit'],
+  ['other',       'NEXUS_STAGING_OTHER_EMAIL',       'NEXUS_STAGING_OTHER_PASSWORD',       'an account at a DIFFERENT dealership'],
+];
+
+/* A Supabase project ref, from either spelling of its hostname. Two URLs can
+   name one project three ways; the ref is the part that cannot be spelled
+   differently. */
+const projectRef = u => {
+  try {
+    const h = new URL(String(u).replace(/^postgres(ql)?:/, 'http:')).hostname.toLowerCase();
+    const p = h.split('.');
+    if (p.length < 3) return '';
+    return (p[0] === 'db' || p[0].startsWith('aws-')) ? p[1] : p[0];
+  } catch { return ''; }
+};
+
+async function resolveSignedCaller() {
+  const url  = (process.env.NEXUS_STAGING_REST_URL || '').replace(/\/+$/, '');
+  const anon = process.env.NEXUS_STAGING_ANON_KEY || '';
+  const missing = [];
+  if (!url)  missing.push('NEXUS_STAGING_REST_URL');
+  if (!anon) missing.push('NEXUS_STAGING_ANON_KEY');
+  for (const [name, e, p, what] of SIGNED_IDENTITIES)
+    if (!process.env[e] || !process.env[p]) missing.push(`${e} + ${p} (${what})`);
+  if (missing.length)
+    return { why: `no signed-in caller is configured. Missing: ${missing.join('; ')}. Set them to a STAGING Supabase project carrying this schema and two dealerships, and these checks sign in through GoTrue and call PostgREST as those accounts` };
+
+  const ref = projectRef(url);
+  for (const [varName, other] of [['NEXUS_DB_URL', process.env.NEXUS_DB_URL], ['NEXUS_LIVE_URL', process.env.NEXUS_LIVE_URL]]) {
+    if (!other) continue;
+    if (projectRef(other) && projectRef(other) === ref)
+      return { why: `NEXUS_STAGING_REST_URL and ${varName} name the same Supabase project (${ref}) — refusing to sign in and write against the database this gate is told is production` };
+  }
+
+  const who = {};
+  for (const [name, e, p] of SIGNED_IDENTITIES) {
+    const email = process.env[e], password = process.env[p];
+    let token;
+    try {
+      const r = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+        method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const body = await r.text();
+      if (!r.ok) return { why: `signing in as ${email} (${e}) was refused with HTTP ${r.status}: ${body.slice(0, 200)}` };
+      token = JSON.parse(body).access_token;
+    } catch (err) { return { why: `signing in as ${email} (${e}) could not reach ${url}: ${String(err.message || err)}` }; }
+    if (!token) return { why: `signing in as ${email} (${e}) succeeded and returned no access_token` };
+    /* The claim this lane cares about, read from the token itself rather than
+       taken on trust: a token whose role is not `authenticated` would exercise
+       something other than a dealership session. */
+    let claims = {};
+    try { claims = JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8')); } catch {}
+    if (claims.role !== 'authenticated')
+      return { why: `the token GoTrue issued for ${email} carries role "${claims.role}" rather than "authenticated" — this lane exercises a dealership session and nothing else` };
+    who[name] = { name, email, token, sub: claims.sub || null };
+  }
+
+  const S = {
+    url, anon, ref, who,
+    rest: async (id, path, opts = {}) => {
+      const r = await fetch(`${url}/rest/v1/${path}`, {
+        ...opts,
+        headers: { apikey: anon, Authorization: `Bearer ${who[id].token}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      });
+      const t = await r.text();
+      let body; try { body = JSON.parse(t); } catch { body = t; }
+      return { status: r.status, body, text: t };
+    },
+  };
+  S.rpc   = (id, fn, args = {}) => S.rest(id, `rpc/${fn}`, { method: 'POST', body: JSON.stringify(args) });
+  S.count = async (id, path) => {
+    const r = await S.rest(id, path.includes('select=') ? path : `${path}${path.includes('?') ? '&' : '?'}select=id`);
+    return Array.isArray(r.body) ? r.body.length : null;
+  };
+
+  /* Each identity says who it is, through the same function the Action Center
+     asks. Nothing below is taken from the variable names. */
+  for (const name of Object.keys(who)) {
+    const c = await S.rpc(name, 'action_approver_context');
+    if (c.status !== 200 || !Array.isArray(c.body) || !c.body.length)
+      return { why: `action_approver_context() answered HTTP ${c.status} for ${who[name].email}: ${String(c.text).slice(0, 200)}` };
+    Object.assign(who[name], c.body[0]);
+  }
+
+  const ap = who.approver, na = who.nonapprover, ot = who.other;
+  S.notes = [];
+  if (ap.may_decide !== true)
+    S.notWritable = `the account named by NEXUS_STAGING_APPROVER_EMAIL (${ap.email}) is not an approver — action_approver_context() answered may_decide=${ap.may_decide}, refusal_code=${ap.refusal_code}. B1 and B2 need one decision that is allowed to succeed`;
+  else if (who.approver2.may_decide !== true)
+    S.notWritable = `the account named by NEXUS_STAGING_APPROVER2_EMAIL (${who.approver2.email}) answered may_decide=${who.approver2.may_decide} — B2's last arm needs a SECOND account that may approve`;
+  else if (who.approver2.tenant_id !== ap.tenant_id)
+    S.notWritable = `the two approver accounts are at different dealerships (${short(ap.tenant_id)} and ${short(who.approver2.tenant_id)}) — B2's arms have to arrive at one action`;
+  else if (na.tenant_id !== ap.tenant_id)
+    S.notWritable = `the non-approver (${na.email}) is at dealership ${short(na.tenant_id)} and the approver at ${short(ap.tenant_id)} — B1 refuses somebody who is a member of the SAME dealership and merely lacks the role; a stranger is a different check`;
+  else if (na.may_decide !== false)
+    S.notWritable = `the account named by NEXUS_STAGING_NONAPPROVER_EMAIL (${na.email}) MAY decide — action_approver_context() answered may_decide=true, so there is no non-approver here for Postgres to refuse`;
+  else if (!ot.tenant_id || ot.tenant_id === ap.tenant_id)
+    S.notWritable = `the account named by NEXUS_STAGING_OTHER_EMAIL (${ot.email}) resolves to dealership ${short(ot.tenant_id)}, the same one as the approver — this database has one dealership as far as these credentials can see, which is what production looks like, so this lane will not write to it`;
+  S.writable = !S.notWritable;
+  S.ok = true;
+  return S;
+}
+const SIGNED = await resolveSignedCaller();
+
+/* The census this lane reports is measured through the callers themselves, on
+   the database it is actually probing — never carried over from the production
+   catalogue the L lane reads. */
+const signedCensus = () => !SIGNED.ok ? [] : [
+  `signed in through ${SIGNED.url}/auth/v1 (Supabase project ${SIGNED.ref}) as ${Object.keys(SIGNED.who).length} real accounts, each holding a JWT GoTrue issued: `
+    + Object.values(SIGNED.who).map(w => `${w.email} → dealership ${short(w.tenant_id)}, account role ${w.tenant_role}${w.staff_role ? ` (job title ${w.staff_role})` : ' (no staff row)'}, may_decide=${w.may_decide}${w.refusal_code ? ` (${w.refusal_code})` : ''}`).join('; '),
+  `every call below carries apikey + Authorization: Bearer and travels through PostgREST — no set_config('request.jwt.claims'), no set_config('role'), no Postgres role held by this gate`,
+];
+
+/* The fixture. Created once per gate run, shared by B1 and B2, and reported. */
+let SIGNED_FIXTURE = null;
+async function signedFixture() {
+  if (SIGNED_FIXTURE) return SIGNED_FIXTURE;
+  if (!SIGNED.ok || !SIGNED.writable) return (SIGNED_FIXTURE = { ok: false, why: SIGNED.notWritable || SIGNED.why });
+  const t = SIGNED.who.approver.tenant_id;
+  /* Re-use before creating: an interrupted run leaves a PROPOSED probe action,
+     and proposing a second one would grow the fixture once per failure. */
+  const open = await SIGNED.rest('approver', 'inventory_actions?select=id,unit_id,status&status=eq.PROPOSED&unit_id=like.GATE-PROBE-*&order=created_at');
+  if (open.status === 200 && Array.isArray(open.body) && open.body.length)
+    return (SIGNED_FIXTURE = { ok: true, unit: open.body[0].unit_id, action: open.body[0].id, created: false,
+      note: `re-used the PROPOSED probe action ${open.body[0].id} on unit ${open.body[0].unit_id}, left by an earlier run` });
+
+  const unit = `GATE-PROBE-${Date.now()}`;
+  const acquired = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10);
+  const ins = await SIGNED.rest('approver', 'inventory', {
+    method: 'POST', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({
+      id: unit, model: 'Quality gate probe unit', vin: `GATEPROBE${Date.now()}`,
+      status: 'Available', price_aed: 100000, cost_aed: 95000, acquired_at: acquired, tenant_id: t,
+    }),
+  });
+  if (ins.status !== 201)
+    return (SIGNED_FIXTURE = { ok: false, why: `the signed-in approver could not create a probe unit on its own dealership: HTTP ${ins.status} ${String(ins.text).slice(0, 200)}` });
+
+  const prop = await SIGNED.rpc('approver', 'action_propose', { p_unit_id: unit });
+  const pr = Array.isArray(prop.body) ? prop.body[0] : null;
+  if (prop.status !== 200 || !pr || pr.ok !== true || !pr.action)
+    return (SIGNED_FIXTURE = { ok: false, why: `action_propose() did not raise an action for probe unit ${unit}: HTTP ${prop.status} ${String(prop.text).slice(0, 300)}` });
+  if (pr.action.status !== 'PROPOSED')
+    return (SIGNED_FIXTURE = { ok: false, why: `action_propose() returned an action already in ${pr.action.status}, so there is no undecided action for B1 and B2 to act on` });
+  return (SIGNED_FIXTURE = { ok: true, unit, action: pr.action.id, created: true,
+    note: `created probe unit ${unit} (400 days in stock, AED 100,000 list against AED 95,000 cost, so the engine recommends ${pr.action.recommendation}) and proposed action ${pr.action.id}` });
+}
+/* One fixture unit and one action are left per COMPLETED run, and that is a
+   consequence of the product's own rule rather than of this lane being untidy:
+   action_propose() treats an APPROVED action as still open, so the same unit
+   cannot be re-proposed, and cancelling it instead puts the unit under
+   inventory_action_policy.reproposal_cooldown_days. So the honest answer is to
+   name the residue and hand over the statement that sweeps ALL of it. */
+const fixtureResidue = F => `THIS ARM WROTE TO ${SIGNED.url} AND THE ROWS PERSIST — there is no transaction to roll back over HTTP. Left behind by this run: unit ${F.unit}, action ${F.action}, and the audit and event rows the decision path wrote; a completed run leaves one of each, because an APPROVED action blocks re-proposal of its unit and a CANCELLED one starts a re-proposal cooldown. Remove every gate fixture with: delete from public.inventory_action_events where action_id in (select id from public.inventory_actions where unit_id like 'GATE-PROBE-%'); delete from public.audit_log where summary like '%unit GATE-PROBE-%'; delete from public.inventory_actions where unit_id like 'GATE-PROBE-%'; delete from public.inventory where id like 'GATE-PROBE-%'; -- audit_log carries no action_id column; action_write_audit() puts the unit id in the summary, and that is the only handle on those rows.`;
+
+/* ── B1, through the signed-in caller ───────────────────────────────────── */
+async function b1Signed() {
+  if (!SIGNED.ok) return { notrun: SIGNED.why };
+  if (!SIGNED.writable) return { notrun: SIGNED.notWritable };
+  const F = await signedFixture();
+  if (!F.ok) return { notrun: F.why };
+
+  const ap = SIGNED.who.approver, na = SIGNED.who.nonapprover, t = ap.tenant_id;
+  const a0 = await SIGNED.count('approver', `audit_log?tenant_id=eq.${t}`);
+  const e0 = await SIGNED.count('approver', `inventory_action_events?tenant_id=eq.${t}`);
+  const before = (await SIGNED.rest('approver', `inventory_actions?select=id,status,decided_at&id=eq.${F.action}`)).body[0] || {};
+
+  const ctx = (await SIGNED.rpc('nonapprover', 'action_approver_context')).body[0] || {};
+  const dec = await SIGNED.rpc('nonapprover', 'action_decide', { p_action_id: F.action, p_decision: 'APPROVE' });
+  const d = Array.isArray(dec.body) ? (dec.body[0] || {}) : {};
+  const afterFn = (await SIGNED.rest('approver', `inventory_actions?select=id,status,decided_at&id=eq.${F.action}`)).body[0] || {};
+
+  /* The second door. rpc/action_decide is not the only way to move this row and
+     a caller who ignores the UI will not politely use the front one. A COMPLETE
+     decision tuple is written on purpose: a status-only PATCH is refused by the
+     CHECK inventory_actions_decision_stamped before any privilege is consulted,
+     which reads as "refused" and is nothing of the kind. */
+  const patch = await SIGNED.rest('nonapprover', `inventory_actions?id=eq.${F.action}`, {
+    method: 'PATCH', headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ status: 'APPROVED', decided_at: new Date().toISOString(), decided_by_authority: 'GATE_PROBE_FORGED' }),
+  });
+  const patchedRows = Array.isArray(patch.body) ? patch.body.length : 0;
+  const patchCode = (patch.body && patch.body.code) || '';
+
+  const after = (await SIGNED.rest('approver', `inventory_actions?select=id,status,decided_at&id=eq.${F.action}`)).body[0] || {};
+  const a1 = await SIGNED.count('approver', `audit_log?tenant_id=eq.${t}`);
+  const e1 = await SIGNED.count('approver', `inventory_action_events?tenant_id=eq.${t}`);
+  const evs = (await SIGNED.rest('approver', `inventory_action_events?select=event&action_id=eq.${F.action}`)).body || [];
+  const refusals = evs.filter(x => x.event === 'APPROVAL_REFUSED' || x.event === 'ESCALATED').length;
+
+  const bad = [];
+  if (ctx.may_decide === true)
+    bad.push(`action_approver_context() told ${na.email}, whose account role is "${na.tenant_role}", that it MAY decide — this dealership's policy admits only {${(ap.approver_tenant_roles || []).join(', ')}}`);
+  if (d.ok === true)
+    bad.push(`rpc/action_decide ACCEPTED an APPROVE posted over HTTPS by a signed-in non-approver (${na.email}, role "${na.tenant_role}") — the refusal exists only in the UI`);
+  if (d.ok !== true && !['NOT_AN_APPROVER', 'NO_APPROVER_AT_DEALERSHIP'].includes(String(d.refusal_code)))
+    bad.push(`rpc/action_decide refused the non-approver with "${d.refusal_code}" — expected NOT_AN_APPROVER (or NO_APPROVER_AT_DEALERSHIP), and a different code means the refusal came from somewhere other than the authorisation arm`);
+  if (afterFn.status !== before.status)
+    bad.push(`the action moved from ${before.status} to ${afterFn.status} across the action_decide() call — the function's refusal did not hold`);
+  if (String(afterFn.decided_at || '') !== String(before.decided_at || ''))
+    bad.push(`decided_at changed (${before.decided_at} → ${afterFn.decided_at}) across a call that reported a refusal`);
+  if (patch.status >= 200 && patch.status < 300 && patchedRows > 0)
+    bad.push(`the same non-approver then bypassed the function entirely: PATCH /rest/v1/inventory_actions, forging a complete decision tuple, was ACCEPTED and rewrote ${patchedRows} row(s). rpc/action_decide is not the only door, and the table has to refuse too`);
+  if (after.status !== before.status)
+    bad.push(`by the end of this arm the action had moved from ${before.status} to ${after.status}`);
+  if (Number(a1 - a0) < 1 || refusals < 1)
+    bad.push(`the refusal was not recorded: ${a1 - a0} audit row(s) and ${refusals} APPROVAL_REFUSED/ESCALATED event(s) were written. A refusal nobody can read afterwards is not evidence of anything`);
+
+  const doorLine = (patch.status >= 200 && patch.status < 300 && patchedRows > 0) ? null
+    : String(patchCode) === '42501'
+      ? `the same caller's direct PATCH on /rest/v1/inventory_actions was refused by the GRANT: HTTP ${patch.status}, PostgREST code 42501 — "${String(patch.body && patch.body.message || '').slice(0, 80)}"`
+      : (patch.status >= 200 && patch.status < 300)
+        ? `the same caller's direct PATCH on /rest/v1/inventory_actions returned HTTP ${patch.status} and rewrote 0 rows — stopped by RLS, which is a row filter and not a privilege. CLAUDE.md: "0 rows" is evidence about RLS and never evidence that the privilege is absent`
+        : `INCONCLUSIVE on the second door: the PATCH came back HTTP ${patch.status} with code ${patchCode || '(none)'} — neither a privilege refusal nor a row filter, so this run says NOTHING about whether authenticated may write public.inventory_actions directly. The function arm above is what this result rests on`;
+
+  return {
+    bad,
+    ok: [
+      `RAN through the real signed-in path: GoTrue password grant at ${SIGNED.url}/auth/v1, then PostgREST with apikey + Authorization: Bearer. No set_config('role'), no set_config('request.jwt.claims') — the gap two-tenant-proof-2026-09-06.md §8.4 records`,
+      F.note,
+      `the caller is ${na.email}, a member of dealership ${short(t)} holding account role "${na.tenant_role}"${na.staff_role ? ` and job title "${na.staff_role}"` : ''}; the dealership's own inventory_action_policy admits only account roles {${(ap.approver_tenant_roles || []).join(', ')}} and job titles {${(ap.approver_staff_roles || []).join(', ') || 'none'}}`,
+      `action_approver_context() answered may_decide=${ctx.may_decide}, refusal_code=${ctx.refusal_code}, tenant_has_any_approver=${ctx.tenant_has_any_approver}`,
+      `POST /rest/v1/rpc/action_decide {APPROVE} answered HTTP ${dec.status}, ok=${d.ok}, refusal_code=${d.refusal_code}; the action stayed ${afterFn.status} and decided_at did not move`,
+      doorLine,
+      `the refusal was recorded: +${a1 - a0} audit row(s) and ${refusals} APPROVAL_REFUSED/ESCALATED event(s) on action ${F.action}`,
+      fixtureResidue(F),
+    ].filter(Boolean).concat(signedCensus()),
+  };
+}
+
+/* ── B2, through the signed-in caller ───────────────────────────────────── */
+async function b2Signed() {
+  if (!SIGNED.ok) return { notrun: SIGNED.why };
+  if (!SIGNED.writable) return { notrun: SIGNED.notWritable };
+  const F = await signedFixture();
+  if (!F.ok) return { notrun: F.why };
+
+  const ap = SIGNED.who.approver, ap2 = SIGNED.who.approver2, t = ap.tenant_id;
+  const state = (await SIGNED.rest('approver', `inventory_actions?select=id,status&id=eq.${F.action}`)).body[0] || {};
+  if (state.status !== 'PROPOSED')
+    return { notrun: `the probe action ${F.action} is already ${state.status}, so there is no first decision left to make and nothing for a second one to be idempotent against` };
+
+  const rc = (await SIGNED.rest('approver', 'inventory_action_reason_codes?select=code,applies_to,sort&order=sort.asc,code.asc')).body || [];
+  const rejectCode = (rc.find(r => Array.isArray(r.applies_to) && r.applies_to.includes('REJECT')) || {}).code || null;
+
+  const audit = () => SIGNED.count('approver', `audit_log?tenant_id=eq.${t}`);
+  const events = () => SIGNED.count('approver', `inventory_action_events?tenant_id=eq.${t}`);
+  const a0 = await audit(), e0 = await events();
+
+  const q1 = await SIGNED.rpc('approver', 'action_decide', { p_action_id: F.action, p_decision: 'APPROVE' });
+  const r1 = (Array.isArray(q1.body) ? q1.body[0] : null) || {};
+  const a1 = await audit(), e1 = await events();
+
+  const q2 = await SIGNED.rpc('approver', 'action_decide', { p_action_id: F.action, p_decision: 'APPROVE' });
+  const r2 = (Array.isArray(q2.body) ? q2.body[0] : null) || {};
+  const a2 = await audit(), e2 = await events();
+
+  let q3 = null, r3 = null, a3 = a2, e3 = e2;
+  if (rejectCode) {
+    q3 = await SIGNED.rpc('approver', 'action_decide', {
+      p_action_id: F.action, p_decision: 'REJECT', p_reason_code: rejectCode,
+      p_note: 'Quality gate probe: a conflicting second decision.',
+    });
+    r3 = (Array.isArray(q3.body) ? q3.body[0] : null) || {};
+    a3 = await audit(); e3 = await events();
+  }
+
+  const q4 = await SIGNED.rpc('approver2', 'action_decide', { p_action_id: F.action, p_decision: 'APPROVE' });
+  const r4 = (Array.isArray(q4.body) ? q4.body[0] : null) || {};
+  const a4 = await audit(), e4 = await events();
+  const evs = (await SIGNED.rest('approver', `inventory_action_events?select=event&action_id=eq.${F.action}`)).body || [];
+  const conflicts = evs.filter(x => x.event === 'DECISION_CONFLICT').length;
+
+  const s1 = (r1.action || {}).status, s2 = (r2.action || {}).status;
+  const d1 = (r1.action || {}).decided_at, d2 = (r2.action || {}).decided_at;
+  const bad = [];
+  if (r1.ok !== true)
+    bad.push(`the first decision was refused: ok=${r1.ok}, refusal_code=${r1.refusal_code}. ${ap.email} holds "${ap.tenant_role}", which this dealership's own policy admits, so a refusal here is a defect and not a precondition`);
+  if (r1.ok === true && s1 !== 'APPROVED') bad.push(`the first APPROVE reported ok=true and left the action in ${s1}`);
+  if (r1.ok === true && r1.idempotent === true) bad.push('the FIRST decision reported idempotent=true — it changed the state, so it was not a repeat of anything');
+  if (r2.ok !== true || r2.idempotent !== true)
+    bad.push(`the identical decision, repeated by the same account over a second HTTPS request, answered ok=${r2.ok} idempotent=${r2.idempotent} refusal=${r2.refusal_code} — the double-click is supposed to be recognised and answered ok=true, idempotent=true`);
+  if (Number(a2 - a1) !== 0 || Number(e2 - e1) !== 0)
+    bad.push(`the repeated decision wrote ${a2 - a1} audit row(s) and ${e2 - e1} event(s) — an idempotent repeat writes nothing, and anything counting audit rows to count decisions will now double-count this one`);
+  if (s2 !== s1 || String(d2 || '') !== String(d1 || ''))
+    bad.push(`the repeated decision moved the row: status ${s1} → ${s2}${String(d2 || '') !== String(d1 || '') ? ', and decided_at was rewritten' : ''} — that is a second state change, which is exactly what "one state change" forbids`);
+  if (r3) {
+    if (r3.ok !== false || r3.refusal_code !== 'ALREADY_DECIDED')
+      bad.push(`a REJECT arriving for an already-APPROVED action answered ok=${r3.ok}, refusal_code=${r3.refusal_code} — expected ok=false, ALREADY_DECIDED, because the first decision stands`);
+    if ((r3.action || {}).status !== s1) bad.push(`the conflicting REJECT moved the action from ${s1} to ${(r3.action || {}).status} — the first decision did not stand`);
+    if (Number(a3 - a2) < 1 || Number(e3 - e2) < 1)
+      bad.push(`the conflicting decision wrote ${a3 - a2} audit row(s) and ${e3 - e2} event(s) — a second person trying to overturn a decision has to be readable afterwards, and this one left no trace`);
+  }
+  if (r4.ok !== false || r4.refusal_code !== 'ALREADY_DECIDED')
+    bad.push(`the same APPROVE from a DIFFERENT approver (${ap2.email}) answered ok=${r4.ok}, refusal_code=${r4.refusal_code} — the idempotent arm is keyed on decided_by_auth_id, so another account repeating the decision must take the ALREADY_DECIDED branch and not be silently absorbed as a double-click`);
+  if (conflicts < 1) bad.push('not one DECISION_CONFLICT event was written across the conflicting attempts');
+
+  return {
+    bad,
+    ok: [
+      `RAN through the real signed-in path: five separate HTTPS requests to /rest/v1/rpc/action_decide, each carrying a JWT GoTrue issued to a real account`,
+      F.note,
+      `on dealership ${short(t)}, action ${F.action}, decided by two accounts that both hold an approving role: ${ap.email} ("${ap.tenant_role}") and ${ap2.email} ("${ap2.tenant_role}")`,
+      `first APPROVE: ok=${r1.ok}, idempotent=${r1.idempotent}, status ${s1}, +${a1 - a0} audit row(s), +${e1 - e0} event(s)`,
+      `the same APPROVE again from the same account: ok=${r2.ok}, idempotent=${r2.idempotent}, status ${s2}, +${a2 - a1} audit row(s), +${e2 - e1} event(s), decided_at unchanged — one state change`,
+      r3 ? `a conflicting REJECT (reason ${rejectCode}) from the same account: ok=${r3.ok}, refusal_code=${r3.refusal_code}, action still ${(r3.action || {}).status}, +${a3 - a2} audit row(s), +${e3 - e2} event(s) — refused AND recorded`
+         : 'the conflicting-REJECT arm did not run: this database carries no inventory_action_reason_codes row that applies to REJECT, and a rejection without a code is refused earlier for a different reason',
+      `the same APPROVE from a second approver: ok=${r4.ok}, refusal_code=${r4.refusal_code}, action still ${(r4.action || {}).status}, +${a4 - a3} audit row(s), +${e4 - e3} event(s)`,
+      `${conflicts} DECISION_CONFLICT event(s) recorded on this action`,
+      fixtureResidue(F),
+    ].concat(signedCensus()),
+  };
+}
+
+/* ── B3, through the signed-in caller, in both directions ───────────────── */
+async function b3Signed() {
+  if (!SIGNED.ok) return { notrun: SIGNED.why };
+  const ap = SIGNED.who.approver, ot = SIGNED.who.other;
+  if (!ot.tenant_id || ot.tenant_id === ap.tenant_id)
+    return { notrun: `both configured accounts resolve to dealership ${short(ap.tenant_id)}, so there is no dealership B whose rows could be withheld from a member of dealership A. This check needs two, and it will not report a clean isolation result against one` };
+
+  const bad = [], ok = [];
+  /* Neither direction writes and neither takes a row lock, so both run
+     wherever this lane is configured. */
+  for (const [meName, themName] of [['approver', 'other'], ['other', 'approver']]) {
+    const me = SIGNED.who[meName], them = SIGNED.who[themName];
+    const mine = me.tenant_id, theirs = them.tenant_id;
+
+    /* Non-vacuity first, and in the only way that is honest: THEIR rows are
+       read by THEM, so a zero below is a withheld row and not an empty table. */
+    const theirRows = (await SIGNED.rest(themName, `inventory_actions?select=id,status&tenant_id=eq.${theirs}&order=created_at`)).body;
+    const myRows    = (await SIGNED.rest(meName,   `inventory_actions?select=id&tenant_id=eq.${mine}`)).body;
+    if (!Array.isArray(theirRows) || !theirRows.length) {
+      bad.push(`dealership ${short(theirs)} holds no inventory_actions rows that its own signed-in member can read, so "0 visible to the other dealership" would say nothing — this check refuses to report a clean isolation result on an empty set`);
+      continue;
+    }
+    const target = theirRows[0];
+
+    const all      = (await SIGNED.rest(meName, 'inventory_actions?select=id,tenant_id')).body || [];
+    const crossed  = all.filter(r => r.tenant_id === theirs).length;
+    const filtered = (await SIGNED.rest(meName, `inventory_actions?select=id&tenant_id=eq.${theirs}`)).body || [];
+    const byId     = (await SIGNED.rest(meName, `inventory_actions?select=id&id=eq.${target.id}`)).body || [];
+    const queue    = await SIGNED.rest(meName, `v_inventory_action_queue?select=id&tenant_id=eq.${theirs}`);
+
+    const theirAudit0 = await SIGNED.count(themName, `audit_log?tenant_id=eq.${theirs}`);
+    const dq = await SIGNED.rpc(meName, 'action_decide', { p_action_id: target.id, p_decision: 'APPROVE' });
+    const dv = (Array.isArray(dq.body) ? dq.body[0] : null) || {};
+    const theirAudit1 = await SIGNED.count(themName, `audit_log?tenant_id=eq.${theirs}`);
+    const targetAfter = ((await SIGNED.rest(themName, `inventory_actions?select=id,status&id=eq.${target.id}`)).body || [])[0] || {};
+
+    const tag = `${me.email} (dealership ${short(mine)}) → dealership ${short(theirs)}`;
+    if (!Array.isArray(myRows) || !myRows.length)
+      bad.push(`${tag}: the caller could not read any of its OWN dealership's inventory_actions rows either, so every zero below is RLS denying everything rather than isolation working — the result is vacuous, not clean`);
+    if (crossed > 0) bad.push(`${tag}: an unqualified SELECT returned ${crossed} of the other dealership's ${theirRows.length} inventory_actions rows`);
+    if (filtered.length > 0) bad.push(`${tag}: a SELECT filtered to the other dealership's tenant_id returned ${filtered.length} row(s)`);
+    if (byId.length > 0) bad.push(`${tag}: the other dealership's action ${short(target.id)}, asked for by primary key, was returned`);
+    if (queue.status === 200 && Array.isArray(queue.body) && queue.body.length > 0)
+      bad.push(`${tag}: v_inventory_action_queue handed over ${queue.body.length} of the other dealership's rows — the view is a second door onto the same rows and it has to be locked too`);
+    if (dv.ok === true)
+      bad.push(`${tag}: rpc/action_decide ACCEPTED a decision on the other dealership's action ${short(target.id)}`);
+    else if (dv.refusal_code !== 'NOT_FOUND')
+      bad.push(`${tag}: rpc/action_decide refused the cross-dealership decision with "${dv.refusal_code}" rather than NOT_FOUND — a distinct code confirms the row exists, which is precisely what "the same answer for no such action and belongs to another dealership" was written to avoid`);
+    if (targetAfter.status !== target.status)
+      bad.push(`${tag}: the other dealership's action moved from ${target.status} to ${targetAfter.status}`);
+    if (Number(theirAudit1) !== Number(theirAudit0))
+      bad.push(`${tag}: the other dealership's audit_log went from ${theirAudit0} to ${theirAudit1} rows across the attempt — the NOT_FOUND arm returns before any write, so anything written there is a row about another dealership's action`);
+
+    ok.push(`${tag}: unqualified SELECT returned ${all.length} row(s), ${all.length - crossed} of its own and ${crossed} of theirs; filtered-by-tenant ${filtered.length}; by primary key ${byId.length}; v_inventory_action_queue ${queue.status === 200 ? (queue.body || []).length : `refused HTTP ${queue.status}`}`);
+    ok.push(`${tag}: non-vacuous — the other dealership's own signed-in member reads ${theirRows.length} row(s) there, and this caller reads ${(myRows || []).length} of its own, so the zeros are a withheld row and not an empty table`);
+    ok.push(`${tag}: rpc/action_decide(APPROVE) on ${short(target.id)} answered HTTP ${dq.status}, ok=${dv.ok}, refusal_code=${dv.refusal_code}; the action stayed ${targetAfter.status} and the other dealership's audit_log stayed at ${theirAudit1} rows — the refusal does not confirm the row exists`);
+  }
+
+  ok.push('this is the arm the two-tenant proof could not run: every request above carried a JWT that GoTrue signed and PostgREST verified. It does NOT extend to service_role, which is BYPASSRLS — n8n writes as service_role and nothing measured here filters it');
+  return { bad, ok: ok.concat(signedCensus()) };
+}
+
 /* ══ B1 ═══════════════════════════════════════════════════════════════════
    R7 proves the UI obeys a may_decide:false flag served from a stub. Nothing
    proves Postgres would refuse a caller who ignored the UI and posted to
@@ -3810,8 +4265,14 @@ end $$;`);
     } else if (ro) {
       measured.push(`read-only arm did not run: ${ro.why}`);
     }
+    /* The second transport. psql is not the only way to be a caller, and on a
+       machine that cannot open a Postgres socket it is not a way at all. */
+    const sig = await b1Signed();
+    if (sig && sig.bad) bad.push(...sig.bad);
     if (bad.length) {
-      B_VERDICT('B1', bad, []);
+      B_VERDICT('B1', bad, (sig && sig.ok) || []);
+    } else if (sig && sig.ok) {
+      B_VERDICT('B1', [], sig.ok.concat(measured));
     } else {
       const nonApprovers = CENSUS.b ? CENSUS.b.members.filter(m => !m.role_admits && !m.title_admits).length : null;
       B_NOTRUN('B1', measured, dot(PROBE.why || PROBE.how)
@@ -3819,16 +4280,24 @@ end $$;`);
         + (CENSUS.b
           ? `Measured on this database: ${CENSUS.b.members.length} membership(s), of which ${nonApprovers} may not approve.`
           : dot(`The precondition could not even be measured: ${CENSUS.why}`))
-        + ' Set NEXUS_STAGING_DB_URL to a staging Postgres carrying this schema and B1 runs there in full, inside a transaction that ends in ROLLBACK.');
+        + ' Set NEXUS_STAGING_DB_URL to a staging Postgres carrying this schema and B1 runs there in full, inside a transaction that ends in ROLLBACK.'
+        + ` The signed-in caller could not run either: ${dot(sig ? sig.notrun : 'it was not attempted')}`);
     }
   } else {
     const p = runProbe(PROBE.url, body);
-    if (!p.ok) {
-      B_NOTRUN('B1', measured, `the write probe could not run on ${PROBE.how}: ${p.why}`);
-    } else if (!p.v || p.v.runnable !== true) {
-      B_NOTRUN('B1', measured, dot(`the probe target is ${PROBE.how}`) + ` It measured: ${(p.v && p.v.why) || 'the probe returned nothing'}`);
+    const sig = await b1Signed();
+    const sigBad = (sig && sig.bad) || [], sigOk = (sig && sig.ok) || [];
+    if (!p.ok || !p.v || p.v.runnable !== true) {
+      /* The psql arm did not run. That is not a reason to ignore an arm that
+         did — a defect found by half a check is still a defect. */
+      const psqlWhy = !p.ok
+        ? `the write probe could not run on ${PROBE.how}: ${p.why}`
+        : dot(`the probe target is ${PROBE.how}`) + ` It measured: ${(p.v && p.v.why) || 'the probe returned nothing'}`;
+      if (sigBad.length) B_VERDICT('B1', sigBad, sigOk);
+      else if (sigOk.length) B_VERDICT('B1', [], sigOk.concat(measured, [`the psql arm did not run: ${psqlWhy}`]));
+      else B_NOTRUN('B1', measured, `${psqlWhy} The signed-in caller could not run either: ${dot(sig ? sig.notrun : 'it was not attempted')}`);
     } else {
-      const v = p.v, bad = [];
+      const v = p.v, bad = [...sigBad];
       if (p.moved.length) bad.push(`the probe was supposed to leave nothing behind and the row counts moved (${p.moved.join(', ')}) — refusing to report a result from a probe that mutated the database`);
       if (v.may_decide === true) bad.push(`action_approver_context() told an account holding the role "${v.role_used}" that it MAY decide, and this dealership's policy admits only {${(v.approver_roles || []).join(', ')}}`);
       if (v.dec_ok === true) bad.push(`action_decide() ACCEPTED an APPROVE from a non-approver (role "${v.role_used}") — the refusal exists only in the UI`);
@@ -3855,7 +4324,7 @@ end $$;`);
         directLine,
         `the refusal was recorded: ${v.audit_delta} audit row(s) and ${v.refusal_events} APPROVAL_REFUSED/ESCALATED event(s)`,
         `nothing persisted: the whole probe ran in a transaction that ended in ROLLBACK and the audit, event, action and membership counts were identical before and after (${Object.entries(p.counts).map(([k, n]) => `${k}=${n}`).join(', ')})`,
-      ].filter(Boolean).concat(measured));
+      ].filter(Boolean).concat(sigOk, measured));
     }
   }
 }
@@ -3954,19 +4423,30 @@ exception when others then
     'the probe could not complete on this database: SQLSTATE ' || sqlstate || ' — ' || replace(sqlerrm, '''', '')));
 end $$;`;
 
+  const sig = await b2Signed();
+  const sigBad = (sig && sig.bad) || [], sigOk = (sig && sig.ok) || [];
+
   if (!PROBE.url || !PROBE.writable) {
-    B_NOTRUN('B2', measured, dot(PROBE.why || PROBE.how)
+    if (sigBad.length) B_VERDICT('B2', sigBad, sigOk);
+    else if (sigOk.length) B_VERDICT('B2', [], sigOk.concat(measured));
+    else B_NOTRUN('B2', measured, dot(PROBE.why || PROBE.how)
       + ' B2 has to make a decision and then repeat it, so both of its arms are state changes by definition and neither has a read-only form; this gate will not open a write probe on production. '
       + (CENSUS.b
         ? `Measured on this database: ${CENSUS.b.actions_by_tenant.reduce((n, a) => n + Number(a.decidable || 0), 0)} action(s) are in a state a decision could still move, and ${CENSUS.b.members.filter(m => m.role_admits || m.title_admits).length} membership(s) may approve.`
         : dot(`The precondition could not even be measured: ${CENSUS.why}`))
-      + ' Set NEXUS_STAGING_DB_URL to a staging Postgres carrying this schema and B2 runs there in full, inside a transaction that ends in ROLLBACK.');
+      + ' Set NEXUS_STAGING_DB_URL to a staging Postgres carrying this schema and B2 runs there in full, inside a transaction that ends in ROLLBACK.'
+      + ` The signed-in caller could not run either: ${dot(sig ? sig.notrun : 'it was not attempted')}`);
   } else {
     const p = runProbe(PROBE.url, body);
-    if (!p.ok) B_NOTRUN('B2', measured, `the write probe could not run on ${PROBE.how}: ${p.why}`);
-    else if (!p.v || p.v.runnable !== true) B_NOTRUN('B2', measured, dot(`the probe target is ${PROBE.how}`) + ` It measured: ${(p.v && p.v.why) || 'the probe returned nothing'}`);
-    else {
-      const v = p.v, bad = [], r1 = v.r1, r2 = v.r2, r3 = v.r3, r4 = v.r4;
+    if (!p.ok || !p.v || p.v.runnable !== true) {
+      const psqlWhy = !p.ok
+        ? `the write probe could not run on ${PROBE.how}: ${p.why}`
+        : dot(`the probe target is ${PROBE.how}`) + ` It measured: ${(p.v && p.v.why) || 'the probe returned nothing'}`;
+      if (sigBad.length) B_VERDICT('B2', sigBad, sigOk);
+      else if (sigOk.length) B_VERDICT('B2', [], sigOk.concat(measured, [`the psql arm did not run: ${psqlWhy}`]));
+      else B_NOTRUN('B2', measured, `${psqlWhy} The signed-in caller could not run either: ${dot(sig ? sig.notrun : 'it was not attempted')}`);
+    } else {
+      const v = p.v, bad = [...sigBad], r1 = v.r1, r2 = v.r2, r3 = v.r3, r4 = v.r4;
       if (p.moved.length) bad.push(`the probe was supposed to leave nothing behind and the row counts moved (${p.moved.join(', ')}) — refusing to report a result from a probe that mutated the database`);
       if (r1.ok !== true) bad.push(`the first decision was refused: ok=${r1.ok}, refusal_code=${r1.code}. The identity holds "${v.approver_role}", which this dealership's own policy admits as an approver, so a refusal here is a defect and not a precondition`);
       if (r1.ok === true && r1.status !== 'APPROVED') bad.push(`the first APPROVE reported ok=true and left the action in ${r1.status}`);
@@ -4001,7 +4481,7 @@ end $$;`;
         `the same APPROVE from a second approver: ok=${r4.ok}, refusal_code=${r4.code}, action still ${r4.status}, +${r4.audit} audit row(s), +${r4.events} event(s)`,
         `${v.conflict_events} DECISION_CONFLICT event(s) recorded`,
         `nothing persisted: the whole probe ran in a transaction that ended in ROLLBACK and the audit, event, action and membership counts were identical before and after (${Object.entries(p.counts).map(([k, n]) => `${k}=${n}`).join(', ')})`,
-      ].concat(measured));
+      ].concat(sigOk, measured));
     }
   }
 }
@@ -4093,18 +4573,34 @@ exception when others then
     'the probe could not complete on this database: SQLSTATE ' || sqlstate || ' — ' || replace(sqlerrm, '''', '')));
 end $$;`;
 
+  /* THE VERDICT IS THE SIGNED-IN ARM'S. The psql arm below reaches Postgres by
+     setting `request.jwt.claims` and `role` with set_config() — which is how
+     PostgREST PRESENTS a JWT and is not a signed JWT that travelled through it.
+     That distinction is the whole subject of B3 and the reason
+     two-tenant-proof-2026-09-06.md §8.4 records it as NOT RUN. So the GUC arm
+     may still FAIL this check — a hole it finds is a real hole — but it may not
+     PASS it on its own, and a clean GUC arm with no signed-in arm is NOT RUN. */
+  const sig = await b3Signed();
+  const sigBad = (sig && sig.bad) || [], sigOk = (sig && sig.ok) || [];
+  const sigRan = !!(sig && sig.bad);
+  const gucNotRun = why => {
+    if (sigBad.length) B_VERDICT('B3', sigBad, sigOk);
+    else if (sigRan) B_VERDICT('B3', [], sigOk.concat(measured, [`the psql arm did not run: ${why}`]));
+    else B_NOTRUN('B3', measured, `${dot(why)} The signed-in caller could not run either: ${dot(sig ? sig.notrun : 'it was not attempted')}`);
+  };
+
   if (!PROBE.url) {
-    B_NOTRUN('B3', measured, dot(PROBE.why) + ' '
+    gucNotRun(dot(PROBE.why) + ' '
       + (CENSUS.b
         ? `The catalogue says this database holds ${CENSUS.b.tenants} dealership(s)${Number(CENSUS.b.tenants) < 2 ? ', so there is no dealership B whose rows could be withheld' : ', which is enough to attempt it'}, but a catalogue has no caller and this check is about what Postgres does with one.`
         : dot(`The precondition could not even be measured: ${CENSUS.why}`))
       + ' Point NEXUS_DB_URL or NEXUS_STAGING_DB_URL at a database with two dealerships and both arms run: neither writes and neither takes a row lock.');
   } else {
     const p = runProbe(PROBE.url, body);
-    if (!p.ok) B_NOTRUN('B3', measured, `the probe could not run on ${PROBE.how}: ${p.why}`);
-    else if (!p.v || p.v.runnable !== true) B_NOTRUN('B3', measured, dot(`the probe target is ${PROBE.how}`) + ` It measured: ${(p.v && p.v.why) || 'the probe returned nothing'}`);
+    if (!p.ok) gucNotRun(`the probe could not run on ${PROBE.how}: ${p.why}`);
+    else if (!p.v || p.v.runnable !== true) gucNotRun(dot(`the probe target is ${PROBE.how}`) + ` It measured: ${(p.v && p.v.why) || 'the probe returned nothing'}`);
     else {
-      const v = p.v, bad = [];
+      const v = p.v, bad = [...sigBad];
       if (p.moved.length) bad.push(`both arms of this check are supposed to write nothing and the row counts moved (${p.moved.join(', ')}) — refusing to report a result from a probe that mutated the database`);
       /* Non-vacuity first, in both directions. A zero is only evidence when a
          non-zero was possible, and when the same reader can see its own rows. */
@@ -4124,15 +4620,21 @@ end $$;`;
         bad.push(`dealership B's action moved from ${v.status_before} to ${v.status_after}`);
       if (Number(v.audit_delta) !== 0 || Number(v.event_delta) !== 0)
         bad.push(`the cross-dealership decision wrote ${v.audit_delta} audit row(s) and ${v.event_delta} event(s) — the NOT_FOUND arm returns before any write, so anything written here is a row about another dealership's action`);
-      B_VERDICT('B3', bad, [
-        `RAN against ${PROBE.how}`,
+      const gucOk = [
+        `the psql arm ALSO ran against ${PROBE.how}, presenting a JWT through set_config() rather than signing in — recorded as a second, weaker measurement`,
         `dealership A = ${short(v.tenant_a)} (${v.a_rows} action rows), dealership B = ${short(v.tenant_b)} (${v.b_rows} action rows); the caller is an account that is a member of A and of nothing else`,
         `read arm: as that member, SELECT on public.inventory_actions returned ${v.visible_total} row(s) — ${v.visible_a} of A's and ${v.visible_b} of B's; ${v.queue_state === 'read' ? `v_inventory_action_queue returned ${v.queue_b} of B's rows` : v.queue_state}`,
         `non-vacuous: B's ${v.b_rows} rows are readable to the owner of this session and A's own ${v.visible_a} were visible to the member, so the zero is isolation and not an empty table`,
         `write arm: action_decide(APPROVE) on B's action ${short(v.action_b)} answered ok=${v.decide_ok}, refusal_code=${v.decide_code}; B's action stayed ${v.status_after} and 0 audit rows and 0 events were written — the refusal does not confirm the row exists`,
         'this does NOT rest on the 2 Sep 2026 two-tenant proof: that pass ran 08:44–08:54 UTC and every Action Center object it would have needed was created at 18:12 that day or later, so it could not have covered any of this',
         `nothing persisted: the whole probe ran in a transaction that ended in ROLLBACK and the row counts were identical before and after (${Object.entries(p.counts).map(([k, n]) => `${k}=${n}`).join(', ')})`,
-      ].concat(measured));
+      ];
+      /* A clean GUC arm is not a pass on its own — it did not sign in. */
+      if (bad.length) B_VERDICT('B3', bad, sigOk.concat(gucOk, measured));
+      else if (sigRan) B_VERDICT('B3', [], sigOk.concat(gucOk, measured));
+      else B_NOTRUN('B3', measured.concat(gucOk),
+        'the only arm that ran reached Postgres through set_config(\'request.jwt.claims\') and set_config(\'role\'), which is how PostgREST presents a JWT and is not a signed JWT travelling through PostgREST. It found nothing wrong — that is recorded above as measured evidence, not as a pass — and B3 exists to assert the signed-in path specifically. '
+        + `The signed-in caller could not run: ${dot(sig ? sig.notrun : 'it was not attempted')}`);
     }
   }
 }
@@ -4167,6 +4669,18 @@ end $$;`;
   const measured = [
     `NEXUS_LIVE_URL ${present('url')}${L.url ? ` (${L.url})` : ''}, NEXUS_LIVE_ANON_KEY ${present('anon')}, NEXUS_LIVE_ACCESS_TOKEN ${present('token')}, NEXUS_LIVE_EMAIL ${present('email')}, NEXUS_LIVE_PASSWORD ${present('password')}`,
   ];
+  /* B4 reads and renders; it never writes. So when no live credential is
+     configured but a signed-in STAGING caller is, it runs there rather than
+     reporting NOT RUN — a rendered-versus-live comparison against a fixture
+     dealership is a smaller claim than against production, and the evidence
+     below says which project it ran against. It does NOT silently borrow the
+     staging project when NEXUS_LIVE_URL names a different one: a half-live,
+     half-staging comparison would be a figure with two derivations. */
+  if (!L.url && !L.anon && !L.token && SIGNED.ok) {
+    L.url = SIGNED.url; L.anon = SIGNED.anon;
+    L.email = SIGNED.who.approver.email; L.password = process.env.NEXUS_STAGING_APPROVER_PASSWORD || '';
+    measured.push(`no NEXUS_LIVE_* credential is set, so this ran against the signed-in staging caller instead: ${SIGNED.url} (Supabase project ${SIGNED.ref}) as ${L.email}, a real member of dealership ${short(SIGNED.who.approver.tenant_id)}. That is a fixture dealership, not a paying one`);
+  }
   const missing = [];
   if (!L.url) missing.push('NEXUS_LIVE_URL');
   if (!L.anon) missing.push('NEXUS_LIVE_ANON_KEY');
@@ -4224,14 +4738,66 @@ end $$;`;
            it: a check about a dealership's figures must not depend on a font CDN
            being reachable from wherever this gate happens to be running. */
         await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ status: 200, body: '', contentType: 'text/css' }));
+        /* WHETHER THE BROWSER COULD REACH THE PROJECT AT ALL, counted from the
+           browser's own network events rather than inferred from a blank
+           screen. Without this the two answers "the app is broken" and "this
+           machine's egress will not carry a browser to Supabase" arrive as the
+           same red line — and one of them is a defect in the product while the
+           other is a defect in where the gate happens to be running. On
+           6 Sep 2026 it was the second: curl reached the project fine and
+           chromium's TLS handshake was cut by the session's egress proxy every
+           time, so B4 reported a FAIL that said four units were missing from a
+           screen that had never rendered. */
+        const net = { ok: 0, failed: [], origin: new URL(L.url).origin };
+        page.on('response', r => { if (r.url().startsWith(net.origin)) net.ok++; });
+        page.on('requestfailed', r => { if (r.url().startsWith(net.origin)) net.failed.push(`${r.method()} ${r.url().slice(net.origin.length).split('?')[0]} — ${(r.failure() || {}).errorText || 'no reason given'}`); });
+        /* HOW THIS SESSION IS OBTAINED, and why it changed on 6 Sep 2026.
+           This used to hand-build a session object into localStorage under
+           supabase-js's storage key. Two things were wrong with it. supabase-js
+           2.110 did not accept the hand-built value at all — measured: zero
+           network requests to the project, boot() fell straight through to the
+           login card, and B4 reported "5 of 5 units do not appear" about a
+           screen that had never rendered. And the fabricated user object
+           carried no `email`, while app.js boot() reads SESSION.user.email to
+           find the staff row — so even a session it HAD accepted would have
+           been a session no real sign-in produces.
+
+           When a password is available the gate now signs in through the app's
+           own login form, which is the path a dealership uses. The injection
+           survives only for NEXUS_LIVE_ACCESS_TOKEN, where there is no password
+           to type, and it is reported as the weaker route. */
         const ref = new URL(L.url).hostname.split('.')[0];
-        const exp = Math.floor(Date.now() / 1000) + 3600;
-        await page.addInitScript(([k, t, e]) => {
-          localStorage.setItem(k, JSON.stringify({ access_token: t, token_type: 'bearer', expires_in: 3600, expires_at: e, refresh_token: 'gate-no-refresh',
-            user: { id: 'live', aud: 'authenticated', role: 'authenticated' } }));
-        }, [`sb-${ref}-auth-token`, token, exp]);
+        const viaForm = !!(L.email && L.password);
+        if (!viaForm) {
+          const exp = Math.floor(Date.now() / 1000) + 3600;
+          await page.addInitScript(([k, t, e]) => {
+            localStorage.setItem(k, JSON.stringify({ access_token: t, token_type: 'bearer', expires_in: 3600, expires_at: e, refresh_token: 'gate-no-refresh',
+              user: { id: 'live', aud: 'authenticated', role: 'authenticated' } }));
+          }, [`sb-${ref}-auth-token`, token, exp]);
+        }
         await page.goto('http://127.0.0.1:8072/', { waitUntil: 'load' });
-        await page.waitForTimeout(2500);
+        await page.waitForTimeout(1500);
+        if (viaForm) {
+          try {
+            await page.waitForSelector('#li', { timeout: 8000 });
+            await page.fill('#li', L.email);
+            await page.fill('#lp', L.password);
+            await page.click('#lgo');
+          } catch { /* no login card: the app may already consider itself signed in */ }
+          /* Wait on an OUTCOME, not on a stopwatch. A sign-in that this
+             machine's egress is going to reset takes longer to fail than it
+             takes to succeed — measured at over six seconds — and a fixed
+             timeout short enough to keep the gate quick was reading "Signing
+             in…" as "did not sign in", with no network event recorded either
+             way. That is how a check that could not run reports a failure. */
+          for (let i = 0; i < 60; i++) {
+            await page.waitForTimeout(500);
+            const inApp = await page.evaluate(() => !document.getElementById('app').classList.contains('hide'));
+            if (inApp || net.failed.length) break;
+          }
+        } else {
+          await page.waitForTimeout(1000);
+        }
         const loggedIn = await page.evaluate(() => !document.getElementById('app').classList.contains('hide'));
         await page.evaluate(() => { location.hash = 'inventory'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
         await page.waitForTimeout(2500);
@@ -4240,12 +4806,20 @@ end $$;`;
           return { text: host.innerText || '', len: host.innerHTML.length, errored: /Couldn.t load/.test(host.innerHTML) };
         });
         await browser.close(); srv.close();
-        live4 = { loggedIn, screen };
+        live4 = { loggedIn, screen, net, viaForm };
       } catch (e) { live4 = { failed: String(e.message || e) }; }
 
       if (live4.failed) {
         B_NOTRUN('B4', measured.concat([`read ${expected.length} unit(s) from ${source}`]),
           `the live render could not be produced: ${live4.failed}`);
+      } else if (!live4.loggedIn && live4.net && live4.net.ok === 0 && live4.net.failed.length) {
+        /* The browser never got a single response out of the project. There is
+           nothing to compare and nothing has been shown about the app: a FAIL
+           here would be this gate crying wolf about its own network. */
+        B_NOTRUN('B4', measured.concat([
+          `read ${expected.length} unit(s) from ${source} — the gate's OWN process reached ${L.url} without trouble, so the project is up and the credentials work`,
+          `the headless browser made ${live4.net.failed.length} request(s) to ${live4.net.origin} and ${live4.net.ok} of them returned anything at all. First failures: ${live4.net.failed.slice(0, 3).join(' · ')}`,
+        ]), `the browser this gate drives could not reach ${live4.net.origin}, so the app never signed in and no screen was rendered to compare. This says nothing about the dashboard: the gate process itself read the units from the same project seconds earlier over the same TLS. It is the browser's egress that failed, and a rendered-versus-live comparison cannot be made without one. Run this gate somewhere the headless browser can reach ${live4.net.origin} directly.`);
       } else {
         const bad = [];
         const money = v => {
@@ -4270,7 +4844,7 @@ end $$;`;
         if (missingRows.length) bad.push(`${missingRows.length} of ${expected.length} unit(s) this dealership's database returns do not appear on the Inventory screen at all: ${missingRows.slice(0, 8).join(', ')}${missingRows.length > 8 ? ' …' : ''}`);
         if (wrongFigures.length) bad.push(...wrongFigures.slice(0, 8));
         B_VERDICT('B4', bad, [
-          `RAN against ${L.url}, signed in ${L.token ? 'with NEXUS_LIVE_ACCESS_TOKEN' : `as ${L.email}`}`,
+          `RAN against ${L.url}, signed in ${live4.viaForm ? `through the app's own login form as ${L.email} — the same path a dealership uses` : 'by placing NEXUS_LIVE_ACCESS_TOKEN in the storage key supabase-js reads, which is weaker than typing a password into the form'}`,
           `the gate read ${expected.length} unit(s) itself from ${source} — a second, independent read, so a fetch bug in lib/data.js cannot cancel out against it`,
           `every one of those ${expected.length} unit ids appears on the Inventory screen, and every non-null price_aed appears in the exact string lib/format.js would produce for it`,
           `${live4.screen.len} characters rendered; the comparison is completeness and figure fidelity, and it does not claim the screen shows no OTHER unit`,
