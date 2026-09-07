@@ -113,6 +113,8 @@ import { aed, ago, dubaiStamp, esc, mins, n0, num, pill, tone } from '../lib/for
    labelled itself. The workflow-history line in the Actions cell used to print
    the raw status beside the workflow name, which is a verdict, not a quote. */
 import { outcomeOf, outcomeWords } from '../lib/health.js';
+import { attributionCompleteness, attributionConfidence, ORIGIN_NOT_RECORDED, WRITER_COLUMN_LABEL, WRITER_COLUMN_NOTE }
+  from '../lib/vocabulary.js';
 import { AMBIGUITY, describeKey, expandIdentity, KEY_SHAPE, keyShape, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { openModal } from '../lib/modal.js';
@@ -369,12 +371,21 @@ SCREENS.leads = async host => {
      nice-to-have, and its failure withholds them. */
   const contactsRead = db('whatsapp_contacts?select=chat_id,phone,push_name,lead_email'
     + `&limit=${CONTACT_LIMIT}`);
+  /* Where each lead actually came from. This is a SEPARATE read from `leads`
+     on purpose: leads.source is the workflow that WROTE the row, and for every
+     real lead this dealership has it reads `nexus-master-router`. The origin
+     lives in the lead-ingestion layer, on columns the dealer plane is denied by
+     column grant, and nexus_lead_attribution() is the accessor that projects it.
+     A lead with no row here has no recorded arrival — which is a different fact
+     from an unknown platform, and the cell below keeps them apart. */
+  const attribRead = db('rpc/nexus_lead_attribution');
   /* Marked handled now: all three are awaited later, and an early rejection
      would otherwise surface in the console instead of in the strip that
      reports it. */
   attnRead.catch(() => {});
   commRead.catch(() => {});
   contactsRead.catch(() => {});
+  attribRead.catch(() => {});
 
   let all = [];
   let leadsErr = null;
@@ -388,6 +399,17 @@ SCREENS.leads = async host => {
   const [attn, attnErr] = await settle(attnRead);
   const [comms, commsErr] = await settle(commRead);
   const [contacts, contactsErr] = await settle(contactsRead);
+  const [attribRows, attribErr] = await settle(attribRead);
+
+  /* One attribution row per lead, newest arrival wins. A lead can have more than
+     one lead_event — a re-enquiry is a second arrival, not a second customer —
+     and the most recent one is the one a salesperson is working from. */
+  const attribByLead = new Map();
+  for (const a of (attribRows || [])) {
+    if (a.lead_id == null) continue;                 /* an arrival that never became a lead */
+    const prev = attribByLead.get(a.lead_id);
+    if (!prev || String(a.received_at || '') > String(prev.received_at || '')) attribByLead.set(a.lead_id, a);
+  }
 
   /* ── Identity ────────────────────────────────────────────────────────────
      One expansion per lead, seeded from the row and bridged through
@@ -990,7 +1012,10 @@ SCREENS.leads = async host => {
            so a source called "Facebook  Lead Ads" or a rep called "Ali Hassan " selected
            an option that could never equal the stored string: 0 of N leads, an empty
            table and nothing on screen saying why. -->
-      <select id="fSource" aria-label="Filter by source" style="width:auto"><option value="ALL">All sources</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
+      <!-- Filters on leads.source, which is the WRITER, so it is labelled as the
+           writer. Renaming the column in the table and leaving this one saying
+           "source" would have moved the wrong word rather than removed it. -->
+      <select id="fSource" aria-label="Filter by which part of NEXUS wrote the row" title="${esc(WRITER_COLUMN_NOTE)}" style="width:auto"><option value="ALL">Written by: any</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
       <select id="fRep" aria-label="Filter by assigned rep" style="width:auto"><option value="ALL">All reps</option><option value="__none">Unassigned</option>${reps.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
       <select id="fSort" aria-label="Sort leads" style="width:auto">${Object.entries(SORTS)
         .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
@@ -1079,7 +1104,47 @@ SCREENS.leads = async host => {
           <div class="bar" style="width:44px"><i style="width:${s}%;background:var(--${c})"></i></div>
           <span style="font-weight:500;min-width:22px;text-align:right">${s}</span></div>`;
       }},
-    { label:'Source', render: r => `<span class="chip nowrap" title="${esc(r.source || '')}">${esc(r.source || '—')}</span>` },
+    /* ── Where it came from ──────────────────────────────────────────────
+       This column was headed "Source" and rendered `leads.source`, which is the
+       name of the workflow that wrote the row. Every real lead here reads
+       `nexus-master-router`, so the column has been showing a salesperson the
+       writer and calling it the origin.
+
+       Three cases, kept apart because collapsing any two of them is how the
+       old cell lied:
+
+         · an arrival WAS recorded  -> the platform, with how we know it
+         · no arrival was recorded  -> say exactly that. NOT "unknown platform":
+                                       there is no arrival to have found a
+                                       platform in.
+         · the attribution read failed -> say the question could not be asked.
+                                       Blank would read as "no origin".
+
+       Nothing here maps a workflow name onto a platform, and UNKNOWN renders
+       as UNKNOWN. */
+    { label:'Came from', render: r => {
+        if (attribErr) {
+          return `${pill('Not read', 'unknown', { verbatim: false })}
+                  <div class="cell-sub">Where this lead came from could not be read, so nothing is claimed either way.</div>`;
+        }
+        const a = attribByLead.get(r.id);
+        if (!a) {
+          return `${pill('No arrival recorded', 'unknown', { verbatim: false })}
+                  <div class="cell-sub">${esc(ORIGIN_NOT_RECORDED)}</div>
+                  <div class="cell-sub"><span style="font-weight:600">${esc(WRITER_COLUMN_LABEL)}</span> ${esc(r.source || '—')}</div>`;
+        }
+        const conf = attributionConfidence(a.ad_platform_confidence);
+        const comp = attributionCompleteness(a.attribution_completeness);
+        const platformKnown = a.ad_platform && String(a.ad_platform).toUpperCase() !== 'UNKNOWN';
+        return `<div>${platformKnown
+                  ? pill(String(a.ad_platform), conf ? conf.tone : 'unknown', { verbatim: true })
+                  : pill('Unknown platform', 'unknown', { verbatim: false })}</div>`
+             + (conf ? `<div class="cell-sub">${esc(conf.label)}</div>` : '')
+             + (comp ? `<div class="cell-sub">${esc(comp.label)}</div>` : '')
+             + (a.campaign_name ? `<div class="cell-sub">${esc(a.campaign_name)}</div>` : '')
+             + (a.is_test_traffic
+                 ? `<div class="cell-sub"><span class="t-hot">Test traffic — counted nowhere as business.</span></div>` : '');
+      }},
     /* Three columns can name an owner and this cell reads all three, in the same
        order lib/lead-drawer.js does. Reading only the users embed made a lead
        owned through the plain `assigned_to` column render "Unassigned" here
