@@ -1694,6 +1694,67 @@ executions — 0 of 51 messages — were genuine customer conversation.** All 51
 The audit said most of the traffic is not customer conversation; in this window
 **none** of it was.
 
+## The template literal is not the SQL — 7 September 2026
+
+R2 and R3 had been red on every CI run since 6 September. The cause was the one
+this file predicts: `QUALITY_GATE.mjs` carries an embedded schema snapshot, it
+was anchored to migration `20260906071310`, and the twenty-odd functions added
+since — `nexus_lead_record_manual`, `nexus_lead_assign_owner`,
+`nexus_lead_attribution`, `nexus_lead_trace` among them — were absent from it,
+so the offline PostgREST stub answered `404 PGRST202` to screens that are
+correct. Refreshed against production: **156 functions, 110 relations, anchor
+`20260907154626` at count 310**, and the offline lanes now exit 0 with R0..R7 all
+PASS. Migration hygiene, function grants and the secret scan are clean too.
+
+**The correction matters more than the refresh.** `CATALOGUE_SQL` contains a call
+to an aggregate that exists in no Postgres. That was read, correctly identified
+as impossible, and written up as *"the gate's own SQL is broken, so
+`--refresh-schema` cannot work as shipped"*. **It is not broken.** A `.replace()`
+at the end of that template strips the whole `'sentinel'` key before the SQL
+leaves the file, and the count it reaches for is selected as
+`meta.sentinel_units` instead. Proved the only way that counts: `--print-sql`
+was run, piped verbatim into production, and returned **482,833 characters with
+no error**.
+
+So: **read what `--print-sql` emits, never the template literal.** This is the
+fifth entry in the same family — a boolean spelled `on` and not `true`, a policy
+predicate written `1=1` and not `true`, `relacl` that was not the ACL, a
+`proacl` clean because the grant was held through PUBLIC, and now a SQL string
+that is not the SQL. The dead fragment is deliberately left in place with a
+comment explaining it, and that comment deliberately does **not** name the
+aggregate: a name written into a comment is carried into the emitted SQL and
+would make the grep the comment exists to recommend find it.
+
+Same day, same shape, caught before it was written down: a check for the T12
+owner-audit trigger on production reported **false** and looked like a missing
+migration. The trigger is called `nexus_leads_owner_change_audit_trg`; the query
+had asked for `nexus_leads_owner_change_audit`, which is the **function**. All
+twelve migrations were then verified live object by object. **The wrong witness
+answers confidently.**
+
+### The migration history stops twelve migrations short of the database
+
+`supabase_migrations.schema_migrations` on production ends at **`20260907154626`
+with 310 rows**. Twelve repository migrations numbered above it —
+`20260907160000` through `20260908090000` — are **live on production** and were
+checked object by object, but they were applied through `execute_sql` rather
+than `apply_migration`, so nothing recorded them.
+
+Two consequences, and neither is a CI blocker because L11 and L13 need a
+database CI must not hold:
+
+- **A live L13 will call those twelve unapplied.** That is the history being
+  incomplete, not the catalogue being stale, and the distinction is written into
+  the snapshot's own `source` field so the next reader meets it there.
+- **`ops/PARITY-2026-09-06.md`'s "byte-exact over the 288 shared migrations" is
+  keyed on version.** A version the history never recorded is outside that
+  rollup entirely — which is the caveat that file already states about itself,
+  now with twelve concrete instances behind it.
+
+The fix is to stamp those twelve into `schema_migrations`, and it should be done
+deliberately rather than as a side effect of the next piece of work: stamping a
+version whose file has since been edited is how a parity rollup starts lying.
+
 ## Corrections to what this file used to say
 
 - **`saveDataSuccessExecution` on the WhatsApp workflow is `"all"`, not

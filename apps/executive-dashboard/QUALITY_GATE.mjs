@@ -250,108 +250,119 @@ if (ARGV.includes('--no-db')) {
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-06T11:22:02Z",
-  "source": "--catalogue /home/claude/out/catalogue.prod.2026-09-06T1122Z.json — live catalogue of Supabase PRODUCTION project dsvuoovivysszdoiorch, read 6 Sep 2026 at 11:22:02Z, ANCHORED TO MIGRATION 20260906071310 (286 recorded). max(version) of supabase_migrations.schema_migrations was read at 11:17:00Z before this reading and again at 11:23:42Z after it, both 20260906071310 with count 286, and the body statement re-selected the same head/count inside its own transaction — so no migration landed across the reading. There is no NEXUS_DB_URL and no psql credential in this environment, so the catalogue was read through mcp__Supabase__execute_sql in TWO statements: (A) the whole catalogue with function bodies blanked, and (B) the 132 function bodies keyed by (name, identity arguments). Each was returned base64-encoded alongside the length and md5 Postgres computed for the same text, decoded locally and accepted only after BOTH matched (A: 75492 chars, md5 a1398b0bebfdc2bb2be931d15ce1897e; B: 363687 chars, md5 ecddb46730c61e85ae4e55e2d9112890). Bodies were spliced by function identity, never by position; a duplicate identity or a body with no matching function would have aborted the splice, and neither occurred. Statement A is CATALOGUE_SQL with its /* */ comments stripped and whitespace collapsed, to fit the tool's request limit - no clause was altered, added or removed, and the strip was verified by tokenising both texts and confirming all 293 string literals survive in identical order. The reassembly was then re-verified against the counts Postgres computed for itself in the same statement: 132 functions, 341191 characters of function source, 99 relations, all three matching meta.*_expected. Re-anchoring pass: the previous snapshot stood at 20260906071310's predecessor 20260906062139/282, and the four migrations between them renamed evidence_today to platform_evidence on v_deal_rescue_readiness and deal_rescue_prerequisites, added gross_margin_state to inventory, and restored the inventory write grants - which is why R2/R3 failed and L13 could not run against the older snapshot.",
+  "takenAt": "2026-09-07T18:33:57Z",
+  "source": "--catalogue /tmp/cat/catalogue.json — production dsvuoovivysszdoiorch, 7 Sep 2026. This container has no NEXUS_DB_URL and no psql reach, so the catalogue was taken through the Supabase MCP: CATALOGUE_SQL was materialised into a temporary table and transferred out base64 in seven chunks (base64 md5 6011abc665862270b73f2490edce0da0, decoded md5 ddbbf264530394f598b2b9a5d4467155, 482,043 bytes). That transfer is the part a later reader should distrust, so it was checked against a second catalogue built in one statement from the SQL `--print-sql` emits verbatim: all 156 functions agree field by field on name, args, secdef, acl and body hash (symmetric difference 0 in both directions), all 110 relations agree on their column lists (symmetric difference 0), and the migration anchor is the same head 20260907154626 at count 310. The two differ only in JSON key order and spacing, because one passed through a re-serialiser and the other did not. Both staging tables (public.zz_cat, public.zz_cat2) were dropped from production afterwards and verified gone. NOTE FOR L13: the anchor 20260907154626/310 is the whole of supabase_migrations.schema_migrations, and twelve repository migrations numbered above it (20260907160000 .. 20260908090000) are LIVE on production but were applied through execute_sql rather than apply_migration, so the history does not record them. Their objects were checked one by one and are present. A live L13 run will therefore report them as landed-past-the-anchor; that is the history being incomplete, not the catalogue being stale.",
   "relations": {
-    "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
-    "attribution_event_type": "event,seq,state,source_ref,finding",
-    "attribution_link_basis": "basis,rank,is_evidence,default_confidence,label,description",
-    "audit_log": "id,workflow,status,lead_name,lead_email,lead_score,intent,summary,logged_at,tenant_id",
-    "channel_message_events": "event_id,tenant_id,integration_id,provider,channel_type,direction,external_message_id,customer_external_id,customer_phone,conversation_id,message_kind,media_ref,media_mime,media_sha256,provider_account_id,provider_delivery_ref,origin_verified,received_at,recorded_at",
-    "channel_provider_capability": "provider,send_form,support_state,basis,evidence,verified_at,set_by,created_at",
-    "channel_provider_rank": "provider,rank,is_official_platform,rationale,set_by,created_at",
-    "channel_registry": "integration_id,tenant_id,channel_type,external_identifier,credential_ref,status,created_at,updated_at",
-    "channel_send_directive": "directive_id,tenant_id,requested_by,request_ref,customer_external_id,intent,requested_send_form,directive,outcome,reason_code,reason,what_would_change_it,integration_id,provider,channel_type,external_identifier,credential_ref,carrier_rule,candidates_considered,resolved_send_form,message_body,template_ref,template_variables,template_category_required,template_verification,media_ref,media_mime,policy_decision,policy_reason_code,policy_applied_rule_id,policy_rule_verification_status,policy_window_state,policy_evaluated_at,capability_state,capability_basis,whatsapp_capability_state,routed_at,routed_by,send_result,provider_message_id,provider_error_code,provider_error_detail,result_recorded_at,tenant_slug,policy_reason,policy_what_would_change_it,policy_window_expires_at,capability_evidence,whatsapp_capability_note,template_verification_detail",
-    "channel_send_form": "code,label,description,requires_template_ref,is_media,is_business_safe_outside_window,sort,created_at",
-    "communication_logs": "id,lead_email,channel,direction,message,created_at,sent_by,tenant_id,external_message_id,channel_key,direction_key",
-    "competitors": "id,competitor,model,price_aed,our_price_aed,price_diff_aed,ai_recommendation,scraped_at,listing_title,source_host,source_kind,offer_name,offer_condition,match_quality,match_note,tenant_id",
-    "customer_360_profiles": "id,customer_id,name,email,phone,total_emails,total_slack_messages,last_synced_at,tenant_id",
-    "daily_metrics": "snapshot_date,open_leads,hot_leads,warm_leads,cold_leads,avg_response_minutes,pipeline_aed,units_at_risk,holding_cost_aed,workflow_runs,workflow_failures,captured_at,workflow_failures_rule,workflow_failures_canonical,pipeline_aed_rule,open_leads_rule,tenant_id",
-    "deal_rescue_evidence_sources": "source,sort,admitted,evidence_tier,claim,verdict_basis",
-    "deal_rescue_prerequisites": "id,sort,requirement,kind,unlocks,unlocks_states,platform_evidence,why_not_code",
-    "deal_rescue_settings": "tenant_id,at_risk_days,stalled_days,set_by,set_at,note",
-    "deal_rescue_states": "state,sort,meaning,engine_can_produce,blocked_by,requires",
-    "deals_embeddings": "id,deal_id,content,embedding,created_at,tenant_id",
-    "finance_quotes": "id,lead_email,lead_name,quoted_by,vehicle_value_aed,loan_payoff_aed,credit_score,equity_aed,equity_status,loan_to_value_pct,finance_tier,indicative_apr_pct,disclaimer,source,created_at,vehicle_price_aed,max_ltv_pct,min_down_payment_aed,down_payment_aed,down_payment_pct,down_payment_assumed,trade_in_equity_applied_aed,financed_aed,tenure_months,monthly_payment_low_aed,monthly_payment_high_aed,total_cost_of_credit_low_aed,total_cost_of_credit_high_aed,indicative_apr_high_pct,calculation_id,execution_id,calculated_at,apr_source,ltv_policy_source,tenant_id",
-    "inventory": "id,model,vin,status,days_in_stock,price_aed,cost_aed,gross_margin,holding_cost_accrued,net_margin,recommended_commission,vat_amount,aging_alert,ai_recommendation,acquired_at,tenant_id,gross_margin_state",
-    "inventory_action_events": "id,tenant_id,action_id,at,event,actor_staff_id,actor_auth_id,actor_authority,detail,audit_log_id",
-    "inventory_action_policy": "tenant_id,approver_tenant_roles,approver_staff_roles,reproposal_cooldown_days,set_by,set_at,note",
-    "inventory_action_reason_codes": "code,applies_to,label,meaning,engine_was_wrong,sort",
-    "inventory_actions": "id,tenant_id,unit_id,recommendation,engine_reason,engine_confidence,engine_confidence_basis,engine_impact_aed,engine_impact_kind,engine_impact_basis,engine_overall_risk,engine_days_in_stock,engine_gross_margin_aed,engine_owner_role,engine_evidence,engine_computed_at,status,proposed_at,proposed_by_staff_id,proposed_source,decided_at,decided_by_staff_id,decided_by_auth_id,decided_by_authority,decision_reason_code,decision_note,defer_until,assigned_to_staff_id,assigned_role,assigned_at,executed_at,executed_by_staff_id,execution_note,execution_failure,outcome_state,outcome_purchase_id,outcome_recorded_at,outcome_recorded_by_staff_id,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,escalated_at,escalation_reason,created_at,updated_at",
-    "inventory_profit_settings": "tenant_id,holding_cost_per_day_aed,holding_cost_source,holding_cost_verified_at,aging_warn_days,aging_critical_days,promote_days,wholesale_days,min_reprice_margin_pct,market_tolerance_pct,enquiry_window_days,min_enquiry_sources,updated_at,holding_cost_basis,holding_cost_set_by,min_model_token_overlap,accepted_market_match_quality,market_max_age_days",
-    "kyc_documents": "id,lead_email,lead_name,chat_id,document_type,full_name,date_of_birth,expiry_date,is_valid,tampering,confidence_score,remarks,attempt_number,max_attempts,verdict,reviewed_by,reviewed_at,created_at,storage_path,retain_until,purged_at,void_reason,voided_at,tenant_id",
-    "lead_recovery_action_events": "id,tenant_id,action_id,at,event,actor_staff_id,actor_auth_id,actor_authority,detail,audit_log_id",
-    "lead_recovery_actions": "id,tenant_id,lead_id,recommendation,engine_state,engine_reason,engine_confidence,engine_confidence_basis,engine_risk_level,engine_risk_basis,engine_evidence,engine_owner_role,engine_computed_at,opportunity_value_state,opportunity_value_basis,status,proposed_at,proposed_by_staff_id,proposed_source,decided_at,decided_by_staff_id,decided_by_auth_id,decided_by_authority,decision_reason_code,decision_note,defer_until,assigned_to_staff_id,assigned_role,assigned_at,executed_at,executed_by_staff_id,execution_note,execution_failure,outcome_state,outcome_purchase_id,outcome_recorded_at,outcome_recorded_by_staff_id,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,escalated_at,escalation_reason,created_at,updated_at",
-    "lead_recovery_reason_codes": "code,applies_to,label,meaning,engine_was_wrong,sort",
-    "lead_recovery_settings": "tenant_id,sla_first_response_minutes,silence_hours,stale_silence_hours,engagement_window_days,detector_max_age_hours,set_by,set_at,note,reproposal_cooldown_days",
-    "lead_recovery_states": "state,sort,meaning,engine_can_produce,blocked_by,requires",
     "leads": "id,name,email,phone,source,vehicle_interest,budget_aed,status,ai_score,assigned_to,response_time_minutes,created_at,assigned_to_id,escalated_at,bitrix_lead_id,crm_synced_at,tenant_id",
-    "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
-    "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
-    "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
-    "policy_rule_event": "id,rule_id,tenant_id,event,actor,actor_auth_user_id,at,from_status,to_status,from_verification,to_verification,detail",
-    "policy_rule_type": "code,label,description,created_at",
-    "policy_unit": "code,label,value_kind,description,created_at",
-    "policy_unmigrated_constant": "id,layer,location,snippet,current_value,kind,proposed_rule_type,proposed_rule_name,reaches_a_customer,seeded_as_rule,note,surveyed_on,created_at",
-    "processed_messages": "message_id,source,chat_id,processed_at,tenant_id",
-    "purchase_history": "id,customer_name,email,phone,vehicle,purchase_date,amount_aed,created_at,deal_id,lead_id,tenant_id",
-    "rag_documents": "id,doc_title,section,content,source_file,page_number,search_vector,tenant_id",
-    "tenant_capability": "tenant_id,capability_key,state,evidence,source,set_by,verified_at,created_at,updated_at",
-    "tenant_capability_catalogue": "capability_key,label,what_it_unlocks,requires,absent_means,sort,created_at",
-    "tenant_configuration": "tenant_id,brand_name,default_language,timezone,currency,business_hours,business_hours_source,business_hours_set_by,business_hours_verified_at,business_hours_basis,ai_tone,ai_tone_source,ai_tone_set_by,ai_tone_verified_at,ai_tone_basis,followup_policy,followup_policy_source,followup_policy_set_by,followup_policy_verified_at,followup_policy_basis,approval_rules,approval_rules_source,approval_rules_set_by,approval_rules_verified_at,approval_rules_basis,created_at,updated_at",
-    "tenant_configuration_default": "setting_key,applies_to,value_kind,default_state,default_value,who_decides,provenance_required,rationale,engine_rule_when_absent,created_at",
-    "tenant_member_invite": "id,tenant_id,email,role,staff_user_id,created_by,created_at,revoked_at,revoked_by,claimed_at,claimed_auth_user_id",
-    "tenant_members": "tenant_id,auth_user_id,role,staff_user_id,created_at",
-    "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine",
     "users": "id,name,email,role,status,slack_user_id,created_at,tenant_id",
-    "v_action_center_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,undecided_exposure_aed,undecided_with_no_figure,last_proposed_at,last_decided_at,last_executed_at,last_activity_at,newest_undecided_days,oldest_undecided_days,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
-    "v_attribution_edges": "tenant_id,edge,from_kind,from_ref,to_kind,to_ref,basis,confidence,note",
-    "v_attribution_events": "tenant_id,event_seq,event_type,event_id,occurred_at,actor,subject_kind,subject_ref,lead_id,lead_basis,lead_confidence,lead_note,unit_id,unit_basis,unit_note,amount_aed,amount_kind,detail",
-    "v_attribution_lead_chain": "tenant_id,lead_id,lead_name,created_at,status,ai_score,lead_source_field,campaign_state,campaign_basis,campaign_note,conversation_messages,messages_in,messages_out,first_message_at,last_message_at,conversation_state,conversation_basis,conversation_confidence,conversation_note,vehicle_interest_text,vehicle_text_candidates,vehicle_state,vehicle_basis,vehicle_note,finance_quotes,finance_state,finance_basis,finance_note,sales_recorded,revenue_confirmed_aed,revenue_kind,last_sale_date,sale_state,sale_basis,sale_note,gross_margin_aed,margin_state,margin_note,hops_total,hops_evidenced,first_break,chain",
-    "v_attribution_link_map": "tenant_id,tenant_name,seq,edge,from_node,to_node,state,basis,basis_is_evidence,basis_confidence,source_ref,finding,unlocked_by,unlock_rank,instances_total,instances_evidenced,instances_refused,coverage_pct,coverage_note",
-    "v_attribution_sale_chain": "tenant_id,sale_id,purchase_date,recorded_at,customer_name,vehicle_text,deal_id,revenue_aed,revenue_kind,gross_margin_aed,campaign_state,campaign_basis,campaign_note,lead_id,lead_name,lead_state,lead_basis,lead_confidence,lead_note,conversation_messages,conversation_state,conversation_basis,conversation_confidence,conversation_note,vehicle_unit_id,vehicle_text_candidates,vehicle_state,vehicle_basis,vehicle_confidence,vehicle_note,deal_record_state,deal_record_basis,deal_record_confidence,deal_record_note,finance_quotes_for_lead,finance_state,finance_basis,finance_note,revenue_state,revenue_basis,revenue_note,margin_state,margin_note,hops_total,hops_evidenced,first_break,chain",
-    "v_audit_unregistered_writers": "tenant_id,workflow_written_in_audit_log,audit_rows,audit_rows_30d,first_written_at,last_written_at,statuses_seen,disposition",
-    "v_channel_provider_capability": "provider,provider_rank,is_official_platform,send_form,send_form_label,requires_template_ref,is_media,support_state,basis,verified_at,supported_but_never_exercised_here,evidence,set_by",
-    "v_channel_send_health": "tenant_id,integration_id,provider,external_identifier,routed_7d,sends_7d,accepted_7d,rejected_7d,transport_errors_7d,pending_now,last_accepted_at,last_failed_at,observed_state",
-    "v_competitor_latest": "id,competitor,model,price_aed,our_price_aed,price_diff_aed,ai_recommendation,scraped_at,listing_title,source_host,source_kind,offer_name,offer_condition,match_quality,match_note",
-    "v_conversations": "thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_status,display_name,identified,message_count,inbound_count,outbound_count,last_message_at,last_message,last_direction,awaiting_reply,msg_count,internal_count,msg_inbound_count,msg_outbound_count,last_msg_at,last_msg,last_msg_direction,awaiting_msg_reply,tenant_id",
-    "v_customer_360": "email,name,phone,lead_count,best_ai_score,latest_status,purchase_count,lifetime_value_aed,last_purchase_date,is_vip,message_count,last_contact_at,total_emails,total_slack_messages,tenant_id",
-    "v_customer_directory": "id,name,email,phone,source_records,last_seen_at,tenant_id",
+    "zz_cat": "id,v",
+    "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine",
+    "audit_log": "id,workflow,status,lead_name,lead_email,lead_score,intent,summary,logged_at,tenant_id",
+    "inventory": "id,model,vin,status,days_in_stock,price_aed,cost_aed,gross_margin,holding_cost_accrued,net_margin,recommended_commission,vat_amount,aging_alert,ai_recommendation,acquired_at,tenant_id,gross_margin_state",
+    "lead_event": "event_id,tenant_id,endpoint_id,source_key,environment,origin_verified,provenance_counts_as_real,external_event_id,occurred_at,received_at,phase,disposition_reason,payload_raw,hydrated_payload,hydrated_at,hydration_error,normalized,lead_id,promoted_at",
+    "competitors": "id,competitor,model,price_aed,our_price_aed,price_diff_aed,ai_recommendation,scraped_at,listing_title,source_host,source_kind,offer_name,offer_condition,match_quality,match_note,tenant_id",
+    "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
+    "policy_unit": "code,label,value_kind,description,created_at",
+    "daily_metrics": "snapshot_date,open_leads,hot_leads,warm_leads,cold_leads,avg_response_minutes,pipeline_aed,units_at_risk,holding_cost_aed,workflow_runs,workflow_failures,captured_at,workflow_failures_rule,workflow_failures_canonical,pipeline_aed_rule,open_leads_rule,tenant_id",
+    "kyc_documents": "id,lead_email,lead_name,chat_id,document_type,full_name,date_of_birth,expiry_date,is_valid,tampering,confidence_score,remarks,attempt_number,max_attempts,verdict,reviewed_by,reviewed_at,created_at,storage_path,retain_until,purged_at,void_reason,voided_at,tenant_id",
+    "rag_documents": "id,doc_title,section,content,source_file,page_number,search_vector,tenant_id",
     "v_deal_rescue": "tenant_id,deal_evidence,deal_evidence_ref,deal_evidence_source,customer_label,lead_id,identity_state,identity_basis,evidence_tier,admission_basis,deal_evidence_at,last_message_at,last_movement_at,days_since_movement,at_risk_days,stalled_days,settings_are_defaults,state,state_basis,recommended_action,action_reason,owner_staff_id,owner_name,owner_job_title,owner_state,owner_note,deal_value_aed,deal_value_state,deal_value_basis,margin_at_stake_state,margin_at_stake_basis,confidence,confidence_basis,lead_recovery_state,silence_state,silence_detector_state,silence_detector_last_success_at,silence_detector_note,human_approval_required,automation_state,automation_note,action_lane_state,action_lane_note,evidence,computed_at",
-    "v_deal_rescue_candidates": "tenant_id,candidate_kind,candidate_ref,customer_label,source_table,observed_at,lead_id,identity_state,identity_basis,verdict,evidence_tier,verdict_basis,deal_value_aed,deal_value_state,deal_value_basis",
-    "v_deal_rescue_readiness": "id,sort,requirement,kind,unlocks,unlocks_states,platform_evidence,why_not_code,met_now,measured_now,evidence_today,measured_at",
-    "v_deal_rescue_state_model": "state,sort,meaning,engine_can_produce,blocked_by,requires,deals_in_state_now,observation",
-    "v_fin_gate_quote_evidence": "id,lead_email,lead_name,quoted_by,created_at,calculated_at,calculation_id,execution_id,indicative_apr_pct,indicative_apr_high_pct,monthly_payment_low_aed,monthly_payment_high_aed,is_evidenced,evidence_note,has_instalment",
-    "v_inventory_action_queue": "id,tenant_id,unit_id,unit_model,unit_vin,unit_status,unit_price_aed,unit_cost_aed,status,is_live,awaiting_decision,deferral_now_due,recommendation,engine_reason,engine_confidence,engine_confidence_basis,engine_impact_aed,engine_impact_kind,engine_impact_basis,engine_overall_risk,engine_days_in_stock,engine_gross_margin_aed,engine_owner_role,engine_evidence,engine_computed_at,engine_now_recommendation,engine_now_risk,engine_now_days_in_stock,engine_now_impact_aed,engine_now_reason,engine_still_agrees,proposed_at,proposed_by_name,proposed_source,decided_at,decided_by_name,decided_by_job_title,decided_by_authority,decision_reason_code,decision_reason_label,decision_reason_meaning,decision_says_engine_was_wrong,decision_note,defer_until,assigned_to_staff_id,assigned_to_name,assigned_role,assigned_at,executed_at,executed_by_name,execution_note,execution_failure,escalated_at,escalation_reason,outcome_state,outcome_purchase_id,outcome_sale_vehicle,outcome_sale_amount_aed,outcome_sale_date,outcome_recorded_at,outcome_recorded_by_name,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,outcome_sentence,cost_of_doing_nothing,days_open,created_at,updated_at",
-    "v_inventory_action_timeline": "id,tenant_id,action_id,at,event,actor_name,actor_job_title,actor_authority,detail,audit_log_id,audit_status,audit_outcome_class,audit_summary",
-    "v_inventory_profit_sentinel": "tenant_id,id,model,vin,status,acquired_at,days_in_stock,aging_band,days_to_warning,days_to_critical,cost_aed,price_aed,gross_margin_aed,gross_margin_pct,capital_tied_aed,holding_cost_per_day_aed,holding_cost_basis,holding_cost_source,holding_cost_set_by,holding_cost_verified_at,holding_cost_accrued_aed,holding_cost_state,holding_cost_note,net_margin_aed,net_margin_state,net_margin_note,market_position,market_competitor,market_price_aed,market_match_quality,market_scraped_at,market_note,demand_signal,enquiries_in_window,enquiry_leads,enquiry_messages,enquiry_last_at,enquiry_source_rows,enquiry_resolved_rows,enquiry_window_days,enquiry_coverage,enquiry_note,age_risk,age_risk_rank,margin_risk,margin_risk_rank,overall_risk,overall_risk_rank,risk_basis,recommendation,reason,confidence,confidence_basis,impact_aed,impact_kind,impact_basis,suggested_owner_role,suggested_owner_state,suggested_owner_note,human_approval_required,automation_state,evidence,warn_days,crit_days,promote_days,wholesale_days,min_margin_pct,tol_pct,min_enq_sources,min_model_token_overlap,market_max_age_days,settings_are_defaults,computed_at",
-    "v_inventory_sales": "id,model,status,price_aed,days_in_stock,tenant_id",
+    "v_lead_origin": "event_id,tenant_id,source_key,source,channel_family,integration_status,phase,disposition_reason,received_at,occurred_at,lead_id,origin_cryptographically_verified,origin_externally_attested,origin_strength,origin_explanation,is_test_traffic",
+    "v_policy_rule": "id,tenant_id,is_global_rule,jurisdiction,rule_type,rule_name,version,supersedes_id,value_numeric,value_text,unit,value_kind,value_display,status,verification_status,confidence,effective_from,effective_to,source_name,source_url,source_document,verification_date,verified_by,added_by,added_at,updated_at,notes,authority,authority_reason,may_be_relied_on",
+    "finance_quotes": "id,lead_email,lead_name,quoted_by,vehicle_value_aed,loan_payoff_aed,credit_score,equity_aed,equity_status,loan_to_value_pct,finance_tier,indicative_apr_pct,disclaimer,source,created_at,vehicle_price_aed,max_ltv_pct,min_down_payment_aed,down_payment_aed,down_payment_pct,down_payment_assumed,trade_in_equity_applied_aed,financed_aed,tenure_months,monthly_payment_low_aed,monthly_payment_high_aed,total_cost_of_credit_low_aed,total_cost_of_credit_high_aed,indicative_apr_high_pct,calculation_id,execution_id,calculated_at,apr_source,ltv_policy_source,tenant_id",
+    "tenant_members": "tenant_id,auth_user_id,role,staff_user_id,created_at",
+    "v_customer_360": "email,name,phone,lead_count,best_ai_score,latest_status,purchase_count,lifetime_value_aed,last_purchase_date,is_vip,message_count,last_contact_at,total_emails,total_slack_messages,tenant_id",
+    "v_conversations": "thread_key,chat_id,phone,push_name,lead_email,lead_name,lead_status,display_name,identified,message_count,inbound_count,outbound_count,last_message_at,last_message,last_direction,awaiting_reply,msg_count,internal_count,msg_inbound_count,msg_outbound_count,last_msg_at,last_msg,last_msg_direction,awaiting_msg_reply,tenant_id",
     "v_lead_messages": "lead_id,id,created_at,channel,direction,message,lead_email,is_message,tenant_id",
     "v_lead_recovery": "tenant_id,lead_id,lead_name,lead_status,lead_is_open,lead_created_at,vehicle_interest_text,vehicle_state,vehicle_note,state,state_basis,response_time_minutes,response_time_state,sla_first_response_minutes,sla_state,response_time_note,last_contact_at,last_contact_state,last_customer_message_at,last_dealership_message_at,messages_resolved,messages_in,messages_out,first_message_at,hours_since_our_last_message,minutes_since_their_last_message,silence_state,silence_threshold_hours,stale_silence_threshold_hours,silence_markers_on_file,last_silence_marker_at,silence_detector_state,silence_detector_last_run_at,silence_detector_last_success_at,silence_detector_last_run_class,silence_detector_note,risk_level,risk_basis,recommended_action,action_reason,owner_staff_id,owner_name,owner_job_title,owner_state,owner_note,action_id,action_status,action_recommendation,action_state,opportunity_value_aed,opportunity_value_state,opportunity_value_basis,confirmed_outcome_state,confirmed_revenue_aed,confirmed_outcome_date,confirmed_outcome_basis,recovery_attribution_state,recovered_value_aed,recovery_attribution_basis,confidence,confidence_basis,human_approval_required,automation_state,automation_note,evidence,settings_are_defaults,computed_at",
-    "v_lead_recovery_coverage": "tenant_id,leads_total,leads_open,leads_closed,leads_at_risk,leads_risk_unknown,leads_with_a_recommended_action,leads_with_a_confirmed_sale,confirmed_revenue_aed,sales_attributed_to_a_recovery_action,leads_with_no_owner,leads_with_no_measured_response_time,leads_with_no_resolved_conversation,communication_log_rows,message_events,silence_markers,message_events_resolved_to_a_lead,identity_resolution_pct,unresolved_whatsapp_handles,silence_detector_state,silence_detector_last_run_at,silence_detector_last_success_at,silence_detector_last_run_class,recovery_actions_total,recovery_actions_awaiting_decision,recovery_actions_executed,recovery_outcomes_attributed,actions_whose_lead_is_another_tenants,settings_are_defaults,sla_first_response_minutes,sla_agrees_with_needs_attention,what_this_engine_cannot_tell_you,computed_at",
-    "v_lead_recovery_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,attributed_revenue_aed,last_proposed_at,last_decided_at,last_executed_at,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
-    "v_lead_recovery_queue": "id,tenant_id,lead_id,lead_name,lead_status,status,is_live,awaiting_decision,deferral_now_due,recommendation,engine_state,engine_reason,engine_confidence,engine_confidence_basis,engine_risk_level,engine_risk_basis,engine_owner_role,engine_evidence,engine_computed_at,engine_now_state,engine_now_risk_level,engine_now_recommendation,engine_now_reason,engine_still_agrees,opportunity_value_state,opportunity_value_basis,proposed_at,proposed_by_name,proposed_source,decided_at,decided_by_name,decided_by_job_title,decided_by_authority,decision_reason_code,decision_reason_label,decision_reason_meaning,decision_says_engine_was_wrong,decision_note,defer_until,assigned_to_staff_id,assigned_to_name,assigned_role,assigned_at,executed_at,executed_by_name,execution_note,execution_failure,escalated_at,escalation_reason,outcome_state,outcome_purchase_id,outcome_sale_vehicle,outcome_sale_amount_aed,outcome_sale_date,outcome_recorded_at,outcome_recorded_by_name,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,outcome_sentence,days_open,created_at,updated_at",
-    "v_lead_recovery_state_model": "state,sort,meaning,engine_can_produce,blocked_by,requires,leads_in_state_now,observation",
+    "channel_registry": "integration_id,tenant_id,channel_type,external_identifier,credential_ref,status,created_at,updated_at",
+    "deals_embeddings": "id,deal_id,content,embedding,created_at,tenant_id",
+    "policy_rule_type": "code,label,description,created_at",
+    "purchase_history": "id,customer_name,email,phone,vehicle,purchase_date,amount_aed,created_at,deal_id,lead_id,tenant_id",
+    "channel_send_form": "code,label,description,requires_template_ref,is_media,is_business_safe_outside_window,sort,created_at",
+    "inventory_actions": "id,tenant_id,unit_id,recommendation,engine_reason,engine_confidence,engine_confidence_basis,engine_impact_aed,engine_impact_kind,engine_impact_basis,engine_overall_risk,engine_days_in_stock,engine_gross_margin_aed,engine_owner_role,engine_evidence,engine_computed_at,status,proposed_at,proposed_by_staff_id,proposed_source,decided_at,decided_by_staff_id,decided_by_auth_id,decided_by_authority,decision_reason_code,decision_note,defer_until,assigned_to_staff_id,assigned_role,assigned_at,executed_at,executed_by_staff_id,execution_note,execution_failure,outcome_state,outcome_purchase_id,outcome_recorded_at,outcome_recorded_by_staff_id,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,escalated_at,escalation_reason,created_at,updated_at",
+    "lead_owner_events": "id,tenant_id,lead_id,at,event,actor_auth_id,actor_staff_id,actor_authority,from_staff_id,to_staff_id,from_name,to_name,reason,audit_log_id",
+    "policy_rule_event": "id,rule_id,tenant_id,event,actor,actor_auth_user_id,at,from_status,to_status,from_verification,to_verification,detail",
+    "tenant_capability": "tenant_id,capability_key,state,evidence,source,set_by,verified_at,created_at,updated_at",
+    "v_inventory_sales": "id,model,status,price_aed,days_in_stock,tenant_id",
     "v_needs_attention": "kind,severity,ref,title,detail,at,screen",
-    "v_policy_authoritative": "id,tenant_id,is_global_rule,jurisdiction,rule_type,rule_name,version,value_numeric,value_text,unit,value_kind,value_display,effective_from,effective_to,source_name,source_url,source_document,verification_date,verified_by,confidence,citation",
-    "v_policy_rule": "id,tenant_id,is_global_rule,jurisdiction,rule_type,rule_name,version,supersedes_id,value_numeric,value_text,unit,value_kind,value_display,status,verification_status,confidence,effective_from,effective_to,source_name,source_url,source_document,verification_date,verified_by,added_by,added_at,updated_at,notes,authority,authority_reason,may_be_relied_on",
-    "v_policy_rule_history": "tenant_id,jurisdiction,rule_type,rule_name,version,id,supersedes_id,status,verification_status,value_numeric,value_text,unit,effective_from,effective_to,source_name,source_document,verification_date,verified_by,added_by,added_at,previous_value_numeric,previous_value_text,previous_effective_from,previous_effective_to,previous_source_name",
-    "v_policy_unmigrated_constant": "layer,kind,location,snippet,current_value,reaches_a_customer,proposed_rule_type,proposed_rule_name,seeded_as_rule,rule_row_exists,rule_is_authoritative,migration_state,note,surveyed_on",
-    "v_team_performance": "id,name,email,role,status,leads_assigned,hot_leads,avg_response_minutes,within_sla,breached_sla,pipeline_aed",
-    "v_whatsapp_conversation_window": "tenant_id,integration_id,channel_type,channel_identifier,customer_wa_id,last_customer_message_at,last_customer_message_external_id,last_customer_message_source,window_rule_id,window_hours,window_rule_verification_status,window_rule_authority,window_expires_at,window_state,opt_in_state,opt_in_last_event_at,opt_in_evidence_ref",
-    "v_whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,sent_at,message_category,template_required,template_id,template_name,template_language,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,template_provider_status_now,template_status_changed_since_send,latest_status,latest_status_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,cost_state,cost_answer,recorded_at,updated_at",
-    "v_whatsapp_messaging_usage_monthly": "tenant_id,month,message_category,messages,provider_billable_messages,provider_not_billable_messages,awaiting_provider_report,reported_without_pricing,provider_conversations_reported,template_messages,sent_under_a_verified_rule,sent_under_an_unverified_rule,sent_with_no_rule_applied,failed_messages,no_status_reported,cost_answer",
-    "v_whatsapp_template_registry": "template_id,tenant_id,integration_id,name,language,category,nexus_state,provider_status,provider_status_raw,provider_status_source,provider_status_observed_at,status_age,status_confidence,previous_provider_status,previous_status_observed_at,provider_rejected_reason,body_variable_count,variable_schema,body_text,body_text_source,what_this_row_claims,created_at,updated_at",
     "v_workflow_health": "name,category,description,is_active,writes_audit_log,runs,failures,escalations,runs_30d,failures_30d,partials_30d,no_result_30d,rejected_30d,escalated_30d,successes_30d,unknown_30d,effective_runs_30d,success_rate_30d,success_rate,last_run,last_success,last_failure,last_partial,last_incomplete,health",
     "whatsapp_contacts": "chat_id,phone,push_name,lead_email,first_seen,last_seen,message_count,tenant_id",
-    "whatsapp_conversation_state": "tenant_id,integration_id,customer_wa_id,last_customer_message_at,last_customer_message_external_id,last_customer_message_source,first_seen_at,created_at,updated_at",
-    "whatsapp_customer_message_seen": "tenant_id,integration_id,customer_wa_id,external_message_id,first_occurred_at,first_source,first_recorded_at",
-    "whatsapp_delivery_events": "delivery_event_id,tenant_id,integration_id,provider,provider_message_id,event_id,link_state,linked_at,status,status_raw,status_at,recipient_wa_id,conversation_id,conversation_origin_type,conversation_expiration_at,pricing_billable,pricing_model,pricing_category,pricing_type,pricing_reported,errors,provider_payload,received_at,recorded_at,status_key",
-    "whatsapp_message_intent": "code,label,description,is_business_initiated,template_category_if_required,created_at",
-    "whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,message_category,template_required,template_id,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,sent_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,provider_pricing_delivery_event_id,latest_status,latest_status_at,latest_status_delivery_event_id,cost_state,recorded_at,updated_at",
-    "whatsapp_opt_in_event": "id,tenant_id,integration_id,customer_wa_id,event,occurred_at,mechanism,evidence_kind,evidence_ref,recorded_by,recorded_at,notes,consent_rank",
+    "workflow_registry": "id,name,audit_name,trigger_type,trigger_detail,category,is_active,description,writes_audit_log,audit_aliases",
+    "communication_logs": "id,lead_email,channel,direction,message,created_at,sent_by,tenant_id,external_message_id,channel_key,direction_key,evidence_state",
+    "deal_rescue_states": "state,sort,meaning,engine_can_produce,blocked_by,requires",
+    "processed_messages": "message_id,source,chat_id,processed_at,tenant_id",
+    "v_team_performance": "id,name,email,role,status,leads_assigned,hot_leads,avg_response_minutes,within_sla,breached_sla,pipeline_aed",
     "whatsapp_templates": "template_id,tenant_id,integration_id,provider,waba_ref,name,language,category,provider_template_id,nexus_state,nexus_state_at,nexus_state_by,provider_status,provider_status_raw,provider_status_observed_at,provider_status_source,provider_status_evidence_ref,provider_rejected_reason,previous_provider_status,previous_status_observed_at,variable_schema,body_variable_count,body_text,body_text_source,body_text_observed_at,created_at,updated_at,language_key,waba_key",
-    "workflow_registry": "id,name,audit_name,trigger_type,trigger_detail,category,is_active,description,writes_audit_log,audit_aliases"
+    "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
+    "v_attribution_edges": "tenant_id,edge,from_kind,from_ref,to_kind,to_ref,basis,confidence,note",
+    "v_competitor_latest": "id,competitor,model,price_aed,our_price_aed,price_diff_aed,ai_recommendation,scraped_at,listing_title,source_host,source_kind,offer_name,offer_condition,match_quality,match_note",
+    "deal_rescue_settings": "tenant_id,at_risk_days,stalled_days,set_by,set_at,note",
+    "lead_ingest_endpoint": "endpoint_id,tenant_id,source_key,required_provenance_for_source,declared_provenance,provenance_counts_as_real,environment,public_key,secret_ref,origin_allowlist,ingest_address,status,rate_limit_per_minute,label,created_at,updated_at",
+    "lead_provenance_kind": "kind,is_cryptographic,strength_rank,counts_as_real,description,is_externally_attested",
+    "lead_recovery_states": "state,sort,meaning,engine_can_produce,blocked_by,requires",
+    "tenant_configuration": "tenant_id,brand_name,default_language,timezone,currency,business_hours,business_hours_source,business_hours_set_by,business_hours_verified_at,business_hours_basis,ai_tone,ai_tone_source,ai_tone_set_by,ai_tone_verified_at,ai_tone_basis,followup_policy,followup_policy_source,followup_policy_set_by,followup_policy_verified_at,followup_policy_basis,approval_rules,approval_rules_source,approval_rules_set_by,approval_rules_verified_at,approval_rules_basis,created_at,updated_at",
+    "tenant_member_invite": "id,tenant_id,email,role,staff_user_id,created_by,created_at,revoked_at,revoked_by,claimed_at,claimed_auth_user_id",
+    "v_attribution_events": "tenant_id,event_seq,event_type,event_id,occurred_at,actor,subject_kind,subject_ref,lead_id,lead_basis,lead_confidence,lead_note,unit_id,unit_basis,unit_note,amount_aed,amount_kind,detail",
+    "v_customer_directory": "id,name,email,phone,source_records,last_seen_at,tenant_id",
+    "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
+    "channel_provider_rank": "provider,rank,is_official_platform,rationale,set_by,created_at",
+    "customer_360_profiles": "id,customer_id,name,email,phone,total_emails,total_slack_messages,last_synced_at,tenant_id",
+    "lead_recovery_actions": "id,tenant_id,lead_id,recommendation,engine_state,engine_reason,engine_confidence,engine_confidence_basis,engine_risk_level,engine_risk_basis,engine_evidence,engine_owner_role,engine_computed_at,opportunity_value_state,opportunity_value_basis,status,proposed_at,proposed_by_staff_id,proposed_source,decided_at,decided_by_staff_id,decided_by_auth_id,decided_by_authority,decision_reason_code,decision_note,defer_until,assigned_to_staff_id,assigned_role,assigned_at,executed_at,executed_by_staff_id,execution_note,execution_failure,outcome_state,outcome_purchase_id,outcome_recorded_at,outcome_recorded_by_staff_id,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,escalated_at,escalation_reason,created_at,updated_at",
+    "lead_source_catalogue": "source_key,display_name,channel_family,integration_status,delivery_shape,required_provenance,dedup_field,evidence_note,manual_entry_surface",
+    "v_channel_send_health": "tenant_id,integration_id,provider,external_identifier,routed_7d,sends_7d,accepted_7d,rejected_7d,transport_errors_7d,pending_now,last_accepted_at,last_failed_at,observed_state",
+    "v_lead_recovery_queue": "id,tenant_id,lead_id,lead_name,lead_status,status,is_live,awaiting_decision,deferral_now_due,recommendation,engine_state,engine_reason,engine_confidence,engine_confidence_basis,engine_risk_level,engine_risk_basis,engine_owner_role,engine_evidence,engine_computed_at,engine_now_state,engine_now_risk_level,engine_now_recommendation,engine_now_reason,engine_still_agrees,opportunity_value_state,opportunity_value_basis,proposed_at,proposed_by_name,proposed_source,decided_at,decided_by_name,decided_by_job_title,decided_by_authority,decision_reason_code,decision_reason_label,decision_reason_meaning,decision_says_engine_was_wrong,decision_note,defer_until,assigned_to_staff_id,assigned_to_name,assigned_role,assigned_at,executed_at,executed_by_name,execution_note,execution_failure,escalated_at,escalation_reason,outcome_state,outcome_purchase_id,outcome_sale_vehicle,outcome_sale_amount_aed,outcome_sale_date,outcome_recorded_at,outcome_recorded_by_name,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,outcome_sentence,days_open,created_at,updated_at",
+    "v_policy_rule_history": "tenant_id,jurisdiction,rule_type,rule_name,version,id,supersedes_id,status,verification_status,value_numeric,value_text,unit,effective_from,effective_to,source_name,source_document,verification_date,verified_by,added_by,added_at,previous_value_numeric,previous_value_text,previous_effective_from,previous_effective_to,previous_source_name",
+    "whatsapp_opt_in_event": "id,tenant_id,integration_id,customer_wa_id,event,occurred_at,mechanism,evidence_kind,evidence_ref,recorded_by,recorded_at,notes,consent_rank",
+    "attribution_event_type": "event,seq,state,source_ref,finding",
+    "attribution_link_basis": "basis,rank,is_evidence,default_confidence,label,description",
+    "channel_message_events": "event_id,tenant_id,integration_id,provider,channel_type,direction,external_message_id,customer_external_id,customer_phone,conversation_id,message_kind,media_ref,media_mime,media_sha256,provider_account_id,provider_delivery_ref,origin_verified,received_at,recorded_at",
+    "channel_send_directive": "directive_id,tenant_id,requested_by,request_ref,customer_external_id,intent,requested_send_form,directive,outcome,reason_code,reason,what_would_change_it,integration_id,provider,channel_type,external_identifier,credential_ref,carrier_rule,candidates_considered,resolved_send_form,message_body,template_ref,template_variables,template_category_required,template_verification,media_ref,media_mime,policy_decision,policy_reason_code,policy_applied_rule_id,policy_rule_verification_status,policy_window_state,policy_evaluated_at,capability_state,capability_basis,whatsapp_capability_state,routed_at,routed_by,send_result,provider_message_id,provider_error_code,provider_error_detail,result_recorded_at,tenant_slug,policy_reason,policy_what_would_change_it,policy_window_expires_at,capability_evidence,whatsapp_capability_note,template_verification_detail",
+    "lead_recovery_settings": "tenant_id,sla_first_response_minutes,silence_hours,stale_silence_hours,engagement_window_days,detector_max_age_hours,set_by,set_at,note,reproposal_cooldown_days",
+    "v_action_center_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,undecided_exposure_aed,undecided_with_no_figure,last_proposed_at,last_decided_at,last_executed_at,last_activity_at,newest_undecided_days,oldest_undecided_days,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
+    "v_attribution_link_map": "tenant_id,tenant_name,seq,edge,from_node,to_node,state,basis,basis_is_evidence,basis_confidence,source_ref,finding,unlocked_by,unlock_rank,instances_total,instances_evidenced,instances_refused,coverage_pct,coverage_note",
+    "v_lead_recovery_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,attributed_revenue_aed,last_proposed_at,last_decided_at,last_executed_at,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
+    "v_policy_authoritative": "id,tenant_id,is_global_rule,jurisdiction,rule_type,rule_name,version,value_numeric,value_text,unit,value_kind,value_display,effective_from,effective_to,source_name,source_url,source_document,verification_date,verified_by,confidence,citation",
+    "whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,message_category,template_required,template_id,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,sent_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,provider_pricing_delivery_event_id,latest_status,latest_status_at,latest_status_delivery_event_id,cost_state,recorded_at,updated_at",
+    "inventory_action_events": "id,tenant_id,action_id,at,event,actor_staff_id,actor_auth_id,actor_authority,detail,audit_log_id",
+    "inventory_action_policy": "tenant_id,approver_tenant_roles,approver_staff_roles,reproposal_cooldown_days,set_by,set_at,note",
+    "v_deal_rescue_readiness": "id,sort,requirement,kind,unlocks,unlocks_states,platform_evidence,why_not_code,met_now,measured_now,evidence_today,measured_at",
+    "whatsapp_message_intent": "code,label,description,is_business_initiated,template_category_if_required,created_at",
+    "v_attribution_lead_chain": "tenant_id,lead_id,lead_name,created_at,status,ai_score,lead_source_field,campaign_state,campaign_basis,campaign_note,conversation_messages,messages_in,messages_out,first_message_at,last_message_at,conversation_state,conversation_basis,conversation_confidence,conversation_note,vehicle_interest_text,vehicle_text_candidates,vehicle_state,vehicle_basis,vehicle_note,finance_quotes,finance_state,finance_basis,finance_note,sales_recorded,revenue_confirmed_aed,revenue_kind,last_sale_date,sale_state,sale_basis,sale_note,gross_margin_aed,margin_state,margin_note,hops_total,hops_evidenced,first_break,chain",
+    "v_attribution_sale_chain": "tenant_id,sale_id,purchase_date,recorded_at,customer_name,vehicle_text,deal_id,revenue_aed,revenue_kind,gross_margin_aed,campaign_state,campaign_basis,campaign_note,lead_id,lead_name,lead_state,lead_basis,lead_confidence,lead_note,conversation_messages,conversation_state,conversation_basis,conversation_confidence,conversation_note,vehicle_unit_id,vehicle_text_candidates,vehicle_state,vehicle_basis,vehicle_confidence,vehicle_note,deal_record_state,deal_record_basis,deal_record_confidence,deal_record_note,finance_quotes_for_lead,finance_state,finance_basis,finance_note,revenue_state,revenue_basis,revenue_note,margin_state,margin_note,hops_total,hops_evidenced,first_break,chain",
+    "v_deal_rescue_candidates": "tenant_id,candidate_kind,candidate_ref,customer_label,source_table,observed_at,lead_id,identity_state,identity_basis,verdict,evidence_tier,verdict_basis,deal_value_aed,deal_value_state,deal_value_basis",
+    "v_inventory_action_queue": "id,tenant_id,unit_id,unit_model,unit_vin,unit_status,unit_price_aed,unit_cost_aed,status,is_live,awaiting_decision,deferral_now_due,recommendation,engine_reason,engine_confidence,engine_confidence_basis,engine_impact_aed,engine_impact_kind,engine_impact_basis,engine_overall_risk,engine_days_in_stock,engine_gross_margin_aed,engine_owner_role,engine_evidence,engine_computed_at,engine_now_recommendation,engine_now_risk,engine_now_days_in_stock,engine_now_impact_aed,engine_now_reason,engine_still_agrees,proposed_at,proposed_by_name,proposed_source,decided_at,decided_by_name,decided_by_job_title,decided_by_authority,decision_reason_code,decision_reason_label,decision_reason_meaning,decision_says_engine_was_wrong,decision_note,defer_until,assigned_to_staff_id,assigned_to_name,assigned_role,assigned_at,executed_at,executed_by_name,execution_note,execution_failure,escalated_at,escalation_reason,outcome_state,outcome_purchase_id,outcome_sale_vehicle,outcome_sale_amount_aed,outcome_sale_date,outcome_recorded_at,outcome_recorded_by_name,attribution_basis,attribution_note,recovered_value_aed,recovered_value_basis,outcome_sentence,cost_of_doing_nothing,days_open,created_at,updated_at",
+    "v_lead_recovery_coverage": "tenant_id,leads_total,leads_open,leads_closed,leads_at_risk,leads_risk_unknown,leads_with_a_recommended_action,leads_with_a_confirmed_sale,confirmed_revenue_aed,sales_attributed_to_a_recovery_action,leads_with_no_owner,leads_with_no_measured_response_time,leads_with_no_resolved_conversation,communication_log_rows,message_events,silence_markers,message_events_resolved_to_a_lead,identity_resolution_pct,unresolved_whatsapp_handles,silence_detector_state,silence_detector_last_run_at,silence_detector_last_success_at,silence_detector_last_run_class,recovery_actions_total,recovery_actions_awaiting_decision,recovery_actions_executed,recovery_outcomes_attributed,actions_whose_lead_is_another_tenants,settings_are_defaults,sla_first_response_minutes,sla_agrees_with_needs_attention,what_this_engine_cannot_tell_you,computed_at",
+    "v_whatsapp_message_usage": "usage_id,tenant_id,integration_id,event_id,sent_at,message_category,template_required,template_id,template_name,template_language,policy_decision,policy_reason_code,policy_rule_id,policy_rule_name,policy_rule_verification_status,policy_decided_at,template_provider_status_at_send,template_status_age_at_send,template_staleness_verdict_at_send,template_provider_status_now,template_status_changed_since_send,latest_status,latest_status_at,billing_fact_state,provider_billable,provider_pricing_model,provider_pricing_category,provider_pricing_type,provider_conversation_id,provider_conversation_origin_type,provider_conversation_expiration_at,provider_pricing_observed_at,cost_state,cost_answer,recorded_at,updated_at",
+    "whatsapp_delivery_events": "delivery_event_id,tenant_id,integration_id,provider,provider_message_id,event_id,link_state,linked_at,status,status_raw,status_at,recipient_wa_id,conversation_id,conversation_origin_type,conversation_expiration_at,pricing_billable,pricing_model,pricing_category,pricing_type,pricing_reported,errors,provider_payload,received_at,recorded_at,status_key",
+    "deal_rescue_prerequisites": "id,sort,requirement,kind,unlocks,unlocks_states,platform_evidence,why_not_code",
+    "inventory_profit_settings": "tenant_id,holding_cost_per_day_aed,holding_cost_source,holding_cost_verified_at,aging_warn_days,aging_critical_days,promote_days,wholesale_days,min_reprice_margin_pct,market_tolerance_pct,enquiry_window_days,min_enquiry_sources,updated_at,holding_cost_basis,holding_cost_set_by,min_model_token_overlap,accepted_market_match_quality,market_max_age_days",
+    "v_deal_rescue_state_model": "state,sort,meaning,engine_can_produce,blocked_by,requires,deals_in_state_now,observation",
+    "v_fin_gate_quote_evidence": "id,lead_email,lead_name,quoted_by,created_at,calculated_at,calculation_id,execution_id,indicative_apr_pct,indicative_apr_high_pct,monthly_payment_low_aed,monthly_payment_high_aed,is_evidenced,evidence_note,has_instalment",
+    "lead_recovery_reason_codes": "code,applies_to,label,meaning,engine_was_wrong,sort",
+    "policy_unmigrated_constant": "id,layer,location,snippet,current_value,kind,proposed_rule_type,proposed_rule_name,reaches_a_customer,seeded_as_rule,note,surveyed_on,created_at",
+    "v_lead_timeline_admissible": "id,lead_email,channel,direction,message,created_at,sent_by,tenant_id,external_message_id,channel_key,direction_key,evidence_state,content_withheld",
+    "channel_provider_capability": "provider,send_form,support_state,basis,evidence,verified_at,set_by,created_at",
+    "lead_recovery_action_events": "id,tenant_id,action_id,at,event,actor_staff_id,actor_auth_id,actor_authority,detail,audit_log_id",
+    "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
+    "tenant_capability_catalogue": "capability_key,label,what_it_unlocks,requires,absent_means,sort,created_at",
+    "v_inventory_action_timeline": "id,tenant_id,action_id,at,event,actor_name,actor_job_title,actor_authority,detail,audit_log_id,audit_status,audit_outcome_class,audit_summary",
+    "v_inventory_profit_sentinel": "tenant_id,id,model,vin,status,acquired_at,days_in_stock,aging_band,days_to_warning,days_to_critical,cost_aed,price_aed,gross_margin_aed,gross_margin_pct,capital_tied_aed,holding_cost_per_day_aed,holding_cost_basis,holding_cost_source,holding_cost_set_by,holding_cost_verified_at,holding_cost_accrued_aed,holding_cost_state,holding_cost_note,net_margin_aed,net_margin_state,net_margin_note,market_position,market_competitor,market_price_aed,market_match_quality,market_scraped_at,market_note,demand_signal,enquiries_in_window,enquiry_leads,enquiry_messages,enquiry_last_at,enquiry_source_rows,enquiry_resolved_rows,enquiry_window_days,enquiry_coverage,enquiry_note,age_risk,age_risk_rank,margin_risk,margin_risk_rank,overall_risk,overall_risk_rank,risk_basis,recommendation,reason,confidence,confidence_basis,impact_aed,impact_kind,impact_basis,suggested_owner_role,suggested_owner_state,suggested_owner_note,human_approval_required,automation_state,evidence,warn_days,crit_days,promote_days,wholesale_days,min_margin_pct,tol_pct,min_enq_sources,min_model_token_overlap,market_max_age_days,settings_are_defaults,computed_at",
+    "v_lead_recovery_state_model": "state,sort,meaning,engine_can_produce,blocked_by,requires,leads_in_state_now,observation",
+    "whatsapp_conversation_state": "tenant_id,integration_id,customer_wa_id,last_customer_message_at,last_customer_message_external_id,last_customer_message_source,first_seen_at,created_at,updated_at",
+    "deal_rescue_evidence_sources": "source,sort,admitted,evidence_tier,claim,verdict_basis",
+    "tenant_configuration_default": "setting_key,applies_to,value_kind,default_state,default_value,who_decides,provenance_required,rationale,engine_rule_when_absent,created_at",
+    "v_audit_unregistered_writers": "tenant_id,workflow_written_in_audit_log,audit_rows,audit_rows_30d,first_written_at,last_written_at,statuses_seen,disposition",
+    "v_communication_log_evidence": "id,lead_email,channel,direction,message,created_at,sent_by,tenant_id,evidence_state,evidence_flagged,evidence_reason_code,evidence_reason,evidence_actor,evidence_at,evidence_incident_ref,evidence_ref",
+    "v_policy_unmigrated_constant": "layer,kind,location,snippet,current_value,reaches_a_customer,proposed_rule_type,proposed_rule_name,seeded_as_rule,rule_row_exists,rule_is_authoritative,migration_state,note,surveyed_on",
+    "v_whatsapp_template_registry": "template_id,tenant_id,integration_id,name,language,category,nexus_state,provider_status,provider_status_raw,provider_status_source,provider_status_observed_at,status_age,status_confidence,previous_provider_status,previous_status_observed_at,provider_rejected_reason,body_variable_count,variable_schema,body_text,body_text_source,what_this_row_claims,created_at,updated_at",
+    "inventory_action_reason_codes": "code,applies_to,label,meaning,engine_was_wrong,sort",
+    "lead_ingest_provider_identity": "identity_id,endpoint_id,source_key,provider,identity_kind,identity_value,label,status,created_at,updated_at",
+    "v_channel_provider_capability": "provider,provider_rank,is_official_platform,send_form,send_form_label,requires_template_ref,is_media,support_state,basis,verified_at,supported_but_never_exercised_here,evidence,set_by",
+    "v_whatsapp_conversation_window": "tenant_id,integration_id,channel_type,channel_identifier,customer_wa_id,last_customer_message_at,last_customer_message_external_id,last_customer_message_source,window_rule_id,window_hours,window_rule_verification_status,window_rule_authority,window_expires_at,window_state,opt_in_state,opt_in_last_event_at,opt_in_evidence_ref",
+    "whatsapp_customer_message_seen": "tenant_id,integration_id,customer_wa_id,external_message_id,first_occurred_at,first_source,first_recorded_at",
+    "communication_log_evidence_event": "id,comm_log_id,tenant_id,event,to_state,reason_code,reason,actor,actor_auth_user_id,at,incident_ref,evidence_ref,evidence_rank",
+    "v_whatsapp_messaging_usage_monthly": "tenant_id,month,message_category,messages,provider_billable_messages,provider_not_billable_messages,awaiting_provider_report,reported_without_pricing,provider_conversations_reported,template_messages,sent_under_a_verified_rule,sent_under_an_unverified_rule,sent_with_no_rule_applied,failed_messages,no_status_reported,cost_answer"
   },
   "rpcs": {
     "action_approver_context": {
@@ -499,6 +510,27 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "lead_event_guard_lead_tenant": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "lead_ingest_endpoint_touch": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "lead_ingest_provider_identity_touch": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "lead_recovery_cancel": {
       "secdef": true,
       "tenantArg": false,
@@ -621,6 +653,14 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_comm_log_evidence_state": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_current_tenant_id": {
       "secdef": true,
       "tenantArg": false,
@@ -645,7 +685,21 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_definer_scoping_audit": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_guard_born_open_grants": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_hydrate_lead_event": {
       "secdef": false,
       "tenantArg": false,
       "grants": [
@@ -697,11 +751,56 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
-    "nexus_kyc_object_tenant": {
+    "nexus_kyc_object_readable": {
       "secdef": true,
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_kyc_object_tenant": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_lead_assign_owner": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_attribution": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_attribution_summary": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_endpoint_for_provider_identity": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_lead_endpoint_for_public_key": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -712,11 +811,56 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_lead_ingest_invariants": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_lead_is_open": {
       "secdef": false,
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_normalized_defect": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_lead_record_manual": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_source_readiness": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_trace": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_leads_owner_change_audit": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -774,6 +918,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_promote_lead_event": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_provider_router_invariants": {
       "secdef": false,
       "tenantArg": false,
@@ -795,8 +946,22 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_quarantine_comm_log": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_record_channel_event": {
       "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_record_lead_event": {
+      "secdef": false,
       "tenantArg": false,
       "grants": [
         "service_role"
@@ -812,6 +977,13 @@ const SNAPSHOT = {
     "nexus_register_channel": {
       "secdef": true,
       "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_reject_lead_event": {
+      "secdef": false,
+      "tenantArg": false,
       "grants": [
         "service_role"
       ]
@@ -864,6 +1036,13 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_sync_comm_log_evidence_state": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -945,6 +1124,13 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_trace_linkability_report": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -1353,9 +1539,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260906071310",
-    "count": 286,
-    "newest": "20260906071310,20260906070947,20260906070115,20260906065739,20260906062139"
+    "head": "20260907154626",
+    "count": 310,
+    "newest": "20260907154626,20260907152407,20260907151246,20260907150958,20260907143510"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */
@@ -1720,6 +1906,23 @@ select json_build_object(
      where p.schemaname='public'
        and (coalesce(p.qual,'')='true' or coalesce(p.with_check,'')='true' or u.q or u.w)
        and array_to_string(p.roles,',') <> 'service_role'),
+  /* DEAD ON PURPOSE, AND DO NOT READ IT AS A DEFECT. The line below calls an
+     aggregate that exists in no Postgres and never did. It is never executed:
+     the .replace() at the end of this template strips the whole 'sentinel' key
+     before the SQL leaves this file, and the count it was reaching for is
+     selected as meta.sentinel_units instead. The per-unit rows the gate
+     actually reads are sentinel_states, immediately below.
+
+     It is left here rather than deleted because deleting it would turn the
+     .replace() from a fact into a superstition, and because on 7 Sep 2026 it
+     cost a session: this text was read, the call was correctly identified as
+     impossible, and the conclusion drawn was that --refresh-schema could not
+     work as shipped. It works. THE TEMPLATE LITERAL IS NOT THE SQL. Run
+     node QUALITY_GATE.mjs --print-sql and read THAT — measured the same day,
+     the emitted SQL runs clean on production and returns 482,833 characters.
+     Deliberately not naming the aggregate here: a name written into a comment
+     is carried into the emitted SQL and would make a grep of --print-sql find
+     it, which is the check this note exists to send the next reader to. */
   'sentinel', (select json_build_object(
        'units', count(*),
        'holding_cost_state', json_object_agg_unique_state(null)) from (select 1) z),
