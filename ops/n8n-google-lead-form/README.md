@@ -79,6 +79,26 @@ database has every dealership's Google key for the retention window.
 **Nothing enforces `rate_limit_per_minute`.** The column is registered and read;
 no limiter uses it.
 
+**What a database error becomes on the wire has not been measured.** All four
+HTTP nodes carry `retryOnFail: true, maxTries: 3` and `onError: null`, so a
+PostgREST refusal is retried three times and then throws; with
+`responseMode: 'responseNode'` the workflow errors before reaching any respond
+node, and n8n answers the caller itself. That is believed to be a 500 — the
+direction that makes Google hold the lead — but it is **not** in the probe table
+above, because reaching `Record Lead Event` over HTTP needs a registered
+endpoint and a secret on the VM. Until it is measured, treat the receiver's
+status-code discipline as proven up to the secret check and asserted beyond it.
+
+**Concurrency at door one is fixed as of 7 September, and the retry setting is
+why it mattered.** `Record Lead Event` retries a lost response, and Google
+delivers at-least-once, so two deliveries of one lead genuinely overlap. Five
+concurrent backends against the old `nexus_record_lead_event` produced one
+insert and **four `23505`** — an exception where the function's own contract
+promised `was_duplicate = true`. Migration `20260907190000` uses
+`ON CONFLICT ON CONSTRAINT … DO NOTHING` and a re-read; the same race now
+returns one new event and four duplicates with no exception. See T21 in
+`ops/journey-lab/TEST-MATRIX.md`.
+
 ## Two things about the tenant
 
 **The key is in the URL and it is not a secret.** Unlike Meta, Google's webhook
@@ -178,6 +198,17 @@ so that is the only available shape. The build then **evaluates its own output
 back** and compares it against the source files, and refuses to write if they
 differ; an off-by-one in the line splitting broke that on the first attempt,
 silently, because the code still looked right.
+
+**It covers the two Code bodies and nothing around them, and that gap was live.**
+Read from the published workflow on 7 September, the webhook path on the box is
+`google-ads-lead`. `build-sdk.js` — and therefore the generated SDK — said
+`google-ads-lead/:key`, the path-parameter form this very file records as
+measured-and-404ing. So the file whose job is to keep the repo equal to the box
+was wrong about the URL, and the round-trip assertion could not see it, because
+a path is scaffolding rather than a body. Corrected in the generator, with the
+limit now stated there. A wrong credential name, retry setting or `onError` in
+that scaffolding would be equally invisible: **read the published definition
+back before trusting this file.**
 
 ## What has to happen before this can carry anything
 

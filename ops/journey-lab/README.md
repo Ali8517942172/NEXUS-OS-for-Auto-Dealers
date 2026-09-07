@@ -4,15 +4,23 @@
 It runs nothing on its own, it creates no database object, and it touches no
 n8n workflow.
 
-**Status, 7 September 2026: 11 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN.** Executed
-against staging; every verdict in `TEST-MATRIX.md` carries the evidence it was
-earned by. Nothing was converted to `PASS` by inference — the seven BLOCKED rows
+**Status, 7 September 2026: 14 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN** across 23
+journeys. Executed against staging; every verdict in `TEST-MATRIX.md` carries
+the evidence it was earned by. Nothing was converted to `PASS` by inference — the seven BLOCKED rows
 each name the missing capability, and T17 stays `NOT RUN` because running it
 properly needs a pass of its own.
 
 **The one FAIL is T12, and it is not in the ingestion layer.** A direct `UPDATE`
 on `leads` — the dashboard's own owner-assignment write path — wrote **0 audit
 rows**. The change is real and nothing recorded who made it.
+
+**T22 was a second FAIL and is now fixed, so it reads PASS-after-a-fix.** Five
+concurrent promotions of one phone-only lead event produced **three customers**
+(two of them orphans no `lead_event` points at) and every caller got a success.
+Door three read the phase without locking the row. Migration `20260907190000`
+takes the lock; the race now produces one customer and four idempotent answers.
+The FAIL is kept in the table because it is the evidence the lock is
+load-bearing.
 
 ---
 
@@ -174,8 +182,11 @@ rules we designed.* It says nothing about:
 
 - **volume** — every journey here runs at n=1, against a database holding a
   handful of rows;
-- **concurrency** — twenty sequential journeys never put five deliveries in
-  flight, and this box has been taken down twice by parallel writes;
+- ~~**concurrency**~~ — **closed 7 September 2026, and it found a real defect.**
+  T21–T23 put five genuinely concurrent backends through all three ingestion
+  doors; door three made three customers out of one enquiry. Read T21–T23 in
+  `TEST-MATRIX.md`. Still true: five backends is not load, and nothing here says
+  what happens at fifty deliveries or under a connection-pool limit;
 - **a customer's actual behaviour** — the person who fills a form twice, gives
   a wrong number, replies from a different handset, or enquires about a car that
   sold yesterday;

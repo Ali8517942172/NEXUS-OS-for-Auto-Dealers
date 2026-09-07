@@ -18,7 +18,15 @@ const hook = trigger({
     name: 'Google Lead Webhook',
     parameters: {
       httpMethod: 'POST',
-      path: 'google-ads-lead/:key',
+      /* NOT 'google-ads-lead/:key'. n8n registers a path-parameter webhook
+       * under an internal webhookId prefix, so the clean URL 404s -- measured
+       * on the box. The key travels as ?k=, which node 1 already accepts.
+       * This line said ':key' here, and therefore in the generated SDK, while
+       * the published workflow said 'google-ads-lead'. The round-trip check
+       * below covers the two Code BODIES and nothing around them, so a wrong
+       * path, credential or retry setting in this scaffolding is invisible to
+       * it. Read the published definition back before trusting this file. */
+      path: 'google-ads-lead',
       authentication: 'none',
       responseMode: 'responseNode',
       options: { rawBody: true },

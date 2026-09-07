@@ -381,6 +381,8 @@ pass.
       nexus-master-router   3
       walk_in               1        <-- lead 121
 
+  (Production `leads` reached **5** later the same day — see the WhatsApp lead
+  below. `walk_in` is still 1.)
   It is a **preflight, not a customer** — `walkin-preflight-2026-09-07-01`, email
   under `@nexus-preflight.invalid`, and it is deletable. Do not quote it as
   traffic. What it does prove, on production and not in a rolled-back
@@ -400,8 +402,9 @@ pass.
   that directory before writing the Lead Ads receiver: the same signature applies,
   and the sandbox it runs in has **no `crypto` at all**.
 - ~~**All twenty Journey Lab verdicts are `NOT RUN`**~~ **Superseded 7 September
-  2026: 11 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN**, executed against staging with
-  per-journey teardown asserted. Still **none of them is L4** — no dealership is
+  2026: 14 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN across 23 journeys**, executed
+  against staging with per-journey teardown asserted. T21–T23 are the
+  concurrency pass added later that day; T22 was a second FAIL and is fixed. Still **none of them is L4** — no dealership is
   on a live NEXUS ingestion endpoint, so no verdict is evidence about a real
   customer. **The one FAIL is T12 and it is not in the ingestion layer:** a
   direct `UPDATE` on `leads` — the dashboard's own owner-assignment path,
@@ -751,6 +754,88 @@ message. Both are `ALTER TABLE` on tables the live dashboard writes, which fires
 make with someone watching. `nexus_trace_linkability_report()` (service_role,
 deliberately cross-tenant, counts only — no names, no message text) keeps the
 gap as a number somebody can watch shrink.
+
+### Three doors read a row and then wrote it, and one made three customers
+
+7 September 2026. The Journey Lab's own README had said since the day it was
+written that nineteen sequential journeys prove nothing about concurrency. Five
+`pg_cron` backends behind a `pg_sleep_until` barrier — all five entering inside
+**25 ms**, measured from `clock_timestamp()` — were pointed at the three
+ingestion doors on staging. All three were read-then-write with no lock.
+
+| door | five concurrent callers, before | after |
+|---|---|---|
+| `nexus_record_lead_event` | 1 insert, **4 × `23505`** | 1 insert, 4 × `was_duplicate = true`, no exception |
+| `nexus_hydrate_lead_event` | **5 hydrations, last write wins** | 1 hydration, 4 × `LEAD_EVENT_NOT_AWAITING_HYDRATION` |
+| `nexus_promote_lead_event` (lead **with** an email) | 1 lead, 4 × `23505 leads_tenant_email_key` | 1 lead, 4 idempotent |
+| `nexus_promote_lead_event` (lead with **no** email) | **THREE leads: 41, 42, 43. Zero errors.** | 1 lead, all five callers naming it |
+
+**The last row is the defect, and the row above it is why nobody had seen it.**
+Promotion of an emailed lead looked safe only because a unique index on
+`(tenant_id, email)` refused the second insert — an *incidental* lock, which
+this file already records the worth of. A unique index does not constrain NULLs,
+and door three writes NULL for a lead with no email. That is the ordinary UAE
+case: the walk-in, the phone call, the WhatsApp enquiry. This file measures 25%
+of production leads as having no email at all.
+
+**And the damage was invisible from every angle anyone was looking from.**
+`lead_event.lead_id` holds one value, so it kept 42; leads 41 and 43 were
+orphans that no event points at. They satisfy every constraint on `lead_event`
+(no `lead_event` is involved), they carry a real origin in `leads.source` so
+`nexus_lead_attribution` counts them, and `nexus_lead_trace` answers
+`arrival = NO_ROWS` for them — which reads as *"this customer predates the
+ingestion layer"*, not as a fault. Two of the five callers were told
+`was_already_promoted = true` while two others were making the duplicates, and
+**every caller got a success.** Three salespeople, three CRM cards, one person
+called three times.
+
+`20260907190000`, on staging **and** production. The fix is `SELECT … FOR
+UPDATE` on the event row for hydrate and promote, and `INSERT … ON CONFLICT ON
+CONSTRAINT lead_event_identity_key DO NOTHING` plus a re-read for record. **Not**
+a unique index on `leads` and **not** a marker column: both are `ALTER TABLE` on
+`public.leads`, which fires `nexus_guard_born_open_grants()`. Route around the
+guard — the worked example this file already carries.
+
+`nexus_lead_ingest_invariants()` gains an eighth check — *every lead carrying an
+ingestion source is pointed at by the event that made it* — and **it went red on
+the wreckage the race had just made** (`2 orphan lead(s): 41, 43`), then green
+after teardown. A gate made to fail by the defect itself, not by a planted
+sabotage.
+
+Semantic parity confirmed across all four bodies: comment- and
+whitespace-normalised `md5(prosrc)` identical on both projects, while the raw
+hashes differ — which is the distinction this file already insists on. Staging
+teardown asserted back to the exact pre-run snapshot (3 `lead_event`, 31
+`leads`). Production positive control: promoting the already-promoted preflight
+event returns `lead_id = 121, was_already_promoted = true` and creates nothing.
+
+**Two things this did not settle.** Five backends is not load — nothing here
+says what happens at fifty deliveries or under a connection-pool limit, and
+`FOR UPDATE` now serialises promotions of one event, which is free at this
+volume and worth watching at real volume. And the receiver's behaviour when
+Postgres refuses is still **asserted, not measured**: all four HTTP nodes carry
+`retryOnFail: true, maxTries: 3` with `onError: null`, so a refusal throws and
+n8n answers the caller itself — believed to be 500, which is the direction that
+makes Google hold the lead, but it is not in `ops/n8n-google-lead-form/README.md`'s
+probe table and reaching that node over HTTP needs a secret on the VM.
+
+**A related repo defect, same class.** `receiver.sdk.js` and `build-sdk.js`
+declared the Google webhook path as `google-ads-lead/:key` while the published
+workflow has said `google-ads-lead` since the path parameter was measured to
+404. `build-sdk.js` round-trips the two Code **bodies** and nothing around them,
+so a wrong path, credential or retry setting in the scaffolding is invisible to
+the check whose whole purpose is repo↔box equality. Corrected, and the limit is
+now written into the generator.
+
+### A real WhatsApp lead arrived on production while this was running
+
+Lead **122**, `Hussain`, `+971556382721`, `source = nexus-master-router`,
+`status = COLD`, created 7 Sep 2026 14:05 UTC. Production `leads` is therefore
+**5**, not the 4 this file said. It came through the old writer, which means it
+came through `/webhook/whatsapp-inbound` — the door recorded above as accepting
+unauthenticated calls with `WAHA_WEBHOOK_SECRET` unset. Nothing about it is
+wrong; it is a reminder that the open webhook is not theoretical and is carrying
+real people's phone numbers today.
 
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 

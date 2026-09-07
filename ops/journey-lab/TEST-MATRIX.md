@@ -174,6 +174,9 @@ that is where this product's expensive failures live.
 | T18 | Two dealerships, one source: the endpoint decides | `meta_lead_ads_facebook`, `google_ads_lead_form` | L2 | **PASS** |
 | T19 | The invariant sweep, and making every branch go red | n/a — the gate itself | L2 | **PASS** |
 | T20 | Onboarding a dealership's ingestion, and rotating a key | all | L2 | **PASS** |
+| T21 | Five concurrent deliveries of one Google lead | `google_ads_lead_form` | L2 | **PASS after a fix** |
+| T22 | Five concurrent promotions of one lead event | `google_ads_lead_form` | L2 | **FAIL before a fix, PASS after** |
+| T23 | Five concurrent hydrations of one metadata-only arrival | `meta_lead_ads_facebook` | L2 | **PASS after a fix** |
 
 ## What was actually run — 7 September 2026, staging
 
@@ -1111,15 +1114,160 @@ product. That is the commercial assertion under this journey.
 
 ---
 
+## T21–T23 — the concurrency pass, 7 September 2026, staging
+
+`README.md` has said since 6 September that this Lab proves nothing about
+concurrency: *"twenty sequential journeys never put five deliveries in flight,
+and this box has been taken down twice by parallel writes."* That sentence was
+a real gap, not a disclaimer, and this is the pass that closes it.
+
+### How the races were run
+
+Five `pg_cron` jobs, five genuinely separate backends, each calling one door of
+the ingestion family and each holding at a `pg_sleep_until` barrier first. All
+five entered inside **25 ms** on every run — measured from `clock_timestamp()`
+taken after the barrier, not assumed from the schedule. Every fixture used the
+`.invalid` email namespace and a `racelab-` external id, and teardown was
+asserted: `lead_event` back to 3 and `leads` back to 31, the exact pre-run
+snapshot.
+
+This matters because all three doors were **read-then-write with no lock**, and
+a read-then-write window is invisible to every sequential test ever run against
+it. Nineteen green journeys said nothing about any of this.
+
+### T21 — record: the duplicate answer that only worked when it was late
+
+| | before the fix | after |
+|---|---|---|
+| callers succeeding | **1 of 5** | 5 of 5 |
+| `was_duplicate = true` | 0 | **4** |
+| exceptions | **4 × `23505 lead_event_identity_key`** | 0 |
+| `lead_event` rows | 1 | 1 |
+
+`nexus_record_lead_event`'s own comment says a duplicate *"must return an answer
+the caller can turn into a 200"*, because Google is at-least-once and
+**permanently discards a lead on a 4XX**. That promise held only for a duplicate
+that arrived *after* the first had committed. A duplicate arriving at the same
+moment — which is exactly what at-least-once delivery produces, and what the
+receiver's own `retryOnFail: true, maxTries: 3` on `Record Lead Event` produces
+when a response is lost — got an exception the receiver has no branch for.
+
+Fixed with `INSERT … ON CONFLICT ON CONSTRAINT lead_event_identity_key DO
+NOTHING`, then a re-read: the loser waits on the speculative-insertion lock and
+returns the ordinary duplicate answer. **Verdict PASS**, earned after the fix
+and recorded as such rather than as a clean pass.
+
+### T22 — promote: three customers out of one enquiry. FAIL.
+
+Run twice on purpose, because the first shape hid the defect.
+
+**With an email on the lead:** 1 lead created, 4 callers refused `23505
+leads_tenant_email_key`. Nothing in the promoter stopped the second promotion.
+A unique index on `(tenant_id, email)` did — an **incidental lock**, and this
+project's own house rules say what those are worth.
+
+**With no email — a walk-in, a phone call, a WhatsApp enquiry, the ordinary UAE
+case:**
+
+| | |
+|---|---|
+| `leads` rows created from one `lead_event` | **3** (41, 42, 43) |
+| callers that got an error | **0** |
+| callers told `was_already_promoted = true` | **2** |
+| `lead_event.lead_id` | 42 — so **41 and 43 are orphans** |
+
+A unique index does not constrain NULLs, and door three writes NULL for a lead
+with no email (`nullif(btrim(coalesce(…,'')),'')`). Two of the five callers were
+told the work was already done while two others were quietly creating
+duplicates, and every caller got a success.
+
+The orphans are worse than duplicates. Nothing points at them, so they satisfy
+every constraint on `lead_event`; they carry a real origin in `leads.source`, so
+`nexus_lead_attribution` counts them; and `nexus_lead_trace` reports
+`arrival = NO_ROWS` for them, which reads as *"this customer predates the
+ingestion layer"* rather than as a fault. Three salespeople, three CRM cards,
+one person called three times.
+
+**After the fix** (`SELECT … FOR UPDATE` on the event row): 5 callers, **1**
+`leads` row, 1 × `was_already_promoted = false` and 4 × `true`, and **all five
+returned the same `lead_id`** — so every caller agrees which customer this is.
+**Verdict: FAIL before, PASS after.** The FAIL is kept in this table; converting
+it to a clean PASS would erase the only evidence that the lock is load-bearing.
+
+### T23 — hydrate: the guard that described what was happening to it
+
+`nexus_hydrate_lead_event` refuses a non-`RECEIVED` event with the hint
+*"re-fetching a lead that has already been hydrated would overwrite what the
+salesperson has been working from"*. Five concurrent Graph fetches all read
+`RECEIVED`, all passed that check, and all wrote — last write wins, which is
+precisely the sentence.
+
+After the lock: **1 hydration, 4 × `NX001 LEAD_EVENT_NOT_AWAITING_HYDRATION`**,
+and the stored `normalized` is the winner's fetch, untouched. The refusal the
+function always claimed now actually fires. **Verdict PASS after a fix.**
+
+### The invariant that would have caught it, made red by real damage
+
+`nexus_lead_ingest_invariants()` gained an eighth check:
+
+> *Every lead carrying an ingestion source is pointed at by the event that made
+> it.*
+
+It went **FAIL — `2 orphan lead(s): 41, 43`** on the wreckage the race had just
+made, and **PASS — `0 orphan lead(s): (none)`** after teardown. That is a gate
+made to go red by the defect itself rather than by a planted sabotage, which is
+the stronger of the two proofs and the cheaper one to come by here.
+
+It is only visible from the `leads` side looking back. From `lead_event` there
+is nothing to see, because an orphan is a lead no event mentions.
+
+### Why the fix is a lock and not a constraint
+
+The tidy answer is a unique index on `(tenant_id, phone)`, or a marker column.
+Both are `ALTER TABLE` on `public.leads`, which fires
+`nexus_guard_born_open_grants()` and strips the live dashboard's write grants —
+the worked example `CLAUDE.md` records. All three fixes are
+`CREATE OR REPLACE FUNCTION` and touch no table.
+
+Migration `20260907190000`, applied to staging **and production**, semantic
+parity verified across all four function bodies (comment- and
+whitespace-normalised md5 identical on both projects). Production positive
+control: promoting the already-promoted preflight event still returns
+`lead_id = 121, was_already_promoted = true` and creates nothing.
+
+### What this pass still does not prove
+
+Five backends is not load. Nothing here says what happens at fifty concurrent
+deliveries, under a connection-pool limit, or when PostgREST times out
+mid-transaction. And it is all L2 — no provider fired any of it. The `FOR
+UPDATE` now serialises promotions of one event, which is correct and also means
+a slow promotion holds a lock; at this volume that is free, and at real volume
+it is a thing to watch rather than a thing that is fine.
+
+**One thing was found in the repo rather than in the database**, and it belongs
+here because it is the same class of error: `receiver.sdk.js` and its generator
+declared the webhook path as `google-ads-lead/:key` while the published workflow
+has said `google-ads-lead` since the day the path parameter was measured to
+404. `build-sdk.js` round-trips the two Code **bodies** and nothing around them,
+so a wrong path, credential or retry setting in the scaffolding is invisible to
+the check that exists to keep the repo equal to the box. Corrected in the
+generator; the limit is now stated in it.
+
+---
+
 ## What all twenty, run and green, would still not prove
 
 Repeated from `README.md`, because this is the page people screenshot.
 
 Twenty green rows would mean: the ingestion layer handles the payloads we and
 two providers can generate, against staging, with the tenancy rules we
-designed, at n=1, sequentially, with no n8n behind it and no customer involved.
-They would not prove volume, concurrency, deliverability, Dubizzle, the
-WhatsApp perimeter, or that one dealership's real enquiries have ever passed
-through this layer.
+designed, at n=1, with no n8n behind it and no customer involved. They would
+not prove volume, deliverability, Dubizzle, the WhatsApp perimeter, or that one
+dealership's real enquiries have ever passed through this layer.
+
+**Concurrency is no longer on that list, and is not off it either.** T21–T23
+put five genuinely concurrent backends through all three ingestion doors and
+found a real defect in one of them. Five is not fifty, and none of it was
+driven by a provider.
 
 **implemented ≠ tested ≠ production-proven ≠ commercially validated.**
