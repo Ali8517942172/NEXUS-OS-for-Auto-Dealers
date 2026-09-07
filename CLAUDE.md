@@ -701,6 +701,47 @@ evidence sentence spelled out. It is not quietly filed under Facebook.
    `nexus_current_tenant_ids()` is empty for it. It answers "my dealership's
    attribution"; the vendor reads `lead_event`.
 
+### There is no correlation id, and the join key is an email string
+
+`20260907180000`. "What happened to this customer?" could not be answered, and
+the reason is structural. `communication_logs` and `audit_log` link to a
+customer by **`lead_email`** — an email address string. Not `lead_id`, not a
+foreign key. Measured on production:
+
+| | |
+|---|---|
+| leads | 4 |
+| **leads with no email at all** | **1 (25%)** |
+| `communication_logs` | 120 |
+| ...whose `lead_email` matches no lead | **95 (79%)** |
+| `audit_log` | 843 |
+| ...carrying no `lead_email` at all | **775 (92%)** |
+
+So a phone-only lead — a walk-in, a WhatsApp enquiry, the ordinary UAE case — is
+**unlinkable**, 92% of the audit trail is attached to nobody, and two enquiries
+from one person collapse into one history.
+
+`nexus_lead_trace(lead_id)` answers what can be answered and says `NOT_LINKABLE`
+where it cannot, because "0 messages" for a customer whose only possible link is
+an email they do not have is a guess wearing a number. Verified on production:
+
+| lead | hops |
+|---|---|
+| with an email | `lead=PRIMARY_KEY, arrival=NO_ROWS, communication=EMAIL_STRING_MATCH, audit=EMAIL_STRING_MATCH` |
+| **without an email** | `lead=PRIMARY_KEY, arrival=NO_ROWS, communication=NOT_LINKABLE, audit=NOT_LINKABLE` |
+| another dealership's lead | 0 rows |
+
+`arrival=NO_ROWS` on both is itself honest: those leads predate the ingestion
+layer, and the row says so rather than implying the customer never arrived.
+
+**The real fix is owed, not done**: a `lead_id` foreign key on
+`communication_logs`, or a correlation id carried from receiver to outbound
+message. Both are `ALTER TABLE` on tables the live dashboard writes, which fires
+`nexus_guard_born_open_grants()` and strips those grants. That is a change to
+make with someone watching. `nexus_trace_linkability_report()` (service_role,
+deliberately cross-tenant, counts only — no names, no message text) keeps the
+gap as a number somebody can watch shrink.
+
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 
 Production holds one dealership and a quarantine tenant. Proving a cross-tenant
