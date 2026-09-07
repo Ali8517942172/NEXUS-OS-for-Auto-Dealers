@@ -42,22 +42,52 @@ worked also proved the scrub was never reached. One branch is copied wholesale
 and cannot be allowlisted: `field_data`, the customer's own answers. That is the
 only door `scrub()` guards.
 
-**A Meta form question named `api_key` would have destroyed the lead.**
+**A bare credential word anywhere in the customer's answers would have destroyed
+the lead — and the first fix here was wrong in both directions.**
 `lead_event_payload_carries_no_shared_secret` is a text match over the whole
-serialised JSON and does not distinguish a key from a value, so that question
-name fails the insert — and a failed insert here is a customer who filled in the
-form and was thrown away. Measured against Postgres, not reasoned about:
+serialised JSON and does not distinguish a key from a value, so a failed insert
+here is a customer who filled in the form and was thrown away. Re-measured
+against Postgres on 7 September 2026, and the second measurement corrected the
+first:
 
 | shape | constraint |
 |---|---|
-| `{"name":"api_key"}` | **REFUSES** |
-| `{"name":"q__api_key"}` | accepts |
-| an *answer* containing the word in quotes | accepts anyway — jsonb escapes the inner quotes |
+| a question label of exactly `api_key` | **REFUSES** |
+| `API_KEY` in any case | **REFUSES** — the match ignores case |
+| a label of `my_api_key` | accepts — a substring never trips it |
+| an **answer** of exactly `authorization` | **REFUSES** |
+| an answer reading `my api_key is broken` | accepts |
+| an answer with the word in escaped quotes | accepts — jsonb escapes them |
+| an answer of `api_key` plus one space | accepts |
+| the word four levels deep | **REFUSES** |
 
-That last row killed a defence already written: a pass rewriting the word inside
-string values guarded a case Postgres proves cannot occur, at the cost of editing
-a customer's own words. It is gone. Only the question **label** is renamed, only
-on a real collision, and the rename is recorded.
+The fourth row is a defect this receiver shipped with. The first pass guarded
+question LABELS only, and guarded them with a SUBSTRING regex — so a real
+customer whose whole answer was `authorization` would have been thrown away,
+while a harmless label like `my_api_key`, which never trips the constraint, was
+renamed for nothing. One wrong rule, wrong in both directions: an embedded word
+had been measured and the result generalised to every word.
+
+What actually trips it is a string — key or value, at any depth — that is
+**exactly** one of the six words. The rule is now exact-match and lives inside
+`scrub()`, which already walks this branch. The repair is the smallest thing
+that clears it: the string keeps the word and gains a stated note, because one
+trailing character is all the constraint needs and deleting a customer's answer
+to satisfy a regex is not a repair. `normalized` — the text a salesperson reads
+— is a different column the constraint does not cover and is untouched.
+
+There is deliberately no key-rename branch: all six words are already in
+`SECRET_KEYS`, so a key equal to one of them is dropped as a credential before
+any repair could run, and a rename branch would be unreachable code pretending
+to be a defence. Meta carries the question label as a *value* of `name`, so the
+value path is the one that fires.
+
+> **The box does not have this fix yet.** The repo body and the tests are
+> corrected; workflow `JDqy54w2HUH7pHgW` still runs the old `Normalize And
+> Redact`. It cannot bite today — `META_APP_SECRET` is unset, so this receiver
+> refuses every delivery before reaching that node, and it has never received
+> anything. Redeploying that one node body is a **blocking step before the Meta
+> app secret is ever set**, and it is listed under "What Ali has to do" below.
 
 **Attribution never touches the identity.** Meta delivers Instagram lead ads on
 the connected Facebook Page's leadgen subscription, so at `RECEIVED` time nobody
@@ -68,7 +98,7 @@ so changing it would make Meta's redelivery of the same `leadgen_id` look new an
 hand the dealership two leads for one customer. Absent platform is `UNKNOWN`, not
 guessed from the ad name.
 
-## Tests: 44, all passing
+## Tests: 49, all passing
 
 `node ops/n8n-meta-lead-ads/receiver.test.js` runs the **deployed node bodies**
 through a harness faking `$input` / `$env` / `$()`. It reaches every branch the
@@ -84,7 +114,8 @@ two leads in one delivery; an Arabic name; `first_name`+`last_name`; a UAE `05x`
 number; an unparseable number reported rather than repaired; Instagram reported,
 absent, and an unrecognised value; the allowlist against a top-level token, a
 nested `client_secret` and an unknown future field; a credential-named question;
-a token-shaped answer; and both promoter refusals.
+a token-shaped answer; an answer that is exactly a constraint word; a label that
+merely contains one and must therefore be left alone; and both promoter refusals.
 
 The harness also **throws if a node body references an upstream node the workflow
 does not have**. That caught a real defect: `Normalize And Redact` read
@@ -99,6 +130,11 @@ returning a healthy-looking `200`.
 
 ## What Ali has to do before this can carry anything
 
+0. **Redeploy `Normalize And Redact` from `normalize-and-redact.node.js`** before
+   anything else on this list. The deployed body still carries the constraint
+   defect described above, which destroys a lead whose answer is exactly one of
+   six words. Harmless while the app secret is unset; lead-losing the moment it
+   is set.
 1. A **Facebook Page** for the dealership, with a **lead form**.
 2. On the VM: `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and
    `META_PAGE_ACCESS_TOKEN` (a Page token with `leads_retrieval`; the short-lived

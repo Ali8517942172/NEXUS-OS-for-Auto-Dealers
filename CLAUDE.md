@@ -468,6 +468,98 @@ Repo↔production parity is **byte-exact over the 288 shared migrations** — se
 `ops/PARITY-2026-09-06.md`, and note its own caveat that a version-keyed rollup
 cannot answer a content question once versions diverge.
 
+### Door three never looked at `environment` — 7 September 2026
+
+Found by asking a narrow question: *is it safe to register a simulation Google
+endpoint so the receiver can be proven end to end?* The answer was no, and not
+for a Google reason.
+
+Parts 2 and 3 of the lead-ingest layer both claim, in their own comments, that
+the simulator cannot reach production numbers "because the row it would need
+cannot be written". That is true of **recording**. It was never true of
+**promotion**. Measured on production before the fix:
+
+```
+pg_get_functiondef(nexus_promote_lead_event) like '%environment%'   ->  0
+columns of public.leads matching (sim|test|demo|fixture|synthetic)  ->  0
+```
+
+A simulation `lead_event`, once hydrated, inserted into `public.leads` exactly
+like a real customer — into a table with no column that could ever say
+otherwise. Pipeline value, response-time reporting and every recovered-revenue
+figure would have counted it. **Nothing had happened**: zero simulation
+endpoints, zero simulation events. A door that was open, not a mess.
+
+Migration `20260907124500_leadingest_10` makes door three refuse a non-production
+event with `PROMOTION_REQUIRES_PRODUCTION_ENVIRONMENT`, and says in its HINT
+what would have to exist first. The tempting fix — `leads.is_simulation` — was
+deliberately **not** taken: an `ALTER TABLE` on `public.leads` fires
+`nexus_guard_born_open_grants()` and strips the live dashboard's write grants,
+and a flag half the readers ignore is worse than no flag. That is a change to
+make with someone watching.
+
+**Proven on staging first, with a positive control**: the simulation event
+refused; a production event alongside it still promoted (lead 31,
+`source = google_ads_lead_form`). Then applied to production and verified —
+guard present, `anon` and `authenticated` denied by `has_function_privilege()`,
+`service_role` allowed, `leads` unchanged at 4 rows, `lead_event` at 1.
+
+### The most valuable field on a car dealership's lead row was being dropped
+
+Same migration. The promoter reads `normalized->>'vehicle_interest'`. Both
+receivers written this week emit `vehicle_of_interest`.
+`nexus_lead_normalized_defect()` does not mention a vehicle at all, so nothing
+complained — every Meta and Google lead would have landed with
+`leads.vehicle_interest` NULL. A silent near-miss between two spellings,
+invisible because the contract was silent about the field.
+
+The promoter now coalesces both spellings, so no lead in flight loses the
+answer, and both test suites now pin the pair so a third spelling cannot be
+introduced quietly. The contract is deliberately left permissive: refusing the
+wrong spelling would have turned a dropped field into a dropped customer.
+
+### The constraint re-measurement that corrected a shipped receiver
+
+`lead_event_payload_carries_no_shared_secret` refuses a string — key or value,
+at any depth — that is **exactly** one of six credential words. Substrings never
+trip it; one trailing character clears it; the match ignores case.
+
+The Meta receiver shipped guarding question LABELS only, with a SUBSTRING regex.
+Wrong in both directions from one wrong rule: a customer whose whole answer was
+`authorization` would have failed the insert and been thrown away, while a
+harmless label like `my_api_key` was renamed for nothing. I had measured an
+embedded word and generalised the result to every word.
+
+Repo bodies and tests for both receivers are corrected (Meta 49 tests, Google
+56). **The Meta box is not**: workflow `JDqy54w2HUH7pHgW` still runs the old
+`Normalize And Redact`. It cannot bite while `META_APP_SECRET` is unset — the
+gate refuses every delivery before that node — but redeploying that one body is
+a **blocking step before the app secret is ever set**.
+
+### The Google Ads Lead Form receiver is live and refuses everything
+
+n8n `EYva4c2bMV5MGq0o`, `POST /webhook/google-ads-lead?k=<endpoint public key>`.
+Measured on the live box: `404` with no key, `404` malformed key, `400` no
+`lead_id`, `400` array body, `403` unregistered key, and — with a registered
+endpoint whose secret is unset — **`500 ENDPOINT_SECRET_NOT_CONFIGURED`**, which
+is the answer that makes Google **hold** the lead rather than discard it.
+
+Google retries a 5XX and permanently discards on a 4XX, so the status code is a
+decision about a real customer, not a formality. An unconfigured secret answers
+5XX on purpose. A form that collected too little to contact anyone answers 200
+and records a `REJECTED` event — the delivery was fine, the form is what needs
+changing.
+
+Two things this receiver does **not** control, stated rather than glossed:
+`google_key` is in n8n's own execution store because the webhook node holds the
+raw body before any of this runs, and a malformed JSON body never reaches the
+code at all — n8n answers `422` first, so a truncated Google POST that a retry
+might have fixed is discarded by n8n, not by us.
+
+The path was originally `google-ads-lead/:key`. n8n registers a
+path-parameter webhook under an internal `webhookId` prefix, so the clean URL
+404s — measured, not assumed. The key moved to `?k=`.
+
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 
 Production holds one dealership and a quarantine tenant. Proving a cross-tenant

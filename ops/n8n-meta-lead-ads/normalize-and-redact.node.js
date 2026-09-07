@@ -69,7 +69,23 @@ const SECRET_KEYS = new Set([
   'client_id_secret', 'secret',
 ]);
 
-let strippedKeys = 0, strippedValues = 0;
+/* The exact-match rule. See the long note further down: what trips
+   lead_event_payload_carries_no_shared_secret is a string -- key or value, at
+   any depth -- that is exactly one of the six words. Substrings never trip it.
+
+   It is applied to VALUES only, and that is not an oversight. Every one of the
+   six words is already in SECRET_KEYS above, so a KEY equal to one of them is
+   dropped as a credential before any repair could run: a rename branch for keys
+   would be unreachable code pretending to be a defence. And in both providers
+   the question LABEL travels as a value -- Meta's field_data[].name, Google's
+   user_column_data[].column_name -- so the value path is the one that fires. */
+const BARE_CONSTRAINT_WORD =
+  /^(google_key|app_secret|client_secret|access_token|api_key|authorization)$/i;
+const CONSTRAINT_NOTE =
+  ' (stored with this note because the bare word is refused by a database constraint; ' +
+  'the customer wrote it exactly as it appears before this bracket)';
+
+let strippedKeys = 0, strippedValues = 0, annotatedValues = 0;
 function scrub(v, depth) {
   if (depth > 12) return null;
   if (Array.isArray(v)) return v.map(x => scrub(x, depth + 1));
@@ -82,6 +98,15 @@ function scrub(v, depth) {
     return out;
   }
   if (typeof v === 'string' && TOKEN_SHAPED.test(v)) { strippedValues++; return '[redacted]'; }
+  /* A question LABEL or a customer's ANSWER that is exactly one of the six
+     words. Nothing is deleted and nothing is rewritten: the word still starts
+     the string, and the note says why the rest is there. `normalized` -- what a
+     salesperson actually reads -- is a different column the constraint does not
+     cover and is left alone entirely. */
+  if (typeof v === 'string' && BARE_CONSTRAINT_WORD.test(v)) {
+    annotatedValues++;
+    return v + CONSTRAINT_NOTE;
+  }
   return v;
 }
 
@@ -149,45 +174,42 @@ const ad_platform = (platform === 'instagram' || platform === 'facebook') ? plat
        hydrated_payload::text !~* '"(google_key|app_secret|client_secret|
                                     access_token|api_key|authorization)"'
 
-   It does not distinguish a key from a value. So a Meta lead form whose QUESTION
-   is called "api_key" makes the insert fail — and a failed insert here is a
+   It does not distinguish a key from a value, and a failed insert here is a
    customer who filled in the form and was thrown away. Same shape as answering
    Google a 4XX.
 
    MEASURED against Postgres rather than reasoned about, because the regex needs
-   a literal quote on both sides and JSON escaping decides whether there is one:
+   a literal quote on both sides and JSON escaping decides whether there is one.
+   Re-measured on 7 September 2026, and the second measurement CORRECTED THE
+   FIRST:
 
-     {"field_data":[{"name":"api_key",...}]}            -> constraint REFUSES
-     {"field_data":[{"name":"q__api_key",...}]}         -> accepted
-     an ANSWER containing "api_key" in quotes           -> accepted anyway,
-        because jsonb renders the inner quotes as \" and the closing quote is
-        therefore preceded by a backslash, so the pattern cannot match.
+     {"name":"api_key"}                        -> REFUSES   (a question label)
+     {"column_id":"API_KEY"}                   -> REFUSES   (case-insensitive)
+     {"name":"my_api_key"}                     -> accepted  (a substring never trips it)
+     {"values":["authorization"]}              -> REFUSES   (an ANSWER, on its own)
+     {"values":["my api_key is broken"]}       -> accepted
+     an answer containing "api_key" IN QUOTES  -> accepted   (jsonb escapes them)
+     {"values":["api_key "]}                   -> accepted  (a trailing space clears it)
+     {"a":{"b":{"c":{"d":"access_token"}}}}    -> REFUSES   (depth is irrelevant)
 
-   That last line killed a defence I had already written. A pass that rewrote
-   the word inside string VALUES was in this file and is gone: it guarded a case
-   Postgres proves cannot occur, and the cost of keeping it was editing a
-   customer's own words in the archival copy for no reason at all.
+   The fourth line is a defect this file shipped with. The first pass read only
+   question LABELS, and read them with a SUBSTRING regex -- so a real customer
+   whose whole answer was "authorization" would have failed the insert and been
+   thrown away, while a harmless label like "my_api_key", which never trips the
+   constraint at all, was renamed for nothing. Wrong in both directions, out of
+   one wrong rule: I had measured an embedded word and generalised it to every
+   word.
 
-   So only the question LABEL is renamed, only when it genuinely collides, and
-   the rename is recorded. The answer is never touched, and `normalized` — the
-   text a salesperson reads — is a different column the constraint does not
-   cover and is left exactly as the customer wrote it. */
-const CONSTRAINT_WORDS = /(google_key|app_secret|client_secret|access_token|api_key|authorization)/gi;
-let renamedQuestions = 0;
-
-const scrubbedFieldData = (scrub(src.field_data || [], 0) || []).map(f => {
-  if (!f || typeof f !== 'object') return f;
-  const name = String(f.name || '');
-  if (CONSTRAINT_WORDS.test(name)) {
-    CONSTRAINT_WORDS.lastIndex = 0;
-    renamedQuestions++;
-    /* The answer is kept. Only the question's LABEL is prefixed, and the
-       original is recorded so nothing is silently rewritten. */
-    return Object.assign({}, f, { name: 'q__' + name, name_original_note: 'renamed to clear a database constraint' });
-  }
-  CONSTRAINT_WORDS.lastIndex = 0;
-  return f;
-});
+   What actually trips it is a string -- key or value, any depth -- that is
+   EXACTLY one of the six words. So the rule is exact-match and it now lives
+   inside scrub(), which already walks this branch. A KEY is prefixed; a VALUE
+   keeps the customer's word and gains a stated note, because one trailing
+   character is all the constraint needs and deleting a customer's answer to
+   satisfy a regex is not a repair. `normalized` -- the text a salesperson reads
+   -- is a different column the constraint does not cover and is left exactly as
+   the customer wrote it. */
+const scrubbedFieldData = scrub(src.field_data || [], 0) || [];
+const renamedQuestions = 0;  /* see above: the key path is unreachable */
 
 const hydrated_payload = {
   provider: 'meta',
@@ -213,7 +235,8 @@ const hydrated_payload = {
      wholesale because we must not edit them. scrub() guards exactly this. */
   field_data: scrubbedFieldData,
   phone_unparseable: phone_e164 ? null : (phoneRaw || null),
-  constraint_safety: { renamed_questions: renamedQuestions },
+  constraint_safety: { renamed_questions: renamedQuestions,
+                       annotated_answers: annotatedValues },
 };
 
 return [{ json: {
@@ -228,6 +251,9 @@ return [{ json: {
   /* Counted over field_data only. Zero is the normal, healthy answer:
      the rest of hydrated_payload is an allowlist and never needed one. */
   renamed_questions: renamedQuestions,
+  /* An answer that was exactly a credential word. Zero is the normal answer;
+     a non-zero count is a lead that WOULD have been destroyed before today. */
+  annotated_answers: annotatedValues,
   field_data_stripped_keys: strippedKeys,
   field_data_stripped_token_shaped_values: strippedValues,
 } }];

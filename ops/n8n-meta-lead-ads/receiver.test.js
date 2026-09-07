@@ -210,8 +210,13 @@ console.log('\nThe allowlist, and the one door it cannot cover');
      !/surprise_field/.test(s), s.slice(0, 200));
 
   /* field_data is the one branch copied wholesale, so scrub() has to work there. */
-  ck('a credential-named QUESTION is renamed, not dropped — the answer is kept',
-     /q__api.key/.test(s) && /should-not-survive/.test(s), s.slice(0, 400));
+  /* The question label travels as the VALUE of `name`, not as a key, so the
+     repair is the annotation and not a key rename. Measured 7 Sep 2026: the
+     bare word is what the constraint refuses, and one trailing character clears
+     it, so the label the advertiser chose is still readable and the answer is
+     untouched. */
+  ck('a credential-named QUESTION keeps its label and its answer, annotated not dropped',
+     /"api_key \(stored with this note/.test(s) && /should-not-survive/.test(s), s.slice(0, 400));
   ck('a token-shaped value inside a customer answer is redacted', !/EAAy/.test(s), s.slice(0, 400));
   ck('the customer answers around it survive', /a@b\.com/.test(s) && /Ahmed/.test(s), s.slice(0, 300));
   ck('and it counted the token-shaped value it redacted from field_data',
@@ -225,8 +230,8 @@ console.log('\nThe allowlist, and the one door it cannot cover');
 
   const CONSTRAINT = /"(google_key|app_secret|client_secret|access_token|api_key|authorization)"/i;
   ck('the row would satisfy lead_event_payload_carries_no_shared_secret', !CONSTRAINT.test(s), s.slice(0, 500));
-  ck('and it recorded the rename rather than editing silently',
-     r.hydrated_payload.constraint_safety.renamed_questions >= 1, JSON.stringify(r.hydrated_payload.constraint_safety));
+  ck('and it recorded the annotation rather than editing silently',
+     r.hydrated_payload.constraint_safety.annotated_answers >= 1, JSON.stringify(r.hydrated_payload.constraint_safety));
 
   /* The lead-losing case, stated as its own test: a form question named
      api_key must NOT cost the dealership the customer. */
@@ -240,6 +245,38 @@ console.log('\nThe allowlist, and the one door it cannot cover');
      collide.can_promote === true && !CONSTRAINT.test(cs), cs.slice(0, 400));
   ck('and the customer answer to it survives verbatim in normalized',
      /yes I consent/.test(collide.normalized.message || ''), collide.normalized.message);
+
+  /* The case this file SHIPPED BROKEN and that a re-measurement on 7 Sep 2026
+     found: the collision can be in the ANSWER, not the label. A customer whose
+     whole answer is the bare word would have failed the insert -- and a failed
+     insert here is a real person who filled in the form and was thrown away. */
+  const answerCollide = runNormalize(graph({ field_data: [
+    { name: 'full_name', values: ['Omar'] },
+    { name: 'email', values: ['omar@example.ae'] },
+    { name: 'what_do_you_need', values: ['authorization'] },
+  ] }), CTX)[0].json;
+  const acs = JSON.stringify(answerCollide.hydrated_payload);
+  ck('an ANSWER that is exactly a constraint word does not destroy the lead',
+     answerCollide.can_promote === true && !CONSTRAINT.test(acs), acs.slice(0, 400));
+  ck('and the word the customer typed still starts the stored string',
+     /"authorization \(stored with this note/.test(acs), acs.slice(0, 500));
+  ck('while normalized keeps it with nothing appended at all',
+     /what do you need: authorization$/.test(answerCollide.normalized.message || ''),
+     answerCollide.normalized.message);
+
+  /* And the opposite direction of the same old defect: a label that merely
+     CONTAINS a constraint word never trips it, so it must not be touched. */
+  const nearMiss = runNormalize(graph({ field_data: [
+    { name: 'full_name', values: ['Sara'] },
+    { name: 'email', values: ['sara@example.ae'] },
+    { name: 'my_api_key_question', values: ['no'] },
+  ] }), CTX)[0].json;
+  const nms = JSON.stringify(nearMiss.hydrated_payload);
+  ck('a label that only contains a constraint word is left alone',
+     /"my_api_key_question"/.test(nms) && !/stored with this note/.test(nms), nms.slice(0, 400));
+  ck('and nothing was counted as repaired',
+     nearMiss.hydrated_payload.constraint_safety.annotated_answers === 0,
+     JSON.stringify(nearMiss.hydrated_payload.constraint_safety));
 }
 
 console.log('\nForms that did not collect enough to reach anyone');
