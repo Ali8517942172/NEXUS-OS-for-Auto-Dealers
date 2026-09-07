@@ -617,6 +617,48 @@ Verified on production, with the positive control that matters:
 An outsider can no longer tell a real path from an invented one, and the
 legitimate reader is unaffected.
 
+### Branch by branch, the RLS-bypassing surface holds — 7 Sep 2026
+
+The earlier audit asked *does this function derive the caller's identity at all?*
+This one asks the harder question: having derived it, does it **use** it on every
+statement that touches tenant-scoped data? A function can read `auth.uid()` in
+its first line and update another dealership's row in its last.
+
+Over the 42 `SECURITY DEFINER` functions `authenticated` can reach: **5
+statements in 5 functions** touch a tenant-scoped table with no tenant
+predicate, and **zero of them are writes**. All five read, all five correct:
+
+- `action_decide`, `lead_recovery_decide` — `select u.name … where u.id =
+  v_row.decided_by_staff_id`. `v_row` was loaded with a tenant predicate, so the
+  id is already this dealership's; a foreign id yields NULL, not a name.
+- `policy_verify_rule`, `policy_supersede_rule`, `policy_withdraw_rule` —
+  `select * into r from policy_rule where id = p_rule_id`. This one **cannot**
+  carry a tenant predicate: you must load the row to learn whose it is, and the
+  three then refuse by name (`GLOBAL_RULE_NOT_TENANT_VERIFIABLE`,
+  `WRONG_TENANT`, `JURISDICTION_NOT_YOURS_TO_LEGISLATE`). Verified: those
+  refusals go through `policy_refuse()`, which **raises**, and every UPDATE in
+  the family carries `and tenant_id = ctx.tenant_id` in the statement itself.
+
+`nexus_definer_scoping_audit()` (`20260907160000`) makes that a standing check —
+REVIEW rows are the finding, zero is healthy. Made to go red: a planted function
+reading *and* writing `leads` unscoped returned two REVIEW rows with `is_write`
+correctly set.
+
+**And the audit's own exemption mechanism had a hole, found by testing it.** The
+exemption was keyed on the statement hash alone, so any function containing a
+byte-identical statement would inherit it. The planted attempt came back REVIEW
+— but only because its `;`-split chunk picked up a leading `begin`, so it was
+refused **by accident, not by design**. `20260907160500` keys on
+`(function_name, statement_md5)`: editing the statement lapses the exemption, a
+different function cannot borrow it, and a rename lapses it too.
+
+What it cannot see, so nobody reads zero rows as safety: it splits on `;`, so a
+predicate in a neighbouring statement is invisible — which is exactly the
+`policy_rule` shape, correct there and identical-looking if it were wrong. And it
+matches the *word* `tenant_id`, not a correct comparison: `tenant_id =
+p_tenant_id` from a caller-supplied argument passes, and that is the original
+defect this whole layer exists to remove.
+
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 
 Production holds one dealership and a quarantine tenant. Proving a cross-tenant
