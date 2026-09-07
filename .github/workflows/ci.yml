@@ -1,0 +1,126 @@
+# NEXUS OS — continuous integration.
+#
+# This file exists because there was none. Twelve pull requests reached main
+# with no automated check of any kind, and QUALITY_GATE.mjs — this project's own
+# safety net, 5,600 lines of it — only ever ran when a person remembered to run
+# it by hand. The immediate cause was one line in .gitignore: `.github/workflows/`
+# was ignored, so any workflow anyone wrote was invisible to git. That line is
+# gone; see the note left in its place.
+#
+# WHAT CI CAN AND CANNOT DO HERE, STATED ONCE
+# CI holds no NEXUS_DB_URL, no service-role key and no n8n API key, and it must
+# not: a pull request from a fork would then execute arbitrary code holding this
+# dealership's database. So every job below runs entirely offline, and the gate
+# is invoked with --no-db, which prints by name the seventeen launch-critical
+# checks it therefore did not make. A green run here is not a green gate.
+# .github/workflows/README.md lists what a human still has to run before a
+# release, and QUALITY_GATE.mjs's own header explains --no-db in full.
+#
+# Node 22: the repository carries no .nvmrc and no `engines`, so there is
+# nothing to match. Vite 5 declares ^18.0.0 || >=20.0.0 and development here
+# runs on 22, so 22 is the version that has actually been exercised.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ── The cheapest defect to catch, and currently uncaught ──────────────────
+  build:
+    name: Dashboard builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/executive-dashboard/package-lock.json
+      - name: Install
+        working-directory: apps/executive-dashboard
+        run: npm ci
+      - name: Build
+        working-directory: apps/executive-dashboard
+        run: npm run build
+
+  # ── Every gate check that needs no secret ────────────────────────────────
+  # The gate builds the bundle itself (R0) and drives headless Chromium against
+  # a stubbed PostgREST (R1..R7), so this job repeats the build on purpose: R0
+  # refuses to grade a stale bundle, and the build job above is the fast signal.
+  gate:
+    name: Quality gate (offline lanes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/executive-dashboard/package-lock.json
+      - name: Install
+        working-directory: apps/executive-dashboard
+        run: npm ci
+      # Without a browser the render lane reports R1..R7 as NOT RUN, and --no-db
+      # deliberately does NOT forgive that: the job exits 2 rather than going
+      # green over seven checks that silently did not execute.
+      - name: Install Chromium for the render lane
+        working-directory: apps/executive-dashboard
+        run: npx playwright install --with-deps chromium
+      - name: Run the gate
+        working-directory: apps/executive-dashboard
+        run: node QUALITY_GATE.mjs --no-db --report "$RUNNER_TEMP/gate.md"
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-report
+          path: ${{ runner.temp }}/gate.md
+          if-no-files-found: ignore
+
+  # ── The schema folder, checked without a schema ──────────────────────────
+  migrations:
+    name: Migration hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Check supabase/migrations/
+        run: node ops/ci/migration-hygiene.mjs
+
+  # ── A service_role key must never reach main ─────────────────────────────
+  # The scan decodes every JWT it finds and judges the `role` claim. The anon
+  # keys committed in n8n-workflows/ and ops/DEMO.md pass because they are anon,
+  # not because of where they live.
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Scan tracked files
+        run: node ops/ci/secret-scan.mjs
+      - name: Name what this change introduced
+        if: github.event_name == 'pull_request'
+        run: node ops/ci/secret-scan.mjs --diff "origin/${{ github.base_ref }}"

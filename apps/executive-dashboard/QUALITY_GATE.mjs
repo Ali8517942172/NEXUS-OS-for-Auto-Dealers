@@ -87,6 +87,41 @@
  *                                               PostgREST's own OpenAPI root
  *   node QUALITY_GATE.mjs --refresh-schema      rewrite the snapshot below
  *   node QUALITY_GATE.mjs --report FILE         also write the markdown report
+ *   node QUALITY_GATE.mjs --no-db               the CI lane. See below.
+ *
+ * THE --no-db LANE (added 7 Sep 2026, for GitHub Actions)
+ *   Continuous integration has no NEXUS_DB_URL, no service-role key and no
+ *   n8n API key, and it never should have one: a pull request from a fork
+ *   would then run arbitrary code holding this dealership's database.
+ *   So CI can only ever run the OFFLINE lanes, and the question is how a run
+ *   that ran half of this file is allowed to report itself.
+ *
+ *   Without a flag it exits 2 — nothing failed, seventeen launch-critical
+ *   checks could not run — and a job that is red on every commit is a job
+ *   people turn off. The wrong fix is a CI wrapper that maps 2 to 0, because
+ *   then the seventeen vanish and the run reads as a full green. That is the
+ *   exact failure this file's header spends a page arguing against.
+ *
+ *   --no-db is the honest version of that mapping, and it buys the amnesty by
+ *   paying for it out loud:
+ *
+ *     · it REFUSES to run if any database input is present (NEXUS_DB_URL,
+ *       NEXUS_STAGING_DB_URL, NEXUS_BASELINE_REPLAY_URL, NEXUS_LIVE_URL,
+ *       NEXUS_STAGING_REST_URL, SUPABASE_SERVICE_ROLE_KEY, NEXUS_ENV or
+ *       --catalogue). The flag is an ASSERTION about the environment, not a
+ *       request to ignore one, so it cannot be used to mute a live lane that
+ *       could have run and might have gone red.
+ *     · it PRINTS every skipped check by id, severity, lane, title and
+ *       reason, under a heading that says they are not passes. The list is
+ *       derived from the results themselves, so a check added to the live
+ *       lane tomorrow appears in it without anyone editing a list.
+ *     · it forgives ONLY the LIVE lane. A NOT RUN in an OFFLINE lane still
+ *       exits 2 — that is what happens when the headless browser is missing
+ *       in CI, and a run with no browser has silently retired R1..R7. A gate
+ *       that appears green because half of it did not execute is worse than
+ *       no gate.
+ *     · its exit-0 sentence never says 'every launch-critical check ran and
+ *       passed'. It says how many did not run.
  *
  * THE B LANE — what needs more than a catalogue
  *   B1 and B2 have to CALL action_decide(), and two of its arms write an audit
@@ -181,6 +216,24 @@ const HERE = new URL('.', import.meta.url).pathname;
 const ARGV = process.argv.slice(2);
 const flag = n => ARGV.includes(n);
 const opt  = n => { const i = ARGV.indexOf(n); return i >= 0 ? ARGV[i + 1] : null; };
+
+/* --no-db is an ASSERTION about the environment, checked here rather than at the
+   end so a contradicted run costs a second instead of three minutes. See the
+   header. The flag must never become a way to mute a live lane that could have
+   run and might have gone red, so a database input present alongside it is a
+   refusal, not a preference this file resolves on the caller's behalf. */
+if (ARGV.includes('--no-db')) {
+  const given = ['NEXUS_DB_URL', 'NEXUS_STAGING_DB_URL', 'NEXUS_BASELINE_REPLAY_URL', 'NEXUS_LIVE_URL',
+                 'NEXUS_STAGING_REST_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL', 'NEXUS_ENV']
+    .filter(k => String(process.env[k] || '').trim());
+  if (opt('--catalogue')) given.push('--catalogue');
+  if (given.length) {
+    console.error(`--no-db asserts that this run has no database and no credential, and ${given.join(', ')} ${given.length === 1 ? 'is' : 'are'} present.`);
+    console.error('One of the two is wrong. --no-db is an assertion about the environment, not a request to ignore one:');
+    console.error('it will not be used to mute a live lane that could have run and might have gone red. Drop the flag or drop the input.');
+    process.exit(3);
+  }
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE SNAPSHOT
@@ -1948,7 +2001,24 @@ const RPC_NAMES = new Set(
 const MIGDIR_RPC = join(HERE, '..', '..', 'supabase', 'migrations');
 const CATALOGUE_ANCHOR = (() => {
   const mh = live.cat && live.cat.migration_history;
-  return mh && mh.readable && mh.head != null ? String(mh.head) : null;
+  if (mh && mh.readable && mh.head != null) return String(mh.head);
+  /* OFFLINE THE SNAPSHOT IS THE CATALOGUE, AND IT CARRIES ITS OWN ANCHOR.
+     This used to return null whenever live.cat was absent, which is every run
+     without a database — including every run in CI. The consequence was the
+     one shape this whole block exists to prevent: with no anchor the map below
+     is empty, so rpcMissingWhy() took its ELSE branch and printed "no migration
+     in supabase/migrations/ newer than that anchor creates a function of that
+     name, so snapshot staleness does not explain it" about a name a migration
+     in this very repository does create. On 7 Sep 2026 that sentence was
+     printed about nexus_lead_source_readiness while
+     supabase/migrations/20260907024207_leadingest_07_available_does_not_mean_connected.sql
+     sat two directories away creating it. The gate was not wrong about the
+     verdict — R2 and R3 are red either way, deliberately — it was wrong about
+     the reason, and it pointed the reader at the screens instead of at the
+     stale snapshot. SNAPSHOT.migration.head is written by --refresh-schema out
+     of the same catalogue, so this is the same fact from the same source. */
+  const sm = SNAPSHOT.migration;
+  return sm && sm.head != null ? String(sm.head) : null;
 })();
 const RPC_CREATED_AFTER_ANCHOR = await (async () => {
   const out = new Map();
@@ -5588,6 +5658,36 @@ function report() {
 }
 const { blocking, unrun, rows } = report();
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   --no-db — see the header. The amnesty is bought by printing what it covers.
+   ══════════════════════════════════════════════════════════════════════════ */
+const NO_DB = flag('--no-db');
+const OFFLINE_LANES = new Set([LANE.SOURCE, LANE.RENDER]);
+const skippedLive   = results.filter(r => r.state === 'NOT RUN' && !OFFLINE_LANES.has(r.lane));
+const unrunOffline  = results.filter(r => r.state === 'NOT RUN' &&  OFFLINE_LANES.has(r.lane) && r.severity === 'P0');
+
+if (NO_DB) {
+  console.log('\n════ --no-db · WHAT THIS RUN DID NOT CHECK ════');
+  console.log(`${skippedLive.length} check(s) were SKIPPED. Every one of them needs a SQL connection, a service-role key or a`);
+  console.log('signed-in account, and this run was told it has none. THEY ARE NOT PASSES. Nothing in them was');
+  console.log('measured, no verdict above rests on them, and a release is not covered by this run until a human');
+  console.log('has run the gate with NEXUS_DB_URL set. Each line says what would have been checked, and why it was not.\n');
+  for (const r of skippedLive) {
+    console.log(`SKIPPED  ${r.severity}  ${r.id.padEnd(5)} ${r.lane.padEnd(18)} ${r.title}`);
+    console.log(`                     why: ${r.reason || 'no reason was recorded, which is itself a defect in this gate'}`);
+  }
+  if (!skippedLive.length) console.log('  (none — which would be a surprise with no database, and is worth reading as a defect in this gate)');
+  if (unrunOffline.length) {
+    console.log('\nAND THESE ARE NOT COVERED BY --no-db. They need no database, and they still did not run:');
+    for (const r of unrunOffline) console.log(`  ${r.id} ${r.title} — ${r.reason}`);
+    console.log('--no-db forgives the LIVE lane only. An offline check that could not run is a hole in this run, not a skip.');
+  }
+}
+
+const code = NO_DB
+  ? (blocking.length ? 1 : (unrunOffline.length ? 2 : 0))
+  : (blocking.length ? 1 : (unrun.length ? 2 : 0));
+
 const md = opt('--report');
 if (md) {
   const esc = s => String(s).replace(/\|/g, '\\|');
@@ -5596,7 +5696,7 @@ if (md) {
     + (r.reason ? `_Could not run: ${r.reason}_\n\n` : '')
     + (r.evidence.length ? r.evidence.map(e => `- ${esc(e)}`).join('\n') + '\n' : '')).join('\n');
   const tally = st => results.filter(r => r.state === st).length;
-  const codeNow = blocking.length ? 1 : (unrun.length ? 2 : 0);
+  const codeNow = code;
   await writeFile(md, `# NEXUS OS — quality gate\n\nRun ${new Date().toISOString()}\n\n`
     + `**PASS ${tally('PASS')} · FAIL ${tally('FAIL')} · WARN ${tally('WARN')} · NOT RUN ${tally('NOT RUN')} · exit ${codeNow}**\n\n`
     + `Schema source: ${SCHEMA_IS_LIVE ? 'LIVE' : 'SNAPSHOT'} (${SCHEMA_TAKEN})\n\n`
@@ -5605,8 +5705,12 @@ if (md) {
   console.log(`\nreport written to ${md}`);
 }
 
-const code = blocking.length ? 1 : (unrun.length ? 2 : 0);
-console.log(`\nexit ${code}  —  ${code === 0 ? 'every launch-critical check ran and passed'
-  : code === 1 ? `${blocking.length} launch-critical check(s) FAILED`
-  : `nothing failed, but ${unrun.length} launch-critical check(s) could not run; a check that could not run is not a check that passed`}`);
+console.log(`\nexit ${code}  —  ${
+  code === 1 ? `${blocking.length} launch-critical check(s) FAILED`
+  : code === 2 ? (NO_DB
+      ? `${unrunOffline.length} check(s) that need no database still could not run; --no-db does not cover those`
+      : `nothing failed, but ${unrun.length} launch-critical check(s) could not run; a check that could not run is not a check that passed`)
+  : NO_DB
+      ? `every check that needs no database ran and passed, and ${skippedLive.length} that need one were SKIPPED and are listed above — this run is not a full gate`
+      : 'every launch-critical check ran and passed'}`);
 process.exit(code);
