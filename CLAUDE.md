@@ -570,6 +570,53 @@ The path was originally `google-ads-lead/:key`. n8n registers a
 path-parameter webhook under an internal `webhookId` prefix, so the clean URL
 404s — measured, not assumed. The key moved to `?k=`.
 
+### The 42 SECURITY DEFINER functions a dealership user can reach — 7 Sep 2026
+
+`SECURITY DEFINER` runs as the owner and **bypasses RLS**, so every one of these
+is responsible for its own tenant scoping and they are the surface worth auditing
+first. Audited transitively (a function counts as scoped if it derives the
+caller's identity directly **or through a call** — the first pass called
+`lead_recovery_decide` unscoped and was wrong, because it delegates to
+`action_approver_context()`):
+
+| verdict | reads | writes |
+|---|---|---|
+| derives the caller's identity | 17 | 24 |
+| **does not** | **1** | 0 |
+
+The one: **`nexus_kyc_object_tenant(text)`**, and it was answering the exact
+question RLS had just refused. Measured on production from a signed-in account
+belonging to **zero** dealerships:
+
+```
+rows it could SELECT from public.kyc_documents ... 0          <- RLS works
+nexus_kyc_object_tenant(<a real kyc path>) ....... fff6a2b5-… <- and this
+nexus_kyc_object_tenant('kyc/999999/nope') ....... NULL       <- clean control
+```
+
+Existence **and** ownership, cross-tenant, over passports and Emirates IDs. And
+the paths are walkable, not opaque: all 35 characters, all `kyc/<integer>/…`,
+**none containing a uuid**. One dealership on production today, so nothing has
+crossed a boundary — the second dealership is what turns the shape into a leak.
+
+**The grant could not simply be revoked**: policy `kyc_objects_staff_read` on
+`storage.objects` calls it, and Postgres evaluates a policy expression as the
+*querying* role, so revoking it breaks every KYC read. A designed grant whose
+side effect was never priced.
+
+`20260907150000` replaces "whose is this?" with "may I read this?".
+`nexus_kyc_object_readable(text)` encodes the whole policy predicate and returns
+a boolean, so calling it directly reveals nothing a read attempt would not.
+Verified on production, with the positive control that matters:
+
+| caller | old oracle | may read a real object | may read a made-up path |
+|---|---|---|---|
+| unaffiliated account | **refused 42501** | false | false |
+| a member of the owning dealership | — | **true** | false |
+
+An outsider can no longer tell a real path from an invented one, and the
+legitimate reader is unaffected.
+
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 
 Production holds one dealership and a quarantine tenant. Proving a cross-tenant
