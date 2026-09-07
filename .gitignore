@@ -32,7 +32,11 @@ integrate_ui_v2.py
 inject_css.py
 fetch_all_stitch_screens.py
 
-.github/workflows/
+# .github/workflows/ WAS IGNORED HERE, and that is why this repository had no
+# continuous integration: twelve pull requests merged to main with no automated
+# check because every workflow file anyone wrote was invisible to git. The line
+# is removed deliberately (7 Sep 2026). Do not restore it — a workflow you
+# cannot commit is a workflow that does not run.
 .vercel
 claude_desktop_config.json
 *.timestamp-*.mjs

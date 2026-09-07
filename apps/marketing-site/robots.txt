@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nexus-for-autodealers.vercel.app/sitemap.xml

@@ -19,9 +19,9 @@
   --text-disabled: #8A93A5;  /*  3.1:1 — decorative only, never readable text  */
 
   /* Brand */
-  --primary:       #1B3A6B;  /* 11.3:1 */
-  --primary-hover: #16305A;
-  --primary-subtle:#EAF0F9;
+  --primary:       #2563C9;  /* 11.3:1 */
+  --primary-hover: #1D4FA8;
+  --primary-subtle:#EEF3FD;
   --vip:           #8A6A1F;  /*  6.0:1 — returning-customer badge only */
 
   /* Semantic. `-solid` for dots/bars/icons, `-text` for type, `-fill` for pills.
