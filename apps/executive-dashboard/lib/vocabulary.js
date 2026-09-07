@@ -282,6 +282,29 @@ export const CONNECTION_STATE = Object.freeze({
          + 'not a connection.',
     silence: 'Nothing from a real customer has arrived through this source and nothing could: only a simulator is '
            + 'attached to it. Its silence measures nothing about how many people enquired.' },
+  /* Added 7 September 2026, and it exists because this screen's only green pill
+     was being shown for the two sources a UAE showroom actually lives on while
+     there was nowhere to enter one. Measured that day across the dashboard
+     source AND the shipped bundle: the only write touching `leads` anywhere is
+     a PATCH of the owner on a row that already exists. A walk-in endpoint was
+     registered, active and production — and a salesperson had no form.
+
+     A webhook source's deliverer is a provider, so the registered endpoint IS
+     the path. A manual source's deliverer is a person, and the path is a
+     screen. `lead_source_catalogue.manual_entry_surface` names that screen, and
+     this state is what a registered endpoint with none behind it is.
+
+     Tone is `warm`, not `unknown`. NOT_CONNECTED is neutral because nobody has
+     done anything wrong by not connecting a source yet. This one is different:
+     the dealership DID the setup, and what is missing is ours to build. */
+  REGISTERED_NO_ENTRY_PATH: { label: 'Set up — but there is nowhere to enter one', tone: 'warm', receiving: false, roadmap: true,
+    blurb: 'This source is registered to this dealership and ready to receive, and NEXUS has no screen for entering '
+         + 'one by hand. A walk-in or a phone call arrives as a person, not as a message from another system, so '
+         + 'somebody has to type it in — and until that screen exists nothing reaches NEXUS through this source. '
+         + 'The setup is done; the missing half is ours.',
+    silence: 'Nothing has arrived through this source and nothing could: it is registered, but there is no screen for '
+           + 'entering one. Its silence measures how many walk-ins or calls NEXUS can currently record, which is none '
+           + '— not how many the dealership had.' },
   NOT_CONNECTED: { label: 'Not connected', tone: 'unknown', receiving: false, roadmap: false,
     blurb: 'Nothing is registered for this source at this dealership, so NEXUS is not receiving from it. That is a '
          + 'connection nobody has made yet — it is not a fault, and nothing has gone wrong.',
@@ -294,6 +317,76 @@ export const CONNECTION_STATE = Object.freeze({
            + 'that had a quiet week, and it is counted nowhere above as a producing source.' },
 });
 export const connectionState = v => CONNECTION_STATE[String(v || '').trim().toUpperCase()] || null;
+
+/* ── Where a lead actually came from ───────────────────────────────────────
+   Added 7 September 2026, and it exists because the Leads screen was rendering
+   `leads.source` under the heading "Source". For every real lead this
+   dealership has, that column reads `nexus-master-router` — the NAME OF THE
+   WORKFLOW THAT WROTE THE ROW. It has never held an origin. A salesperson
+   reading that column has been reading the writer and calling it the source.
+
+   The honest answer lives in nexus_lead_attribution(), which reads what the
+   provider actually told us at the moment of arrival. Two vocabularies come
+   back from it and NEITHER is re-derived here — the database owns both words
+   and this file only puts them into English.
+
+   ATTRIBUTION_CONFIDENCE answers "how do we know which platform?".
+   ATTRIBUTION_COMPLETENESS answers "how much of the campaign spine survived?".
+
+   The rule that matters more than either: UNKNOWN IS RENDERED AS UNKNOWN. There
+   is no branch anywhere below that turns an absent platform into a likely one,
+   and `nexus-master-router` is never mapped to Facebook, WhatsApp or anything
+   else. A lead whose origin nobody recorded is a lead whose origin nobody
+   recorded, and that is a fact a dealership can act on — it tells them their
+   ad spend is unattributable, which is worth knowing and worth fixing. */
+export const ATTRIBUTION_CONFIDENCE = Object.freeze({
+  PROVIDER_REPORTED: { label: 'The platform told us', tone: 'ok',
+    blurb: 'The advertising platform named itself in the delivery. This is the strongest form this system has: '
+         + 'it is the provider\u2019s own statement, recorded at the moment the enquiry arrived.' },
+  ENDPOINT_REGISTERED: { label: 'Known from where it arrived', tone: 'ok',
+    blurb: 'The platform was not named in the delivery, and it did not need to be: this enquiry came in on a '
+         + 'connection registered to exactly one platform, so arriving there is itself the evidence.' },
+  UNKNOWN: { label: 'Not known', tone: 'unknown',
+    blurb: 'Nothing in the delivery said which platform this came from, and it did not arrive on a connection '
+         + 'that answers the question either. It is shown as unknown rather than guessed.' },
+});
+export const attributionConfidence = v =>
+  ATTRIBUTION_CONFIDENCE[String(v || '').trim().toUpperCase()] || null;
+
+export const ATTRIBUTION_COMPLETENESS = Object.freeze({
+  FULL_SPINE: { label: 'Platform, campaign, ad set and ad', tone: 'ok',
+    blurb: 'Every step from the platform down to the individual ad survived, so this enquiry can be priced against '
+         + 'what was spent on that ad.' },
+  PLATFORM_AND_CAMPAIGN: { label: 'Platform and campaign', tone: 'ok',
+    blurb: 'The platform and the campaign are known; the ad set and the ad are not. Spend can be attributed to the '
+         + 'campaign and no further.' },
+  PLATFORM_ONLY: { label: 'Platform only', tone: 'warm',
+    blurb: 'We know the platform and nothing below it. This enquiry counts towards that platform and cannot be '
+         + 'attributed to any campaign, so it cannot be priced.' },
+  PLATFORM_UNKNOWN: { label: 'Nothing recorded', tone: 'unknown',
+    blurb: 'No part of the advertising spine arrived with this enquiry. It is counted under UNKNOWN, which is a real '
+         + 'answer and not a missing one.' },
+});
+export const attributionCompleteness = v =>
+  ATTRIBUTION_COMPLETENESS[String(v || '').trim().toUpperCase()] || null;
+
+/* The sentence for a lead that has NO attribution row at all — which today is
+   every lead this dealership actually has. It predates the lead-ingestion
+   layer, so no arrival was ever recorded for it. Saying "unknown platform"
+   would be wrong in a specific way: it implies we looked at an arrival and
+   found no platform, when there is no arrival to look at. */
+export const ORIGIN_NOT_RECORDED =
+  'No arrival was ever recorded for this lead, so where it came from cannot be answered. This is not a platform '
+  + 'we failed to identify — it is an enquiry that reached the dealership before NEXUS was recording origins at all.';
+
+/* And the label for the raw column, so it can be shown WITHOUT being called a
+   source. It is genuinely useful — it says which part of the system created the
+   row — and it is genuinely not an origin. */
+export const WRITER_COLUMN_LABEL = 'Written by';
+export const WRITER_COLUMN_NOTE =
+  'The part of NEXUS that created this row. It is not where the customer came from, and it was labelled "Source" '
+  + 'until 7 September 2026, which is why every lead appeared to come from a workflow.';
+
 
 /* The banner sentence that says what the column means, once, at the top of the
    screen. It is here rather than in the screen because it is the correction

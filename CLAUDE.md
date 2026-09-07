@@ -381,6 +381,8 @@ pass.
       nexus-master-router   3
       walk_in               1        <-- lead 121
 
+  (Production `leads` reached **5** later the same day — see the WhatsApp lead
+  below. `walk_in` is still 1.)
   It is a **preflight, not a customer** — `walkin-preflight-2026-09-07-01`, email
   under `@nexus-preflight.invalid`, and it is deletable. Do not quote it as
   traffic. What it does prove, on production and not in a rolled-back
@@ -399,7 +401,15 @@ pass.
   **Written, tested and deployed** — `ops/n8n-whatsapp-cloud/`, 47 tests. Read
   that directory before writing the Lead Ads receiver: the same signature applies,
   and the sandbox it runs in has **no `crypto` at all**.
-- **All twenty Journey Lab verdicts are `NOT RUN`**, and none of them is L4.
+- ~~**All twenty Journey Lab verdicts are `NOT RUN`**~~ **Superseded 7 September
+  2026: 15 PASS, 0 FAIL, 7 BLOCKED, 1 NOT RUN across 23 journeys**, executed
+  against staging with per-journey teardown asserted. T21–T23 are the
+  concurrency pass added later that day; T22 was a FAIL and is fixed, and **T12
+  — the last standing FAIL — was closed the same day** (see "T12 closed" below:
+  a direct `UPDATE` on `leads` wrote 0 audit rows; a trigger now records every
+  ownership change from every writer). Still **none of them is L4** — no
+  dealership is on a live NEXUS ingestion endpoint, so no verdict here is
+  evidence about a real customer, and a green column is not a working product.
 - ~~**The six migrations are on staging and deliberately not on production.**~~
   **False as of 7 September 2026, and it was already false when this line was
   last read.** There are **seven** (`leadingest_01` … `leadingest_07`) and all
@@ -467,6 +477,627 @@ Both constraints and all 17 verified back in place afterwards.
 Repo↔production parity is **byte-exact over the 288 shared migrations** — see
 `ops/PARITY-2026-09-06.md`, and note its own caveat that a version-keyed rollup
 cannot answer a content question once versions diverge.
+
+### Door three never looked at `environment` — 7 September 2026
+
+Found by asking a narrow question: *is it safe to register a simulation Google
+endpoint so the receiver can be proven end to end?* The answer was no, and not
+for a Google reason.
+
+Parts 2 and 3 of the lead-ingest layer both claim, in their own comments, that
+the simulator cannot reach production numbers "because the row it would need
+cannot be written". That is true of **recording**. It was never true of
+**promotion**. Measured on production before the fix:
+
+```
+pg_get_functiondef(nexus_promote_lead_event) like '%environment%'   ->  0
+columns of public.leads matching (sim|test|demo|fixture|synthetic)  ->  0
+```
+
+A simulation `lead_event`, once hydrated, inserted into `public.leads` exactly
+like a real customer — into a table with no column that could ever say
+otherwise. Pipeline value, response-time reporting and every recovered-revenue
+figure would have counted it. **Nothing had happened**: zero simulation
+endpoints, zero simulation events. A door that was open, not a mess.
+
+Migration `20260907124500_leadingest_10` makes door three refuse a non-production
+event with `PROMOTION_REQUIRES_PRODUCTION_ENVIRONMENT`, and says in its HINT
+what would have to exist first. The tempting fix — `leads.is_simulation` — was
+deliberately **not** taken: an `ALTER TABLE` on `public.leads` fires
+`nexus_guard_born_open_grants()` and strips the live dashboard's write grants,
+and a flag half the readers ignore is worse than no flag. That is a change to
+make with someone watching.
+
+**Proven on staging first, with a positive control**: the simulation event
+refused; a production event alongside it still promoted (lead 31,
+`source = google_ads_lead_form`). Then applied to production and verified —
+guard present, `anon` and `authenticated` denied by `has_function_privilege()`,
+`service_role` allowed, `leads` unchanged at 4 rows, `lead_event` at 1.
+
+### The most valuable field on a car dealership's lead row was being dropped
+
+Same migration. The promoter reads `normalized->>'vehicle_interest'`. Both
+receivers written this week emit `vehicle_of_interest`.
+`nexus_lead_normalized_defect()` does not mention a vehicle at all, so nothing
+complained — every Meta and Google lead would have landed with
+`leads.vehicle_interest` NULL. A silent near-miss between two spellings,
+invisible because the contract was silent about the field.
+
+The promoter now coalesces both spellings, so no lead in flight loses the
+answer, and both test suites now pin the pair so a third spelling cannot be
+introduced quietly. The contract is deliberately left permissive: refusing the
+wrong spelling would have turned a dropped field into a dropped customer.
+
+### The constraint re-measurement that corrected a shipped receiver
+
+`lead_event_payload_carries_no_shared_secret` refuses a string — key or value,
+at any depth — that is **exactly** one of six credential words. Substrings never
+trip it; one trailing character clears it; the match ignores case.
+
+The Meta receiver shipped guarding question LABELS only, with a SUBSTRING regex.
+Wrong in both directions from one wrong rule: a customer whose whole answer was
+`authorization` would have failed the insert and been thrown away, while a
+harmless label like `my_api_key` was renamed for nothing. I had measured an
+embedded word and generalised the result to every word.
+
+Repo bodies and tests for both receivers are corrected (Meta 49 tests, Google
+56), and the Meta box was fixed and **verified on the box, both ways**.
+`test_workflow` pins the upstream nodes and lets a Code node execute for real,
+which reaches `Normalize And Redact` while `META_APP_SECRET` is still unset:
+
+| execution | node output | Postgres verdict |
+|---|---|---|
+| `10879` (old body) | the bare word | **REFUSED `23514`** — customer thrown away |
+| `10880` (new body) | the word plus a stated note, `annotated_answers: 2` | **would INSERT** |
+
+That technique — pin every trigger, credentialled and HTTP node, let the Code
+node run — is the only way to exercise these receivers before their secrets
+exist. Use it. All three live URLs still fail closed afterwards:
+`500 APP_SECRET_NOT_CONFIGURED` for both Meta receivers, `403
+GOOGLE_KEY_REJECTED` for Google.
+
+### The Google Ads Lead Form receiver is live and refuses everything
+
+n8n `EYva4c2bMV5MGq0o`, `POST /webhook/google-ads-lead?k=<endpoint public key>`.
+Measured on the live box: `404` with no key, `404` malformed key, `400` no
+`lead_id`, `400` array body, `403` unregistered key, and — with a registered
+endpoint whose secret is unset — **`500 ENDPOINT_SECRET_NOT_CONFIGURED`**, which
+is the answer that makes Google **hold** the lead rather than discard it.
+
+Google retries a 5XX and permanently discards on a 4XX, so the status code is a
+decision about a real customer, not a formality. An unconfigured secret answers
+5XX on purpose. A form that collected too little to contact anyone answers 200
+and records a `REJECTED` event — the delivery was fine, the form is what needs
+changing.
+
+Two things this receiver does **not** control, stated rather than glossed:
+`google_key` is in n8n's own execution store because the webhook node holds the
+raw body before any of this runs, and a malformed JSON body never reaches the
+code at all — n8n answers `422` first, so a truncated Google POST that a retry
+might have fixed is discarded by n8n, not by us.
+
+The path was originally `google-ads-lead/:key`. n8n registers a
+path-parameter webhook under an internal `webhookId` prefix, so the clean URL
+404s — measured, not assumed. The key moved to `?k=`.
+
+### The 42 SECURITY DEFINER functions a dealership user can reach — 7 Sep 2026
+
+`SECURITY DEFINER` runs as the owner and **bypasses RLS**, so every one of these
+is responsible for its own tenant scoping and they are the surface worth auditing
+first. Audited transitively (a function counts as scoped if it derives the
+caller's identity directly **or through a call** — the first pass called
+`lead_recovery_decide` unscoped and was wrong, because it delegates to
+`action_approver_context()`):
+
+| verdict | reads | writes |
+|---|---|---|
+| derives the caller's identity | 17 | 24 |
+| **does not** | **1** | 0 |
+
+The one: **`nexus_kyc_object_tenant(text)`**, and it was answering the exact
+question RLS had just refused. Measured on production from a signed-in account
+belonging to **zero** dealerships:
+
+```
+rows it could SELECT from public.kyc_documents ... 0          <- RLS works
+nexus_kyc_object_tenant(<a real kyc path>) ....... fff6a2b5-… <- and this
+nexus_kyc_object_tenant('kyc/999999/nope') ....... NULL       <- clean control
+```
+
+Existence **and** ownership, cross-tenant, over passports and Emirates IDs. And
+the paths are walkable, not opaque: all 35 characters, all `kyc/<integer>/…`,
+**none containing a uuid**. One dealership on production today, so nothing has
+crossed a boundary — the second dealership is what turns the shape into a leak.
+
+**The grant could not simply be revoked**: policy `kyc_objects_staff_read` on
+`storage.objects` calls it, and Postgres evaluates a policy expression as the
+*querying* role, so revoking it breaks every KYC read. A designed grant whose
+side effect was never priced.
+
+`20260907150000` replaces "whose is this?" with "may I read this?".
+`nexus_kyc_object_readable(text)` encodes the whole policy predicate and returns
+a boolean, so calling it directly reveals nothing a read attempt would not.
+Verified on production, with the positive control that matters:
+
+| caller | old oracle | may read a real object | may read a made-up path |
+|---|---|---|---|
+| unaffiliated account | **refused 42501** | false | false |
+| a member of the owning dealership | — | **true** | false |
+
+An outsider can no longer tell a real path from an invented one, and the
+legitimate reader is unaffected.
+
+### Branch by branch, the RLS-bypassing surface holds — 7 Sep 2026
+
+The earlier audit asked *does this function derive the caller's identity at all?*
+This one asks the harder question: having derived it, does it **use** it on every
+statement that touches tenant-scoped data? A function can read `auth.uid()` in
+its first line and update another dealership's row in its last.
+
+Over the 42 `SECURITY DEFINER` functions `authenticated` can reach: **5
+statements in 5 functions** touch a tenant-scoped table with no tenant
+predicate, and **zero of them are writes**. All five read, all five correct:
+
+- `action_decide`, `lead_recovery_decide` — `select u.name … where u.id =
+  v_row.decided_by_staff_id`. `v_row` was loaded with a tenant predicate, so the
+  id is already this dealership's; a foreign id yields NULL, not a name.
+- `policy_verify_rule`, `policy_supersede_rule`, `policy_withdraw_rule` —
+  `select * into r from policy_rule where id = p_rule_id`. This one **cannot**
+  carry a tenant predicate: you must load the row to learn whose it is, and the
+  three then refuse by name (`GLOBAL_RULE_NOT_TENANT_VERIFIABLE`,
+  `WRONG_TENANT`, `JURISDICTION_NOT_YOURS_TO_LEGISLATE`). Verified: those
+  refusals go through `policy_refuse()`, which **raises**, and every UPDATE in
+  the family carries `and tenant_id = ctx.tenant_id` in the statement itself.
+
+`nexus_definer_scoping_audit()` (`20260907160000`) makes that a standing check —
+REVIEW rows are the finding, zero is healthy. Made to go red: a planted function
+reading *and* writing `leads` unscoped returned two REVIEW rows with `is_write`
+correctly set.
+
+**And the audit's own exemption mechanism had a hole, found by testing it.** The
+exemption was keyed on the statement hash alone, so any function containing a
+byte-identical statement would inherit it. The planted attempt came back REVIEW
+— but only because its `;`-split chunk picked up a leading `begin`, so it was
+refused **by accident, not by design**. `20260907160500` keys on
+`(function_name, statement_md5)`: editing the statement lapses the exemption, a
+different function cannot borrow it, and a rename lapses it too.
+
+What it cannot see, so nobody reads zero rows as safety: it splits on `;`, so a
+predicate in a neighbouring statement is invisible — which is exactly the
+`policy_rule` shape, correct there and identical-looking if it were wrong. And it
+matches the *word* `tenant_id`, not a correct comparison: `tenant_id =
+p_tenant_id` from a caller-supplied argument passes, and that is the original
+defect this whole layer exists to remove.
+
+### Attribution a dealership can read, and a false finding a positive control caught
+
+`20260907170000`. Both Meta receivers and the Google receiver already recorded
+platform, campaign, adset, ad and form — all of it inside `hydrated_payload` /
+`payload_raw`, on columns the dealer plane is **denied by column grant**. The
+facts existed and nobody could ask a question of them.
+
+`nexus_lead_attribution(p_since)` is the read-side projection.
+`nexus_lead_attribution_summary(p_since)` is the shape a dashboard should read,
+and it is built so it **cannot flatter**: the UNKNOWN bucket is emitted even at
+zero, and `share_of_known` and `share_of_all` are two different numbers so the
+kinder one cannot be quoted by accident. Verified on production:
+
+| caller | attribution rows | summary |
+|---|---|---|
+| account in 0 dealerships | 0 | 1 bucket — UNKNOWN, at zero |
+| a real member | 1 | `UNKNOWN=1 (of_known n/a, of_all 100.0)` |
+
+The single production lead reads `UNKNOWN / UNKNOWN / PLATFORM_UNKNOWN` with the
+evidence sentence spelled out. It is not quietly filed under Facebook.
+
+**Three things this cost, worth keeping:**
+
+1. It is a FUNCTION, not a view, and not by preference. An invoker view cannot
+   read `payload_raw` (column grant), and a view **without** `security_invoker`
+   is refused outright by `nexus_require_security_invoker_views()` — an event
+   trigger that has been guarding this since before today. So: SECURITY DEFINER
+   with the tenant predicate written into the statement.
+2. **A boolean reloption has more than one spelling.** A sweep flagged
+   `v_competitor_latest` as definer-semantics, dealer-readable and unscoped —
+   which sounded exactly like the KYC oracle. It is spelled
+   `security_invoker=on`; the other 41 views say `=true`; the sweep compared
+   against the literal `'true'` and read `on` as OFF. The positive control
+   settled it before anything was written down: 0 rows to an unaffiliated
+   account, 7 to a real member — precisely what invoker semantics predicts.
+   **The measurement was right and my reading of it was wrong.** An audit that
+   string-matches one spelling of a boolean is blind in a direction that will
+   not always be the safe one.
+3. `service_role` gets **zero** rows from the attribution function by design —
+   `nexus_current_tenant_ids()` is empty for it. It answers "my dealership's
+   attribution"; the vendor reads `lead_event`.
+
+### There is no correlation id, and the join key is an email string
+
+`20260907180000`. "What happened to this customer?" could not be answered, and
+the reason is structural. `communication_logs` and `audit_log` link to a
+customer by **`lead_email`** — an email address string. Not `lead_id`, not a
+foreign key. Measured on production:
+
+| | |
+|---|---|
+| leads | 4 |
+| **leads with no email at all** | **1 (25%)** |
+| `communication_logs` | 120 |
+| ...whose `lead_email` matches no lead | **95 (79%)** |
+| `audit_log` | 843 |
+| ...carrying no `lead_email` at all | **775 (92%)** |
+
+So a phone-only lead — a walk-in, a WhatsApp enquiry, the ordinary UAE case — is
+**unlinkable**, 92% of the audit trail is attached to nobody, and two enquiries
+from one person collapse into one history.
+
+`nexus_lead_trace(lead_id)` answers what can be answered and says `NOT_LINKABLE`
+where it cannot, because "0 messages" for a customer whose only possible link is
+an email they do not have is a guess wearing a number. Verified on production:
+
+| lead | hops |
+|---|---|
+| with an email | `lead=PRIMARY_KEY, arrival=NO_ROWS, communication=EMAIL_STRING_MATCH, audit=EMAIL_STRING_MATCH` |
+| **without an email** | `lead=PRIMARY_KEY, arrival=NO_ROWS, communication=NOT_LINKABLE, audit=NOT_LINKABLE` |
+| another dealership's lead | 0 rows |
+
+`arrival=NO_ROWS` on both is itself honest: those leads predate the ingestion
+layer, and the row says so rather than implying the customer never arrived.
+
+**The real fix is owed, not done**: a `lead_id` foreign key on
+`communication_logs`, or a correlation id carried from receiver to outbound
+message. Both are `ALTER TABLE` on tables the live dashboard writes, which fires
+`nexus_guard_born_open_grants()` and strips those grants. That is a change to
+make with someone watching. `nexus_trace_linkability_report()` (service_role,
+deliberately cross-tenant, counts only — no names, no message text) keeps the
+gap as a number somebody can watch shrink.
+
+### Three doors read a row and then wrote it, and one made three customers
+
+7 September 2026. The Journey Lab's own README had said since the day it was
+written that nineteen sequential journeys prove nothing about concurrency. Five
+`pg_cron` backends behind a `pg_sleep_until` barrier — all five entering inside
+**25 ms**, measured from `clock_timestamp()` — were pointed at the three
+ingestion doors on staging. All three were read-then-write with no lock.
+
+| door | five concurrent callers, before | after |
+|---|---|---|
+| `nexus_record_lead_event` | 1 insert, **4 × `23505`** | 1 insert, 4 × `was_duplicate = true`, no exception |
+| `nexus_hydrate_lead_event` | **5 hydrations, last write wins** | 1 hydration, 4 × `LEAD_EVENT_NOT_AWAITING_HYDRATION` |
+| `nexus_promote_lead_event` (lead **with** an email) | 1 lead, 4 × `23505 leads_tenant_email_key` | 1 lead, 4 idempotent |
+| `nexus_promote_lead_event` (lead with **no** email) | **THREE leads: 41, 42, 43. Zero errors.** | 1 lead, all five callers naming it |
+
+**The last row is the defect, and the row above it is why nobody had seen it.**
+Promotion of an emailed lead looked safe only because a unique index on
+`(tenant_id, email)` refused the second insert — an *incidental* lock, which
+this file already records the worth of. A unique index does not constrain NULLs,
+and door three writes NULL for a lead with no email. That is the ordinary UAE
+case: the walk-in, the phone call, the WhatsApp enquiry. This file measures 25%
+of production leads as having no email at all.
+
+**And the damage was invisible from every angle anyone was looking from.**
+`lead_event.lead_id` holds one value, so it kept 42; leads 41 and 43 were
+orphans that no event points at. They satisfy every constraint on `lead_event`
+(no `lead_event` is involved), they carry a real origin in `leads.source` so
+`nexus_lead_attribution` counts them, and `nexus_lead_trace` answers
+`arrival = NO_ROWS` for them — which reads as *"this customer predates the
+ingestion layer"*, not as a fault. Two of the five callers were told
+`was_already_promoted = true` while two others were making the duplicates, and
+**every caller got a success.** Three salespeople, three CRM cards, one person
+called three times.
+
+`20260907190000`, on staging **and** production. The fix is `SELECT … FOR
+UPDATE` on the event row for hydrate and promote, and `INSERT … ON CONFLICT ON
+CONSTRAINT lead_event_identity_key DO NOTHING` plus a re-read for record. **Not**
+a unique index on `leads` and **not** a marker column: both are `ALTER TABLE` on
+`public.leads`, which fires `nexus_guard_born_open_grants()`. Route around the
+guard — the worked example this file already carries.
+
+`nexus_lead_ingest_invariants()` gains an eighth check — *every lead carrying an
+ingestion source is pointed at by the event that made it* — and **it went red on
+the wreckage the race had just made** (`2 orphan lead(s): 41, 43`), then green
+after teardown. A gate made to fail by the defect itself, not by a planted
+sabotage.
+
+Semantic parity confirmed across all four bodies: comment- and
+whitespace-normalised `md5(prosrc)` identical on both projects, while the raw
+hashes differ — which is the distinction this file already insists on. Staging
+teardown asserted back to the exact pre-run snapshot (3 `lead_event`, 31
+`leads`). Production positive control: promoting the already-promoted preflight
+event returns `lead_id = 121, was_already_promoted = true` and creates nothing.
+
+**Two things this did not settle.** Five backends is not load — nothing here
+says what happens at fifty deliveries or under a connection-pool limit, and
+`FOR UPDATE` now serialises promotions of one event, which is free at this
+volume and worth watching at real volume. And the receiver's behaviour when
+Postgres refuses is still **asserted, not measured**: all four HTTP nodes carry
+`retryOnFail: true, maxTries: 3` with `onError: null`, so a refusal throws and
+n8n answers the caller itself — believed to be 500, which is the direction that
+makes Google hold the lead, but it is not in `ops/n8n-google-lead-form/README.md`'s
+probe table and reaching that node over HTTP needs a secret on the VM.
+
+**A related repo defect, same class.** `receiver.sdk.js` and `build-sdk.js`
+declared the Google webhook path as `google-ads-lead/:key` while the published
+workflow has said `google-ads-lead` since the path parameter was measured to
+404. `build-sdk.js` round-trips the two Code **bodies** and nothing around them,
+so a wrong path, credential or retry setting in the scaffolding is invisible to
+the check whose whole purpose is repo↔box equality. Corrected, and the limit is
+now written into the generator.
+
+### No receiver wrote an audit row — T12's shape at the other end of the funnel
+
+7 September 2026, found by checking rather than by it biting:
+
+```
+grep -c audit_log  ops/n8n-google-lead-form/receiver.sdk.js   ->  0
+grep -c audit_log  ops/n8n-meta-lead-ads/*.js                 ->  0
+the Meta workflow's graph:  Promote To Lead -> Respond 200 Promoted, end.
+```
+
+Every receiver built this week would have created a real customer with **no
+entry in the one table a dealership reads to answer "what happened"**. Nothing
+had gone wrong yet only because no receiver has carried a lead.
+
+**The audit went into door three, not into each receiver** — the T12 lesson
+applied at the other end. A writer that audits itself audits *one* writer, and
+there are four receivers plus manual entry plus whatever comes next, each a
+separate chance to forget. Every lead that becomes a customer passes through
+`nexus_promote_lead_event`, so now no receiver *can* forget, and the sentence has
+one derivation rather than five that drift.
+
+It also **removed** one that already existed: `nexus_lead_record_manual` wrote
+its own an hour earlier. Two writers for one fact is how a count ends up double.
+
+The row spells the provenance out in words, because it is what somebody reads
+when asking whether a lead is real:
+
+```
+ingest:walk_in       … origin operator_recorded (a person's word, not a signature)
+ingest:website_form  … origin origin_and_form_key (attested by the provider)
+```
+
+Fails closed, same reason as T12's trigger: a customer in the funnel with no
+record of arriving is worse than a delivery the provider retries, and Meta and
+Google both redeliver.
+
+### The Meta Lead Ads receiver was already built — checked, not rebuilt
+
+Asked to "build the Meta Lead Ads receiver", the first thing to do was look:
+`ops/n8n-meta-lead-ads/` is live (`JDqy54w2HUH7pHgW`), fail-closed, and carries
+**49 passing tests**. Raw-body HMAC, `page_id` identity resolution, the Graph
+hop, `field_data` normalisation, allowlist redaction, and an explicit rule that
+attribution never touches `lead_event_identity_key` — all present.
+
+Two things were genuinely worth checking rather than assuming:
+
+- **"registered / verified / active endpoint checks"** — measured on staging with
+  a positive control, all three levels refuse: a disabled **page identity**, a
+  disabled **endpoint**, and a suspended **dealership** each return zero rows
+  from `nexus_lead_endpoint_for_provider_identity()`, while the active case
+  resolves.
+- **the audit row** — genuinely missing, and that is the section above.
+
+What is still missing is not code: `META_APP_SECRET`,
+`META_WEBHOOK_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, a Facebook Page, and the
+`leadgen` subscription. **Do not rebuild this receiver.**
+
+### A salesperson can now put a walk-in into NEXUS
+
+7 September 2026. The other half of the `REGISTERED_NO_ENTRY_PATH` finding: the
+endpoints, the provenance ladder and the promoter all existed, and the person
+standing in the showroom had nowhere to type.
+
+`nexus_lead_record_manual()` is the path, and it is the **one place a browser
+crosses into the ingestion layer**. That is a new write surface on the dealer
+plane, which this file spent the morning arguing against for owner assignment —
+the difference is that there a narrow column grant already existed to reuse, and
+here doors one and three are `service_role`-only, so no grant exists and the
+capability genuinely has to cross. It crosses once, through one function, with
+every decision that matters taken from the **session**:
+
+| the caller may not decide | why, in one line |
+|---|---|
+| the dealership | from `nexus_current_tenant_ids()`, no argument, no fallback — `/webhook/whatsapp-inbound` takes its tenant from a caller-supplied field, and that is the open door we still live with |
+| the endpoint | resolved by `(tenant, source_key)`; a caller-supplied key is how one dealership posts into another's pipeline |
+| the source | `MANUAL_ENTRY` only — otherwise anybody with a login could manufacture attribution, which is what ad spend gets judged against |
+| the provenance | forced to `operator_recorded`: a person's word, recorded as a person's word |
+
+**Ambiguity is refused, not resolved.** An account in two dealerships gets a
+refusal naming the problem rather than having one picked for it.
+
+**Idempotency is the caller's request id**, generated once when the dialog opens
+and re-sent on every attempt, because the failure it prevents is a double-click.
+Two *different* reps entering the same walk-in produce two leads, and that is
+correct — they are two separate acts of recording, and merging two people into
+one row is identity resolution, which must not be solved here by accident.
+
+Five controls, one rolled-back staging transaction: the happy path
+(**phone-only, no email**) produced lead 45 with `source = walk_in` — an origin,
+not a writer; the same request id again returned **lead 45, `was_duplicate =
+true`**; `meta_lead_ads_facebook` by hand was refused; a lead with no phone and
+no email was refused by the contract's own rule; an account in no dealership was
+refused. **`leads` went 31 → 32 across all five attempts.**
+
+**A defect caught while writing it:** the function was first declared `returns
+null on null input`. STRICT makes the whole function return NULL the moment *any*
+argument is null, and `p_email`, `p_vehicle_interest` and `p_budget_aed` are all
+optional — so every refusal above would have become a silent empty answer the
+form renders as "nothing happened". The migration now asserts `proisstrict` is
+false.
+
+`lib/manual-lead-form.js` is the screen, reached from an **Add a lead** button on
+Leads. It writes nothing itself. The picker offers only `MANUAL_ENTRY` sources —
+a convenience, not the control, since the server refuses the rest anyway.
+
+**And the readiness flip is deliberately staging-only.**
+`20260907230000` sets `manual_entry_surface`, which turns `walk_in` and
+`phone_call` back to **CONNECTED** — proving `20260907200000` was a recorded fact
+and not a hardcode. It must run on **production only on the day the dashboard is
+deployed**: the column records a fact about the *shipped* bundle, and setting it
+early would put the green pill back while the deployed bundle still had no
+button, which is the same defect re-introduced by its own fix. The check is one
+line — the browser bundle must contain `rpc/nexus_lead_record_manual`.
+
+Staging after the flip: **4 CONNECTED** (`walk_in`, `phone_call`,
+`meta_lead_ads_facebook`, `website_form`). Production stays at **0 CONNECTED**
+until the deploy.
+
+`ops/journey-lab/CONCURRENCY-REGRESSION.sql` makes the promotion race a standing
+check: **ten** concurrent backends on one phone-only event must produce exactly
+one lead, zero orphans, zero raises and nine idempotent answers. It says in its
+own header why it must be phone-only — the same race on an emailed lead goes
+green while the defect is fully open, because a unique index refuses the second
+insert and a unique index does not constrain NULLs.
+
+### T12 closed: who reassigned this lead, and why
+
+7 September 2026. A direct `UPDATE` on `public.leads` — the dashboard's own
+owner-assignment path — changed the owner and wrote **zero** audit rows. Fixed
+by a trigger, not by the RPC that was the obvious answer, and then by an RPC as
+well for the half a trigger cannot do.
+
+**`CREATE TRIGGER` on `public.leads` does not fire the guard, and that was
+measured.** `nexus_guard_born_open_grants()` has `evttags = null`, so it fires on
+**every** `ddl_command_end` — but it acts only on rows whose `object_type` is
+`table` / `view` / `sequence` / `function`, and `CREATE TRIGGER` reports
+`trigger`. Proved on staging in a rolled-back transaction: 8 column grants
+before and after, `relacl` byte-identical, `authenticated` still holds UPDATE.
+**The guard's blast radius is `ALTER TABLE`, not "any DDL near `leads`"** — which
+widens what can be fixed here without the two-screen outage this file keeps
+warning about.
+
+**Why a trigger and not a definer RPC**, in order of weight: a definer RPC
+bypasses RLS and would need a **second copy** of `leads_role_update`'s
+authorisation, and the copy that drifts is the one that silently grants too much;
+it audits **one writer**, while n8n writes as `service_role` and would bypass it;
+and it is a **new write surface** on the dealer plane, where the browser holds
+one narrow column grant today.
+
+Proved on staging, every one a separate rolled-back transaction:
+
+| control | result |
+|---|---|
+| the exact dashboard write, as a signed-in manager | `REASSIGNED`, `tenant_member`, actor auth id **and** staff id, from/to names, linked `audit_log` row |
+| a `sales` rep taking a lead that is not theirs | **0 rows** — authorisation unchanged |
+| an edit to any other column | **0 events** |
+| a `service_role` write (the n8n path) | audited, `actor_authority = service_role`, no person named |
+| **audit table made to refuse** | the owner change was **refused `23514`** and the owner was unchanged — it fails closed |
+
+**A defect the control caught before it shipped.** The first version derived the
+actor from `current_user = 'service_role'`, which inside a `SECURITY DEFINER`
+function is **always the owner** — so it could never be true, and an n8n write
+came out labelled `database_owner`: a machine blaming a different machine. The
+answer is `current_setting('role')`, which carries PostgREST's per-request
+`SET ROLE` and survives the definer switch. Found by running the control, not by
+reading the code.
+
+**And the RPC, `nexus_lead_assign_owner`, is `SECURITY INVOKER`** — the UPDATE
+runs as the caller, so the same policy still decides and nothing is
+re-implemented or bypassed. It exists for two things a PATCH cannot do:
+
+1. **The reason.** PostgREST will not set an arbitrary GUC for a browser, so
+   `nexus.change_reason` — the seam the trigger reads — is reachable only from
+   inside a function. Through the RPC a reason is recorded; through a PATCH it is
+   NULL, and NULL means nobody said.
+2. **A measured cross-dealership defect.** `leads_role_update`'s WITH CHECK
+   constrains `leads.tenant_id` and says **nothing** about `assigned_to_id`. As a
+   real signed-in Alpha manager: through the RPC, refused by name; **by direct
+   PATCH, accepted** — Alpha's lead came out owned by Bravo's owner. Not an
+   access leak (the lead stays put and the stranger still cannot read it), but
+   the screen then names a rep nobody is accountable to.
+
+`lib/lead-drawer.js` now calls the RPC and takes an optional "why". **The shipped
+bundle contains zero `leads?id=eq` writes**, so the `authenticated` column-level
+UPDATE grant on `leads` — the one kept because "revoking it breaks the screen" —
+**no longer has a screen behind it.** Revoking it is now a real option and a
+separate decision: check n8n first, because `service_role` does not need it but
+something else might.
+
+**No backfill.** Every ownership change before today is unrecorded and is not
+reconstructable. `lead_owner_events` starts empty on both projects and says so.
+
+### CONNECTED meant a row exists, and nobody could type into it
+
+7 September 2026. `nexus_lead_source_readiness()` reported **2 CONNECTED** to
+the ALBA owner — `walk_in` and `phone_call` — and those were the *only* two
+sources reading connected, so the entire positive half of the Lead Sources
+screen was this. Both endpoints are registered, active and production.
+
+Then the dashboard was searched for any way a human can put a lead into NEXUS,
+source and built bundle both. **There is none.**
+
+| searched for | result |
+|---|---|
+| any add-lead / walk-in / manual-entry form | **not found** |
+| a `POST` to `leads` | **not found** — the only write touching `leads` anywhere is `lib/lead-drawer.js:490`, a `PATCH` of `assigned_to_id` on a row that already exists |
+| `nexus_record_lead_event` / `hydrate` / `promote` in the app | **not found**, source or bundle |
+| `lead_event` as a string in the bundle | **zero occurrences** |
+
+And the three doors are `service_role`-only by grant, so a signed-in
+salesperson could not call them from the browser even if a form existed.
+
+**This is the third turn of the same mistake, and the previous two are recorded
+above in this file.** v1 derived connectedness from `integration_status` — a
+fact about the *provider*. v2 derived it from whether an endpoint row exists — a
+fact about *us*, and its own comment already says an endpoint row *"is still not
+the same fact as a delivery can arrive"*. v3: for a **webhook** source the
+deliverer is a provider that posts to the endpoint, so the endpoint **is** the
+path. For a **`MANUAL_ENTRY`** source the deliverer is a person and the path is
+a screen. A registered endpoint with no screen behind it is a door with no
+handle on the inside.
+
+`20260907200000`, both projects. `lead_source_catalogue.manual_entry_surface`
+names the screen, NULL when there is not one, with a CHECK that only a
+`MANUAL_ENTRY` source may name one. The readiness function gains
+`REGISTERED_NO_ENTRY_PATH`, evaluated **before** the CONNECTED branch. **A
+column and not a rule**: "MANUAL_ENTRY is never CONNECTED" would be wrong the
+day the form ships, and silently — the function cannot see the dashboard, so a
+person having a way to do this is a fact somebody must *record*.
+
+Both controls held on staging, in one rolled-back transaction: setting
+`manual_entry_surface` flips `walk_in` straight back to `CONNECTED`, so the
+branch is not a hardcode wearing a column; and a `WEBHOOK_FULL_PAYLOAD` source
+claiming a surface is refused by the CHECK.
+
+**Production now reads 0 CONNECTED**, which is the true state: NEXUS is
+receiving from nothing today.
+
+    before   CONNECTED 2 (phone_call, walk_in) · NOT_CONNECTABLE 1 · NOT_CONNECTED 6
+    after    REGISTERED_NO_ENTRY_PATH 2        · NOT_CONNECTABLE 1 · NOT_CONNECTED 6
+
+`ALTER TABLE` was safe here and that was checked rather than assumed:
+`nexus_guard_born_open_grants()` strips ALL from `anon` and
+INSERT/UPDATE/DELETE/TRUNCATE from `authenticated`, and this table holds exactly
+`authenticated=r`. The migration asserts the grant survived rather than trusting
+the reasoning.
+
+**The screen was already right about not knowing.** Until the dashboard is
+redeployed, `connectionCell()` meets the unfamiliar word with a *stated unknown*
+that prints the raw value, and the FAULT row names it — by design, and far
+better than a false green. `lib/vocabulary.js` now carries the state (tone
+`warm`, not `unknown`: NOT_CONNECTED is neutral because nobody has done anything
+wrong yet, whereas here the dealership **did** the setup and the missing half is
+ours). Three captions saying "the four this screen knows" were corrected, and
+the count is now computed from `CONNECTION_STATE` so it cannot go stale again.
+
+**What is owed, and it is the most sellable unbuilt thing in this repo:** a
+walk-in / phone-call entry screen. It needs no Meta secret, no Google asset and
+no VM change — the endpoints, the provenance ladder, the promoter and the origin
+column all already exist and are proven. It does need a decision that should be
+made with someone watching: door three is `service_role`-only today, and giving
+a salesperson a form means either a new `SECURITY DEFINER` RPC granted to
+`authenticated` (a new write surface on the dealer plane) or routing the form
+through n8n. That is an authority question, not a UI question.
+
+### A real WhatsApp lead arrived on production while this was running
+
+Lead **122**, `Hussain`, `+971556382721`, `source = nexus-master-router`,
+`status = COLD`, created 7 Sep 2026 14:05 UTC. Production `leads` is therefore
+**5**, not the 4 this file said. It came through the old writer, which means it
+came through `/webhook/whatsapp-inbound` — the door recorded above as accepting
+unauthenticated calls with `WAHA_WEBHOOK_SECRET` unset. Nothing about it is
+wrong; it is a reminder that the open webhook is not theoretical and is carrying
+real people's phone numbers today.
 
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 
@@ -618,6 +1249,57 @@ the 30 August repo export, which is stale; the box is the witness.
 > and the one a careful person is *more* likely to have used, because a
 > column-level grant is what you write when you are being precise. So the check
 > was blindest exactly where somebody had taken the most care.
+>
+> ### And for FUNCTIONS the same title has a fourth trap — 7 Sep 2026
+>
+> `proacl` is not two ACLs; it is one, with an entry that has no name. A
+> function is born with `EXECUTE` granted to `PUBLIC`, and that entry renders as
+> a bare `=X/postgres`. There are now **three distinct ways** to get this wrong,
+> and none of them catches the other two:
+>
+> 1. `revoke ... from public` does **not** remove a direct grant to `anon`.
+>    Supabase's default privileges hand `anon` an entry of its own.
+> 2. `revoke ... from anon, authenticated` does **not** remove the `PUBLIC`
+>    entry. Both roles keep reaching the function *through* `PUBLIC`, and
+>    neither name appears in `proacl` afterwards — so the ACL reads **clean**.
+> 3. `proacl like '%anon=%'` is therefore blind in both directions.
+>
+> Number 2 was live for three days on `nexus_public_exposure_report` — the
+> function that prints this database's own over-grants. Measured on production:
+> `proacl = {=X/postgres, postgres=X, service_role=X}`,
+> `has_function_privilege('authenticated', …) = true`, and
+> `set local role authenticated; select count(*) …` returned **149 rows** naming
+> 149 objects, every one flagged as a broken rule. A dealership's own user could
+> ask the database for the map of its own weaknesses.
+>
+> **The rule: `revoke ... from public, anon, authenticated` — name `public` AND
+> the roles — then assert with `has_function_privilege()`.**
+> `ops/ci/function-grants.mjs` now blocks a migration after
+> `20260907140000` that does not.
+>
+> ### `has_function_privilege()` is necessary and still not sufficient
+>
+> It answers "is EXECUTE granted", not "can this role call it". **Schema `USAGE`
+> is a second gate**, and on production the two disagree completely:
+>
+> | role | `USAGE` on `public` | functions it may EXECUTE | actually reachable |
+> |---|---|---|---|
+> | `anon` | **no** | 146 | **none** |
+> | `authenticated` | yes | 209 | 209 |
+>
+> Measured: `set local role anon; select … from public.nexus_public_exposure_report()`
+> fails **42501, permission denied for schema public**. So the alarming `anon`
+> number is carried entirely by one missing schema grant — which is real
+> protection, and is also a single `grant usage on schema public to anon` away
+> from opening 146 functions at once. Judge reachability on **both** gates, and
+> never report an `anon` function count as an exposure without saying which gate
+> is holding.
+>
+> Of the 64 of our own functions `authenticated` can genuinely reach, **42 are
+> `SECURITY DEFINER`** — they run as the owner and bypass RLS. That is the
+> dashboard's intended API and each one is responsible for its own tenant
+> scoping; it is a designed surface, not a defect, and it is the surface worth
+> auditing first.
 
 Supabase ships default privileges that grant **directly to `anon` and
 `authenticated`** on everything created in `public` — `EXECUTE` on every new

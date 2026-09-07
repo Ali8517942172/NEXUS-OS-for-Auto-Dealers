@@ -21,7 +21,7 @@ come back.
 |---|---|---|
 | **Dashboard builds** | `npm ci` and `npm run build` in `apps/executive-dashboard` | Yes — a build break is the cheapest defect there is and it was entirely uncaught |
 | **Quality gate (offline lanes)** | `node QUALITY_GATE.mjs --no-db`, with Chromium installed for the render lane | Yes — verified; see "Deliberate failures", below |
-| **Migration hygiene** | `node ops/ci/migration-hygiene.mjs` | Yes — verified |
+| **Migration hygiene** | `node ops/ci/migration-hygiene.mjs` **and** `node ops/ci/function-grants.mjs --census` | Yes — both verified; see "Deliberate failures" |
 | **Secret scan** | `node ops/ci/secret-scan.mjs` | Yes — verified |
 
 ---
@@ -117,6 +117,51 @@ the database is where every P0 in this product lives.
 
 ---
 
+## Function grant hygiene, and the three shapes of one mistake
+
+`ops/ci/function-grants.mjs` exists because a Postgres function is born with
+`EXECUTE` granted to `PUBLIC`, and this database has been surprised by that in
+three different ways. None of the three would have caught the other two:
+
+1. `revoke ... from public` does **not** remove a direct grant to `anon` —
+   Supabase's default privileges hand `anon` a grant of its own.
+2. `revoke ... from anon, authenticated` does **not** remove the `PUBLIC` grant.
+   Both roles keep reaching the function through `PUBLIC`, and neither name
+   appears in `proacl` afterwards, so the ACL *looks* clean.
+3. `proacl like '%anon=%'` is therefore blind, and a sweep written that way
+   reported nothing wrong while a hole was open.
+
+Number 2 is the one that cost something. `nexus_public_exposure_report` — the
+function that prints this database's own over-grants — was revoked from `anon`
+and `authenticated` on 4 September and stayed executable by every signed-in
+dealership user until 7 September, returning 149 rows of security posture to a
+customer's account. `proacl` was `{=X/postgres, postgres=X, service_role=X}`;
+the leading `=X` is `PUBLIC`.
+
+The script blocks, in migrations **newer than `20260907140000`**:
+
+- **rule 1** — a function defined without a `revoke` naming `public` in the same
+  file, and (unless it `returns trigger`) without a `grant` saying who may call
+  it. A trigger function still needs the revoke: it can also be called directly,
+  and one of ours was born reachable exactly that way.
+- **rule 2** — any `revoke ... on function` whose role list omits `public`.
+
+Everything at or before the watermark is a **named census, not a failure**: 90
+definitions do not state their own ACL and 31 revokes omit `public`. Making that
+blocking would have put CI red on day one over history that is already correct
+on the server — production showed **zero** of our functions carrying a bare
+`PUBLIC` entry on 7 Sep 2026. Same lesson as rule 4 of migration hygiene: a rule
+whose obvious remedy is wrong is worse than no rule.
+
+This is a check on the **text** of `supabase/migrations/`. It cannot see a grant
+made by hand, cannot follow a function granted in one migration and revoked in
+another, and cannot tell whether a role exists. Its live counterpart is
+`nexus_public_exposure_report()`, which needs a service-role key CI must never
+hold. Neither replaces the other: this one stops the defect being **written**,
+that one finds it once it **exists**.
+
+---
+
 ## Migration hygiene, and the rule that was replaced
 
 `ops/ci/migration-hygiene.mjs` checks, with no database:
@@ -197,6 +242,15 @@ cannot fail is decoration.
 | fake `sk-or-v1-…` key | secret scan | 1 | 0 |
 | `PLAYWRIGHT_CHROMIUM_PATH=/nonexistent` (R1–R7 could not run) | gate `--no-db` | 2 | — |
 | `NEXUS_DB_URL` set alongside `--no-db` | gate `--no-db` | 3 | — |
+| a post-watermark migration whose revoke omits `public` (rule 2) | function grants | 1 | 0 |
+| a post-watermark function with no ACL statement at all (rule 1) | function grants | 1 | 0 |
+| a post-watermark **trigger** function with no revoke (rule 1) | function grants | 1 | 0 |
 
 A planted **anon** JWT was correctly *allowed*, next to a planted `service_role`
 one that was correctly *refused*, in the same file, in the same run.
+
+The function-grant job has a positive control too, and it matters more than
+usual because both of its rules are about absence: a planted migration that
+defines a callable function **and** a trigger function and states the ACL for
+both correctly exits **0**. So the job is not simply refusing every new
+migration.

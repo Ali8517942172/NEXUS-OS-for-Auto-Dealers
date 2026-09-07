@@ -1,0 +1,200 @@
+#!/usr/bin/env node
+/* NEXUS OS — every new function must state who may execute it, with no database.
+ *
+ * WHY THIS EXISTS
+ * ---------------
+ * A Postgres function is born with EXECUTE granted to PUBLIC. In a Supabase
+ * project that means anon and authenticated can call it the moment it is
+ * created, and this database has now been surprised by that in three distinct
+ * ways — none of which the other two would have caught:
+ *
+ *   1. `revoke ... from public` does NOT remove a direct grant to anon.
+ *      Supabase's default privileges hand anon a grant of its own.
+ *   2. `revoke ... from anon, authenticated` does NOT remove the PUBLIC grant.
+ *      Both roles keep reaching the function through PUBLIC, and neither name
+ *      appears in proacl afterwards — so the ACL *looks* clean.
+ *   3. `proacl like '%anon=%'` is therefore blind. A sweep written that way
+ *      reported nothing wrong while the hole was open.
+ *
+ * Number 2 is the one that cost something real. `nexus_public_exposure_report`
+ * — the function that prints this database's own over-grants — was revoked
+ * from anon and authenticated on 4 September and remained executable by every
+ * signed-in dealership user until 7 September, because the revoke never named
+ * `public`. Measured on production: proacl `{=X/postgres, postgres=X, ...}`,
+ * `has_function_privilege('authenticated', ...)` true, and 149 rows of this
+ * database's security posture returned to a customer's account.
+ *
+ * The rule that survives all three shapes is one line long: REVOKE NAMING
+ * `public` AND THE ROLES, then assert with has_function_privilege(). This
+ * script makes CI refuse a migration that does not.
+ *
+ * WHAT THIS CAN AND CANNOT SEE
+ * ----------------------------
+ * CI holds no database. This is a check on the TEXT of supabase/migrations/, so
+ * it reasons about what a migration *says*, never about what the database *is*.
+ * It cannot see a grant made by hand in the SQL editor, cannot follow a function
+ * granted in one migration and revoked in another, and cannot tell whether a
+ * role exists. The live counterpart is nexus_public_exposure_report(), which
+ * runs against a real database and needs a service-role key CI must never hold.
+ *
+ * Neither replaces the other: this one stops the defect being WRITTEN, that one
+ * finds it once it EXISTS.
+ *
+ * WHY THE WHOLE TREE IS NOT BLOCKING, AND WHAT IS
+ * -----------------------------------------------
+ * 216 function definitions live in supabase/migrations/. 101 of them do not
+ * state a full ACL in their own file, and 31 revoke statements omit `public`.
+ * Making all of that blocking would put CI red on day one over history that is
+ * already correct on the server: production currently shows ZERO functions of
+ * ours carrying a bare PUBLIC entry (measured 7 Sep 2026), because later
+ * migrations and Supabase's own default privileges landed differently than the
+ * text alone suggests.
+ *
+ * migration-hygiene.mjs learned this lesson the expensive way — a rule whose
+ * obvious remedy is data loss is worse than no rule — so the shape is the same
+ * here: BLOCKING on anything newer than the watermark, a NAMED CENSUS for
+ * everything at or before it. The watermark is the migration that fixed the
+ * defect. Nothing written after it has an excuse.
+ *
+ *     node ops/ci/function-grants.mjs           check
+ *     node ops/ci/function-grants.mjs --census  also print the legacy list
+ */
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const DIR = join(ROOT, 'supabase', 'migrations');
+
+/* The migration that closed the hole. Everything after it is held to the rule;
+   everything at or before it is history, censused and not blocked. */
+const WATERMARK = '20260907140000';
+
+const SHOW_CENSUS = process.argv.includes('--census');
+
+/* ── parsing ──────────────────────────────────────────────────────────────
+   Deliberately conservative. These patterns are matched against SQL that was
+   extracted verbatim from the database, so they must tolerate the formatting a
+   dozen different migrations happen to use, and must not claim a match they are
+   unsure of. Anything unparseable is reported, never assumed correct. */
+
+const DEFINE = /create\s+(?:or\s+replace\s+)?function\s+(?:public\.)?([a-z0-9_]+)\s*\(([^)]*)\)([\s\S]{0,600}?)\b(?:language|as)\b/gi;
+const REVOKE = /revoke\s+(?:all|execute)(?:\s+privileges)?[^;]*?\son\s+function\s+([^;]*?)\sfrom\s+([^;]+);/gi;
+const GRANT  = /grant\s+execute\s+on\s+function\s+([^;]*?)\sto\s+([^;]+);/gi;
+
+const nameOf = (target) => {
+  const m = /(?:public\.)?([a-z0-9_]+)\s*\(/i.exec(String(target).trim());
+  return m ? m[1].toLowerCase() : null;
+};
+
+function parse(sql) {
+  const defined = [];
+  DEFINE.lastIndex = 0;
+  for (const m of sql.matchAll(DEFINE)) {
+    defined.push({ name: m[1].toLowerCase(), isTrigger: /returns\s+trigger/i.test(m[3]) });
+  }
+  const revokes = [];
+  for (const m of sql.matchAll(REVOKE)) {
+    revokes.push({
+      name: nameOf(m[1]),
+      roles: m[2].split(',').map(r => r.trim().toLowerCase()).filter(Boolean),
+    });
+  }
+  const grants = [];
+  for (const m of sql.matchAll(GRANT)) {
+    grants.push({ name: nameOf(m[1]), roles: m[2].split(',').map(r => r.trim().toLowerCase()) });
+  }
+  return { defined, revokes, grants };
+}
+
+/* ── the check ────────────────────────────────────────────────────────────── */
+const files = readdirSync(DIR).filter(f => f.endsWith('.sql')).sort();
+const failures = [];
+const census = { unstated: [], revokeOmitsPublic: [] };
+let definedTotal = 0, newFiles = 0, newDefs = 0;
+
+for (const file of files) {
+  const version = file.slice(0, 14);
+  const isNew = version > WATERMARK;
+  const sql = readFileSync(join(DIR, file), 'utf8');
+  const { defined, revokes, grants } = parse(sql);
+  if (!defined.length && !revokes.length) continue;
+  if (isNew) newFiles++;
+
+  /* Rule 2 first, because it is the defect itself and it is about a STATEMENT,
+     not about a function this file happens to define. A revoke that names the
+     roles and omits `public` reads as protection and is not. */
+  for (const r of revokes) {
+    if (r.roles.includes('public')) continue;
+    const where = `${file}: revoke on ${r.name ?? '(unparsed target)'} from ${r.roles.join(', ')}`;
+    if (isNew) {
+      failures.push({
+        rule: 2,
+        text: `${where}\n        omits \`public\`. Both anon and authenticated keep reaching the ` +
+              `function through the bare PUBLIC grant, and neither name will appear in proacl ` +
+              `afterwards, so the ACL will look clean. Write: revoke ... from public, anon, authenticated;`,
+      });
+    } else {
+      census.revokeOmitsPublic.push(where);
+    }
+  }
+
+  for (const d of defined) {
+    definedTotal++;
+    if (isNew) newDefs++;
+    const revoked = revokes.some(r => r.name === d.name && r.roles.includes('public'));
+    /* A trigger function needs no grant — it runs as the table owner — but it
+       still needs the revoke, because it can also be CALLED directly, and one
+       of ours (lead_ingest_provider_identity_touch) was born reachable exactly
+       that way. */
+    const granted = grants.some(g => g.name === d.name);
+    const missing = [];
+    if (!revoked) missing.push('a revoke naming `public`');
+    if (!granted && !d.isTrigger) missing.push('a grant naming who may execute it');
+
+    if (!missing.length) continue;
+    const where = `${file}: ${d.name}()${d.isTrigger ? ' [trigger]' : ''} — missing ${missing.join(' and ')}`;
+    if (isNew) {
+      failures.push({
+        rule: 1,
+        text: `${where}\n        A function is born with EXECUTE granted to PUBLIC. Say who may ` +
+              `call it in the same migration that creates it, and assert it with ` +
+              `has_function_privilege() rather than by reading proacl.`,
+      });
+    } else {
+      census.unstated.push(where);
+    }
+  }
+}
+
+/* ── report ───────────────────────────────────────────────────────────────── */
+const pad = (n) => String(n).padStart(4, ' ');
+console.log('supabase/migrations/ — function grant hygiene');
+console.log(`  files scanned                          ${pad(files.length)}`);
+console.log(`  function definitions found             ${pad(definedTotal)}`);
+console.log(`  files newer than ${WATERMARK}     ${pad(newFiles)}  (blocking)`);
+console.log(`  function definitions in those files    ${pad(newDefs)}`);
+console.log('');
+console.log('  legacy census, at or before the watermark — reported, not blocked:');
+console.log(`    definitions not stating their own ACL  ${pad(census.unstated.length)}`);
+console.log(`    revokes omitting \`public\`              ${pad(census.revokeOmitsPublic.length)}`);
+console.log('    Production showed ZERO of our functions carrying a bare PUBLIC entry');
+console.log('    on 7 Sep 2026, so this census is hygiene, not an open breach. Confirm');
+console.log('    with nexus_public_exposure_report(), which needs a database.');
+
+if (SHOW_CENSUS) {
+  for (const [title, list] of [['ACL not stated', census.unstated],
+                               ['revoke omits public', census.revokeOmitsPublic]]) {
+    if (!list.length) continue;
+    console.log(`\n  ── ${title} ──`);
+    for (const line of list) console.log(`    ${line}`);
+  }
+}
+
+if (failures.length) {
+  console.log(`\n${failures.length} blocking failure(s) in migrations after ${WATERMARK}:\n`);
+  for (const f of failures) console.log(`  [rule ${f.rule}] ${f.text}\n`);
+  process.exit(1);
+}
+
+console.log(`\nOK — every function defined after ${WATERMARK} states who may execute it.`);

@@ -465,6 +465,8 @@ async function assignDialog(lead) {
            <div>There are no staff accounts to assign to.</div></div>`
         : ''}
     <select id="assignSel" ${canAssign ? '' : 'disabled'}>${users.map(u => `<option value="${esc(u.id)}" ${u.id === lead.assigned_to_id ? 'selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`).join('')}</select>
+    <label class="cell-sub" for="assignWhy" style="display:block;margin-top:12px">Why (optional — recorded with the change)</label>
+    <input id="assignWhy" type="text" maxlength="200" placeholder="e.g. customer asked for someone else" style="width:100%">
     <div style="display:flex;gap:8px;margin-top:12px">
     <button class="btn primary" id="assignGo" ${canAssign ? '' : 'disabled title="No staff list was loaded, so saving could only clear the current owner."'}>Save</button>
     <button class="btn" id="assignCancel">Cancel</button></div>
@@ -478,21 +480,37 @@ async function assignDialog(lead) {
         '<span class="t-hot">No rep selected — refusing to save, because that would clear the current owner.</span>';
       return;
     }
-    const name = users.find(u => u.id === id)?.name || null;
+    const why = (box.querySelector('#assignWhy')?.value || '').trim();
     try {
-      /* `dbWrite` sends `Prefer: return=representation`, so a PATCH the row
-         policy filters out is not an error — PostgREST answers 200 with [].
-         Since the role model landed on 5 Sep 2026 that is a reachable outcome
-         here: a rep may only reassign a lead that is theirs, and a lead that is
-         not theirs simply is not in the update's scope. Printing "Saved." on an
-         empty result tells somebody the owner changed when it did not, and the
-         table still shows the old one when they reload. */
-      const saved = await dbWrite('PATCH', `leads?id=eq.${lead.id}`, { assigned_to_id: id, assigned_to: name });
-      if (Array.isArray(saved) && saved.length === 0) {
-        box.querySelector('#assignMsg').innerHTML =
-          '<span class="t-hot">Nothing was saved — this lead is no longer there, or your account is not allowed to reassign it. The owner is unchanged.</span>';
-        return;
-      }
+      /* rpc/nexus_lead_assign_owner, NOT a PATCH on `leads` — and the reasons
+         are specific rather than stylistic. Both were measured on 7 Sep 2026.
+
+         1. THE CHANGE IS NOW RECORDED. A direct PATCH wrote ZERO audit rows, so
+            "who reassigned this lead, and when" had no answer at all (Journey
+            Lab T12). A trigger on `leads` now writes lead_owner_events for every
+            writer — but a trigger can only see THAT the owner changed. The
+            reason travels in a transaction-local setting that PostgREST will not
+            set for a browser, so it is reachable only from inside a function.
+            Through this call the reason is recorded; through a PATCH it is NULL,
+            and NULL honestly means nobody said.
+
+         2. A PATCH ACCEPTS AN OWNER FROM ANOTHER DEALERSHIP. Policy
+            leads_role_update constrains the lead's tenant and says nothing about
+            assigned_to_id. Proved as a real signed-in manager: the PATCH filed
+            one dealership's lead under another dealership's staff member. It is
+            not an access leak — the lead stays put and the stranger still cannot
+            read it — but the screen then names a rep nobody is accountable to.
+            This function refuses it by name.
+
+         The function is SECURITY INVOKER, so the UPDATE still runs as this user
+         and the same row policy still decides who may reassign what. It is not a
+         way around that rule; it is the same rule with the recording attached.
+
+         Refusals arrive as NX001 with a sentence written for a salesperson, so
+         they are shown as-is rather than being re-worded here. */
+      await dbWrite('POST', 'rpc/nexus_lead_assign_owner', {
+        p_lead_id: lead.id, p_to_staff_id: id, p_reason: why || null,
+      });
       box.querySelector('#assignMsg').innerHTML = '<span class="t-ok">Saved. Reopen the screen to see it in the table.</span>';
     } catch (e) {
       box.querySelector('#assignMsg').innerHTML = `<span class="t-hot">${esc(e.message)}</span>`;

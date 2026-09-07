@@ -155,7 +155,33 @@ function renderStep(scenario, step, index, ctx) {
       call: 'nexus_promote_lead_event',
       kind: 'database',
       skipped: step.skipped === true,
-      args: { event_id: '<event_id returned by step 1>' }
+      args: { event_id: '<event_id returned by step 1>' },
+      // The scenario's `disposition` says what happens IN PRODUCTION, with a
+      // real provider on a production endpoint. This says what happens when you
+      // actually run the simulator, and since 7 September 2026 the two differ.
+      //
+      // nexus_promote_lead_event() now refuses any event whose environment is
+      // not 'production', because public.leads has no column that could say a
+      // row is simulated -- so a simulated row put there is a real customer to
+      // every reader of that table, for ever. Migration
+      // 20260907124500_leadingest_10 has the whole account.
+      //
+      // This is the simulator's best property, not a limitation of it: you
+      // cannot make simulator output count as revenue even if you try. It is
+      // stated on every fixture rather than left for someone to discover when a
+      // demo throws.
+      in_simulation: {
+        outcome: 'REFUSED_BY_DESIGN',
+        sqlstate: 'NX001',
+        detail: 'PROMOTION_REQUIRES_PRODUCTION_ENVIRONMENT',
+        why: 'The simulator writes to a simulation endpoint, and door three ' +
+             'refuses to create a leads row from non-production traffic. The ' +
+             'event still records and hydrates, and is readable through ' +
+             'v_lead_origin with is_test_traffic = true.',
+        measured: 'staging, 7 September 2026: a simulation event refused with ' +
+                  'this exact detail while a production event alongside it ' +
+                  'promoted normally (lead 31).'
+      }
     });
   }
 

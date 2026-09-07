@@ -159,12 +159,21 @@ SCREENS.attribution = async host => {
     + '&order=purchase_date.desc&limit=200'));
 
   const readLeadChain = shared(() => db('v_attribution_lead_chain'
-    + '?select=lead_id,lead_name,created_at,status,lead_source_field,campaign_state,campaign_note,'
+    + '?select=lead_id,lead_name,created_at,status,campaign_state,campaign_note,'
     + 'conversation_messages,messages_in,messages_out,conversation_state,conversation_basis,conversation_note,'
     + 'vehicle_interest_text,vehicle_text_candidates,vehicle_state,vehicle_basis,vehicle_note,'
     + 'finance_quotes,finance_state,finance_note,sales_recorded,revenue_confirmed_aed,revenue_kind,last_sale_date,'
     + 'sale_state,sale_note,margin_state,margin_note,hops_total,hops_evidenced,first_break'
     + '&order=lead_id.asc&limit=500'));
+
+  /* The one honest answer that DOES exist about where enquiries came from.
+     nexus_lead_attribution_summary() reads the lead-ingestion layer, which
+     records what the provider said at the moment of arrival — not leads.source,
+     which holds the name of the workflow that wrote the row. It is built so it
+     cannot flatter: the UNKNOWN bucket is emitted even at zero, and
+     share_of_known and share_of_all are two different numbers so the kinder one
+     cannot be quoted by accident. */
+  const readOrigins = shared(() => db('rpc/nexus_lead_attribution_summary'));
 
   const readEdges = shared(() => db('v_attribution_edges'
     + '?select=edge,from_kind,from_ref,to_kind,to_ref,basis,confidence,note'
@@ -348,6 +357,73 @@ SCREENS.attribution = async host => {
            </div>`;
     },
   }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P1b · Where the enquiries themselves came from
+     ══════════════════════════════════════════════════════════════════════
+     The banner above says the campaign hop cannot be answered. This panel is
+     the NARROWER question that CAN be: of the enquiries whose arrival NEXUS
+     actually recorded, which advertising platform did each come from?
+
+     It reads nexus_lead_attribution_summary() and re-derives nothing. Two
+     properties of that function are the reason this panel is safe to show:
+     the UNKNOWN bucket is emitted even at zero, so it can never quietly vanish
+     from the table; and share_of_known and share_of_all are two different
+     numbers, so the flattering one cannot be quoted by mistake.
+
+     Today, on this dealership, it is expected to be almost entirely UNKNOWN,
+     and that is the point of putting it on the screen. Every lead here arrived
+     before the ingestion layer existed, so nothing recorded an origin for it.
+     A screen that hid that would be hiding the reason the campaign hop above is
+     unanswerable. ══════════════════════════════════════════════════════════ */
+  panel(host, {
+    title: 'Where the enquiries came from',
+    sub: 'Of the enquiries whose arrival was recorded, which platform each came from &mdash; and how many were '
+       + 'never recorded at all',
+    load: async () => {
+      const o = await settle(readOrigins());
+      if (o.err) throw o.err;
+      return { rows: o.v || [] };
+    },
+    render: ({ rows }) => {
+      if (!rows.length) {
+        return `<div class="banner warm">
+          <span class="material-symbols-outlined" style="font-size:20px">help</span>
+          <div>${bold('Nothing came back, not even an UNKNOWN row.')}
+          <div class="cell-sub" style="margin-top:6px">This function emits the UNKNOWN bucket even when it is
+          empty, so an empty answer means the question could not be asked for this account rather than that there
+          were no enquiries.</div></div></div>`;
+      }
+      const known = rows.filter(r => String(r.ad_platform || '').toUpperCase() !== 'UNKNOWN');
+      const unknown = rows.find(r => String(r.ad_platform || '').toUpperCase() === 'UNKNOWN');
+      const lead = !known.length
+        ? `<div class="banner hot">
+             <span class="material-symbols-outlined" style="font-size:20px">error</span>
+             <div>${bold('Not one enquiry has a recorded platform.')}
+             <div class="cell-sub" style="margin-top:6px">Every lead this dealership holds arrived before NEXUS was
+             recording where enquiries come from, so there is nothing to attribute spend against. This is the reason
+             the campaign question above cannot be answered, stated as a number.</div></div></div>`
+        : '';
+      return lead + table(rows, [
+        { label: 'Platform', render: r => String(r.ad_platform || '').toUpperCase() === 'UNKNOWN'
+            ? pill('Unknown', 'unknown', { verbatim: false })
+            : pill(String(r.ad_platform), 'ok', { verbatim: true }) },
+        { label: 'Enquiries', align: 'right', render: r => n0(r.leads) },
+        { label: 'Became a lead', align: 'right', render: r => n0(r.promoted_leads) },
+        /* BOTH shares, always, side by side. Printing one would let a reader
+           quote 100% of the known slice as though it were 100% of the funnel,
+           which is the exact flattery the function was written to prevent. */
+        { label: 'Share of those with a known platform', align: 'right',
+          render: r => r.share_of_known == null ? muted('n/a') : `${esc(str(r.share_of_known))}%` },
+        { label: 'Share of ALL enquiries', align: 'right',
+          render: r => r.share_of_all == null ? muted('n/a') : `${esc(str(r.share_of_all))}%` },
+        { label: 'What the engine says', render: r => muted(esc(str(r.note))) },
+      ]) + (unknown
+        ? muted('UNKNOWN is a real row, not a rounding remainder. It counts enquiries NEXUS holds and cannot '
+              + 'attribute, which is a number worth watching go down rather than one worth hiding.')
+        : '');
+    },
+  });
 
   /* ══════════════════════════════════════════════════════════════════════
      P2 · Every hop, what is true today, and what would unlock it

@@ -252,3 +252,51 @@ real validators and the real adapter functions against what you wrote, so:
 
 That is deliberate. Fixtures that quietly stop testing what they claim to test are worse than no
 fixtures.
+
+---
+
+## The simulator cannot make a customer, and that is now measured
+
+Every scenario's `disposition` says what happens **in production**, with a real
+provider on a production endpoint. Six of them say `PROMOTED`, and that is still
+correct as a statement about production.
+
+It is no longer what happens when you run the simulator, and the difference is
+deliberate. Since `20260907124500_leadingest_10`, `nexus_promote_lead_event()`
+refuses any event whose `environment` is not `production`, because
+`public.leads` has **no column that could say a row is simulated** — so a
+simulated row put there is a real customer to every reader of that table, for
+ever, and would be counted by pipeline value, response-time reporting and every
+recovered-revenue figure.
+
+So every emitted fixture now carries `in_simulation` on its promote step, saying
+so before anyone discovers it in a demo:
+
+```json
+"call": "nexus_promote_lead_event",
+"in_simulation": {
+  "outcome": "REFUSED_BY_DESIGN",
+  "sqlstate": "NX001",
+  "detail": "PROMOTION_REQUIRES_PRODUCTION_ENVIRONMENT"
+}
+```
+
+**Measured on staging, 7 September 2026, running scenario A's own shape against
+a real `simulation` endpoint:**
+
+| step | result |
+|---|---|
+| record + hydrate in one hop | event recorded, phase **HYDRATED** |
+| promote the simulated event | **refused: `PROMOTION_REQUIRES_PRODUCTION_ENVIRONMENT`** |
+| still readable afterwards? | `v_lead_origin`: phase HYDRATED, **`is_test_traffic` true**, source "Dubizzle Motors" |
+| did a `leads` row appear? | **0** |
+
+Read the third row as carefully as the second. The event is **not** discarded —
+it records, it hydrates, and a dealership can see it, correctly flagged as test
+traffic. What it cannot do is become a customer. That is the difference between
+containment and deletion, and it is the property that makes this directory safe
+to demo in front of a buyer.
+
+The positive control is in the same migration: a **production** event alongside
+it promoted normally (lead 31, `source = google_ads_lead_form`). The guard is
+not simply refusing everything.

@@ -127,7 +127,7 @@ import {
   ORIGIN_STRENGTH_NOT_STATED, ORIGIN_STRENGTH_SCALE, PROVIDER_ROUTE_IS_NOT_A_CONNECTION,
   PROVIDER_ROUTE_LABEL, SOURCE_IS_AS_ATTESTED_AS_ITS_WEAKEST,
   TEST_TRAFFIC_BAND, TEST_TRAFFIC_EXCLUDED, TEST_TRAFFIC_UNCLASSIFIED,
-  connectionState, leadPhase, noLeadFeedSentence, originBand, providerRoute,
+  CONNECTION_STATE, connectionState, leadPhase, noLeadFeedSentence, originBand, providerRoute,
 } from '../lib/vocabulary.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
@@ -374,7 +374,11 @@ function phaseCells(a) {
 /* ══════════════════════════════════════════════════════════════════════════
    Whether NEXUS is receiving from this source — RENDERED, never derived
    ══════════════════════════════════════════════════════════════════════════
-   One branch per value of `connection_state`, and no fifth branch that guesses.
+   One branch per value of `connection_state`, and no extra branch that guesses.
+   The set of values is `CONNECTION_STATE` in lib/vocabulary.js and nothing here
+   hardcodes how many there are — that sentence used to say "four", and the day
+   the database learned a fifth word it was a caption asserting the opposite of
+   the branch it sat in.
    Three things are load-bearing here and each of them is the defect this
    replaces, stated as code:
 
@@ -388,8 +392,12 @@ function phaseCells(a) {
        has done anything wrong by not having connected a source yet, and a red
        row would be this screen inventing an alarm.
 
-   A value outside the four, or a source absent from the readiness answer, is a
-   stated unknown. Neither is filled in from the provider column. */
+   A value this screen does not know, or a source absent from the readiness
+   answer, is a stated unknown. Neither is filled in from the provider column,
+   and an unknown state is deliberately NOT rendered as a neutral or a hopeful
+   one: the FAULT row further down names it, because an unreadable state might
+   be an unconnected source being shown as working. That is how this screen
+   behaves correctly while it is a deploy behind the database. */
 function connectionCell(rd) {
   if (!rd) return hot(esc(CONNECTION_STATE_MISSING));
   const st = connectionState(rd.state);
@@ -963,7 +971,7 @@ SCREENS.leadsources = async host => {
           const words = [...new Set(unknownState.map(x => x.state || 'nothing recorded'))];
           rows.push({ what: 'FAULT — whether NEXUS is receiving from some of these sources',
             detail: `${num(unknownState.length)} of ${num(R.usable.length)} sources record a connection state outside `
-                  + `the four this screen knows: ${words.join(', ')}`,
+                  + `the ${num(Object.keys(CONNECTION_STATE).length)} this screen knows: ${words.join(', ')}`,
             why: 'A state that cannot be read might be an unconnected source being shown as working, which is the one '
                + 'direction that misleads. Nothing is claimed about those sources in either direction.',
             unlock: 'Reconcile the wording. Either the record gained a state or this screen fell behind one, and the '
