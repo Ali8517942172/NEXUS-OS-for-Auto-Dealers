@@ -202,12 +202,13 @@ const ad_platform = (platform === 'instagram' || platform === 'facebook') ? plat
 
    What actually trips it is a string -- key or value, any depth -- that is
    EXACTLY one of the six words. So the rule is exact-match and it now lives
-   inside scrub(), which already walks this branch. A KEY is prefixed; a VALUE
-   keeps the customer's word and gains a stated note, because one trailing
-   character is all the constraint needs and deleting a customer's answer to
-   satisfy a regex is not a repair. `normalized` -- the text a salesperson reads
-   -- is a different column the constraint does not cover and is left exactly as
-   the customer wrote it. */
+   inside scrub(), which already walks this branch. It runs on VALUES only: see
+   the note beside BARE_CONSTRAINT_WORD for why a key needs no repair. The
+   string keeps the customer's word and gains a stated note, because one
+   trailing character is all the constraint needs and deleting a customer's
+   answer to satisfy a regex is not a repair. `normalized` -- the text a
+   salesperson reads -- is a different column the constraint does not cover and
+   is left exactly as the customer wrote it. */
 const scrubbedFieldData = scrub(src.field_data || [], 0) || [];
 const renamedQuestions = 0;  /* see above: the key path is unreachable */
 

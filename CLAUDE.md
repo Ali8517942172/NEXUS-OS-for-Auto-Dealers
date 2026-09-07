@@ -531,10 +531,20 @@ harmless label like `my_api_key` was renamed for nothing. I had measured an
 embedded word and generalised the result to every word.
 
 Repo bodies and tests for both receivers are corrected (Meta 49 tests, Google
-56). **The Meta box is not**: workflow `JDqy54w2HUH7pHgW` still runs the old
-`Normalize And Redact`. It cannot bite while `META_APP_SECRET` is unset — the
-gate refuses every delivery before that node — but redeploying that one body is
-a **blocking step before the app secret is ever set**.
+56), and the Meta box was fixed and **verified on the box, both ways**.
+`test_workflow` pins the upstream nodes and lets a Code node execute for real,
+which reaches `Normalize And Redact` while `META_APP_SECRET` is still unset:
+
+| execution | node output | Postgres verdict |
+|---|---|---|
+| `10879` (old body) | the bare word | **REFUSED `23514`** — customer thrown away |
+| `10880` (new body) | the word plus a stated note, `annotated_answers: 2` | **would INSERT** |
+
+That technique — pin every trigger, credentialled and HTTP node, let the Code
+node run — is the only way to exercise these receivers before their secrets
+exist. Use it. All three live URLs still fail closed afterwards:
+`500 APP_SECRET_NOT_CONFIGURED` for both Meta receivers, `403
+GOOGLE_KEY_REJECTED` for Google.
 
 ### The Google Ads Lead Form receiver is live and refuses everything
 

@@ -82,12 +82,20 @@ any repair could run, and a rename branch would be unreachable code pretending
 to be a defence. Meta carries the question label as a *value* of `name`, so the
 value path is the one that fires.
 
-> **The box does not have this fix yet.** The repo body and the tests are
-> corrected; workflow `JDqy54w2HUH7pHgW` still runs the old `Normalize And
-> Redact`. It cannot bite today — `META_APP_SECRET` is unset, so this receiver
-> refuses every delivery before reaching that node, and it has never received
-> anything. Redeploying that one node body is a **blocking step before the Meta
-> app secret is ever set**, and it is listed under "What Ali has to do" below.
+**And it was proven on the box, both ways, rather than argued.** `test_workflow`
+pins the upstream nodes and lets a Code node run for real, so `Normalize And
+Redact` could be fed a lead whose answer was exactly `authorization` while
+`META_APP_SECRET` is still unset:
+
+| n8n execution | what the node produced | what Postgres does with it |
+|---|---|---|
+| `10879`, the body deployed before today | the bare word, `annotated_answers` absent | **REFUSED `23514`** — the customer is thrown away |
+| `10880`, the body deployed now | the word plus the stated note, `annotated_answers: 2` | **would INSERT** — the lead survives |
+
+The same run also showed `my_api_key_question` left exactly alone, an answer of
+`my api_key is broken` left exactly alone, and `050 444 5566` normalised to
+`+971504445566`. Fixed body published 7 September 2026; the live URL still
+answers `500 APP_SECRET_NOT_CONFIGURED`, so the gate is unchanged.
 
 **Attribution never touches the identity.** Meta delivers Instagram lead ads on
 the connected Facebook Page's leadgen subscription, so at `RECEIVED` time nobody
@@ -130,11 +138,6 @@ returning a healthy-looking `200`.
 
 ## What Ali has to do before this can carry anything
 
-0. **Redeploy `Normalize And Redact` from `normalize-and-redact.node.js`** before
-   anything else on this list. The deployed body still carries the constraint
-   defect described above, which destroys a lead whose answer is exactly one of
-   six words. Harmless while the app secret is unset; lead-losing the moment it
-   is set.
 1. A **Facebook Page** for the dealership, with a **lead form**.
 2. On the VM: `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and
    `META_PAGE_ACCESS_TOKEN` (a Page token with `leads_retrieval`; the short-lived
