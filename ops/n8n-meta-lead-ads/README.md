@@ -136,6 +136,34 @@ and `previousNodeOutput: 1` — the POST output is connected. On the Cloud recei
 that connection was missed and every real delivery ran no nodes at all while
 returning a healthy-looking `200`.
 
+## The audit row is written by door three, not by this workflow
+
+Measured 7 September 2026: `grep -c audit_log` over this directory returned
+**0**, and the workflow's own graph goes `Promote To Lead -> Respond 200
+Promoted` and stops. A real customer would have arrived with no row in the table
+a dealership reads to answer "what happened".
+
+It is fixed in `nexus_promote_lead_event` rather than here, deliberately: a
+receiver that audits itself audits one receiver, and there are four of them plus
+manual entry. Nothing needs adding to this workflow — the row appears the moment
+a lead is promoted, and it names the source and spells out whether the origin was
+attested by the provider or rests on a person's word.
+
+## Registered, verified and active are three separate refusals, and all three hold
+
+Measured on staging with a positive control first, in a rolled-back transaction:
+
+| state | resolves? |
+|---|---|
+| page identity active, endpoint active, dealership active | **1 row** — the control |
+| page identity `disabled` | 0 rows |
+| endpoint `disabled` (page still active) | 0 rows |
+| dealership `suspended` | 0 rows |
+
+So the `disabled` state the two Meta endpoints sit in today is a real lock, not a
+label: re-enabling them is a deliberate act, and until it happens a delivery from
+a registered Page still resolves to nothing.
+
 ## What Ali has to do before this can carry anything
 
 1. A **Facebook Page** for the dealership, with a **lead form**.

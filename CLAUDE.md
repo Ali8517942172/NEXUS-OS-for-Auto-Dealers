@@ -824,6 +824,63 @@ so a wrong path, credential or retry setting in the scaffolding is invisible to
 the check whose whole purpose is repo↔box equality. Corrected, and the limit is
 now written into the generator.
 
+### No receiver wrote an audit row — T12's shape at the other end of the funnel
+
+7 September 2026, found by checking rather than by it biting:
+
+```
+grep -c audit_log  ops/n8n-google-lead-form/receiver.sdk.js   ->  0
+grep -c audit_log  ops/n8n-meta-lead-ads/*.js                 ->  0
+the Meta workflow's graph:  Promote To Lead -> Respond 200 Promoted, end.
+```
+
+Every receiver built this week would have created a real customer with **no
+entry in the one table a dealership reads to answer "what happened"**. Nothing
+had gone wrong yet only because no receiver has carried a lead.
+
+**The audit went into door three, not into each receiver** — the T12 lesson
+applied at the other end. A writer that audits itself audits *one* writer, and
+there are four receivers plus manual entry plus whatever comes next, each a
+separate chance to forget. Every lead that becomes a customer passes through
+`nexus_promote_lead_event`, so now no receiver *can* forget, and the sentence has
+one derivation rather than five that drift.
+
+It also **removed** one that already existed: `nexus_lead_record_manual` wrote
+its own an hour earlier. Two writers for one fact is how a count ends up double.
+
+The row spells the provenance out in words, because it is what somebody reads
+when asking whether a lead is real:
+
+```
+ingest:walk_in       … origin operator_recorded (a person's word, not a signature)
+ingest:website_form  … origin origin_and_form_key (attested by the provider)
+```
+
+Fails closed, same reason as T12's trigger: a customer in the funnel with no
+record of arriving is worse than a delivery the provider retries, and Meta and
+Google both redeliver.
+
+### The Meta Lead Ads receiver was already built — checked, not rebuilt
+
+Asked to "build the Meta Lead Ads receiver", the first thing to do was look:
+`ops/n8n-meta-lead-ads/` is live (`JDqy54w2HUH7pHgW`), fail-closed, and carries
+**49 passing tests**. Raw-body HMAC, `page_id` identity resolution, the Graph
+hop, `field_data` normalisation, allowlist redaction, and an explicit rule that
+attribution never touches `lead_event_identity_key` — all present.
+
+Two things were genuinely worth checking rather than assuming:
+
+- **"registered / verified / active endpoint checks"** — measured on staging with
+  a positive control, all three levels refuse: a disabled **page identity**, a
+  disabled **endpoint**, and a suspended **dealership** each return zero rows
+  from `nexus_lead_endpoint_for_provider_identity()`, while the active case
+  resolves.
+- **the audit row** — genuinely missing, and that is the section above.
+
+What is still missing is not code: `META_APP_SECRET`,
+`META_WEBHOOK_VERIFY_TOKEN`, `META_PAGE_ACCESS_TOKEN`, a Facebook Page, and the
+`leadgen` subscription. **Do not rebuild this receiver.**
+
 ### A salesperson can now put a walk-in into NEXUS
 
 7 September 2026. The other half of the `REGISTERED_NO_ENTRY_PATH` finding: the
