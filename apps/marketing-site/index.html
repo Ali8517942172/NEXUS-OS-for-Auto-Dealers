@@ -551,6 +551,33 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
       b=document.getElementById('submit-btn');
   if(!f) return;
   var started=Date.now();
+  /* MINTED ONCE, WHEN THE PAGE LOADS -- not inside the submit handler.
+     submission_id is sent to /api/lead as p_external_event_id, which is the
+     idempotency key of nexus_record_lead_event. The failure it has to survive
+     is the one this form actively invites: the 503 branch re-enables the
+     button and the error text asks the visitor to try again. Minted per
+     attempt, a second click was a second enquiry from one person. Minted here,
+     a retry is recognised as the same act and returns was_duplicate.
+     A reload is deliberately a new id: that is a person deciding to enquire
+     again, not a retry. */
+  var submissionId = (function(){
+    try {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      if (window.crypto && crypto.getRandomValues) {
+        var b = new Uint8Array(16); crypto.getRandomValues(b);
+        b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+        var h = []; for (var i = 0; i < 16; i++) h.push(('0' + b[i].toString(16)).slice(-2));
+        return h.slice(0,4).join('') + '-' + h.slice(4,6).join('') + '-' + h.slice(6,8).join('')
+             + '-' + h.slice(8,10).join('') + '-' + h.slice(10,16).join('');
+      }
+    } catch (e) { /* fall through */ }
+    /* No CSPRNG at all. Deliberately NOT a clock reading plus a weak PRNG:
+       that is the `nokey:` + timestamp shape the database refuses by name, and
+       it is unique per attempt, which is the defect this block exists to
+       remove. An id the server can recognise as absent is more honest than one
+       that looks unique and is not. */
+    return '';
+  })();
   function show(cls,text){m.className='msg '+cls;m.textContent=text;}
   f.addEventListener('submit',function(e){
     e.preventDefault();
@@ -558,7 +585,7 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
     if(!d.full_name||!d.full_name.trim()){show('err','Please tell us your name.');return;}
     if(!d.phone||!d.phone.trim()){show('err','We need a number to reach you on.');return;}
     d.elapsed_ms=Date.now()-started;
-    d.submission_id=(crypto.randomUUID?crypto.randomUUID():'s'+Date.now()+Math.random().toString(16).slice(2));
+    if(submissionId) d.submission_id=submissionId;
     b.disabled=true;b.textContent='Sending…';
     fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
       .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})

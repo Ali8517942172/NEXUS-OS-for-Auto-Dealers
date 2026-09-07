@@ -1694,6 +1694,125 @@ executions — 0 of 51 messages — were genuine customer conversation.** All 51
 The audit said most of the traffic is not customer conversation; in this window
 **none** of it was.
 
+## The dashboard was already deployed, and the flip is done — 7 September 2026
+
+`nexus_lead_source_readiness()` read **0 CONNECTED** on production this morning
+because `20260907230000` was deliberately held back until the bundle shipped. It
+had already shipped. Measured against the live production bundle
+(`nexus-os-dashboard-six.vercel.app`, `/assets/main-BFmkO_-a.js`, 1,499,871 bytes):
+
+| probed for | occurrences |
+|---|---|
+| `rpc/nexus_lead_record_manual` | 2 |
+| `rpc/nexus_lead_assign_owner` | 1 |
+| `rpc/nexus_lead_attribution` | 2 |
+| `rpc/nexus_lead_source_readiness` | 1 |
+| `REGISTERED_NO_ENTRY_PATH` | 1 |
+| `Add a lead` | 2 |
+| **`leads?id=eq`** | **0** |
+
+The last row is the one that changes a decision. **The `authenticated`
+column-level UPDATE grant on `leads` no longer has a screen behind it on the
+DEPLOYED bundle**, not just in the repository — so
+`20260908090000_the_grant_that_no_longer_has_a_screen_behind_it.sql`, written and
+held, is now genuinely applicable. Its preflight still refuses while
+`nexus_lead_assign_owner` is `SECURITY INVOKER` (the RPC needs the grant to do
+its UPDATE as the caller), so that refusal is correct and the migration stays
+unapplied until someone decides which of the two shapes to keep. **Check n8n
+before revoking**: `service_role` does not need the grant, but nothing has
+established that no other writer does.
+
+So `20260907230000` was applied to production. Two manual sources now carry
+`manual_entry_surface`, zero provider-delivered sources do, and as a real ALBA
+session the readiness reads **CONNECTED 2 (`phone_call`, `walk_in`) ·
+NOT_CONNECTABLE 1 · NOT_CONNECTED 6**.
+
+**Read as `service_role` it still says NOT_CONNECTED for all nine**, and that is
+not a bug: readiness is tenant-scoped and `nexus_current_tenant_ids()` is empty
+for `service_role`, so `active_endpoints` comes back 0. Any future reading of
+this function taken through the MCP without impersonating a member is a reading
+of nobody's dealership.
+
+### And the RPC was proved on production, in a transaction that rolled back
+
+As a real `authenticated` ALBA member, sequenced through a temp table because
+**UNION ALL branches are not evaluated in the order they are written** — a first
+attempt read `before = 5` after the insert and looked like a silent failure:
+
+| control | result |
+|---|---|
+| A — walk-in, **phone only, no email** | lead **125**, `was_duplicate = false`, `source_key = walk_in` |
+| B — same `client_request_id` again | lead **125**, `was_duplicate = true` |
+| C — after | `leads` 5 → 6, `leads.source = walk_in`, phone `+971500000001` |
+| D — the event points at the lead | exactly **1** `lead_event`, no orphan |
+
+Rolled back. Production is unchanged at **5 leads, 1 `lead_event`, 0 rows named
+`Rolled Back Control`**. That is the browser-reachable path — grant, contract,
+idempotency and origin — exercised on production without inventing a customer.
+
+## The marketing site would have duplicated a prospect, and its 503 lied ahead of time
+
+Same day, reading `apps/marketing-site/`:
+
+- **`submission_id` was minted inside the submit handler**, so every retry was a
+  new id — and this form actively invites retries: the 503 branch re-enables the
+  button and the error text asks the visitor to try again. `submission_id` is
+  sent as `p_external_event_id`, the idempotency key of
+  `nexus_record_lead_event`. It is the `nokey:` + clock shape this file already
+  records, wearing a `web-` prefix so the database CHECK let it through. Now
+  minted **once per page load** and re-sent; a reload is deliberately a new id,
+  because that is a person deciding to enquire again rather than a retry. The
+  server's own `'web-' + Date.now() + Math.random()` fallback is **deleted**
+  rather than replaced: an absent id recorded as absent beats one that looks
+  idempotent and is not.
+- **The 503 branch's comment said "Nothing durable happened" and the branch did
+  not check.** `recorded` can be `'recorded'` — the enquiry IS in `lead_event` —
+  and the comment asserted the opposite. **Eighth instance** of the house rule
+  about captions contradicting their own branch. It is latent rather than live:
+  production carries **4 lead endpoints, all `production`, zero `simulation`**
+  (measured), so the optional write cannot succeed today and `recorded` is null.
+  The status code is deliberately unchanged — a stored enquiry nobody is
+  notified about still means nobody will call the person back, so the browser
+  must still show the WhatsApp fallback — but the response now carries
+  `stored_for_replay` and the log says which of the two happened.
+
+**The 503 itself is a Vercel environment variable, not a missing account.** n8n
+holds a working `Resend API (Header)` credential; `RESEND_API_KEY` and
+`NEXUS_NOTIFY_FROM` are simply unset on the site's Vercel project.
+
+## Bitrix24 has really worked. Slack has not been shown to.
+
+Asked whether the CRM and Slack legs are real, measured rather than inspected —
+node existence is not evidence, and `audit_log` is.
+
+**Bitrix24: proven, in August, and not since.** `wf_108 ERP Sync - Bitrix24`
+wrote SUCCESS rows naming a returned CRM id — *"Bitrix24 lead created (ID 25)"*,
+*"(ID 27)"*, *"lead updated (ID 25)"* — across 16, 17 and 19 August. A returned
+Bitrix id is evidence a real Bitrix24 instance answered, so
+`$env.BITRIX24_WEBHOOK_URL` was set and reachable then. **Nothing has succeeded
+since 19 August.** All six retained executions of that workflow are refusals of
+my own `curl` probes at its `Auth Gate` (`401 no_authorization` from
+`/auth/v1/user`, then `[NEXUS-UNATTRIBUTED] ERP sync rejected`) — the guard
+working, on a path nothing real has entered. There is **no Bitrix24 credential in
+n8n**, by design: every Bitrix call is an `httpRequest` to
+`{{ $env.BITRIX24_WEBHOOK_URL }}`, so whether it is still set cannot be read
+through the n8n API.
+
+**Slack: five SUCCESS rows, all with summary `"Completed"`.** That is the
+workflow finishing, not a message arriving in a channel. A Slack credential
+exists. **Do not quote those five as proof a Slack alert was delivered** — the
+Bitrix rows name an id and these name nothing, and the difference is the whole
+point.
+
+**And the ERP link-back is keyed on an email string.** `Link Back to Supabase`
+PATCHes `leads?email=eq.<email>&tenant_id=eq.<tenant>`, falling back to the
+literal `__nexus_noop__` when `_lead_email` is falsy. So for a **phone-only**
+lead — the walk-in, the phone call, the WhatsApp enquiry, 25% of production
+leads — the Bitrix id is never written back into NEXUS. It fails safe (it
+matches no row rather than the wrong one) and it fails **silently**. Same defect
+this file already records for `communication_logs` and `audit_log`, now found a
+third time in the ERP sync.
+
 ## The template literal is not the SQL — 7 September 2026
 
 R2 and R3 had been red on every CI run since 6 September. The cause was the one
