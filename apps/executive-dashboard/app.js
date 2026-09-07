@@ -22,6 +22,12 @@
      app.js    environment check, auth, boot. Nothing screen-specific.
    ========================================================================== */
 import './styles.css';
+/* The design-system layer, imported AFTER styles.css so its scoped upgrades sit
+   later in the cascade. It is additive: every token is `--ds-` and every class
+   `.ds-`, and the handful of rules that restyle existing chrome are gated on
+   `.ds-screen`, which only a converted screen sets on its host. Importing it
+   changes the rendering of no screen that has not asked for it. */
+import './lib/design-system.css';
 
 import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';

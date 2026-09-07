@@ -1,0 +1,735 @@
+/* ============================================================================
+   NEXUS OS — lib/design-system.css
+   The foundation layer. Tokens, density, and the component classes that make a
+   screen read as an enterprise data product rather than as a document.
+
+   ───────────────────────────────────────────────────────────────────────────
+   WHY THIS IS A NEW FILE AND NOT AN EDIT TO styles.css
+   ───────────────────────────────────────────────────────────────────────────
+   styles.css is 412 lines that twenty-two screens depend on, and several of its
+   rules exist because a specific defect was found in production — the KPI that
+   wrapped mid-figure, the source chip that broke onto two lines, the sidebar
+   item clipped at short heights. Rewriting it would put every one of those
+   screens at risk in a change whose whole point is presentation, and there is
+   no way to prove twenty-two screens are unharmed inside one pass.
+
+   So this file is ADDITIVE and its adoption is OPT-IN, in two ways:
+
+     · Every token is prefixed `--ds-` and every class `.ds-`. Nothing here can
+       collide with a name styles.css already owns, so importing it changes the
+       rendering of exactly nothing until a screen asks for it.
+     · The handful of rules that must upgrade the EXISTING panel chrome —
+       `.card`, `.card-head`, `.card-title` — are scoped under `.ds-screen`, a
+       class a converted screen puts on its own host. An unconverted screen
+       never matches them.
+
+   The intended end state is that every screen carries `.ds-screen`, at which
+   point styles.css shrinks to the shell. That is a screen-at-a-time migration,
+   and this file is written so each step of it is independently safe.
+
+   Light only, by instruction. There is no dark variant and no media query that
+   would produce one by accident.
+   ========================================================================== */
+
+:root {
+  /* ── Type scale ───────────────────────────────────────────────────────────
+     Nine steps, each with its own line height, because a scale whose line
+     heights are computed from a ratio produces 17.5px values that make two
+     adjacent rows sit half a pixel apart. The step names describe SIZE, not
+     role; roles are assigned by the component classes below.
+
+     The steps that matter for the density brief are `md` (13px) — the table
+     and dense-body default — and `2xl`/`3xl`, which are the stat figures. The
+     jump from body to figure is deliberately large: the complaint this file
+     answers is that headings and body were nearly the same size, so the eye
+     had no entry point. */
+  --ds-fs-2xs: 10px;  --ds-lh-2xs: 14px;
+  --ds-fs-xs:  11px;  --ds-lh-xs:  16px;
+  --ds-fs-sm:  12px;  --ds-lh-sm:  16px;
+  --ds-fs-md:  13px;  --ds-lh-md:  18px;
+  --ds-fs-base:14px;  --ds-lh-base:20px;
+  --ds-fs-lg:  16px;  --ds-lh-lg:  22px;
+  --ds-fs-xl:  19px;  --ds-lh-xl:  26px;
+  --ds-fs-2xl: 24px;  --ds-lh-2xl: 30px;
+  --ds-fs-3xl: 30px;  --ds-lh-3xl: 36px;
+
+  --ds-fw-regular: 400;
+  --ds-fw-medium:  500;
+  --ds-fw-semi:    600;
+  --ds-fw-bold:    700;
+
+  --ds-tracking-caps: .055em;   /* the 11px uppercase eyebrow, and only that */
+  --ds-tracking-tight: -.011em; /* headings and figures, so they read as one mass */
+
+  /* ── Spacing, 4px base ──────────────────────────────────────────────────── */
+  --ds-sp-0:  0px;
+  --ds-sp-05: 2px;
+  --ds-sp-1:  4px;
+  --ds-sp-2:  8px;
+  --ds-sp-3:  12px;
+  --ds-sp-4:  16px;
+  --ds-sp-5:  20px;
+  --ds-sp-6:  24px;
+  --ds-sp-8:  32px;
+  --ds-sp-10: 40px;
+  --ds-sp-12: 48px;
+  --ds-sp-16: 64px;
+
+  /* ── Radii ──────────────────────────────────────────────────────────────── */
+  --ds-r-xs:   3px;
+  --ds-r-sm:   4px;
+  --ds-r-md:   6px;
+  --ds-r-lg:   8px;
+  --ds-r-xl:   12px;
+  --ds-r-pill: 9999px;
+
+  /* ── Elevation ────────────────────────────────────────────────────────────
+     Four steps and no more. A data product earns its depth from borders and
+     alignment; shadow is reserved for things that genuinely float. */
+  --ds-elev-0: none;
+  --ds-elev-1: 0 1px 2px rgba(15, 23, 41, .05);
+  --ds-elev-2: 0 1px 2px rgba(15, 23, 41, .06), 0 4px 12px rgba(15, 23, 41, .06);
+  --ds-elev-3: 0 8px 28px rgba(15, 23, 41, .12);
+
+  /* ── Surfaces ────────────────────────────────────────────────────────────
+     Three planes plus a hover. `raised` is the same white as `surface` and
+     differs by elevation rather than by tint, because two near-identical whites
+     read as a rendering bug on a cheap monitor, which is most monitors in a
+     showroom. */
+  --ds-canvas:         #F6F7F9;
+  --ds-brand:          #2563C9;
+  --ds-brand-hover:    #1D4FA8;
+  --ds-brand-deep:     #1B4C9E;
+  --ds-brand-soft:     #EEF3FD;
+  --ds-brand-tint:     #E4EDFB;
+  --ds-surface:        #FFFFFF;
+  --ds-surface-raised: #FFFFFF;
+  --ds-surface-sunken:  #F1F3F7;
+  --ds-surface-hover:  #F4F6F9;
+
+  /* ── Text. Ratios measured against --ds-surface (#FFFFFF). ──────────────── */
+  --ds-text-primary:   #0F1729;  /* 17.9:1 */
+  --ds-text-secondary: #4A5468;  /*  7.6:1 */
+  --ds-text-tertiary:  #68718A;  /*  4.9:1 — the floor for real text */
+  --ds-text-disabled:  #8A93A5;  /*  3.1:1 — decorative and UI marks only */
+  --ds-text-inverse:   #FFFFFF;
+
+  /* ── Borders ─────────────────────────────────────────────────────────────
+     `subtle` is the hairline between table rows and must be almost invisible
+     one row at a time and clearly present over thirty. `strong` is for a
+     boundary the eye has to stop at. */
+  --ds-border-subtle: #EBEDF2;
+  --ds-border:        #D9DDE5;
+  --ds-border-strong: #B4BCCB;
+
+  /* ── Intent ──────────────────────────────────────────────────────────────
+     Six intents. Each has a foreground (contrast-checked against its own fill),
+     a fill, a border and a solid for dots, bars and icons.
+
+     THE RULE THIS PALETTE ENFORCES, WHICH IS NOT A STYLE RULE:
+     success is measured-and-good. It is never "empty", never "nothing was
+     returned", never "the read failed and produced no findings". A zero that
+     was never read must not be able to reach this green, which is why UNKNOWN
+     below is not merely a seventh colour but a different TEXTURE. */
+  --ds-neutral-fg:     #4A5468;  --ds-neutral-bg: #F1F3F7;  --ds-neutral-border: #DDE1E8;  --ds-neutral-solid: #64748B;
+  --ds-info-fg:        #1E5EA8;  --ds-info-bg:    #EAF2FC;  --ds-info-border:    #C6DCF5;  --ds-info-solid:    #2563C9;
+  --ds-success-fg:     #0F6B50;  --ds-success-bg: #E5F4EF;  --ds-success-border: #BEE2D5;  --ds-success-solid: #157A5B;
+  --ds-warning-fg:     #8A5008;  --ds-warning-bg: #FDF2E2;  --ds-warning-border: #F2DAB3;  --ds-warning-solid: #B26A00;
+  --ds-danger-fg:      #B22C1B;  --ds-danger-bg:  #FCEBE8;  --ds-danger-border:  #F4CBC4;  --ds-danger-solid:  #C8321F;
+
+  /* ── UNKNOWN — deliberately not a colour ─────────────────────────────────
+     Unread is not zero. This product has rendered a false all-clear seven
+     times, and every one of them was a state with no measurement behind it
+     wearing the clothes of a state with one.
+
+     So UNKNOWN is separated from the other six by three signals at once, not
+     by hue: a DASHED border, a diagonal HATCH fill, and a HOLLOW dot. Nothing
+     else in this system is dashed, nothing else is hatched and nothing else has
+     a hollow dot, so an unknown cannot be mistaken for a neutral note at a
+     glance, at a distance, in a photograph of a screen, or by a reader who does
+     not distinguish the greens from the greys. */
+  --ds-unknown-fg:     #4F5A72;  /* 7.1:1 on the hatch's lighter band */
+  --ds-unknown-bg:     repeating-linear-gradient(135deg,
+                         #EDEFF4 0, #EDEFF4 4px, #F7F8FA 4px, #F7F8FA 9px);
+  --ds-unknown-bg-flat:#F2F4F7;
+  --ds-unknown-border: #A7AFC0;
+  --ds-unknown-solid:  #7B8499;
+
+  /* ── Density ─────────────────────────────────────────────────────────────
+     The compact set is the DEFAULT, because the default use of this product is
+     reading data. The relaxed set exists for empty and error states, where the
+     content is prose meant to be read once rather than a column meant to be
+     scanned. */
+  --ds-row-h:        38px;
+  --ds-row-h-tight:  32px;
+  --ds-row-h-relaxed:48px;
+  --ds-cell-px:      14px;
+  --ds-cell-py:      9px;
+  --ds-head-h:       32px;
+  --ds-control-h:    30px;
+  --ds-control-h-lg: 36px;
+
+  --ds-dur-fast: 110ms;
+  --ds-dur-base: 180ms;
+  --ds-ease: cubic-bezier(.2, 0, 0, 1);
+  --ds-ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRIMITIVES
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Every figure in this system is tabular. A column of money that does not align
+   is the single fastest way to look amateur beside Odoo. */
+.ds-num, .ds-stat__value, .ds-table td.ds-num, .ds-table th.ds-num { font-variant-numeric: tabular-nums; }
+.ds-nowrap { white-space: nowrap; }
+.ds-mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--ds-fs-sm); font-variant-numeric: tabular-nums;
+}
+
+.ds-eyebrow {
+  font-size: var(--ds-fs-xs); line-height: var(--ds-lh-xs);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase; color: var(--ds-text-tertiary);
+}
+.ds-t-primary   { color: var(--ds-text-primary); }
+.ds-t-secondary { color: var(--ds-text-secondary); }
+.ds-t-tertiary  { color: var(--ds-text-tertiary); }
+.ds-t-neutral { color: var(--ds-neutral-fg); }
+.ds-t-info    { color: var(--ds-info-fg); }
+.ds-t-success { color: var(--ds-success-fg); }
+.ds-t-warning { color: var(--ds-warning-fg); }
+.ds-t-danger  { color: var(--ds-danger-fg); }
+.ds-t-unknown { color: var(--ds-unknown-fg); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ICONS
+   Inline SVG, sized 16 or 20, painted with currentColor. No icon font and no
+   CDN: lib/icons.js emits the markup, and this only fixes the box.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-icon {
+  display: inline-block; flex: 0 0 auto; vertical-align: -.18em;
+  width: 16px; height: 16px; color: inherit;
+}
+.ds-icon--20 { width: 20px; height: 20px; vertical-align: -.22em; }
+.ds-icon--24 { width: 24px; height: 24px; vertical-align: -.25em; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE INFO AFFORDANCE — how a long sentence gets demoted without being lost
+   ──────────────────────────────────────────────────────────────────────────
+   This is the most important component in the file, because it is the one that
+   makes the density work legitimate.
+
+   The long explanatory sentences on these screens are safety machinery. They
+   exist because this product has rendered a false all-clear seven times, and
+   each one is the sentence that stops the eighth. They may be DEMOTED — terse
+   by default, one click from full — and they may not be deleted.
+
+   It is built on <details>/<summary> and NOT on a JS-driven popover, for
+   reasons that are all about the sentence still being reachable:
+
+     · It works with no JavaScript at all, so a screen whose wiring pass threw
+       still opens every caveat.
+     · It is keyboard-operable and announced by screen readers for free.
+     · The text is in the DOM whether it is open or closed, so browser find,
+       copy-paste, and Ctrl-F reach it.
+     · Chromium's find-in-page auto-expands a closed <details> that contains
+       the match, so a reader searching for a caveat is taken to it.
+
+   A tooltip has none of those five properties. That is why there is no tooltip
+   here.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-note { display: block; }
+.ds-note > summary {
+  display: inline-flex; align-items: center; gap: var(--ds-sp-1);
+  cursor: pointer; list-style: none; user-select: none;
+  color: var(--ds-text-tertiary); font-size: var(--ds-fs-sm); line-height: var(--ds-lh-sm);
+  border-radius: var(--ds-r-sm); padding: 1px var(--ds-sp-1); margin-left: calc(var(--ds-sp-1) * -1);
+  transition: color var(--ds-dur-fast) ease-out, background var(--ds-dur-fast) ease-out;
+}
+.ds-note > summary::-webkit-details-marker { display: none; }
+.ds-note > summary::marker { content: ''; }
+.ds-note > summary:hover { color: var(--ds-info-fg); background: var(--ds-info-bg); }
+.ds-note[open] > summary { color: var(--ds-info-fg); }
+.ds-note__body {
+  font-size: var(--ds-fs-sm); line-height: 17px; color: var(--ds-text-secondary);
+  margin-top: var(--ds-sp-2); padding: var(--ds-sp-2) var(--ds-sp-3);
+  background: var(--ds-surface-sunken); border-radius: var(--ds-r-md);
+  border-left: 2px solid var(--ds-border-strong);
+  max-width: 78ch;
+}
+.ds-note__body p { margin: 0 0 var(--ds-sp-2); }
+.ds-note__body p:last-child { margin-bottom: 0; }
+.ds-note__body strong { color: var(--ds-text-primary); font-weight: var(--ds-fw-semi); }
+.ds-note__body ul { margin: var(--ds-sp-1) 0 0; padding-left: var(--ds-sp-4); }
+.ds-note__body li { margin: 2px 0; }
+
+/* The icon-only variant: a 16px circled "i" that sits at the end of a label or
+   in the corner of a stat tile. The accessible name is on the <summary>. */
+.ds-note--icon > summary { padding: 2px; }
+.ds-note--icon > summary .ds-note__label { display: none; }
+
+/* Pinned to a tile corner so it never competes with the figure. */
+.ds-note--corner { position: static; }
+.ds-note--corner > summary { position: absolute; top: var(--ds-sp-2); right: var(--ds-sp-2); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CHIPS — the visual language for status
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-chip {
+  display: inline-flex; align-items: center; gap: var(--ds-sp-1);
+  padding: 1px var(--ds-sp-2) 1px var(--ds-sp-2);
+  border-radius: var(--ds-r-sm);
+  font-size: var(--ds-fs-xs); line-height: 18px; font-weight: var(--ds-fw-semi);
+  letter-spacing: .01em; white-space: nowrap;
+  border: 1px solid transparent;
+  background: var(--ds-neutral-bg); color: var(--ds-neutral-fg); border-color: var(--ds-neutral-border);
+}
+.ds-chip .ds-icon { width: 12px; height: 12px; vertical-align: -.1em; }
+.ds-chip__dot {
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto;
+}
+.ds-chip--neutral { background: var(--ds-neutral-bg); color: var(--ds-neutral-fg); border-color: var(--ds-neutral-border); }
+.ds-chip--info    { background: var(--ds-info-bg);    color: var(--ds-info-fg);    border-color: var(--ds-info-border); }
+.ds-chip--success { background: var(--ds-success-bg); color: var(--ds-success-fg); border-color: var(--ds-success-border); }
+.ds-chip--warning { background: var(--ds-warning-bg); color: var(--ds-warning-fg); border-color: var(--ds-warning-border); }
+.ds-chip--danger  { background: var(--ds-danger-bg);  color: var(--ds-danger-fg);  border-color: var(--ds-danger-border); }
+/* Dashed, hatched, hollow-dotted. See the token block. */
+.ds-chip--unknown {
+  background: var(--ds-unknown-bg); color: var(--ds-unknown-fg);
+  border: 1px dashed var(--ds-unknown-border);
+}
+.ds-chip--unknown .ds-chip__dot {
+  background: transparent; box-shadow: inset 0 0 0 1.5px currentColor;
+}
+/* A chip that names a value taken verbatim from the database rather than words
+   the product wrote. Monospaced so the difference is visible. */
+.ds-chip--verbatim { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: var(--ds-fs-2xs); font-weight: var(--ds-fw-medium); }
+.ds-chip--lg { font-size: var(--ds-fs-sm); line-height: 20px; padding: 1px var(--ds-sp-2); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STAT TILE — number first, label above, one terse line under, prose behind an
+   info affordance. The four-line paragraph that used to live in the tile is in
+   the <details>, in full.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-statrow {
+  display: grid; gap: var(--ds-sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.ds-stat {
+  position: relative;
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  border-radius: var(--ds-r-lg); padding: var(--ds-sp-3) var(--ds-sp-4) var(--ds-sp-3);
+  display: flex; flex-direction: column; gap: var(--ds-sp-1);
+  min-width: 0;
+}
+/* A 3px rail rather than a tinted card. A tinted card says "this whole number
+   is an alarm"; a rail says "this number has a state", which is the true claim
+   and leaves the figure itself readable in the primary text colour. */
+.ds-stat::before {
+  content: ''; position: absolute; left: 0; top: var(--ds-sp-3); bottom: var(--ds-sp-3);
+  width: 3px; border-radius: 0 var(--ds-r-xs) var(--ds-r-xs) 0; background: transparent;
+}
+.ds-stat--neutral::before { background: var(--ds-neutral-solid); }
+.ds-stat--info::before    { background: var(--ds-info-solid); }
+.ds-stat--success::before { background: var(--ds-success-solid); }
+.ds-stat--warning::before { background: var(--ds-warning-solid); }
+.ds-stat--danger::before  { background: var(--ds-danger-solid); }
+.ds-stat--unknown::before {
+  background: repeating-linear-gradient(180deg,
+    var(--ds-unknown-solid) 0 3px, transparent 3px 6px);
+}
+.ds-stat__label {
+  font-size: var(--ds-fs-xs); line-height: var(--ds-lh-xs);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase; color: var(--ds-text-tertiary);
+  padding-right: var(--ds-sp-6);
+}
+.ds-stat__value {
+  font-size: var(--ds-fs-3xl); line-height: var(--ds-lh-3xl);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-tight);
+  color: var(--ds-text-primary); white-space: nowrap;
+}
+/* A figure that is words rather than a number — "Not computable" — is set at
+   the heading size, not the figure size, so it never reads as a quantity. */
+.ds-stat__value--words {
+  font-size: var(--ds-fs-lg); line-height: var(--ds-lh-lg); font-weight: var(--ds-fw-semi);
+  color: var(--ds-text-secondary); white-space: normal;
+}
+.ds-stat__value--long { font-size: var(--ds-fs-2xl); line-height: var(--ds-lh-2xl); }
+.ds-stat__meta {
+  font-size: var(--ds-fs-sm); line-height: 17px; color: var(--ds-text-tertiary);
+  display: flex; align-items: baseline; gap: var(--ds-sp-1); flex-wrap: wrap;
+}
+.ds-stat__foot { margin-top: auto; padding-top: var(--ds-sp-2); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DATA TABLE
+   Sticky header, hairline rows, no zebra, numerics right and tabular.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* ── Why this is not `overflow-x: auto` ───────────────────────────────────
+   It was, and the sticky header floated over the third row. `overflow-x: auto`
+   makes the element a scroll container on BOTH axes — `overflow-y` computes
+   from `visible` to `auto` the moment the other axis is not `visible` — so the
+   nearest scrollport for a sticky `<th>` becomes this wrapper rather than the
+   viewport, and `top: <topbar height>` means "56px down from the top of the
+   wrapper", which is somewhere in the middle of the table. Measured at
+   1440x900, not reasoned about.
+
+   The shell scrolls the WINDOW (`.content` has no height and no overflow), so
+   for the header to stick to the top bar the wrapper must not be a scrollport.
+   Cells in these tables wrap rather than push the table wide, so horizontal
+   overflow is the exception; where a table genuinely needs it, add
+   `.ds-tablewrap--scroll`, which scrolls horizontally and pins the header to
+   the top of that scrollport instead. Both behaviours are real; only one of
+   them can be true of a given table, and the class is how a caller chooses. */
+.ds-tablewrap { overflow-x: visible; max-width: 100%; }
+.ds-tablewrap--scroll { overflow-x: auto; }
+.ds-tablewrap--scroll .ds-table th { top: 0; }
+.ds-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: var(--ds-fs-md); line-height: var(--ds-lh-md); color: var(--ds-text-primary);
+}
+.ds-table th {
+  position: sticky; top: 0; z-index: 2;
+  height: var(--ds-head-h);
+  background: var(--ds-surface-sunken);
+  text-align: left; padding: 0 var(--ds-cell-px);
+  font-size: var(--ds-fs-xs); line-height: var(--ds-lh-xs);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase; color: var(--ds-text-tertiary);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ds-border);
+  box-shadow: inset 0 -1px 0 var(--ds-border);
+}
+.ds-table td {
+  padding: var(--ds-cell-py) var(--ds-cell-px);
+  border-bottom: 1px solid var(--ds-border-subtle);
+  vertical-align: top;
+}
+/* The compact default: a row of single-line cells lands on 38px. A row whose
+   cell wraps grows, which is correct — the alternative is truncating data. */
+.ds-table tbody tr { height: var(--ds-row-h); }
+.ds-table tbody tr:last-child td { border-bottom: 0; }
+.ds-table tbody tr:hover { background: var(--ds-surface-hover); }
+.ds-table tbody tr.ds-row--clickable { cursor: pointer; }
+.ds-table td.ds-num, .ds-table th.ds-num { text-align: right; white-space: nowrap; }
+.ds-table td.ds-cell--strong { font-weight: var(--ds-fw-medium); color: var(--ds-text-primary); }
+.ds-table td.ds-cell--mid { vertical-align: middle; }
+.ds-table td.ds-cell--prose { color: var(--ds-text-secondary); }
+.ds-table col.ds-col--narrow { width: 88px; }
+/* Prose inside a data table is a paragraph in a grid, which is the defect. Any
+   cell that carries a sentence is clamped to two lines and hands the rest to a
+   .ds-note. */
+.ds-clamp2 {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; color: var(--ds-text-secondary);
+}
+.ds-cell-sub {
+  font-size: var(--ds-fs-sm); line-height: 17px; color: var(--ds-text-tertiary);
+  margin-top: 2px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ROW LIST — a data table whose rows expand
+   Used where each record has one scannable line and a body of evidence behind
+   it. The head strip and every row share one grid template, so the columns line
+   up exactly as a <table>'s would while each row remains a <details>.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-rowlist { display: block; }
+.ds-rowlist__head,
+.ds-row > summary {
+  display: grid;
+  grid-template-columns: var(--ds-rowlist-cols, 32px minmax(0, 1fr) 150px 132px 20px);
+  align-items: center; gap: var(--ds-sp-3);
+  padding: 0 var(--ds-cell-px);
+}
+.ds-rowlist__head {
+  position: sticky; top: 0; z-index: 2;
+  height: var(--ds-head-h);
+  background: var(--ds-surface-sunken);
+  border-bottom: 1px solid var(--ds-border);
+  font-size: var(--ds-fs-xs); line-height: var(--ds-lh-xs);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-caps);
+  text-transform: uppercase; color: var(--ds-text-tertiary);
+}
+.ds-row { border-bottom: 1px solid var(--ds-border-subtle); }
+.ds-row:last-child { border-bottom: 0; }
+.ds-row > summary {
+  min-height: var(--ds-row-h); padding-top: var(--ds-sp-1); padding-bottom: var(--ds-sp-1);
+  cursor: pointer; list-style: none;
+  transition: background var(--ds-dur-fast) ease-out;
+}
+.ds-row > summary::-webkit-details-marker { display: none; }
+.ds-row > summary::marker { content: ''; }
+.ds-row > summary:hover { background: var(--ds-surface-hover); }
+.ds-row[open] > summary { background: var(--ds-surface-hover); }
+.ds-row[open] .ds-row__chev { transform: rotate(90deg); }
+.ds-row__chev {
+  color: var(--ds-text-disabled); transition: transform var(--ds-dur-fast) ease-out;
+  display: inline-flex; justify-self: end;
+}
+.ds-row__rank {
+  font-size: var(--ds-fs-md); font-weight: var(--ds-fw-bold); font-variant-numeric: tabular-nums;
+  color: var(--ds-text-tertiary); text-align: right;
+}
+.ds-row__title {
+  min-width: 0; display: flex; align-items: center; gap: var(--ds-sp-2); flex-wrap: wrap;
+  font-size: var(--ds-fs-base); font-weight: var(--ds-fw-medium); color: var(--ds-text-primary);
+}
+.ds-row__title > span:first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.ds-row__num {
+  text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-size: var(--ds-fs-base); font-weight: var(--ds-fw-semi); color: var(--ds-text-primary);
+}
+.ds-row__num--words { font-size: var(--ds-fs-sm); font-weight: var(--ds-fw-medium); color: var(--ds-text-secondary); }
+.ds-row__detail {
+  padding: var(--ds-sp-3) var(--ds-cell-px) var(--ds-sp-4) 46px;
+  background: var(--ds-surface-sunken);
+  border-top: 1px solid var(--ds-border-subtle);
+  font-size: var(--ds-fs-md); line-height: 18px; color: var(--ds-text-secondary);
+}
+.ds-detail-grid {
+  display: grid; grid-template-columns: 128px minmax(0, 1fr);
+  gap: var(--ds-sp-2) var(--ds-sp-4); align-items: start; max-width: 96ch;
+}
+.ds-detail-grid dt {
+  font-size: var(--ds-fs-xs); line-height: 18px; font-weight: var(--ds-fw-semi);
+  letter-spacing: var(--ds-tracking-caps); text-transform: uppercase; color: var(--ds-text-tertiary);
+}
+.ds-detail-grid dd { margin: 0; color: var(--ds-text-secondary); }
+/* Evidence: fact, then the relation it came out of. The source is set in mono
+   at a lower weight so the fact reads first and the provenance second. */
+.ds-evidence { list-style: none; margin: 0; padding: 0; }
+.ds-evidence li {
+  padding: var(--ds-sp-1) 0 var(--ds-sp-1) var(--ds-sp-3);
+  border-left: 2px solid var(--ds-border); margin-bottom: var(--ds-sp-1);
+}
+.ds-evidence li:last-child { margin-bottom: 0; }
+.ds-evidence__src {
+  display: block; margin-top: 1px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: var(--ds-fs-2xs); line-height: 14px; color: var(--ds-text-tertiary);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SECTION HEADER + TOOLBAR
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-sectionhead {
+  display: flex; align-items: flex-start; gap: var(--ds-sp-3);
+  padding: var(--ds-sp-3) var(--ds-sp-4);
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+.ds-sectionhead__main { min-width: 0; flex: 1; }
+.ds-sectionhead__title {
+  font-size: var(--ds-fs-lg); line-height: var(--ds-lh-lg);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-tight);
+  color: var(--ds-text-primary);
+  display: flex; align-items: center; gap: var(--ds-sp-2); flex-wrap: wrap;
+}
+.ds-sectionhead__sub {
+  font-size: var(--ds-fs-sm); line-height: 17px; color: var(--ds-text-tertiary);
+  margin-top: 2px;
+}
+.ds-sectionhead__actions { display: flex; align-items: center; gap: var(--ds-sp-2); flex: 0 0 auto; }
+.ds-count {
+  font-size: var(--ds-fs-sm); font-weight: var(--ds-fw-semi); font-variant-numeric: tabular-nums;
+  color: var(--ds-text-tertiary); background: var(--ds-surface-sunken);
+  border-radius: var(--ds-r-pill); padding: 0 var(--ds-sp-2); line-height: 18px;
+}
+
+.ds-toolbar {
+  display: flex; align-items: center; gap: var(--ds-sp-2); flex-wrap: wrap;
+  padding: var(--ds-sp-2) var(--ds-sp-4);
+  background: var(--ds-surface); border-bottom: 1px solid var(--ds-border-subtle);
+  min-height: var(--ds-row-h);
+}
+.ds-toolbar__grow { flex: 1 1 auto; min-width: 0; }
+.ds-toolbar__label {
+  font-size: var(--ds-fs-xs); font-weight: var(--ds-fw-semi);
+  letter-spacing: var(--ds-tracking-caps); text-transform: uppercase; color: var(--ds-text-tertiary);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CALLOUT — a banner that is one line by default
+   The old banner carried three paragraphs and pushed the first data row below
+   the fold. This one shows a lede and puts the rest behind the same <details>
+   the stat tiles use.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-callout {
+  display: flex; gap: var(--ds-sp-2); align-items: flex-start;
+  padding: var(--ds-sp-2) var(--ds-sp-3);
+  border: 1px solid var(--ds-border); border-left-width: 3px;
+  border-radius: var(--ds-r-md);
+  font-size: var(--ds-fs-md); line-height: 18px;
+  background: var(--ds-surface); color: var(--ds-text-secondary);
+}
+.ds-callout__body { min-width: 0; flex: 1; }
+.ds-callout__lede { font-weight: var(--ds-fw-semi); color: var(--ds-text-primary); }
+.ds-callout__icon { margin-top: 1px; flex: 0 0 auto; }
+.ds-callout--neutral { border-color: var(--ds-neutral-border); border-left-color: var(--ds-neutral-solid); background: var(--ds-neutral-bg); }
+.ds-callout--info    { border-color: var(--ds-info-border);    border-left-color: var(--ds-info-solid);    background: var(--ds-info-bg); }
+.ds-callout--info .ds-callout__icon { color: var(--ds-info-fg); }
+.ds-callout--success { border-color: var(--ds-success-border); border-left-color: var(--ds-success-solid); background: var(--ds-success-bg); }
+.ds-callout--success .ds-callout__icon { color: var(--ds-success-fg); }
+.ds-callout--warning { border-color: var(--ds-warning-border); border-left-color: var(--ds-warning-solid); background: var(--ds-warning-bg); }
+.ds-callout--warning .ds-callout__icon { color: var(--ds-warning-fg); }
+.ds-callout--danger  { border-color: var(--ds-danger-border);  border-left-color: var(--ds-danger-solid);  background: var(--ds-danger-bg); }
+.ds-callout--danger .ds-callout__icon { color: var(--ds-danger-fg); }
+.ds-callout--unknown {
+  border: 1px dashed var(--ds-unknown-border); border-left: 3px dashed var(--ds-unknown-border);
+  background: var(--ds-unknown-bg); color: var(--ds-unknown-fg);
+}
+.ds-callout .ds-note__body { background: rgba(255, 255, 255, .62); border-left-color: currentColor; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EMPTY AND ERROR — the ONE place the generous spacing lives
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-empty {
+  padding: var(--ds-sp-12) var(--ds-sp-6); text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: var(--ds-sp-2);
+}
+.ds-empty__icon {
+  width: 40px; height: 40px; border-radius: var(--ds-r-lg);
+  display: grid; place-items: center; margin-bottom: var(--ds-sp-1);
+  background: var(--ds-surface-sunken); color: var(--ds-text-tertiary);
+}
+.ds-empty--success .ds-empty__icon { background: var(--ds-success-bg); color: var(--ds-success-fg); }
+.ds-empty--warning .ds-empty__icon { background: var(--ds-warning-bg); color: var(--ds-warning-fg); }
+.ds-empty--danger  .ds-empty__icon { background: var(--ds-danger-bg);  color: var(--ds-danger-fg); }
+.ds-empty--unknown .ds-empty__icon { background: var(--ds-unknown-bg-flat); color: var(--ds-unknown-fg); border: 1px dashed var(--ds-unknown-border); }
+.ds-empty__title {
+  font-size: var(--ds-fs-lg); line-height: var(--ds-lh-lg); font-weight: var(--ds-fw-semi);
+  color: var(--ds-text-primary); max-width: 60ch;
+}
+.ds-empty--danger .ds-empty__title { color: var(--ds-danger-fg); }
+.ds-empty__body {
+  font-size: var(--ds-fs-base); line-height: var(--ds-lh-base); color: var(--ds-text-tertiary);
+  max-width: 74ch;
+}
+.ds-empty__actions { margin-top: var(--ds-sp-3); display: flex; gap: var(--ds-sp-2); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SKELETON — shaped like the table it is standing in for
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-skeleton {
+  background: linear-gradient(90deg, var(--ds-surface-sunken) 0%, #E7EAF1 50%, var(--ds-surface-sunken) 100%);
+  background-size: 200% 100%;
+  border-radius: var(--ds-r-sm);
+  animation: ds-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes ds-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ds-skeleton { animation: none; }
+}
+.ds-skeleton-table__head {
+  height: var(--ds-head-h); background: var(--ds-surface-sunken);
+  border-bottom: 1px solid var(--ds-border);
+  display: flex; align-items: center; gap: var(--ds-sp-4); padding: 0 var(--ds-cell-px);
+}
+.ds-skeleton-table__row {
+  height: var(--ds-row-h); border-bottom: 1px solid var(--ds-border-subtle);
+  display: flex; align-items: center; gap: var(--ds-sp-4); padding: 0 var(--ds-cell-px);
+}
+.ds-skeleton-table__row:last-child { border-bottom: 0; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCOPED UPGRADES
+   These are the only rules in this file that touch a class this design system
+   does not own, and every one of them is gated behind `.ds-screen`, which only
+   a converted screen sets on its host. An unconverted screen matches none of
+   them and renders exactly as it did before this file existed.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ds-screen { display: flex; flex-direction: column; gap: var(--ds-sp-4); }
+
+.ds-screen > .card {
+  border-color: var(--ds-border); border-radius: var(--ds-r-lg);
+  box-shadow: var(--ds-elev-1); overflow: visible;
+}
+/* The panel head, rebuilt at the section-header proportions: a 16px semibold
+   title against a 12px tertiary sub, which is the entry point the flat
+   typography did not give the eye. */
+.ds-screen .card-head {
+  padding: var(--ds-sp-3) var(--ds-sp-4);
+  border-bottom: 1px solid var(--ds-border-subtle);
+  align-items: flex-start; gap: var(--ds-sp-3);
+}
+.ds-screen .card-title {
+  font-size: var(--ds-fs-lg); line-height: var(--ds-lh-lg);
+  font-weight: var(--ds-fw-semi); letter-spacing: var(--ds-tracking-tight);
+  color: var(--ds-text-primary);
+}
+.ds-screen .card-sub {
+  font-size: var(--ds-fs-sm); line-height: 17px; color: var(--ds-text-tertiary);
+  margin-top: 2px; max-width: 92ch;
+}
+.ds-screen .pbody { position: relative; }
+/* Buttons in a converted screen sit at the control height so a toolbar, a card
+   head and a table row all share one rhythm. */
+.ds-screen .btn.sm { height: var(--ds-control-h); font-size: var(--ds-fs-md); }
+.ds-screen .btn { border-radius: var(--ds-r-md); }
+
+/* A converted screen wants the sticky table headers to stick to the TOP BAR,
+   not to the top of the document, or the first header of the page floats over
+   the shell. `.content` is not a scroll container, so the offset is the topbar
+   height declared in styles.css. */
+.ds-screen .ds-table th,
+.ds-screen .ds-rowlist__head { top: var(--topbar-h, 56px); }
+.ds-screen .ds-tablewrap--scroll .ds-table th { top: 0; }
+
+/* The panel loader. lib/ui.js's panel() paints stateLoading(4) — a stack of
+   `.skeleton` bars — before every render, and that helper is shared by all
+   twenty-two screens, so it is not this pass's to rewrite. Restyling the class
+   under `.ds-screen` gets a converted screen the shimmer without changing what
+   any unconverted screen renders. */
+.ds-screen .skeleton {
+  background: linear-gradient(90deg, var(--ds-surface-sunken) 0%, #E7EAF1 50%, var(--ds-surface-sunken) 100%);
+  background-size: 200% 100%;
+  animation: ds-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--ds-r-sm);
+}
+@media (prefers-reduced-motion: reduce) { .ds-screen .skeleton { animation: none; } }
+
+/* A converted screen's content column. The shell's `.content` is capped at
+   1440px, which is right; this only removes the gap the old screens got by
+   accident from having no margin at all between stacked cards. */
+.ds-screen > .card + .card { margin-top: 0; }
+
+/* The shared empty/error state, brought onto the same proportions as
+   `.ds-empty` while it is inside a converted screen.
+
+   lib/states.js's stateEmpty()/stateError() are used by all twenty-two screens
+   and are not this pass's to rewrite — stateError() in particular carries a
+   wording contract with lib/errors.js and with QUALITY_GATE.mjs, which detects
+   a failed panel by matching /Couldn.t load/ on the rendered HTML. So the
+   markup is left exactly as it is and only its typography and its icon are
+   aligned here, under `.ds-screen`. An unconverted screen is untouched. */
+.ds-screen .state { padding: var(--ds-sp-12) var(--ds-sp-6); }
+.ds-screen .state .material-symbols-outlined {
+  font-size: 20px; width: 40px; height: 40px; border-radius: var(--ds-r-lg);
+  display: inline-grid; place-items: center;
+  background: var(--ds-surface-sunken); color: var(--ds-text-tertiary);
+}
+.ds-screen .state.err .material-symbols-outlined { background: var(--ds-danger-bg); color: var(--ds-danger-fg); }
+.ds-screen .state h3 {
+  font-size: var(--ds-fs-lg); line-height: var(--ds-lh-lg); font-weight: var(--ds-fw-semi);
+  margin: var(--ds-sp-3) 0 var(--ds-sp-1);
+}
+.ds-screen .state.err h3 { color: var(--ds-danger-fg); }
+.ds-screen .state p {
+  font-size: var(--ds-fs-base); line-height: var(--ds-lh-base); color: var(--ds-text-tertiary);
+  max-width: 74ch; margin: 0 auto var(--ds-sp-4);
+}
+
+/* The unknown rail on a stat tile. Widened from a 3px dotted column to a
+   4px dashed one after looking at a 1440px screenshot rather than at the CSS:
+   at 3px the dashes read as a rendering artefact, and the whole argument for
+   the unknown intent is that it must be unmistakable at a glance. */
+.ds-stat--unknown::before {
+  width: 4px;
+  background: repeating-linear-gradient(180deg,
+    var(--ds-unknown-solid) 0 5px, transparent 5px 9px);
+}

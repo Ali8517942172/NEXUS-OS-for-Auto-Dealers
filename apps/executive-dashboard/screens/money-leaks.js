@@ -118,11 +118,41 @@
    quality on any unit. Two leak lines. That is the correct output. */
 
 import { db, onIdentityChange } from '../lib/data.js';
-import { aed, ago, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
+import { el } from '../lib/dom.js';
+import { aed, ago, dubaiStamp, esc, n0, num } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { panel } from '../lib/ui.js';
+/* ── The design system, adopted here first ────────────────────────────────
+   6 Sep 2026. This screen is the app's default landing screen, so it is what a
+   buyer sees before anything else, and it is the first one converted to
+   lib/design-system.css + lib/design-system.js.
+
+   NOT ONE DATA READ, QUERY, THRESHOLD OR DERIVATION CHANGED IN THAT PASS.
+   buildLeaks(), buildLeadLeaks(), measuredClear(), notMeasured(), makeLeak()
+   and the MONEY_WORD gate are byte-for-byte what they were; the eight reads are
+   the same eight columns lists; the ranking, the totals and every branch that
+   decides what may be said are untouched. What changed is how the result is
+   painted.
+
+   THE CONSTRAINT THE CONVERSION WAS WRITTEN AGAINST, stated here because it is
+   the thing a later pass is most likely to undo:
+
+     The long sentences on this screen are not filler. "An unread check is not a
+     clear one", "unknown is not zero", "this is not an all-clear" — each one is
+     here because this codebase has shipped the opposite, and the file header
+     above names six places it did. They may be DEMOTED — terse on the surface,
+     one click from the full sentence — and they may NOT be deleted.
+
+     Every one of them is now inside a <details> built by dsNote(), which means
+     it is in the DOM whether it is open or closed: browser find reaches it,
+     copy-paste reaches it, a screen reader reaches it, and Chromium expands the
+     row when find-in-page matches inside it. None of that is true of a
+     `title=` tooltip, which is why nothing on this screen uses one to carry a
+     caveat. If you are about to replace a dsNote with a tooltip, read this
+     paragraph again. */
+import { dsCallout, dsCell, dsChip, dsDetailGrid, dsEmpty, dsEvidence, dsIntent,
+         dsNote, dsRowList, dsStat, dsStatRow, dsTable, icon } from '../lib/design-system.js';
 /* The exposure arithmetic and the sentence that discloses its denominator.
    Imported from screens/overview.js, which owns them, for the same reason
    overview.js imports recoveryEvidence() from screens/actions.js: a second
@@ -136,12 +166,31 @@ import { recoveryEvidence, unsupportedRecoverySentence } from './actions.js';
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="cell-sub">${h}</div>`;
-const hot   = h => `<div class="cell-sub t-hot">${h}</div>`;
-const bold  = h => `<div style="font-weight:600">${h}</div>`;
-const wrap  = h => `<div style="white-space:normal">${h}</div>`;
-const mono  = v => `<span class="mono">${esc(str(v))}</span>`;
-const list  = arr => `<ul style="margin:6px 0 0 16px;padding:0">${arr.filter(Boolean).map(x => `<li style="margin:2px 0">${x}</li>`).join('')}</ul>`;
+const muted = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot   = h => `<div class="ds-cell-sub ds-t-danger">${h}</div>`;
+const bold  = h => `<strong>${h}</strong>`;
+const para  = h => `<p>${h}</p>`;
+const mono  = v => `<span class="ds-mono">${esc(str(v))}</span>`;
+const list  = arr => `<ul>${arr.filter(Boolean).map(x => `<li>${x}</li>`).join('')}</ul>`;
+/* The first sentence of a paragraph, for the surface, with the whole paragraph
+   kept for the note. Splitting on the sentence boundary rather than truncating
+   at a character count means the terse form is always a complete thought and
+   never ends mid-word — a clipped caveat reads as a broken one. */
+const firstSentence = t => {
+  const s0 = str(t);
+  const m = /^[\s\S]*?[.!?](?=\s|$)/.exec(s0);
+  return m ? m[0] : s0;
+};
+/* Terse on the surface, the full text one click away. The note is omitted when
+   the full text IS the first sentence, because an affordance that opens onto
+   the words already on screen teaches the reader that these affordances are
+   decoration — and the next one will hold something they needed. */
+const said = (t, a11y = 'Read this in full') => {
+  const full = str(t);
+  if (!full) return '';
+  const head = firstSentence(full);
+  return dsCell(esc(head), head === full ? '' : para(esc(full)), a11y);
+};
 
 /* A read that failed, said where the figure would have been. Never a bare dash:
    a dash beside "Leaks today" reads as zero, and zero is a finding this screen
@@ -228,26 +277,66 @@ const MONEY_WORD = {
 
 /* The amount is gated on the word, in one place, so no caller can print a
    figure under a word that does not permit one. NOT_COMPUTABLE may never carry
-   a number; the other three must, or the line is incomplete and says so. */
-const sizeCell = size => {
+   a number; the other three must, or the line is incomplete and says so.
+
+   ── What the design-system pass changed here, and what it did not ──────────
+   THE GATE IS UNTOUCHED. The four branches, the order they are tested in, and
+   what each one is allowed to render are exactly what they were. What changed
+   is that the result is returned in THREE PIECES instead of one blob of markup,
+   so the leak register can put the figure in a right-aligned numeric column,
+   the money word in a chip column, and the basis behind the row's disclosure —
+   rather than stacking all three into one cell, which is what made the old rows
+   200px tall and put the second leak below the fold.
+
+   `figure` is never a bare dash and never a zero. Where the gate refuses a
+   number the figure slot carries WORDS — "Not computable", "No figure" — set at
+   a smaller size than a real figure, so nothing in that column can be misread
+   as a quantity the engine produced. */
+const sizeParts = size => {
   const w = MONEY_WORD[up(size && size.word)];
   if (!w) {
-    return hot(`This line claims a size of "${esc(str(size && size.word)) || 'nothing'}", which is not one of the `
-      + 'four money words this screen is allowed to use. No figure is shown.');
+    return {
+      figure: '<span class="ds-t-danger">Unsized</span>', words: true, chip: '',
+      note: hot(`This line claims a size of "${esc(str(size && size.word)) || 'nothing'}", which is not one of the `
+        + 'four money words this screen is allowed to use. No figure is shown.'),
+    };
   }
   if (up(size.word) === 'NOT_COMPUTABLE') {
-    return `<span class="pill unknown"><span class="dot"></span>Not computable</span>`
-      + muted(esc(str(size.basis)) || 'The engine records no reason, which is itself a gap.');
+    return {
+      figure: '<span class="ds-t-unknown">Not computable</span>', words: true,
+      chip: dsChip('not computable', 'unknown'),
+      note: muted(esc(str(size.basis)) || 'The engine records no reason, which is itself a gap.'),
+    };
   }
   const amount = n0(size.amount);
   if (amount == null) {
-    return hot(`Sized as ${esc(w.label)} and no figure came with it, so nothing is shown. A money word without a `
-      + 'number is a claim this screen cannot make.');
+    return {
+      figure: '<span class="ds-t-danger">No figure</span>', words: true,
+      chip: dsChip(w.label, dsIntent(w.tone)),
+      note: hot(`Sized as ${esc(w.label)} and no figure came with it, so nothing is shown. A money word without a `
+        + 'number is a claim this screen cannot make.'),
+    };
   }
-  return `<div style="font-weight:600">${aed(amount)}</div>`
-    + `<div>${pill(w.label, w.tone, { verbatim: false })}</div>`
-    + muted(esc(str(size.basis)) || esc(w.gloss));
+  return {
+    figure: aed(amount), words: false,
+    chip: dsChip(w.label, dsIntent(w.tone)),
+    note: muted(esc(str(size.basis)) || esc(w.gloss)),
+  };
 };
+
+/* ── Confidence is NOT toned through lib/format.js's TONE table ─────────────
+   That table exists for SEVERITY vocabularies, where HIGH is 'hot' and LOW is
+   'cold'. A confidence runs the other way: passing a confidence through it
+   would paint the engine's most trustworthy findings red and its least
+   trustworthy ones a calm blue, which is worse than no colour at all.
+
+   The original screen rendered confidence as plain text and made no colour
+   claim, and that judgement is kept. The only distinction added is the one the
+   data actually supports and that this design system exists to make visible:
+   whether the engine stated a confidence at all. UNSTATED is unknown — hatched
+   and dashed — because a finding with no confidence recorded is a gap in the
+   finding, and the file header above says so. */
+const confIntent = lvl => (up(lvl) && up(lvl) !== 'UNSTATED' ? 'neutral' : 'unknown');
 
 /* ══════════════════════════════════════════════════════════════════════════
    makeLeak — the ONLY way a leak line comes into being
@@ -274,12 +363,21 @@ function makeLeak(o) {
   return { rank: 0, ...o, missing };
 }
 
-const leakFault = leak => `<div class="banner hot">
-    <span class="material-symbols-outlined" style="font-size:20px">report</span>
-    <div>${bold('A leak line was built without everything a leak line needs, and it is shown as a fault rather than as a row.')}
-      ${muted(`Missing: ${esc(leak.missing.join('; '))}.`)}
-      ${muted(`It concerns ${esc(str(leak.what) || 'something this screen could not name')}. Report this — a leak `
-        + 'this dashboard cannot fully account for must not be quietly tidied into a table.')}</div></div>`;
+/* A fault stays a CALLOUT rather than becoming a row, which is the same
+   decision the original made and the reason it is worth restating: a line this
+   screen cannot fully account for must not be tidied into the table, where it
+   would sit among lines that ARE accounted for and be read as one of them. The
+   missing parts are named on the surface — they are the whole point — and the
+   instruction to report it is one click away. */
+const leakFault = leak => dsCallout({
+  intent: 'danger', name: 'danger',
+  lede: 'A leak line was built without everything a leak line needs.',
+  body: `<span>Missing: ${esc(leak.missing.join('; '))}.</span>`,
+  note: para('A leak line was built without everything a leak line needs, and it is shown as a fault rather than as a row.')
+    + para(`Missing: ${esc(leak.missing.join('; '))}.`)
+    + para(`It concerns ${esc(str(leak.what) || 'something this screen could not name')}. Report this — a leak `
+      + 'this dashboard cannot fully account for must not be quietly tidied into a table.'),
+});
 
 /* ══════════════════════════════════════════════════════════════════════════
    Reads
@@ -617,10 +715,20 @@ SCREENS.moneyleaks = async host => {
      repairing and why a stale register here is worse than a slow one. */
   resetReads();
 
+  /* ── The design system is scoped to a container THIS SCREEN OWNS ──────────
+     `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads and Inventory and restyle two screens nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: "Today's money leaks",
     sub: 'One question: where is money leaking right now, and what should be done about it. A check that came back '
        + 'clear and a check that could not run are counted separately and never added together',
@@ -653,22 +761,46 @@ SCREENS.moneyleaks = async host => {
       const sized = leaks ? leaks.filter(x => up(x.size.word) === 'EXPOSED') : [];
       const t = expose(sized, x => x.size.amount, x => x.size.kind);
 
+      /* ── The one rendering decision in this strip that is not a like-for-like
+            move, and why it is the safer of the two ──────────────────────────
+         A tile whose read FAILED used to print `num(null)`, which is an em
+         dash. readFailed()'s own comment forty lines up says why that is wrong:
+         "a dash beside 'Leaks today' reads as zero, and zero is a finding this
+         screen makes on purpose and must be able to make credibly." The dash
+         was left in place because there was nowhere else for the words to go.
+         There is now — the tile carries a state rail and a note — so the figure
+         slot says "Not read" in words, at heading size rather than figure size,
+         with the unknown rail beside it and the full sentence one click away.
+         Nothing about WHAT is read or computed changed; the null still comes
+         from the same failed promise. */
+      const unread = dsChip('unread', 'unknown');
+
       const leakTile = allLeaks == null
-        ? kpi('Leaks today', num(null), readFailed('The engines behind this count', q.err || e.err || l.err))
-        : kpi('Leaks today', num(allLeaks.length),
-            muted(allLeaks.length
+        ? dsStat({ label: 'Leaks today', value: 'Not read', words: true, intent: 'unknown', meta: unread,
+            note: readFailed('The engines behind this count', q.err || e.err || l.err) })
+        : dsStat({ label: 'Leaks today', value: num(allLeaks.length),
+            intent: allLeaks.length ? 'danger' : 'success',
+            meta: allLeaks.length ? 'ranked below, worst first' : 'every check that could run came back clear',
+            note: para(allLeaks.length
               ? 'Each one below carries what is leaking, the rows behind it, the size in one of four named money '
                 + 'words, how confident and why, and one thing to do.'
               : 'Every check that could run came back clear. That is a finding, not an empty screen — the checks that '
-                + 'could NOT run are counted separately, to the right.'),
-            allLeaks.length ? 't-hot' : 't-ok');
+                + 'could NOT run are counted separately, to the right.') });
 
       const moneyTile = leaks == null
-        ? kpi('Gross margin behind them', num(null), readFailed('The exposure figure', q.err || e.err))
-        : kpi('Gross margin behind them', t.total == null ? 'Not computable' : aed(t.total),
-            muted(esc(exposureLine(t, plural(sized.length, 'that leak', 'those leaks')))
-              + ' This is the only figure on this screen that adds anything up.'),
-            t.total == null ? '' : 't-warm');
+        ? dsStat({ label: 'Gross margin behind them', value: 'Not read', words: true, intent: 'unknown', meta: unread,
+            note: readFailed('The exposure figure', q.err || e.err) })
+        : dsStat({ label: 'Gross margin behind them',
+            value: t.total == null ? 'Not computable' : aed(t.total),
+            words: t.total == null,
+            intent: t.total == null ? 'unknown' : 'warning',
+            /* The denominator stays on the SURFACE, not behind the note. A
+               total whose denominator is one click away is a total presented
+               without one, and that is the aggregate-shaped lie this screen
+               exists to refuse. The prose around it is what got demoted. */
+            meta: `${num(t.n)} of ${num(t.of)} carry a figure`,
+            note: para(esc(exposureLine(t, plural(sized.length, 'that leak', 'those leaks'))))
+              + para('This is the only figure on this screen that adds anything up.') });
 
       /* Measured-clear and not-measured are counted from the same reads the
          registers below render, so the tiles cannot disagree with the panels. */
@@ -682,38 +814,61 @@ SCREENS.moneyleaks = async host => {
       /* A source that failed contributes no CLEAR checks — an unread check is
          not a clear one — so the count is real but incomplete, and the tile says
          which sources were unread rather than letting the number stand alone. */
-      const unread = [e.err && 'the inventory engine', q.err && 'the action lane', l.err && 'Lead Recovery']
+      const unreadSources = [e.err && 'the inventory engine', q.err && 'the action lane', l.err && 'Lead Recovery']
         .filter(Boolean);
       const clearTile = clear == null
-        ? kpi('Checks that came back clear', num(null), readFailed('The clear register', q.err || e.err || l.err))
-        : kpi('Checks that came back clear', num(clear),
-            muted('Each one names how many rows it looked at. A zero with a denominator is a finding; a zero without '
-              + 'one is a guess.'
-              + (unread.length
-                  ? ` Incomplete: ${esc(unread.join(', '))} could not be read, so any check that rests on `
-                    + plural(unread.length, 'it', 'them') + ' is missing here rather than clear.'
-                  : '')),
-            unread.length ? 't-warm' : 't-ok');
+        ? dsStat({ label: 'Checks that came back clear', value: 'Not read', words: true, intent: 'unknown', meta: unread,
+            note: readFailed('The clear register', q.err || e.err || l.err) })
+        : dsStat({ label: 'Checks that came back clear', value: num(clear),
+            intent: unreadSources.length ? 'warning' : 'success',
+            meta: unreadSources.length
+              ? dsChip('incomplete', 'warning') + '<span>some sources unread</span>'
+              : 'each names its denominator',
+            note: para('Each one names how many rows it looked at. A zero with a denominator is a finding; a zero '
+              + 'without one is a guess.')
+              + (unreadSources.length
+                  ? para(`Incomplete: ${esc(unreadSources.join(', '))} could not be read, so any check that rests on `
+                    + plural(unreadSources.length, 'it', 'them') + ' is missing here rather than clear.')
+                  : '') });
 
-      const unmeasuredTile = kpi('Checks that could not run', num(unmeasured),
-        muted('Unknown is not zero. Each one says since when, why, and the single thing that would light it up.'),
-        unmeasured ? 't-warm' : '');
+      const unmeasuredTile = dsStat({ label: 'Checks that could not run', value: num(unmeasured),
+        intent: unmeasured ? 'warning' : 'neutral',
+        meta: 'unknown is not zero',
+        note: para('Unknown is not zero. Each one says since when, why, and the single thing that would light it '
+          + 'up.') });
 
-      const caveat = `<div class="banner info" style="margin-top:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">info</span>
-          <div>${bold('What the money figure is, and what it is not.')}${muted(esc(EXPOSURE_CAVEAT))}
-            ${muted('Nothing on this page adds a customer figure to a unit figure. No enquiry in this database '
-              + 'carries a value at all, so the customer half of a true "revenue at risk" does not exist at any '
-              + 'confidence and is not filled in.')}</div></div>`;
+      /* The definitional caveat. The first sentence of EXPOSURE_CAVEAT is on the
+         surface VERBATIM rather than paraphrased: a shortened restatement of a
+         money definition is a second copy of a business fact, which is the thing
+         this screen imports expose() from overview.js to avoid. */
+      const caveat = dsCallout({
+        intent: 'info', name: 'info',
+        lede: 'What the money figure is, and what it is not.',
+        body: `<span>${esc(firstSentence(EXPOSURE_CAVEAT))}</span>`,
+        noteLabel: 'in full',
+        note: para(esc(EXPOSURE_CAVEAT))
+          + para('Nothing on this page adds a customer figure to a unit figure. No enquiry in this database '
+            + 'carries a value at all, so the customer half of a true "revenue at risk" does not exist at any '
+            + 'confidence and is not filled in.'),
+      });
 
-      return `<div class="grid g4">${leakTile}${moneyTile}${clearTile}${unmeasuredTile}</div>` + caveat;
+      return `<div style="padding:16px">${dsStatRow(leakTile + moneyTile + clearTile + unmeasuredTile)}`
+        + `<div style="margin-top:12px">${caveat}</div></div>`;
     },
   }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P2 · Register 1 — what is leaking
+
+     Was a stack of `.list-item` blocks, each of which set out WHY, the
+     EVIDENCE, the CONFIDENCE and the ACTION as paragraphs — around 200px per
+     leak, so the second one was already below the fold on a 1440×900 screen and
+     the third was two scrolls away. It is a table now, one 38px row per leak,
+     ranked exactly as before, with all four of those parts inside the row's own
+     disclosure. Nothing was dropped; the worst leak's row is opened by default
+     so the evidence is on screen without a click.
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'What is leaking, worst first',
     sub: 'Ranked by the money behind it. Every line carries WHY, the EVIDENCE, the SIZE in a named word, the '
        + 'CONFIDENCE and one ACTION — and a line that cannot carry all six is shown as a fault, not as a row',
@@ -725,63 +880,111 @@ SCREENS.moneyleaks = async host => {
     },
     render: ({ e, q, l }) => {
       if (q.err || e.err) {
-        return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the leak register</h3>
-          <p>The action lane or the inventory engine could not be read, so this register is not empty — it is unread.
-             Nothing is being claimed about whether anything is leaking.</p></div>`;
+        /* The heading keeps its exact wording. QUALITY_GATE.mjs's render lane
+           detects a screen in the error state by matching /Couldn.t load/ on the
+           rendered HTML, so rephrasing it would silently switch that check off
+           for this screen. */
+        return dsEmpty({
+          intent: 'danger', name: 'danger',
+          title: "Couldn't load the leak register",
+          body: 'The action lane or the inventory engine could not be read, so this register is not empty — it is '
+              + 'unread. Nothing is being claimed about whether anything is leaking.',
+        });
       }
       const leaks = buildLeaks(e.v || [], q.v || []);
       const leadLeaks = l.err ? [] : buildLeadLeaks(l.v || []);
       const all = leaks.concat(leadLeaks);
 
       const leadNote = l.err
-        ? `<div class="banner warm" style="margin-top:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('The customer side of this register is missing, not clear.')}
-               ${muted(`Lead Recovery could not be read (${esc(str(l.err.message) || 'no reason given')}), so any `
-                 + 'enquiry that needs chasing is absent from the list above rather than absent from the '
-                 + 'dealership.')}</div></div>`
+        ? dsCallout({
+            intent: 'warning', name: 'alert',
+            lede: 'The customer side of this register is missing, not clear.',
+            body: '<span>Lead Recovery could not be read.</span>',
+            noteLabel: 'what that means',
+            note: para('The customer side of this register is missing, not clear.')
+              + para(`Lead Recovery could not be read (${esc(str(l.err.message) || 'no reason given')}), so any `
+                + 'enquiry that needs chasing is absent from the list above rather than absent from the '
+                + 'dealership.'),
+          })
         : '';
 
       if (!all.length) {
-        return stateEmpty('Nothing is leaking that this product can evidence today',
-          'Every engine that holds real data was asked and each came back clear. That is the correct answer, not an '
-          + 'empty screen: the checks are listed below with the number of rows each one looked at, and separately '
-          + 'the checks that could not run at all — because a question nobody could ask is not a question that came '
-          + 'back clean.', 'check_circle') + leadNote;
+        return dsEmpty({
+          intent: 'success', name: 'check',
+          title: 'Nothing is leaking that this product can evidence today',
+          body: 'Every engine that holds real data was asked and each came back clear. That is the correct answer, '
+              + 'not an empty screen: the checks are listed below with the number of rows each one looked at, and '
+              + 'separately the checks that could not run at all — because a question nobody could ask is not a '
+              + 'question that came back clean.',
+        }) + leadNote;
       }
 
       const faults = all.filter(x => x.missing.length);
       const good = all.filter(x => !x.missing.length);
 
-      const cards = good.map(x => `
-        <div class="list-item" style="align-items:flex-start;gap:12px">
-          <div style="flex-shrink:0;width:28px;text-align:center;font-weight:700;font-size:18px"
-               class="t-${esc(x.tone)}">${esc(String(x.rank))}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              ${esc(x.what)} ${pill(x.badge, x.tone, { verbatim: false })}
-            </div>
-            ${muted('<strong>Why this is a leak.</strong> ' + esc(x.why))}
-            ${x.note ? muted('<strong>The engine’s own words.</strong> ' + esc(str(x.note))) : ''}
-            ${muted('<strong>Evidence.</strong>' + list(x.evidence.map(ev =>
-              `${esc(str(ev.fact))} <span class="mono" style="opacity:.7">${esc(str(ev.source))}</span>`)))}
-            ${muted(`<strong>Confidence: ${esc(str(x.confidence.level))}.</strong> ${esc(str(x.confidence.why))}`)}
-            ${muted('<strong>What to do.</strong> ' + esc(str(x.action.ask)))}
-            ${x.heldDays != null ? muted(`Open for ${num(x.heldDays)} ${plural(x.heldDays, 'day', 'days')}.`) : ''}
-            <div style="margin-top:8px">${linkBtn(x.action.screen, x.action.label)}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0;max-width:260px">${sizeCell(x.size)}</div>
-        </div>`).join('');
+      const HEAD = [{ label: '#', align: 'r' }, 'What is leaking', { label: 'Size', align: 'r' },
+                    'Money word', 'Confidence', ''];
+      const TEMPLATE = '28px minmax(0,1fr) 128px 132px 104px 16px';
 
-      return faults.map(leakFault).join('') + cards + leadNote;
+      /* Every row starts CLOSED, including the worst one, and that is a
+         deliberate reversal of the first draft of this conversion.
+
+         Opening rank 1 by default put its evidence on screen without a click,
+         which reads well — and measured at 1440x900 it filled the entire fold
+         with one leak, so the operator saw exactly as many rows as the old
+         paragraph layout did. The whole argument for a table is that the
+         morning question is an ORDER OF WORK: how many, which is worst, how
+         much. Three closed rows answer that at a glance; one open row answers
+         it for one leak and hides the other two. The evidence is one click
+         away, and the panel's own action sits in its head where it is reachable
+         without opening anything. */
+      const items = good.map(x => {
+        const sz = sizeParts(x.size);
+        return {
+          cells: [
+            /* Rank 0 is not rank zero. buildLeaks() numbers its lines 1..n by
+               exposure; buildLeadLeaks() appends lines that carry no figure to
+               rank by and leaves makeLeak()'s default of 0 on them. Painting
+               that 0 in the rank column — which the old layout did — put a
+               "0" above a "1" and a "2" in a list whose whole promise is
+               "worst first". It is rendered as unranked, and the row's own
+               disclosure says why. */
+            `<span class="ds-row__rank${x.rank ? '' : ' ds-t-tertiary'}">${x.rank ? esc(String(x.rank)) : '–'}</span>`,
+            `<span class="ds-row__title"><span>${esc(x.what)}</span>${dsChip(x.badge, dsIntent(x.tone))}`
+              + (x.heldDays != null
+                  ? dsChip(`${num(x.heldDays)} ${plural(x.heldDays, 'day', 'days')}`, 'neutral', { dot: false, name: 'clock' })
+                  : '')
+              + '</span>',
+            `<span class="ds-row__num${sz.words ? ' ds-row__num--words' : ''}">${sz.figure}</span>`,
+            `<span>${sz.chip}</span>`,
+            `<span>${dsChip(str(x.confidence.level), confIntent(x.confidence.level), { verbatim: true })}</span>`,
+            `<span class="ds-row__chev">${icon('chevron')}</span>`,
+          ],
+          detail: dsDetailGrid([
+            ['Why this is a leak', esc(x.why)],
+            ['The engine’s own words', x.note ? esc(str(x.note)) : ''],
+            ['Evidence', dsEvidence(x.evidence.map(ev => ({ fact: esc(str(ev.fact)), source: str(ev.source) })))],
+            [`Confidence — ${str(x.confidence.level)}`, esc(str(x.confidence.why))],
+            ['What the size means', sz.note],
+            ['What to do', esc(str(x.action.ask))
+              + `<div style="margin-top:8px">${linkBtn(x.action.screen, x.action.label)}</div>`],
+            ['Open for', x.heldDays != null ? `${num(x.heldDays)} ${plural(x.heldDays, 'day', 'days')}` : ''],
+            ['Rank', x.rank ? '' : 'Unranked. The order above is by the money behind each line, and this one is '
+              + 'not sized — which is a statement about what the database holds, not about how urgent it is.'],
+          ]),
+        };
+      });
+
+      return faults.map(leakFault).join('')
+        + dsRowList(HEAD, items, { template: TEMPLATE, caption: 'What is leaking, ranked by the money behind it' })
+        + (leadNote ? `<div style="padding:12px 16px">${leadNote}</div>` : '');
     },
   }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P3 · Register 2 — checks that came back clear
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Checks that came back clear',
     sub: 'A zero is only a finding when it says what it counted. Each of these names its denominator',
     load: async () => {
@@ -796,27 +999,48 @@ SCREENS.moneyleaks = async host => {
       if (q.err) notRun.push('the action lane');
       if (l.err) notRun.push('Lead Recovery');
       const warn = notRun.length
-        ? `<div class="banner warm" style="margin-bottom:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('Some checks are absent from this list because they could not be run at all.')}
-               ${muted(`Could not be read: ${esc(notRun.join(', '))}. Those checks are neither clear nor failing — `
-                 + 'they are unread, and they are not counted anywhere on this screen as clear.')}</div></div>`
+        ? `<div style="padding:12px 16px 0">${dsCallout({
+            intent: 'warning', name: 'alert',
+            lede: 'Some checks are absent from this list because they could not be run at all.',
+            body: `<span>Could not be read: ${esc(notRun.join(', '))}.</span>`,
+            noteLabel: 'what that means',
+            note: para('Some checks are absent from this list because they could not be run at all.')
+              + para(`Could not be read: ${esc(notRun.join(', '))}. Those checks are neither clear nor failing — `
+                + 'they are unread, and they are not counted anywhere on this screen as clear.'),
+          })}</div>`
         : '';
-      if (!rows.length) return warn + stateEmpty('No check came back clear',
-        'Either every check found something, or none of them could run. The two registers either side of this one say '
-        + 'which.', 'search');
-      return warn + table([
-        { label: 'What was checked', strong: true, render: r => wrap(esc(r.what)) },
-        { label: 'Over how many rows', render: r => wrap(muted(esc(r.over))) },
-        { label: 'Result', render: () => pill('Clear', 'ok', { verbatim: false }) },
-      ], rows);
+      if (!rows.length) return warn + dsEmpty({ name: 'scan',
+        title: 'No check came back clear',
+        body: 'Either every check found something, or none of them could run. The two registers either side of this '
+            + 'one say which.' });
+      return warn + dsTable([
+        { label: 'What was checked', strong: true, render: r => said(r.what, 'The full wording of this check') },
+        { label: 'Over how many rows', prose: true, render: r => said(r.over, 'The denominator, in full') },
+        /* ── The one place this conversion refused to keep a colour ──────────
+           This column was `pill('Clear', 'ok')` for every row, unconditionally.
+           measuredClear() can emit a row whose subject begins "FAULT — the
+           first-response target is reporting a state this screen does not
+           know", and that row was painted the same green as a measured clear —
+           a check that BROKE, reported in the colour reserved for a check that
+           looked and found nothing.
+
+           Nothing in measuredClear() changed to fix it: the rule is read off
+           the wording that function already writes, in the renderer, which is
+           where a colour decision belongs. A fault is UNKNOWN, because that is
+           what it is — the screen no longer knows what the engine is saying, so
+           it cannot claim the check came back clear and must not claim it came
+           back dirty either. */
+        { label: 'Result', mid: true, render: r => (/^FAULT\b/.test(str(r.what))
+            ? dsChip('Fault', 'unknown', { name: 'question' })
+            : dsChip('Clear', 'success', { name: 'check' })) },
+      ], rows, { caption: 'Checks that came back clear, each with its denominator' });
     },
   }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P4 · Register 3 — checks that could not run
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Checks that could not run — unknown is not zero',
     sub: 'The engine could not look. Each line says since when, why, and the one thing that would light it up. This '
        + 'is the roadmap made concrete rather than a feature list',
@@ -831,24 +1055,27 @@ SCREENS.moneyleaks = async host => {
       const rows = notMeasured(e.err ? null : e.v, c.err ? null : one(c.v), l.err ? null : l.v,
                                w.err ? null : w.v, r.err ? null : r.v);
       if (!rows.length) {
-        return stateEmpty('Every check this screen makes could be run',
-          'Nothing is being withheld for want of data. That has not been true of this database before, so if you are '
-          + 'reading it, check that the reads above actually returned rows.', 'fact_check');
+        return dsEmpty({ name: 'shield',
+          title: 'Every check this screen makes could be run',
+          body: 'Nothing is being withheld for want of data. That has not been true of this database before, so if '
+              + 'you are reading it, check that the reads above actually returned rows.' });
       }
-      return table([
-        { label: 'What is not measured', strong: true, render: x => wrap(esc(x.what)) },
-        { label: 'Since / how much', render: x => wrap(muted(esc(x.since))) },
-        { label: 'Why', render: x => wrap(muted(esc(x.why))) },
-        { label: 'What would light it up', render: x => wrap(`<div class="t-warm">${esc(x.unlock)}</div>`) },
-        { label: 'Kind', render: x => pill(x.kind, x.kind === 'OPERATIONAL' ? 'warm' : 'unknown', { verbatim: true }) },
-      ], rows);
+      return dsTable([
+        { label: 'What is not measured', strong: true, render: x => said(x.what, 'What is not measured, in full') },
+        { label: 'Since / how much', prose: true, render: x => said(x.since, 'Since when, in full') },
+        { label: 'Why', prose: true, render: x => said(x.why, 'Why this cannot be measured, in full') },
+        { label: 'What would light it up', prose: true,
+          render: x => `<div class="ds-t-warning">${said(x.unlock, 'What would light this up, in full')}</div>` },
+        { label: 'Kind', mid: true,
+          render: x => dsChip(x.kind, x.kind === 'OPERATIONAL' ? 'warning' : 'unknown', { verbatim: true }) },
+      ], rows, { caption: 'Checks that could not run, and what would light each one up' });
     },
   }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P5 · Register 4 — what this screen refuses to call a leak
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'What this screen refuses to call a leak',
     sub: 'The alert feed, audited against the engines rather than trusted. A competitor’s dashboard would show '
        + 'every one of these as a finding; showing why they are not is the trust the product is selling',
@@ -954,42 +1181,55 @@ SCREENS.moneyleaks = async host => {
         };
       });
 
-      const confirmedNote = `<div class="banner info" style="margin-top:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">payments</span>
-          <div>${bold('And the money that is on file is not a leak either.')}
-            ${muted('There is confirmed sale revenue in this database. It is not shown on this screen as a leak, as '
-              + 'a recovery or as anything NEXUS did: the attribution chain grades its campaign hop UNKNOWN and its '
-              + 'margin NOT COMPUTABLE, so nothing here may take credit for it. Attribution is the screen that says '
-              + 'so, hop by hop.')}
-            <div style="margin-top:8px">${linkBtn('attribution', 'Open Attribution')}</div></div></div>`;
+      const confirmedNote = `<div style="padding:12px 16px 0">${dsCallout({
+        intent: 'info', name: 'coins',
+        lede: 'And the money that is on file is not a leak either.',
+        body: '<span>Confirmed sale revenue exists here and nothing on this screen takes credit for it.</span>'
+          + `<div style="margin-top:8px">${linkBtn('attribution', 'Open Attribution')}</div>`,
+        noteLabel: 'why not',
+        note: para('There is confirmed sale revenue in this database. It is not shown on this screen as a leak, as '
+          + 'a recovery or as anything NEXUS did: the attribution chain grades its campaign hop UNKNOWN and its '
+          + 'margin NOT COMPUTABLE, so nothing here may take credit for it. Attribution is the screen that says '
+          + 'so, hop by hop.'),
+      })}</div>`;
 
       const reconciled = ranked
-        ? muted(`Reconciled against the ${num(ranked.size)} ${plural(ranked.size, 'line', 'lines')} in the leak `
-          + 'register above: an alert marked ALREADY RANKED appears there with its evidence, and is not counted a '
-          + 'second time here.')
-        : hot('The leak register could not be read on this pass, so these alerts have not been reconciled against it. '
-          + 'Nothing is being claimed about which of them is also above.');
+        ? dsCallout({ intent: 'neutral', name: 'info',
+            lede: `Reconciled against ${num(ranked.size)} ${plural(ranked.size, 'line', 'lines')} above.`,
+            body: '<span>An alert marked ALREADY RANKED is not counted a second time here.</span>',
+            note: para(`Reconciled against the ${num(ranked.size)} ${plural(ranked.size, 'line', 'lines')} in the `
+              + 'leak register above: an alert marked ALREADY RANKED appears there with its evidence, and is not '
+              + 'counted a second time here.') })
+        : dsCallout({ intent: 'unknown', name: 'question',
+            lede: 'These alerts have not been reconciled against the leak register.',
+            body: '<span>The leak register could not be read on this pass.</span>',
+            note: para('The leak register could not be read on this pass, so these alerts have not been reconciled '
+              + 'against it. Nothing is being claimed about which of them is also above.') });
 
       if (!items.length) {
-        return stateEmpty('The alert feed is empty', 'There is nothing to audit. That is a statement about the alert '
-          + 'feed, not about the dealership.', 'notifications_off') + confirmedNote;
+        return dsEmpty({ name: 'bellOff',
+          title: 'The alert feed is empty',
+          body: 'There is nothing to audit. That is a statement about the alert feed, not about the dealership.',
+        }) + confirmedNote;
       }
 
-      return table([
-        { label: 'Alert kind', strong: true, render: x => mono(x.kind) },
-        { label: 'Items', align: 'r', render: x => num(x.n) },
-        { label: 'Verdict', render: x => pill(x.verdict, x.verdict === 'ALREADY RANKED' ? 'cold'
-            : x.verdict === 'NO RULE' ? 'unknown' : 'ok', { verbatim: false }) },
-        { label: 'Why', render: x => wrap(muted(esc(x.why))) },
-        { label: 'For example', render: x => wrap(muted(esc(x.example) + (x.detail ? ` &middot; ${esc(x.detail)}` : ''))) },
-      ], rows) + `<div class="section" style="margin-top:16px">${reconciled}</div>` + confirmedNote;
+      return dsTable([
+        { label: 'Alert kind', strong: true, mid: true, render: x => mono(x.kind) },
+        { label: 'Items', align: 'r', mid: true, render: x => num(x.n) },
+        { label: 'Verdict', mid: true, render: x => dsChip(x.verdict, x.verdict === 'ALREADY RANKED' ? 'info'
+            : x.verdict === 'NO RULE' ? 'unknown' : 'success') },
+        { label: 'Why', prose: true, render: x => said(x.why, 'Why this is refused, in full') },
+        { label: 'For example', prose: true,
+          render: x => said(x.example + (x.detail ? ` · ${x.detail}` : ''), 'The example, in full') },
+      ], rows, { caption: 'The alert feed, audited against the engines' })
+        + `<div style="padding:12px 16px 0">${reconciled}</div>` + confirmedNote;
     },
   }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P6 · The four money words, and what NEXUS has actually earned
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'The words this screen is allowed to use about money',
     sub: 'Four words, one gate each. A figure that has not earned its word is not shown',
     load: async () => {
@@ -1037,18 +1277,22 @@ SCREENS.moneyleaks = async host => {
       ];
 
       const faultBanner = (unsupported && unsupported.length)
-        ? `<div class="banner hot" style="margin-bottom:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">report</span>
-             <div>${bold(`${num(unsupported.length)} ${plural(unsupported.length, 'action record claims', 'action records claim')} money with nothing behind it.`)}
-               ${muted(esc(unsupportedRecoverySentence(unsupported[0].ev)))}</div></div>`
+        ? `<div style="padding:12px 16px 0">${dsCallout({
+            intent: 'danger', name: 'danger',
+            lede: `${num(unsupported.length)} ${plural(unsupported.length, 'action record claims', 'action records claim')} money with nothing behind it.`,
+            body: '',
+            noteLabel: 'what is missing',
+            note: para(esc(unsupportedRecoverySentence(unsupported[0].ev))),
+          })}</div>`
         : '';
 
-      return faultBanner + table([
-        { label: 'Word', strong: true, render: r => pill(MONEY_WORD[r.word].label, MONEY_WORD[r.word].tone, { verbatim: false }) },
-        { label: 'What it means', render: r => wrap(muted(esc(MONEY_WORD[r.word].gloss))) },
-        { label: 'What holds it today', render: r => wrap(esc(r.held)) },
-        { label: 'Why it is listed', render: r => wrap(muted(esc(r.note))) },
-      ], rows);
+      return faultBanner + dsTable([
+        { label: 'Word', mid: true, strong: true,
+          render: r => dsChip(MONEY_WORD[r.word].label, dsIntent(MONEY_WORD[r.word].tone), { lg: true }) },
+        { label: 'What it means', prose: true, render: r => said(MONEY_WORD[r.word].gloss, 'The full definition') },
+        { label: 'What holds it today', render: r => said(r.held, 'What holds this word today, in full') },
+        { label: 'Why it is listed', prose: true, render: r => said(r.note, 'Why this word is listed, in full') },
+      ], rows, { caption: 'The four money words and the gate on each' });
     },
   }).then(wireGo);
 };
