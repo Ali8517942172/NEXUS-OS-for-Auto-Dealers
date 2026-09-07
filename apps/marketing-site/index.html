@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXUS for AutoDealers — Revenue Recovery OS for Dubai & UAE Car Dealerships</title>
+<meta name="description" content="NEXUS finds where a UAE car dealership is losing money and acts on it. Automatic replies to inbound WhatsApp enquiries, high-intent leads routed to the right salesperson, ageing stock flagged nightly. One month free, then AED 399 a month.">
+<link rel="canonical" href="https://nexusforautodealers.vercel.app/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="Ali Asgher">
+<meta name="geo.region" content="AE-DU">
+<meta name="geo.placename" content="Deira, Dubai">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NEXUS for AutoDealers">
+<meta property="og:title" content="NEXUS for AutoDealers — Revenue Recovery OS for UAE Car Dealerships">
+<meta property="og:description" content="Every enquiry answered in minutes, not hours. High-intent buyers routed to the right salesperson. Ageing stock flagged before it eats your margin. One month free, then AED 399 a month.">
+<meta property="og:url" content="https://nexusforautodealers.vercel.app/">
+<meta property="og:locale" content="en_AE">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NEXUS for AutoDealers — Revenue Recovery OS for UAE Car Dealerships">
+<meta name="twitter:description" content="Every enquiry answered in minutes, not hours. One month free, then AED 399 a month.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://nexusforautodealers.vercel.app/#org",
+      "name": "NEXUS for AutoDealers",
+      "description": "Revenue Recovery and Action OS for car dealerships in the UAE.",
+      "email": "aliasgher892@gmail.com",
+      "telephone": "+971526647253",
+      "founder": { "@type": "Person", "name": "Ali Asgher" },
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Deira, Dubai",
+        "addressCountry": "AE"
+      },
+      "areaServed": [
+        { "@type": "Country", "name": "United Arab Emirates" },
+        { "@type": "City", "name": "Dubai" },
+        { "@type": "City", "name": "Sharjah" },
+        { "@type": "City", "name": "Abu Dhabi" }
+      ]
+    },
+    {
+      "@type": "Service",
+      "name": "NEXUS for AutoDealers — Revenue Recovery OS",
+      "provider": { "@id": "https://nexusforautodealers.vercel.app/#org" },
+      "serviceType": "Automotive dealership lead response and revenue recovery software",
+      "areaServed": { "@type": "Country", "name": "United Arab Emirates" },
+      "offers": {
+        "@type": "Offer",
+        "priceCurrency": "AED",
+        "price": "399",
+        "priceSpecification": {
+          "@type": "UnitPriceSpecification",
+          "price": "399",
+          "priceCurrency": "AED",
+          "unitCode": "MON",
+          "billingDuration": 1
+        },
+        "description": "One month free, then AED 399 per month. No setup fee. Cancel any time.",
+        "availability": "https://schema.org/InStock"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does NEXUS replace my DMS or CRM?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. NEXUS sits above the systems you already run. It reads from them, works out where money is leaking, and acts. It replaces nothing." }
+        },
+        {
+          "@type": "Question",
+          "name": "How fast does it reply to a customer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Replies take seconds to a couple of minutes. Measured across live replies: fastest 13.3 seconds, median 38.8 seconds, slowest 3 minutes 38 seconds. We publish the slow end as well as the fast one." }
+        },
+        {
+          "@type": "Question",
+          "name": "Will the AI invent a price?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. The price it quotes is read from your stock list. It also holds your cost price and is blocked from disclosing it to a customer." }
+        },
+        {
+          "@type": "Question",
+          "name": "What does NEXUS cost in the UAE?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The first month is free. After that it is AED 399 per month, with no setup fee and no minimum term. You can cancel any time." }
+        },
+        {
+          "@type": "Question",
+          "name": "What does NEXUS focus on?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Leads, stock and conversations — the revenue side of the showroom. It runs above your existing DMS and CRM rather than replacing them, and it is managed for you rather than sold as software you install yourself." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
+<style>
+:root{
+  --ivory:#F7F9FC; --paper:#FFFFFF; --ink:#12203A; --body:#48566E;
+  --line:#DEE5F0; --deep:#2563C9; --deep-soft:#EEF3FD;
+  --copper:#1B4C9E; --copper-soft:#E4EDFB;
+  --shadow:0 1px 2px rgba(23,30,26,.04), 0 8px 24px -12px rgba(23,30,26,.10);
+  --wrap:1120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--ivory);color:var(--body);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:Fraunces,Georgia,"Times New Roman",serif;color:var(--ink);
+  font-weight:500;line-height:1.15;letter-spacing:-.015em;margin:0}
+p{margin:0 0 1em}
+a{color:var(--deep)}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 24px}
+.eyebrow{font-family:Inter,sans-serif;font-size:12px;font-weight:600;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--copper);margin:0 0 14px}
+
+/* header */
+header{position:sticky;top:0;z-index:50;background:rgba(252,250,246,.92);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;justify-content:space-between;height:70px;gap:20px}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none}
+.mark{width:32px;height:32px;border-radius:8px;background:var(--deep);color:#fff;
+  display:grid;place-items:center;font-family:Fraunces,serif;font-size:17px;flex:none}
+.brand b{font-family:Fraunces,serif;font-size:19px;color:var(--ink);font-weight:600;letter-spacing:-.01em}
+.brand span{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--body);font-family:Inter,sans-serif;margin-top:-2px}
+nav{display:flex;gap:26px;align-items:center}
+nav a{color:var(--body);text-decoration:none;font-size:15px;font-weight:500}
+nav a:hover{color:var(--deep)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:12px 22px;border-radius:9px;font-family:Inter,sans-serif;font-size:15px;
+  font-weight:600;text-decoration:none;border:1px solid transparent;cursor:pointer;
+  transition:.15s;white-space:nowrap}
+.btn-primary{background:var(--deep);color:#fff}
+.btn-primary:hover{background:#1D4FA8}
+.btn-ghost{background:var(--paper);color:var(--ink);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--deep);color:var(--deep)}
+.btn-wa{background:#1F8A4C;color:#fff}
+.btn-wa:hover{background:#186f3d}
+
+/* hero */
+.hero{padding:84px 0 72px}
+.hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:64px;align-items:start}
+.badge{display:inline-flex;align-items:center;gap:9px;background:var(--copper-soft);
+  border:1px solid #CFE0F8;color:var(--copper);padding:7px 14px;border-radius:100px;
+  font-size:13px;font-weight:600;margin-bottom:26px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--copper)}
+.hero h1{font-size:clamp(40px,5vw,60px);margin-bottom:22px}
+.hero h1 em{font-style:normal;color:var(--deep)}
+.lede{font-size:20px;line-height:1.6;color:var(--body);max-width:35ch;margin-bottom:30px}
+.cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+.hero-note{font-size:14px;color:#6B756E}
+.hero-note b{color:var(--ink);font-weight:600}
+
+/* form card */
+.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;
+  padding:30px;box-shadow:var(--shadow)}
+.card h3{font-size:22px;margin-bottom:6px}
+.card .sub{font-size:14px;color:#6B756E;margin-bottom:22px}
+.field{margin-bottom:15px}
+label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px}
+input,select,textarea{width:100%;padding:11px 13px;border:1px solid var(--line);
+  border-radius:9px;font-family:Inter,sans-serif;font-size:15px;color:var(--ink);
+  background:var(--ivory);transition:.15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--deep);
+  background:var(--paper);box-shadow:0 0 0 3px rgba(14,83,70,.09)}
+textarea{resize:vertical;min-height:78px}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.form-note{font-size:12.5px;color:#7A847D;margin-top:14px;line-height:1.5}
+.msg{padding:13px 15px;border-radius:9px;font-size:14.5px;margin-top:14px;display:none}
+.msg.ok{display:block;background:var(--deep-soft);color:var(--deep);border:1px solid #CFE0F8}
+.msg.err{display:block;background:#FDF2F0;color:#9B3B2A;border:1px solid #F2D6D0}
+
+/* sections */
+section{padding:78px 0;border-top:1px solid var(--line)}
+.sec-head{max-width:66ch;margin-bottom:46px}
+.sec-head h2{font-size:clamp(29px,3.4vw,40px);margin-bottom:16px}
+.sec-head p{font-size:18px}
+
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:26px}
+.tile{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:28px}
+.tile h3{font-size:19px;margin-bottom:10px}
+.tile p{font-size:15.5px;margin:0}
+.tile .num{font-family:Fraunces,serif;font-size:15px;color:var(--copper);
+  display:block;margin-bottom:12px;font-weight:600}
+
+.leak{background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  padding:26px 28px;display:flex;gap:20px;align-items:flex-start}
+.leak .icon{width:38px;height:38px;border-radius:9px;background:var(--copper-soft);
+  color:var(--copper);display:grid;place-items:center;flex:none;font-size:19px}
+.leak h3{font-size:18px;margin-bottom:7px}
+.leak p{font-size:15.5px;margin:0}
+
+/* honesty */
+.honest{background:var(--deep);color:#DCE8FB;border-radius:20px;padding:52px}
+.honest h2{color:#fff}
+.honest .eyebrow{color:#A9C8F5}
+.honest .sec-head p{color:#C3D8F7}
+.honest ul{list-style:none;padding:0;margin:0;display:grid;
+  grid-template-columns:1fr 1fr;gap:16px 34px}
+.honest li{padding-left:26px;position:relative;font-size:15.5px;line-height:1.55}
+.honest li:before{content:"—";position:absolute;left:0;color:#8FB6F0}
+.honest li b{color:#fff;font-weight:600;display:block}
+.honest .foot{margin-top:34px;padding-top:26px;border-top:1px solid rgba(255,255,255,.14);
+  font-size:16px;color:#CBDDF8;max-width:70ch}
+
+/* price */
+.price-card{background:var(--paper);border:1px solid var(--line);border-radius:18px;
+  padding:40px;box-shadow:var(--shadow);max-width:600px}
+.price-main{font-family:Fraunces,serif;font-size:46px;color:var(--ink);line-height:1;
+  margin-bottom:6px;font-weight:600}
+.price-main small{font-family:Inter,sans-serif;font-size:16px;color:var(--body);font-weight:500}
+.price-sub{font-size:15px;color:var(--body);margin-bottom:26px}
+.price-list{list-style:none;padding:0;margin:0 0 28px}
+.price-list li{padding:11px 0;border-bottom:1px solid var(--line);font-size:15.5px;
+  display:flex;justify-content:space-between;gap:18px}
+.price-list li:last-child{border-bottom:0}
+.price-list span:last-child{color:var(--ink);font-weight:600;white-space:nowrap}
+
+/* faq */
+details{background:var(--paper);border:1px solid var(--line);border-radius:12px;
+  padding:20px 24px;margin-bottom:12px}
+details[open]{border-color:#CFE0F8}
+summary{font-family:Fraunces,serif;font-size:18px;color:var(--ink);cursor:pointer;
+  list-style:none;font-weight:500}
+summary::-webkit-details-marker{display:none}
+summary:after{content:"+";float:right;color:var(--copper);font-size:22px;line-height:1}
+details[open] summary:after{content:"–"}
+details p{margin:14px 0 0;font-size:15.5px}
+
+/* contact */
+.contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:52px;align-items:start}
+.contact-list{list-style:none;padding:0;margin:26px 0 0}
+.contact-list li{display:flex;gap:15px;align-items:flex-start;margin-bottom:20px}
+.contact-list .icon{width:38px;height:38px;border-radius:9px;background:var(--deep-soft);
+  color:var(--deep);display:grid;place-items:center;flex:none;font-size:17px}
+.contact-list b{display:block;color:var(--ink);font-size:12px;text-transform:uppercase;
+  letter-spacing:.09em;margin-bottom:2px;font-weight:600}
+.contact-list a{color:var(--ink);text-decoration:none;font-size:17px;font-weight:500}
+.contact-list a:hover{color:var(--deep)}
+
+footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A847D}
+.foot-bar{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+
+@media(max-width:900px){
+  .hero-grid,.contact-grid{grid-template-columns:1fr;gap:44px}
+  .grid-3,.grid-2,.honest ul{grid-template-columns:1fr}
+  nav{display:none}
+  .honest{padding:34px 26px}
+  section{padding:56px 0}
+  .hero{padding:52px 0 46px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="#top">
+      <span class="mark">N</span>
+      <span><b>NEXUS</b><span>for AutoDealers</span></span>
+    </a>
+    <nav>
+      <a href="#leaks">The problem</a>
+      <a href="#how">How it works</a>
+      <a href="#proof">Why it matters</a>
+      <a href="#limits">What it does</a>
+      <a href="#price">Price</a>
+    </nav>
+    <a class="btn btn-primary" href="#talk">Book a walkthrough</a>
+  </div>
+</header>
+
+<main id="top">
+
+<div class="hero wrap">
+  <div class="hero-grid">
+    <div>
+      <div class="badge"><span class="dot"></span> First month free · then AED 399/month · Dubai &amp; UAE</div>
+      <h1>Your next customer already messaged you. <em>Did anyone answer?</em></h1>
+      <p class="lede">NEXUS sits above the systems your showroom already runs, finds where money is leaking right now, and acts on it — with your team in control.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#talk">Book a walkthrough</a>
+        <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20to%20see%20NEXUS" target="_blank" rel="noopener">WhatsApp us</a>
+      </div>
+      <p class="hero-note">Built in Dubai, for UAE showrooms. <b>No setup fee, no contract</b> — try it for a month and keep it only if it pays for itself.</p>
+    </div>
+
+    <div class="card" id="talk">
+      <h3>See it on your own stock</h3>
+      <p class="sub">Tell us a little and we'll walk you through it on your own inventory — not a canned demo.</p>
+      <form id="lead-form" novalidate>
+        <div class="field">
+          <label for="name">Your name</label>
+          <input id="name" name="full_name" type="text" autocomplete="name" required placeholder="Ahmed Al Mansoori">
+        </div>
+        <div class="field">
+          <label for="dealership">Dealership</label>
+          <input id="dealership" name="dealership" type="text" autocomplete="organization" placeholder="Al Mansoori Motors, Deira">
+        </div>
+        <div class="field">
+          <label for="phone">WhatsApp number</label>
+          <input id="phone" name="phone" type="tel" autocomplete="tel" required placeholder="+971 50 000 0000">
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" placeholder="you@dealership.ae">
+        </div>
+        <div class="field">
+          <label for="stock">Roughly how many cars in stock?</label>
+          <select id="stock" name="stock_size">
+            <option value="">Select…</option>
+            <option>Under 25</option>
+            <option>25 to 50</option>
+            <option>50 to 150</option>
+            <option>More than 150</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="msg">What's leaking? (optional)</label>
+          <textarea id="msg" name="message" placeholder="Enquiries at night go unanswered until the morning…"></textarea>
+        </div>
+        <div class="hp" aria-hidden="true">
+          <label for="company_website">Leave this empty</label>
+          <input id="company_website" name="company_website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+        <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn">Request a walkthrough</button>
+        <div class="msg" id="form-msg" role="status" aria-live="polite"></div>
+        <p class="form-note">We reply from a real Dubai number, usually the same day. Your details are used to contact you about NEXUS and nothing else.</p>
+      </form>
+    </div>
+  </div>
+</div>
+
+<section id="leaks">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Where the money goes</p>
+      <h2>A dealership rarely loses a sale in one big moment. It loses it in four small ones.</h2>
+      <p>None of these show up on a P&amp;L as a line item. That is exactly why they run for years.</p>
+    </div>
+    <div class="grid-2" style="gap:20px">
+      <div class="leak"><span class="icon">◷</span><div>
+        <h3>The enquiry nobody answered</h3>
+        <p>A buyer messages at 9pm. Your salesperson sees it at 9am. By then they have messaged four other showrooms, and one of them replied in a minute.</p>
+      </div></div>
+      <div class="leak"><span class="icon">◱</span><div>
+        <h3>The hot buyer treated like a browser</h3>
+        <p>Someone asking about finance on a specific VIN and someone asking "is it available" get the same answer, from whoever is free. The serious one waits.</p>
+      </div></div>
+      <div class="leak"><span class="icon">◔</span><div>
+        <h3>The car quietly eating its own margin</h3>
+        <p>Every day a unit sits, it costs you. By the time it feels slow, the profit you were protecting by holding the price is already gone.</p>
+      </div></div>
+      <div class="leak"><span class="icon">◈</span><div>
+        <h3>The conversation nobody can find</h3>
+        <p>Half the business happens on personal WhatsApp. A salesperson leaves and the history of every customer they touched leaves with them.</p>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">How it works</p>
+      <h2>It reads, it decides, it acts — and it writes down what it did.</h2>
+      <p>NEXUS automatically responds to inbound dealership enquiries and routes high-intent opportunities to the right team.</p>
+    </div>
+    <div class="grid-3">
+      <div class="tile">
+        <span class="num">01 — Reads</span>
+        <h3>Your stock, your conversations</h3>
+        <p>It connects to the inventory and enquiry data you already keep. It replaces no system you are running today — it sits above them.</p>
+      </div>
+      <div class="tile">
+        <span class="num">02 — Decides</span>
+        <h3>Grounded in your real prices</h3>
+        <p>When it answers a customer, the price comes from your stock list, not from the model's imagination. It holds your cost price and is blocked from revealing it.</p>
+      </div>
+      <div class="tile">
+        <span class="num">03 — Acts</span>
+        <h3>And stops when you step in</h3>
+        <p>It answers, routes, and flags ageing stock nightly. The moment one of your people joins the chat, it goes quiet.</p>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-top:22px">
+      <div class="tile">
+        <span class="num">04 — Records</span>
+        <h3>Every run is checked</h3>
+        <p>Each run verifies that the steps it claims to have taken actually landed, and writes an audit record either way. You can read back what happened and when.</p>
+      </div>
+      <div class="tile">
+        <span class="num">05 — Grades itself</span>
+        <h3>It tells you when it's broken</h3>
+        <p>The system scores its own automations and reports the ones that are degraded or producing nothing. You are not left guessing whether it ran.</p>
+      </div>
+      <div class="tile">
+        <span class="num">06 — Refuses to guess</span>
+        <h3>Unknown is never "none"</h3>
+        <p>If it can't tell two customers apart, it leaves the message unassigned rather than attaching it to the wrong person. An empty screen says why it's empty.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <div class="honest">
+      <div class="sec-head">
+        <p class="eyebrow">Focus</p>
+        <h2>NEXUS does three things, and it does them properly.</h2>
+        <p>Dealership software usually sprawls until nothing in it is excellent. NEXUS is deliberately narrow — it owns the revenue side of your showroom and leaves the rest to the systems that already do it well.</p>
+      </div>
+      <ul>
+        <li><b>Leads.</b> Every enquiry answered, scored and routed to the right salesperson — including the ones that arrive at midnight.</li>
+        <li><b>Stock.</b> Days-in-stock recomputed nightly, with the units quietly eating your margin flagged before the profit is gone.</li>
+        <li><b>Conversations.</b> Grounded in your real prices, silent the moment your team steps in, and every word on the record.</li>
+        <li><b>Evidence.</b> Estimated, attributed and confirmed are three different words here. NEXUS shows which one it means.</li>
+      </ul>
+      <p class="foot">Your DMS keeps doing your DMS's job. Your finance manager keeps quoting finance. NEXUS sits above all of it and makes sure nothing worth money falls through the gap between them.</p>
+    </div>
+  </div>
+</section>
+
+<section id="proof">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Why this is worth a month of your time</p>
+      <h2>The gap between a two-minute reply and a twelve-hour one is the whole business.</h2>
+      <p>These are the market's numbers, not ours — published research on how buyers behave. We are showing you the problem honestly so you can judge whether the fix is worth AED 399.</p>
+    </div>
+    <div class="grid-3">
+      <div class="tile">
+        <span class="num">The five-minute rule</span>
+        <h3>Odds collapse after five minutes</h3>
+        <p>Contacting a lead within five minutes rather than thirty makes it dramatically more likely to qualify. Most showroom enquiries arrive when nobody is on the floor.</p>
+      </div>
+      <div class="tile">
+        <span class="num">First to answer</span>
+        <h3>The first reply usually wins</h3>
+        <p>Buyers message several showrooms at once. The one that answers first sets the price expectation and gets the test drive booked.</p>
+      </div>
+      <div class="tile">
+        <span class="num">Holding cost</span>
+        <h3>Every day a car sits, it costs</h3>
+        <p>Depreciation, floorplan and space run whether the unit moves or not. NEXUS recomputes days-in-stock nightly and flags units before the margin is gone.</p>
+      </div>
+    </div>
+    <p class="hero-note" style="margin-top:26px;max-width:80ch">
+      <b>What we are not doing here:</b> putting a dirham figure on your losses. We have not seen
+      your stock, your traffic or your margins, so any number we printed would be invented.
+      Run the free month and the dashboard will show you your own figures, measured — not estimated.
+    </p>
+  </div>
+</section>
+
+<section id="price">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Price</p>
+      <h2>One month free. Then AED 399 a month.</h2>
+      <p>Published, flat, and on the page — because a dealership should not have to book a call to find out what something costs.</p>
+    </div>
+    <div class="price-card">
+      <div class="price-main">AED 399 <small>/ month</small></div>
+      <p class="price-sub">The first month is free. No setup fee, no contract, cancel any time.</p>
+      <ul class="price-list">
+        <li><span>First month</span><span>Free</span></li>
+        <li><span>Every month after</span><span>AED 399</span></li>
+        <li><span>Setup and onboarding</span><span>Included</span></li>
+        <li><span>Minimum term</span><span>None</span></li>
+        <li><span>Number of cars in stock</span><span>Unlimited</span></li>
+      </ul>
+      <a class="btn btn-primary" href="#talk" style="width:100%">Start the free month</a>
+      <p class="form-note" style="text-align:center"><b>Founding rate.</b> We are onboarding the first 50 showrooms in the UAE. Join in that group and AED 399 is your price for good, whatever we charge later.</p>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Questions</p>
+      <h2>The things dealers actually ask.</h2>
+    </div>
+    <details><summary>Do I have to throw away my DMS or CRM?</summary>
+      <p>No. NEXUS sits above the systems you already run. It reads from them, reasons across them, and acts. It replaces nothing — that is the whole point of it.</p></details>
+    <details><summary>How fast does it actually reply?</summary>
+      <p>Seconds to a couple of minutes. Measured across live replies: fastest 13.3 seconds, median 38.8 seconds, slowest 3 minutes 38 seconds. We publish the slow end deliberately — a vendor who only quotes their best number is telling you about their best number.</p></details>
+    <details><summary>Will the AI invent a price and embarrass me?</summary>
+      <p>The price it quotes is read from your stock list, not generated. It also holds your cost price and is blocked from disclosing it. In a live test it quoted AED 152,000 for a Fortuner — the exact asking price on that VIN — and never mentioned the cost.</p></details>
+    <details><summary>What happens when my salesperson is already replying?</summary>
+      <p>It checks before it writes and stays out. It is there for the hours and the messages your team cannot cover, not to talk over them.</p></details>
+    <details><summary>Is my data separated from other dealerships?</summary>
+      <p>Yes, at the database level. Every table holding your data carries a dealership id and every access rule checks it. It was tested with two dealerships sharing a deliberately identical customer email and phone number — each saw only its own records. We still run one dealership per system.</p></details>
+    <details><summary>What do I need to give you to start?</summary>
+      <p>Your stock list and access to the number your enquiries arrive on. Setup is done by hand, by us, which is what the setup fee pays for.</p></details>
+  </div>
+</section>
+
+<section id="contact">
+  <div class="wrap contact-grid">
+    <div>
+      <p class="eyebrow">Talk to a person</p>
+      <h2 style="font-size:clamp(28px,3.2vw,38px);margin-bottom:16px">Ali Asgher, Deira, Dubai.</h2>
+      <p style="font-size:17px">Not a form that goes nowhere. Message the WhatsApp number below and it reaches me directly — usually the same day.</p>
+      <ul class="contact-list">
+        <li><span class="icon">✆</span><div><b>Phone &amp; WhatsApp</b>
+          <a href="https://wa.me/971526647253">+971 52 664 7253</a></div></li>
+        <li><span class="icon">✉</span><div><b>Email</b>
+          <a href="mailto:aliasgher892@gmail.com">aliasgher892@gmail.com</a></div></li>
+        <li><span class="icon">◎</span><div><b>Based in</b>
+          <a href="#contact" style="cursor:default">Deira, Dubai, United Arab Emirates</a></div></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Prefer to write?</h3>
+      <p class="sub">Same form, same inbox. It reaches the same person.</p>
+      <a class="btn btn-primary" href="#talk" style="width:100%;margin-bottom:10px">Go to the form</a>
+      <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20to%20see%20NEXUS" target="_blank" rel="noopener" style="width:100%">Open WhatsApp instead</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot-bar">
+    <div>© 2026 NEXUS for AutoDealers · Deira, Dubai, UAE</div>
+    <div>+971 52 664 7253 · aliasgher892@gmail.com</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var f=document.getElementById('lead-form'),
+      m=document.getElementById('form-msg'),
+      b=document.getElementById('submit-btn');
+  if(!f) return;
+  var started=Date.now();
+  function show(cls,text){m.className='msg '+cls;m.textContent=text;}
+  f.addEventListener('submit',function(e){
+    e.preventDefault();
+    var d=Object.fromEntries(new FormData(f).entries());
+    if(!d.full_name||!d.full_name.trim()){show('err','Please tell us your name.');return;}
+    if(!d.phone||!d.phone.trim()){show('err','We need a number to reach you on.');return;}
+    d.elapsed_ms=Date.now()-started;
+    d.submission_id=(crypto.randomUUID?crypto.randomUUID():'s'+Date.now()+Math.random().toString(16).slice(2));
+    b.disabled=true;b.textContent='Sending…';
+    fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
+      .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
+      .then(function(res){
+        if(res.ok){
+          f.reset();
+          show('ok','Thank you — that reached us. We will message you on WhatsApp, usually the same day.');
+        } else {
+          show('err','That did not send. Please WhatsApp +971 52 664 7253 directly — it reaches the same person.');
+        }
+      })
+      .catch(function(){
+        show('err','That did not send. Please WhatsApp +971 52 664 7253 directly — it reaches the same person.');
+      })
+      .finally(function(){b.disabled=false;b.textContent='Request a walkthrough';});
+  });
+})();
+</script>
+</body>
+</html>
