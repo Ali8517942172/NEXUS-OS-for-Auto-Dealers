@@ -369,24 +369,112 @@ pass.
 
 ### What is NOT proven — and this half is not smaller than the half above
 
-- **Nothing has carried a real lead.** Zero rows on both projects. Every result
-  in this section is staging, in transactions that were rolled back.
-- **No HTTP endpoint exists yet.** There is no receiver for any of it — no n8n
-  workflow, no signature verifier, no rate limit and no honeypot enforcement in
-  a running service. The database contract is built; the transport is not. Do
-  not describe this layer as "lead ingestion works".
-- **The Meta signature verifier is the highest-risk unwritten piece.** Meta
-  computes `X-Hub-Signature-256` over an **escaped-unicode** form of the body, so
-  a verifier that parses and re-serialises the JSON **will pass an ASCII test
-  suite and fail every Arabic customer name in Dubai.** Scenario J in the
-  simulator exists for this and derives both encodings live.
+> Three lines in this section were true when written and are false now. They are
+> corrected in place below rather than left to be quoted by the next reader.
+
+- ~~**Nothing has carried a real lead.** Zero rows on both projects.~~
+  **Superseded 7 September 2026.** Production now holds **one** `lead_event` and
+  the first `leads` row in this project's history whose `source` is an origin
+  rather than a writer:
+
+      select source, count(*) from leads group by 1
+      nexus-master-router   3
+      walk_in               1        <-- lead 121
+
+  It is a **preflight, not a customer** — `walkin-preflight-2026-09-07-01`, email
+  under `@nexus-preflight.invalid`, and it is deletable. Do not quote it as
+  traffic. What it does prove, on production and not in a rolled-back
+  transaction, is that record → hydrate → promote works and that the origin
+  survives to `leads.source`. Redelivering the same event returned
+  `was_duplicate = true` without raising, and promoting twice returned
+  `was_already_promoted = true` with the lead count unchanged at 4.
+- ~~**No HTTP endpoint exists yet.**~~ **Partly superseded.** The WhatsApp Cloud
+  receiver is built and published (`J8MXprxVw1yhjBpp`,
+  `POST/GET /webhook/whatsapp-cloud-inbound`), and it refuses every request today
+  because `META_APP_SECRET` is unset — deliberately, see
+  `ops/whatsapp-cloud/README.md`. Still true for **leads**: there is no HTTP
+  receiver for Meta Lead Ads, Google, or a website form. The database contract is
+  built and now exercised; that transport is not.
+- ~~**The Meta signature verifier is the highest-risk unwritten piece.**~~
+  **Written, tested and deployed** — `ops/n8n-whatsapp-cloud/`, 47 tests. Read
+  that directory before writing the Lead Ads receiver: the same signature applies,
+  and the sandbox it runs in has **no `crypto` at all**.
 - **All twenty Journey Lab verdicts are `NOT RUN`**, and none of them is L4.
-- **The six migrations are on staging and deliberately not on production**,
-  because nothing calls `nexus_record_lead_event` yet and promoting new tables,
-  new RLS and a new dealer-facing view in front of paying customers to no
-  purpose is a cost with no buyer. Repo↔production parity is **byte-exact over
-  the 288 shared migrations**, and these six are the whole of the remaining
-  difference — see `ops/PARITY-2026-09-06.md`.
+- ~~**The six migrations are on staging and deliberately not on production.**~~
+  **False as of 7 September 2026, and it was already false when this line was
+  last read.** There are **seven** (`leadingest_01` … `leadingest_07`) and all
+  seven are on **production** — `supabase_migrations.schema_migrations` carries
+  versions `20260907023137` through `20260907024207`, and the objects are live: 4
+  tables, 7 functions, 8 provenance kinds, 9 catalogue sources. Anyone planning
+  work around "it is staging-only" is planning around a fact that expired.
+
+### Registered production endpoints, and why two of them are disabled
+
+| source | public key | env | status |
+|---|---|---|---|
+| `walk_in` | `alba-prod-walkin-showroom-floor` | production | **active** |
+| `phone_call` | `alba-prod-phonecall-front-desk` | production | **active** |
+| `meta_lead_ads_facebook` | `alba-prod-meta-leadads-facebook` | production | disabled |
+| `meta_lead_ads_instagram` | `alba-prod-meta-leadads-instagram` | production | disabled |
+
+The two Meta rows are registered and **deliberately `disabled`**. They were
+created active, and `nexus_lead_source_readiness()` immediately reported Facebook
+and Instagram as `CONNECTED` to an ALBA session — while Meta is subscribed to
+nothing, no Page or lead form exists, and `META_APP_SECRET` is unset. That is the
+**same defect this function was written to kill**, one layer up: the first
+version derived connectedness from `integration_status`, a fact about the
+provider; the fix derived it from whether an endpoint row exists; and an endpoint
+row is *still* not the same fact as "a delivery can arrive". Disabling them is
+the honest state until the subscription exists. Re-enable in one statement then.
+
+Read as the ALBA owner today: **2 CONNECTED** (`walk_in`, `phone_call` — the two
+a salesperson can use with no integration at all), **1 NOT_CONNECTABLE**
+(Dubizzle), **6 NOT_CONNECTED**.
+
+### Proved on production, 7 September 2026
+
+Six registration attacks, all refused `23514`: a production endpoint claiming
+simulated provenance; a Meta endpoint downgraded to a shared header; an HMAC
+endpoint naming no secret; a website form with no Origin allowlist; a
+manual-entry endpoint holding a secret; an eight-character public key.
+
+Six ingestion attacks, all refused: an unregistered public key (`NX001`), a
+`nokey:` identity (`23514`), a bare 13-digit clock reading as an id (`23514`),
+provenance stronger than the endpoint declares (`NX001`), a lead dated forty days
+ahead (`NX001`), and `google_key` nested three deep inside `payload_raw`
+(`23514`). **Positive control held**: the same body redacted, with `gcl_id`
+preserved, still inserted and reached `HYDRATED` — so the guard is not too wide.
+
+Dealer read path as a real ALBA session: `v_lead_origin` **1 row**;
+`payload_raw`, `lead_event.endpoint_id`, `lead_ingest_endpoint.public_key` and
+`secret_ref` all refused **`42501` — by grant, not by a row filter**.
+
+**And the gate was made to go red, because a gate that cannot fail is
+decoration.** `nexus_lead_ingest_invariants()` returns 7 PASS / 2 INFO / 0 FAIL
+on production. Two sabotages, both rolled back:
+
+- Direct `UPDATE lead_event SET origin_verified='simulated'` as `service_role`,
+  which bypasses RLS — **refused `23503`**. The event is pinned to its endpoint's
+  provenance by foreign key, so even the bypass role cannot downgrade a live
+  arrival. Gate stayed 0 FAIL, correctly: the state is unreachable.
+- Dropping `lead_ingest_endpoint_production_needs_real_provenance` and
+  `..._production_matches_source`, then registering the row they exist to
+  refuse — **gate went to 1 FAIL**, naming "A production endpoint never accepts
+  provenance that is not real business".
+
+Both constraints and all 17 verified back in place afterwards.
+
+Repo↔production parity is **byte-exact over the 288 shared migrations** — see
+`ops/PARITY-2026-09-06.md`, and note its own caveat that a version-keyed rollup
+cannot answer a content question once versions diverge.
+
+### Cross-tenant, on production, is still NOT PROVEN and should stay that way
+
+Production holds one dealership and a quarantine tenant. Proving a cross-tenant
+refusal needs a second **active** tenant, and activating one silences the five
+consumers of `nexus_scoped_tenant_id()` listed at the top of this file. The
+staging pass proved it (a Bravo event citing Alpha's endpoint, `23503`); do not
+re-run it here to feel thorough.
 
 ## What is actually proven
 
