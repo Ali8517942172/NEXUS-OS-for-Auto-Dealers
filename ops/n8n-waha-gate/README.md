@@ -80,7 +80,21 @@ The third row is a deliberate fail-open — losing a real customer's message is
 worse than processing one twice — and it should be *stated*, because it
 currently reads as an accident.
 
-It has a specific reachable shape. When `payload.id` is absent the node mints
+**Corrected after measuring `Prefilter`, which the first version of this note
+had not read.** Prefilter already computes a stable fallback:
+
+```
+message_id = payload.id  ??  (payload.from + ':' + payload.timestamp)
+```
+
+So omitting `payload.id` alone does **not** reach the `nokey:` branch — it
+produces `971…@c.us:1788…`, which satisfies the CHECK and dedupes correctly. The
+earlier claim here that "a caller who simply omits `payload.id` bypasses the
+claim entirely" was wrong, and it was wrong in the direction that overstates a
+finding.
+
+The reachable shape is narrower: a body carrying **neither `payload.id` nor
+`payload.timestamp`**. Then `message_id` is empty, `Claim Message Id` mints
 `'nokey:' + $now.toMillis()`, and since 5 September a CHECK refuses exactly that:
 
 ```
@@ -89,21 +103,29 @@ processed_messages_message_id_is_a_provider_id
                                                        -- ≥8 chars, not all digits
 ```
 
-So **a caller who simply omits `payload.id` bypasses the claim entirely** and
-reaches the full downstream chain, including the WhatsApp send to a number they
-choose. On the open door that is free.
+The insert fails, `onError: continueRegularOutput` swallows it, `!!$json.error`
+fires the second branch, and the message reaches the full downstream chain
+unclaimed — including the WhatsApp send to a number the caller chooses. On the
+open door that is free.
 
 **How live this is: latent, not active.** `processed_messages` holds **zero**
 `nokey:` rows, real WAHA payloads always carry `payload.id`, and the outreach
 path has never fired. Nothing has gone through this. It is an attack path that
 exists because the door is open, not a malfunction.
 
-**Owed fix**, to be made in the same pass as the secret so the live workflow is
-touched once: mint a *stable* fallback id instead of a per-attempt one —
-`payload.timestamp` and `chat_id` are both in the body and both survive a
-redelivery, where `$now.toMillis()` changes every time. That satisfies the CHECK
-and makes the fallback dedupe instead of merely not-crashing. There is no
-hashing available in an n8n expression, so it is a concatenation, not a digest.
+**Closed 7 September 2026, and not by minting a better fake id.** A body with no
+id and no timestamp carries *nothing stable to key on*, so any id invented for it
+is a lie — a second delivery of the same message would mint a different one and
+be processed again. `Prefilter`'s `is_real_inbound` now also requires that the
+payload carry an id or a timestamp, so such a body is treated as what it is: not
+a real inbound message. The flow stops before the claim rather than reaching it
+with an unusable identity.
+
+**The fail-open on `error` is deliberately left in place**, and that is a
+judgement rather than an oversight: with the id-less case stopped earlier, an
+error at the claim now means the database is genuinely unreachable, and losing a
+real customer's message to a transient outage is worse than processing one twice.
+That trade is now *stated*; before, it read as an accident.
 
 ## The order, and it is not advice
 
