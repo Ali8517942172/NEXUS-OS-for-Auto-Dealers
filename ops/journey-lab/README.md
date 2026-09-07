@@ -4,9 +4,15 @@
 It runs nothing on its own, it creates no database object, and it touches no
 n8n workflow.
 
-**Status of every journey in this Lab: NOT RUN.** All twenty rows in
-`TEST-MATRIX.md` carry the verdict `NOT RUN` and none of them has been
-executed. Nothing here has been converted to `PASS`, by inference or otherwise.
+**Status, 7 September 2026: 11 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN.** Executed
+against staging; every verdict in `TEST-MATRIX.md` carries the evidence it was
+earned by. Nothing was converted to `PASS` by inference — the seven BLOCKED rows
+each name the missing capability, and T17 stays `NOT RUN` because running it
+properly needs a pass of its own.
+
+**The one FAIL is T12, and it is not in the ingestion layer.** A direct `UPDATE`
+on `leads` — the dashboard's own owner-assignment write path — wrote **0 audit
+rows**. The change is real and nothing recorded who made it.
 
 ---
 

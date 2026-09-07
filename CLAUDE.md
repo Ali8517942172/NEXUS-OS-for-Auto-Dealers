@@ -399,7 +399,17 @@ pass.
   **Written, tested and deployed** — `ops/n8n-whatsapp-cloud/`, 47 tests. Read
   that directory before writing the Lead Ads receiver: the same signature applies,
   and the sandbox it runs in has **no `crypto` at all**.
-- **All twenty Journey Lab verdicts are `NOT RUN`**, and none of them is L4.
+- ~~**All twenty Journey Lab verdicts are `NOT RUN`**~~ **Superseded 7 September
+  2026: 11 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN**, executed against staging with
+  per-journey teardown asserted. Still **none of them is L4** — no dealership is
+  on a live NEXUS ingestion endpoint, so no verdict is evidence about a real
+  customer. **The one FAIL is T12 and it is not in the ingestion layer:** a
+  direct `UPDATE` on `leads` — the dashboard's own owner-assignment path,
+  `lib/lead-drawer.js` — wrote **0 audit rows**. The change is real and nothing
+  recorded who made it, so a dealership cannot answer "who reassigned this lead".
+  Every other write goes through a `SECURITY DEFINER` function that audits; this
+  one is a direct table write kept deliberately because revoking it breaks the
+  screen, and that consequence was never priced.
 - ~~**The six migrations are on staging and deliberately not on production.**~~
   **False as of 7 September 2026, and it was already false when this line was
   last read.** There are **seven** (`leadingest_01` … `leadingest_07`) and all

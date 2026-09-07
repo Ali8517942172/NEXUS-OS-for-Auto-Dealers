@@ -1,7 +1,8 @@
 # NEXUS JOURNEY LAB — TEST MATRIX T01–T20
 
 **Written 6 September 2026. Nothing in this file has been executed.** Every
-row's verdict is `NOT RUN`, and no row may move off `NOT RUN` except by a
+row's verdict WAS `NOT RUN` until 7 September 2026 (see "What was actually run"
+below); no row may move off `NOT RUN` except by a
 recorded execution with its assertions read.
 
 Read `README.md` first.
@@ -153,26 +154,87 @@ that is where this product's expensive failures live.
 
 | id | title | enters by | level runnable today | verdict |
 |---|---|---|---|---|
-| T01 | The website enquiry that lands | `website_form` | L2 | **NOT RUN** |
-| T02 | Meta Lead Ads: the two hops that complete | `meta_lead_ads_facebook` | L3 | **NOT RUN** |
-| T03 | Meta Lead Ads: the field data that expired | `meta_lead_ads_instagram` | L2 | **NOT RUN** |
-| T04 | Google Ads lead form: the secret inside the body | `google_ads_lead_form` | L3 | **NOT RUN** |
-| T05 | Google delivers the same lead twice | `google_ads_lead_form` | L2 | **NOT RUN** |
-| T06 | A bot fills the website form — and the human who follows | `website_form` | L2 | **NOT RUN** |
-| T07 | The WhatsApp enquiry, on a door that is open | `whatsapp_inbound` | L2 | **NOT RUN** |
-| T08 | The marketplace enquiry that arrives as a WhatsApp message | `marketplace_dubizzle` via `whatsapp_inbound` | L2 (simulated only, permanently) | **NOT RUN** |
-| T09 | The marketplace notification email | `marketplace_email_notification` | L2 (simulated only) | **NOT RUN** |
-| T10 | Walk-in, then a phone call from the same person | `walk_in`, `phone_call` | L2 | **NOT RUN** |
-| T11 | First response on a promoted lead, and the clock that is not the clock | `website_form` (from T01) | L2 | **NOT RUN** |
-| T12 | Owner assignment, and the act nothing records | any promoted lead | L2 | **NOT RUN** |
-| T13 | A lead for Branch A while Branch B is signed in | `website_form` | L2 | **NOT RUN** |
-| T14 | An origin we cannot verify is never promoted | all four verification paths | L2 | **NOT RUN** |
-| T15 | Simulation traffic must be flagged, not counted | Lab traffic from T01–T10 | L2 | **NOT RUN** |
-| T16 | An endpoint disabled between hop one and hop two | `meta_lead_ads_facebook` | L2 (L3 for the honest half) | **NOT RUN** |
+| T01 | The website enquiry that lands | `website_form` | L2 | **PASS** |
+| T02 | Meta Lead Ads: the two hops that complete | `meta_lead_ads_facebook` | L3 | **BLOCKED BY MISSING CAPABILITY** |
+| T03 | Meta Lead Ads: the field data that expired | `meta_lead_ads_instagram` | L2 | **PASS** |
+| T04 | Google Ads lead form: the secret inside the body | `google_ads_lead_form` | L3 | **BLOCKED BY MISSING CAPABILITY** |
+| T05 | Google delivers the same lead twice | `google_ads_lead_form` | L2 | **PASS** |
+| T06 | A bot fills the website form — and the human who follows | `website_form` | L2 | **BLOCKED BY MISSING CAPABILITY** |
+| T07 | The WhatsApp enquiry, on a door that is open | `whatsapp_inbound` | L2 | **BLOCKED BY MISSING CAPABILITY** |
+| T08 | The marketplace enquiry that arrives as a WhatsApp message | `marketplace_dubizzle` via `whatsapp_inbound` | L2 (simulated only, permanently) | **BLOCKED BY MISSING CAPABILITY** |
+| T09 | The marketplace notification email | `marketplace_email_notification` | L2 (simulated only) | **BLOCKED BY MISSING CAPABILITY** |
+| T10 | Walk-in, then a phone call from the same person | `walk_in`, `phone_call` | L2 | **PASS** |
+| T11 | First response on a promoted lead, and the clock that is not the clock | `website_form` (from T01) | L2 | **BLOCKED BY MISSING CAPABILITY** |
+| T12 | Owner assignment, and the act nothing records | any promoted lead | L2 | **FAIL** |
+| T13 | A lead for Branch A while Branch B is signed in | `website_form` | L2 | **PASS** |
+| T14 | An origin we cannot verify is never promoted | all four verification paths | L2 | **PASS** |
+| T15 | Simulation traffic must be flagged, not counted | Lab traffic from T01–T10 | L2 | **PASS** |
+| T16 | An endpoint disabled between hop one and hop two | `meta_lead_ads_facebook` | L2 (L3 for the honest half) | **PASS** |
 | T17 | A suspended dealership, and its own blind book | `website_form` | L2 | **NOT RUN** |
-| T18 | Two dealerships, one source: the endpoint decides | `meta_lead_ads_facebook`, `google_ads_lead_form` | L2 | **NOT RUN** |
-| T19 | The invariant sweep, and making every branch go red | n/a — the gate itself | L2 | **NOT RUN** |
-| T20 | Onboarding a dealership's ingestion, and rotating a key | all | L2 | **NOT RUN** |
+| T18 | Two dealerships, one source: the endpoint decides | `meta_lead_ads_facebook`, `google_ads_lead_form` | L2 | **PASS** |
+| T19 | The invariant sweep, and making every branch go red | n/a — the gate itself | L2 | **PASS** |
+| T20 | Onboarding a dealership's ingestion, and rotating a key | all | L2 | **PASS** |
+
+## What was actually run — 7 September 2026, staging
+
+Executed against staging (`wwspuxrbiyagnrnzgate`) in three passes, every journey
+creating its own endpoints and tearing them down afterwards. Emails are in the
+RFC 2606 `.invalid` namespace; teardown was asserted, not assumed (`0
+journey-lab leads remain`).
+
+**11 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN.** The FAIL is the most valuable line
+here and it is not in the ingestion layer.
+
+| id | verdict | evidence, as measured |
+|---|---|---|
+| T01 | PASS | recorded `HYDRATED` in one hop, promoted to lead 32, `leads.source = website_form` — an origin, not a writer |
+| T03 | PASS | metadata-only arrival records `RECEIVED` with `normalized` null; promotion refused `LEAD_EVENT_NOT_HYDRATED`; then `EXPIRED` **retained with its reason**, not deleted |
+| T05 | PASS | the second delivery returned `was_duplicate=true` with the **same** `event_id` and **did not raise** — which is what stops Google discarding a real lead |
+| T10 | PASS | two events, two sources, two leads, both carrying a real origin: `walk_in`, `phone_call` |
+| T13 | PASS | Branch B's signed-in session sees **0** of Branch A's `lead_event` rows through `v_lead_origin`, and `nexus_lead_trace` on Branch A's lead returns **0 rows** to Branch B |
+| T14 | PASS | refused at the **record** door, not the promote door: `PROVENANCE_WEAKER_THAN_ENDPOINT_DECLARES` |
+| T15 | PASS | promotion refused `PROMOTION_REQUIRES_PRODUCTION_ENVIRONMENT`; the event is **still readable**, phase `HYDRATED`, `is_test_traffic true` — contained, not deleted |
+| T16 | PASS | hydration of an already-recorded event **succeeds** after its endpoint is disabled. Disabling a key stops NEW arrivals; it does not strand a customer who already got in half way |
+| T18 | PASS | recorded against the dealership that **owns the endpoint**, with nothing in the call naming a dealership |
+| T19 | PASS | `nexus_lead_ingest_invariants()` — 7 PASS / 2 INFO / **0 FAIL** |
+| T20 | PASS | the rotated-out key is refused `LEAD_ENDPOINT_UNRESOLVED`, and the `lead_event` it already wrote is untouched |
+
+### T12 — FAIL, and it is a live screen
+
+> A direct `UPDATE` on `leads` — **the dashboard's own write path**,
+> `lib/lead-drawer.js`, owner assignment — wrote **0 audit rows**.
+>
+> The change is real and **nothing recorded who made it.** Every other write in
+> this product goes through a `SECURITY DEFINER` function that writes an audit
+> row; this one does not, because it is a direct table write kept deliberately
+> (revoking it would break the screen). The consequence was never priced: a
+> dealership cannot answer "who reassigned this lead, and when".
+>
+> This is not an ingestion defect and the Journey Lab found it anyway, which is
+> what the Lab is for.
+
+### The seven BLOCKED, each naming the missing thing
+
+| id | what is missing |
+|---|---|
+| T02 | `META_APP_SECRET` on the VM, a Facebook Page, and a lead form. L3 by definition — it needs Meta to fire our real endpoint |
+| T04 | `GOOGLE_LEAD_KEY_ALBA` on the VM and a Google Ads lead form asset |
+| T06 | the live website form answers **503** — `RESEND_API_KEY` and `NEXUS_NOTIFY_FROM` are unset on Vercel. The honeypot refusal itself is exercised by simulator scenario G, which is **adjacent evidence and not this journey** |
+| T07 | a WAHA session on a controlled device, and the open-door remediation on `/webhook/whatsapp-inbound` |
+| T08 | the same WhatsApp path. The marketplace half is permanently simulated — Dubizzle publishes no leads-out API |
+| T09 | there is **no inbound email ingest at all**. Not a configuration gap, an unbuilt capability |
+| T11 | the outbound messaging path has never carried a message. A response clock cannot be measured from data that does not exist, and deriving it from `created_at` would invent the number this journey exists to check |
+
+### T17 — NOT RUN, and why it stays that way today
+
+It needs a dealership suspended mid-run. Staging currently has two active
+dealerships and suspending one changes `nexus_scoped_tenant_id()` behaviour for
+everything else in the same transaction. That is a deliberate pass of its own,
+not a step to bolt onto a batch — so it is left `NOT RUN` rather than
+half-attempted.
+
+**Nothing here is L4.** No dealership is on a live NEXUS ingestion endpoint, so
+no verdict above is evidence about a real customer.
 
 **Coverage of the nine sources:** `website_form` T01/T06/T11/T13/T17;
 `meta_lead_ads_facebook` T02/T16/T18; `meta_lead_ads_instagram` T03;
