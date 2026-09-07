@@ -827,6 +827,79 @@ so a wrong path, credential or retry setting in the scaffolding is invisible to
 the check whose whole purpose is repo↔box equality. Corrected, and the limit is
 now written into the generator.
 
+### CONNECTED meant a row exists, and nobody could type into it
+
+7 September 2026. `nexus_lead_source_readiness()` reported **2 CONNECTED** to
+the ALBA owner — `walk_in` and `phone_call` — and those were the *only* two
+sources reading connected, so the entire positive half of the Lead Sources
+screen was this. Both endpoints are registered, active and production.
+
+Then the dashboard was searched for any way a human can put a lead into NEXUS,
+source and built bundle both. **There is none.**
+
+| searched for | result |
+|---|---|
+| any add-lead / walk-in / manual-entry form | **not found** |
+| a `POST` to `leads` | **not found** — the only write touching `leads` anywhere is `lib/lead-drawer.js:490`, a `PATCH` of `assigned_to_id` on a row that already exists |
+| `nexus_record_lead_event` / `hydrate` / `promote` in the app | **not found**, source or bundle |
+| `lead_event` as a string in the bundle | **zero occurrences** |
+
+And the three doors are `service_role`-only by grant, so a signed-in
+salesperson could not call them from the browser even if a form existed.
+
+**This is the third turn of the same mistake, and the previous two are recorded
+above in this file.** v1 derived connectedness from `integration_status` — a
+fact about the *provider*. v2 derived it from whether an endpoint row exists — a
+fact about *us*, and its own comment already says an endpoint row *"is still not
+the same fact as a delivery can arrive"*. v3: for a **webhook** source the
+deliverer is a provider that posts to the endpoint, so the endpoint **is** the
+path. For a **`MANUAL_ENTRY`** source the deliverer is a person and the path is
+a screen. A registered endpoint with no screen behind it is a door with no
+handle on the inside.
+
+`20260907200000`, both projects. `lead_source_catalogue.manual_entry_surface`
+names the screen, NULL when there is not one, with a CHECK that only a
+`MANUAL_ENTRY` source may name one. The readiness function gains
+`REGISTERED_NO_ENTRY_PATH`, evaluated **before** the CONNECTED branch. **A
+column and not a rule**: "MANUAL_ENTRY is never CONNECTED" would be wrong the
+day the form ships, and silently — the function cannot see the dashboard, so a
+person having a way to do this is a fact somebody must *record*.
+
+Both controls held on staging, in one rolled-back transaction: setting
+`manual_entry_surface` flips `walk_in` straight back to `CONNECTED`, so the
+branch is not a hardcode wearing a column; and a `WEBHOOK_FULL_PAYLOAD` source
+claiming a surface is refused by the CHECK.
+
+**Production now reads 0 CONNECTED**, which is the true state: NEXUS is
+receiving from nothing today.
+
+    before   CONNECTED 2 (phone_call, walk_in) · NOT_CONNECTABLE 1 · NOT_CONNECTED 6
+    after    REGISTERED_NO_ENTRY_PATH 2        · NOT_CONNECTABLE 1 · NOT_CONNECTED 6
+
+`ALTER TABLE` was safe here and that was checked rather than assumed:
+`nexus_guard_born_open_grants()` strips ALL from `anon` and
+INSERT/UPDATE/DELETE/TRUNCATE from `authenticated`, and this table holds exactly
+`authenticated=r`. The migration asserts the grant survived rather than trusting
+the reasoning.
+
+**The screen was already right about not knowing.** Until the dashboard is
+redeployed, `connectionCell()` meets the unfamiliar word with a *stated unknown*
+that prints the raw value, and the FAULT row names it — by design, and far
+better than a false green. `lib/vocabulary.js` now carries the state (tone
+`warm`, not `unknown`: NOT_CONNECTED is neutral because nobody has done anything
+wrong yet, whereas here the dealership **did** the setup and the missing half is
+ours). Three captions saying "the four this screen knows" were corrected, and
+the count is now computed from `CONNECTION_STATE` so it cannot go stale again.
+
+**What is owed, and it is the most sellable unbuilt thing in this repo:** a
+walk-in / phone-call entry screen. It needs no Meta secret, no Google asset and
+no VM change — the endpoints, the provenance ladder, the promoter and the origin
+column all already exist and are proven. It does need a decision that should be
+made with someone watching: door three is `service_role`-only today, and giving
+a salesperson a form means either a new `SECURITY DEFINER` RPC granted to
+`authenticated` (a new write surface on the dealer plane) or routing the form
+through n8n. That is an authority question, not a UI question.
+
 ### A real WhatsApp lead arrived on production while this was running
 
 Lead **122**, `Hussain`, `+971556382721`, `source = nexus-master-router`,

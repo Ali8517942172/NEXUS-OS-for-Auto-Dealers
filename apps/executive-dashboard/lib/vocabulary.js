@@ -282,6 +282,29 @@ export const CONNECTION_STATE = Object.freeze({
          + 'not a connection.',
     silence: 'Nothing from a real customer has arrived through this source and nothing could: only a simulator is '
            + 'attached to it. Its silence measures nothing about how many people enquired.' },
+  /* Added 7 September 2026, and it exists because this screen's only green pill
+     was being shown for the two sources a UAE showroom actually lives on while
+     there was nowhere to enter one. Measured that day across the dashboard
+     source AND the shipped bundle: the only write touching `leads` anywhere is
+     a PATCH of the owner on a row that already exists. A walk-in endpoint was
+     registered, active and production — and a salesperson had no form.
+
+     A webhook source's deliverer is a provider, so the registered endpoint IS
+     the path. A manual source's deliverer is a person, and the path is a
+     screen. `lead_source_catalogue.manual_entry_surface` names that screen, and
+     this state is what a registered endpoint with none behind it is.
+
+     Tone is `warm`, not `unknown`. NOT_CONNECTED is neutral because nobody has
+     done anything wrong by not connecting a source yet. This one is different:
+     the dealership DID the setup, and what is missing is ours to build. */
+  REGISTERED_NO_ENTRY_PATH: { label: 'Set up — but there is nowhere to enter one', tone: 'warm', receiving: false, roadmap: true,
+    blurb: 'This source is registered to this dealership and ready to receive, and NEXUS has no screen for entering '
+         + 'one by hand. A walk-in or a phone call arrives as a person, not as a message from another system, so '
+         + 'somebody has to type it in — and until that screen exists nothing reaches NEXUS through this source. '
+         + 'The setup is done; the missing half is ours.',
+    silence: 'Nothing has arrived through this source and nothing could: it is registered, but there is no screen for '
+           + 'entering one. Its silence measures how many walk-ins or calls NEXUS can currently record, which is none '
+           + '— not how many the dealership had.' },
   NOT_CONNECTED: { label: 'Not connected', tone: 'unknown', receiving: false, roadmap: false,
     blurb: 'Nothing is registered for this source at this dealership, so NEXUS is not receiving from it. That is a '
          + 'connection nobody has made yet — it is not a fault, and nothing has gone wrong.',
