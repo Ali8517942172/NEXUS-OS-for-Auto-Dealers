@@ -31,10 +31,26 @@
 
      3. Which sources produce nothing because they are quiet, and which produce
         nothing because nobody ever connected them?
-        The list of sources set up for this dealership is read for exactly this.
-        A source at NOT_ESTABLISHED with no rows is a setup that has not
-        happened, not a source that had a slow week, and an empty row under it
-        would read as the second.
+        This is the whole reason the readiness accessor exists, and until
+        7 Sep 2026 this screen got it WRONG in the one direction that misleads.
+        It read `lead_source_catalogue.integration_status` and rendered
+        AVAILABLE as a green "Connected" pill with the sentence "this source can
+        hand NEXUS an enquiry directly, and anything counted under it below
+        arrived that way". AVAILABLE answers a COMMERCIAL question — does the
+        provider publish a contract somebody could implement — and eight of the
+        nine seeded sources carry it. Not one of them was connected: there is no
+        receiver of any kind in this product and the endpoint register holds no
+        rows on either database. So a paying dealership was shown eight working
+        integrations having a quiet week, which is the exact reading this panel
+        was built to prevent, printed by the panel itself.
+
+        The state is now computed in the database, per dealership, from what is
+        actually registered to it, and this screen RENDERS it rather than
+        deriving it: one branch per value, no second path to a positive
+        treatment, and no column anywhere else on the screen allowed to produce
+        the word "connected". `provider_route` carries the old value and is
+        shown as a sentence about the PROVIDER, never as a state and never with
+        a tone.
 
    ═══════════════════════════════════════════════════════════════════════════
    THE FOUR RULES THIS SCREEN IS BUILT AROUND — they are the screen, not
@@ -79,14 +95,22 @@
    WHERE EVERYTHING COMES FROM — nothing below is computed in this file
    ═══════════════════════════════════════════════════════════════════════════
      v_lead_origin            one row per arrival: the source and its display
-                              name, the channel family, whether NEXUS can
-                              receive from it at all, what stage the arrival
+                              name, the channel family, what stage the arrival
                               reached, the reason if it went no further, whether
                               a signature was checked, how strongly the origin is
                               attested and why, and whether it is test traffic.
-     lead_source_catalogue    every source set up for this dealership, so that a
-                              source which has produced nothing can be told apart
-                              from one that was never connected.
+     nexus_lead_source_readiness()
+                              one row per source set up for this dealership,
+                              carrying the CONNECTION STATE computed from what is
+                              actually registered to it — so that a source which
+                              has produced nothing can be told apart from one
+                              nobody ever connected, and so that neither is
+                              inferred here. It also carries `provider_route`,
+                              which is the provider's half and drives nothing.
+
+   `v_lead_origin.integration_status` is deliberately NOT selected. It is the
+   same provider-side value under a name that reads operationally, and the only
+   way it stops being read as a connection is for it not to be here.
 
    Both are tenant-scoped and read as the signed-in user. Nothing here filters
    by dealership — the database refuses another dealership's rows, this file
@@ -98,10 +122,12 @@ import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
 import {
-  LOSS_IS_NOT_ABSENCE, NO_MONEY_ON_LEAD_SOURCES, NO_REASON_RECORDED,
-  ORIGIN_STRENGTH_NOT_STATED, ORIGIN_STRENGTH_SCALE, SOURCE_IS_AS_ATTESTED_AS_ITS_WEAKEST,
+  CONNECTION_IS_ABOUT_THIS_DEALERSHIP, CONNECTION_STATE_MISSING, CONNECTION_STATE_NOT_KNOWN,
+  CONNECTION_STATE_UNREAD, LOSS_IS_NOT_ABSENCE, NO_MONEY_ON_LEAD_SOURCES, NO_REASON_RECORDED,
+  ORIGIN_STRENGTH_NOT_STATED, ORIGIN_STRENGTH_SCALE, PROVIDER_ROUTE_IS_NOT_A_CONNECTION,
+  PROVIDER_ROUTE_LABEL, SOURCE_IS_AS_ATTESTED_AS_ITS_WEAKEST,
   TEST_TRAFFIC_BAND, TEST_TRAFFIC_EXCLUDED, TEST_TRAFFIC_UNCLASSIFIED,
-  integrationStatus, leadPhase, noLeadFeedSentence, originBand,
+  connectionState, leadPhase, noLeadFeedSentence, originBand, providerRoute,
 } from '../lib/vocabulary.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
@@ -171,16 +197,25 @@ const wireGo = card => {
    the live catalogue. */
 const ARRIVALS_LIMIT = 1000;
 const readOrigin = shared(() => db('v_lead_origin?select=event_id,source_key,source,channel_family,'
-  + 'integration_status,phase,disposition_reason,received_at,occurred_at,lead_id,'
+  + 'phase,disposition_reason,received_at,occurred_at,lead_id,'
   + 'origin_cryptographically_verified,origin_strength,origin_explanation,is_test_traffic'
   + `&order=received_at.desc&limit=${ARRIVALS_LIMIT}`));
 
-/* `*` here, and for the opposite reason. Nothing in this repository declares
-   the shape of the source list, so a hand-typed column list would be this
-   screen asserting a contract it cannot see. Every field is picked defensively
-   below and a row whose shape is unrecognisable is reported as a fault rather
-   than guessed at. */
-const readCatalogue = shared(() => db('lead_source_catalogue?select=*&limit=500'));
+/* WHETHER NEXUS IS RECEIVING, ANSWERED BY THE DATABASE.
+
+   This replaces a read of `lead_source_catalogue`, and the replacement is the
+   fix rather than a refactor of it. The catalogue is the PROVIDER register: it
+   says what each source publishes, and it is byte-identical at every
+   dealership. It cannot answer whether THIS dealership is wired up, and the
+   column that was made to answer it — `integration_status` — said AVAILABLE for
+   eight sources that were connected to nothing.
+
+   `nexus_lead_source_readiness()` is a SECURITY DEFINER accessor scoped to the
+   caller's own dealership(s), because the register it counts is off the dealer
+   plane entirely. It returns `connection_state` already computed, precisely so
+   that this screen has nothing left to infer — and so there is no longer any
+   column on this page from which a connection could be inferred. */
+const readReadiness = shared(() => db('rpc/nexus_lead_source_readiness'));
 
 /* ══════════════════════════════════════════════════════════════════════════
    The three-way split on test traffic
@@ -213,7 +248,7 @@ function bySource(rows) {
     const id = key || str(r.source) || 'source-with-no-name';
     let a = map.get(id);
     if (!a) {
-      a = { id, key, name: str(r.source), channels: new Set(), statuses: new Set(),
+      a = { id, key, name: str(r.source), channels: new Set(),
             events: 0, phases: new Map(), unknownPhase: 0, promoted: 0, duplicate: 0, lost: 0,
             strengths: [], noStrength: 0, verified: 0, unverified: 0, verifyUnknown: 0,
             explains: new Map(), lastAt: null, leadLinked: 0 };
@@ -222,7 +257,6 @@ function bySource(rows) {
     a.events += 1;
     if (!a.name && str(r.source)) a.name = str(r.source);
     if (str(r.channel_family)) a.channels.add(str(r.channel_family));
-    if (str(r.integration_status)) a.statuses.add(up(r.integration_status));
 
     /* Partitioned on the vocabulary the database owns. A stage outside it is
        counted as unknown rather than dropped, so it cannot quietly reduce a
@@ -337,50 +371,102 @@ function phaseCells(a) {
         : '');
 }
 
-/* Whether NEXUS can receive from this source at all, and the roadmap sentence
-   where it cannot. A source that needs a commercial conversation renders as
-   roadmap wherever it appears: the alternative is a row that reads like a
-   working integration having a quiet week. */
-function integrationCell(statusKey, label) {
-  const st = integrationStatus(statusKey);
+/* ══════════════════════════════════════════════════════════════════════════
+   Whether NEXUS is receiving from this source — RENDERED, never derived
+   ══════════════════════════════════════════════════════════════════════════
+   One branch per value of `connection_state`, and no fifth branch that guesses.
+   Three things are load-bearing here and each of them is the defect this
+   replaces, stated as code:
+
+     · ONLY `CONNECTED` MAY BE POSITIVE. The tone comes from the vocabulary
+       entry and nothing else on this screen produces an `ok` tone for a source.
+       There is no expression anywhere below of the form "if some other column
+       looks encouraging, show green".
+     · SIMULATION_ONLY IS NOT A SHADE OF CONNECTED. Different word, different
+       tone, and a sentence that says outright that nothing real arrives.
+     · NOT_CONNECTED IS NEUTRAL. It is not a warning and not a fault — nobody
+       has done anything wrong by not having connected a source yet, and a red
+       row would be this screen inventing an alarm.
+
+   A value outside the four, or a source absent from the readiness answer, is a
+   stated unknown. Neither is filled in from the provider column. */
+function connectionCell(rd) {
+  if (!rd) return hot(esc(CONNECTION_STATE_MISSING));
+  const st = connectionState(rd.state);
   if (!st) {
-    return hot(`This source records a connection state of "${esc(str(statusKey) || 'nothing')}", which is not one of `
-      + 'the four this screen knows. Nothing is claimed about whether enquiries can reach NEXUS from it.');
+    return hot(esc(CONNECTION_STATE_NOT_KNOWN))
+      + muted(`The value recorded against it is “${esc(rd.state || 'nothing at all')}”, shown exactly as it stands.`);
   }
+  /* A connected source with nothing live registered under it is two facts that
+     cannot both be true. It is reported rather than resolved: picking whichever
+     one reads better is how a screen starts deciding, which is the whole habit
+     being removed here. */
+  const contradiction = st.receiving && rd.endpoints === 0
+    ? hot('This source is recorded as connected while nothing live is registered under it. Those cannot both be '
+        + 'true, so neither is being relied on here.')
+    : '';
   return `<div>${pill(st.label, st.tone, { verbatim: false })}`
     + `${st.roadmap ? ' ' + chip('roadmap', 'Not a working connection today. Shown as roadmap so that an empty row under it is never read as a quiet source.') : ''}</div>`
     + muted(esc(st.blurb))
-    + (up(statusKey) === 'COMMERCIAL_CONVERSATION_REQUIRED' ? muted(esc(noLeadFeedSentence(label))) : '');
+    + contradiction
+    /* NOT_CONNECTABLE gets the roadmap sentence INSTEAD of the provider line,
+       not as well as: that sentence already says everything the provider line
+       would, in wording written for this exact case, and printing both makes a
+       reader hunt for the difference between two paragraphs that have none. */
+    + (rd.state === 'NOT_CONNECTABLE'
+        ? muted(esc(noLeadFeedSentence(rd.name || rd.key)))
+        : providerLine(rd));
 }
 
+/* The provider's half. A SENTENCE, never a pill, never a tone, and labelled at
+   the point of reading so a reader who never saw the banner still cannot take
+   it for the state above it. Nothing branches on it. */
+function providerLine(rd) {
+  const sentence = providerRoute(rd.route);
+  if (!sentence) return '';
+  return muted(`<span style="font-weight:600">${esc(PROVIDER_ROUTE_LABEL)}</span> ${esc(sentence)}`);
+}
+
+/* `evidence_note` IS READ AND DELIBERATELY NOT RENDERED, and that is a decision
+   rather than an omission. It is free text this screen did not write, produced
+   by an accessor over a register that is off the dealer plane entirely — the
+   one place in this product where endpoint identifiers, key references and
+   environment names live. "No endpoint, no key, no signing header, no
+   automation node name" is the rule at the top of this file, and it is not a
+   rule that can be enforced by hoping the sentence is tame: `plain()` strips
+   suppliers, URLs and schema nouns, and would pass "the production endpoint for
+   this source was revoked" through untouched. The state and its own wording say
+   everything a dealership can act on. If a note is ever wanted on this screen,
+   the honest route is a column whose vocabulary is closed, the way
+   `connection_state` is — not this one. It stays on the row object so the next
+   reader finds this note rather than the column. */
+
 /* ══════════════════════════════════════════════════════════════════════════
-   The source list, read defensively
+   The readiness answer, read defensively
    ══════════════════════════════════════════════════════════════════════════
-   Nothing in this repository declares its shape, so every field is picked from
-   a small set of candidates and a row that yields no key at all is a fault
-   rather than a guess. Matching a display name against a source key would
-   invent a "configured but silent" line for a source that is producing
-   perfectly well, which is the worst outcome available here. */
-const CAT_KEY_FIELDS  = ['source_key', 'key', 'slug', 'code'];
-const CAT_NAME_FIELDS = ['source', 'display_name', 'name', 'label', 'title'];
-const CAT_CHAN_FIELDS = ['channel_family', 'channel', 'family'];
-const CAT_STAT_FIELDS = ['integration_status', 'status', 'integration_state'];
-const pickField = (row, names) => {
-  for (const n of names) {
-    if (row && row[n] != null && String(row[n]).trim() !== '') return String(row[n]).trim();
-  }
-  return '';
-};
-function catalogueRows(rows) {
+   The accessor declares its result type, so the field names are read directly
+   rather than guessed at from a list of candidates — that guessing existed
+   because the catalogue's shape was undeclared, and it is exactly how a column
+   nobody meant to render ended up rendered. A row that yields no source key is
+   still reported as a fault rather than dropped: a source nobody can account
+   for is the one worth naming. */
+function readinessRows(rows) {
   const usable = [];
   let unreadable = 0;
   (Array.isArray(rows) ? rows : []).forEach(r => {
-    const key = pickField(r, CAT_KEY_FIELDS);
+    const key = str(r && r.source_key);
     if (!key) { unreadable += 1; return; }
-    usable.push({ key, name: pickField(r, CAT_NAME_FIELDS), channel: pickField(r, CAT_CHAN_FIELDS),
-                  status: pickField(r, CAT_STAT_FIELDS) });
+    usable.push({
+      key,
+      name: str(r.display_name),
+      channel: str(r.channel_family),
+      state: up(r.connection_state),
+      route: up(r.provider_route),
+      endpoints: n0(r.active_endpoints),
+      note: str(r.evidence_note),
+    });
   });
-  return { usable, unreadable };
+  return { usable, unreadable, byKey: new Map(usable.map(x => [x.key, x])) };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -392,9 +478,9 @@ SCREENS.leadsources = async host => {
   resetReads();
 
   const loadBoth = async () => {
-    const [o, c] = await Promise.all([settle(readOrigin()), settle(readCatalogue())]);
-    if (o.err && c.err) throw o.err;
-    return { o, c };
+    const [o, d] = await Promise.all([settle(readOrigin()), settle(readReadiness())]);
+    if (o.err && d.err) throw o.err;
+    return { o, d };
   };
 
   /* The same two reads, and this one never throws. It is for the register at
@@ -402,8 +488,8 @@ SCREENS.leadsources = async host => {
      that panel the standard "couldn't load" card when both reads fail would
      silence the one panel on the screen that exists to report exactly that. */
   const loadBothSoft = async () => {
-    const [o, c] = await Promise.all([settle(readOrigin()), settle(readCatalogue())]);
-    return { o, c };
+    const [o, d] = await Promise.all([settle(readOrigin()), settle(readReadiness())]);
+    return { o, d };
   };
 
   /* ────────────────────────────────────────────────────────────────────────
@@ -415,9 +501,9 @@ SCREENS.leadsources = async host => {
        + 'verified. Test traffic is counted nowhere in these four figures',
     actions: linkBtn('leads', 'Open Leads') + ' ' + linkBtn('attribution', 'Open Attribution'),
     load: loadBoth,
-    render: ({ o, c }) => {
+    render: ({ o, d }) => {
       const T = o.err ? null : splitTraffic(o.v);
-      const cat = c.err ? null : catalogueRows(c.v);
+      const rd = d.err ? null : readinessRows(d.v);
       const sources = T ? bySource(T.business) : null;
 
       const arrivalsTile = T == null
@@ -438,16 +524,16 @@ SCREENS.leadsources = async host => {
       const sourceTile = sources == null
         ? kpi('Sources they came through', num(null), readFailed('The arrivals record', o.err))
         : kpi('Sources they came through', num(sources.length),
-            muted(cat
-              ? (cat.usable.length
-                  ? `${num(cat.usable.length)} ${plural(cat.usable.length, 'source is', 'sources are')} set up for this `
-                    + 'dealership. The ones that produced nothing are listed below, and a source nobody connected is '
-                    + 'not the same as a source that had a quiet week.'
+            muted(rd
+              ? (rd.usable.length
+                  ? `${num(rd.usable.length)} ${plural(rd.usable.length, 'source is', 'sources are')} set up for this `
+                    + `dealership and NEXUS is receiving from ${num(rd.usable.filter(x => (connectionState(x.state) || {}).receiving).length)} `
+                    + 'of them. The ones that produced nothing are listed below, and a source nobody connected is not '
+                    + 'the same as a source that had a quiet week.'
                   : 'No source is set up for this dealership at all, so there is nothing to compare this against — and '
                     + 'no source can be reported as silent.')
-              : 'The list of sources set up for this dealership could not be read '
-                + `(${esc(str(c.err && c.err.message) || 'no reason given')}), so this figure cannot be compared `
-                + 'against it — a source that is set up and silent would be invisible here.'));
+              : esc(CONNECTION_STATE_UNREAD)
+                + ` (${esc(str(d.err && d.err.message) || 'no reason given')})`));
 
       /* Signed at source, over the arrivals that state a strength at all. The
          denominator is the measurable set, never the whole set: claiming a
@@ -494,6 +580,8 @@ SCREENS.leadsources = async host => {
       const caveat = `<div class="banner info" style="margin-top:16px">
           <span class="material-symbols-outlined" style="font-size:20px">info</span>
           <div>${bold('What these figures are, and what they are not.')}
+            ${muted(esc(CONNECTION_IS_ABOUT_THIS_DEALERSHIP))}
+            ${muted(esc(PROVIDER_ROUTE_IS_NOT_A_CONNECTION))}
             ${muted(esc(NO_MONEY_ON_LEAD_SOURCES))}
             ${muted(esc(ORIGIN_STRENGTH_SCALE))}
             ${muted('An arrival is an enquiry reaching NEXUS. It is not a customer, not a sale and not a valuation, '
@@ -511,7 +599,7 @@ SCREENS.leadsources = async host => {
     sub: 'Busiest first. Every line carries how well its origin is attested, because a source that proves who it is '
        + 'and one that merely says who it is must never look the same',
     load: loadBoth,
-    render: ({ o }) => {
+    render: ({ o, d }) => {
       if (o.err) {
         return `<div class="state err"><span class="material-symbols-outlined">error</span>
           <h3>Couldn't load the arrivals record</h3>
@@ -520,6 +608,11 @@ SCREENS.leadsources = async host => {
              ruled out.</p></div>`;
       }
       const T = splitTraffic(o.v);
+      /* Null when the readiness read failed, and the column below then says so
+         once per row. It does NOT fall back to anything: the arrivals carry a
+         provider-side status of their own and reading it here is precisely the
+         substitution that put eight green pills on this screen. */
+      const rd = d.err ? null : readinessRows(d.v);
       const sources = bySource(T.business);
       if (!sources.length) {
         return stateEmpty(
@@ -545,13 +638,8 @@ SCREENS.leadsources = async host => {
             + (a.channels.size
                 ? `<div style="margin-top:4px">${[...a.channels].map(x => chip(x, 'The kind of road these enquiries travelled, as the record states it.')).join(' ')}</div>`
                 : '')) },
-        { label: 'Can NEXUS receive from it', render: a => wrap(
-            a.statuses.size === 0
-              ? hot('These arrivals record no connection state at all, so nothing is claimed about whether enquiries can reach NEXUS from this source.')
-              : a.statuses.size === 1
-                ? integrationCell([...a.statuses][0], sourceLabel(a))
-                : hot(`Arrivals from this source disagree about its connection state (${esc([...a.statuses].join(', '))}). `
-                    + 'Nothing is claimed until that is reconciled.')) },
+        { label: 'Is NEXUS receiving from it', render: a => wrap(
+            rd ? connectionCell(a.key ? rd.byKey.get(a.key) : null) : hot(esc(CONNECTION_STATE_UNREAD))) },
         { label: 'How well the origin is attested', render: a => wrap(attestationCell(a)) },
         { label: 'Arrivals', align: 'r', render: a => `<div style="font-weight:600">${num(a.events)}</div>`
             + muted(`${num(a.promoted)} became ${plural(a.promoted, 'an enquiry', 'enquiries')}`)
@@ -637,19 +725,27 @@ SCREENS.leadsources = async host => {
     sub: 'A source nobody ever connected and a source having a quiet week are opposite facts. This is the only place '
        + 'in the product that tells them apart',
     load: loadBoth,
-    render: ({ o, c }) => {
-      if (c.err) {
+    render: ({ o, d }) => {
+      /* THE BRANCH THAT MUST NOT BECOME A FALLBACK. There is a second list of
+         sources in this database — the provider catalogue — and rendering it
+         here when the readiness read fails would restore the whole defect: the
+         same nine rows, the same column, the same eight green pills, under a
+         panel whose subtitle promises to tell connected from unconnected. The
+         honest output when this read fails is that nothing could be checked. */
+      if (d.err) {
         return `<div class="state err"><span class="material-symbols-outlined">error</span>
-          <h3>Couldn't load the list of sources set up for this dealership</h3>
-          <p>Without it, a source that is configured and silent cannot be told from one that was never configured at
-             all, so neither is being reported. This panel is unread, not empty — no source is being cleared and none
-             is being blamed.</p></div>`;
+          <h3>Nothing could be checked — whether NEXUS is receiving from each source could not be read</h3>
+          <p>${esc(CONNECTION_STATE_UNREAD)}</p>
+          <p>${esc(str(d.err.message) || 'No reason was given.')}</p>
+          <p>Without it, a source that is connected and silent cannot be told from one that was never connected, so
+             neither is being reported. This panel is unread, not empty — no source is being cleared and none is being
+             blamed.</p></div>`;
       }
-      const { usable, unreadable } = catalogueRows(c.v);
+      const { usable, unreadable, byKey } = readinessRows(d.v);
       const shapeFault = unreadable
         ? `<div class="banner hot">
              <span class="material-symbols-outlined" style="font-size:20px">report</span>
-             <div>${bold('Part of the source list came back in a shape this screen cannot read.')}
+             <div>${bold('Part of the readiness answer came back in a shape this screen cannot read.')}
                ${muted(`${num(unreadable)} of ${num(usable.length + unreadable)} entries carry nothing this screen can `
                  + 'match against an arrival, so they are neither listed below nor counted as producing. They are '
                  + 'reported rather than dropped: a source nobody can account for is exactly the one worth naming.')}</div></div>`
@@ -670,9 +766,8 @@ SCREENS.leadsources = async host => {
       const silent = usable.filter(s => !producing.has(s.key));
 
       /* The mirror image, and a fault rather than a note: something is producing
-         enquiries that this dealership's own list of sources does not contain. */
-      const catalogued = new Set(usable.map(s => s.key));
-      const unlisted = producingSources.filter(a => a.key && !catalogued.has(a.key));
+         enquiries that this dealership's own readiness answer does not contain. */
+      const unlisted = producingSources.filter(a => a.key && !byKey.has(a.key));
       const unlistedFault = unlisted.length
         ? `<div class="banner warm">
              <span class="material-symbols-outlined" style="font-size:20px">warning</span>
@@ -706,37 +801,29 @@ SCREENS.leadsources = async host => {
       return shapeFault + unlistedFault + table([
         { label: 'Source', strong: true, render: s => wrap(bold(esc(s.name || s.key))
             + (s.channel ? `<div style="margin-top:4px">${chip(s.channel)}</div>` : '')) },
-        { label: 'Whether NEXUS can receive from it', render: s => wrap(
-            s.status
-              ? integrationCell(s.status, s.name || s.key)
-              : hot('This entry records no connection state, so nothing is claimed about whether enquiries could reach NEXUS from it at all.')) },
+        { label: 'Is NEXUS receiving from it', render: s => wrap(connectionCell(s)) },
         { label: 'What the silence means', render: s => {
-            const st = integrationStatus(s.status);
+            const st = connectionState(s.state);
             /* Order matters, and it was wrong for one render: the test-traffic
-               branch is MORE SPECIFIC than the roadmap one and has to be asked
-               first. A source that is not carrying real enquiries yet is also a
-               source that produced simulator output, and answering with the
-               roadmap sentence — "nothing has arrived because nothing can
-               arrive yet" — while a test arrival from it sits in the band below
-               is a caption contradicting the page it is printed on. */
+               branch is MORE SPECIFIC than the state one and has to be asked
+               first. A source with only a simulator attached is also a source
+               that produced simulator output, and printing the general sentence
+               while a test arrival from it sits in the band below is a caption
+               contradicting the page it is printed on.
+
+               Below that, the meaning of silence comes from `connection_state`
+               and from nothing else, one sentence per value, held in
+               lib/vocabulary.js beside the state it belongs to — so a state and
+               its explanation cannot drift apart. There is no final `else` that
+               says "connected": the connected sentence is reachable only from
+               the CONNECTED entry. */
             if (testOnly.has(s.key)) {
               return wrap(hot('The only arrivals recorded under this source are test traffic. Nothing from a real '
                 + 'customer has come through it, and simulator output is not counted as production anywhere on this '
                 + 'screen.'));
             }
-            if (up(s.status) === 'SIMULATED_ONLY') {
-              return wrap(muted('Nothing from a real customer has arrived through this source, and nothing could: it '
-                + 'is not carrying real enquiries yet. Anything it does produce is simulator output and is counted '
-                + 'nowhere above.'));
-            }
-            if (st && st.roadmap) {
-              return wrap(muted('Nothing has arrived because nothing can arrive yet. This is a connection that does '
-                + 'not exist, not a source that had a quiet week, and it is counted nowhere above as a producing '
-                + 'source.'));
-            }
-            return wrap(muted('This source is connected and produced nothing within the window read here. A source '
-              + 'whose last enquiry falls outside that window looks identical to one that has never produced — this '
-              + 'line cannot tell those apart and does not claim to.'));
+            if (!st) return wrap(hot(esc(CONNECTION_STATE_NOT_KNOWN)));
+            return wrap(muted(esc(st.silence)));
           } },
       ], silent);
     },
@@ -798,7 +885,7 @@ SCREENS.leadsources = async host => {
     sub: 'Every gap above, named, with what it would take to close it. The last line is permanent and is here so the '
        + 'promise is on the screen rather than only in a document',
     load: loadBothSoft,
-    render: ({ o, c }) => {
+    render: ({ o, d }) => {
       const rows = [];
       const T = o.err ? null : splitTraffic(o.v);
 
@@ -835,18 +922,6 @@ SCREENS.leadsources = async host => {
             kind: 'FAULT' });
         }
 
-        const unknownStatus = T.all.filter(r => str(r.integration_status) && !integrationStatus(r.integration_status));
-        if (unknownStatus.length) {
-          const words = [...new Set(unknownStatus.map(r => up(r.integration_status)))];
-          rows.push({ what: 'FAULT — whether NEXUS can receive from some of these sources',
-            detail: `${num(unknownStatus.length)} ${plural(unknownStatus.length, 'arrival carries', 'arrivals carry')} `
-                  + `a connection state outside the four this screen knows: ${words.join(', ')}`,
-            why: 'A source whose connection state cannot be read may be roadmap being shown as working, which is the '
-               + 'one direction that misleads. Nothing is claimed about those sources.',
-            unlock: 'Reconcile the wording, as above.',
-            kind: 'FAULT' });
-        }
-
         const noStrength = T.business.filter(r => n0(r.origin_strength) == null);
         if (noStrength.length) {
           rows.push({ what: 'How well some arrivals are attested',
@@ -870,13 +945,43 @@ SCREENS.leadsources = async host => {
         }
       }
 
-      if (c.err) {
-        rows.push({ what: 'Which sources are set up but have produced nothing',
-          detail: `The list of sources set up for this dealership could not be read (${str(c.err.message) || 'no reason given'})`,
+      if (d.err) {
+        rows.push({ what: 'Whether NEXUS is receiving from any source at all, and which sources are set up',
+          detail: `The readiness answer could not be read (${str(d.err.message) || 'no reason given'})`,
           why: 'Without it, a source nobody connected cannot be told from one that had a quiet week, and neither is '
-             + 'being reported. Nothing above claims that a source is silent.',
+             + 'being reported. No source above is shown as connected and none is shown as unconnected — and the '
+             + 'provider register, which lists the same sources and would have rendered without complaint, is '
+             + 'deliberately not being substituted for it: it answers whether a provider publishes a contract, not '
+             + 'whether this dealership is wired up, and reading it as the second is the defect this screen was '
+             + 'repaired for on 7 September 2026.',
           unlock: 'Whatever is refusing that read.',
           kind: 'UNREAD' });
+      } else {
+        const R = readinessRows(d.v);
+        const unknownState = R.usable.filter(x => !connectionState(x.state));
+        if (unknownState.length) {
+          const words = [...new Set(unknownState.map(x => x.state || 'nothing recorded'))];
+          rows.push({ what: 'FAULT — whether NEXUS is receiving from some of these sources',
+            detail: `${num(unknownState.length)} of ${num(R.usable.length)} sources record a connection state outside `
+                  + `the four this screen knows: ${words.join(', ')}`,
+            why: 'A state that cannot be read might be an unconnected source being shown as working, which is the one '
+               + 'direction that misleads. Nothing is claimed about those sources in either direction.',
+            unlock: 'Reconcile the wording. Either the record gained a state or this screen fell behind one, and the '
+                  + 'two cannot be told apart from here.',
+            kind: 'FAULT' });
+        }
+        const receiving = R.usable.filter(x => (connectionState(x.state) || {}).receiving);
+        if (!receiving.length && R.usable.length) {
+          rows.push({ what: 'Everything about enquiries that were sent to a source NEXUS is not receiving from',
+            detail: `NEXUS is receiving from none of the ${num(R.usable.length)} `
+                  + `${plural(R.usable.length, 'source', 'sources')} set up for this dealership`,
+            why: 'Every count on this screen is over what reached NEXUS. With nothing connected, those counts measure '
+               + 'the connections rather than the market: a zero here is not evidence that nobody enquired, and it '
+               + 'must not be read as one.',
+            unlock: 'A live connection registered for at least one source. Until then the arrival counts describe '
+                  + 'this product rather than this dealership.',
+            kind: 'UNREAD' });
+        }
       }
 
       /* Permanent, and stated on every render whatever the data says. It is the

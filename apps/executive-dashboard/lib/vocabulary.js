@@ -138,7 +138,15 @@ export const TERM = Object.freeze({
   lead_source_catalogue: 'the lead sources set up for this dealership',
   source_key: 'the source\u2019s own name for itself',
   channel_family: 'the kind of road the enquiry travelled',
-  integration_status: 'whether NEXUS can receive from that source at all',
+  /* `integration_status` is the PROVIDER's half — whether a contract exists
+     that could be implemented. `connection_state` is this dealership's half
+     — whether anything is actually registered. They were confused for one
+     fact until 7 Sep 2026; the two nouns are deliberately not alike. */
+  integration_status: 'whether the provider publishes anything NEXUS could connect to',
+  provider_route: 'whether the provider publishes anything NEXUS could connect to',
+  connection_state: 'whether NEXUS is actually receiving from that source at this dealership',
+  lead_ingest_endpoint: 'the connections registered for this dealership',
+  active_endpoints: 'how many live connections are registered for that source',
   disposition_reason: 'the reason recorded for what happened to it',
   origin_strength: 'how much of the sender\u2019s claim about itself could be verified',
   origin_explanation: 'why the origin is attested as well or as poorly as it is',
@@ -232,21 +240,110 @@ export const LEAD_PHASE = Object.freeze({
 export const leadPhase = v => LEAD_PHASE[String(v || '').trim().toUpperCase()] || null;
 export const isLostPhase = v => (leadPhase(v) || {}).kind === 'LOST';
 
-/* Whether NEXUS can actually receive a lead from this source. Three of the
-   four are ROADMAP and must render as roadmap: an empty row under a source
-   nobody has connected reads as "this source is quiet" when the truth is that
-   nothing was ever plugged in. */
-export const INTEGRATION_STATUS = Object.freeze({
-  AVAILABLE: { label: 'Connected', tone: 'ok', roadmap: false,
-    blurb: 'This source can hand NEXUS an enquiry directly, and anything counted under it below arrived that way.' },
-  SIMULATED_ONLY: { label: 'Not carrying real enquiries yet', tone: 'warm', roadmap: true,
-    blurb: 'Nothing from a real customer has come through this source. Anything recorded under it is test traffic and is counted nowhere as business.' },
-  COMMERCIAL_CONVERSATION_REQUIRED: { label: 'Roadmap — there is no feed to connect to', tone: 'unknown', roadmap: true,
-    blurb: 'No lead feed exists for NEXUS to connect to, and no amount of engineering here produces one.' },
-  NOT_ESTABLISHED: { label: 'Not set up', tone: 'unknown', roadmap: true,
-    blurb: 'No connection to this source has been established, so nothing has ever arrived through it. That is a setup that has not happened, not a source that produced nothing.' },
+/* ── Whether NEXUS is actually receiving from a source ─────────────────────
+   Rewritten 7 September 2026, because the vocabulary this replaces was the
+   defect.
+
+   WHAT WENT WRONG. `lead_source_catalogue.integration_status` was rendered as
+   the answer to "is this dealership wired up?", with AVAILABLE labelled
+   "Connected" in green. AVAILABLE does not mean that and never did: it is a
+   fact about the PROVIDER — this marketplace publishes a contract somebody
+   could implement. Eight of the nine seeded sources carry it, and on 7 Sep 2026
+   not one of them was connected to anything: there is no receiver of any kind
+   in this product and the endpoint register holds no rows on either database.
+   A paying dealership was therefore shown eight green "Connected" pills and the
+   sentence "anything counted under it below arrived that way", under a table
+   whose whole purpose is to say which sources produced nothing. It answered a
+   commercial question with an operational pill, and the two words happened to
+   be the same word.
+
+   HOW IT IS ANSWERED NOW. `nexus_lead_source_readiness()` computes
+   `connection_state` in the database, per dealership, from the endpoints
+   actually registered to it. The screen renders that value and infers nothing:
+   there is no rule anywhere in the app that turns any other column into the
+   word "connected", and the only vocabulary that carries a positive tone is
+   CONNECTED below. That is deliberate — a second path to a green pill is how
+   this comes back.
+
+   `silence` is the sentence the "produced nothing" table prints under a source
+   with no arrivals. It is per-state because the meaning of silence is entirely
+   decided by this column: silence from a connected source is a quiet week, and
+   silence from an unconnected one is not a measurement at all. */
+export const CONNECTION_STATE = Object.freeze({
+  CONNECTED: { label: 'Connected', tone: 'ok', receiving: true, roadmap: false,
+    blurb: 'A live connection is registered to this dealership for this source, so an enquiry from it reaches NEXUS '
+         + 'directly and anything counted under it arrived that way.',
+    silence: 'This source is connected and produced nothing within the window read here. A source whose last enquiry '
+           + 'falls outside that window looks identical to one that has never produced — this line cannot tell those '
+           + 'apart and does not claim to.' },
+  SIMULATION_ONLY: { label: 'Simulator attached — nothing real arrives', tone: 'warm', receiving: false, roadmap: true,
+    blurb: 'The only thing attached to this source is a simulator. Nothing a real customer sends reaches NEXUS '
+         + 'through it, and everything it does produce is test traffic that is counted nowhere as business. This is '
+         + 'not a connection.',
+    silence: 'Nothing from a real customer has arrived through this source and nothing could: only a simulator is '
+           + 'attached to it. Its silence measures nothing about how many people enquired.' },
+  NOT_CONNECTED: { label: 'Not connected', tone: 'unknown', receiving: false, roadmap: false,
+    blurb: 'Nothing is registered for this source at this dealership, so NEXUS is not receiving from it. That is a '
+         + 'connection nobody has made yet — it is not a fault, and nothing has gone wrong.',
+    silence: 'NEXUS is not receiving from this source yet, so silence from it means nothing has been connected rather '
+           + 'than that nobody enquired. Anyone who did enquire through it reached the dealership some other way and '
+           + 'is not counted here.' },
+  NOT_CONNECTABLE: { label: 'Roadmap — there is no feed to connect to', tone: 'unknown', receiving: false, roadmap: true,
+    blurb: 'No lead feed exists for NEXUS to connect to, and no amount of engineering here produces one.',
+    silence: 'Nothing has arrived because nothing can arrive. This is a connection that does not exist, not a source '
+           + 'that had a quiet week, and it is counted nowhere above as a producing source.' },
 });
-export const integrationStatus = v => INTEGRATION_STATUS[String(v || '').trim().toUpperCase()] || null;
+export const connectionState = v => CONNECTION_STATE[String(v || '').trim().toUpperCase()] || null;
+
+/* The banner sentence that says what the column means, once, at the top of the
+   screen. It is here rather than in the screen because it is the correction
+   itself: the reader has been shown the wrong answer to this question. */
+export const CONNECTION_IS_ABOUT_THIS_DEALERSHIP =
+  'Whether NEXUS is receiving from a source is measured from what is actually registered to THIS dealership, not '
+  + 'from what the provider publishes. A source can be perfectly connectable and connected to nothing.';
+
+/* What could not be said when the readiness read failed. It exists as a
+   constant so the branch cannot quietly become a fallback: there is no second
+   column anywhere that answers this question, and substituting one would be
+   answering a different question with a green tick. */
+export const CONNECTION_STATE_UNREAD =
+  'Whether NEXUS is receiving from each source could not be read, so nothing could be checked. No source here is '
+  + 'shown as connected and none is shown as unconnected, because neither was measured — and an unread check is '
+  + 'never a clear one.';
+export const CONNECTION_STATE_NOT_KNOWN =
+  'This source records a connection state this screen has no wording for, so nothing is claimed about whether NEXUS '
+  + 'is receiving from it. It is not being shown as connected and it is not being shown as unconnected.';
+export const CONNECTION_STATE_MISSING =
+  'This source is not in the readiness answer at all, so whether NEXUS is receiving from it was not measured. It is '
+  + 'not being shown as connected and it is not being shown as unconnected.';
+
+/* ── The provider's half, kept apart from the dealership's ─────────────────
+   `provider_route` carries the old `integration_status`. It is a fact about
+   the PROVIDER — whether a contract exists that somebody could implement — and
+   it is the column that was misread as a connection. It therefore renders as a
+   SENTENCE and never as a pill, carries no tone of any kind, and no branch on
+   this screen reads it to decide anything. Each sentence ends by pointing back
+   at the state, so the two can never be read as one fact. */
+export const PROVIDER_ROUTE = Object.freeze({
+  AVAILABLE:
+    'The provider publishes a way to hand enquiries over, so a connection to it could be built. That says nothing '
+  + 'about whether one exists for this dealership, which is the state shown beside it.',
+  SIMULATED_ONLY:
+    'No route to this provider has been built yet; what exists is a simulator standing in for one. That is a fact '
+  + 'about the product rather than about this dealership.',
+  COMMERCIAL_CONVERSATION_REQUIRED:
+    'The provider publishes nothing to connect to. Obtaining a feed is a commercial conversation with the '
+  + 'marketplace rather than a piece of work that can be done from this side.',
+  NOT_ESTABLISHED:
+    'No route to this provider has been established, so there is nothing for this dealership to be wired into yet.',
+});
+export const providerRoute = v => PROVIDER_ROUTE[String(v || '').trim().toUpperCase()] || null;
+export const PROVIDER_ROUTE_IS_NOT_A_CONNECTION =
+  'What a provider publishes is not whether this dealership is connected to it. Where both are shown, the state is '
+  + 'about this dealership and the sentence under it is about the provider.';
+/* The prefix that keeps the two apart at the point of reading, on the row
+   itself, where a reader who never saw the banner is. */
+export const PROVIDER_ROUTE_LABEL = 'About the provider, not about this dealership.';
 
 /* The sentence for a marketplace that sells enquiries but publishes nothing to
    connect to. It names the SOURCE the view named and nothing else — no
