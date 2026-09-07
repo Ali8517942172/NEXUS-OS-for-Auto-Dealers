@@ -1,107 +1,176 @@
-# Moving WhatsApp off WAHA and onto the Cloud API — NOT DEPLOYED
+# WhatsApp Cloud API — the receiver is LIVE and refusing everything, by design
 
-Nothing in this directory is running. It is the receiver's hardest piece,
-written and tested ahead of the rollout, plus the order the rollout has to
-happen in and the one constraint that changes the plan.
+Updated 7 September 2026. The earlier version of this file said "NOT DEPLOYED".
+That is no longer true, and what changed is worth reading before touching any of
+it.
 
-## The constraint nobody had checked
+## Where it stands
 
-Read from Meta Business Suite on 7 September 2026:
+| piece | state |
+|---|---|
+| Meta app `NEXUS for AutoDealers` | created, id `1406045581736122` |
+| WhatsApp test number | `+1 555 672-4466` |
+| `phone_number_id` | `1306545252542419` |
+| WABA id | `1098665496068509` |
+| Verified recipient `+91 85179 42172` | added — Ali entered the WhatsApp code himself |
+| `channel_registry` row, **production** | `9129126e-da78-4340-a89d-ca703b9fc169` → `alba-cars` |
+| `channel_registry` row, **staging** | `7f858868-8dd4-4391-a655-89570d9bf45a` → `staging-alpha` |
+| n8n receiver `J8MXprxVw1yhjBpp` | built, credentialled, **published** |
+| Webhook URL | `https://35.224.126.225.nip.io/webhook/whatsapp-cloud-inbound` |
+| `META_APP_SECRET` / `META_WEBHOOK_VERIFY_TOKEN` on the VM | **unset** |
+| A real customer message carried end to end | **no** |
 
-    WhatsApp account   "Ali Asgher"
-    ID                 311007628770691
-    Owned by           bharmalmarketing
-    Type               WhatsApp Business app        <-- this is the finding
-    Account status     Approved
-    Payment method     none
+The last two lines are the honest headline: the road is built and nothing has
+driven on it. Everything below the signature check has been exercised only in a
+harness and in the database, never by Meta.
 
-**Type is "WhatsApp Business app", not Cloud API.** A phone number lives on one
-or the other, never both. So `+971526647253` cannot be pointed at the Cloud API
-while it is registered on the WhatsApp Business app — it has to be deleted from
-that app first, which loses that app's chat history and is not a step you undo
-in an afternoon. WAHA is driving the same number today, which makes it three
-claims on one line.
+## The receiver refuses every request today, and that is the design
 
-That kills the obvious plan of "switch the number over and delete WAHA", and it
-should be said out loud before anyone starts, because discovering it halfway
-means the dealership's WhatsApp is down while it gets sorted.
+    $ curl -sS -X POST .../webhook/whatsapp-cloud-inbound -d '{...}'
+    500 APP_SECRET_NOT_CONFIGURED
 
-**Do this instead.** Meta issues a free test number with every app. Build and
-prove the entire pipeline on that number — it costs nothing, needs no
-migration, needs no business verification, and `+971526647253` keeps working on
-WAHA throughout. Decide the production number only once the pipeline is proven,
-and then decide it deliberately: a new business line is usually the better
-answer than migrating the number the owner answers personally.
+    $ curl -sS '.../webhook/whatsapp-cloud-inbound?hub.mode=subscribe&hub.verify_token=guess&hub.challenge=1'
+    500 VERIFY_TOKEN_NOT_CONFIGURED
 
-Two limits of the test number, so nobody plans around a capability it lacks:
-it will only message **recipients you have explicitly verified** (add
-`+918517942172`), and its access token **expires in 24 hours**. A non-expiring
-token needs a System User, which is a separate setup and is the owner's to
-create.
+This is deliberately the opposite of `WAHA Auth Gate`, whose whole defect was
+that an unset `WAHA_WEBHOOK_SECRET` made it *pass everything through*. A gate
+that goes quiet when it is unconfigured is not a gate. This one goes loud.
 
-## The signature verifier, and why it is here first
+**5XX and not 4XX**, on purpose: a 4XX tells Meta not to retry, and for a lead
+that means it is gone. Our missing configuration is our failure, so it answers
+like one and Meta will redeliver once the secret is set.
 
-`verify-signature.mjs` is the single highest-risk piece of the receiver, so it
-was written and tested before anything else.
+## Three things that were measured rather than assumed, and each one changed the build
+
+### 1. `multipleMethods` gives the webhook node one output per method
+
+The first published version wired only output 0. Output 0 is GET. So **every
+POST — the only method that carries a message — ran no nodes at all**, and n8n
+answered a bare `200` with an empty body. The signature gate was unreachable on
+the one path that matters, and from outside it looked like a healthy endpoint.
+
+Found by curling the live URL and reading the execution: `lastNodeExecuted:
+"Meta Cloud Webhook"`, `runData: {}`. A gate nothing routes to is worth exactly
+as much as a dormant one.
+
+### 2. The n8n Code sandbox has no crypto at all
+
+Not "no `require`". No crypto:
+
+    require('crypto')  ->  throws
+    crypto.subtle      ->  "crypto is not defined"
+
+Both routes the receiver shipped with were unavailable on this box. The first
+real customer message would have thrown inside the verifier. This was found by a
+self-test that runs on the refusal path — it cost nothing to add, and it turned
+a go-live outage into a Monday-morning edit.
+
+So the HMAC is implemented in full inside the node
+(`ops/n8n-whatsapp-cloud/verify-or-refuse.node.js`, shared with
+`hmac-pure.js`). It operates on bytes end to end; the body is never parsed,
+re-serialised or round-tripped through a string before hashing.
+
+### 3. The obvious SHA-256 padding is wrong on 1 length in 64
+
+`(l + 9)` rounds up to an extra all-zero block whenever `l % 64 === 55`. RFC 4231
+cases 1, 2, 3 and 6 **all pass** with that bug. It was caught by differential-
+testing 300 random key/body pairs against `node:crypto`, which found it at body
+lengths 55, 119, 183 and 247.
+
+Two of those lengths are now vectors in the self-test that runs on the box, with
+a negative control, because a self-test that cannot fail proves nothing. Measured
+live in execution `10759`:
+
+    hmac_selftest: { vectors: 3, failed: 0, negative_control_rejects: true, ok: true }
+
+## The trap this whole receiver exists to avoid
 
 Meta computes `X-Hub-Signature-256` over **the exact bytes it sent**, in an
-escaped-unicode form. Parse the JSON and re-serialise it to hash it, and you
-get different bytes — except, most of the time, for pure ASCII, where you get
-the same bytes by luck.
-
-`verify-signature.test.mjs` demonstrates that rather than asserting it:
+escaped-unicode form. Parse the JSON and re-serialise it to hash, and you get
+different bytes — except, most of the time, for pure ASCII, where you get the
+same bytes by luck.
 
 | customer name | raw-bytes verifier | re-serialising verifier |
 |---|---|---|
 | `Ahmed` | accepts | **also accepts** |
 | `محمد` | accepts | **rejects a genuine Meta delivery** |
 
-So an ASCII-only test suite passes with the broken implementation and proves
+An ASCII-only test suite passes with the broken implementation and proves
 nothing. In Dubai the Arabic name is not an edge case, it is Tuesday, and the
-failure is silent: Meta's deliveries are refused, no error appears anywhere,
-and the dealership simply stops receiving leads.
+failure is silent: Meta's deliveries are refused, no error appears anywhere, and
+the dealership simply stops receiving leads.
 
-12 tests, all passing, including forgery, tampering, a `sha1=` prefix, a
-truncated digest, uppercase hex, and passing a parsed object — which throws
-rather than silently mis-verifying.
+`verify-signature.test.mjs` demonstrates that on the standalone verifier (12
+tests). `ops/n8n-whatsapp-cloud/verify-or-refuse.test.js` runs the **deployed
+node body** through a harness that fakes `$input`/`$env` and reaches every branch
+the live box cannot: 26 tests, including both wire forms of an Arabic name, a
+forged secret, a body tampered after signing, a `sha1=` prefix, a truncated
+digest, uppercase hex, and two messages in one delivery.
 
-**The operational consequence for whatever hosts the receiver:** capture the
-raw body as a Buffer *before* any JSON middleware. In n8n the webhook node must
-be set to raw/binary body. A parsed body has already lost the bytes Meta
-signed, and nothing downstream can recover them.
+Total: 9 HMAC tests, 26 node tests, 12 standalone verifier tests, all passing.
 
-## Order of the rollout
+## What the tenant comes from
 
-Each step's precondition is the step before it, and none of the owner steps can
-be done for him.
+`metadata.phone_number_id` — **Meta's own field, in a body we have
+cryptographically verified** — looked up in `channel_registry`. Compare
+`POST /webhook/whatsapp-inbound`, which takes its tenant from `body.session`, a
+field the *caller* supplies, and then writes as `service_role`, which is
+`BYPASSRLS`. That is the shape this replaces.
 
-1. **Owner** — create a Meta app at `developers.facebook.com`, add the WhatsApp
-   product. There is no app on that account today ("No apps yet", read 7 Sep).
-2. **Owner** — note the test number's `phone_number_id`, and add
-   `+918517942172` as a verified recipient.
-3. **Build** — register the number in `channel_registry` under the
-   `whatsapp_cloud_phone_number_id` namespace. That namespace exists and is
-   empty. This is what makes the tenant come from **Meta's own
-   `metadata.phone_number_id`** rather than from a caller-supplied string —
-   the defect that makes the WAHA webhook dangerous.
-4. **Build** — the receiver: verify the signature over raw bytes, and only
-   then write anything.
+Measured on production: the registered id resolves to `alba-cars`; one digit off
+resolves to nothing; the right id under the WAHA namespace resolves to nothing.
+Unresolved is zero rows, and the workflow branches on that rather than guessing —
+it answers Meta `200`, writes nothing, and throws into the error workflow so the
+miss lands in `audit_log` instead of disappearing.
 
-   Nothing may be written before the signature verifies. The reason is not
-   storage hygiene: claiming a `wamid` before verification is a **denial of
-   service on a real customer**, because Meta's genuine delivery then looks
-   like a duplicate and is dropped, and nothing appears broken.
-5. **Owner** — the app secret and access token. Set as environment variables.
-   Never in a workflow node, never in the repo.
-6. **Prove** — a real message from `+918517942172` to the test number, end to
-   end, with the signature verifying.
-7. **Only then** decide the production number, and only then retire WAHA.
+## What is left, and only Ali can do the first two
 
-## What is not built
+1. **On the GCP VM**, set two environment variables and restart n8n:
 
-The receiver itself, the `channel_registry` row, the n8n workflow, and the
-send path. Also unresolved and older than this work: every conversation in
-production returns `TEMPLATE_REQUIRED / WINDOW_RULE_NOT_VERIFIED`, because the
-24-hour window rule is seeded `NOT_VERIFIED` and only a named human with the
-Meta account can attest it. Cloud API does not change that; the rule still has
-to be checked and recorded.
+       META_APP_SECRET=<App settings -> Basic -> App secret, click Show>
+       META_WEBHOOK_VERIFY_TOKEN=<any long random string you invent>
+
+   Never in a workflow node, never in this repo. Until both are set the receiver
+   refuses every request, which is safe but useless.
+
+2. **In the Meta app**, WhatsApp -> Configuration -> Webhook: set the callback
+   URL to `https://35.224.126.225.nip.io/webhook/whatsapp-cloud-inbound` and the
+   verify token to the same string, then subscribe to the `messages` field.
+   Meta will `GET` the URL immediately; a `200` echoing the challenge means the
+   handshake worked.
+
+3. **Then prove it**: send a WhatsApp message from `+91 85179 42172` to the test
+   number and check, in order —
+   - an n8n execution with `verdict: ACCEPT` and `hmac_route` present,
+   - a row in `channel_message_events` for integration `9129126e…`,
+   - `whatsapp_conversation_state` showing a window open,
+   - `whatsapp_policy_decision_for_channel(...)` turning from
+     `TEMPLATE_REQUIRED / CONVERSATION_NOT_MEASURED` into a window-open answer.
+
+   Until that sequence has actually run, nothing here may be described as
+   working.
+
+## Two constraints that have not changed
+
+**The production number cannot simply be pointed at Cloud API.** Read from Meta
+Business Suite on 7 September: the WhatsApp account `311007628770691` owned by
+`bharmalmarketing` is type **"WhatsApp Business app"**, not Cloud API. A phone
+number lives on one or the other, never both, so `+971526647253` would have to be
+deleted from that app first — losing its chat history — and WAHA is driving the
+same number today, which makes three claims on one line. Prove the pipeline on
+the free test number first; decide the production number deliberately afterwards,
+and a new business line is usually the better answer than migrating the number
+the owner answers personally.
+
+**The test number's own limits.** It messages only recipients explicitly
+verified (five maximum), and the token the developer UI hands out expires in
+24 hours. A non-expiring token needs a System User, which is a separate setup and
+is the owner's to create.
+
+## Still unresolved, and older than this work
+
+Every conversation in production returns `TEMPLATE_REQUIRED /
+WINDOW_RULE_NOT_VERIFIED`, because the 24-hour window rule is seeded
+`NOT_VERIFIED` and only a named human with the Meta account can attest it. Cloud
+API does not change that. The rule still has to be checked against Meta's own
+documentation and recorded through `policy_platform_verify_rule()`.
