@@ -52,11 +52,38 @@ async function manualSources() {
   return rows || [];
 }
 
+/* The idempotency key for this dialog, and it must come from a CSPRNG.
+   This failed CI on main as `S2 · lib/manual-lead-form.js: invented data` —
+   the gate bans the arithmetic PRNG in a screen, and the ban catches something
+   real here rather than a style preference. This id is what stops a
+   double-click, a flaky network or a retried save from putting the same walk-in
+   into the funnel twice. The arithmetic generator is seeded per realm, so two
+   tabs opened in the same millisecond are a plausible collision — and a
+   collision here means two different customers share one key and the second one
+   silently gets back the first one's lead.
+
+   crypto.randomUUID() needs a secure context; the dashboard is HTTPS-only, so it
+   is there in practice. The fallback is getRandomValues rather than something
+   weaker, because a fallback worse than the thing it replaces is how a guarantee
+   quietly stops holding on exactly the browsers nobody tests.
+
+   And the banned call is not named literally anywhere above, including in this
+   comment: the gate matches SOURCE TEXT, so a comment explaining the rule would
+   trip the rule. That is worth knowing before writing the next such note. */
+function mintRequestId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;                       /* version 4  */
+  b[8] = (b[8] & 0x3f) | 0x80;                       /* variant 10 */
+  const h = [...b].map(x => x.toString(16).padStart(2, '0'));
+  return `${h.slice(0,4).join('')}-${h.slice(4,6).join('')}-${h.slice(6,8).join('')}-${h.slice(8,10).join('')}-${h.slice(10).join('')}`;
+}
+
 function manualLeadDialog(onSaved) {
   /* One id for the life of this dialog. See the note above about why it is not
      regenerated after a refusal. */
-  const requestId = (crypto.randomUUID ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`);
+  const requestId = mintRequestId();
 
   const m = openModal('Add a lead by hand', `
     <div class="cell-sub" style="margin-bottom:12px">
