@@ -104,6 +104,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Check supabase/migrations/
         run: node ops/ci/migration-hygiene.mjs
+      # A Postgres function is born with EXECUTE granted to PUBLIC. This blocks
+      # a NEW migration that does not say who may call what it creates, and it
+      # blocks the specific shape that cost us three days: a revoke naming the
+      # roles but not `public`, which leaves both of them reaching the function
+      # through PUBLIC while proacl reads clean. Text-only, so it stops the
+      # defect being written; nexus_public_exposure_report() finds it once it
+      # exists, and that one needs a database CI must never hold.
+      - name: Function grant hygiene
+        run: node ops/ci/function-grants.mjs --census
 
   # ── A service_role key must never reach main ─────────────────────────────
   # The scan decodes every JWT it finds and judges the `role` claim. The anon

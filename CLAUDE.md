@@ -720,6 +720,57 @@ the 30 August repo export, which is stale; the box is the witness.
 > and the one a careful person is *more* likely to have used, because a
 > column-level grant is what you write when you are being precise. So the check
 > was blindest exactly where somebody had taken the most care.
+>
+> ### And for FUNCTIONS the same title has a fourth trap — 7 Sep 2026
+>
+> `proacl` is not two ACLs; it is one, with an entry that has no name. A
+> function is born with `EXECUTE` granted to `PUBLIC`, and that entry renders as
+> a bare `=X/postgres`. There are now **three distinct ways** to get this wrong,
+> and none of them catches the other two:
+>
+> 1. `revoke ... from public` does **not** remove a direct grant to `anon`.
+>    Supabase's default privileges hand `anon` an entry of its own.
+> 2. `revoke ... from anon, authenticated` does **not** remove the `PUBLIC`
+>    entry. Both roles keep reaching the function *through* `PUBLIC`, and
+>    neither name appears in `proacl` afterwards — so the ACL reads **clean**.
+> 3. `proacl like '%anon=%'` is therefore blind in both directions.
+>
+> Number 2 was live for three days on `nexus_public_exposure_report` — the
+> function that prints this database's own over-grants. Measured on production:
+> `proacl = {=X/postgres, postgres=X, service_role=X}`,
+> `has_function_privilege('authenticated', …) = true`, and
+> `set local role authenticated; select count(*) …` returned **149 rows** naming
+> 149 objects, every one flagged as a broken rule. A dealership's own user could
+> ask the database for the map of its own weaknesses.
+>
+> **The rule: `revoke ... from public, anon, authenticated` — name `public` AND
+> the roles — then assert with `has_function_privilege()`.**
+> `ops/ci/function-grants.mjs` now blocks a migration after
+> `20260907140000` that does not.
+>
+> ### `has_function_privilege()` is necessary and still not sufficient
+>
+> It answers "is EXECUTE granted", not "can this role call it". **Schema `USAGE`
+> is a second gate**, and on production the two disagree completely:
+>
+> | role | `USAGE` on `public` | functions it may EXECUTE | actually reachable |
+> |---|---|---|---|
+> | `anon` | **no** | 146 | **none** |
+> | `authenticated` | yes | 209 | 209 |
+>
+> Measured: `set local role anon; select … from public.nexus_public_exposure_report()`
+> fails **42501, permission denied for schema public**. So the alarming `anon`
+> number is carried entirely by one missing schema grant — which is real
+> protection, and is also a single `grant usage on schema public to anon` away
+> from opening 146 functions at once. Judge reachability on **both** gates, and
+> never report an `anon` function count as an exposure without saying which gate
+> is holding.
+>
+> Of the 64 of our own functions `authenticated` can genuinely reach, **42 are
+> `SECURITY DEFINER`** — they run as the owner and bypass RLS. That is the
+> dashboard's intended API and each one is responsible for its own tenant
+> scoping; it is a designed surface, not a defect, and it is the surface worth
+> auditing first.
 
 Supabase ships default privileges that grant **directly to `anon` and
 `authenticated`** on everything created in `public` — `EXECUTE` on every new
