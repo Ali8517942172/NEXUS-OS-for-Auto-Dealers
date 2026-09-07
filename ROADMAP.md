@@ -163,6 +163,55 @@ dealer data plane entirely (no table grant, no column grant, no `authenticated`
 policy) and the naming projection a dealership is entitled to now arrives through
 `nexus_workflow_catalogue()`. Gate check `L2` **passes**.
 
+### Lead ingestion — roadmap, and none of it is capability yet
+
+Added 6 September 2026. The database contract for multi-source lead ingestion is
+built and proved adversarially on staging; there is **no HTTP receiver, no
+signature verifier, and not one real lead has arrived through it.** Everything
+below is therefore roadmap, and must be sold as roadmap. `LEAD-INGESTION.md`
+carries the evidence and the limits.
+
+Four items, none of which is code alone:
+
+1. **Meta App Review, and Lead Access Manager.** A Meta app cannot receive
+   `leadgen` webhooks for a real page until it has been through App Review for
+   the leads permissions, and the dealership must then grant NEXUS lead access
+   on the page through **Lead Access Manager** — a setting inside the
+   dealership's own Business Manager that no engineering work can substitute
+   for. Both are prerequisites, and both are on Ali and the dealership rather
+   than on the repo. Meta's Lead Ads Testing Tool fires the real webhook before
+   any of this, at no cost, which is how the receiver gets tested first.
+2. **The Dubizzle partner conversation.** Dubizzle Motors publishes no
+   leads-out API, no webhook and no developer portal, so there is nothing to
+   integrate and no engineering task to schedule. The only routes are a
+   commercial conversation with Dubizzle, or interception of the WhatsApp and
+   email its listings already produce. Until somebody signs something,
+   engineering time spent here is wasted — which is what
+   `integration_status = COMMERCIAL_CONVERSATION_REQUIRED` records in the source
+   catalogue. Same shape for YallaMotor and CarSwitch.
+3. **An inbound-email ingest subdomain.** Marketplace notifications and
+   forwarded enquiries need a mailbox NEXUS controls, on its own subdomain, with
+   DNS to match. Two things must be designed in from the start rather than
+   discovered: **route on the envelope recipient, not `To:`** — a dealer
+   forwarding from their own inbox leaves `To:` pointing at themselves — and
+   **DMARC cannot be the authenticity gate**, because SPF fails across a forward
+   by design.
+4. **Google Ads offline conversion upload.** Closing the loop — telling Google
+   which lead qualified and which converted — is what makes Smart Bidding
+   optimise for revenue instead of form fills. Two things decide whether it
+   works:
+   - **`gcl_id` must be captured at ingest.** It arrives in the lead form POST
+     and cannot be recovered later. If it is not stored on the lead when it
+     lands, no upload is possible for that lead, ever.
+   - **`generate_lead`, `qualify_lead` and `close_convert_lead` are GA4
+     recommended events, not Google Ads conversion actions.** Google Ads wants
+     conversion actions in its own categories — **"Qualified lead"** and
+     **"Converted lead"**. Uploading the snake_case GA4 names against Google Ads
+     produces conversions that exist but sit in the wrong category, so **Smart
+     Bidding never sees the qualification signal** and the campaign keeps
+     optimising for the cheapest form fill. This is the kind of mistake that
+     looks like it worked.
+
 ## Next — the seven capability gaps, in priority order
 
 1. Trade-in and acquisition intelligence — connects straight to inventory

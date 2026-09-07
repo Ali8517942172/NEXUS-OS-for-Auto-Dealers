@@ -23,6 +23,11 @@ const NAV = [
     { id:'moneyleaks',    title:"Today's Money Leaks", icon:'water_drop' },
     { id:'overview',      title:'Overview',        icon:'dashboard' },
     { id:'leads',         title:'Leads',           icon:'person_search' },
+    /* Lead Sources sits directly under Leads because it answers the question
+       that screen cannot: not who enquired, but which door they came through,
+       how much of that origin NEXUS could verify, and what arrived and was
+       then lost before anybody saw it. */
+    { id:'leadsources',   title:'Lead Sources',    icon:'alt_route' },
     { id:'conversations', title:'Conversations',   icon:'forum' },
     { id:'compliance',    title:'Compliance',      icon:'verified_user' },
   ]},

@@ -173,6 +173,46 @@ capability.
 Dealer Benchmarking needs multiple dealerships. It is a moat that only exists
 after customers do — do not build it before them.
 
+### Lead ingestion — the source of the data every engine above is short of
+
+Added 6 September 2026. The sequencing rule cuts both ways: the engines are
+starved because leads barely arrive, and **the one field that would say where a
+lead came from does not say it.** Production holds three leads and all three
+carry `source = 'nexus-master-router'` — the name of the workflow that wrote
+them. Attribution has been rendering a column that never held an origin, which
+is exactly the "no data in front of a paying dealership" failure this section
+exists to prevent, dressed as a value.
+
+Nine sources are catalogued. They divide commercially, not technically:
+
+| Source | Can it be a real integration today? |
+|---|---|
+| Meta Lead Ads — Facebook and Instagram | **Yes.** Signed webhook, then a Graph fetch for the fields |
+| Google Ads lead forms | **Yes.** One POST carrying the whole lead |
+| Website form | **Yes.** It is our own page posting to our own endpoint |
+| Inbound email | **Yes**, once an ingest subdomain exists |
+| Walk-in, phone call | **Yes** — a person typing. In a UAE showroom this is the largest source there is, and the layer must record it as real business even though nothing external attests it |
+| WhatsApp inbound | Already carried, on a door that is still open — see `CLAUDE.md` |
+| Dubizzle Motors | **No.** Roadmap only |
+| Marketplace notification email | Partly. We can send ourselves a real email; we cannot make Dubizzle send one |
+
+**Dubizzle is the one to be careful about, and the reason is one sentence:**
+Dubizzle Motors publishes no leads-out API, no webhook and no developer portal,
+so its enquiries can only be simulated, intercepted as WhatsApp or email, or
+negotiated commercially — never integrated — and it must be sold as roadmap and
+never as capability. YallaMotor and CarSwitch are the same shape.
+
+**Two sources are testable end to end at AED 0.** Meta's Lead Ads Testing Tool
+and Google's "send test data" button both fire the **real** production webhook,
+free of charge, with no campaign running and no ad spend. So the first honest
+demonstration of lead capture costs nothing but the receiver.
+
+**What may not be said yet.** The database contract for ingestion is built and
+proved adversarially on staging; **no HTTP endpoint exists**, nothing has
+carried a real lead, and the six migrations are deliberately not on production.
+Until a real lead arrives through it, lead ingestion is roadmap by this
+document's own rule, the same as Service Retention.
+
 ---
 
 # The engines

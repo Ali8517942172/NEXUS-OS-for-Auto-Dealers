@@ -159,3 +159,84 @@ Three rollbacks, fastest first:
 2. **One env line + restart:** unset `WAHA_WEBHOOK_ENFORCE` → back to MONITOR,
    everything passes, header still observable.
 3. **Full:** unset `WAHA_WEBHOOK_SECRET` too → DORMANT, i.e. exactly today.
+
+---
+
+## 6 September 2026, evening — measured again, and who can do which step
+
+Ali gave permission to do this rollout through the browser. Two of its four steps
+are still not mine to do, and saying so is cheaper than discovering it halfway
+through with the channel silent.
+
+### The gate, read from the box just now
+
+Execution `10593`, 19:32:03 UTC, `WAHA Auth Gate`'s own output:
+
+```
+_gate: { mode: "DORMANT", ok: false, header_present: false, enforcing: false }
+```
+
+Not inferred from an absent key — the node emits `mode` in every state, and it
+says DORMANT. The door is open, today, and this is the measurement rather than a
+recollection of the 3 September one.
+
+Same execution, same read: `x-forwarded-for: 35.224.126.225`, `user-agent:
+WAHA/2026.7.2`, `me.jid …:12@…`. One sender, the GCP box. `2.50.10.149` is still
+gone. And the payload is `status@broadcast` again — the traffic in this window is
+still not customer conversation.
+
+### What I cannot do, and why
+
+- **Step 1, `WAHA_WEBHOOK_SECRET` in `/opt/nexus/.env` on the VM.** There is no
+  shell on that machine from here; the n8n API is the only reach, and it does not
+  set environment variables. **Ali's.**
+- **Step 2, the `customHeaders` entry on WAHA.** This is typing a secret value
+  into a field, and I do not handle secrets, passwords or tokens — browser
+  permission does not change that. **Ali's.**
+- **Step 3, the MONITOR proof.** It requires a genuine 1:1 customer message from
+  a real phone. No amount of access substitutes for that. **Ali's, or a
+  controlled handset.**
+- **Step 4, `WAHA_WEBHOOK_ENFORCE=true`.** Also a VM environment variable, and it
+  must not happen until step 3 has actually been observed.
+
+So the honest position is that this rollout is **entirely owner-side**, and the
+useful thing I can contribute is the measurement above and the ordering below.
+
+### The order is different from what this file said, and safer
+
+The original sequence was VM secret, then WAHA header. **Reverse the first two.**
+
+Setting the WAHA header while `WAHA_WEBHOOK_SECRET` is unset is completely inert:
+the gate is DORMANT, it reads no header, and it passes everything through exactly
+as it does now. So the header can be configured first, at leisure, with zero risk
+— and then setting the env var moves the gate DORMANT -> MONITOR with the header
+**already flowing**, which is the state you actually want to observe.
+
+Doing it the other way round leaves a window in which the gate is in MONITOR and
+every item logs `header_present: false`, which is indistinguishable at a glance
+from a header that was configured wrongly.
+
+    1. WAHA:  add customHeaders x-nexus-webhook-secret: <value>     (inert, safe)
+    2. VM:    WAHA_WEBHOOK_SECRET=<same value>, restart n8n          (-> MONITOR)
+    3. Watch: _gate.header_present == true and _gate.ok == true,
+              on a genuine 1:1 message, not group or broadcast traffic
+    4. VM:    WAHA_WEBHOOK_ENFORCE=true                              (-> ENFORCE)
+
+**Step 3 is not a formality and it is the one most likely to be skipped.** With
+one sender, arming the gate before the header is confirmed drops one hundred per
+cent of inbound messages, and `WAHA Webhook (POST)` responds `onReceived`, so WAHA
+sees HTTP 200 either way and never backs off. Nothing anywhere reports an error.
+The channel simply goes quiet.
+
+### How to read the MONITOR window without reading n8n by hand
+
+`saveDataSuccessExecution` is `"all"`, so every execution is retained. For each
+recent execution of `BiyHk9ZXxJUVGbf6`, read `WAHA Auth Gate` -> `_gate` and the
+trigger's `headers['x-forwarded-for']`. You are waiting to see, on a **1:1**
+message (`payload.from` ending `@c.us`, not `@g.us`, `status@broadcast` or
+`@newsletter`):
+
+    _gate.mode == "MONITOR"   header_present == true   ok == true
+
+If any 1:1 message shows `ok: false`, stop. That is the message that would have
+been destroyed.

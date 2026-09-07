@@ -1,0 +1,20 @@
+{
+  "name": "nexus-lead-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "NEXUS Marketplace & Lead Simulator - synthetic lead-event scenarios for the unified ingestion layer. DEMONSTRATION TEST ENVIRONMENT ONLY.",
+  "main": "simulate.js",
+  "bin": {
+    "nexus-lead-simulator": "./simulate.js"
+  },
+  "scripts": {
+    "list": "node simulate.js --list",
+    "fixtures": "node simulate.js --all --out fixtures/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

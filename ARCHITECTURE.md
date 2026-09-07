@@ -52,7 +52,7 @@ enforced by an event trigger that fails the deploy without it, and by gate check
 the string (a view created `(security_invoker = false)` used to pass the check
 that exists to forbid it).
 
-The repository can now rebuild this database. `supabase/` holds all **286**
+The repository can now rebuild this database. `supabase/` holds all **288**
 applied migrations (count and head re-measured 6 September 2026 against
 production; the byte-exact rollup was last verified at 273/273 on 5 September), a generated baseline and a vocabulary seed;
 `supabase/README.md` carries the restore path and the verification. That
@@ -91,6 +91,46 @@ Browser → `POST /webhook/ask-ai` with the Supabase JWT → n8n RAG workflow �
 **No embeddings are computed at any point**; `document_embeddings` does not
 exist. pgvector is installed, but it serves the closed-won deal memory, not
 Ask AI.
+
+### How a lead gets in — built on staging 6 September, not yet on production
+The path is one line and every hop in it is deliberate:
+
+    provider  ->  registered lead_ingest_endpoint  ->  nexus_record_lead_event
+              ->  RECEIVED / HYDRATED / PROMOTED   ->  leads
+
+**A source never posts to a raw public n8n webhook.** It posts to a registered
+endpoint row, and that row — resolved by `public_key` — is what decides which
+dealership the lead belongs to. Nothing in the payload chooses a tenant. That is
+the opposite of `POST /webhook/whatsapp-inbound`, which keys off caller-supplied
+`body.session` while n8n writes as `service_role`. `public_key` **identifies and
+does not authenticate**; the secret that authenticates is named by `secret_ref`
+and held outside the table.
+
+Every arrival is written verbatim as a `lead_event` and walks
+**RECEIVED → HYDRATED → PROMOTED**, or stops at a terminal phase —
+`DUPLICATE / REJECTED / QUARANTINED / EXPIRED` — each of which must state its
+reason. Only promotion writes a `leads` row, and it writes the real origin into
+`leads.source` (`meta_lead_ads_facebook`, `google_ads_lead_form`, `walk_in`, …)
+rather than the name of the writing workflow.
+
+**Two phases are a requirement, not tidiness**, because two sources cannot
+deliver a lead in one hop:
+
+| source | one hop or two | why |
+|---|---|---|
+| **Meta Lead Ads** (Facebook, Instagram) | **two** | the webhook carries six ids and no customer data; the fields come from `GET /v25.0/<leadgen_id>` and expire |
+| **Inbound email** (incl. marketplace notifications) | **two** | metadata arrives on the webhook, the body on a second call |
+| Google Ads lead forms | one | the whole lead is in the POST body — including `google_key`, a plaintext secret that must be redacted before `payload_raw` is written |
+| Website form, walk-in, phone call | one | — |
+| Dubizzle Motors | **none** | no leads-out API exists; simulated, intercepted or negotiated only |
+
+The dealership reads this through `v_lead_origin` — `security_invoker`,
+tenant-scoped, with raw payloads, endpoint ids and endpoint keys absent from the
+grant rather than merely unselected.
+
+**Status: six migrations on staging only, no HTTP receiver, no signature
+verifier, and nothing has carried a real lead.** See `LEAD-INGESTION.md` and
+`ops/PARITY-2026-09-06.md`.
 
 ### Not in the stack
 Make.com holds two scenarios, both inactive, zero executions, last touched
