@@ -117,6 +117,7 @@ import { attributionCompleteness, attributionConfidence, ORIGIN_NOT_RECORDED, WR
   from '../lib/vocabulary.js';
 import { AMBIGUITY, describeKey, expandIdentity, KEY_SHAPE, keyShape, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
+import { manualLeadDialog } from '../lib/manual-lead-form.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -1007,6 +1008,14 @@ SCREENS.leads = async host => {
       </div>
       <div class="grow"><input type="search" id="q" aria-label="Search leads"
         placeholder="Search name, email, phone or vehicle" /></div>
+      <!-- The walk-in and phone-call entry path. Until 7 Sep 2026 those two
+           sources reported CONNECTED with nowhere to enter one; this button is
+           the other half of that fix. It writes nothing itself — it opens a
+           dialog that calls rpc/nexus_lead_record_manual, which walks the same
+           record -> hydrate -> promote path a provider lead walks, so a walk-in
+           lands with a real origin instead of as a row nobody can place. -->
+      <button class="btn primary sm" id="addLead">
+        <span class="material-symbols-outlined" style="font-size:18px">person_add</span> Add a lead</button>
       <!-- Every option carries an explicit value. Without one, HTMLOptionElement.value
            falls back to .text, which the HTML spec strips and collapses whitespace in,
            so a source called "Facebook  Lead Ads" or a rep called "Ali Hassan " selected
@@ -1323,6 +1332,18 @@ SCREENS.leads = async host => {
     f.status = b.dataset.v; draw();
   }));
   $('q').addEventListener('input', e => { f.q = e.target.value; draw(); });
+  /* Reloads the screen on a save rather than splicing the new lead into `all`
+     by hand. The row a salesperson needs to see is the one the DATABASE made —
+     with its real origin, its event id and its promoted state — not a
+     client-side guess at what it probably looks like.
+
+     `host` is emptied first because SCREENS.leads APPENDS its two cards rather
+     than replacing them, so calling it again on a live host would leave the old
+     table sitting above the new one, showing the pre-save state. */
+  $('addLead')?.addEventListener('click', () => manualLeadDialog(() => {
+    host.innerHTML = '';
+    SCREENS.leads(host);
+  }));
   $('fSource').addEventListener('change', e => { f.source = e.target.value; draw(); });
   $('fRep').addEventListener('change', e => { f.rep = e.target.value; draw(); });
   $('fSort').addEventListener('change', e => { f.sort = e.target.value; draw(); });

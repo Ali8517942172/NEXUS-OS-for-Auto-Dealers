@@ -824,6 +824,74 @@ so a wrong path, credential or retry setting in the scaffolding is invisible to
 the check whose whole purpose is repo↔box equality. Corrected, and the limit is
 now written into the generator.
 
+### A salesperson can now put a walk-in into NEXUS
+
+7 September 2026. The other half of the `REGISTERED_NO_ENTRY_PATH` finding: the
+endpoints, the provenance ladder and the promoter all existed, and the person
+standing in the showroom had nowhere to type.
+
+`nexus_lead_record_manual()` is the path, and it is the **one place a browser
+crosses into the ingestion layer**. That is a new write surface on the dealer
+plane, which this file spent the morning arguing against for owner assignment —
+the difference is that there a narrow column grant already existed to reuse, and
+here doors one and three are `service_role`-only, so no grant exists and the
+capability genuinely has to cross. It crosses once, through one function, with
+every decision that matters taken from the **session**:
+
+| the caller may not decide | why, in one line |
+|---|---|
+| the dealership | from `nexus_current_tenant_ids()`, no argument, no fallback — `/webhook/whatsapp-inbound` takes its tenant from a caller-supplied field, and that is the open door we still live with |
+| the endpoint | resolved by `(tenant, source_key)`; a caller-supplied key is how one dealership posts into another's pipeline |
+| the source | `MANUAL_ENTRY` only — otherwise anybody with a login could manufacture attribution, which is what ad spend gets judged against |
+| the provenance | forced to `operator_recorded`: a person's word, recorded as a person's word |
+
+**Ambiguity is refused, not resolved.** An account in two dealerships gets a
+refusal naming the problem rather than having one picked for it.
+
+**Idempotency is the caller's request id**, generated once when the dialog opens
+and re-sent on every attempt, because the failure it prevents is a double-click.
+Two *different* reps entering the same walk-in produce two leads, and that is
+correct — they are two separate acts of recording, and merging two people into
+one row is identity resolution, which must not be solved here by accident.
+
+Five controls, one rolled-back staging transaction: the happy path
+(**phone-only, no email**) produced lead 45 with `source = walk_in` — an origin,
+not a writer; the same request id again returned **lead 45, `was_duplicate =
+true`**; `meta_lead_ads_facebook` by hand was refused; a lead with no phone and
+no email was refused by the contract's own rule; an account in no dealership was
+refused. **`leads` went 31 → 32 across all five attempts.**
+
+**A defect caught while writing it:** the function was first declared `returns
+null on null input`. STRICT makes the whole function return NULL the moment *any*
+argument is null, and `p_email`, `p_vehicle_interest` and `p_budget_aed` are all
+optional — so every refusal above would have become a silent empty answer the
+form renders as "nothing happened". The migration now asserts `proisstrict` is
+false.
+
+`lib/manual-lead-form.js` is the screen, reached from an **Add a lead** button on
+Leads. It writes nothing itself. The picker offers only `MANUAL_ENTRY` sources —
+a convenience, not the control, since the server refuses the rest anyway.
+
+**And the readiness flip is deliberately staging-only.**
+`20260907230000` sets `manual_entry_surface`, which turns `walk_in` and
+`phone_call` back to **CONNECTED** — proving `20260907200000` was a recorded fact
+and not a hardcode. It must run on **production only on the day the dashboard is
+deployed**: the column records a fact about the *shipped* bundle, and setting it
+early would put the green pill back while the deployed bundle still had no
+button, which is the same defect re-introduced by its own fix. The check is one
+line — the browser bundle must contain `rpc/nexus_lead_record_manual`.
+
+Staging after the flip: **4 CONNECTED** (`walk_in`, `phone_call`,
+`meta_lead_ads_facebook`, `website_form`). Production stays at **0 CONNECTED**
+until the deploy.
+
+`ops/journey-lab/CONCURRENCY-REGRESSION.sql` makes the promotion race a standing
+check: **ten** concurrent backends on one phone-only event must produce exactly
+one lead, zero orphans, zero raises and nine idempotent answers. It says in its
+own header why it must be phone-only — the same race on an emailed lead goes
+green while the defect is fully open, because a unique index refuses the second
+insert and a unique index does not constrain NULLs.
+
 ### T12 closed: who reassigned this lead, and why
 
 7 September 2026. A direct `UPDATE` on `public.leads` — the dashboard's own
