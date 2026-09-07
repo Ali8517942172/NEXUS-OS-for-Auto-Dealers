@@ -659,6 +659,48 @@ matches the *word* `tenant_id`, not a correct comparison: `tenant_id =
 p_tenant_id` from a caller-supplied argument passes, and that is the original
 defect this whole layer exists to remove.
 
+### Attribution a dealership can read, and a false finding a positive control caught
+
+`20260907170000`. Both Meta receivers and the Google receiver already recorded
+platform, campaign, adset, ad and form — all of it inside `hydrated_payload` /
+`payload_raw`, on columns the dealer plane is **denied by column grant**. The
+facts existed and nobody could ask a question of them.
+
+`nexus_lead_attribution(p_since)` is the read-side projection.
+`nexus_lead_attribution_summary(p_since)` is the shape a dashboard should read,
+and it is built so it **cannot flatter**: the UNKNOWN bucket is emitted even at
+zero, and `share_of_known` and `share_of_all` are two different numbers so the
+kinder one cannot be quoted by accident. Verified on production:
+
+| caller | attribution rows | summary |
+|---|---|---|
+| account in 0 dealerships | 0 | 1 bucket — UNKNOWN, at zero |
+| a real member | 1 | `UNKNOWN=1 (of_known n/a, of_all 100.0)` |
+
+The single production lead reads `UNKNOWN / UNKNOWN / PLATFORM_UNKNOWN` with the
+evidence sentence spelled out. It is not quietly filed under Facebook.
+
+**Three things this cost, worth keeping:**
+
+1. It is a FUNCTION, not a view, and not by preference. An invoker view cannot
+   read `payload_raw` (column grant), and a view **without** `security_invoker`
+   is refused outright by `nexus_require_security_invoker_views()` — an event
+   trigger that has been guarding this since before today. So: SECURITY DEFINER
+   with the tenant predicate written into the statement.
+2. **A boolean reloption has more than one spelling.** A sweep flagged
+   `v_competitor_latest` as definer-semantics, dealer-readable and unscoped —
+   which sounded exactly like the KYC oracle. It is spelled
+   `security_invoker=on`; the other 41 views say `=true`; the sweep compared
+   against the literal `'true'` and read `on` as OFF. The positive control
+   settled it before anything was written down: 0 rows to an unaffiliated
+   account, 7 to a real member — precisely what invoker semantics predicts.
+   **The measurement was right and my reading of it was wrong.** An audit that
+   string-matches one spelling of a boolean is blind in a direction that will
+   not always be the safe one.
+3. `service_role` gets **zero** rows from the attribution function by design —
+   `nexus_current_tenant_ids()` is empty for it. It answers "my dealership's
+   attribution"; the vendor reads `lead_event`.
+
 ### Cross-tenant, on production, is still NOT PROVEN and should stay that way
 
 Production holds one dealership and a quarantine tenant. Proving a cross-tenant
