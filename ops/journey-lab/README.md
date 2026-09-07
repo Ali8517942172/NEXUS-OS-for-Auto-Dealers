@@ -4,15 +4,17 @@
 It runs nothing on its own, it creates no database object, and it touches no
 n8n workflow.
 
-**Status, 7 September 2026: 14 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN** across 23
+**Status, 7 September 2026: 15 PASS, 0 FAIL, 7 BLOCKED, 1 NOT RUN** across 23
 journeys. Executed against staging; every verdict in `TEST-MATRIX.md` carries
 the evidence it was earned by. Nothing was converted to `PASS` by inference — the seven BLOCKED rows
 each name the missing capability, and T17 stays `NOT RUN` because running it
 properly needs a pass of its own.
 
-**The one FAIL is T12, and it is not in the ingestion layer.** A direct `UPDATE`
-on `leads` — the dashboard's own owner-assignment write path — wrote **0 audit
-rows**. The change is real and nothing recorded who made it.
+**Both FAILs were closed the same day, and both are kept as FAILs in the table**
+because the failure is the evidence that the fix is load-bearing rather than
+decorative. T12: a direct `UPDATE` on `leads` — the dashboard's own
+owner-assignment path — wrote **0 audit rows**; a trigger now records every
+ownership change from every writer, and it fails closed. T22 is below.
 
 **T22 was a second FAIL and is now fixed, so it reads PASS-after-a-fix.** Five
 concurrent promotions of one phone-only lead event produced **three customers**

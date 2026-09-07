@@ -165,7 +165,7 @@ that is where this product's expensive failures live.
 | T09 | The marketplace notification email | `marketplace_email_notification` | L2 (simulated only) | **BLOCKED BY MISSING CAPABILITY** |
 | T10 | Walk-in, then a phone call from the same person | `walk_in`, `phone_call` | L2 | **PASS** |
 | T11 | First response on a promoted lead, and the clock that is not the clock | `website_form` (from T01) | L2 | **BLOCKED BY MISSING CAPABILITY** |
-| T12 | Owner assignment, and the act nothing records | any promoted lead | L2 | **FAIL** |
+| T12 | Owner assignment, and the act nothing records | any promoted lead | L2 | **FAIL, then PASS the same day** |
 | T13 | A lead for Branch A while Branch B is signed in | `website_form` | L2 | **PASS** |
 | T14 | An origin we cannot verify is never promoted | all four verification paths | L2 | **PASS** |
 | T15 | Simulation traffic must be flagged, not counted | Lab traffic from T01–T10 | L2 | **PASS** |
@@ -215,6 +215,41 @@ here and it is not in the ingestion layer.
 >
 > This is not an ingestion defect and the Journey Lab found it anyway, which is
 > what the Lab is for.
+
+### T12 — closed the same day it failed
+
+The FAIL is kept above because it is the evidence. What it found: a direct
+`UPDATE` on `leads` — the dashboard's own owner-assignment path — changed the
+owner and wrote **zero** audit rows, so "who reassigned this lead, and when" had
+no answer.
+
+Fixed by a **trigger** on `leads` rather than by the obvious definer RPC, for
+three reasons: a definer RPC bypasses RLS and would need a second copy of the
+authorisation rule; it would audit one writer while n8n writes as `service_role`;
+and it would be a new write surface on the dealer plane. The trigger catches
+every path, including ones nobody has written yet.
+
+Re-run, staging, each control its own rolled-back transaction:
+
+| | |
+|---|---|
+| the exact dashboard write, as a signed-in manager | `REASSIGNED`, `tenant_member`, actor **auth id and staff id**, from/to names, linked `audit_log` row |
+| a `sales` rep on a lead that is not theirs | **0 rows** — authorisation unchanged |
+| an edit to any other column | **0 events** |
+| a `service_role` write | audited, `service_role`, no person named |
+| the audit table made to refuse | the owner change **refused `23514`**, owner unchanged — fails closed |
+
+One defect the controls caught first: the actor was derived from `current_user`,
+which inside a `SECURITY DEFINER` function is always the owner, so an n8n write
+came out labelled `database_owner`. `current_setting('role')` is the answer.
+
+`nexus_lead_assign_owner` (SECURITY **INVOKER**, so the same policy still
+decides) adds the half a trigger cannot: a stated reason, and a refusal for an
+owner who is staff at another dealership — which a direct PATCH **accepts**,
+measured.
+
+**Verdict: FAIL before, PASS after.** Not rewritten as a clean PASS: the FAIL is
+what makes the trigger obviously load-bearing rather than decorative.
 
 ### The seven BLOCKED, each naming the missing thing
 

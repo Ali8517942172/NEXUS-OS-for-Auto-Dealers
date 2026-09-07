@@ -402,17 +402,14 @@ pass.
   that directory before writing the Lead Ads receiver: the same signature applies,
   and the sandbox it runs in has **no `crypto` at all**.
 - ~~**All twenty Journey Lab verdicts are `NOT RUN`**~~ **Superseded 7 September
-  2026: 14 PASS, 1 FAIL, 7 BLOCKED, 1 NOT RUN across 23 journeys**, executed
+  2026: 15 PASS, 0 FAIL, 7 BLOCKED, 1 NOT RUN across 23 journeys**, executed
   against staging with per-journey teardown asserted. T21–T23 are the
-  concurrency pass added later that day; T22 was a second FAIL and is fixed. Still **none of them is L4** — no dealership is
-  on a live NEXUS ingestion endpoint, so no verdict is evidence about a real
-  customer. **The one FAIL is T12 and it is not in the ingestion layer:** a
-  direct `UPDATE` on `leads` — the dashboard's own owner-assignment path,
-  `lib/lead-drawer.js` — wrote **0 audit rows**. The change is real and nothing
-  recorded who made it, so a dealership cannot answer "who reassigned this lead".
-  Every other write goes through a `SECURITY DEFINER` function that audits; this
-  one is a direct table write kept deliberately because revoking it breaks the
-  screen, and that consequence was never priced.
+  concurrency pass added later that day; T22 was a FAIL and is fixed, and **T12
+  — the last standing FAIL — was closed the same day** (see "T12 closed" below:
+  a direct `UPDATE` on `leads` wrote 0 audit rows; a trigger now records every
+  ownership change from every writer). Still **none of them is L4** — no
+  dealership is on a live NEXUS ingestion endpoint, so no verdict here is
+  evidence about a real customer, and a green column is not a working product.
 - ~~**The six migrations are on staging and deliberately not on production.**~~
   **False as of 7 September 2026, and it was already false when this line was
   last read.** There are **seven** (`leadingest_01` … `leadingest_07`) and all
@@ -826,6 +823,73 @@ workflow has said `google-ads-lead` since the path parameter was measured to
 so a wrong path, credential or retry setting in the scaffolding is invisible to
 the check whose whole purpose is repo↔box equality. Corrected, and the limit is
 now written into the generator.
+
+### T12 closed: who reassigned this lead, and why
+
+7 September 2026. A direct `UPDATE` on `public.leads` — the dashboard's own
+owner-assignment path — changed the owner and wrote **zero** audit rows. Fixed
+by a trigger, not by the RPC that was the obvious answer, and then by an RPC as
+well for the half a trigger cannot do.
+
+**`CREATE TRIGGER` on `public.leads` does not fire the guard, and that was
+measured.** `nexus_guard_born_open_grants()` has `evttags = null`, so it fires on
+**every** `ddl_command_end` — but it acts only on rows whose `object_type` is
+`table` / `view` / `sequence` / `function`, and `CREATE TRIGGER` reports
+`trigger`. Proved on staging in a rolled-back transaction: 8 column grants
+before and after, `relacl` byte-identical, `authenticated` still holds UPDATE.
+**The guard's blast radius is `ALTER TABLE`, not "any DDL near `leads`"** — which
+widens what can be fixed here without the two-screen outage this file keeps
+warning about.
+
+**Why a trigger and not a definer RPC**, in order of weight: a definer RPC
+bypasses RLS and would need a **second copy** of `leads_role_update`'s
+authorisation, and the copy that drifts is the one that silently grants too much;
+it audits **one writer**, while n8n writes as `service_role` and would bypass it;
+and it is a **new write surface** on the dealer plane, where the browser holds
+one narrow column grant today.
+
+Proved on staging, every one a separate rolled-back transaction:
+
+| control | result |
+|---|---|
+| the exact dashboard write, as a signed-in manager | `REASSIGNED`, `tenant_member`, actor auth id **and** staff id, from/to names, linked `audit_log` row |
+| a `sales` rep taking a lead that is not theirs | **0 rows** — authorisation unchanged |
+| an edit to any other column | **0 events** |
+| a `service_role` write (the n8n path) | audited, `actor_authority = service_role`, no person named |
+| **audit table made to refuse** | the owner change was **refused `23514`** and the owner was unchanged — it fails closed |
+
+**A defect the control caught before it shipped.** The first version derived the
+actor from `current_user = 'service_role'`, which inside a `SECURITY DEFINER`
+function is **always the owner** — so it could never be true, and an n8n write
+came out labelled `database_owner`: a machine blaming a different machine. The
+answer is `current_setting('role')`, which carries PostgREST's per-request
+`SET ROLE` and survives the definer switch. Found by running the control, not by
+reading the code.
+
+**And the RPC, `nexus_lead_assign_owner`, is `SECURITY INVOKER`** — the UPDATE
+runs as the caller, so the same policy still decides and nothing is
+re-implemented or bypassed. It exists for two things a PATCH cannot do:
+
+1. **The reason.** PostgREST will not set an arbitrary GUC for a browser, so
+   `nexus.change_reason` — the seam the trigger reads — is reachable only from
+   inside a function. Through the RPC a reason is recorded; through a PATCH it is
+   NULL, and NULL means nobody said.
+2. **A measured cross-dealership defect.** `leads_role_update`'s WITH CHECK
+   constrains `leads.tenant_id` and says **nothing** about `assigned_to_id`. As a
+   real signed-in Alpha manager: through the RPC, refused by name; **by direct
+   PATCH, accepted** — Alpha's lead came out owned by Bravo's owner. Not an
+   access leak (the lead stays put and the stranger still cannot read it), but
+   the screen then names a rep nobody is accountable to.
+
+`lib/lead-drawer.js` now calls the RPC and takes an optional "why". **The shipped
+bundle contains zero `leads?id=eq` writes**, so the `authenticated` column-level
+UPDATE grant on `leads` — the one kept because "revoking it breaks the screen" —
+**no longer has a screen behind it.** Revoking it is now a real option and a
+separate decision: check n8n first, because `service_role` does not need it but
+something else might.
+
+**No backfill.** Every ownership change before today is unrecorded and is not
+reconstructable. `lead_owner_events` starts empty on both projects and says so.
 
 ### CONNECTED meant a row exists, and nobody could type into it
 
