@@ -24,9 +24,29 @@
  * Validation failures are 4XX; anything on our side is 5XX.
  */
 
-const NOTIFY_TO = process.env.NEXUS_NOTIFY_EMAIL || 'aliasgher892@gmail.com';
-const RESEND_KEY = process.env.RESEND_API_KEY || '';
-const RESEND_FROM = process.env.NEXUS_NOTIFY_FROM || '';
+/* THE NOTIFICATION GOES THROUGH n8n, NOT THROUGH A MAIL PROVIDER.
+
+   This used to POST to api.resend.com with RESEND_API_KEY and a verified
+   NEXUS_NOTIFY_FROM sending domain. Nothing else in NEXUS used Resend --
+   measured 8 Sep 2026: one call site, this file, and zero across all
+   twenty-odd n8n workflows, which send with a gmailOAuth2 credential that has
+   been working since August. So the site was the only reason a Resend account
+   had to exist at all.
+
+   It now posts the enquiry to a guarded n8n webhook, which composes the mail
+   and sends it from that same Gmail credential. Two environment variables and
+   an external account become one environment variable we generate ourselves.
+
+   NEXUS_NOTIFY_WEBHOOK_URL is NOT a secret and is not required -- it is here
+   so the endpoint can be moved without a deploy. NEXUS_NOTIFY_WEBHOOK_SECRET
+   is the whole guard: n8n refuses a request without the matching header
+   before it starts an execution, which is one better than the eleven older
+   business webhooks in this system, every one of which accepts the request
+   first and refuses downstream. */
+const NOTIFY_WEBHOOK_URL = process.env.NEXUS_NOTIFY_WEBHOOK_URL
+  || 'https://35.224.126.225.nip.io/webhook/site-enquiry';
+const NOTIFY_WEBHOOK_SECRET = process.env.NEXUS_NOTIFY_WEBHOOK_SECRET || '';
+const NOTIFY_HEADER = 'x-nexus-notify-secret';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const INGEST_KEY = process.env.NEXUS_LEAD_ENDPOINT_KEY || '';
@@ -114,40 +134,41 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'contact_required' });
   }
 
-  const summary =
-    'New NEXUS enquiry\n\n' +
-    'Name:       ' + full_name + '\n' +
-    'Dealership: ' + (dealership || '(not given)') + '\n' +
-    'WhatsApp:   ' + (phone || '(unparseable: ' + clean(body.phone, 60) + ')') + '\n' +
-    'Email:      ' + (email || '(not given)') + '\n' +
-    'Stock:      ' + (stock_size || '(not given)') + '\n\n' +
-    (message || '(no message)') + '\n\n' +
-    '--\nsubmission ' + submission_id + ' · ' + new Date().toISOString() + ' · ' + ip;
+  /* The mail body used to be composed here and handed to Resend. It is now
+     composed inside the n8n workflow instead, from the allowlisted fields
+     posted below. That is not tidying: a body built here and sent onward is a
+     body the sender chooses, and the point of the guard is that they do not. */
 
   let notified = false, notifyError = null;
-  if (RESEND_KEY && RESEND_FROM) {
+  if (NOTIFY_WEBHOOK_SECRET) {
     try {
-      const r = await fetch('https://api.resend.com/emails', {
+      /* Only the seven fields the workflow allowlists. `summary` is
+         deliberately NOT sent: the mail body is composed inside n8n from these
+         fields, so a caller holding the header still cannot make the message
+         arbitrary text. Sending a ready-made body would hand that away. */
+      const r = await fetch(NOTIFY_WEBHOOK_URL, {
         method: 'POST',
         headers: {
-          Authorization: 'Bearer ' + RESEND_KEY,
+          [NOTIFY_HEADER]: NOTIFY_WEBHOOK_SECRET,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: RESEND_FROM,
-          to: [NOTIFY_TO],
-          reply_to: email || undefined,
-          subject: 'NEXUS enquiry — ' + full_name + (dealership ? ' · ' + dealership : ''),
-          text: summary,
+          full_name,
+          phone: phone || '',
+          email,
+          dealership,
+          stock_size,
+          message,
+          submission_id,
         }),
       });
       notified = r.ok;
-      if (!r.ok) notifyError = 'resend_' + r.status;
+      if (!r.ok) notifyError = 'notify_' + r.status;
     } catch (e) {
-      notifyError = 'resend_unreachable';
+      notifyError = 'notify_unreachable';
     }
   } else {
-    notifyError = 'resend_not_configured';
+    notifyError = 'notify_secret_not_configured';
   }
 
   /* Optional second write, into the ingestion contract, under a SIMULATION

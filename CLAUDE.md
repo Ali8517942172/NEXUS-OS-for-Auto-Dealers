@@ -1694,6 +1694,84 @@ executions — 0 of 51 messages — were genuine customer conversation.** All 51
 The audit said most of the traffic is not customer conversation; in this window
 **none** of it was.
 
+## Resend was one call site pretending to be a dependency — 8 September 2026
+
+Ali asked why the go-live list wanted a `RESEND_API_KEY` when the system already
+sends everything through Gmail. He was right, and the measurement is stark:
+
+| | |
+|---|---|
+| files calling Resend | **one** — `apps/marketing-site/api/lead.js`, a single `fetch` to `api.resend.com` |
+| n8n workflows calling Resend | **zero** |
+| n8n workflows with Gmail nodes | **five** — the 7-day drip (3), Customer 360 (1), Lead Escalation (1) |
+| the decisive one | `Email: Escalation Alert (Gmail)` already emails `aliasgher892@gmail.com` on a `gmailOAuth2` credential — the *same shape* as the site's notification |
+
+So a Resend account existed for one call in one file. `ARCHITECTURE.md`,
+`CONTROL-PLANE.md` and the architecture diagram all listed it as a provider
+NEXUS uses; none of them was true.
+
+### What replaced it, and what it actually costs
+
+The site now POSTs the enquiry to **`POST /webhook/site-enquiry`**
+(`Oz2W6EWG6n6XW0HQ`, *NEXUS Site Enquiry to Gmail Notification*), which composes
+the mail and sends it from that existing Gmail credential.
+
+**Correcting something said out loud first: this is not "no secret on Vercel".**
+That was claimed before the door was designed, and it was wrong. An unguarded
+webhook that emails the owner is a spam cannon, and this file already carries
+the story of what an open business webhook costs. The honest ledger:
+
+| | before | after |
+|---|---|---|
+| Vercel env vars | `RESEND_API_KEY` + `NEXUS_NOTIFY_FROM` | `NEXUS_NOTIFY_WEBHOOK_SECRET` |
+| third-party account | Resend, plus a verified sending domain | none |
+| who sends | Resend | the `gmailOAuth2` credential already in production use |
+
+Two variables and an external account become one variable we generate.
+
+### Two design decisions worth keeping
+
+**The door is guarded by n8n itself.** The webhook uses `authentication:
+headerAuth`, so a request without the matching header is refused **before an
+execution starts**. This file records that all eleven older business webhooks
+do the opposite — every guard is downstream application logic, so every endpoint
+accepts the request and begins work before refusing. This is the first one that
+does not.
+
+**The mail body is composed inside n8n, never passed through.** The site sends
+seven allowlisted fields and *not* the `summary` string it used to build; the
+workflow strips control characters, caps every length, and refuses an enquiry
+with no name or no way to reply. A body built by the caller is a body the caller
+chooses, and the whole point of the guard is that they do not.
+
+**And nothing is written to any dealership record, deliberately.** A person
+filling in the NEXUS site is a prospect for the *vendor*. Filing them into
+`leads` or `audit_log` would put the vendor's own pipeline inside a customer's
+data — the boundary `CONTROL-PLANE.md` exists to hold.
+
+### The one step that is Ali's, and one trap inside it
+
+Creating the Header Auth credential is typing a secret, so it is his. **And n8n
+auto-assigned the wrong credential on creation:** it bound the webhook to
+`Resend API (Header)`, the only Header Auth credential that existed — so until
+that is changed the door key is the Resend API key, which is both wrong and the
+exact opposite of the point. **The workflow is therefore left UNPUBLISHED.**
+
+Publishing it before the credential is right would arm a door with the key we
+are trying to throw away.
+
+**The check to run first needs no secret at all**: POST to the endpoint with no
+header and expect **403** from n8n, with no execution created. That proves the
+route exists *and* that the guard bites. Only then send a real form.
+
+### And the marketing site is not connected to git
+
+`nexus-for-autodealers` on Vercel reads *"Connect Git Repository"*. Measured on
+the live page the same day: it still mints `submission_id` per attempt, so
+**both of the 7 September fixes are on `main` and not live.** A redeploy of that
+project ships whatever was last uploaded by hand, not what the repository says.
+That is the more important finding of the two.
+
 ## The evidence lived in a container that gets deleted — 8 September 2026
 
 This file, `CONTROL-PLANE.md`, `README.md`, `OWNER-ACTIONS.md`,
@@ -1805,9 +1883,10 @@ Same day, reading `apps/marketing-site/`:
   must still show the WhatsApp fallback — but the response now carries
   `stored_for_replay` and the log says which of the two happened.
 
-**The 503 itself is a Vercel environment variable, not a missing account.** n8n
-holds a working `Resend API (Header)` credential; `RESEND_API_KEY` and
-`NEXUS_NOTIFY_FROM` are simply unset on the site's Vercel project.
+**The 503 itself is a Vercel environment variable, not a missing account.**
+~~n8n holds a working `Resend API (Header)` credential; `RESEND_API_KEY` and
+`NEXUS_NOTIFY_FROM` are simply unset on the site's Vercel project.~~
+**Superseded 8 September 2026 — Resend is gone entirely. See below.**
 
 ## Bitrix24 has really worked. Slack has not been shown to.
 

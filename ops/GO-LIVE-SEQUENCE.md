@@ -135,19 +135,50 @@ expected and is not a failure.)
 
 ## 6 · The website form
 
-Vercel project `nexus-for-autodealers` → environment variables:
+**Resend is gone. This step is one variable now, not two plus an account.**
+Measured 8 Sep 2026: the site was the only thing in NEXUS that called Resend,
+and every n8n workflow already sends with a `gmailOAuth2` credential that has
+worked since August. The site now posts to a guarded n8n webhook which composes
+and sends the mail from that same credential.
+
+**Step A — n8n, and this one is Ali's because it is a secret.** Create a
+credential of type **Header Auth** named `NEXUS Site Enquiry Secret`, with
 
 ```
-RESEND_API_KEY
-NEXUS_NOTIFY_FROM
+Name:  x-nexus-notify-secret
+Value: <32+ random characters you generate>
 ```
 
-Redeploy.
+Open `NEXUS Site Enquiry to Gmail Notification` (`Oz2W6EWG6n6XW0HQ`), select
+that credential on the **Site Enquiry Webhook** node, and publish.
 
-**Check** — submit the real form once, then submit **the same thing again**.
-Expected: a `lead_event` with `source_key = website_form`, one `leads` row, one
-`ingest:website_form` audit row, a notification email, and the second submission
-producing **no second customer**.
+**Do not leave the auto-assigned credential in place.** n8n picked the only
+existing Header Auth credential it could find, which is `Resend API (Header)` —
+so until this is changed the door key is the Resend API key, which is both
+wrong and the opposite of the point.
+
+**Step B — Vercel** project `nexus-for-autodealers` → environment variables:
+
+```
+NEXUS_NOTIFY_WEBHOOK_SECRET   = the same value
+```
+
+`NEXUS_NOTIFY_WEBHOOK_URL` is optional and is **not** a secret; without it the
+site uses `https://35.224.126.225.nip.io/webhook/site-enquiry`.
+
+Redeploy. (The project is not connected to a repository, so check that first —
+otherwise a redeploy ships whatever was last uploaded by hand.)
+
+**Check the door before the form.** `curl -sS -o /dev/null -w '%{http_code}\n'
+-X POST https://35.224.126.225.nip.io/webhook/site-enquiry` with **no** header.
+Expected **403** from n8n itself, with no execution created — that proves the
+route exists *and* that it is guarded, and it needs no secret to run.
+
+**Then check the form** — submit it once, then submit **the same thing again**.
+Expected: a notification email, and — once the ingestion endpoint is configured
+— a `lead_event` with `source_key = website_form`, one `leads` row, one
+`ingest:website_form` audit row, and the second submission producing **no second
+customer**.
 
 ---
 

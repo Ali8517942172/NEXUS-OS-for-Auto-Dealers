@@ -257,7 +257,7 @@ what makes the trigger obviously load-bearing rather than decorative.
 |---|---|
 | T02 | `META_APP_SECRET` on the VM, a Facebook Page, and a lead form. L3 by definition — it needs Meta to fire our real endpoint |
 | T04 | `GOOGLE_LEAD_KEY_ALBA` on the VM and a Google Ads lead form asset |
-| T06 | the live website form answers **503** — `RESEND_API_KEY` and `NEXUS_NOTIFY_FROM` are unset on Vercel. The honeypot refusal itself is exercised by simulator scenario G, which is **adjacent evidence and not this journey** |
+| T06 | the live website form answers **503** — `NEXUS_NOTIFY_WEBHOOK_SECRET` is unset on Vercel. (Until 8 Sep 2026 this said `RESEND_API_KEY` and `NEXUS_NOTIFY_FROM`; Resend was removed and the notification now goes through a guarded n8n webhook to the existing Gmail credential.) The honeypot refusal itself is exercised by simulator scenario G, which is **adjacent evidence and not this journey** |
 | T07 | a WAHA session on a controlled device, and the open-door remediation on `/webhook/whatsapp-inbound` |
 | T08 | the same WhatsApp path. The marketplace half is permanently simulated — Dubizzle publishes no leads-out API |
 | T09 | there is **no inbound email ingest at all**. Not a configuration gap, an unbuilt capability |
