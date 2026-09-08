@@ -6,7 +6,7 @@ Each item says **what it unblocks**, **what "done" looks like**, **roughly how
 long**, and **what breaks if it is done out of order.**
 
 Companion files: `STATUS-2026-09-06.md` (what moved), `VERSIONS.md` (the four
-columns), `/home/claude/out/n8n-bundle-NOT-DEPLOYED/` (the nine n8n changes, with
+columns), `ops/n8n-bundle-NOT-DEPLOYED/` (the nine n8n changes, with
 exact before/after per node).
 
 ---
@@ -232,7 +232,7 @@ believing something false about the system.
 
 # TIER B — the n8n bundle, this week
 
-Nine changes, written up in `/home/claude/out/n8n-bundle-NOT-DEPLOYED/`, each with
+Nine changes, written up in `ops/n8n-bundle-NOT-DEPLOYED/`, each with
 the exact node, the exact before and after, the out-of-order consequence and the
 rollback. **Every one was written against the LIVE published definitions on the
 box, not against `n8n-workflows/*.json` in the repo — that export is from

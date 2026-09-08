@@ -256,7 +256,7 @@ behaviour. That directory is an export and it goes stale.
 - `apps/executive-dashboard/QUALITY_GATE_REPORT.md` — the generated gate result.
   Read it rather than any narrative summary of it. **The committed copy is from
   2026-09-03**; the 5 September run is written up in
-  `/home/claude/out/gate-2026-09-05.md`.
+  `ops/evidence/gate-2026-09-05.md`.
 - `apps/executive-dashboard/SECURITY_REGRESSION_REPORT.md` — the 3 September
   security sweep and its open findings.
 - `apps/executive-dashboard/J1_PRODUCTION_READINESS_REPORT.md` — release
