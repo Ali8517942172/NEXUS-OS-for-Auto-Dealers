@@ -99,8 +99,15 @@ export default async function handler(req, res) {
   const dealership = clean(body.dealership, 160);
   const stock_size = clean(body.stock_size, 40);
   const message = clean(body.message, 1500);
-  const submission_id = clean(body.submission_id, 80)
-    || 'web-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  /* NO SERVER-SIDE FALLBACK ID, AND THAT IS THE POINT. This used to mint
+     'web-' + Date.now() + a weak PRNG when the browser sent none. That value is
+     unique per REQUEST, so a visitor retrying after the 503 below produced a
+     second lead_event for one enquiry -- the `nokey:` + timestamp shape the
+     database refuses by name, wearing a different prefix so the CHECK let it
+     through. The browser now mints one id per page load and re-sends it; if it
+     could not (no CSPRNG at all) it sends none, and an absent id is recorded as
+     absent rather than faked into something that looks idempotent and is not. */
+  const submission_id = clean(body.submission_id, 80);
 
   if (!full_name) return res.status(400).json({ error: 'name_required' });
   if (!phone && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -182,10 +189,30 @@ export default async function handler(req, res) {
   }
 
   if (!notified) {
-    /* Nothing durable happened. Say so with a 5XX, so the browser shows the
-       WhatsApp fallback rather than telling someone we have their details. */
-    console.error('lead notify failed', { notifyError, recorded, submission_id });
-    return res.status(503).json({ error: 'not_delivered', detail: notifyError });
+    /* THE COMMENT HERE USED TO SAY "Nothing durable happened", AND THE BRANCH
+       DID NOT CHECK. `recorded` can be 'recorded' -- the enquiry IS in
+       lead_event -- and this branch still asserted the opposite. Today the
+       assertion happens to be true, because production carries zero simulation
+       endpoints (measured 7 Sep 2026: 4 endpoints, all production, none
+       simulation), so the optional write cannot succeed and `recorded` is null.
+       The day that endpoint exists, the sentence would have been false while
+       reading like a fact -- the house rule about captions asserting the
+       opposite of their own branch, which this project has now found eight
+       times.
+
+       The status code deliberately does NOT change. A stored enquiry nobody is
+       notified about still means no human will call this person back, so the
+       browser must still show the WhatsApp fallback. What changes is that the
+       response and the log say which of the two happened. */
+    const durable = recorded === 'recorded';
+    console.error('lead notify failed', { notifyError, recorded, durable, submission_id });
+    return res.status(503).json({
+      error: 'not_delivered',
+      detail: notifyError,
+      /* Named so a later reader cannot mistake it for "we have your details and
+         someone will call": stored is not contacted. */
+      stored_for_replay: durable,
+    });
   }
 
   return res.status(200).json({ ok: true, recorded });
