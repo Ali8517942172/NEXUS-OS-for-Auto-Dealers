@@ -37,6 +37,19 @@ control. It replaces none of those systems. `PRODUCT.md` holds the full thesis,
 the commercial role of each of the 14 modules, the engines, and the roadmap —
 read it before proposing any feature.
 
+**Who it is for: every dealership, not this one.** NEXUS is a multi-tenant
+product **by design and by intent**, sold to auto dealerships on a subscription
+— the UAE market first, then worldwide. It was not commissioned by, and is not
+being built for, any single dealership. **ALBA CARS is tenant #1 and the pilot**
+— the proving ground the product is measured on, not the customer it exists to
+serve. That is what NEXUS is *for*; it is not a claim that it is safe to put a
+second dealership on today, which the next two sections answer, and answer with
+"not yet". Judge a feature as
+a product decision: *does this hold for a dealership we have not met yet?* A
+fact that is really one dealership's configuration — its bank commission
+arrangement, its holding-cost rate, its WhatsApp number, its lead-ingest
+endpoints — belongs in per-tenant data, never in a constant and never in code.
+
 The sequencing rule that matters more than the strategy: **build the engine
 whose data already exists.** An engine that renders "no data" to a paying
 dealership is worse than one that does not exist. Measured 2 Sep — inventory
@@ -48,6 +61,26 @@ integrations, not on code. Sell those as roadmap, never as capability.
 Never fabricate a monetary impact. Estimated, attributed and confirmed are
 three different words; do not call an estimate revenue, and do not claim
 recovered revenue until a real business outcome occurs.
+
+## Every production measurement in this repo is a measurement of one tenant
+
+Production holds **one active dealership plus a quarantine tenant**. So a figure
+taken "as the ALBA owner", "on production" or "on ALBA's real data" is a
+one-tenant figure. It says nothing about what a second dealership would see.
+
+That is the deliberate shape of production, not a gap in the testing.
+Cross-tenant behaviour is proven **on staging only**, with two synthetic
+dealerships — and it is proven there because activating a second dealership on
+production silences the five consumers of `nexus_scoped_tenant_id()` tabulated
+in the next section.
+
+**Do not let a reader — or yourself — upgrade "works for ALBA" into "works for
+any dealership".** Those are two claims with two different pieces of evidence.
+When quoting a production figure, say which tenant it was scoped to. When a
+check could only run at one tenant, record it as NOT RUN for the multi-tenant
+case rather than as a PASS. `commercial/WHAT-WE-CLAIM.md` holds the
+customer-facing version of this rule and outranks this file for anything said to
+a buyer.
 
 ## Tenancy: the database is finished. The workflows are most of the way.
 

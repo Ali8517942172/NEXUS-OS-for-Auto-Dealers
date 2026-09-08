@@ -32,6 +32,12 @@ It runs on my infrastructure, under my supervision, and I am in it every day. Th
 honest description and it is also the reason it works — a system this young needs someone
 watching it. You are buying a managed service with me attached, not a licence to software.
 
+**What you are joining.** NEXUS is being built as a product for auto dealerships — the UAE
+first, then wider — not as a bespoke system for any one dealer. One dealership is on it
+today, and it is the pilot. That is a statement about where the product is going. It is not a
+claim that NEXUS runs several dealerships side by side, because it does not yet, and nothing
+in this document should be read as saying otherwise.
+
 ---
 
 ## What the dealership gets

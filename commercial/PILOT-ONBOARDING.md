@@ -361,6 +361,10 @@ them the same way. On 2 September a raw `count(*)` at 09:57 showed 2 sales and 2
 quotes, and every one of them was another workstream's test data — a raw count will lie to you
 in exactly the direction you want to be lied to.
 
+That one dealership is the pilot — tenant #1 of a product built for dealerships generally, the
+UAE first and then wider. Every figure below is one tenant's figure. The steps in this
+document are written to be repeatable for the next dealership; the figures are not.
+
 12 WhatsApp contacts, 1 of them a car enquiry · 108 messages, 24 resolving to a named
 customer · 3 leads · 12 vehicles, **0 with a reconditioning cost** · **0 customer sales** (one
 `purchase_history` row appeared at 09:59:53 on 2 Sep from a repair test against the owner's own

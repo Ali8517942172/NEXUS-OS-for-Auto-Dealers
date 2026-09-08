@@ -25,6 +25,32 @@ is losing money, proves the evidence, recommends the highest-value action,
 executes approved actions across systems the dealership already has, and
 measures what was recovered.*
 
+## The market, in order: UAE first, then worldwide
+
+**NEXUS is a multi-tenant product sold to auto dealerships on a subscription,
+not a system built for one dealer.** The route to market has two stages and the
+order is deliberate:
+
+1. **UAE first.** The regulatory surface is one the product already reasons
+   about — CBUAE finance rules, the PDPL, AED pricing, the WhatsApp-first buying
+   behaviour of the market — and it is where the pilot dealership, the real
+   stock and the real enquiries are. The competitor scan above is a UAE scan for
+   the same reason.
+2. **Then worldwide.** Nothing in the thesis is UAE-specific: every market has
+   dealerships whose leads decay, whose stock ages and whose systems do not talk
+   to each other. What is UAE-specific is configuration — currency, finance
+   rules, consent law, the messaging channel — which is why those belong in
+   per-tenant data and in the policy engine rather than in code.
+
+**ALBA CARS is tenant #1 and the pilot**, the first dealership the product has
+to be good enough for. It is not the customer NEXUS was built for, and a
+capability is not on the route below because ALBA needs it — it is there because
+dealerships need it.
+
+This is the intended route, not a proven one. There is no second dealership on
+production, no paying customer, and no market outside the UAE has been tested.
+`VERSIONS.md` holds what that means column by column.
+
 ## What a UAE dealership actually does
 
 Acquire → inspect → recondition → price → advertise → capture enquiry →

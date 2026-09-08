@@ -27,6 +27,27 @@ the way:
 this system.** That has not changed and no row below should be read as implying
 otherwise.
 
+## What NEXUS is, and what that does not let you say
+
+**NEXUS is a product sold to auto dealerships on a subscription — the UAE market
+first, then worldwide. It is not a system built for one dealer.** **ALBA CARS is
+tenant #1 and the pilot**: the dealership whose real stock, enquiries and
+WhatsApp traffic every measurement in this register was taken against.
+
+Both halves of that are sayable. What it does **not** license is any claim that
+NEXUS can run two dealerships today — the Part 2 row on multi-tenancy stands
+exactly as written, and it is the row that governs. "It is being built as a
+product for dealerships" is a statement about intent. "You can put your second
+branch on it" is a statement about capability, and the evidence does not support
+it.
+
+**Read every figure in Part 1 and Part 3 as a one-tenant figure.** Production
+holds one active dealership plus a quarantine tenant. Cross-tenant behaviour was
+proven on staging, deliberately, because activating a second dealership on
+production silences five consumers of `nexus_scoped_tenant_id()`. Nothing
+measured on ALBA CARS is evidence about what a second dealership would see, and
+a buyer must not be allowed to hear it that way.
+
 ---
 
 **Version 2.1 · Re-measured against the live system on 3 September 2026**

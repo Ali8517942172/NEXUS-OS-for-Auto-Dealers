@@ -23,6 +23,16 @@ combination of them. Most of the disappointment in this project has come from a
 | **Production-proven** | It has done its job on real production data at least once and left a record | A row, an audit entry, an execution — with the outcome checked, not the count |
 | **Commercially validated** | A dealership that is not ALBA CARS has used it, and ideally paid for it | Nothing in this repository can currently supply this |
 
+**Why that fourth column names ALBA CARS.** NEXUS is a multi-tenant product
+sold to auto dealerships on a subscription — the UAE market first, then
+worldwide — and **ALBA CARS is tenant #1 and the pilot**, not the dealership the
+product was built for. So a capability proving itself on ALBA proves it on the
+proving ground; it does not prove it on the market. Everything measured
+"as the ALBA owner" or "on production" below is a **one-tenant** measurement:
+production runs one active dealership plus a quarantine tenant, and two-dealership
+behaviour is exercised on staging deliberately, because activating a second
+dealership on production silences five consumers of `nexus_scoped_tenant_id()`.
+
 **Three facts run through every table below and are stated once here rather than
 softened in each row. All three were re-measured on 6 September 2026 against
 production `dsvuoovivysszdoiorch`:**

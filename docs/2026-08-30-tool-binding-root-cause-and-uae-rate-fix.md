@@ -133,6 +133,16 @@ quote accuracy more than any further tuning of the bands.
 2. **Whether ALBA CARS is contractually an "agent"** of any bank under CBUAE 5.1.1.80 — banks are held
    responsible for their agents' conduct, and those agreements may carry their own rate-quoting clauses.
 
+---
+
+**Note added 8 September 2026.** The two questions above are ALBA CARS' questions
+because ALBA CARS is tenant #1 and the pilot. They are not one-off business
+questions about a single dealer: **every dealership NEXUS is sold to has its own
+bank agreements, its own commission arrangement, and its own answer to whether it
+is contractually an agent of a bank.** So the answers belong in per-tenant
+configuration and in the policy engine, not in a constant and not in an agent
+prompt. Nothing about the finance figures above is changed by this note.
+
 ## Still open
 
 - `saveDataSuccessExecution` on `BiyHk9ZXxJUVGbf6` remains `all` for one more verification message.

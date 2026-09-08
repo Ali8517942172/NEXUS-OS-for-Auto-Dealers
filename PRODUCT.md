@@ -27,6 +27,30 @@ Four questions the product must answer, in this order:
 3. What should happen next?
 4. Can NEXUS do it — and how much was actually recovered?
 
+## Who it is sold to
+
+**NEXUS is a multi-tenant product for auto dealerships, sold on a subscription.
+The UAE market first, then worldwide.** It is not a bespoke build for one
+dealer, and no document in this repository should read as though it were.
+
+**ALBA CARS is tenant #1 and the pilot.** It supplies the real stock, the real
+enquiries and the real WhatsApp traffic that everything here is measured
+against, and it is the first dealership the product has to be good enough for —
+but it is the proving ground, not the client. The practical test on every
+feature is *does this hold for a dealership we have not met yet?*, and anything
+that is really one dealership's configuration — its bank commission arrangement,
+its holding-cost rate, its lead-ingest endpoints — is per-tenant data rather
+than a product constant.
+
+**That is what NEXUS is for. It is not a claim about what it can do today.**
+Multi-tenancy is by design and by intent; what may be said to a buyer about
+running two dealerships side by side is governed by
+`commercial/WHAT-WE-CLAIM.md`, which still refuses the multi-tenancy claim. And
+every production figure in this document is a **one-tenant** figure — production
+holds one active dealership plus a quarantine tenant, and cross-tenant behaviour
+is exercised on staging deliberately. See "Every production measurement in this
+repo is a measurement of one tenant" in `CLAUDE.md`.
+
 ## What the 14 modules are for, commercially
 
 | Module | Commercial role |

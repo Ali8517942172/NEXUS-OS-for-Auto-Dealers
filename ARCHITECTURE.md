@@ -5,6 +5,13 @@
 > leaking, decides the next best action, and executes it — with the team in
 > control. It replaces nothing. It reads from the systems the dealership
 > already trusts, reasons across them, and acts.
+>
+> **It is a multi-tenant product by design, sold to auto dealerships on a
+> subscription — the UAE market first, then worldwide.** ALBA CARS is tenant #1
+> and the pilot, not the dealership NEXUS was built for. By design is not yet in
+> operation: read every measured figure below as a **one-tenant** figure, because
+> production runs one active dealership plus a quarantine tenant and
+> two-dealership behaviour is exercised on staging only.
 
 This document describes the system **as it runs on 5 September 2026**. An
 earlier version of it described an architecture that was planned in July and
