@@ -1,6 +1,14 @@
 # =============================================================================
 # NEXUS OS — SINGLE-DEALER STACK (3 containers)
 # =============================================================================
+# THIS IS PROBABLY NOT THE FILE RUNNING ON THE BOX — corrected 8 September 2026.
+# docs/J1-RUN-CHECKLIST.md drives `-f docker-compose.single.yml` on the VM, which
+# is why this header used to say "THIS IS THE DEPLOYED FILE". Measured against the
+# live box the same day, `/rest/settings` returns `executionMode: "queue"` — and
+# this file runs in the default "regular" mode by design (see below). Queue mode
+# comes from docker-compose.yml. Read that file's header before touching the VM.
+# n8n is reachable at https://35.224.126.225.nip.io either way.
+#
 # Use this instead of docker-compose.yml when running ONE dealership.
 #
 #   docker compose -f docker-compose.single.yml up -d
@@ -24,17 +32,29 @@ services:
   n8n:
     image: docker.n8n.io/n8nio/n8n
     container_name: n8n
-    # WAHA no longer runs on this VM. The e2-micro's throttled shared-core CPU
-    # cannot boot WAHA's GOWS engine inside its hard-coded 10 s window
-    # ("GOWS did not start after 10000 ms"), and NOWEB has the stuck-on-STARTING
-    # bug. So WAHA stays on the local PC and is reached over Tailscale.
+    # WAHA runs as the `waha` service defined further down in THIS compose file,
+    # on the shared `nexus_net` bridge. The hostname `waha` therefore resolves by
+    # Docker DNS to that container, and http://waha:3000/api/sendText — the URL
+    # every workflow already calls — reaches it with no workflow edits.
+    # (The GOWS boot failure below was an e2-micro CPU limit; whether it recurs
+    # on nexus-vm's instance size has not been re-verified from this repo — if
+    # WAHA will not start, check `docker logs waha` before changing anything.)
     #
-    # Mapping the PC's Tailscale IP to the hostname `waha` means every workflow
-    # keeps calling http://waha:3000/api/sendText unchanged — no workflow edits.
-    # Tailscale IPs are stable per device, but if the PC is ever removed from
-    # the tailnet and re-added, update this line.
-    extra_hosts:
-      - "waha:100.76.236.42"      # desktop-l3an0ma (Windows) on the tailnet
+    # HISTORY (removed 2026-09-08): this service used to carry an
+    #   extra_hosts: ["waha:100.76.236.42"]
+    # entry pinning the hostname `waha` to the Tailscale IP of the Windows
+    # desktop `desktop-l3an0ma`. That pin existed because WAHA had failed to boot
+    # on the old e2-micro — the throttled shared-core CPU could not start the
+    # GOWS engine inside its hard-coded 10 s window ("GOWS did not start after
+    # 10000 ms"), and the NOWEB engine had the stuck-on-STARTING bug — so WAHA
+    # was kept on the desktop and reached over Tailscale. Ali asked for that
+    # desktop stack to be removed on 8 Sep 2026; at the time this comment was
+    # written its three containers (n8n, n8n-db, waha) were still RUNNING under
+    # Docker Desktop from C:\Users\user\Desktop\MY RESUMES\nexus-os, so read
+    # "gone" as "being removed", not as verified. Either way the pin had to go:
+    # a hostname override aimed at a machine outside the compose network is a
+    # silent outage of the outbound WhatsApp send path the day that machine
+    # stops. Do not reintroduce it.
     restart: always
     env_file: .env
     ports:
@@ -44,10 +64,10 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      # Override WEBHOOK_URL in .env when this moves off the Tailscale tunnel
-      # (e.g. to a GCP VM). Everything else stays identical.
-      - WEBHOOK_URL=${WEBHOOK_URL:-https://desktop-l3an0ma.tail2141f7.ts.net/}
-      - N8N_EDITOR_BASE_URL=${WEBHOOK_URL:-https://desktop-l3an0ma.tail2141f7.ts.net/}
+      # Default is the GCP VM's public entrypoint. Override WEBHOOK_URL in .env
+      # if this ever moves again; everything else stays identical.
+      - WEBHOOK_URL=${WEBHOOK_URL:-https://35.224.126.225.nip.io/}
+      - N8N_EDITOR_BASE_URL=${WEBHOOK_URL:-https://35.224.126.225.nip.io/}
       - GENERIC_TIMEZONE=UTC
 
       # --- Identity keys: MUST stay pinned ---

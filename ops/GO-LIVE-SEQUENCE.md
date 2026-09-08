@@ -100,9 +100,33 @@ from" cell must show the walk-in origin, **not** "No arrival recorded".
 ## 5 · The WhatsApp door · ⚠️ ORDER MATTERS MOST HERE
 
 Today the gate is `DORMANT` and **29 of 29 sampled requests carry no secret**.
-There is one sender. Enforcing before the header exists drops **100%** of a
-dealership's inbound WhatsApp, silently, and the only symptom is the bot going
-quiet.
+There is one sender of customer messages, the box. Enforcing before the header
+exists drops **100%** of a dealership's inbound WhatsApp, silently, and the only
+symptom is the bot going quiet.
+
+> **Two corrections measured on 8 September 2026, both of which change this
+> step.**
+>
+> **"There is one sender" was read too widely.** `2.50.10.149` — Ali's Windows
+> desktop `desktop-l3an0ma` — was **still posting** into
+> `/webhook/whatsapp-inbound` on 8 September (execution 11103, 06:07:40 UTC,
+> `session.status`, no secret header). The 29-execution sample could not see it:
+> it grouped by `payload.id` and that host's unauthenticated session emits only
+> `session.status`, which carries none. **Absence of duplicates is not absence
+> of the sender.** Its containers were **stopped by hand at 06:08:24 UTC** and
+> it is **identified, and stopped by hand on 8 Sep 2026 — not yet permanently
+> removed (`restart: always` still declared, device 8 still linked)**. It
+> delivers no messages, so enforcement would drop only its `session.status`
+> posts, harmlessly.
+>
+> **5b does not currently pass.** With the secret set and the header arriving,
+> the gate reads `header_present: true, **ok: false**` on the box's own traffic.
+> The box runs in queue mode, so the Code node reading
+> `$env.WAHA_WEBHOOK_SECRET` executes in `n8n-worker`, and
+> `docker compose up -d n8n` recreates the container you then check rather than
+> the one that compares. Recreate both and verify where the value is consumed:
+> `docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'`.
+> **5d stays blocked until 5b actually reads `ok: true`.**
 
 **5a.** On the VM: `WAHA_WEBHOOK_SECRET=<a long random string>`. **Nothing
 else.** Restart n8n.

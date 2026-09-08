@@ -234,7 +234,19 @@ headers['x-forwarded-for']   -> 35.224.126.225   (the box)
 headers['x-forwarded-for']   -> 2.50.10.149      (the second host, if kept)
 ```
 
-Any `header_present: false` is a host you have not configured. **Do not enforce
+**8 September 2026:** `.149` is no longer a host to keep. It was measured still
+posting that morning (execution 11103, 06:07:40 UTC, `session.status`, no secret
+header) and its containers were **stopped by hand at 06:08:24 UTC** —
+**identified, and stopped by hand on 8 Sep 2026 — not yet permanently removed
+(`restart: always` still declared, device 8 still linked)**. Its WhatsApp session
+is not authenticated, so it delivers no messages; there is nothing to configure.
+**Do not read the source cross-check by hunting duplicate `payload.id`** — that is
+what hid this host for two days. Read `x-forwarded-for` on every event.
+
+Any `header_present: false` is a host you have not configured. **A
+`header_present: true` with `ok: false` is a different fault** — as measured on
+the box on 8 September, it means the value n8n compares against is stale, which
+in queue mode is the `n8n-worker` container, not `n8n`. **Do not enforce
 until you have seen `ok: true` on at least one genuine 1:1 customer message** —
 in the 9 hours sampled on 6 Sep there were none, all 51 messages were group /
 `status@broadcast` / `@newsletter`.

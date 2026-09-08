@@ -6,7 +6,7 @@
 The Contract Auditor is a public-facing AI tool that lets any car buyer upload a contract or RTA invoice and instantly detect hidden fees or KYC document anomalies. It uses Google Gemini Flash (via OpenRouter) for vision analysis.
 
 **Live URL:** https://nexus-contract-auditor.vercel.app
-**n8n Webhook:** `https://desktop-l3an0ma.tail2141f7.ts.net/webhook/audit-kyc`
+**n8n Webhook:** `https://35.224.126.225.nip.io/webhook/audit-kyc`
 **n8n Workflow:** `wf_101` — KYC/AML Document Auditor
 
 ---
@@ -18,7 +18,7 @@ User uploads contract (JPG/PNG/PDF)
         ↓
 Vercel Frontend (nexus-contract-auditor.vercel.app)
         ↓ POST /webhook/audit-kyc
-Tailscale Funnel → n8n Docker (localhost:5678)
+GCP VM `nexus-vm` → n8n Docker (published at https://35.224.126.225.nip.io)
         ↓
 [Receive Document] Webhook node
         ↓
@@ -78,7 +78,7 @@ For contract audits, the frontend also renders:
 
 **Webhook test (curl):**
 ```bash
-curl -X POST https://desktop-l3an0ma.tail2141f7.ts.net/webhook/audit-kyc \
+curl -X POST https://35.224.126.225.nip.io/webhook/audit-kyc \
   -H "Content-Type: application/json" \
   -d '{"document_url": "https://example.com/contract.jpg"}'
 ```
@@ -89,16 +89,16 @@ curl -X POST https://desktop-l3an0ma.tail2141f7.ts.net/webhook/audit-kyc \
 3. Click Run Audit — results in 3-5 seconds
 
 **n8n manual test:**
-1. http://localhost:5678 → login → wf_101 → Execute Workflow
+1. https://35.224.126.225.nip.io → login → wf_101 → Execute Workflow
 
 ---
 
 ## Deployment
 
 **Frontend:** Vercel static deploy from `apps/contract-auditor/index.html`
-**Backend:** n8n in Docker + Tailscale Funnel (permanent HTTPS, no port forwarding)
+**Backend:** n8n in Docker on the GCP VM `nexus-vm` (us-central1-a), published over HTTPS at https://35.224.126.225.nip.io
 
-To restart backend: `docker compose up -d` from `nexus-os/`
+To restart backend, on the VM: `cd /opt/nexus && sudo docker compose -f docker-compose.single.yml restart n8n`
 
 ---
 
@@ -106,10 +106,10 @@ To restart backend: `docker compose up -d` from `nexus-os/`
 
 | Issue | Fix |
 |-------|-----|
-| "Could not reach audit service" | `docker compose up -d` + activate wf_101 in n8n |
+| "Could not reach audit service" | On the VM: `cd /opt/nexus && sudo docker compose -f docker-compose.single.yml up -d`, then activate wf_101 in n8n |
 | Null AI response | Check OpenRouter credits at openrouter.ai |
 | CORS error | Add `Access-Control-Allow-Origin: *` in n8n webhook node |
-| Tailscale down | `tailscale up && tailscale funnel 5678` |
+| n8n unreachable at https://35.224.126.225.nip.io | Check the VM is running and the n8n container is up (`sudo docker compose -f docker-compose.single.yml ps` in `/opt/nexus`) |
 
 ---
 

@@ -68,6 +68,25 @@ If available memory is under 150 MB or load is above 3, restart n8n and wait 90 
     gcloud compute ssh nexus-vm --zone=us-central1-a --quiet \
       --command='cd /opt/nexus && sudo docker compose -f docker-compose.single.yml restart n8n'
 
+> **Note added 8 September 2026: that `-f docker-compose.single.yml` is probably
+> wrong, and the command is deliberately left as it stands.**
+> `GET https://35.224.126.225.nip.io/rest/settings` on the live VM returns
+> `executionMode: "queue"`, concurrency 2. `docker-compose.single.yml` states in
+> its own comments that it runs in the default `regular` mode with no worker and
+> no redis, so queue mode can only come from `docker-compose.yml`. Both files'
+> headers have been corrected to say what is measured and what is inferred —
+> read them before touching the VM.
+>
+> **Nobody has run `docker compose ps` on the box**, so the command above is not
+> being changed on an inference. Settle it there first. If the box really is in
+> queue mode, this line restarts the wrong process for anything env-related: the
+> **worker** executes workflows, so a Code node reading `$env` runs in
+> `n8n-worker`, and recreating `n8n` alone leaves the stale value where it is
+> actually used. That is exactly how the WAHA gate sat at
+> `header_present: true, ok: false` on 8 September. For a memory-pressure restart
+> during a J1 run the distinction is minor; for anything touching `.env` it is
+> the whole defect.
+
 A restart takes about 90 seconds to answer again and costs nothing — the published workflow
 version and all data survive it. It is a normal part of this plan, not a failure.
 

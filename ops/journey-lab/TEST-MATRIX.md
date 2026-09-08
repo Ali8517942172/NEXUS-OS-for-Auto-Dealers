@@ -604,9 +604,16 @@ Five controls, so five things to fire.
 **Level today** L2 against the writer. **L4 is the only level that can prove
 this path**, and not before the documented rollout order: set
 `WAHA_WEBHOOK_SECRET` on the VM, make WAHA send `x-nexus-webhook-secret`,
-confirm in MONITOR on a genuine message, then enforce. With a single sender now
-posting, enforcing before the header is configured drops **100%** of inbound
-messages.
+confirm in MONITOR on a genuine message, then enforce. The box is the only sender
+of customer messages, so enforcing before the header is configured drops **100%**
+of inbound messages. *(Corrected 8 September 2026: "a single sender now posting"
+overstated a duplicate-pair sample. `2.50.10.149` was still posting
+`session.status` into production on 8 Sep — execution 11103, 06:07:40 UTC — and
+was stopped by hand at 06:08:24 UTC; it is **identified, and stopped by hand on
+8 Sep 2026 — not yet permanently removed (`restart: always` still declared,
+device 8 still linked)**. It carries no messages either way. The live blocker on
+enforcing is that the gate reads `header_present: true, ok: false` on the box's
+own traffic.)*
 **Verdict** **NOT RUN**
 
 ---

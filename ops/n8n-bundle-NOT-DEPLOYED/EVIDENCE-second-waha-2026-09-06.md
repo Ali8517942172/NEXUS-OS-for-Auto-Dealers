@@ -172,3 +172,129 @@ Two consequences worth carrying:
   reached `Is Real Inbound?` and 102 stopped there. No AI call, no send, no
   `communication_logs` row. The cost of the second WAHA host is therefore
   102 wasted executions per 51 ignorable messages, not doubled customer replies.
+
+---
+
+# ADDENDUM — 8 September 2026: the host is named
+
+**Nothing above is changed by this. No number, no table and no conclusion in this
+file was re-derived; the measurements of 5–6 September stand exactly as recorded.**
+This addendum records one new fact of a different kind, and its evidence is of a
+different kind too.
+
+**The fact.** `2.50.10.149` is **Ali's own Windows desktop `desktop-l3an0ma`**,
+running WAHA in Docker Desktop. It is the same PC that used to host n8n, reached
+over a Tailscale funnel at `https://desktop-l3an0ma.tail2141f7.ts.net`, from
+before the move to GCP.
+
+**How it is known.** Ali stated it, on 8 September 2026: *"purana waha mene
+desktop docker pe chalaya tha aur n8n bhi tailscale ke zariye use bhi local pc pe
+download kiya tha but ab sab kuch gcp pe hai to use remove kar do purana wala."*
+Nothing was read off that machine from here. This is an owner statement, not a
+measurement, and it is the only evidence for the host's identity.
+
+| claim | status |
+|---|---|
+| two senders, same account, `me.jid …:8` vs `…:12`, builds 2026.7.1 vs 2026.7.2, ~40 s apart | **measured** (this file, 5–6 Sep) |
+| 51 distinct messages, all delivered twice, zero singletons | **measured** (this file) |
+| one sender only on 7 Sep, 29 executions, zero duplicate `payload.id` | **measured** (`ops/n8n-waha-gate/README.md`) |
+| the `.149` host is `desktop-l3an0ma`, WAHA in Docker Desktop, ex-n8n host behind Tailscale | **stated by the owner, 8 Sep 2026** |
+| the container is stopped | **not proven** |
+| it will not restart | **not proven** — its compose declares `restart: always` |
+| WhatsApp linked device **8** is unlinked | **not proven** |
+
+**Status to carry forward: identified; decommissioning in progress, not yet
+verified.** At the time of writing the desktop teardown was running and had not
+been confirmed from either end. Do not write "removed" or "done" anywhere on the
+strength of this addendum. **Superseded later the same day — see the second
+addendum at the end of this file. The correct status is now: identified, and
+stopped by hand on 8 Sep 2026 — not yet permanently removed (`restart: always`
+still declared, device 8 still linked).**
+
+**One observation consistent with the identification, which is not proof of it.**
+On 8 September, execution `11094` carried a `webhookUrl` of
+`https://desktop-l3an0ma.tail2141f7.ts.net/...` inside a WAHA payload — the same
+Tailscale hostname. That is consistent with the desktop having been the WAHA
+webhook target while it was the n8n host. It is not confirmation: the webhook
+target has not been read out of the live WAHA session config, so what that
+instance points at today is unknown.
+
+**What the identification does and does not do to the rollout.** It removes the
+search — nobody has to hunt a host by its address any more. It does not remove
+the step: `PRECONDITIONS.md` §1 still closes on one of two observations, either
+the container stopped with `restart: always` disabled and device 8 unlinked and
+no `me.jid …:8` delivery seen from the box over a meaningful window, or
+`x-nexus-webhook-secret` present in its WAHA webhook `customHeaders`.
+
+
+---
+
+# SECOND ADDENDUM — 8 September 2026: it had not stopped, and this file's method could not have seen it
+
+**Nothing above is changed by this either. The 5-6 September numbers stand; so
+does the first addendum. What changes is a claim made elsewhere on the strength
+of samples shaped like this one.**
+
+**The measurement.** Production execution **11103**, **8 September 2026 at
+06:07:40 UTC**:
+
+```
+x-forwarded-for            2.50.10.149
+user-agent                 WAHA/2026.7.1
+me.jid                     971526647253:8@s.whatsapp.net
+body.environment.version   2026.7.1
+body.event                 session.status
+x-nexus-webhook-secret     absent   ->  _gate.header_present = false
+```
+
+The `.149` host was **still posting into `/webhook/whatsapp-inbound` on
+production on 8 September** — two days after `CLAUDE.md` and
+`ops/n8n-waha-gate/README.md` recorded that the second WAHA had stopped.
+
+**The method blind spot, which is this file's own method.** The 6 September
+sample above and the 29-execution sample of 7 September both grouped by
+`payload.id` and looked for duplicate pairs. That host's WhatsApp session is no
+longer authenticated, so it emits `session.status` events and **no `message`
+events at all** — events that carry no `payload.id` and can therefore never form
+a pair. A sender that has stopped duplicating is invisible to a detector built
+out of duplicates. **Absence of duplicates is not absence of the sender.**
+
+This does not weaken the 51-pair result: in the 5-6 September window both hosts
+were delivering `message` events and every one was seen twice, which is what
+that sample measured and all it measured. It does mean the sample answers
+"is `.149` ever the only sender of a message?" and does **not** answer "is
+`.149` still calling this endpoint?". Only a per-request read of
+`x-forwarded-for` across all events answers the second question.
+
+**What was found and what was done.** Docker Desktop on `desktop-l3an0ma`,
+opened on 8 September, showed a compose project **`nexus-os`** at
+`C:\Users\user\Desktop\MY RESUMES\nexus-os` with **three containers
+running**: `n8n` (5678), `n8n-db` (postgres:16-alpine) and `waha`
+(devlikeapro/waha, 3000). Its own WAHA log at 06:02:22 records a
+`session.status` POST to
+`https://35.224.126.225.nip.io/webhook/whatsapp-inbound` returning status code
+200. The compose project was **stopped by hand through the Docker Desktop UI at
+06:08:24 UTC** (`Received SIGTERM signal`, `Deregistered all crons`,
+`database system is shut down`). The GCP box was unaffected: `/healthz` `ok`,
+and executions 11104 and 11105 arrived from `35.224.126.225` in the same minute.
+
+Deletion of the compose project was **declined** deliberately — the Docker
+Desktop confirmation says nothing about named volumes, and those volumes hold
+that n8n's workflows and credentials and the WAHA linked-device session.
+
+**Status to carry forward, replacing the first addendum's:
+identified, and stopped by hand on 8 Sep 2026 — not yet permanently removed
+(`restart: always` still declared, device 8 still linked).** `restart: always`
+is declared on all three services and Docker restarts a manually stopped
+`always` container when the daemon next starts, so a Docker Desktop restart or a
+Windows reboot brings it back. The outstanding steps are
+`docker update --restart=no n8n n8n-db waha` on that PC and unlinking WhatsApp
+device **8** on the handset. Neither has been done. Do not write "removed",
+"decommissioned" or "done".
+
+**A second exposure this uncovered, never costed anywhere in this repo:** a
+second n8n with its own Postgres — schedules, credentials and all — was live on
+that machine alongside the WAHA container.
+
+The authoritative account is `CLAUDE.md`, section "It had not stopped. It was
+stopped, by hand, at 06:08 UTC on 8 September 2026".

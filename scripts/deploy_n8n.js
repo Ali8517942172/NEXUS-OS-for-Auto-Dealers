@@ -4,8 +4,27 @@ const https = require('https');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const N8N_API_KEY = process.env.N8N_MCP_API_KEY;
-// Parse the tailscale URL to get hostname, without protocol
-const N8N_URL = process.env.TAILSCALE_N8N_URL.replace(/^https?:\/\//, '');
+
+// Base URL of the live n8n instance. Default is the GCP VM `nexus-vm`.
+// TAILSCALE_N8N_URL is the old name from when n8n ran on the Windows desktop
+// behind a Tailscale funnel; it is still read so existing .env files keep
+// working, but it is deprecated — set N8N_BASE_URL instead.
+const DEFAULT_N8N_BASE_URL = 'https://35.224.126.225.nip.io';
+const N8N_BASE_URL =
+    process.env.N8N_BASE_URL ||
+    process.env.TAILSCALE_N8N_URL ||
+    DEFAULT_N8N_BASE_URL;
+
+if (!N8N_BASE_URL || typeof N8N_BASE_URL !== 'string' || !N8N_BASE_URL.trim()) {
+    console.error(
+        'deploy_n8n: no n8n base URL. Set N8N_BASE_URL in .env, e.g.\n' +
+        '  N8N_BASE_URL=' + DEFAULT_N8N_BASE_URL
+    );
+    process.exit(1);
+}
+
+// https.request wants a bare hostname, not a URL.
+const N8N_URL = N8N_BASE_URL.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
 const workflowsDir = path.join(__dirname, '../n8n-workflows');
 
 async function pushWorkflow(filename) {

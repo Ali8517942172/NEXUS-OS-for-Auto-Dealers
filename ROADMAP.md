@@ -145,10 +145,28 @@ because what closed an item is the evidence that it is closed.
 6. ~~**Staging parity — P1.**~~ Achieved 4 Sep and **not re-measured since the
    eighteen migrations of 5 September**. Treat parity as **UNKNOWN** until a
    fingerprint comparison is run.
-7. **Still open, in this order:** identify `2.50.10.149`; the WAHA secret
-   rollout; the Meta attestation (13 rules, 0 verified, 0 attestations); Meta
-   Cloud. Then give `workflow_registry` a `tenant_id`, publish the Infra Health
-   Probe, and rehearse the `NEXUS_TENANT_MAP` switch on staging.
+7. **Still open, in this order:** permanently remove `2.50.10.149`; the WAHA
+   secret rollout; the Meta attestation (13 rules, 0 verified, 0 attestations);
+   Meta Cloud. Then give `workflow_registry` a `tenant_id`, publish the Infra
+   Health Probe, and rehearse the `NEXUS_TENANT_MAP` switch on staging.
+   **`2.50.10.149` is identified as of 8 September 2026** — Ali's own Windows
+   desktop `desktop-l3an0ma`, running WAHA in Docker Desktop, the PC that used to
+   host n8n behind `https://desktop-l3an0ma.tail2141f7.ts.net`. **It had not
+   stopped**: execution 11103 on production at 06:07:40 UTC on 8 September posted
+   `session.status` from that address with no secret header, two days after this
+   repo recorded it gone. The 6 and 7 September samples grouped by `payload.id`
+   and that host emits only events which carry none, so they could not have seen
+   it — absence of duplicates is not absence of the sender. Its `nexus-os`
+   compose project (`n8n`, `n8n-db`, `waha`) was **stopped by hand at 06:08:24
+   UTC**. Status: **identified, and stopped by hand on 8 Sep 2026 — not yet
+   permanently removed (`restart: always` still declared, device 8 still
+   linked)**. The two outstanding steps are
+   `docker update --restart=no n8n n8n-db waha` on that PC and unlinking WhatsApp
+   device 8.
+   **And the secret rollout has its own live blocker**, unrelated to `.149`: the
+   gate reads `header_present: true, ok: false` on the box's own traffic, because
+   the box is in queue mode and the Code node comparing the secret runs in
+   `n8n-worker`, not in `n8n`.
 
 **PR #7 is not merged and WhatsApp messaging is not switched on until item 7 is
 done and the n8n writers in item 3 are deployed.** `STATUS-2026-09-06.md`

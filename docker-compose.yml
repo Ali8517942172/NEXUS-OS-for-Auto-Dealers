@@ -1,5 +1,27 @@
 version: '3.8'
 
+# WHICH FILE IS ON THE BOX — measured 8 September 2026, not assumed.
+# `GET https://35.224.126.225.nip.io/rest/settings` on the live VM returns
+# `executionMode: "queue"`, concurrency 2. Only THIS file sets EXECUTIONS_MODE=queue
+# and ships an n8n-worker plus redis; docker-compose.single.yml says in its own
+# comments that it deliberately runs in the default "regular" mode. So the box is
+# running this file, or something derived from it — NOT the single-container one,
+# whatever docs/J1-RUN-CHECKLIST.md's `-f docker-compose.single.yml` line implies.
+# That checklist line is older than the queue-mode switch and has not been
+# re-verified. Nobody has read /opt/nexus from this repo; the reasoning above is
+# the whole basis. Settle it with `docker compose ps` on the VM before relying on
+# it either way.
+#
+# CONSEQUENCE THAT COSTS REAL TIME: in queue mode the WORKER executes workflows,
+# so `docker compose up -d n8n` recreates the process that does NOT read
+# $env inside a Code node. A changed secret in .env then appears correct in the
+# main container's `printenv` and is still stale where it is actually used. This
+# is exactly how the WAHA gate sat at `header_present: true, ok: false` on 8 Sep.
+# Recreate n8n AND n8n-worker, and verify the worker:
+#   docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'
+#
+# Both compose files share the same named volumes, so only ONE may run at a time.
+
 services:
   n8n:
     image: docker.n8n.io/n8nio/n8n
@@ -13,8 +35,8 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - NODE_ENV=production
-      - WEBHOOK_URL=https://desktop-l3an0ma.tail2141f7.ts.net/
-      - N8N_EDITOR_BASE_URL=https://desktop-l3an0ma.tail2141f7.ts.net/
+      - WEBHOOK_URL=https://35.224.126.225.nip.io/
+      - N8N_EDITOR_BASE_URL=https://35.224.126.225.nip.io/
       - GENERIC_TIMEZONE=UTC
 
       # --- Identity keys: MUST be pinned and identical on n8n + n8n-worker ---

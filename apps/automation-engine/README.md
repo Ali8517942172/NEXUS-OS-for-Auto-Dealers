@@ -42,7 +42,7 @@ Website Form / WhatsApp / Phone
 CRM_API_URL=http://localhost:5000
 CRM_API_KEY=your_crm_api_key
 MARKETING_API_URL=http://localhost:5001
-N8N_WEBHOOK_URL=http://localhost:5678
+N8N_WEBHOOK_URL=https://35.224.126.225.nip.io
 WHATSAPP_API_KEY=your_whatsapp_key
 SLACK_WEBHOOK_URL=your_slack_webhook
 ```

@@ -3,6 +3,13 @@
 **Status, 7 September 2026: still open.** `WAHA_WEBHOOK_SECRET` is unset on the
 VM, so `WAHA Auth Gate` is `DORMANT` and every caller passes.
 
+**Status, 8 September 2026: still open, and the reason has changed.** The secret
+is now set and WAHA is sending the header, but the gate reads
+`mode MONITOR, header_present true, ok false` on live traffic from the box
+itself. Enforcing against that would drop every real customer message. See
+"The secret is set, the header arrives, and `ok` is still `false`" below before
+touching `WAHA_WEBHOOK_ENFORCE`.
+
 This is not theoretical any more. **Lead 122 — a real person, a real UAE phone
 number — entered production through this door at 14:05 UTC today.**
 
@@ -20,18 +27,71 @@ the saved webhook item on every one.
 | requests carrying `x-nexus-webhook-secret` | **0 of 29** |
 | pairs sharing a `payload.id` | **0** |
 
-Two things follow, and they point in opposite directions.
+Two things follow, and they point in opposite directions. Both were read too
+widely at the time; the correction is immediately below the first.
 
-**The second WAHA really is gone.** Zero duplicate `payload.id`, one build, one
-device index. The 3–6 September doubling is over, which retires the "execution
-count is roughly double the truth" caveat for traffic after 6 September.
+**No duplicate deliveries in the window — and that is a narrower fact than it
+was first read as.** Zero duplicate `payload.id`, one build, one device index.
+The 3-6 September doubling is over, which retires the "execution count is
+roughly double the truth" caveat for traffic after 6 September.
 
-**And that makes enforcement more dangerous, not less.** With two senders, a
-premature `WAHA_WEBHOOK_ENFORCE=true` cut off whichever one lacked the header and
-the other carried on — survivable and visible. With one sender and the header
-absent on 29 of 29 requests, the same mistake drops **100% of a dealership's
-inbound WhatsApp**, silently, and the only symptom is that the bot stops
-replying.
+> **The inference drawn from these 29 executions was wrong — corrected
+> 8 September 2026. The numbers above are not.**
+>
+> This note first read the sample as "the second WAHA has stopped delivering".
+> It had not. Execution **11103** on production, **8 September 2026 at 06:07:40
+> UTC**, carries `x-forwarded-for 2.50.10.149`, `user-agent WAHA/2026.7.1`,
+> `me.jid 971526647253:8@s.whatsapp.net`, `body.environment.version 2026.7.1`,
+> `body.event session.status`, no `x-nexus-webhook-secret` and therefore
+> `_gate.header_present false`. The `.149` host was still posting into
+> `/webhook/whatsapp-inbound` two days after this file called it absent.
+>
+> **The method has a blind spot, and it is the lesson worth keeping.** This
+> sample — and the 6 September one before it — grouped by `payload.id` and
+> looked for duplicate pairs. That host's WhatsApp session is no longer
+> authenticated, so it emits `session.status` events and **no `message` events
+> at all**. Those events carry no `payload.id` and can therefore never form a
+> pair. **Absence of duplicates is not absence of the sender.** A detector built
+> out of duplicates goes blind the moment the sender stops duplicating, and
+> "0 pairs sharing a `payload.id`" answers a different question from "who is
+> calling this endpoint".
+>
+> **What actually happened to it.** The host is Ali's Windows desktop
+> `desktop-l3an0ma`. On 8 September Docker Desktop on that machine showed a
+> compose project `nexus-os` with three containers running — `n8n` (5678),
+> `n8n-db` (postgres:16-alpine) and `waha` (devlikeapro/waha, 3000) — and the
+> WAHA container's own log at 06:02:22 recorded a `session.status` POST to
+> `https://35.224.126.225.nip.io/webhook/whatsapp-inbound` returning 200. The
+> compose project was **stopped by hand through the Docker Desktop UI at
+> 06:08:24 UTC**. The GCP box was unaffected: `/healthz` `ok`, executions 11104
+> and 11105 from `35.224.126.225` in the same minute.
+>
+> **Status to carry: identified, and stopped by hand on 8 Sep 2026 — not yet
+> permanently removed (`restart: always` still declared, device 8 still
+> linked).** Deletion was declined deliberately; `restart: always` is still on
+> all three services, and Docker restarts a manually stopped `always` container
+> when the daemon next starts, so a Docker Desktop restart or a Windows reboot
+> brings the whole project back. The two outstanding steps are
+> `docker update --restart=no n8n n8n-db waha` on that PC and unlinking
+> WhatsApp device **8** on the handset. Neither has been done. Never write
+> "removed", "decommissioned" or "done". Full account: `CLAUDE.md`,
+> "It had not stopped. It was stopped, by hand, at 06:08 UTC on 8 September
+> 2026".
+
+**And that makes enforcement more dangerous, not less — for the real traffic.**
+With two senders both delivering messages, a premature
+`WAHA_WEBHOOK_ENFORCE=true` cut off whichever one lacked the header and the
+other carried on — survivable and visible. The box is now the only sender of
+`message` events, and the header is absent on 29 of 29 requests, so the same
+mistake drops **100% of a dealership's inbound WhatsApp**, silently, and the
+only symptom is that the bot stops replying.
+
+**The `.149` host does not soften that, and it is not an argument for
+enforcing either.** Since its session lost authentication it delivers only
+`session.status` events, which `Prefilter` discards anyway; enforcement would
+drop those posts harmlessly. It is not a capture path any more, so there is
+nothing to configure and nothing to lose. What blocks enforcement today is the
+box's own traffic — see the next section.
 
 > `x-forwarded-for` is the box's own address because WAHA runs on that box and
 > reaches n8n through the public hostname. It distinguished the two senders in
@@ -47,7 +107,7 @@ box is already in, which is the one state that needs no proving.
 
 | state | env | behaviour |
 |---|---|---|
-| **DORMANT** | secret unset | everything passes. The rollback, and today's state. |
+| **DORMANT** | secret unset | everything passes. The rollback, and the state on 7 September. As of 8 September the box is in **MONITOR** — see below. |
 | **MONITOR** | secret set, enforce ≠ `true` | everything passes, tagged, so the header can be confirmed on real traffic first |
 | **ENFORCE** | secret set, enforce = `true` | only a matching header survives |
 | **misconfigured** | enforce = `true`, secret **unset or empty** | **everything is dropped** — fails closed |
@@ -126,6 +186,51 @@ judgement rather than an oversight: with the id-less case stopped earlier, an
 error at the claim now means the database is genuinely unreachable, and losing a
 real customer's message to a transient outage is worse than processing one twice.
 That trade is now *stated*; before, it read as an accident.
+
+## The secret is set, the header arrives, and `ok` is still `false` — 8 September 2026
+
+This is the state of the gate on the box today, and it is the reason
+`WAHA_WEBHOOK_ENFORCE` still cannot be armed.
+
+```
+_gate.mode  MONITOR     _gate.header_present  true     _gate.ok  false
+```
+
+**The header half is genuinely fixed**, measured on executions 11098, 11099 and
+11100: name `x-nexus-webhook-secret`, value 32 characters, alphanumeric, no
+quoting and no surrounding whitespace, and the SHA-256 fingerprint of what WAHA
+sends **changes** between 11096 and 11098, so the rotation reached WAHA.
+`ok = false` therefore means one thing only: the value n8n compares against is
+not that value.
+
+**Why.** `GET /rest/settings` on the live box returns `executionMode: "queue"`,
+concurrency 2. In queue mode the **worker** executes workflows, so the Code node
+that reads `$env.WAHA_WEBHOOK_SECRET` runs in `n8n-worker`, not in `n8n`.
+`docker compose up -d n8n` recreates the container whose `printenv` you then
+check and leaves the one that does the comparing on the old value. The
+verification and the defect were in different containers.
+
+**So verify the secret where it is consumed**, without printing it:
+
+```
+docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'
+```
+
+compared against the fingerprint of what the sender actually sent. Recreate
+`n8n` **and** `n8n-worker` after any change to `.env`.
+
+**Which compose file the box runs is not settled by this repository.**
+`docs/J1-RUN-CHECKLIST.md` drives `-f docker-compose.single.yml`, and that file
+states in its own comments that it runs in the default `regular` mode with no
+worker and no redis; queue mode can only come from `docker-compose.yml`. Both
+files' headers now say what is measured and what is inferred. `docker compose ps`
+on the VM settles it; nothing in here does.
+
+**Consequence for the order below.** Step 3 — MONITOR reading `header_present`
+and `ok` both `true` on a genuine 1:1 message — is **not yet satisfied**, and it
+is the step that is failing. Step 4 stays blocked. This is a different blocker
+from the one that held the rollout in early September: then it was a second,
+unconfigured sender; now it is the box's own traffic failing its own comparison.
 
 ## The order, and it is not advice
 

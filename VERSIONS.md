@@ -115,7 +115,7 @@ row says what is done and what is not, and that is deliberate.
 | Unattributed traffic never files under a dealership | YES | YES — proved on staging including against a forged JWT claim and a forged membership row | PARTLY — re-measured today, `nexus_quarantine_census()` returns **0 rows** | Which n8n workflows omit `tenant_id` is still **UNKNOWN** |
 | Message and consent identity | YES | YES — every attack re-run, plus a designed RESTRICTIVE deny floor on seven tables replacing an incidental lock | **NO** — the tables are empty, so no identity has ever been exercised by real traffic | `service_role` writing the tables directly bypasses the writer's checks, and n8n holds `service_role` |
 | Idempotency of the inbound claim | YES | YES | YES — observed absorbing a real duplicate delivery on 4 September | The workflow path around it is **fail-open**, so the database guarantee is stronger than the operational one |
-| The inbound webhook perimeter | **NO** | YES — tested live and found open | — | `WAHA_WEBHOOK_SECRET` unset; the caller picks the dealership. **The second sender is now identified** — Ali's own account on device 8, an older WAHA on a UAE host — and, measured over 51 messages, **it was never the only sender**, so arming the gate would on that evidence have dropped nothing. That is grounds for confidence, not for skipping the step |
+| The inbound webhook perimeter | **NO** | YES — tested live and found open | — | `WAHA_WEBHOOK_SECRET` unset; the caller picks the dealership. **The second sender is identified** — Ali's own account on device 8, an older WAHA on his Windows desktop `desktop-l3an0ma` in Docker Desktop, the old n8n host behind `https://desktop-l3an0ma.tail2141f7.ts.net`. **It had not stopped**: measured on 8 Sep 2026, execution 11103 at 06:07:40 UTC posted `session.status` from `2.50.10.149` with no secret header, two days after this repo called it gone — the earlier samples grouped by `payload.id` and that host emits only events which can never pair. Its whole `nexus-os` compose project (`n8n`, `n8n-db`, `waha`) was **stopped by hand at 06:08:24 UTC**. Status: **identified, and stopped by hand on 8 Sep 2026 — not yet permanently removed (`restart: always` still declared, device 8 still linked)**. Measured over 51 messages, it was never the only sender, and it now delivers no messages at all, so enforcement would drop only its `session.status` posts. **Enforcement is nevertheless still blocked, for a new reason:** the gate reads `header_present: true, ok: false` on the box's **own** traffic, because in queue mode the comparison runs in `n8n-worker` and `docker compose up -d n8n` recreates the wrong container |
 | Something watching the channel | **NO** | — | — | The Infra Health Probe has `activeVersionId: null` — **never published** — while `workflow_registry` says `is_active = true`. **The defect is the pair**: the Automation screen tells the dealership its channel is monitored |
 | The quality gate | YES | YES — and on 6 September its own freshness test was rebuilt on the migration history rather than on a clock, after a snapshot **eighteen minutes old** turned out to be wrong | YES | Definitive run **PASS 31 · FAIL 1 · WARN 2 · NOT RUN 3**, exit 1, anchored to `20260906062139`. **Four migrations have landed since**, and the render lane goes red against the stale snapshot — measured both ways, and it is the snapshot's age, not the product |
 | The repository can rebuild the database | YES | PARTLY | — | `L11` and `L12` are the mechanism and both are still **NOT RUN** here |
@@ -139,8 +139,13 @@ timings, "done" criteria and out-of-order consequences.
    `communication_logs` and `processed_messages` identities have writers.
 6. **Publish the Infra Health Probe**, so something is watching the channel
    *before* the webhook gate is armed.
-7. **Close the inbound webhook**, in the documented order, having decided what to
-   do about the second WAHA host.
+7. **Close the inbound webhook**, in the documented order. Two things sit under
+   this. The second WAHA host — `desktop-l3an0ma` — is **identified, and stopped
+   by hand on 8 Sep 2026 — not yet permanently removed (`restart: always` still
+   declared, device 8 still linked)**; it was measured still posting that
+   morning. And the gate itself now reads `header_present: true, ok: false` on
+   the box's own traffic, because the box is in queue mode and the comparison
+   runs in `n8n-worker`.
 8. **Publish the Phase 6 Silence Detector**, which empties most of Money Leaks'
    register 3.
 9. **Rehearse the `NEXUS_TENANT_MAP` switch on staging** — and note it needs a

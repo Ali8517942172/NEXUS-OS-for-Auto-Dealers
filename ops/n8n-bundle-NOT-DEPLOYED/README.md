@@ -53,7 +53,7 @@ individual edits are the easy part.
 | **04** | `Claim Message Id` stops minting `nokey:`; `Is New Message?` stops treating 23514 as a licence to reply | 2–3 nodes | seconds | **medium — can suppress a reply** |
 | **05** | Publish **NEXUS Infra Health Probe** | 1 publish + 1 registry row | seconds | medium |
 | **06** | Edge JWT validation for the dashboard webhooks | Caddy, not n8n | seconds (`caddy reload`) | medium |
-| **07** | **Arm `WAHA_WEBHOOK_SECRET`** | VM env + both WAHA hosts | ~10 s (disable the gate node) | **HIGH — can silently drop every customer message** |
+| **07** | **Arm `WAHA_WEBHOOK_SECRET`** | VM env + the box's WAHA (`.149` no longer applies — see below) | ~10 s (disable the gate node) | **HIGH — can silently drop every customer message** |
 | **08** | Publish **Phase 6 Silence Detector** | 1 publish | seconds | **high — contacts humans** |
 | **09** | `Resolve Tenant`: `NEXUS_TENANT_MAP` → `channel_registry` | 1–2 nodes | seconds | high |
 
@@ -73,6 +73,13 @@ individual edits are the easy part.
   source **on a genuine customer message** → only then `WAHA_WEBHOOK_ENFORCE=true`.
   **Hardcoding the secret in n8n before WAHA sends the header silently drops every
   real customer message**, and WAHA keeps seeing 200 so nothing ever errors.
+  **Update 8 September 2026:** "both hosts" now means the box only —
+  `2.50.10.149` was stopped by hand that morning and its session was already
+  unauthenticated, so it delivers no messages to configure for. The step is
+  nevertheless stuck: the gate reads `header_present true, ok false` on the
+  **box's own** traffic, because in queue mode the comparison runs in
+  `n8n-worker` and `docker compose up -d n8n` does not recreate it. See
+  `PRECONDITIONS.md` §2.
 - **07 before 09.** Moving the tenant map into `channel_registry` does not
   authenticate the caller; `body.session` is still caller-supplied. Doing 09 first
   produces something that *looks* finished and is not. Every tenant control proven
@@ -103,6 +110,30 @@ dropped nothing. **Configure the second host anyway** — the sample is 9 hours 
 one day in which both hosts were up throughout, and it contained **zero genuine
 customer conversations**. Full method, limits and worked examples:
 `EVIDENCE-second-waha-2026-09-06.md`.
+
+**Which host it is — 8 September 2026, stated by Ali, not measured.**
+`2.50.10.149` is his own Windows desktop **`desktop-l3an0ma`**, running WAHA in
+Docker Desktop; the same PC that used to host n8n behind a Tailscale funnel at
+`https://desktop-l3an0ma.tail2141f7.ts.net`, from before the move to GCP. He has
+asked for it to be removed.
+
+**And it had not stopped — measured 8 September 2026.** Production execution
+**11103** at **06:07:40 UTC** carries `x-forwarded-for 2.50.10.149`,
+`WAHA/2026.7.1`, `me.jid …:8`, `body.event session.status`, no
+`x-nexus-webhook-secret`. The 6 and 7 September samples missed it because both
+grouped by `payload.id` and looked for pairs, and that host's session is no
+longer authenticated: it emits `session.status` events, which carry no
+`payload.id` and can never pair. **Absence of duplicates is not absence of the
+sender.** Docker Desktop on that PC showed the `nexus-os` compose project with
+`n8n`, `n8n-db` and `waha` all running; the project was **stopped by hand at
+06:08:24 UTC** and deletion was declined.
+
+**Carry it as: identified, and stopped by hand on 8 Sep 2026 — not yet
+permanently removed (`restart: always` still declared, device 8 still linked).**
+A Docker Desktop restart or a Windows reboot brings it back. See
+`PRECONDITIONS.md` §1, `EVIDENCE-second-waha-2026-09-06.md`'s second addendum,
+and `CLAUDE.md`, "It had not stopped. It was stopped, by hand, at 06:08 UTC on
+8 September 2026".
 
 **Second number from the same sample, because it changes what this channel is
 worth:** `Is Real Inbound?` classified **0 of 102** executions (0 of 51 messages)
