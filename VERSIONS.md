@@ -23,6 +23,18 @@ combination of them. Most of the disappointment in this project has come from a
 | **Production-proven** | It has done its job on real production data at least once and left a record | A row, an audit entry, an execution — with the outcome checked, not the count |
 | **Commercially validated** | A dealership that is not ALBA CARS has used it, and ideally paid for it | Nothing in this repository can currently supply this |
 
+**And as of 8 September 2026 these four columns are reported on a five-level
+ladder.** The owner's reporting rule is
+`1. IMPLEMENTED · 2. PROVEN · 3. PRODUCTION-DEPLOYED · 4. REAL TRAFFIC PROVEN ·
+5. COMMERCIAL VALIDATED`, and it splits what this table's third column ran
+together: **deployed** and **carrying real traffic** are two different facts,
+and this document has needed that distinction on nearly every row (a capability
+implemented on an unmerged branch; a screen deployed with no customer through
+it). The columns below are not rewritten — they are still what was measured —
+but a status quoted from here should name the ladder level as well. The full
+applied ladder is at `ops/evidence-standard/STATUS-LADDER.md` and is
+deliberately not reproduced here.
+
 **Why that fourth column names ALBA CARS.** NEXUS is a multi-tenant product
 sold to auto dealerships on a subscription — the UAE market first, then
 worldwide — and **ALBA CARS is tenant #1 and the pilot**, not the dealership the
@@ -63,11 +75,17 @@ row says what is done and what is not, and that is deliberate.
 
 ---
 
-# The four versions
+# The versions
+
+**Corrected 8 September 2026.** This section was headed *"The four versions"*.
+There are five: `V1.5 — Revenue Capture Reliability` was inserted before V2 by
+the owner on 8 September 2026, and `ROADMAP.md` holds the reasoning for the
+order.
 
 | | What it is | Where it stands |
 |---|---|---|
 | **V1** | **Production-safe core Revenue OS.** One dealership, safely: lead recovery, stock profit, evidence-based action, the honesty machinery, and a channel that does not leak or misattribute | The engines are implemented and now substantially tested through real signed-in sessions; the flagship screen exists; **the channel is still not operational and the branch is still not merged or deployed** |
+| **V1.5** | **Revenue Capture Reliability.** No new product surface. WhatsApp capture, message event durability, customer / conversation / lead identity, AI enquiry classification, held queue, manual recovery, cross-channel attach, audit, attribution, delivery reliability, observability | **New on 8 September 2026, and nothing here is claimed as capability.** Parts of it exist and are measured in the V1 tables below — the ingestion contract, the origin column, the promotion race fix, the owner-change audit. The items it names as gaps are the ones this document already measures as gaps: no lead HTTP receiver in service, `communication_logs` joined on an email string, message identity with no writer, nothing watching the channel |
 | **V2** | **Dealer intelligence expansion.** Pricing advisor, buy/don't-buy, trade-in desk, marketplace performance, stock-to-lead matching, service revenue recovery | **Nothing implemented.** Two of the six are also blocked on data that does not exist. Unchanged |
 | **V3** | **Full dealership lifecycle.** Ownership, service, appointments, and a customer-facing surface | **Nothing implemented.** No service table, no appointments table, no customer route, no build target. Unchanged |
 | **V4** | **Platform.** Unified event graph, control plane, subscriptions, self-serve onboarding, cross-system integrations | **Nothing implemented.** Zero control-plane objects in production. Unchanged |
@@ -81,7 +99,8 @@ row says what is done and what is not, and that is deliberate.
 | **M2** | The core Revenue OS is hardened | **NOT DONE, and materially advanced.** The flagship screen exists and is the default; B1–B3 pass through real signed-in sessions; the gate's definitive run is PASS 31 · FAIL 1 · WARN 2 · NOT RUN 3, exit 1. **The branch is still not merged and not deployed**, and four migrations landed after the gate's catalogue was taken, so that board is a true statement about 06:51Z and not a current one |
 | **M3** | Messaging is operational | **NOT STARTED in the sense that matters, and unchanged.** The layer is built and wired to nothing. Nothing on the box changed last night. The nine-step rollout now exists as an ordered runbook with its constraints stated, which is progress in *planning*, not in *operation* |
 | **M4** | Two tenants proven | **NOT DONE — and the first column moved.** A full customer journey was walked under two dealerships in aborted transactions with a live positive control on every probe, and all eight assertions passed **at the database**. `NEXUS_TENANT_MAP` is still unset, the switch has never been rehearsed, the inbound webhook still lets the caller pick the dealership, and `service_role` is `BYPASSRLS` and was measured writing a lead under the wrong dealership with no check at all. **The sentence is unchanged: *multi-tenant architecture implemented, second-dealer runtime proof pending*** |
-| **M5** | V1 is sellable | **NOT DONE.** Requires M1–M4 plus a decision on price and a signed pilot |
+| **M4.5** | **NEXUS V1 — REAL DEALERSHIP CERTIFIED** | **NOT STARTED, and it is now the next milestone.** Set by the owner on 8 September 2026: one real dealership's real enquiries proven end to end — source → capture → classify → lead → response → sales action → audit → revenue evidence. **Not one clause of that has happened.** Production holds 5 leads, of which one is a preflight and one is a WhatsApp lead created from a message that was not an enquiry; no lead has arrived through an HTTP receiver; the messaging layer has never carried a genuine customer message. This milestone is what `V1.5` in `ROADMAP.md` exists to reach |
+| **M5** | V1 is sellable | **NOT DONE.** Requires M1–M4 plus a decision on price and a signed pilot — **and, corrected 8 September 2026, M4.5 before it.** The old sentence implied feature completeness was the bar. It is not: the bar is a real dealership's real enquiries proven end to end |
 | **M6 / M7 / M8** | V2 / V3 / V4 | **Not started.** None of the three has an implemented capability |
 
 **Nothing above is a percentage, because there is no honest denominator for
@@ -136,6 +155,13 @@ row says what is done and what is not, and that is deliberate.
 In the order they block each other. `OWNER-ACTIONS.md` is the same list with
 timings, "done" criteria and out-of-order consequences.
 
+**Read this list under the milestone that now comes first.** As of 8 September
+2026 the next milestone is **M4.5 — NEXUS V1 REAL DEALERSHIP CERTIFIED**, not
+feature completeness, so items 1–10 below are no longer "the remaining build" —
+they are the prerequisites for putting one real dealership's real enquiries
+through the system and proving each hop. Nothing is added to the list and
+nothing is removed; what changed is what finishing it buys.
+
 1. **Get the work off this container and onto GitHub.** Nine commits — including
    the entire flagship screen — exist nowhere else.
 2. **Deploy the branch.** 14 screens against 21 is the largest single gap between
@@ -171,7 +197,40 @@ runs on today's honest data.
 
 ---
 
+# V1.5 — revenue capture reliability
+
+Inserted 8 September 2026, before V2. `ROADMAP.md` holds the phase and the
+reasoning; this section holds only where the thirteen items stand, and the
+honest answer for most of them is in the V1 tables above rather than here.
+
+**Nothing in this phase is a new capability to sell.** It is the layer the V1
+engines already depend on, and the reason it is a phase of its own is that this
+document keeps measuring the same shape: the mechanism exists, and the arrival
+it was built for has not happened.
+
+| Item | Where it stands, from the measurements above |
+|---|---|
+| WhatsApp capture | The inbound path runs and the perimeter is open: `WAHA_WEBHOOK_SECRET` unset, the caller picks the dealership, and enforcement is blocked because the comparison runs in `n8n-worker`. **0 of 51 sampled messages were genuine customer conversation** |
+| Message event durability | The database identities refuse per-attempt ids; **the n8n writers were not changed**, `communication_logs` has 115 rows and 0 external ids, and `Claim Message Id` is fail-open |
+| Customer identity | Identity helpers fail closed at more than one dealership by design, so inbound stops matching known customers and starts creating duplicate people |
+| Conversation identity | `v_conversations` renders; `channel_message_events` holds **0** rows |
+| Lead identity | The promotion race that made three customers out of one phone-only enquiry is fixed on both projects, with a standing ten-backend regression |
+| AI enquiry classification | Not built. The only measurement of enquiry density is from a personal handset and is **not** a dealership benchmark — see `CLAUDE.md` |
+| Held queue | Not built. There is no place for an enquiry that arrives and cannot be classified or attached |
+| Manual recovery | `nexus_lead_record_manual()` and the Add-a-lead screen are live and proved on production in a rolled-back transaction |
+| Cross-channel attach | Not built. Nothing links a lead to a unit, and nothing attaches a WhatsApp conversation to a lead except an email string |
+| Audit | Every promoted lead now writes one audit row from door three. **92%** of `audit_log` still carries no customer link |
+| Attribution | `nexus_lead_attribution()` reads the origin a dealership is entitled to; the single production lead reads `UNKNOWN` and is not filed under Facebook |
+| Delivery reliability | `whatsapp_delivery_events` holds **0** rows. Its key omitted `integration_id` and that is fixed; no delivery report has ever been recorded |
+| Observability | **NO.** The Infra Health Probe has never been published while `workflow_registry` says it is active — the dealership is told the channel is monitored |
+
+---
+
 # V2 — dealer intelligence expansion
+
+**None of the six begins before V1.5 is proven** — the sequencing decision the
+owner set on 8 September 2026, recorded with its reasoning in `ROADMAP.md`. The
+priority order inside the list is unchanged.
 
 Six capabilities, from `LAUNCH.md`. **None is implemented.** Unchanged since
 5 September; the column that matters is the last one.
@@ -235,9 +294,11 @@ zero.
 
 # The one-line answer, if somebody asks how far along this is
 
-**V1 is built and not finished; V2, V3 and V4 are not started.** The database is
-in good shape, can be rebuilt from this repository, and two dealerships have now
-been proven isolated from each other adversarially at that level. The flagship
-screen exists. **The product differentiator is on an unmerged, undeployed branch
+**V1 is built and not finished; V1.5 is the phase that has to be proven before
+V2, V3 and V4 start, and none of those three has begun.** The next milestone is
+not feature completeness — it is one real dealership's real enquiries proven end
+to end. The database is in good shape, can be rebuilt from this repository, and
+two dealerships have now been proven isolated from each other adversarially at
+that level. The flagship screen exists. **The product differentiator is on an unmerged, undeployed branch
 whose nine newest commits exist in one container.** The messaging layer has never
 carried a genuine customer message. Nobody has paid for any of it.

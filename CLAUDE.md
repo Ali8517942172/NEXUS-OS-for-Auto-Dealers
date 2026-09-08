@@ -2,6 +2,68 @@
 
 Read this before doing anything in this repo.
 
+## The governing question — set 8 September 2026
+
+Every piece of work here is judged against one sentence:
+
+> **Can a real dealership enquiry enter NEXUS from a real source at 11 PM,
+> become the correct customer and opportunity, receive the right response,
+> reach the right salesperson, leave an audit trail, and still be traceable
+> six months later?**
+
+It **replaces** "what should we build next". Progress is no longer measured in
+commits, nodes, screens or migrations — none of those answers any clause of
+that sentence, and this repository has produced a great many of all four.
+
+**The next milestone is not "V1 feature complete".** It is **NEXUS V1 — REAL
+DEALERSHIP CERTIFIED**: one real dealership's real enquiries proven end to end
+— source → capture → classify → lead → response → sales action → audit →
+revenue evidence. `ROADMAP.md` holds the phase that gets there, `V1.5 — Revenue
+Capture Reliability`; `VERSIONS.md` holds where each capability stands against
+it.
+
+## The Foundation Freeze
+
+**New features are frozen.** Work is admitted in these categories only:
+
+    SECURITY · RELIABILITY · DATA INTEGRITY · INGESTION · OBSERVABILITY ·
+    REAL-WORLD TESTING
+
+Every proposed piece of work answers one question before anything else:
+
+> **Does this make the existing core revenue path safer or more provable?**
+
+If the answer is no, it is not built now. It goes to the V2 backlog in
+`ROADMAP.md`, whatever its revenue case — the reasoning is written there in
+full, and it is short: every V2 feature is worth less on top of a capture layer
+that loses enquiries.
+
+The freeze is not a licence to describe unfinished work as finished. The
+honesty rules in this file are unchanged; the ladder below is how they are
+reported.
+
+Parallel agents remain wanted for docs, SQL analysis, tests, frontend and
+research. The live n8n box still takes exactly one writer at a time — see
+**House rules**, which now says why.
+
+## Report on five levels, and name the level
+
+Every run reports where a thing stands on this ladder:
+
+    1. IMPLEMENTED   2. PROVEN   3. PRODUCTION-DEPLOYED
+    4. REAL TRAFFIC PROVEN   5. COMMERCIAL VALIDATED
+
+The reason is a mistake this repository keeps paying for: **"49 tests pass" is
+level 2 and gets read as level 4.** A passing suite says somebody deliberately
+tried to break the thing and recorded the result. It says nothing about whether
+that thing is deployed, whether a real customer has been through it, or whether
+anyone has paid for it. Name the level, name the evidence, and never let a lower
+level be quoted as a higher one.
+
+The full applied ladder — every capability against every level — is at
+`ops/evidence-standard/STATUS-LADDER.md`. **Do not restate that table here or
+anywhere else**: one figure, one derivation.
+
 ## Who you are working for
 
 Ali owns this product. As of 2 September 2026 he has decided to run this as a
@@ -10,6 +72,12 @@ be judged the way an owner judges it:
 
 **Does this make NEXUS OS sellable to a real dealership on a subscription, and
 does it keep it sellable once they are using it?**
+
+**That question stands, and the governing question at the top of this file is
+how it is now answered.** Sellability was being read as feature coverage; from
+8 September 2026 it is read as whether a real enquiry survives the whole path
+and can be proved afterwards. Where the two seem to disagree, the sentence at
+the top of the file decides.
 
 That is not a licence to cut corners — an owner carries the liability for what
 the software says to a customer. It means:
@@ -81,6 +149,31 @@ check could only run at one tenant, record it as NOT RUN for the multi-tenant
 case rather than as a PASS. `commercial/WHAT-WE-CLAIM.md` holds the
 customer-facing version of this rule and outranks this file for anything said to
 a buyer.
+
+### The 1-in-31 figure is a risk shape, and must never be quoted as a market statistic
+
+It is recorded here because it is the number in this repository most likely to
+end up in a pitch deck, and it is the one that must not.
+
+Measured on the only WhatsApp line NEXUS has ever watched: **of 31 genuine 1:1
+inbound messages in seven days, one was a vehicle enquiry — and that one was
+planted**, Ali's own test from an Indian number.
+`ops/whatsapp-lead-capture/SPEC.md` holds the query and characterises the other
+thirty (family conversation in four languages, a kitchen-worktop quotation, an
+unrelated business chasing a payment, a social-engineering attempt).
+
+**That line is Ali's personal handset**, not a dealership sales line — the
+number his family and his other businesses message. So the figure establishes
+**the shape of a risk**: an eager capture rule pointed at a real WhatsApp line
+would fill a dealership's CRM with family conversation, and production already
+holds one such lead (122, "Hussain", created from *"I have been driving for 6-7
+hours. Can you please adjust for a while?"*).
+
+**It is not a dealership benchmark and not a base rate.** On a real dealership
+number the mix inverts. Do not quote 1-in-31 as a market statistic, as evidence
+of how noisy dealership WhatsApp is, or as a justification for a capture rule's
+precision. It is a measurement of one personal phone, and it is worth keeping
+for exactly that reason.
 
 ## Tenancy: the database is finished. The workflows are most of the way.
 
@@ -1214,8 +1307,18 @@ the 30 August repo export, which is stale; the box is the witness.
 
 ## House rules that exist because something broke
 
-- **One agent on the n8n box at a time.** Parallel writes have taken the
-  production VM down twice. Repo and database work parallelises fine.
+- **Many agents inspect; one agent publishes.** Restated by the owner on
+  8 September 2026 as the working pattern rather than as a caution: parallel
+  agents are fine, and wanted, for docs, SQL analysis, tests, frontend and
+  research. The **live n8n box has exactly one writer at a time.** Parallel
+  writes have taken the production VM down twice — and short of an outage, this
+  file already records what the same shape costs: a secret verified in the `n8n`
+  container while the comparison ran in `n8n-worker`, a repository that did not
+  know which compose file was on the box, a second n8n and WAHA running on a
+  machine nobody had accounted for. Queue, worker and environment drift is what
+  a second writer produces before it produces an outage. Repo and database work
+  parallelises fine. So: design, inspect, test, review and draft in parallel;
+  publish through one agent.
 - **n8n edits stay in draft until published.** Verify against the *published*
   version by fetching it back, not against your draft.
 - **No frontend may compute a finance figure.** APR, EMI, monthly payment, LTV

@@ -256,7 +256,74 @@ Four items, none of which is code alone:
      optimising for the cheapest form fill. This is the kind of mistake that
      looks like it worked.
 
-## Next — the seven capability gaps, in priority order
+## V1.5 — Revenue Capture Reliability
+
+Set by the owner on 8 September 2026 and inserted **before V2**. It is a change
+of kind rather than of degree: the phase adds no new product surface at all.
+
+    WhatsApp capture · Message event durability · Customer identity · Conversation identity
+    Lead identity · AI enquiry classification · Held queue · Manual recovery
+    Cross-channel attach · Audit · Attribution · Delivery reliability · Observability
+
+Thirteen items with one subject: **an enquiry that arrives is captured once,
+identified as the right person, answered, delivered, recorded, and still
+explainable months later.**
+
+The **Now** list above is not superseded by this phase — it is the part of it
+already in flight. What V1.5 adds is the sequencing rule underneath: nothing on
+the capability list below starts until this is proven.
+
+### Why this order
+
+The thing NEXUS sells is that money leaking out of a dealership is found, acted
+on, and proved. Every clause of that promise sits downstream of capture, so
+V1.5 is not a detour before the interesting work — it is the work the rest is
+priced on.
+
+- **Every V2 feature is worth less on top of a capture layer that loses
+  enquiries**, and it is worth less in a way the dealership discovers rather
+  than we do. A Pricing Advisor is only as good as the enquiry count feeding it.
+  Stock-to-Lead matching needs leads that exist and are not duplicated.
+  Marketplace Performance is a report about arrivals somebody recorded. Build
+  those first and a capture defect stops being a defect and becomes a wrong
+  number on a screen a buyer is looking at.
+- **The failures already recorded in `CLAUDE.md` are capture failures, not
+  feature gaps.** `leads.source` recorded the writer and not the origin. Three
+  concurrent promotions of one phone-only enquiry made three customers, three
+  CRM cards and one person called three times, and every caller was told it had
+  succeeded. 92% of `audit_log` carries no link to a customer, because the join
+  key is an email string and a quarter of production leads have no email.
+  Message identity has writers that mint a new id on every attempt. No new
+  engine fixes any of that; each one inherits it.
+- **V1.5 is what the next milestone is measured on.** `CLAUDE.md` carries the
+  governing question and the milestone — **NEXUS V1 — REAL DEALERSHIP
+  CERTIFIED** — and every clause of it (source, capture, classify, lead,
+  response, sales action, audit, revenue evidence) is an item on the list above.
+
+**One caution belongs with `AI enquiry classification` before anybody specifies
+it.** On the only WhatsApp line NEXUS has ever watched, the measured rate of
+genuine vehicle enquiries was 1 in 31 and that one was planted — but that line
+is a **personal handset**, so the figure is the *shape* of a risk (an eager
+capture rule filling a dealership's CRM with family conversation) and **not** a
+dealership benchmark. `CLAUDE.md` states the rule: it must never be quoted as a
+market statistic.
+
+**This phase is roadmap.** Nothing on the list above is capability today, and
+none of it may be sold as capability. The freeze that accompanies it —
+`SECURITY · RELIABILITY · DATA INTEGRITY · INGESTION · OBSERVABILITY ·
+REAL-WORLD TESTING`, with every proposal answering *"does this make the existing
+core revenue path safer or more provable?"* — is recorded in `CLAUDE.md`, which
+is the file an agent starting work reads.
+
+## After V1.5 — the seven capability gaps, in priority order
+
+**Renamed 8 September 2026.** This section was headed *"Next"*, and that is no
+longer true: V1.5 is what comes next. The order below is unchanged and the
+priorities are unchanged; what changed is when the list opens. **Pricing
+Advisor, Trade-In, Stock-to-Lead matching, Marketplace Performance, Service
+Revenue Recovery and Ownership 360 begin only after V1.5 is proven** — a
+sequencing decision, not a judgement about their value, and it holds even for
+the items with the strongest revenue case.
 
 1. Trade-in and acquisition intelligence — connects straight to inventory
    profitability, and it is the largest missing economic engine.
@@ -267,6 +334,14 @@ Four items, none of which is code alone:
 5. Ownership 360 — turn Customer 360 into the full lifecycle.
 6. A true pricing and acquisition engine for UAE used cars.
 7. Omnichannel — voice matters; most service bookings are still made by phone.
+
+**One item here overlaps the Foundation Freeze, and the boundary is worth
+stating rather than discovering.** Item 2 — marketplace, website and channel
+ingestion — shares its subject with V1.5's capture items, and INGESTION is one
+of the six categories the freeze admits. The split: making an enquiry that
+already reaches NEXUS survive the whole path is V1.5 and is allowed now;
+opening a new class of source NEXUS has no contract with is expansion and
+waits.
 
 Each of these needs data NEXUS does not have today. **Sell none of them as
 capability until the data exists.**
