@@ -1880,28 +1880,93 @@ had asked for `nexus_leads_owner_change_audit`, which is the **function**. All
 twelve migrations were then verified live object by object. **The wrong witness
 answers confidently.**
 
-### The migration history stops twelve migrations short of the database
+### The migration history does NOT stop twelve short — the VERSIONS diverge
 
-`supabase_migrations.schema_migrations` on production ends at **`20260907154626`
-with 310 rows**. Twelve repository migrations numbered above it —
-`20260907160000` through `20260908090000` — are **live on production** and were
-checked object by object, but they were applied through `execute_sql` rather
-than `apply_migration`, so nothing recorded them.
+**This section said something wrong on 7 September and the correction is worth
+more than the original claim.** It read: *"twelve repository migrations are live
+on production but were applied through `execute_sql` rather than
+`apply_migration`, so nothing recorded them."* **They were recorded.**
+`apply_migration` stamps its own wall-clock version rather than the filename's,
+so the history and the repository hold the same migrations under **different
+version numbers**. Reading `max(version)` and comparing it with the newest
+filename measured the wrong thing.
 
-Two consequences, and neither is a CI blocker because L11 and L13 need a
-database CI must not hold:
+Measured properly on 8 September — by NAME, which is the field that survives the
+stamping:
 
-- **A live L13 will call those twelve unapplied.** That is the history being
-  incomplete, not the catalogue being stale, and the distinction is written into
-  the snapshot's own `source` field so the next reader meets it there.
-- **`ops/PARITY-2026-09-06.md`'s "byte-exact over the 288 shared migrations" is
-  keyed on version.** A version the history never recorded is outside that
-  rollup entirely — which is the caveat that file already states about itself,
-  now with twelve concrete instances behind it.
+| repository file | recorded on production as |
+|---|---|
+| `20260907124500_leadingest_10_…` | `20260907121650` |
+| `20260907140000_exposure_report_…` | `20260907123723` |
+| `20260907150000_the_kyc_helper_…` | `20260907124533` |
+| `20260907160000_the_rls_bypassing_surface_…` | `20260907130806` |
+| `20260907160500_the_exemption_was_borrowable` | `20260907131039` |
+| `20260907170000_attribution_is_additive_…` | `20260907132018` |
+| `20260907180000_a_lead_trace_…` | `20260907132716` |
+| `20260907190000_the_promoter_read_a_phase_…` | `20260907141933` |
+| `20260907200000_connected_meant_a_row_exists_…` | `20260907143510` |
+| `20260907210000_who_reassigned_this_lead_…` | `20260907150958` |
+| `20260907211000_assigning_an_owner_can_now_say_why` | `20260907151246` |
+| `20260907220000_a_salesperson_can_finally_…` | `20260907152407` |
+| `20260907240000_a_lead_arrived_and_nothing_wrote_it_down` | `20260907154626` |
 
-The fix is to stamp those twelve into `schema_migrations`, and it should be done
-deliberately rather than as a side effect of the next piece of work: stamping a
-version whose file has since been edited is how a parity rollup starts lying.
+Thirteen exact name matches. `20260907230000` (the readiness flip) is genuinely
+unrecorded — it was applied by hand on 7 September. `20260908090000` is
+deliberately unapplied and now lives in `ops/migrations-held/`.
+
+**And do not now stamp the thirteen, which is what the old text recommended.**
+`schema_migrations.statements` holds the SQL that actually ran, and it was
+compared against the repository files:
+
+| | |
+|---|---|
+| byte-exact (modulo a trailing newline) | **6** of 13 |
+| **content differs** | **7** of 13 |
+
+`20260907124500`, `190000`, `200000`, `210000`, `211000`, `220000` and `240000`
+all differ — mostly because a defect was found *after* the migration was applied
+and the file was corrected while the fix went to production as a separate
+statement. Their objects are live and were verified one by one, so the file and
+the database agree **semantically**; they do not agree **textually**, and
+renaming a version to make a parity rollup look clean over seven files whose
+text does not match what ran is precisely the lie this file keeps warning about.
+So: **semantic parity, stated as semantic parity.** The same distinction this
+file already draws for `md5(prosrc)`.
+
+### The Supabase GitHub integration was pointed at the production database
+
+Found on 8 September while chasing a red X on the merge commit. **The X was
+never CI** — all four CI jobs were green (Dashboard builds 14s, Quality gate 1m
+11s, Migration hygiene 6s, Secret scan 5s). The failing check was
+**`Supabase Preview`**, and `list_branches` on the production project answers:
+
+```
+name: main   git_branch: main   project_ref: dsvuoovivysszdoiorch
+parent_project_ref: dsvuoovivysszdoiorch   status: MIGRATIONS_FAILED
+```
+
+`project_ref` **is production**. So on every push to `main`, Supabase was
+attempting to apply `supabase/migrations/` **directly to the database holding a
+real dealership's customers**, and the only reason nothing happened is that it
+has been failing — since the branch row was created on 3 August 2026.
+
+That is a worse fact than the red X it produced. A red X is information; an
+automated push at a production database that happens to be broken is a loaded
+gun that has been jamming.
+
+**Ali's decision, 8 September: disconnect the integration.** Migrations here are
+applied deliberately, verified object by object, and proved with positive
+controls before anyone believes them — an automatic push on merge is the
+opposite of that discipline, and it cannot be made safe by tidying the history.
+
+**Moving `20260908090000` out of `supabase/migrations/` does not by itself turn
+the check green,** and nobody should read it that way: the version divergence
+above remains, so `db push` would still find thirteen files it has no record of.
+The check goes away when the integration does. What the move fixes is different
+and permanent — a deliberately-held migration sitting in the deploy path fails
+every automated push for ever, and the failure is indistinguishable from a
+broken migration. `ops/migrations-held/README.md` states what would have to be
+true before it comes back.
 
 ## Corrections to what this file used to say
 
