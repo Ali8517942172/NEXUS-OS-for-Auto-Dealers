@@ -8,8 +8,13 @@ phir sirf wahi import karta hai jo missing hain.
 Usage:
   python import_n8n_workflows.py <YOUR_N8N_API_KEY>
 
+n8n kahan chal raha hai:
+  Default base URL: https://35.224.126.225.nip.io  (GCP VM `nexus-vm`)
+  Kisi aur instance pe chalana ho to N8N_BASE_URL env var set kar do, e.g.
+      N8N_BASE_URL=https://35.224.126.225.nip.io python import_n8n_workflows.py <API_KEY>
+
 n8n API key kaise banayein:
-  1. http://localhost:5678 open karo (already logged in ho)
+  1. https://35.224.126.225.nip.io open karo (already logged in ho)
   2. Bottom-left mein apna naam → Settings click karo
   3. "n8n API" section mein jao
   4. "Create an API key" click karo
@@ -22,7 +27,9 @@ import os
 import urllib.request
 import urllib.error
 
-N8N_BASE = "http://localhost:5678"
+# n8n base URL. Defaults to the GCP VM `nexus-vm`; override with N8N_BASE_URL.
+DEFAULT_N8N_BASE = "https://35.224.126.225.nip.io"
+N8N_BASE = os.environ.get("N8N_BASE_URL", DEFAULT_N8N_BASE).rstrip("/")
 WORKFLOWS_DIR = os.path.join(os.path.dirname(__file__), "n8n-workflows")
 
 # 8 workflow files jinhe import karna hai
@@ -168,7 +175,7 @@ def main():
         for name, err in failed:
             print(f"     • {name}: {err}")
 
-    print("\n🎉 Done! n8n → http://localhost:5678/home/workflows pe check karo.")
+    print(f"\n🎉 Done! n8n → {N8N_BASE}/home/workflows pe check karo.")
 
 if __name__ == "__main__":
     main()

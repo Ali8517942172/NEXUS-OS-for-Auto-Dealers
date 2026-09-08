@@ -100,9 +100,33 @@ from" cell must show the walk-in origin, **not** "No arrival recorded".
 ## 5 · The WhatsApp door · ⚠️ ORDER MATTERS MOST HERE
 
 Today the gate is `DORMANT` and **29 of 29 sampled requests carry no secret**.
-There is one sender. Enforcing before the header exists drops **100%** of a
-dealership's inbound WhatsApp, silently, and the only symptom is the bot going
-quiet.
+There is one sender of customer messages, the box. Enforcing before the header
+exists drops **100%** of a dealership's inbound WhatsApp, silently, and the only
+symptom is the bot going quiet.
+
+> **Two corrections measured on 8 September 2026, both of which change this
+> step.**
+>
+> **"There is one sender" was read too widely.** `2.50.10.149` — Ali's Windows
+> desktop `desktop-l3an0ma` — was **still posting** into
+> `/webhook/whatsapp-inbound` on 8 September (execution 11103, 06:07:40 UTC,
+> `session.status`, no secret header). The 29-execution sample could not see it:
+> it grouped by `payload.id` and that host's unauthenticated session emits only
+> `session.status`, which carries none. **Absence of duplicates is not absence
+> of the sender.** Its containers were **stopped by hand at 06:08:24 UTC** and
+> it is **identified, and stopped by hand on 8 Sep 2026 — not yet permanently
+> removed (`restart: always` still declared, device 8 still linked)**. It
+> delivers no messages, so enforcement would drop only its `session.status`
+> posts, harmlessly.
+>
+> **5b does not currently pass.** With the secret set and the header arriving,
+> the gate reads `header_present: true, **ok: false**` on the box's own traffic.
+> The box runs in queue mode, so the Code node reading
+> `$env.WAHA_WEBHOOK_SECRET` executes in `n8n-worker`, and
+> `docker compose up -d n8n` recreates the container you then check rather than
+> the one that compares. Recreate both and verify where the value is consumed:
+> `docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'`.
+> **5d stays blocked until 5b actually reads `ok: true`.**
 
 **5a.** On the VM: `WAHA_WEBHOOK_SECRET=<a long random string>`. **Nothing
 else.** Restart n8n.
@@ -135,19 +159,50 @@ expected and is not a failure.)
 
 ## 6 · The website form
 
-Vercel project `nexus-for-autodealers` → environment variables:
+**Resend is gone. This step is one variable now, not two plus an account.**
+Measured 8 Sep 2026: the site was the only thing in NEXUS that called Resend,
+and every n8n workflow already sends with a `gmailOAuth2` credential that has
+worked since August. The site now posts to a guarded n8n webhook which composes
+and sends the mail from that same credential.
+
+**Step A — n8n, and this one is Ali's because it is a secret.** Create a
+credential of type **Header Auth** named `NEXUS Site Enquiry Secret`, with
 
 ```
-RESEND_API_KEY
-NEXUS_NOTIFY_FROM
+Name:  x-nexus-notify-secret
+Value: <32+ random characters you generate>
 ```
 
-Redeploy.
+Open `NEXUS Site Enquiry to Gmail Notification` (`Oz2W6EWG6n6XW0HQ`), select
+that credential on the **Site Enquiry Webhook** node, and publish.
 
-**Check** — submit the real form once, then submit **the same thing again**.
-Expected: a `lead_event` with `source_key = website_form`, one `leads` row, one
-`ingest:website_form` audit row, a notification email, and the second submission
-producing **no second customer**.
+**Do not leave the auto-assigned credential in place.** n8n picked the only
+existing Header Auth credential it could find, which is `Resend API (Header)` —
+so until this is changed the door key is the Resend API key, which is both
+wrong and the opposite of the point.
+
+**Step B — Vercel** project `nexus-for-autodealers` → environment variables:
+
+```
+NEXUS_NOTIFY_WEBHOOK_SECRET   = the same value
+```
+
+`NEXUS_NOTIFY_WEBHOOK_URL` is optional and is **not** a secret; without it the
+site uses `https://35.224.126.225.nip.io/webhook/site-enquiry`.
+
+Redeploy. (The project is not connected to a repository, so check that first —
+otherwise a redeploy ships whatever was last uploaded by hand.)
+
+**Check the door before the form.** `curl -sS -o /dev/null -w '%{http_code}\n'
+-X POST https://35.224.126.225.nip.io/webhook/site-enquiry` with **no** header.
+Expected **403** from n8n itself, with no execution created — that proves the
+route exists *and* that it is guarded, and it needs no secret to run.
+
+**Then check the form** — submit it once, then submit **the same thing again**.
+Expected: a notification email, and — once the ingestion endpoint is configured
+— a `lead_event` with `source_key = website_form`, one `leads` row, one
+`ingest:website_form` audit row, and the second submission producing **no second
+customer**.
 
 ---
 

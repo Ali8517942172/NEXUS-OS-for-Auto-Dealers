@@ -243,9 +243,13 @@ revert the tenancy wave.**
 writes have taken the VM down twice), and you verify against the **published**
 version by fetching it back, never against your draft.
 
-## B0 · First: identify the machine behind the second WAHA
+## B0 · First: permanently remove the second WAHA — it is stopped, not gone
 
-**This is the one thing in tier B that is genuinely only yours.**
+**This is the one thing in tier B that is genuinely only yours.** The machine is
+no longer a mystery — as of 8 September 2026 it is named, it was **measured still
+posting into production**, and its containers were **stopped by hand at 06:08:24
+UTC that morning**. What is left is making that stop permanent, and it has not
+been done.
 
 **What is now known, measured 6 September from the box read-only.**
 `2.50.10.149` is **not a stranger.** Executions 10322 and 10323 carry the same
@@ -262,29 +266,81 @@ version by fetching it back, never against your draft.
 **It is your own WhatsApp account on a different device index**, served by a
 second, older WAHA instance on a non-GCP address that geolocates to the UAE.
 
-**What nobody but you can do:** find which machine that is. **WhatsApp's Linked
-Devices screen on your handset will show device 8 beside device 12** — that is
-the fastest way in. Candidates, in the order worth checking: an old laptop or
-desktop still running a WAHA container from an earlier install; a home or office
-NUC or Pi; a previous VPS; a colleague's machine linked to the business number
-during setup and never unlinked.
+**Which machine it is — you answered this on 8 September 2026.** It is your own
+Windows desktop **`desktop-l3an0ma`**, running WAHA in Docker Desktop: the same
+PC that used to host n8n behind the Tailscale address
+`https://desktop-l3an0ma.tail2141f7.ts.net`, from before the move to GCP. That is
+your statement, not something measured from the box — nothing here has read that
+machine. *Consistent with it, and not proof of it:* execution `11094` on 8 Sep
+carried a `webhookUrl` of `https://desktop-l3an0ma.tail2141f7.ts.net/...` inside
+a WAHA payload; the live WAHA session config has not been read back, so what that
+instance points at today is unknown.
 
-**"Done" looks like one of two, and both are acceptable:**
+**It had not stopped on its own — measured 8 September 2026.** This repo recorded
+on 6 September that the second WAHA was gone. It was not. Production execution
+**11103** at **06:07:40 UTC** on 8 September carries:
 
-- **Configure it** — add `x-nexus-webhook-secret` to its WAHA webhook
-  `customHeaders`, same value as the box. Keeps a redundant capture path.
-- **Decommission it** — unlink the device in WhatsApp and stop the container.
+```
+x-forwarded-for            2.50.10.149
+user-agent                 WAHA/2026.7.1
+me.jid                     971526647253:8@s.whatsapp.net
+body.event                 session.status
+x-nexus-webhook-secret     absent
+```
 
-**"Done" does NOT look like** leaving it alone and arming the gate.
+**Why nobody saw it.** The 6 and 7 September checks grouped messages by
+`payload.id` and looked for the duplicate pairs that used to give the second
+sender away. Your desktop's WhatsApp session is no longer logged in, so that WAHA
+sends only `session.status` events and no actual messages — and those carry no
+`payload.id`, so they can never form a pair. It was calling production the whole
+time, invisibly to that check. **Absence of duplicates is not absence of the
+sender.**
 
-**How urgent, honestly: less than it looked.** Measured over 102 executions
-spanning 8h56m — **51 distinct messages, every one of them delivered from BOTH
-hosts, zero from `.149` only, zero from the box only.** So arming the gate with
-only the box configured would, on that evidence, have dropped nothing. **The
-sample is nine hours of one day and contained zero genuine customer
-conversations**, so that is grounds for confidence, not for skipping the step.
+**What was found on the PC, and what was done.** Docker Desktop showed a compose
+project **`nexus-os`** at `C:\Users\user\Desktop\MY RESUMES\nexus-os` with
+**three containers running**: `n8n` (port 5678), `n8n-db` (postgres:16-alpine)
+and `waha` (devlikeapro/waha, port 3000) — so a whole second n8n with its own
+database was live there too, not just WAHA. The WAHA log at 06:02:22 shows its
+POST to `https://35.224.126.225.nip.io/webhook/whatsapp-inbound` returning 200.
+**The compose project was stopped through the Docker Desktop UI at 06:08:24
+UTC.** The GCP box was unaffected. **Deleting the project was deliberately not
+done** — the confirmation dialog says nothing about the named volumes, and those
+volumes hold that n8n's workflows and credentials and the WAHA linked-device
+session.
 
-**Time:** 10–30 minutes with the handset in your hand.
+**Status: identified, and stopped by hand on 8 Sep 2026 — not yet permanently
+removed (`restart: always` still declared, device 8 still linked).**
+
+**The two steps that are left, and they are the whole item:**
+
+1. On that PC: `docker update --restart=no n8n n8n-db waha`. `restart: always`
+   is still declared on all three services, and Docker restarts a manually
+   stopped `always` container the next time the daemon starts — so a Docker
+   Desktop restart or a Windows reboot brings the whole thing back.
+2. On your handset: WhatsApp → Linked Devices → unlink device **8**. This is the
+   only step that stops your account being served by that machine at all.
+
+**"Done" does NOT look like** knowing whose PC it is, or the containers being
+stopped right now. Neither survives a reboot. Configuring it instead —
+`x-nexus-webhook-secret` in its WAHA `customHeaders` — is no longer worth doing:
+with an unauthenticated session it captures no messages, so it is not a redundant
+capture path any more.
+
+**Verification, when you have done both:** with the desktop powered on and Docker
+running, no delivery carrying `me.jid …:8` from the box over a window long enough
+to mean something — read across **all** events, not by looking for duplicate
+`payload.id`.
+
+**How urgent, honestly.** Measured over 102 executions spanning 8h56m —
+**51 distinct messages, every one of them delivered from BOTH hosts, zero from
+`.149` only, zero from the box only** — so this host never carried a message the
+box did not. And since its session lost authentication it carries no messages at
+all, so arming the gate would drop only its `session.status` posts, harmlessly.
+**That is not a reason to skip it:** the exposure is a second n8n with its own
+credentials and a linked WhatsApp device, both able to come back on the next
+reboot.
+
+**Time:** 10–30 minutes, at the desktop with the handset in your hand.
 
 **Unblocks:** B7 (arming the webhook secret), and therefore B9.
 
@@ -301,7 +357,7 @@ Safe → observable → traffic-affecting.
 | **04** | `Claim Message Id` stops minting `nokey:`; `Is New Message?` stops treating a constraint refusal as licence to reply | 2–3 nodes | seconds | **medium — can suppress a reply** |
 | **05** | **Publish the NEXUS Infra Health Probe** | 1 publish + 1 registry row | seconds | medium |
 | **06** | Edge JWT validation for the dashboard webhooks | Caddy, not n8n | seconds (`caddy reload`) | medium |
-| **07** | **Arm `WAHA_WEBHOOK_SECRET`** | VM env + both WAHA hosts | ~10 s (disable the gate node) | **HIGH — can silently drop every customer message** |
+| **07** | **Arm `WAHA_WEBHOOK_SECRET`** | VM env + the box's WAHA (see below) | ~10 s (disable the gate node) | **HIGH — can silently drop every customer message** |
 | **08** | **Publish the Phase 6 Silence Detector** | 1 publish | seconds | **high — contacts humans** |
 | **09** | `Resolve Tenant`: `NEXUS_TENANT_MAP` → `channel_registry` | 1–2 nodes | seconds | high |
 
@@ -321,13 +377,29 @@ Safe → observable → traffic-affecting.
   dealership its channel is monitored.
 - **07's internal order is the single largest risk in the bundle.** Set the
   secret on the **VM** (`/opt/nexus/.env`, `WAHA_WEBHOOK_ENFORCE` **not** set),
-  restart n8n → make **both** WAHA hosts send `x-nexus-webhook-secret` → confirm
+  restart n8n → make the **box's** WAHA send `x-nexus-webhook-secret` → confirm
   saved executions show `_gate.mode == "MONITOR"`, `_gate.header_present == true`
-  and `_gate.ok == true` **from every source you intend to keep, on at least one
-  genuine 1:1 customer message, not just group traffic** → **only then**
-  `WAHA_WEBHOOK_ENFORCE=true`. **Hardcoding the secret in the n8n node before
-  WAHA sends the header silently drops every real customer message, and WAHA
-  keeps seeing 200 so nothing ever errors.**
+  and `_gate.ok == true` **on at least one genuine 1:1 customer message, not just
+  group traffic** → **only then** `WAHA_WEBHOOK_ENFORCE=true`. **Hardcoding the
+  secret in the n8n node before WAHA sends the header silently drops every real
+  customer message, and WAHA keeps seeing 200 so nothing ever errors.**
+  *(Was "both WAHA hosts". Corrected 8 September 2026: `.149` was stopped by hand
+  that morning and its WhatsApp session is not authenticated, so it delivers
+  `session.status` and no messages — nothing to configure and nothing to lose if
+  enforcement drops it. B0 is still open, for the different reason that it can
+  restart.)*
+- **Where 07 is stuck today, 8 September 2026.** The secret is set and the header
+  arrives — measured on executions 11098/11099/11100, and the SHA-256 fingerprint
+  of what WAHA sends changed between 11096 and 11098, so the rotation reached it.
+  The gate still reads `mode MONITOR, header_present true, **ok false**` on the
+  box's own traffic. The box runs in **queue mode** (`executionMode: "queue"`,
+  concurrency 2), so the Code node that reads `$env.WAHA_WEBHOOK_SECRET` runs in
+  **`n8n-worker`** — `docker compose up -d n8n` recreates the container you then
+  check with `printenv` and leaves the one doing the comparison on the old value.
+  Recreate `n8n` **and** `n8n-worker`, and verify where the value is consumed
+  without printing it:
+  `docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'`.
+  Until that reads `ok: true`, enforcing drops 100% of real inbound.
 - **Set `NEXUS_PROBE_KEY` (24+ random chars) at the same time as the webhook
   secret.** Without it `Probe Auth Gate` is dormant and the probe endpoint
   answers anyone. **Do not set `NEXUS_PROBE_VERBOSE=true`** — once WAHA carries

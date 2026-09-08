@@ -1,4 +1,4 @@
-// n8n KYC/AML Document Auditor — Tailscale Funnel (permanent HTTPS)
+// n8n KYC/AML Document Auditor — n8n on the GCP VM (https://35.224.126.225.nip.io)
 const WEBHOOK_URL = String(import.meta.env.VITE_N8N_BASE_URL || "").trim() + "/webhook/audit-kyc";
 
 const dropzone = document.getElementById('dropzone');

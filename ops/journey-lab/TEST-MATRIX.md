@@ -257,7 +257,7 @@ what makes the trigger obviously load-bearing rather than decorative.
 |---|---|
 | T02 | `META_APP_SECRET` on the VM, a Facebook Page, and a lead form. L3 by definition — it needs Meta to fire our real endpoint |
 | T04 | `GOOGLE_LEAD_KEY_ALBA` on the VM and a Google Ads lead form asset |
-| T06 | the live website form answers **503** — `RESEND_API_KEY` and `NEXUS_NOTIFY_FROM` are unset on Vercel. The honeypot refusal itself is exercised by simulator scenario G, which is **adjacent evidence and not this journey** |
+| T06 | the live website form answers **503** — `NEXUS_NOTIFY_WEBHOOK_SECRET` is unset on Vercel. (Until 8 Sep 2026 this said `RESEND_API_KEY` and `NEXUS_NOTIFY_FROM`; Resend was removed and the notification now goes through a guarded n8n webhook to the existing Gmail credential.) The honeypot refusal itself is exercised by simulator scenario G, which is **adjacent evidence and not this journey** |
 | T07 | a WAHA session on a controlled device, and the open-door remediation on `/webhook/whatsapp-inbound` |
 | T08 | the same WhatsApp path. The marketplace half is permanently simulated — Dubizzle publishes no leads-out API |
 | T09 | there is **no inbound email ingest at all**. Not a configuration gap, an unbuilt capability |
@@ -604,9 +604,16 @@ Five controls, so five things to fire.
 **Level today** L2 against the writer. **L4 is the only level that can prove
 this path**, and not before the documented rollout order: set
 `WAHA_WEBHOOK_SECRET` on the VM, make WAHA send `x-nexus-webhook-secret`,
-confirm in MONITOR on a genuine message, then enforce. With a single sender now
-posting, enforcing before the header is configured drops **100%** of inbound
-messages.
+confirm in MONITOR on a genuine message, then enforce. The box is the only sender
+of customer messages, so enforcing before the header is configured drops **100%**
+of inbound messages. *(Corrected 8 September 2026: "a single sender now posting"
+overstated a duplicate-pair sample. `2.50.10.149` was still posting
+`session.status` into production on 8 Sep — execution 11103, 06:07:40 UTC — and
+was stopped by hand at 06:08:24 UTC; it is **identified, and stopped by hand on
+8 Sep 2026 — not yet permanently removed (`restart: always` still declared,
+device 8 still linked)**. It carries no messages either way. The live blocker on
+enforcing is that the gate reads `header_present: true, ok: false` on the box's
+own traffic.)*
 **Verdict** **NOT RUN**
 
 ---

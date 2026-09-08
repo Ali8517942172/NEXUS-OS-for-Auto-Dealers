@@ -20,7 +20,7 @@ const ROOT = resolve(__dirname, '..');
 const OUT_DIR = join(ROOT, 'n8n-workflows');
 const ENV_PATH = join(ROOT, '.env');
 
-const DEFAULT_BASE_URL = 'https://desktop-l3an0ma.tail2141f7.ts.net';
+const DEFAULT_BASE_URL = 'https://35.224.126.225.nip.io';
 
 // Live workflow id -> repo filename. Keeps git history stable.
 const FILE_MAP = {

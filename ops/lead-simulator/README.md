@@ -73,6 +73,14 @@ nothing. Posting is an explicit flag, and `--post` to a non-local host additiona
 `--allow-remote` — sending simulated leads at a remote ingest is the specific mistake that rail
 exists to prevent.
 
+**The `localhost:5678` in the `--post` example is deliberate and is not a stale reference to the
+decommissioned desktop n8n.** `isLocalHost()` in `simulate.js` accepts only `localhost`,
+`127.0.0.1`, `::1` and `*.local`, so a local URL is the only `--post` target that works without
+`--allow-remote`. Writing the live GCP n8n host (`https://35.224.126.225.nip.io`) into the example
+would make the documented command fail the safety rail, and — worse — would model pointing the
+simulator at the production ingest, which is exactly what the rail exists to stop. Post at a local
+n8n or a local listener; reach a remote ingest only deliberately, with `--allow-remote`.
+
 `p_public_key` comes from `--public-key`, else `$NEXUS_SIM_PUBLIC_KEY`, else a placeholder. It
 must be the public key of a **simulation** endpoint; the tool warns if it does not look like one.
 

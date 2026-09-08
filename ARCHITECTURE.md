@@ -82,8 +82,12 @@ JWT. Two screens write tables directly; everything else goes through
 - **OpenRouter free-tier models** with a hand-rolled fallback ladder, and
   **Groq** for Whisper voice transcription. **There is no OpenAI credential on
   the box.**
-- **Resend** (email), **Apify** (competitor scraping), **Slack**, **Gmail**,
-  **Bitrix24** (the live CRM sync — not Odoo).
+- **Gmail** (every email NEXUS sends — the drip, the escalation alert and the
+  marketing-site enquiry notification all use one `gmailOAuth2` credential),
+  **Apify** (competitor scraping), **Slack**, **Bitrix24** (the live CRM sync —
+  not Odoo). **Resend is not used.** It was listed here until 8 Sep 2026 on the
+  strength of one call in the marketing site and an unused credential in n8n;
+  measured, zero workflows ever called it.
 
 ### How Ask AI actually works
 Browser → `POST /webhook/ask-ai` with the Supabase JWT → n8n RAG workflow →

@@ -893,7 +893,7 @@ SCREENS.settings = async host => {
            given a made-up name; it is described by what it broke. */
         /* ── What this card is allowed to call the thing that broke ────────
            `g.name` is the credential's own name as the failing run wrote it —
-           "NEXUS Resend", "Gmail OAuth2", "Bitrix Webhook". It names the
+           "Gmail OAuth2", "Bitrix Webhook", "Slack". It names the
            SUPPLIER, and until 5 Sep 2026 it was the headline of this card and
            the title of the alert. A dealership can do nothing with it: they
            have no login to that supplier, the card's own Reconnect button is

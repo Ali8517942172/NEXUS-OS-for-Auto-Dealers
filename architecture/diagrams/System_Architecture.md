@@ -48,7 +48,7 @@ graph TD
 
     subgraph OUT["Outbound integrations"]
         BX[Bitrix24 REST<br/>the working CRM]
-        RS[Resend — email]
+        GM[Gmail — every email NEXUS sends]
         AP[Apify — competitor scraping]
     end
 

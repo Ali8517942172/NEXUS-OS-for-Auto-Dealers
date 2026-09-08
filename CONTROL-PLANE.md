@@ -449,7 +449,7 @@ either a breach, a commercial injury, or a support call Ali will lose.
 | **Any other dealership** — name, count, existence, or a total that implies one | The whole tenancy proof rests on this. A count of "12 dealerships" tells ALBA CARS their competitors are on the same system. |
 | **NEXUS's revenue, MRR, pricing, margin or plan economics** | Ali's business, and the fastest route to a renegotiation. |
 | **Global AI cost, token spend, or per-message model cost** | Two harms: it is Ali's cost base, and CLAUDE.md records that `whatsapp_message_usage` has **zero numeric columns** on purpose — a messaging cost may not be invented, and rendering a platform cost as a dealership's cost invents one. |
-| **Provider API keys — OpenRouter, Groq, Resend, Apify, Meta** | Obvious, and stated because "masked" is not an exception: a masked key still confirms which key is installed. |
+| **Provider API keys — OpenRouter, Groq, Apify, Meta** | Obvious, and stated because "masked" is not an exception: a masked key still confirms which key is installed. |
 | **n8n credentials, credential names, or the credential store** | n8n exposes no browser-reachable credential API, which is a fact the current build relies on. Do not build one. |
 | **The `service_role` key, the Supabase connection string, or any secret reference** | `service_role` is `BYPASSRLS`. Exposure is total compromise of every tenant. |
 | **Internal prompts, system messages, the model ladder, model names, retrieval parameters** | Product IP, and a jailbreak surface. A dealership seeing "8000-character prompt budget, three-model fallback ladder" learns how to steer the agent. |

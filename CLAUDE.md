@@ -1651,10 +1651,17 @@ nine hours with both hosts up; it contains zero customer conversations; and the
 box's WAHA is also the *send* path, so `.149` surviving a box outage would
 produce an unanswerable inbound rather than a rescue.
 
-### And it is gone — 6 September 2026, evening
+### And it stopped posting — 6 September 2026, evening
 
 Ali identified it: **it was his own local Docker WAHA**, run before the move to
 GCP. He deleted it there and has now logged his WhatsApp account out of it.
+
+**Corrected 8 September 2026:** the second half of that sentence did not hold.
+On 8 Sep Ali asked for the old WAHA to be removed — which means it was still
+there to remove. Treat "he deleted it there and logged the account out" as
+*reported on 6 Sep and not verified*; what **was** verified that evening is the
+measurement below — the doubling stopped and every sampled header was the box.
+Those are different facts. See "The machine is named" below.
 
 Verified from the box rather than taken on trust, because "logged out" and "no
 longer posting" are different facts and the whole rollout depends on which is
@@ -1686,6 +1693,166 @@ sampled header is the GCP box.
   send `x-nexus-webhook-secret`, then confirm in MONITOR on a genuine 1:1
   message, and only then enforce.
 
+### The machine is named — 8 September 2026, stated by Ali, not measured
+
+The host behind `2.50.10.149` is **Ali's own Windows desktop `desktop-l3an0ma`**,
+running WAHA in Docker Desktop. It is the same PC that used to host n8n, reached
+over a Tailscale funnel at `https://desktop-l3an0ma.tail2141f7.ts.net`, from
+before the move to GCP. In his words, on 8 September 2026: *"purana waha mene
+desktop docker pe chalaya tha aur n8n bhi tailscale ke zariye use bhi local pc pe
+download kiya tha but ab sab kuch gcp pe hai to use remove kar do purana wala."*
+
+**Where the line between measured and stated falls, and it matters here:**
+
+| fact | how it is known |
+|---|---|
+| two senders on 3–6 Sep, same account, device index `:8` vs `:12`, builds 2026.7.1 vs 2026.7.2, ~40 s apart | **measured**, from saved executions |
+| 51 distinct messages over 8h56m, every one delivered by both, zero singletons | **measured** |
+| one sender only on 7 Sep (29 executions, zero duplicate `payload.id`) | **measured** |
+| the `.149` host is `desktop-l3an0ma`, WAHA in Docker Desktop on Ali's Windows PC, ex-n8n host behind Tailscale | **stated by the owner, 8 Sep 2026.** Nothing was read off that machine from here |
+| the container is stopped | **not proven** |
+| it will not come back | **not proven** — its compose declares `restart: always`, so a reboot or a Docker Desktop start restarts it |
+| WhatsApp linked device **8** is unlinked | **not proven** |
+
+So the correct status is **identified; decommissioning in progress, not yet
+verified** — not "removed", and not "done". As of this writing the desktop
+teardown is running in the same session that recorded this and has not been
+confirmed from either end.
+
+**A detail that is consistent with this, and is not proof of it.** On 8 September,
+execution `11094` carried a `webhookUrl` of
+`https://desktop-l3an0ma.tail2141f7.ts.net/...` inside a WAHA payload — the same
+Tailscale hostname. That is consistent with the desktop having been the WAHA
+webhook target while it was the n8n host. It is not confirmation: the live WAHA
+session config has not been read back, so what that instance points at *today*
+is unknown.
+
+**What still has to happen before the perimeter question closes.** Either the
+container is stopped and device 8 unlinked and that is verified from the box (no
+`:8` deliveries over a window long enough to mean something), or `.149` is
+configured with `x-nexus-webhook-secret` like any other kept sender. Naming the
+machine removes the search; it does not remove the step.
+
+### It had not stopped. It was stopped, by hand, at 06:08 UTC on 8 September 2026
+
+The section above records the machine being *named*. This one records it being
+*measured*, and it corrects two claims this file made with confidence.
+
+**Claim one, wrong: "the second WAHA really is gone" (6 Sep) / "it stopped
+posting".** Execution **11103**, production, **8 September 2026 at 06:07:40 UTC**:
+
+```
+x-forwarded-for            2.50.10.149
+user-agent                 WAHA/2026.7.1
+me.jid                     971526647253:8@s.whatsapp.net
+body.environment.version   2026.7.1
+body.event                 session.status
+x-nexus-webhook-secret     absent   ->  _gate.header_present = false
+```
+
+That is the `.149` host, on the old build, at device index 8, posting into
+`/webhook/whatsapp-inbound` on production **two days after this file said it was
+gone** — and roughly half an hour before it was stopped.
+
+**Why the 6–7 September samples missed it, and the lesson is the point.** Both
+samples grouped by `payload.id` and looked for duplicate pairs. The desktop
+WAHA's WhatsApp session is no longer authenticated, so it emits **`session.status`
+events and no `message` events at all** — events that carry no `payload.id` and
+therefore can never form a pair. A method that detects a second sender only by
+the duplicates it creates goes blind the moment that sender stops duplicating.
+**Absence of duplicates is not absence of the sender**, and "the doubling has
+stopped" was the honest reading of a measurement that could not answer the
+question it was being asked.
+
+**Claim two, wrong: implied by the first — that nothing had to be switched off.**
+Docker Desktop on `desktop-l3an0ma`, opened on 8 September, showed a compose
+project **`nexus-os`** at `C:\Users\user\Desktop\MY RESUMES\nexus-os` with
+**three containers running**: `n8n` (5678), `n8n-db` (postgres:16-alpine) and
+`waha` (devlikeapro/waha, 3000). Its own WAHA log, minutes earlier:
+
+```
+[06:02:22.358] INFO (WebhookSender/7): session:default - POST request was sent
+with status code: 200
+{"session":"default","event":"session.status",
+ "url":"https://35.224.126.225.nip.io/webhook/whatsapp-inbound"}
+```
+
+A second n8n was also live on that machine with its own Postgres — schedules,
+credentials and all — which is a larger exposure than the WAHA half and had
+never been costed anywhere in this repo.
+
+**What was done, and what deliberately was not.** The compose project was
+**stopped** through the Docker Desktop UI at 06:08:24 UTC (`Received SIGTERM
+signal, shutting down`, `Deregistered all crons`, `database system is shut
+down`). The GCP box was unaffected: `/healthz` `ok`, and executions 11104 and
+11105 arrived from `35.224.126.225` in the same minute.
+
+Deleting the project was **declined**. Docker Desktop's confirmation says only
+*"The 'nexus-os' compose project is selected for deletion"* with a **Delete
+forever** button and no statement about named volumes — and those volumes hold
+that n8n's workflows and credentials and the WAHA linked-device session. An
+ambiguous irreversible button is not worth pressing to save a reversible command.
+
+**So the correct status is still not "removed".** `restart: always` is declared
+on all three services, and Docker's own rule is that a manually stopped `always`
+container **is restarted when the daemon next starts**. A Docker Desktop restart
+or a Windows reboot brings the whole thing back. The permanent, non-destructive
+close is one command on that PC:
+
+```
+docker update --restart=no n8n n8n-db waha
+```
+
+and then WhatsApp -> Linked Devices -> unlink device **8**, which is the only
+step that stops the account being served by that machine at all. Neither has
+been done as of this line.
+
+### The worker is the process that reads `$env`, and the box is in queue mode
+
+Same day, and it is the reason `WAHA_WEBHOOK_ENFORCE` still could not be armed.
+After Ali corrected the header name and rotated the secret, the gate read:
+
+```
+_gate.mode  MONITOR     _gate.header_present  true     _gate.ok  false
+```
+
+The header half was genuinely fixed — measured on executions 11098/11099/11100:
+name `x-nexus-webhook-secret`, value 32 characters, alphanumeric, no quoting and
+no surrounding whitespace, and the SHA-256 fingerprint of what WAHA sends
+**changes** between 11096 and 11098, so the rotation reached WAHA. `ok = false`
+therefore means one thing only: the value n8n compares against is not that value.
+
+`GET /rest/settings` on the live box returns **`executionMode: "queue"`**,
+concurrency 2. In queue mode the **worker** executes workflows, so the Code node
+that reads `$env.WAHA_WEBHOOK_SECRET` runs in `n8n-worker`, not in `n8n`.
+`docker compose up -d n8n` recreates the container whose `printenv` you then
+check, and leaves the one that does the comparing on the old value. **The
+verification and the defect were in different containers.**
+
+Two things follow that are worth more than this incident:
+
+- **Verify a secret where it is consumed, not where it is convenient.** The
+  non-disclosing check is
+  `docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'`,
+  compared against the fingerprint of what the sender actually sent. A hash
+  prefix settles it without either value being printed, pasted or logged.
+- **The repo does not know which compose file is on the box, and said it did.**
+  `docs/J1-RUN-CHECKLIST.md` drives `-f docker-compose.single.yml`, and
+  `docker-compose.single.yml` states in its own comments that it runs in the
+  default `regular` mode with no worker and no redis. Queue mode can only come
+  from `docker-compose.yml`. Both files' headers have been corrected to say what
+  is measured and what is inferred; the question is settled by `docker compose ps`
+  on the VM and by nothing in this repository.
+
+**A defect this uncovered, unrelated to the secret.** `docker-compose.single.yml`
+carried `extra_hosts: ["waha:100.76.236.42"]` on the n8n service, pinning the
+hostname `waha` to the Tailscale IP of the desktop that has just been stopped —
+while defining a `waha` service on the same bridge. Had that file been the
+deployed one, every `http://waha:3000/api/sendText` would now be aimed at a
+stopped machine and the outbound WhatsApp path would be dead with no error
+anywhere in NEXUS. Removed. The measured evidence says it was not deployed; the
+pin was a loaded gun regardless of whether this was the week it fired.
+
 ### And none of this traffic is a customer
 
 Read from `Is Real Inbound?`'s own output rather than judged by eye: **0 of 102
@@ -1693,6 +1860,84 @@ executions — 0 of 51 messages — were genuine customer conversation.** All 51
 `@g.us` groups, `status@broadcast` or `@newsletter` on Ali's personal handset.
 The audit said most of the traffic is not customer conversation; in this window
 **none** of it was.
+
+## Resend was one call site pretending to be a dependency — 8 September 2026
+
+Ali asked why the go-live list wanted a `RESEND_API_KEY` when the system already
+sends everything through Gmail. He was right, and the measurement is stark:
+
+| | |
+|---|---|
+| files calling Resend | **one** — `apps/marketing-site/api/lead.js`, a single `fetch` to `api.resend.com` |
+| n8n workflows calling Resend | **zero** |
+| n8n workflows with Gmail nodes | **five** — the 7-day drip (3), Customer 360 (1), Lead Escalation (1) |
+| the decisive one | `Email: Escalation Alert (Gmail)` already emails `aliasgher892@gmail.com` on a `gmailOAuth2` credential — the *same shape* as the site's notification |
+
+So a Resend account existed for one call in one file. `ARCHITECTURE.md`,
+`CONTROL-PLANE.md` and the architecture diagram all listed it as a provider
+NEXUS uses; none of them was true.
+
+### What replaced it, and what it actually costs
+
+The site now POSTs the enquiry to **`POST /webhook/site-enquiry`**
+(`Oz2W6EWG6n6XW0HQ`, *NEXUS Site Enquiry to Gmail Notification*), which composes
+the mail and sends it from that existing Gmail credential.
+
+**Correcting something said out loud first: this is not "no secret on Vercel".**
+That was claimed before the door was designed, and it was wrong. An unguarded
+webhook that emails the owner is a spam cannon, and this file already carries
+the story of what an open business webhook costs. The honest ledger:
+
+| | before | after |
+|---|---|---|
+| Vercel env vars | `RESEND_API_KEY` + `NEXUS_NOTIFY_FROM` | `NEXUS_NOTIFY_WEBHOOK_SECRET` |
+| third-party account | Resend, plus a verified sending domain | none |
+| who sends | Resend | the `gmailOAuth2` credential already in production use |
+
+Two variables and an external account become one variable we generate.
+
+### Two design decisions worth keeping
+
+**The door is guarded by n8n itself.** The webhook uses `authentication:
+headerAuth`, so a request without the matching header is refused **before an
+execution starts**. This file records that all eleven older business webhooks
+do the opposite — every guard is downstream application logic, so every endpoint
+accepts the request and begins work before refusing. This is the first one that
+does not.
+
+**The mail body is composed inside n8n, never passed through.** The site sends
+seven allowlisted fields and *not* the `summary` string it used to build; the
+workflow strips control characters, caps every length, and refuses an enquiry
+with no name or no way to reply. A body built by the caller is a body the caller
+chooses, and the whole point of the guard is that they do not.
+
+**And nothing is written to any dealership record, deliberately.** A person
+filling in the NEXUS site is a prospect for the *vendor*. Filing them into
+`leads` or `audit_log` would put the vendor's own pipeline inside a customer's
+data — the boundary `CONTROL-PLANE.md` exists to hold.
+
+### The one step that is Ali's, and one trap inside it
+
+Creating the Header Auth credential is typing a secret, so it is his. **And n8n
+auto-assigned the wrong credential on creation:** it bound the webhook to
+`Resend API (Header)`, the only Header Auth credential that existed — so until
+that is changed the door key is the Resend API key, which is both wrong and the
+exact opposite of the point. **The workflow is therefore left UNPUBLISHED.**
+
+Publishing it before the credential is right would arm a door with the key we
+are trying to throw away.
+
+**The check to run first needs no secret at all**: POST to the endpoint with no
+header and expect **403** from n8n, with no execution created. That proves the
+route exists *and* that the guard bites. Only then send a real form.
+
+### And the marketing site is not connected to git
+
+`nexus-for-autodealers` on Vercel reads *"Connect Git Repository"*. Measured on
+the live page the same day: it still mints `submission_id` per attempt, so
+**both of the 7 September fixes are on `main` and not live.** A redeploy of that
+project ships whatever was last uploaded by hand, not what the repository says.
+That is the more important finding of the two.
 
 ## The evidence lived in a container that gets deleted — 8 September 2026
 
@@ -1805,9 +2050,10 @@ Same day, reading `apps/marketing-site/`:
   must still show the WhatsApp fallback — but the response now carries
   `stored_for_replay` and the log says which of the two happened.
 
-**The 503 itself is a Vercel environment variable, not a missing account.** n8n
-holds a working `Resend API (Header)` credential; `RESEND_API_KEY` and
-`NEXUS_NOTIFY_FROM` are simply unset on the site's Vercel project.
+**The 503 itself is a Vercel environment variable, not a missing account.**
+~~n8n holds a working `Resend API (Header)` credential; `RESEND_API_KEY` and
+`NEXUS_NOTIFY_FROM` are simply unset on the site's Vercel project.~~
+**Superseded 8 September 2026 — Resend is gone entirely. See below.**
 
 ## Bitrix24 has really worked. Slack has not been shown to.
 

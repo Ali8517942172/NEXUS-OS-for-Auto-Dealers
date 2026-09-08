@@ -2031,8 +2031,17 @@ caller-chosen dealership.
 **What must be true first:** set `WAHA_WEBHOOK_SECRET` on the VM, make WAHA send
 `x-nexus-webhook-secret`, confirm in MONITOR mode, then set
 `WAHA_WEBHOOK_ENFORCE=true`. Hardcoding a secret in n8n first would silently drop
-every real customer message, because WAHA is not sending the header yet. The fix
-is on the VM, not in n8n.
+every real customer message. The fix is on the VM, not in n8n.
+
+**Where this stands, 8 September 2026.** The secret is set and WAHA *is* sending
+the header — measured on executions 11098/11099/11100. The gate still reads
+`mode MONITOR, header_present true, ok false`, so the confirm step has not been
+met and enforcing would drop every real customer message. The box runs in queue
+mode, so the Code node reading `$env.WAHA_WEBHOOK_SECRET` executes in
+`n8n-worker`; `docker compose up -d n8n` recreates the container whose `printenv`
+gets checked and leaves the one doing the comparison stale. Verify where the
+value is consumed:
+`docker compose exec -T n8n-worker sh -c 'printf %s "$WAHA_WEBHOOK_SECRET" | sha256sum'`.
 
 ## B2 — Two WAHA hosts are posting the same messages
 
@@ -2044,13 +2053,40 @@ device indexes on the same WhatsApp account. A second pair started **1 ms
 apart** — far too close for a retry. This is two senders, and one of them is a
 host nobody has accounted for.
 
-**Consequences for these journeys.** Any count of "messages" from the execution
-list is roughly double the truth. The only thing absorbing the doubling is
-`Claim Message Id`. And **arming the gate in B1 will cut off whichever sender is
-not configured with the secret** — so B2 must be resolved before B1, not after.
+**Accounted for on 8 September 2026.** `2.50.10.149` is Ali's own Windows desktop
+**`desktop-l3an0ma`**, running WAHA in Docker Desktop — the same PC that used to
+host n8n behind a Tailscale funnel at
+`https://desktop-l3an0ma.tail2141f7.ts.net`, from before the move to GCP.
 
-**What must be true first:** find out what `2.50.10.149` is, and decide whether
-it is a sender NEXUS wants.
+**And it had not stopped, which this document previously implied it had.**
+Execution **11103** on production at **06:07:40 UTC on 8 September** carries
+`x-forwarded-for 2.50.10.149`, `WAHA/2026.7.1`, `me.jid …:8`,
+`body.event session.status`, no `x-nexus-webhook-secret`. Its `nexus-os` compose
+project — `n8n`, `n8n-db`, `waha`, all three running — was **stopped by hand
+through Docker Desktop at 06:08:24 UTC**. Status: **identified, and stopped by
+hand on 8 Sep 2026 — not yet permanently removed (`restart: always` still
+declared, device 8 still linked)**.
+
+**Consequences for these journeys.** Any count of "messages" from the execution
+list before 6 September is roughly double the truth. The only thing absorbing the
+doubling is `Claim Message Id`.
+
+**And the ordering consequence has changed.** B2 used to precede B1 because
+arming the gate would cut off whichever sender lacked the secret. That is no
+longer the reason. `.149`'s WhatsApp session is not authenticated, so it delivers
+`session.status` and no messages; enforcement would drop those posts harmlessly.
+B1 is blocked by something else entirely — the gate reads
+`header_present: true, ok: false` on the **box's own** traffic, because the box
+runs in queue mode and the Code node comparing `$env.WAHA_WEBHOOK_SECRET`
+executes in `n8n-worker` rather than in `n8n`.
+
+**What must be true first for B2:** the two steps that make the 8 September stop
+permanent — `docker update --restart=no n8n n8n-db waha` on that PC, and
+unlinking WhatsApp device 8 — neither of which has been done. A stopped
+`restart: always` container comes back when the Docker daemon next starts.
+**And the check must not be a duplicate-pair check:** the 6 and 7 September
+samples grouped by `payload.id` and could never have seen a `session.status`-only
+sender. Absence of duplicates is not absence of the sender.
 
 ## B3 — Writing to the production n8n box has not been authorised
 
@@ -2219,3 +2255,13 @@ rag_documents 0 · users 4 · tenant_members 4.
 status (last recorded 28 Aug); `WAHA_WEBHOOK_SECRET` and `NEXUS_TENANT_MAP` on
 the VM (environment, not readable from here); the identity of `2.50.10.149`;
 whether the `finance_quotes` insert works today.
+
+On the third of those: the identity was **stated by Ali on 8 September 2026** —
+his Windows desktop `desktop-l3an0ma`, WAHA in Docker Desktop, the old n8n host
+behind `https://desktop-l3an0ma.tail2141f7.ts.net`. The host's *activity* was
+then measured: execution 11103 at 06:07:40 UTC that day, posting `session.status`
+from `2.50.10.149` with no secret header. Its containers were stopped by hand at
+06:08:24 UTC. The identity of the machine remains an owner statement rather than
+something read off it from here, and the removal is not permanent
+(`restart: always` still declared, device 8 still linked), so it stays out of the
+asserted column.

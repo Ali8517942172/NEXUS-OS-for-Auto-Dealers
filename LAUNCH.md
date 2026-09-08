@@ -134,12 +134,25 @@ written:
 | Full security regression | **not run** since 3 Sep |
 
 Still standing between here and switching WhatsApp on: the open inbound webhook
-and its dormant WAHA gate; the second sender `2.50.10.149`, **now identified as
-Ali's own WhatsApp account on device 8, an older WAHA on a UAE host** — which
-machine it is remains his to find; the Meta attestation (13 rules, 0 verified,
-0 attestations, re-measured 6 Sep); the unpublished Infra Health Probe; and the
-n8n writer changes above. No shortcuts. **WhatsApp does not switch on until those
-are done.** `STATUS-2026-09-06.md` is the current list and `OWNER-ACTIONS.md` is
+and its WAHA gate, which as of 8 Sep 2026 is in MONITOR and reads
+`header_present: true, ok: false` on the box's own traffic — the box is in queue
+mode, so the Code node comparing the secret runs in `n8n-worker` and
+`docker compose up -d n8n` recreates the wrong container. Enforcing against that
+drops every real customer message, so the gate is still not armable.
+
+Then the second sender `2.50.10.149`, **identified as Ali's own WhatsApp account
+on device 8, an older WAHA on his Windows desktop `desktop-l3an0ma` in Docker
+Desktop — the PC that used to host n8n behind
+`https://desktop-l3an0ma.tail2141f7.ts.net`**. **It had not stopped**: execution
+11103 on production at 06:07:40 UTC on 8 September posted `session.status` from
+that address with no secret header, two days after this repo recorded it gone.
+Its `nexus-os` compose project (`n8n`, `n8n-db`, `waha`) was **stopped by hand at
+06:08:24 UTC**, which reads **identified, and stopped by hand on 8 Sep 2026 — not
+yet permanently removed (`restart: always` still declared, device 8 still
+linked)**. Then the Meta attestation (13 rules, 0 verified, 0 attestations,
+re-measured 6 Sep); the unpublished Infra Health Probe; and the n8n writer
+changes above. No shortcuts. **WhatsApp does not switch on until those are
+done.** `STATUS-2026-09-06.md` is the current list and `OWNER-ACTIONS.md` is
 the ordered set of steps.
 
 **Track B — make it sellable.** Three to five UAE dealers. Show the real Profit
