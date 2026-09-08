@@ -24,7 +24,7 @@ account through the live REST API — not read out of a privileged SQL session.*
 > open it and say the truth — *"that line is wrong, here is why, and I would
 > rather show you the bug than a number you can't check."* Fixing it is a
 > one-word change owned by whoever owns that file; the finding is written up in
-> `/home/claude/out/demo-tenant-evidence.md`. Everything else on the path below
+> `ops/evidence/demo-tenant-evidence.md`. Everything else on the path below
 > was verified line by line.
 
 `LAUNCH.md` says Track B — "make it sellable" — does not wait for Track A, and
@@ -289,7 +289,7 @@ engine."*
 **nine named prerequisites, none of them met**, each with what it unlocks, why
 it is not merely code, and what was measured. Staging is missing the platform
 reference rows behind it (`deal_rescue_prerequisites` = 0 on staging, 9 on
-production — see `/home/claude/out/demo-tenant-evidence.md`, finding 5).
+production — see `ops/evidence/demo-tenant-evidence.md`, finding 5).
 
 **So do not open Deal Rescue in a demo until that is fixed.** Take the deal
 blocker from **Today's Money Leaks → "Checks that could not run"** instead,

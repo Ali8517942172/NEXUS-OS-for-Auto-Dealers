@@ -123,7 +123,7 @@ operational rather than structural:
   be driven over instead.
 - `tenants.is_unattributed_default` **no longer points at a dealership.** Fixed
   5 Sep 2026 (migrations `20260905201206`/`201227`/`201337`, evidence in
-  `/home/claude/out/unattributed-default-evidence.md`). It is held by a
+  `ops/evidence/unattributed-default-evidence.md`). It is held by a
   quarantine tenant — slug `__unattributed__`, `status='quarantine'`,
   `is_quarantine=true` — and a CHECK constraint
   (`tenants_unattributed_default_must_be_quarantine`) makes re-pointing it at a
@@ -144,12 +144,12 @@ operational rather than structural:
   it is stable** — that census is the only measurement of which writers are
   broken, and this is the cheapest moment to take it. Also: disabling
   `Resolve Tenant` in n8n, the documented rollback, no longer falls back to ALBA;
-  see `/home/claude/out/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
+  see `ops/evidence/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
 - ~~**`workflow_registry` is readable by every signed-in user and is not
   tenant-scoped.**~~ **Closed 6 September 2026** — migration
   `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`,
   applied to staging then production, evidence in
-  `/home/claude/out/workflow-registry-scoping-evidence.md`. **`QUALITY_GATE`
+  `ops/evidence/workflow-registry-scoping-evidence.md`. **`QUALITY_GATE`
   check L2 now PASSES** (12 open policies, 12 exempt, 0 not) and nothing was
   added to `L2_EXEMPT_TABLES`.
 
@@ -1693,6 +1693,35 @@ executions — 0 of 51 messages — were genuine customer conversation.** All 51
 `@g.us` groups, `status@broadcast` or `@newsletter` on Ali's personal handset.
 The audit said most of the traffic is not customer conversation; in this window
 **none** of it was.
+
+## The evidence lived in a container that gets deleted — 8 September 2026
+
+This file, `CONTROL-PLANE.md`, `README.md`, `OWNER-ACTIONS.md`,
+`V1-RELEASE-CLOSURE.md`, `ops/DEMO.md` and both `STATUS-*.md` cited **ten**
+evidence files by absolute path under `/home/claude/out/` — an ephemeral cloud
+container that is reclaimed after a period of inactivity. **None of the ten was
+tracked.** Sentences like *"proved adversarially, evidence in
+`/home/claude/out/unattributed-default-evidence.md`"* would have gone on
+asserting a measurement while the named file existed nowhere.
+
+Nothing had been lost yet. The whole record — 33 documents, 676 KB — is now in
+`ops/evidence/`, and every citation points there. Nothing was rewritten except
+the paths; the CI secret scan passes over the lot (no JWT, no key, no token).
+
+**The rule: evidence for a claim in a tracked file must itself be tracked.** If
+a measurement is worth citing, it is worth committing. A path under
+`/home/claude`, `/tmp` or any other session-local directory is not a citation —
+it is a promise that expires when the container does.
+
+Three things were deliberately **not** committed, and `ops/evidence/README.md`
+says why in full: the catalogue dumps (regenerable in one statement, and a stale
+committed catalogue is worse than none, because the gate's entire staleness
+discipline exists to stop exactly that being trusted); the gate reports (CI
+uploads its own); and the transfer patches. Two sentences still name
+`/home/claude/out/nexus-M0-M1-2026-09-06.patch` — that is a historical
+measurement of a moment on 6 September, not an instruction, and rewriting it
+into a repository path it never had would have been the fabrication rather than
+the fix.
 
 ## The dashboard was already deployed, and the flip is done — 7 September 2026
 

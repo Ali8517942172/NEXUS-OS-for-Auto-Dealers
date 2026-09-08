@@ -504,7 +504,7 @@ worst of which is recorded under 5.8 below. Reading a screen finds the sentences
 somebody wrote; rendering it finds the ones the data wrote.
 
 Full evidence, including what was deliberately left:
-`/home/claude/out/control-plane-frontend-evidence.md`.
+`ops/evidence/control-plane-frontend-evidence.md`.
 
 Findings are ordered by how much they cost if a dealership reads them.
 
@@ -553,7 +553,7 @@ strings, URLs or hostnames across all 18 rows.
 **Closed 6 September 2026**, by migration
 `20260906042024_workflow_registry_off_the_dealer_plane_via_vendor_accessor`
 (staging first, then production; evidence
-`/home/claude/out/workflow-registry-scoping-evidence.md`). Gate check `L2`
+`ops/evidence/workflow-registry-scoping-evidence.md`). Gate check `L2`
 **passes** and nothing was added to `L2_EXEMPT_TABLES`.
 
 **It was not closed with a `tenant_id`, and that is the part worth carrying.**
@@ -984,7 +984,7 @@ double duty as Ali's operations console.
    `customers.js`; internal table and view names across roughly twenty screens,
    which needs a vocabulary decision before a rewrite; and `app.js`'s boot card.
    Evidence and reasons:
-   `/home/claude/out/control-plane-frontend-evidence.md` §2d.
+   `ops/evidence/control-plane-frontend-evidence.md` §2d.
 2. **The tenant registry and subscription state.** A separate Supabase project,
    one row per dealership, one row per subscription, wired to whatever payment
    processor the marketplace uses. This alone answers "who is paying" and "who
