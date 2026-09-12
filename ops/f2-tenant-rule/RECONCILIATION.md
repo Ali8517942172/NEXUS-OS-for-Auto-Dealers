@@ -169,3 +169,100 @@ producer's vocabulary the consequences are measured, not estimated:
   used-car gap of five figures, one model year is often the whole gap.
 
 I am not choosing this. It is a commercial risk appetite, not a technical fact.
+
+---
+
+# Corrections from cross-check, 12 September 2026
+
+Five reviewer agents attacked this document and the wave around it. Three of its
+claims did not survive intact. Full evidence in `ops/crosscheck/`.
+
+## The screen is wrong too, and I graded it on the wrong axis
+
+Above, I called `screens/competitors.js` "the most correct surface" and reversed
+the fix order on that basis. The vocabulary half of that judgement holds. The
+judgement itself was too generous, because I graded the screen on *which words it
+knows* and never checked *what its verdict gates*.
+
+`QUALITY.unrated` carries `concludes: true`. `unrated` is the ABSENCE of a rating
+— 9 of 22 production rows are null-quality — and `concludes` is what gates the
+percentage and the market position at `competitors.js:900` and `:905`. The file's
+own doctrine, written three hundred lines above, is that "a percentage IS the
+conclusion". So a row whose tie to our car was never established is permitted to
+support a price position, while `weak` — a row the scraper actively rated as
+untied — is not. The unchecked row outranks the checked-and-failed one.
+
+The scraper's measured base rate is 0% `exact_year`, 31% `model_only`, 69% `weak`.
+If the 9 unrated rows had been rated, roughly 6 of them would have come back
+`weak`. Treating them as conclusive is not neutral; it is optimistic by default,
+which is the same failure as `REAL unless marked test` that the provenance
+contract exists to prevent.
+
+Correct behaviour: show the row and the absolute gap, withhold the percentage and
+the market position, and give the reason its own words — distinct from `weak`'s,
+because "never checked" and "checked and failed" are different sentences and the
+screen is otherwise scrupulous about exactly that distinction. `concludes: false`,
+for a different reason.
+
+Related, same file, `:858`: any grade the screen has no words for is coerced to
+`unrated` — and therefore inherits conclusive authority. That now couples to the
+20260912 migration's deliberate choice to *surface* unknown producer grades rather
+than reject them. Surfacing them is still right; letting them conclude is not.
+
+## The fix order was right, for one reason more than I knew
+
+The reversal stands and gains a third leg. `ops/migrations-held/20260908120000_…`
+repeated `array['exact','strong']` as its **own fallback inside the view body**. A
+literal in a view body cannot be reached by a migration that corrects a column
+DEFAULT and its existing rows, so the dead vocabulary would have survived in
+`v_needs_attention` in either apply order — in the file most recently reviewed and
+therefore least likely to be re-read. Fixed on 12 Sep: the fallback now reads the
+catalogue, which makes that file depend on this one. **Apply 20260912 first.**
+
+## Patient zero has a name, and the guard would have broken it
+
+`ops/demo/seed_demo_tenant.sql` seeds `array['exact','strong']` at line 204 and
+writes `weak` / `model_only` / `null` competitor rows at line 434. One file, both
+vocabularies, neither matching the other. That is why `{exact,strong}` looked
+verified: the only place the two ends were ever written together wrote them
+inconsistently, and the demo tenant never had enough rows for anyone to notice.
+
+It is also why staging held a single `strong` row dated 2026-08-12 — the one I
+presented as a positive control. Origin now settled: `seed_demo_tenant.sql:434`.
+Not scraper output. Seed.
+
+Consequence neither held file had noticed: once the 20260912 guard lands, seeding
+a demo tenant raises `23514`. The seed is corrected in the same commit.
+
+## `exact_year` is not emittable from anything in this repo — settled
+
+Marked UNKNOWN above; now resolved as far as the repo can resolve it.
+`competitor_price_scraping_supabase_update.json` is the only repo file writing
+`tableId:"competitors"`, and it contains **zero** occurrences of `match_quality`,
+`listing_title`, `source_kind`, `offer_name`, `offer_condition` or `match_note`.
+Production holds 13 non-null `match_quality` values and 13 `source_kind='unknown'`,
+so the deployed node is newer than the repo copy and **the repo copy is stale**.
+The writer exists only inside the deployed `Competitor Price Scraping` workflow on
+the n8n box. This cannot be closed from the repo, and the honest status is that
+NEXUS's scraper is a component whose source of truth is not in version control.
+
+## It is a class. Five live instances, not one
+
+The pattern — a producer writes one vocabulary, a consumer filters on another, the
+empty result reads as absent data — is not confined to `match_quality`. Measured:
+
+| Producer | Consumer | Effect |
+|---|---|---|
+| `competitors.match_quality` | `accepted_market_match_quality` | 0 of 22 pass; 12 units, no market position |
+| `audit_log.workflow` | `nexus_workflow_catalogue()` | 9 rows invisible in `v_workflow_health`; 4 registry rows render `NEVER_RAN` with an empty alias map |
+| `audit_log.summary` prose | `nexus_outcome_class()` 5-substring regex | 13 of 53 Finance Calc refusals counted as runs producing nothing |
+| `attribution_edge_type.state` | `v_attribution_link_map` | a hop refused **by design** prints as "nothing has happened yet" |
+| `leads.status` | `overview.js` KPI trio | counts **3 of 6** leads; `NEW` belongs to no documented writer |
+
+The last one is the one a dealership would notice first: the summary screen
+undercounts its own pipeline by half, and does it by hardcoding what the detail
+screen derives from reality — the same reversal found here, in a second place.
+
+The counter-example matters too. `nexus_outcome_class` translates `FAILED→FAILURE`
+and classifies **0 of 1018 rows** as UNKNOWN. The correct pattern already exists in
+this codebase; it simply was not applied consistently.

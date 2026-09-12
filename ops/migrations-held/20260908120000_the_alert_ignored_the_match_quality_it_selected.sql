@@ -50,6 +50,16 @@
 -- but it is a visible change to a screen a dealership looks at, which is why
 -- this file is HELD rather than applied.
 --
+-- A THIRD DEFECT, FOUND BY CROSS-CHECK ON 12 SEP AND FIXED HERE.
+-- This file originally repeated `array['exact','strong']` as its OWN fallback,
+-- inside the view body. Those two values are never written by the scraper (see
+-- ops/f2-tenant-rule/RECONCILIATION.md), and a literal inside a view body cannot
+-- be reached by the migration that corrects the column DEFAULT and the existing
+-- rows. So the dead vocabulary would have survived here in either apply order,
+-- and this file would have been the last place anyone thought to look. The
+-- fallback now reads the catalogue that 20260912 creates, which makes this file
+-- depend on that one: APPLY ORDER IS 20260912 FIRST, THEN THIS.
+--
 -- A SECOND DEFECT IN THE SAME BRANCH, fixed here because the branch is already
 -- being rewritten. `DISTINCT ON (c2.competitor, c2.model)` omits `tenant_id`,
 -- which is NOT NULL on `competitors`. Under RLS a dealership only ever sees its
@@ -148,7 +158,9 @@ union all
     -- unknown is not a verdict.
     and lower(coalesce(c.match_quality, '')) = any (
           select lower(q)
-            from unnest(coalesce(ips.accepted_market_match_quality, array['exact','strong'])) q )
+            from unnest(coalesce(ips.accepted_market_match_quality,
+                                 array(select k.kind from public.market_match_quality_kind k
+                                        where k.rank >= 30))) q )
 union all
  select 'workflow_failure'::text, 'HOT'::text, coalesce(r.name, f.workflow), coalesce(r.name, f.workflow),
         (((f.n || ' run'::text) || case when f.n = 1 then ''::text else 's'::text end)

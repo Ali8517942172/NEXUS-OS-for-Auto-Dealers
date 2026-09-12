@@ -201,7 +201,12 @@ insert into public.inventory_profit_settings
    min_model_token_overlap, accepted_market_match_quality, market_max_age_days)
 values
   ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', null, null, null, null,
-   75, 110, 60, 170, 9.00, 3.00, 30, 50, 2, array['exact','strong'], 14);
+   75, 110, 60, 170, 9.00, 3.00, 30, 50, 2, array['exact_year'], 14);
+-- 12 Sep 2026: was array['exact','strong']. Those two grades are never written by
+-- the scraper, and this seed is patient zero for the mismatch — it seeds the
+-- consumer's vocabulary on line 204 and the producer's on line 434, which is why
+-- {exact,strong} looked verified for a week. Once the guard in
+-- ops/f2-tenant-rule/held/20260912_* lands, the old value raises 23514 here.
 
 insert into public.inventory_action_policy
   (tenant_id, approver_tenant_roles, approver_staff_roles, reproposal_cooldown_days, set_by, note)
