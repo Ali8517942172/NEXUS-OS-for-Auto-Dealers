@@ -1037,3 +1037,214 @@ so that count is stale and the conclusion is not.) Adding one to `leads` is an
    one of them is constrained by `leads_tenant_email_key`. Correcting it is a
    one-row `UPDATE`, not an `ALTER TABLE`, and it removes a trap the backfill in
    stage 1 would otherwise have to carry a special case for.
+
+---
+
+## 8. Addendum, 9 September 2026 — what building it on staging and breaking it taught
+
+Everything above §8 was written from reading the catalogue. This section was
+written after the model was actually built on staging `wwspuxrbiyagnrnzgate` and
+attacked. It **corrects** three things §1–§7 got wrong and **confirms** two.
+
+Evidence lives in `MEASURED-ON-PRODUCTION.md` (production, read-only),
+`STAGING-MODEL.sql` (exactly what ran) and `BREAK-LOG.md` (each attack, its real
+result). Where those disagree with §1–§7, they win: they are measurements and
+§1–§7 is reading.
+
+### 8.1 The production measurement changes the argument for the model
+
+§1.1 counted five leads. It did not ask how many humans they represent. Measured:
+
+- **Inside `leads`: 5 rows, 5 distinct normalised phones, 5 distinct nine-digit
+  tails. Collision rate 0%.** There is no duplicate person in `leads` today. Any
+  pitch of this model as "leads double-count humans" is false on this data.
+- **Across `leads` + `whatsapp_contacts`: 19 identity-bearing rows, 15 distinct
+  humans — 21% duplication.** Four humans exist twice, and one of the four
+  (Effco, `111948809162873@lid`) is linked by nothing at all: its
+  `whatsapp_contacts.lead_email` is NULL, and the only evidence the two rows are
+  one person is a phone tail that no code computes.
+- **The real number: the dealership has spoken to 15 people and `leads` knows 5.
+  11 humans and 83 of 142 messages (58%) attach to no customer record at all.**
+
+**So the argument for `customer` is not deduplication. It is that eleven humans
+currently have no row anywhere that a salesperson can open.** §5.3 was right that
+a customer table does not fix message linkability — but it was aimed at the wrong
+target. The gap is not 107 unattributable messages; it is 11 unrepresented people.
+
+### 8.2 §5.1 is wrong, and open question 2 now has an evidence-based answer
+
+§5.1 accepted merging two people who share a phone, on the grounds that *"there
+is no signal in this data that separates a husband and wife on one handset."*
+
+**There is a signal, and the attack found it.** When Maryam arrives on Rashid's
+landline she brings **her own email address** — a strong, account-bound
+identifier that the matched customer does not hold and that contradicts the one
+he does. Four walk-ins on the showroom line brought four distinct new emails. A
+resolver that treats a phone match as sufficient is throwing that evidence away.
+
+The corrected rule, built and tested as `im_resolve_customer_v3`:
+
+- **strong keys** — email, WhatsApp LID, Instagram handle: account-bound, one
+  human owns them;
+- **weak key** — phone: shareable, because families and switchboards exist;
+- a weak-key-only match whose strong key *contradicts* the matched customer does
+  **not** merge. It declares the number shared in `im_shared_key`, creates a
+  separate customer, and files a `SHARED_PHONE_SPLIT` review row.
+
+Measured: three humans on one landline get three records, and each returns to
+their own on a later arrival (`MATCHED`, correct customer, both times).
+
+**And the cost of §5.1's accepted trade-off was understated.** The measured blast
+radius: one customer card headed *"Rashid Al Mansoori"* carrying Maryam's email
+address, her conversation, and an opportunity recorded *"Maryam: private purchase,
+do not tell husband"*. §5.1 called this a data-quality trade. It is a
+**cross-person data leak inside a single tenant**, and NEXUS RLS cannot see it
+because RLS is tenant-scoped and both humans are in the same tenant. There is no
+person-scope anywhere in the system. That should be the answer to open question 5
+as well: a wrong merge is not a tidiness problem.
+
+**Answer to open question 2: no.** Two arrivals sharing a phone and nothing else
+are the same customer *only while no strong key contradicts*. The moment one does,
+they split and the number stops being an identifier.
+
+### 8.3 The price of that fix, which must be stated before it ships
+
+Once a number is in `im_shared_key` it never identifies anybody again. Measured:
+**three inbound calls on a shared line produced three throwaway customers.** On a
+busy company switchboard that is one junk record per call, forever, until a human
+works the `im_identity_review` queue — and that queue is work ALBA does not do
+today. This is not solved. It is priced, and the price is a person's time.
+
+### 8.4 Normalisation is where the silent damage is, not identity
+
+§6.2 listed the production key shapes to test against and was right to. What it
+missed is that the *fix* for one of them creates a worse bug. Stripping the WAHA
+`:77` device suffix with `split_part(raw, ':', 1)` — which the production data
+genuinely requires — **destroys every number a human typed with a label**:
+`"ph: 052 664 7253"` and `"Tel: +971526647253"` both normalise to NULL.
+
+Worse, `"052 664 7253 ext 4"` silently normalises to **`+9715266472534`** — a
+plausible number belonging to nobody, which creates a *second* customer for a
+human already in the book and can never match again. **A silent wrong answer is
+more expensive than a refusal**, and only one of the three failure modes here
+refuses.
+
+`im_normalize_phone_v3` is verified on 13 inputs including all of these. Any
+production normaliser must carry the same test table, and must return a *quality*
+alongside the value so `TRUNCATED_MULTI` arrivals can be flagged rather than
+trusted.
+
+### 8.5 §6.3 was right about concurrency and the fix is one line of intent
+
+The naive read-then-write resolver, raced with two real `pg_cron` backends
+**1.6 ms apart**, produced:
+
+```
+ARM_A_whatsapp | pid 584531 | sqlstate 23505 | duplicate key ... im_identity_unique_exclusive
+ARM_B_webform  | pid 584530 | CREATED dfb22675-...
+```
+
+Read that precisely, because the obvious reading is wrong. The unique index
+worked — there is no duplicate customer. What it produced instead is **a dropped
+arrival**: the WhatsApp message errored, and no customer, no conversation and no
+reply exists for it. **The index converted a duplicate-row problem into a
+lost-lead problem, which for a dealership is the more expensive one.** Any design
+that relies on a unique index to "handle" concurrency is choosing to lose leads.
+
+The fix is `pg_advisory_xact_lock` on every normalised key **before** the read.
+Re-raced: two backends 2.2 ms apart, both returned the same `customer_id`, one
+CREATED and one MATCHED, no error. Throughput under contention and behaviour
+above two writers are **NOT MEASURED**.
+
+Method note for whoever re-runs this: **two parallel MCP tool calls are not
+concurrent.** This harness executes them sequentially — measured 3.4 s and 5.0 s
+apart even behind a wall-clock sleep barrier. A "pass" obtained that way means
+nothing. Use `pg_cron`, which starts all jobs due on a tick in separate
+background workers.
+
+### 8.6 Three integrity holes §3 did not anticipate
+
+1. **An opportunity could be linked to another customer's conversation.** Nothing
+   checked that `conversation.customer_id = opportunity.customer_id`; the insert
+   succeeded. Fixed with the composite-FK shape `lead_event` already uses
+   (`unique (conversation_id, customer_id)`, `unique (opportunity_id, customer_id)`,
+   `customer_id` on the link row, two composite FKs). Re-attacked: `23503`.
+   **This constraint is not optional — without it, revenue attribution can be
+   credited to the wrong human by an ordinary INSERT.**
+
+2. **The 360 view listed merged-away customers as ghost rows** with zeros in
+   every column. One `where status = 'active'` — but note that
+   `CREATE OR REPLACE VIEW` resets `reloptions`, so `with (security_invoker = on)`
+   had to be restated on the replace, exactly as the guard's HINT warns.
+
+3. **A repair introduced a regression the naive version did not have.** Modelling
+   "shared" as a boolean on the identity row let a later writer re-insert the
+   same number as *not* shared; a known customer returning with his own email
+   then matched two customers and was refused entry entirely. "Shared" is a fact
+   about the key for the tenant, so it belongs in `im_shared_key`, keyed
+   `(tenant_id, kind, value_norm)`. **The lesson generalises: any per-row flag
+   that encodes a global fact will be re-introduced by the next writer.**
+
+### 8.7 §3 and §5 were right about two things
+
+- **The anonymous walk-in.** The first model refused to record a human with no
+  phone and no email — *stricter than production `leads`, which mints
+  `walkin-preflight-01@nexus-preflight.invalid` and does record them.* A new
+  model that loses a customer the old one kept is a regression, and it was only
+  visible because someone tried it. Fixed by minting an `anon` identity holding a
+  UUID. Honest cost: anon customers can never be auto-merged, because a UUID
+  matches nothing.
+- **§5.8's ambiguity refusal is the right instinct**, and it now has a home:
+  `im_identity_review` with `AMBIGUOUS_MULTI_CUSTOMER` and `SHARED_PHONE_SPLIT`
+  reasons. Three review rows were filed by the attacks without anyone asking.
+
+### 8.8 Un-merge: reversible in structure, lossy in meaning
+
+§3.1 treated `merged_into` plus a split RPC as sufficient. Tested: a wrong merge
+was reversed and the loser got back exactly what the merge log recorded — one
+identity, one conversation, one opportunity. But **three objects created during
+the merged period were stranded on the winner**, including a finance application,
+and nothing can say which human they belong to.
+
+**Un-merge restores the past. It cannot restore the middle. The loss grows with
+time-to-detection, not with data volume** — which means the review queue in §8.3
+is not optional hygiene, it is the mechanism that bounds this cost.
+
+A defect found in the same attack and **not yet fixed**:
+`im_unmerge_customer` reported `orphaned_since_merge = 1` when the true figure was
+3 — it counts stranded identities only, not conversations or opportunities. An
+un-merge tool that under-reports its own damage is worse than one that refuses to
+run.
+
+### 8.9 Still unsolved, and it needs a decision not a schema
+
+Two open opportunities on one conversation (trade-in + new purchase) are accepted
+by the schema — nothing assumes one, which §3 got right. But an inbound message on
+that thread matches **two** candidate opportunities and the model carries no
+tiebreaker. Attribution must then either pick (wrong half the time) or split
+(double-count — the exact defect the model exists to remove).
+
+**Until a rule exists, per-opportunity revenue attribution on a multi-intent
+conversation is NOT MEASURED and must not be reported as a number.** This is a
+new open question for Ali, and it is the one that decides whether the Revenue
+screen can be trusted:
+
+8. **When a customer has two open opportunities and sends one message, which one
+   does it belong to?** Candidate rules: most recently touched; the one whose
+   `vehicle_interest` the message mentions; ask the salesperson. Each is
+   defensible; none is derivable from the data.
+
+### 8.10 Revised status of §6's test plan
+
+| §6 item | status |
+|---|---|
+| 6.1 guard measurements on `leads` | **NOT RUN** — untouched by this work |
+| 6.2 identity rule vs real shapes | **partly run.** `:77` suffix, `''`, `.invalid` and synthetic-email exclusion covered by `im_norm_email`/`im_normalize_phone_v3`. **LID→customer resolution and Arabic push names NOT RUN.** |
+| 6.3 concurrency | **RUN on the staging model** (`pg_cron`, two backends 2.2 ms apart, PASS). **NOT RUN against `nexus_promote_lead_event`.** |
+| 6.4 repeat-customer journey | **NOT RUN** |
+| 6.5 repeat-walk-in `23505` defect | **NOT RUN** — still a prediction, still worth filing |
+| 6.6 cross-tenant isolation | **NOT RUN.** All staging work used Alpha Motors `11111111-…` only; Bravo `22222222-…` untouched. |
+
+Nothing in §8 has been applied to production, and no repo code was changed. The
+staging objects are all prefixed `im_` and the teardown is at the foot of
+`STAGING-MODEL.sql`.

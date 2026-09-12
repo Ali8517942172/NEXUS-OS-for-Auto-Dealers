@@ -872,3 +872,134 @@ the other end the same six-in-forty-one becomes six real enquiries.
    `external_message_id`, retires the ~12% duplicate-row defect, and turns
    invariant 1 from a count into a join. It cannot be deployed from this
    repository.
+
+---
+
+# Addendum — 9 September 2026: the evidence is on a seven-day timer, and the outbound half
+
+**Measured 9 September 2026 against production `dsvuoovivysszdoiorch`. Read-only
+throughout; nothing was written to any database, and no n8n API call was made.
+Nothing above is retracted. Two things are added, and the first changes how this
+document should be read.**
+
+Full measurement: `ops/message-durability/GAP-MEASURED.md`.
+Design: `ops/message-durability/DESIGN.md`.
+Held migration: `ops/message-durability/held/20260909050000_a_send_that_left_no_row_is_a_send_that_never_happened.sql`.
+
+## A1. Six is now five, and nothing was fixed
+
+§4.2 above ran invariant 1 on 8 September and got *"6 claimed message(s) with no
+record, in 4 conversation(s)"*. The same body, run today:
+
+```
+5 | 3 | 158510264357112@lid (6/3), 184984711217354@lid (1/0), 204479249027311@lid (3/2)
+```
+
+`210097552777273@lid` — the `2026-09-01 10:26:44.942502+00` claim — is gone.
+
+```sql
+select min(processed_at)::text, max(processed_at)::text, count(*),
+       (now() - interval '7 days')::text
+  from processed_messages;
+-- 2026-09-02 06:07:09.584087+00 | 2026-09-08 17:24:34.794258+00 | 36 | 2026-09-02 03:43:18+00
+```
+
+`processed_messages` was 41 when §2.2 was written and is **36** now. The deleter
+is first-party and in this repository — `n8n-workflows/nexus_retention_purge.json`,
+node **`Prune Dedupe Guard`**:
+
+```
+DELETE /rest/v1/processed_messages?processed_at=lt.{{ $now.minus(7,'days') }}
+```
+
+**So invariant 1 goes green on its own.** `184984711217354@lid` (2026-09-04
+06:21:37) is deleted on 11 September; the three `158510264357112@lid` claims and
+the `204479249027311@lid` one went on 9 September's run or go on the 10th. By
+roughly 15 September the gate reads PASS with nothing repaired.
+
+That is not a new defect — it is this document's defect seen from the other side.
+The only durable trace that a message was *seen* has a seven-day TTL, and the
+table that survives carries no message id to join it to (still 0 of 142). **A
+gate that self-heals by forgetting is worse than one that stays red**, and
+§4.3's discipline — a gate must be made to fail on purpose — needs a companion:
+a gate must also be checked for whether it can go green on its own.
+
+Consequences for the text above, none of which require a correction to it:
+
+- §5 (Recovery) is now harder, not easier. §5.3's n8n query is the only route to
+  three of the six and the claim rows that name them are being deleted while the
+  execution history ages out separately.
+- §1.6 (*"has not recurred in the 26 claims since"*) still stands. A crude
+  per-`chat_id` recount today appears to show a surplus on
+  `150345548320909@lid` (9 claims, 5 inbound rows under that key). **It is not a
+  loss.** That conversation writes `communication_logs` rows under *two* keys —
+  `150345548320909@lid` on 7 Sep and `+971556382721@whatsapp.lead` on 7–8 Sep,
+  the same person — because `whatsapp_contacts` gained a `lead_email` for it
+  mid-conversation. Counting per key is invalid for exactly the reason §1.1
+  gives, and §4.1's `logged` CTE resolves identity through `whatsapp_contacts`
+  precisely to avoid this. **Use §4.1's body, not a per-key count.**
+- **`P0 §4.1`'s invariant should gain a check that this table is not being
+  purged**, or the loss counter will keep resetting. Naming it here rather than
+  editing §4.1, which is quoted elsewhere.
+
+## A2. The same defect on the outbound side, and it is wider
+
+§3 answers where the durability boundary belongs for **inbound**. The outbound
+side was not measured above. It is measured now, and both halves of the failure
+are live at once.
+
+Every send call site in the repository, enumerated by parsing all
+`n8n-workflows/*.json` — the WhatsApp six match
+`ops/whatsapp-cloud/WAHA-EXIT-PLAN.md §1b`, found by a different method:
+
+| | |
+|---|---|
+| WhatsApp send call sites | 6, all WAHA. No Cloud send node exists |
+| ...capturing the provider's message id | **0** — confirmed by the database: 0 of 142 rows carry one |
+| ...persisting a send outcome as data | **0**. Two KYC nodes persist it as English inside the message body |
+| ...persisting nothing at all when the send fails | **1**: `whatsapp_send_dashboard_reply` → `Send via WAHA` has `onError: continueErrorOutput`, and output 1 goes to `Respond Send Failed`, a terminal `set` node. Its own text: *"Nothing was sent and nothing was logged — the message is still unsent."* **That is the salesperson's own reply from the Conversations screen** |
+| ...writing an outbound "we said this" row **even when the send failed** | **5**: `onError: continueRegularOutput` routes the error item down the same main output the `Log …` node hangs off |
+| Python send call sites | 0 |
+
+So the two failure modes are opposites and both are deployed:
+**sent-and-not-logged** (call site 2) and **logged-and-not-sent** (the other
+five). §2.4's sentence — *the claim is written from an item that does not
+contain the message* — has an outbound twin: **the log is written from an item
+that does not contain the provider's answer.**
+
+The dashboard is honest about it in the browser and nowhere else.
+`screens/conversations.js` renders *"whether the message left cannot be told
+from here. Check WhatsApp before sending again."* Nothing persists that
+sentence, so tomorrow the question is unanswerable.
+
+## A3. Three ledgers exist for this, two have never held a row
+
+- `channel_message_events` — **0 rows**, and `external_message_id` is `NOT NULL`
+  plus provider-id-shaped, so **a rejected send is a row it structurally refuses**.
+  It also has **no append-only trigger**, while its sibling
+  `whatsapp_delivery_events` does, and `service_role` holds `UPDATE, DELETE,
+  TRUNCATE` on it. Given A1, that is not a theoretical concern.
+- `channel_send_directive` — **0 rows**, and it already holds the send-outcome
+  vocabulary, in a CHECK where nothing else can see it:
+  `PENDING | ACCEPTED_BY_PROVIDER | REJECTED_BY_PROVIDER | NOT_ATTEMPTED | TRANSPORT_ERROR`.
+- `communication_logs` — 142 rows, no status column, no provider id, no error
+  column.
+
+The held migration extends `channel_message_events` into the append-only log,
+writes the attempt **before** the provider call (§3's argument, applied
+outbound), and moves those five strings into a catalogue table with foreign keys
+so an unknown value is `23503` at INSERT rather than a row nobody's filter
+matches. It is **not** applied and has one unresolved cross-owner dependency;
+its header says which.
+
+## A4. What only Ali can do — two additions to the list above
+
+6. **Decide whether `Prune Dedupe Guard` should be deleting `processed_messages`
+   at all.** It is a dedupe cache with a seven-day TTL that is currently the only
+   record of a message being seen. Under the design in `DESIGN.md` the claim
+   moves into an append-only table and the purge becomes harmless; until then it
+   is deleting the evidence of an open P0. One n8n change, and not mine to make.
+7. **Confirm on the box that no live workflow calls `nexus_record_channel_event`
+   with `p_direction='outbound'`.** Under the held migration such a call becomes
+   `23503` rather than a bad row — loud and correct, and still a behaviour
+   change. The exported workflows contain no such call; the box was not read.
