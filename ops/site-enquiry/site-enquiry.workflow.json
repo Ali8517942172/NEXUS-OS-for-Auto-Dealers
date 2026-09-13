@@ -1,0 +1,479 @@
+{
+  "name": "Site Enquiry Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "site-enquiry",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "site-enq-hook",
+      "name": "Site Enquiry Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "nexus-site-enquiry",
+      "notes": "POST /webhook/site-enquiry. Called only by apps/marketing-site/api/lead.js, which has already checked Origin, honeypot, timing and shape. responseMode is 'responseNode' because the caller's HTTP status is load-bearing: lead.js answers the visitor 503 when this answers non-2xx."
+    },
+    {
+      "parameters": {
+        "jsCode": "// THE REFUSAL HAPPENS HERE, BEFORE ANY WORK.\n// lead.js sends the guard as a header, not in the body, and the whole point of\n// that choice is that this workflow can decide to stop before it reads, parses\n// or logs one field of a stranger's payload. So this node touches\n// $json.headers only on the unauthorized path.\n//\n// The expected value is read from $env.NEXUS_NOTIFY_WEBHOOK_SECRET. It is NOT\n// written down in this file and must never be: a workflow JSON lives in git and\n// is exported, copied and pasted by people, and a secret pasted into one is a\n// secret that has left the building.\n//\n// n8n only exposes $env inside a Code node when N8N_BLOCK_ENV_ACCESS_IN_NODE is\n// false (the default). If that is turned on, this returns unconfigured and the\n// workflow refuses everything rather than silently accepting everything --\n// which is the direction a guard must fail in.\n\nconst h = $input.first().json.headers || {};\nconst PRESENTED = String(h['x-nexus-notify-secret'] || '');\nconst EXPECTED = String($env.NEXUS_NOTIFY_WEBHOOK_SECRET || '');\n\nconst ip = String(h['x-forwarded-for'] || '').split(',')[0].trim() || 'unknown';\n\nif (!EXPECTED) {\n  return [{ json: { authorized: false, reason: 'guard_not_configured', ip } }];\n}\n\n// Length-independent compare. Not constant time in the cryptographic sense --\n// JS string indexing is not -- but it does not early-exit on the first wrong\n// character, which is the leak that matters over a network.\nfunction equal(a, b) {\n  let diff = a.length ^ b.length;\n  const n = Math.max(a.length, b.length);\n  for (let i = 0; i < n; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);\n  return diff === 0;\n}\n\nif (!equal(PRESENTED, EXPECTED)) {\n  return [{ json: { authorized: false, reason: PRESENTED ? 'secret_mismatch' : 'secret_absent', ip } }];\n}\n\n// Authorized. Only now do we look at the body, and only at the seven fields\n// lead.js says it sends. The mail body is composed HERE from these fields and\n// never taken from the caller -- a caller holding the header still cannot make\n// the message arbitrary text. That is deliberate and must stay: see the comment\n// in apps/marketing-site/api/lead.js above the fetch().\nconst b = $input.first().json.body || {};\nconst take = (v, max) => String(v == null ? '' : v).replace(/[\\x00-\\x1F\\x7F]/g, '').trim().slice(0, max);\n\nconst enquiry = {\n  full_name:     take(b.full_name, 120),\n  phone:         take(b.phone, 32),\n  email:         take(b.email, 160),\n  dealership:    take(b.dealership, 160),\n  stock_size:    take(b.stock_size, 40),\n  message:       take(b.message, 1500),\n  submission_id: take(b.submission_id, 80),\n};\n\n// The site already refuses a nameless enquiry with 400. If one arrives anyway\n// the endpoint moved or the check regressed; say so rather than mailing a blank.\nif (!enquiry.full_name) {\n  return [{ json: { authorized: false, reason: 'authorized_but_empty_name', ip } }];\n}\n\nconst esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst row = (label, value) => value ? '<tr><td style=\"padding:4px 12px 4px 0;color:#666\">' + label + '</td><td style=\"padding:4px 0\"><strong>' + esc(value) + '</strong></td></tr>' : '';\n\nconst html =\n  '<p>A new enquiry arrived from the NEXUS marketing site.</p>' +\n  '<table style=\"border-collapse:collapse;font:14px/1.5 -apple-system,Segoe UI,sans-serif\">' +\n  row('Name', enquiry.full_name) +\n  row('Phone', enquiry.phone) +\n  row('Email', enquiry.email) +\n  row('Dealership', enquiry.dealership) +\n  row('Stock size', enquiry.stock_size) +\n  '</table>' +\n  (enquiry.message ? '<p style=\"margin-top:16px;color:#666\">Message</p><blockquote style=\"margin:0;padding:8px 12px;border-left:3px solid #ddd;white-space:pre-wrap\">' + esc(enquiry.message) + '</blockquote>' : '') +\n  '<hr><p style=\"font:12px -apple-system,sans-serif;color:#999\">submission_id: ' + esc(enquiry.submission_id || '(none sent)') +\n  '<br>This person is a prospect for NEXUS. They are NOT a car buyer and do not belong in any dealership pipeline.</p>';\n\nconst subject = 'NEXUS enquiry: ' + enquiry.full_name + (enquiry.dealership ? ' (' + enquiry.dealership + ')' : '');\n\nreturn [{ json: { authorized: true, ip, enquiry, subject, html } }];\n"
+      },
+      "id": "site-enq-guard",
+      "name": "Guard: Secret and Allowlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "Refuses before reading the body. Expected value comes from $env.NEXUS_NOTIFY_WEBHOOK_SECRET and is never stored in this file."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "site-enq-authz-c1",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "site-enq-authz",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "TRUE -> compose and send. FALSE -> audit the refusal, then answer 401. typeVersion 2.2 matches the IF nodes used elsewhere in this system."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.NEXUS_NOTIFY_TO || 'aliasgher892@gmail.com' }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "NEXUS Site Enquiries"
+        },
+        "resource": "message",
+        "operation": "send"
+      },
+      "id": "site-enq-gmail",
+      "name": "Email: Site Enquiry (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        680,
+        -120
+      ],
+      "webhookId": "2b9f0c31-7a44-4d6e-9f21-0c5a8b7d4e11",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1Cgivoyjt7psAirH",
+          "name": "Gmail OAuth2 API"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Node type, typeVersion 2.1 and the gmailOAuth2 credential reference (id 1Cgivoyjt7psAirH) are copied verbatim from n8n-workflows/lead_escalation_ai_agent.json so the import binds to the credential that already exists. onError is 'continueRegularOutput' ONLY so that a failure reaches the Delivery Report and an audit row; the next node checks it and the workflow answers 502. Do not remove the Delivery Report and leave this onError in place."
+    },
+    {
+      "parameters": {
+        "jsCode": "// DELIVERY REPORT -- verify the claim before anything writes it down.\n//\n// The Gmail node runs with onError:'continueRegularOutput' so that a failed\n// send reaches an audit row instead of vanishing into a red execution with no\n// record. That swallow is ONLY safe because this node looks at what came out.\n//\n// Measured 2026-09: 5 of the 6 WhatsApp send nodes in this repo use the same\n// onError and then write \"we said this\" unconditionally, so the audit trail\n// asserts sends that never landed. This node is the difference. Do not delete\n// it and leave the onError in place -- that combination is the defect.\n\nconst item = $input.first().json || {};\nconst err = item.error;\n\nlet sent = true, why = null;\nif (err !== undefined) {\n  sent = false;\n  why = String((err && (err.message || err.description)) || err).slice(0, 300);\n} else if (!item.id && !item.threadId && !item.messageId) {\n  // Gmail returns the created message. No id means we have no evidence a\n  // message exists, and \"no evidence\" is not \"sent\".\n  sent = false;\n  why = 'gmail node returned no message id';\n}\n\nconst g = $('Guard: Secret and Allowlist').first().json;\n\nreturn [{ json: {\n  sent,\n  why,\n  status: sent ? 'SUCCESS' : 'FAILED',\n  enquiry: g.enquiry,\n  ip: g.ip,\n} }];\n"
+      },
+      "id": "site-enq-verify",
+      "name": "Delivery Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        -120
+      ],
+      "notes": "Turns the Gmail node's output into a claim we are willing to write down."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "site-enq-sent-c1",
+              "leftValue": "={{ $json.sent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "site-enq-sent",
+      "name": "Actually Sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        -120
+      ],
+      "notes": "TRUE -> audit SUCCESS, answer 200. FALSE -> audit FAILED, answer 502 so lead.js answers the visitor 503 and shows the WhatsApp fallback. A visitor must never be told an enquiry was delivered when it was not."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'Site Enquiry Notification', status: 'SUCCESS', lead_name: $json.enquiry.full_name, lead_email: $json.enquiry.email || null, summary: ('Site enquiry emailed via Gmail. dealership=' + ($json.enquiry.dealership || 'n/a') + ' stock_size=' + ($json.enquiry.stock_size || 'n/a') + ' phone=' + ($json.enquiry.phone || 'n/a') + ' submission_id=' + ($json.enquiry.submission_id || '(none)')).substring(0, 900), logged_at: $now.toISO() }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "site-enq-audit-ok",
+      "name": "Audit: SENT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        -240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Shape copied from the 'Audit Log' node in n8n-workflows/lead_escalation_ai_agent.json (same URL, supabaseApi credential dv4OeARarErZLHCj, Prefer: return=minimal, jsonBody expression). tenant_id is omitted and falls to the column default nexus_default_tenant_id(), which is how all sixteen existing workflows write this table -- see GO-LIVE.md, 'What I could not settle'."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'Site Enquiry Notification', status: 'FAILED', lead_name: $json.enquiry.full_name, lead_email: $json.enquiry.email || null, summary: ('SITE ENQUIRY NOT DELIVERED. reason=' + ($json.why || 'unknown') + ' | dealership=' + ($json.enquiry.dealership || 'n/a') + ' phone=' + ($json.enquiry.phone || 'n/a') + ' email=' + ($json.enquiry.email || 'n/a') + ' submission_id=' + ($json.enquiry.submission_id || '(none)') + ' | CONTACT THIS PERSON MANUALLY').substring(0, 900), logged_at: $now.toISO() }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "site-enq-audit-fail",
+      "name": "Audit: FAILED",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "This is the row that matters. It carries enough of the enquiry to contact the person by hand, because the mail did not arrive and nothing else in the system knows they exist."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'Site Enquiry Notification', status: 'REFUSED', summary: ('Refused at the guard. reason=' + ($json.reason || 'unknown') + ' ip=' + ($json.ip || 'unknown')).substring(0, 900), logged_at: $now.toISO() }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "site-enq-audit-refused",
+      "name": "Audit: REFUSED",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "No enquiry fields: the guard refused before parsing the body, and the presented secret is deliberately never logged. reason='guard_not_configured' means NEXUS_NOTIFY_WEBHOOK_SECRET is unset in n8n -- the workflow then refuses everything, which is the correct direction to fail."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, delivered: true }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "site-enq-resp-200",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        -240
+      ],
+      "notes": "lead.js reads only r.ok, but the body says which branch answered."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'send_failed', detail: $('Delivery Report').first().json.why }) }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "site-enq-resp-502",
+      "name": "Respond 502",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        0
+      ],
+      "notes": "Non-2xx on purpose. lead.js turns any non-ok into a 503 'not_delivered' for the visitor."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'unauthorized' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "site-enq-resp-401",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        200
+      ],
+      "notes": "Same code and shape as 'Respond Unauthorized' in n8n-workflows/nexus_infra_health_probe.json."
+    }
+  ],
+  "connections": {
+    "Site Enquiry Webhook": {
+      "main": [
+        [
+          {
+            "node": "Guard: Secret and Allowlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Secret and Allowlist": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Email: Site Enquiry (Gmail)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Audit: REFUSED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email: Site Enquiry (Gmail)": {
+      "main": [
+        [
+          {
+            "node": "Delivery Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery Report": {
+      "main": [
+        [
+          {
+            "node": "Actually Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actually Sent?": {
+      "main": [
+        [
+          {
+            "node": "Audit: SENT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Audit: FAILED",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit: SENT": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit: FAILED": {
+      "main": [
+        [
+          {
+            "node": "Respond 502",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit: REFUSED": {
+      "main": [
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [],
+  "meta": {
+    "instanceId": "nexus"
+  },
+  "pinData": {}
+}
