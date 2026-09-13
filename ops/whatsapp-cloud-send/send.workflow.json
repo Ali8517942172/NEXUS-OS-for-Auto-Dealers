@@ -1,0 +1,289 @@
+{
+  "name": "WhatsApp Cloud - Outbound Sender (Meta Graph)",
+  "meta": { "instanceId": "nexus-os" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-cloud-send",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Send Request In",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-240, 0],
+      "webhookId": "whatsapp-cloud-send",
+      "notes": "Internal caller only. headerAuth so that the one thing standing between an open port and a customer's phone is not the absence of a port scan."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* Nothing here sends and nothing here writes. This node decides only whether\n * the request is shaped well enough to be ROUTED. Every real decision --\n * which number it leaves from, whether the 24h window is open, whether a\n * template is approved -- belongs to nexus_route_message, not to n8n.\n *\n * request_ref is mandatory and is NOT generated here. A ref minted at call\n * time is a new ref on every retry, which is the same as having none, and\n * nexus_request_send refuses it by name (NEXUS_SEND_REQUEST_REF_REQUIRED). */\nconst b = ($input.first().json || {}).body || {};\n\nconst refuse = (code, why) => [{ json: {\n  verdict: 'REFUSE', respond_status: 400, reason_code: code, why,\n  wrote_nothing: true, sent_nothing: true,\n} }];\n\nconst str = (v) => (v === undefined || v === null) ? '' : String(v).trim();\n\nconst tenant_id   = str(b.tenant_id);\nconst customer    = str(b.customer_external_id);\nconst intent      = str(b.intent).toUpperCase();\nconst send_form   = str(b.send_form).toUpperCase();\nconst request_ref = str(b.request_ref);\n\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant_id)) {\n  return refuse('TENANT_ID_NOT_A_UUID', 'tenant_id must be the id of a row in public.tenants. NEXUS does not default the dealership: a caller that can omit it can pick whose customers get messaged.');\n}\nif (!/^[0-9]{6,20}$/.test(customer)) {\n  return refuse('CUSTOMER_EXTERNAL_ID_NOT_A_WA_ID', 'customer_external_id must be the wa_id exactly as Meta reports it -- digits only, no leading +, no spaces, no display name. The same shape channel_message_events.customer_phone is CHECK-constrained to.');\n}\nif (!intent)    return refuse('INTENT_MISSING', 'intent decides the template category the policy engine will demand. It is not optional and is not inferred from the body text.');\nif (!send_form) return refuse('SEND_FORM_MISSING', 'send_form must be a code in public.channel_send_form (FREEFORM_TEXT, TEMPLATE_TEXT, ...). An unknown shape is refused by the router rather than attempted.');\nif (!request_ref) {\n  return refuse('REQUEST_REF_MISSING', 'request_ref is the only thing that stops a retry becoming a second message to a real customer. Pass something stable across retries of this same logical send -- the inbound message id, or execution id plus step name. Do not generate a UUID here.');\n}\n\nreturn [{ json: {\n  verdict: 'ROUTE',\n  tenant_id, customer_external_id: customer, intent, send_form, request_ref,\n  message_body:        b.message_body ?? null,\n  template_ref:        b.template_ref ?? null,\n  template_variables:  b.template_variables ?? null,\n  media_ref:           b.media_ref ?? null,\n  media_mime:          b.media_mime ?? null,\n  requested_by:        str(b.requested_by) || 'n8n:whatsapp-cloud-send',\n  max_template_status_age: b.max_template_status_age ?? null,\n} }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Require A Send Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-20, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [{
+            "id": "is-routable",
+            "leftValue": "={{ $json.verdict }}",
+            "rightValue": "ROUTE",
+            "operator": { "type": "string", "operation": "equals" }
+          }]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Request Is Well Formed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [200, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_request_send",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": { "parameters": [
+          { "name": "Content-Type", "value": "application/json" },
+          { "name": "Accept", "value": "application/vnd.pgrst.object+json" }
+        ]},
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_tenant_id: $json.tenant_id, p_customer_external_id: $json.customer_external_id, p_intent: $json.intent, p_send_form: $json.send_form, p_message_body: $json.message_body, p_template_ref: $json.template_ref, p_template_variables: $json.template_variables, p_media_ref: $json.media_ref, p_media_mime: $json.media_mime, p_requested_by: $json.requested_by, p_request_ref: $json.request_ref, p_max_template_status_age: $json.max_template_status_age }) }}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Ask NEXUS To Route And Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, -140],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "notes": "SAFE to retry: nexus_request_send is keyed on (tenant_id, request_ref) and a repeat returns ALREADY_ROUTED_UNDER_THIS_REQUEST_REF rather than routing twice. It writes the directive row -- including every refusal -- before any transport runs. If this call fails, nothing was sent and nothing is claimed."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [{
+            "id": "directive-is-send",
+            "leftValue": "={{ $json.result.directive }}",
+            "rightValue": "SEND",
+            "operator": { "type": "string", "operation": "equals" }
+          }]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Directive Is SEND",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [640, -140]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* The directive says SEND. Three things are still checked before the Graph\n * call, and each one refuses rather than guessing.\n *\n *  1. This workflow is the CLOUD transport. If the router picked waha, this\n *     is not our directive to carry -- carrying it anyway is how a template\n *     decision made for one provider gets executed on another.\n *  2. If the ledger says the directive was already routed under this ref AND\n *     already carries a provider result, the send already happened. Stop.\n *     This is the retry guard: Graph has no idempotency key, so the only\n *     thing standing between a retry and a second message is this row.\n *  3. The payload is built from resolved_send_form, never from the caller's\n *     requested_send_form -- the router is allowed to have narrowed it. */\nconst j  = $input.first().json || {};\nconst r  = j.result || {};\nconst id = j.directive_id;\nconst st = String(j.ledger_state || '');\n\nconst stop = (code, why, status) => [{ json: {\n  proceed: false, respond_status: status || 409, reason_code: code, why,\n  directive_id: id, ledger_state: st, sent_nothing: true,\n} }];\n\nif (!id) return stop('DIRECTIVE_NOT_RECORDED', 'The router returned SEND but filed no directive row (' + st + '). NEXUS does not send what it has not written down first.', 500);\n\nif (String(r.provider) !== 'whatsapp_cloud') {\n  return stop('NOT_THIS_TRANSPORT', 'The router selected provider ' + r.provider + ' on ' + r.external_identifier + '. This workflow is the WhatsApp Cloud transport and will not carry another provider\\u2019s directive. Route it to that provider\\u2019s sender, or register Cloud ahead of it.');\n}\nif (st === 'ALREADY_ROUTED_UNDER_THIS_REQUEST_REF') {\n  return stop('ALREADY_SENT_UNDER_THIS_REQUEST_REF', 'This request_ref already has a directive on this dealership. If it is still PENDING a transport may be mid-flight; if it carries a result the message already went. Either way n8n does not send a second one. Read channel_send_directive for directive_id ' + id + '.', 200);\n}\n\nconst form = String(r.resolved_send_form || '');\nconst to   = String(r.customer_external_id || '');\nlet payload;\n\nif (form === 'FREEFORM_TEXT') {\n  payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to,\n              type: 'text', text: { preview_url: false, body: String(r.message_body || '') } };\n} else if (form === 'TEMPLATE_TEXT' || form === 'TEMPLATE_MEDIA_HEADER') {\n  const v = r.template_variables || {};\n  const body_params = Array.isArray(v.body) ? v.body.map(t => ({ type: 'text', text: String(t) })) : [];\n  const components = body_params.length ? [{ type: 'body', parameters: body_params }] : [];\n  payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to,\n              type: 'template',\n              template: { name: String(r.template_ref),\n                          language: { code: String(v.language_code || 'en') },\n                          components } };\n} else if (form === 'FREEFORM_IMAGE' || form === 'FREEFORM_DOCUMENT' || form === 'FREEFORM_VIDEO' || form === 'FREEFORM_AUDIO') {\n  const kind = form.replace('FREEFORM_', '').toLowerCase();\n  const ref  = String(r.media_ref || '');\n  const isUrl = /^https:\\/\\//i.test(ref);\n  payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to,\n              type: kind, [kind]: isUrl ? { link: ref } : { id: ref } };\n} else {\n  return stop('SEND_FORM_NOT_IMPLEMENTED_IN_TRANSPORT', 'The router resolved send form ' + (form || '(empty)') + ', which this transport cannot build a Graph payload for. It refuses rather than downgrading the shape -- an INTERACTIVE_LIST silently flattened to a text message is a different message from the one that was authorised.', 501);\n}\n\nreturn [{ json: {\n  proceed: true,\n  directive_id: id,\n  phone_number_id: String(r.external_identifier || ''),\n  resolved_send_form: form,\n  payload,\n} }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Compose Graph Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, -240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [{
+            "id": "proceed",
+            "leftValue": "={{ $json.proceed }}",
+            "rightValue": true,
+            "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+          }]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Transport May Proceed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1080, -240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.phone_number_id }}/messages",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "=Bearer {{ $env.META_WA_SYSTEM_USER_TOKEN }}" },
+          { "name": "Content-Type", "value": "application/json" }
+        ]},
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 20000,
+          "response": { "response": { "fullResponse": true, "neverError": true, "responseFormat": "json" } }
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "POST Graph Messages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, -340],
+      "retryOnFail": false,
+      "onError": "continueErrorOutput",
+      "notes": "retryOnFail is FALSE on purpose. The Graph messages endpoint has no idempotency key: an n8n-level retry of a request the server already accepted is a second message to a real customer. neverError + fullResponse means a 4xx arrives as DATA and is classified below rather than vanishing; the error output catches only the case where the call never completed at all. Token: META_WA_SYSTEM_USER_TOKEN -- NOT META_PAGE_ACCESS_TOKEN, which in this repo holds the Lead Ads Page token (scope leads_retrieval) and cannot send a message."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* Both Graph outcomes land here, and BOTH write a row. Five of six existing\n * WhatsApp send sites in this repo use onError: continueRegularOutput and go\n * on to record \"we said this\" whether or not anything left the building.\n * This node exists so that does not happen again: it reads the status code\n * and the body and names what actually occurred.\n *\n * ACCEPTED is not DELIVERED and is not READ. The wamid is the only thing a\n * later delivery feed can reconcile against, so an accept without one is\n * refused by nexus_record_send_result rather than recorded as a success. */\nconst src = $input.first().json || {};\nconst d   = $('Compose Graph Payload').first().json || {};\n\nconst status = Number(src.statusCode ?? src.status ?? 0);\nconst body   = src.body ?? src;\nconst wamid  = body && body.messages && body.messages[0] ? body.messages[0].id : null;\nconst gerr   = (body && body.error) ? body.error : null;\n\nlet result, error_code = null, error_detail = null, respond_status = 200;\n\nif (status >= 200 && status < 300 && wamid) {\n  result = 'ACCEPTED_BY_PROVIDER';\n} else if (status >= 200 && status < 300 && !wamid) {\n  /* A 2xx with no message id is not an accept we can prove. Recording it as\n     accepted would make \"accepted\" unfalsifiable, which is the exact shape\n     nexus_record_send_result refuses. Call it a transport error: whether the\n     provider saw it is UNKNOWN, which is the honest answer. */\n  result = 'TRANSPORT_ERROR';\n  error_code = 'GRAPH_2XX_WITHOUT_WAMID';\n  error_detail = 'Graph returned ' + status + ' with no messages[0].id. Raw body: ' + JSON.stringify(body).slice(0, 900);\n  respond_status = 502;\n} else if (status >= 400 && status < 600 && gerr) {\n  /* A policy rejection (131047 outside window, 132000 template mismatch,\n     133010 not registered) is NOT a transport failure and must never be\n     re-driven as one. It is recorded and it stops here. */\n  result = 'REJECTED_BY_PROVIDER';\n  error_code = String(gerr.code ?? status) + (gerr.error_subcode ? '/' + gerr.error_subcode : '');\n  error_detail = String(gerr.message || '') + (gerr.error_data && gerr.error_data.details ? ' | ' + gerr.error_data.details : '') + ' | fbtrace_id=' + String(gerr.fbtrace_id || 'none');\n  respond_status = 200;\n} else {\n  result = 'TRANSPORT_ERROR';\n  error_code = src.error ? 'N8N_REQUEST_FAILED' : ('GRAPH_HTTP_' + (status || 'NO_RESPONSE'));\n  error_detail = 'The call did not complete, so whether Meta saw it is UNKNOWN -- not \"it was not sent\". Re-drive only under the same request_ref so idempotency decides. Detail: ' + JSON.stringify(src.error ?? body ?? {}).slice(0, 900);\n  respond_status = 502;\n}\n\nreturn [{ json: {\n  directive_id: d.directive_id,\n  result, provider_message_id: wamid, error_code, error_detail,\n  respond_status,\n  resolved_send_form: d.resolved_send_form,\n  graph_status: status,\n} }];"
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Classify Provider Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, -240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_send_result",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": { "parameters": [{ "name": "Content-Type", "value": "application/json" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_directive_id: $json.directive_id, p_result: $json.result, p_provider_message_id: $json.provider_message_id, p_error_code: $json.error_code, p_error_detail: $json.error_detail }) }}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "a1000000-0000-4000-8000-00000000000a",
+      "name": "Record Send Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1740, -240],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 2000,
+      "notes": "SAFE to retry, and it must be: this is the durable row for BOTH outcomes. nexus_record_send_result returns ALREADY_RECORDED for an identical repeat and raises 55000 on a CONFLICTING second result rather than overwriting. It is deliberately not onError:continue -- a send whose outcome we failed to write down is an incident, and the execution should stay red until someone reconciles it."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: $('Classify Provider Response').item.json.result, directive_id: $('Classify Provider Response').item.json.directive_id, wamid: $('Classify Provider Response').item.json.provider_message_id, error_code: $('Classify Provider Response').item.json.error_code, note: 'Accepted is not delivered and is not read. No screen may say otherwise until a delivery-event feed exists.' }) }}",
+        "options": { "responseCode": "={{ $('Classify Provider Response').item.json.respond_status }}" }
+      },
+      "id": "a1000000-0000-4000-8000-00000000000b",
+      "name": "Respond With What Actually Happened",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [1960, -240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'DO_NOT_SEND', directive_id: $json.directive_id, reason_code: $json.result.reason_code, reason: $json.result.reason, what_would_change_it: $json.result.what_would_change_it, policy_window_state: $json.result.policy_window_state, template_category_required: $json.result.template_category_required, recorded: $json.ledger_state, note: 'This refusal is durable. nexus_request_send filed it in channel_send_directive with send_result NOT_ATTEMPTED before any transport ran.' }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "a1000000-0000-4000-8000-00000000000c",
+      "name": "Respond Refused (Already On The Ledger)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [860, -40]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'NOT_SENT', reason_code: $json.reason_code, why: $json.why, directive_id: $json.directive_id, ledger_state: $json.ledger_state, sent_nothing: true }) }}",
+        "options": { "responseCode": "={{ $json.respond_status }}" }
+      },
+      "id": "a1000000-0000-4000-8000-00000000000d",
+      "name": "Respond Transport Stopped",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [1300, -120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'NOT_SENT', reason_code: $json.reason_code, why: $json.why, wrote_nothing: true }) }}",
+        "options": { "responseCode": "={{ $json.respond_status }}" }
+      },
+      "id": "a1000000-0000-4000-8000-00000000000e",
+      "name": "Respond Malformed Without Writing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [420, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ outcome: 'NOT_SENT', reason_code: 'ROUTER_UNREACHABLE', why: 'nexus_request_send could not be reached after 3 attempts, so no directive exists and nothing was sent. This is a NEXUS availability failure, not a refusal, and it must not be reported to a salesperson as \"the customer cannot be messaged\".', wrote_nothing: true }) }}",
+        "options": { "responseCode": 503 }
+      },
+      "id": "a1000000-0000-4000-8000-00000000000f",
+      "name": "Respond Router Unreachable",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [640, 160]
+    }
+  ],
+  "connections": {
+    "Send Request In":              { "main": [[{ "node": "Require A Send Request", "type": "main", "index": 0 }]] },
+    "Require A Send Request":       { "main": [[{ "node": "Request Is Well Formed", "type": "main", "index": 0 }]] },
+    "Request Is Well Formed":       { "main": [
+                                        [{ "node": "Ask NEXUS To Route And Record", "type": "main", "index": 0 }],
+                                        [{ "node": "Respond Malformed Without Writing", "type": "main", "index": 0 }]
+                                      ] },
+    "Ask NEXUS To Route And Record":{ "main": [
+                                        [{ "node": "Directive Is SEND", "type": "main", "index": 0 }],
+                                        [{ "node": "Respond Router Unreachable", "type": "main", "index": 0 }]
+                                      ] },
+    "Directive Is SEND":            { "main": [
+                                        [{ "node": "Compose Graph Payload", "type": "main", "index": 0 }],
+                                        [{ "node": "Respond Refused (Already On The Ledger)", "type": "main", "index": 0 }]
+                                      ] },
+    "Compose Graph Payload":        { "main": [[{ "node": "Transport May Proceed", "type": "main", "index": 0 }]] },
+    "Transport May Proceed":        { "main": [
+                                        [{ "node": "POST Graph Messages", "type": "main", "index": 0 }],
+                                        [{ "node": "Respond Transport Stopped", "type": "main", "index": 0 }]
+                                      ] },
+    "POST Graph Messages":          { "main": [
+                                        [{ "node": "Classify Provider Response", "type": "main", "index": 0 }],
+                                        [{ "node": "Classify Provider Response", "type": "main", "index": 0 }]
+                                      ] },
+    "Classify Provider Response":   { "main": [[{ "node": "Record Send Result", "type": "main", "index": 0 }]] },
+    "Record Send Result":           { "main": [[{ "node": "Respond With What Actually Happened", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "all", "saveManualExecutions": true },
+  "pinData": {}
+}
