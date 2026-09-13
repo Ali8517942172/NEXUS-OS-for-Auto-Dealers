@@ -404,10 +404,10 @@ function unitRow(u, withCost) {
   const row = {
     id: u.id, model: u.model, vin: u.vin || null,
     status: u.status, acquired_at: u.acquired_at,
-    price_aed: n0(u.price_aed) || 0,
+    price_aed: Number.isFinite(n0(u.price_aed)) ? n0(u.price_aed) : null,
     ai_recommendation: u.ai_recommendation || null,
   };
-  if (withCost) row.cost_aed = n0(u.cost_aed) || 0;
+  if (withCost) row.cost_aed = Number.isFinite(n0(u.cost_aed)) ? n0(u.cost_aed) : null;
   return row;
 }
 

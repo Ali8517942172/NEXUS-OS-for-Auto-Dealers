@@ -27,7 +27,7 @@
               "id": "facb0d06-edb5-4f87-9314-17108f0de0c9",
               "name": "status",
               "type": "string",
-              "value": "FAILED"
+              "value": "={{ /unauthor|forbidden|a valid supabase session token|rejected/i.test(String((($json.execution && $json.execution.error && $json.execution.error.message) || ($json.error && $json.error.message) || ''))) ? 'REJECTED' : 'FAILED' }}"
             },
             {
               "id": "537d3dd0-d427-4021-987a-5d833788d7a3",
