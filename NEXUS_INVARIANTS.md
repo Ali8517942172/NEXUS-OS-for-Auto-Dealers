@@ -1,11 +1,14 @@
-<!-- BUSINESS CONTEXT — added 2026-09-02, corrected 2026-09-03 -->
+<!-- BUSINESS CONTEXT — added 2026-09-02, corrected 2026-09-03, product framing added 2026-09-08 -->
 > **This is a commercial product, not a demo.** NEXUS is a **Revenue Recovery &
 > Action OS for dealerships** — it sits above the dealership's existing DMS, CRM
 > and inventory systems, finds revenue leaks, decides the next best action and
 > executes it. It replaces none of them. See `PRODUCT.md` for the thesis and
 > `CLAUDE.md` for how to work here. Ali owns NEXUS OS and is selling it
-> to real dealerships on a subscription. Judge changes by whether they make it
-> sellable and keep it sellable. The honest commercial position today is a
+> to real dealerships on a subscription — the UAE market first, then worldwide.
+> It is a multi-tenant product by design, not a build for one dealer; **ALBA
+> CARS is tenant #1 and the pilot**, the proving ground rather than the customer
+> it was built for. Judge changes by whether they make it sellable and keep it
+> sellable. The honest commercial position today is a
 > **controlled dealership pilot** — not "enterprise-ready", not "compliant".
 > Never state more than the evidence supports; "wired but never fired" is a real
 > answer.

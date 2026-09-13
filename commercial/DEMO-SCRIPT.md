@@ -327,6 +327,10 @@ Checked against Supabase project `dsvuoovivysszdoiorch` on **3 September 2026**,
 one real dealership. Anyone re-running these counts must scope them to
 `tenants.slug = 'alba-cars'` or the numbers will flatter you.
 
+That dealership is the pilot — tenant #1 of a product built for dealerships generally. Every
+figure below is therefore one tenant's figure, and none of it is evidence about how NEXUS
+behaves with a second dealership on it.
+
 108 messages, 24 resolving to a named customer · 3 leads · 12 vehicles · 0 customer sales
 (1 `purchase_history` row exists, written 09:59:53 on 2 Sep by a repair test) · 0 finance
 quotes · 3 KYC submissions, 0 verified · 1 login · 687 run records ·

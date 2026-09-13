@@ -8,6 +8,15 @@ been corrected here rather than left standing.
 This is a managed pilot, not an enterprise software subscription. Where something has not
 been proven, this document says so. Nothing here is a projection dressed up as a fact.
 
+**Version 2.2 · 8 September 2026.** The counts marked *(8 Sep)* were re-read on
+that date; every other figure still carries its 3 September date and should be
+re-run before you rely on it. Three things changed in substance: the description
+of what NEXUS does is sharpened to match what the system actually does; a line
+was added saying plainly that there is no marketplace integration and there will
+not be one without a commercial agreement; and the claim that the other lead
+channels are "an afternoon of configuration each" is withdrawn, because it is not
+true.
+
 **What changed since version 1.0**, so you are not comparing two documents: the price moved
 from a flat monthly fee to a setup fee plus a monthly band; the 17.8-second response-time
 claim has been **withdrawn in full** and replaced with a measured range and no promise; and
@@ -17,6 +26,14 @@ exactly the level it has been tested.
 ---
 
 ## What this is
+
+> **NEXUS captures dealership enquiries, identifies which conversations are real
+> sales opportunities, tells your team what to do next, and keeps an auditable
+> record of what happened.**
+
+That is the sentence, and the rest of this document is what stands behind each
+part of it and where it stops. Two things it is deliberately not: it is not a
+CRM and does not replace the one you have, and it is not a chatbot on a website.
 
 One dealership. One WhatsApp number. A three-month supervised pilot.
 
@@ -31,6 +48,12 @@ decide whether it is worth keeping.
 It runs on my infrastructure, under my supervision, and I am in it every day. That is the
 honest description and it is also the reason it works — a system this young needs someone
 watching it. You are buying a managed service with me attached, not a licence to software.
+
+**What you are joining.** NEXUS is being built as a product for auto dealerships — the UAE
+first, then wider — not as a bespoke system for any one dealer. One dealership is on it
+today, and it is the pilot. That is a statement about where the product is going. It is not a
+claim that NEXUS runs several dealerships side by side, because it does not yet, and nothing
+in this document should be read as saying otherwise.
 
 ---
 
@@ -66,8 +89,14 @@ smaller problem than a message shown to the wrong customer.
 
 **3. A live dashboard**
 Fourteen screens over one database: leads, conversations, inventory, ageing stock, workflow
-health, and an Ask-AI box that answers questions from your own documents. You see what the
-bot said, when, and to whom.
+health, and an Ask-AI box that answers staff questions from company documents. You see what
+the bot said, when, and to whom.
+
+**One caveat on the Ask-AI box, so it is not a surprise in month one.** It holds
+15 sample documents today, not yours, and it last produced an answer on 24 August.
+Loading your documents is onboarding work. Treat it as a screen that will work on
+your material once your material is in it, not as a capability you are buying
+ready-made.
 
 **4. Ageing stock, computed nightly**
 Days-in-stock is recomputed every night at 00:15 and flags cars that are sitting too long.
@@ -122,7 +151,8 @@ checked this morning.
 | **An uptime SLA or support ticketing** | There is none. There is me, on WhatsApp, in UAE hours. The infrastructure health probe is registered and has never run. |
 | **Automatic data retention / purging** | The retention purge workflow is registered, is marked active, and has **never run once**. Deletion during the pilot is manual and on request. |
 | **A signed data-processing agreement** | Not drafted. If your legal team needs one before customer data moves, say so now and we build that into week one. |
-| **Any channel other than WhatsApp** | Facebook, Instagram, website forms and TikTok are wired and have never carried a single lead. They are an afternoon of configuration each, and they are not part of this price. |
+| **Any channel other than WhatsApp** *(corrected 8 September)* | **The previous version of this line said these were "wired" and "an afternoon of configuration each". Both were wrong and both are withdrawn.** The database holds registered endpoints for Facebook Lead Ads, Instagram Lead Ads and the Google Ads lead form, and **all three are switched off**; there is no Meta app, no webhook subscription and no receiver behind any of them. Facebook and Instagram in particular need Meta App Review and a lead-access grant inside **your** Business Manager before a single lead can arrive — days of Meta's time, not an afternoon of mine. TikTok is not in the system at all. **Not one lead has ever arrived through any of these channels.** They are not part of this price. |
+| **Any marketplace integration — Dubizzle, YallaMotor, CarSwitch** | **There is no integration and I am not going to build one, because there is nothing to build against.** Dubizzle Motors publishes no lead API, no webhook and no developer portal; the only public route is scraping, which breaks their terms and which I will not do to a site your business depends on. What actually happens is that your Dubizzle enquiry arrives on your WhatsApp, and that message is a message NEXUS works on like any other — recorded as a WhatsApp enquiry, because WhatsApp is what delivered it. **You will not get a Dubizzle lead count, a marketplace ROI report, or a breakdown of which listing site performs best.** Nobody can give you those honestly today. If that changes it will be because a marketplace agreed a commercial arrangement, not because I wrote more code. |
 
 ---
 
@@ -236,7 +266,13 @@ The pilot costs AED 12,500 to AED 15,500 for the quarter. **That is 40% to 49% o
 margin on one car**, and a larger share of the net.
 
 I am not going to promise you a recovered deal, and nothing in this document is a projection
-of one. There are 3 leads in the system and none is a completed customer sale. What I can show
+of one. **Recovered revenue in this system is zero and it is measured as zero** — the two
+tables that would hold it carry no row with a recovered value, and the database refuses to
+accept one unless it is attributed to a real sale with a stated basis, which has never
+happened. The margin figure above is what a car is listed at minus what it cost. **It is not
+money the system has made you and must not be read as any part of one.** There are 5 leads in
+the system *(8 Sep; 3 on 3 Sep)*, none of them a genuine customer vehicle enquiry, and none is
+a completed customer sale. What I can show
 you is the mechanism: a customer asked a price question at six in the morning and got a
 correct, grounded answer with no human awake. Whether that converts is exactly what the pilot
 is for, and it is the thing neither of us knows yet.
@@ -300,7 +336,8 @@ on real customers until it is done.
 
 **2. That personal number means the database currently holds conversations that have nothing
 to do with any dealership** — a contracting company, a perfumer, family, cheque and payment
-discussions. Twelve WhatsApp contacts are on file and one of them is a car enquiry. That is
+discussions. **Fourteen WhatsApp contacts are on file** *(8 Sep; twelve on 3 Sep)* and one of
+them is a car enquiry. That is
 unacceptable for a commercial deployment, it is why step one of your onboarding is a dedicated
 number, and it is why those existing conversations are deleted before your first customer
 message arrives. I am telling you this before you sign rather than after, because you would
@@ -311,18 +348,21 @@ find out either way.
 ## Figures in this document, and when they were checked
 
 Checked against Supabase project `dsvuoovivysszdoiorch` on **3 September 2026**, scoped to the
-one real dealership.
+one real dealership. **The rows marked *(8 Sep)* were re-read on 8 September 2026.** Where a
+count moved, both are shown, because how a number moves is more useful to you than the number.
 
 | Figure | Value |
 |---|---|
 | Real customer sales recorded | **0** (1 row exists, written 09:59:53 on 2 Sep by a repair test against the owner's own lead) |
 | Finance quotes produced | **0** |
 | ID documents successfully verified | **0** (3 submitted, all 3 correctly rejected) |
-| Customer records | **3** (2 are disqualified wrong numbers) |
+| Customer records | **5** *(8 Sep; 3 on 3 Sep)* — two disqualified wrong numbers, one my own test, one a preflight test, one created from a friend's message. **None is a genuine customer vehicle enquiry** |
+| Recovered revenue recorded | **0** *(8 Sep)* — and the database refuses to record any without a real sale attributed behind it |
+| Marketplace enquiries captured as marketplace leads | **0**, permanently — there is no marketplace integration and no route to one without a commercial agreement |
 | Vehicles in stock | **12** — AED 3,046,900 asking, AED 2,667,000 cost, **0 with a reconditioning cost recorded** |
-| Messages on record | **108** — 83 inbound WhatsApp, 18 automated replies, 5 sent by hand, 2 system |
+| Messages on record | **142** *(8 Sep; 108 on 3 Sep — of which 83 inbound WhatsApp, 18 automated replies, 5 sent by hand, 2 system)*. Read it as a record you can open, not as a message count |
 | Automated replies: fastest / median / slowest | **13.3s / 38.8s / 218.3s** across 18 replies, all sent between 31 Aug and 2 Sep |
-| Run records written | **687** |
+| Run records written | **881** *(8 Sep; 687 on 3 Sep)* |
 | Dealerships on the system | **1** |
 | Dashboard logins | **1** |
 

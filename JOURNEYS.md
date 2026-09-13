@@ -2107,7 +2107,13 @@ run needs a zombie check before and after, and never two journeys in flight.
 
 Production `dsvuoovivysszdoiorch` holds **1 tenant, 1 tenant member, 1 user,
 3 leads, 12 units, 1 sale**. That tenant is ALBA CARS — an actual dealership
-whose book these numbers are.
+whose book these numbers are, and **tenant #1 of a product built for dealerships
+generally**, not the dealership NEXUS was built for.
+
+The count is one **by design**, not by neglect. Activating a second dealership
+on production silences five consumers of `nexus_scoped_tenant_id()` (see
+`CLAUDE.md`), which is why the two-dealership work belongs on staging — B5 —
+and why no journey result taken here is evidence about cross-tenant behaviour.
 
 **Running customer journeys against production would put test rows in a real
 dealership's book.** Not merely untidy: a synthetic HOT lead is chaseable,
