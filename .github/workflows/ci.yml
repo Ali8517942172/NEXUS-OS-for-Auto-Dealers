@@ -114,6 +114,22 @@ jobs:
       - name: Function grant hygiene
         run: node ops/ci/function-grants.mjs --census
 
+  # ── The number that routes a lead must say who produced it ───────────────
+  # Runs the exact `Parse AI Decision` jsCode body out of the workflow JSON
+  # against decoder babble, `{}`, half-objects and invented intents. A free
+  # model filed a live buying lead as WARM/0 on 13 Sep and nothing caught it
+  # because nothing tested it. See ops/ADR-003-who-decides-the-score.md.
+  scoring:
+    name: Scoring provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Parse AI Decision — adversarial cases
+        run: node ops/scoring/parse-ai-decision.test.js
+
   # ── A service_role key must never reach main ─────────────────────────────
   # The scan decodes every JWT it finds and judges the `role` claim. The anon
   # keys committed in n8n-workflows/ and ops/DEMO.md pass because they are anon,

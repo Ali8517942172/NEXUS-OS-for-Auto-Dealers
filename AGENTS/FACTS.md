@@ -20,18 +20,20 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 - **FACT-011** Webhook callback URL at Meta = `https://35.224.126.225.nip.io/webhook/whatsapp-cloud-inbound`, read out of the input field. Correct. — 2026-09-13
 - **FACT-012** Webhook field `messages` is **Subscribed** at v26.0 — the only subscribed field of 33. — 2026-09-13
 - **FACT-013** A **real inbound message** reached Meta 13 Sep 17:21:54 (UTC+4): `from 918517942172`, `profile.name "Ali"`, `country_code IN`, correct `phone_number_id`. **Recipient eligibility is PROVEN; the allowlist is NOT the blocker.** — 2026-09-13
-- **FACT-014** n8n produced **zero executions** for that event. Last executions were 14:05:09/14:05:10 box-time, both orchestrator curl probes. Meta appears never to have attempted delivery. — 2026-09-13
+- **FACT-014** *(superseded by FACT-021)* On 13 Sep n8n produced zero executions for that event. Cause: the WABA was not subscribed to this app.
 - **FACT-015** Receiver refuses correctly on the wire: GET with wrong verify token → `403 HUB_VERIFY_TOKEN_MISMATCH`; POST without signature → `401 SIGNATURE_HEADER_MISSING`. Neither wrote any row. — 2026-09-13
 - **FACT-016** Both `META_WEBHOOK_VERIFY_TOKEN` and `META_APP_SECRET` ARE set and DO reach the worker — the probes returned branches *past* the not-configured guards (`receiver.sdk.js:62-66`, `:81-87`). Closes the open question in `ops/v1-certification/META-CLOUD-COMPLETION.md §3`. — 2026-09-13
 - **FACT-017** Execution 12968 was Meta's own **Test button**, carrying the dummy `phone_number_id 123456123`. It passed HMAC verification and tenant resolution, then correctly failed closed at `Raise Unregistered Channel`. So the deployed app secret is the right one. — 2026-09-13
 - **FACT-018** `channel_registry` holds an **active** row for `whatsapp_cloud_phone_number_id` = `1306545252542419`, tenant ALBA. Also an active `whatsapp_waha_session` row. — 2026-09-13
 - **FACT-019** "Number claimed but not `/register`-ed" is **REFUTED** as the cause: an unregistered number never produces a `messages` object with resolved `metadata`, `profile.name` and `country_code`. All five were present. — 2026-09-13
 - **FACT-020** Business Verification on the WABA is **Unverified**. It gates messaging tier and volume, **not** webhook delivery on a test number. — 2026-09-13
+- **FACT-021** **The blocker was the WABA-level app subscription, and it is fixed.** `GET /1098665496068509/subscribed_apps` returned only `WA DevX Webhook Events 1P App` (2202427980234937) — Meta's own first-party test-webhook app. Our app was absent, which is exactly why the message appeared in Meta's "Check test webhooks" panel and never reached our endpoint. `POST` returned `{"success": true}`; the re-read now lists `NEXUS for AutoDealers` (1406045581736122). App-level field subscription and WABA-level app subscription are separate mechanisms. — 2026-09-14
+- **FACT-022** The app is in **live mode** (Alert Inbox: "NEXUS for AutoDealers was switched to live mode on 13 Sep, 2026"). App Review "Published" and the Development/Live state are distinct; both are now correct.
 
 ## The `'+'` defect — repo and box DISAGREE
 
-- **FACT-030** The live n8n box was patched on 13 Sep: node `Record Channel Event` in `J8MXprxVw1yhjBpp` now sends `(String(...||'').replace(/[^0-9]/g,'') || null)`. Published as version "customer_phone is digits, not +digits". Verified by DOM read. **UNPROVEN against real traffic.**
-- **FACT-031** The **repo still carries the defect**: `ops/n8n-whatsapp-cloud/receiver.sdk.js:265` still builds `'+' + customer_wa_id`. Repo and box have diverged. Any re-import of the repo export would reintroduce the bug.
+- **FACT-030** The live n8n box was patched on 13 Sep: node `Record Channel Event` in `J8MXprxVw1yhjBpp` now sends `(String(...||'').replace(/[^0-9]/g,'') || null)`. Published as version "customer_phone is digits, not +digits". **PROVEN against real traffic on 14 Sep — see FACT-110.**
+- **FACT-031** *(closed 14 Sep)* The repo carried the defect at `ops/n8n-whatsapp-cloud/receiver.sdk.js:265` while the box was patched. Repo and box now agree.
 - **FACT-032** `ops/whatsapp-cloud-send/SEND-DESIGN.md §6` instructs applying `ops/whatsapp-cloud-send/phase-plus-defect.patch`. **That file does not exist.** The repo documents a remediation it cannot perform.
 - **FACT-033** DB constraint `channel_message_events_customer_phone_is_digits_or_null` = `customer_phone IS NULL OR customer_phone ~ '^[0-9]{6,20}$'`. `'+9185...'` raises 23514.
 
@@ -99,6 +101,60 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 - **FACT-097** A second, independent score writer exists: `apps/ai-crm/backend/server.js:129` hardcodes `status:'HOT', ai_score:90`. Whether it still writes to production is UNKNOWN.
 - **FACT-098** Zero test coverage of the scoring parser. The repo's 7 test files touch none of it.
 
+## The first real Cloud message — 14 September 2026
+
+- **FACT-110** **Cloud inbound is PROVEN end to end.** `channel_message_events` 0 → 1, `whatsapp_conversation_state` 0 → 1. The row, in full: `provider whatsapp_cloud`, `direction inbound`, `external_message_id wamid.HBgMOTE4NTE3OTQyMTcy…`, `customer_external_id 918517942172`, **`customer_phone 918517942172` — digits, no `+`**, `message_kind text`, `provider_account_id 1098665496068509`, **`origin_verified hmac_sha256_x_hub`** (rank 90), `tenant_id` ALBA. `received_at 05:26:06` → `recorded_at 05:26:12` — six seconds.
+- **FACT-111** `whatsapp_conversation_state` carries `last_customer_message_source = whatsapp_cloud_webhook_hmac_verified`. The 24-hour customer-service window is open for `918517942172`.
+- **FACT-112** **The chain stops there, by construction.** Measured immediately after: `leads` still 7, no new `audit_log` row, `channel_send_directive` 0, no new `communication_logs` row. The receiver's three terminal nodes only respond. A customer who messages the Cloud number gets a 200 and silence. This is the next thing to build, not a regression.
+- **FACT-113** Outbound is still blocked on three owner-side facts, unchanged: `META_WA_SYSTEM_USER_TOKEN` does not exist as a Meta object; `whatsapp_templates` = 0 rows; `WA_CUSTOMER_SERVICE_WINDOW_HOURS` is `NOT_VERIFIED`, so the policy engine refuses every send fail-closed.
+
 ## Stale-evidence warning
 
 - **FACT-100** `n8n-workflows/` is an export stamped `2026-08-30T17:56Z` in `_exported_from.updatedAt`. It is **not evidence about the live box**. Anything depending on the live published definition is UNKNOWN until the single writer reads the box.
+
+## Multi-tenancy — what was measured on 14 September, and what was wrong about it
+
+- **FACT-120** The named suspect `leads_authenticated_all` was **inert**. Four tables carried a PERMISSIVE `cmd=ALL` policy over `nexus_current_tenant_ids()` (every active membership), but `information_schema.role_table_grants` shows the `authenticated` role holds a write grant on **only one** of them: `inventory` (`DELETE`). On `leads` and the other two the role has `SELECT` only, so `cmd=ALL` grants nothing extra. A policy is not an exposure until a grant stands behind it.
+- **FACT-121** `inventory` already carried **RESTRICTIVE** owner/admin role policies narrowing it further. The exposure was the permissive layer alone, and NX910 replaced only that layer. The restrictive policies are untouched.
+- **FACT-122** The second named suspect was wrong in its scariest part: `nexus_resolve_channel_tenant()` does **not** call `nexus_scoped_tenant_id()`. Reading the full function body shows the string match was inside a comment. **The WhatsApp inbound hot path does not go silent at dealership #2.**
+- **FACT-123** `nexus_scoped_tenant_id()` genuinely does return NULL once a second active non-quarantine tenant exists, and **8 functions read it**. Each returns quietly rather than raising. This is real, it is deferred, and it is now *reported* rather than remembered.
+- **FACT-124** Migration `nx910_an_action_happens_in_the_dealership_you_selected` applied to production 14 Sep and mirrored to `supabase/migrations/20260914065151_*.sql`. `inventory` now reads `ALL_MEMBERSHIPS` for SELECT and `SELECTED_TENANT` for INSERT/UPDATE/DELETE. Verified after apply.
+- **FACT-125** `public.nexus_multi_tenant_blockers()` exists on production, EXECUTE granted to `service_role` only. Its clause 2 is self-maintaining: it fires again if any future migration re-adds a write grant to a table whose permissive policy still spans every membership. Current output: one `BLOCKER` row (FACT-123) and `INFO | no cross-dealership write path found`.
+- **FACT-126** `nexus_tenancy_readiness()` still reports a live WARN: rows sitting in the quarantine tenant (`audit_log` 20, `communication_logs` 2) from a write path that still omits `tenant_id`. Not closed.
+
+## Scale and spend — the owner's rule, recorded
+
+- **FACT-130** Zero auto dealers are onboarded as of 14 Sep 2026. Everything runs on free tiers by deliberate choice.
+- **FACT-131** The owner's spending trigger is explicit: **when 2 paying auto dealers are onboarded**, buy the paid AI model and paid Supabase. Upgrades follow dealer growth from there. Architecture must be scalable from today regardless.
+- **FACT-132** Workflow count must **never** grow with dealer count. One shared set of ~20-25 tenant-parameterised n8n workflows serves every dealer; per-dealer workflow copies are forbidden. See `ops/ADR-002-scaling-ladder-and-when-to-pay.md`.
+- **FACT-133** The breaking order under load, recorded in ADR-002, is: Supabase free-tier limits first, then the free AI model's rate limit, then n8n execution storage, then the single n8n box's worker concurrency. Each has a named upgrade and a named trigger.
+
+## Scoring provenance — closed 14 September (ADR-003)
+
+- **FACT-140** `leads` had **no provenance columns at all** before today: only `status` and `ai_score`. Migration `nx920_a_score_now_says_who_decided_it` added `score_source`, `rules_score`, `ai_score_raw`, `ai_intent_raw`, `ai_parse_failed`, with CHECK `leads_score_source_is_a_known_label` over exactly four values.
+- **FACT-141** All **7 existing rows** were labelled `AI_SCORE_UNKNOWN`. That is the honest value — provenance was never recorded for them. `nexus_scoring_health()` verified after apply: `AI_SCORE_UNKNOWN | 7 | avg 25.8 | "Provenance never recorded. UNKNOWN is not ZERO."` **Nothing in the database is yet labelled as a real model verdict.**
+- **FACT-142** Authority decision: **RULES decide today.** One constant `AUTHORITY` in the `Parse AI Decision` node flips it to `'AI'` when the paid structured model arrives at 2 paying dealers. No schema change needed.
+- **FACT-143** The `{}` hole is closed by requiring **both** a valid intent *and* a finite score before an answer counts as structured. `{}`, `{"intent":"HOT"}`, `{"score":90}`, `{"intent":"BOILING","score":90}` and `{"intent":"HOT","score":"very high"}` are all now `parse_failed: true` — proven by test, not asserted.
+- **FACT-144** `parse_failed` is now **persisted** as `leads.ai_parse_failed`, and `score_source` travels with every row. The audit row carries `[RULES]` / `[AI_SCORE_CONFIRMED]` / `[AI_SCORE_FALLBACK]` as a prefix.
+- **FACT-145** `ops/scoring/parse-ai-decision.test.js` runs the **exact jsCode body lifted out of the workflow JSON** — not a copy that can drift — against 18 adversarial assertions including the real 13 Sep decoder-babble string. **18 passed, 0 failed.** Wired into CI as the `Scoring provenance` job. Scoring test coverage went 0 → 18.
+- **FACT-146** The rules scorer is deterministic and explainable: base 20, `+25` reachable by phone, `+10` email, `+20` named an enquiry (`-10` greeting only, `-15` no text), `+25` buying-intent phrase, `+15` urgency phrase, `+15` budget ≥ AED 100k (`+10` any budget), `+10` already in a live WhatsApp thread; clamp 0–100; HOT ≥ 70, WARM ≥ 40, else COLD. A lead with **no enquiry text and no budget returns `UNKNOWN`** and goes to the Slack human-review branch rather than being given an invented temperature.
+- **FACT-147** **The workflow change is in the repo only. It is NOT on the box.** `n8n-workflows/nexus_master_lead_router_ai_agent.json` is patched; the live Master Router still runs the old node until it is imported. Repo ≠ box (FACT-100).
+
+## CI caught two things the same day
+
+- **FACT-150** `ops/ci/function-grants.mjs --census` **blocked the NX910 mirror** for splitting the revoke into three statements instead of `revoke ... from public, anon, authenticated;`. Not cosmetic — see the next fact.
+- **FACT-151** Measured on production: `nexus_multi_tenant_blockers()` carried `authenticated=X/postgres` in `proacl` — **any signed-in dealer user could execute the blockers report.** The as-applied migration granted to `service_role` but never revoked the born-open default. Revoked and re-verified: ACL is now `postgres=X | service_role=X`. The repo mirror is the stricter, correct version. *The CI rule that looked pedantic found a live exposure.*
+
+## Onboarding dealers without a trade licence — 14 September (ADR-004)
+
+- **FACT-160** Meta's Tech Provider path is **closed to NEXUS today**. Meta's own guide: *"Your business must be verified before you can start the app review process."* Embedded Signup additionally needs App Review for Advanced access on `whatsapp_business_messaging` + `whatsapp_business_management`, with video evidence. All of that requires a verified business, which requires the trade licence NEXUS does not have.
+- **FACT-161** The **BYO path needs no NEXUS verification at all**: the dealership owns the Meta app, the business portfolio, the WABA and the number, so Standard access suffices and no App Review is involved. The verification burden lands on the dealer — who, being a UAE used-car dealership, already holds a trade licence, an address and a website.
+- **FACT-162** An **unverified** business can message **up to 250 unique customers per rolling 24 hours** with full API functionality (templates, automation, campaigns). Verification raises the ceiling 1K → 10K → 100K → unlimited. A pilot dealer can therefore start the same day and verify in parallel. 250/24h is not a constraint at pilot scale.
+- **FACT-163** **THE REAL BLOCKER WAS NOT THE LICENCE.** The Cloud receiver verifies the X-Hub signature against a single `$env.META_APP_SECRET` (`verify-or-refuse.node.js:90`) and `channel_registry` can only point at it (`credential_ref = 'env:META_APP_SECRET+META_WA_TOKEN'`). **As built, NEXUS could serve exactly one dealership on WhatsApp Cloud.** Dealer #2 with their own Meta app signs with a different secret and is refused — correctly and fatally.
+- **FACT-164** `supabase_vault` **0.3.1 was already installed** on the free tier. Encrypted-at-rest per-dealer credentials cost nothing extra.
+- **FACT-165** Migration `nx930_every_dealer_brings_their_own_meta_app` applied: `channel_secret_kind` (3 kinds), `channel_secret` (pointer + sha256 fingerprint, never a value, RLS on, zero grants to anon/authenticated/public), and three service_role-only functions — `nexus_channel_secret_put()`, `nexus_channel_secret_reveal()` (audits **every** call), `nexus_meta_onboarding_status()`. ACLs verified: all three `postgres=X | service_role=X`.
+- **FACT-166** Round-trip **PROVEN** on production with a throwaway value generated in-database and deleted immediately after: install → reveal → byte-match, rotation path returns `ROTATED`, an unknown `phone_number_id` **fails closed with a named reason**, and a value under 8 characters is refused. The live ALBA channel holds no test credential — `nexus_meta_onboarding_status()` reads `MISSING` for all three kinds, which is the truth.
+- **FACT-167** NX931: `pgcrypto` lives in schema `extensions`, so `digest()` was unresolvable under the pinned search_path and the first install failed. Qualified the call rather than widening the search_path of a function that can reach a vault.
+- **FACT-168** NX932: `channel_secret_kind` was born with a `SELECT` grant to `authenticated` and no RLS — **the same born-open shape as FACT-151, found by looking this time instead of being told.** RLS enabled with an explicit read policy. `channel_secret` itself was verified clean.
+- **FACT-169** **The receiver still reads `$env.META_APP_SECRET`.** NX930 is the storage layer only. Until `verify-or-refuse.node.js` calls `nexus_channel_secret_reveal()`, multi-dealer Cloud inbound is **BUILT, NOT WIRED**. One dealership is still the live limit.
+
