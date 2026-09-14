@@ -37,14 +37,31 @@ Read `FACTS.md` for the evidence behind every line.
 - ~~**P0-03 Repo/box drift on the `'+'` fix.**~~ **CLOSED 14 Sep.** Repo patched and the fix proven by real traffic.
 - **P0-04 Scoring provenance.** `parse_failed` never persisted; `{}` silently becomes WARM/50; parse failure recorded as SUCCESS.
 - **P0-05 `lead_event` certifies a fixture as real production data.**
+- **P0-06 Nothing happens after a Cloud message lands.** Receiver ends at respond: no customer, no classification, no lead, no reply, no audit row (FACT-112).
+- **P0-07 `nexus_scoped_tenant_id()` goes silent at dealership #2.** 8 callers return quietly instead of raising. Deferred, but now *reported* by `nexus_multi_tenant_blockers()` rather than remembered (FACT-123/125).
+- **P0-08 Quarantine-tenant WARN.** A live write path still omits `tenant_id`: `audit_log` 20 rows, `communication_logs` 2 rows sitting in the quarantine tenant (FACT-126).
 
 ## Not blockers (measured, previously suspected)
 
 - Dashboard hardcoded figures — **FALSE ALARM** (FACT-060).
 - Recipient allowlist — **REFUTED** (FACT-013).
 - Cross-tenant leakage — none found (FACT-050..054).
+- `leads_authenticated_all` cross-dealership write — **inert**, no write grant behind it (FACT-120).
+- WhatsApp hot path going silent at dealership #2 — **REFUTED**, `nexus_resolve_channel_tenant` never calls the scoped function (FACT-122).
 - `nexus-os-dashboard.vercel.app` fake page — **not our project** (FACT-004).
 - "Scorer never produces HOT" — **false** (FACT-091).
+
+## Multi-tenancy
+
+- `inventory` writes scoped to the selected dealership — **CLOSED 14 Sep** by NX910, applied to production and mirrored to `supabase/migrations/`.
+- `nexus_multi_tenant_blockers()` on production reports: 1 BLOCKER (P0-07) + `INFO | no cross-dealership write path found`.
+- Run it before onboarding dealer #2. It is self-maintaining — a future migration that re-adds a write grant behind an all-memberships policy makes it fire again.
+
+## Scale and spend
+
+Zero dealers onboarded. Free tier by choice. **Trigger: at 2 paying dealers → paid AI model + paid Supabase**, then upgrades follow growth.
+Workflow count never grows with dealer count — one shared tenant-parameterised set; per-dealer copies forbidden.
+Breaking order under load and the named upgrade for each: `ops/ADR-002-scaling-ladder-and-when-to-pay.md`.
 
 ## Pilot
 

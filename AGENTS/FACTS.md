@@ -101,8 +101,6 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 - **FACT-097** A second, independent score writer exists: `apps/ai-crm/backend/server.js:129` hardcodes `status:'HOT', ai_score:90`. Whether it still writes to production is UNKNOWN.
 - **FACT-098** Zero test coverage of the scoring parser. The repo's 7 test files touch none of it.
 
-## Stale-evidence warning
-
 ## The first real Cloud message — 14 September 2026
 
 - **FACT-110** **Cloud inbound is PROVEN end to end.** `channel_message_events` 0 → 1, `whatsapp_conversation_state` 0 → 1. The row, in full: `provider whatsapp_cloud`, `direction inbound`, `external_message_id wamid.HBgMOTE4NTE3OTQyMTcy…`, `customer_external_id 918517942172`, **`customer_phone 918517942172` — digits, no `+`**, `message_kind text`, `provider_account_id 1098665496068509`, **`origin_verified hmac_sha256_x_hub`** (rank 90), `tenant_id` ALBA. `received_at 05:26:06` → `recorded_at 05:26:12` — six seconds.
@@ -113,3 +111,21 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 ## Stale-evidence warning
 
 - **FACT-100** `n8n-workflows/` is an export stamped `2026-08-30T17:56Z` in `_exported_from.updatedAt`. It is **not evidence about the live box**. Anything depending on the live published definition is UNKNOWN until the single writer reads the box.
+
+## Multi-tenancy — what was measured on 14 September, and what was wrong about it
+
+- **FACT-120** The named suspect `leads_authenticated_all` was **inert**. Four tables carried a PERMISSIVE `cmd=ALL` policy over `nexus_current_tenant_ids()` (every active membership), but `information_schema.role_table_grants` shows the `authenticated` role holds a write grant on **only one** of them: `inventory` (`DELETE`). On `leads` and the other two the role has `SELECT` only, so `cmd=ALL` grants nothing extra. A policy is not an exposure until a grant stands behind it.
+- **FACT-121** `inventory` already carried **RESTRICTIVE** owner/admin role policies narrowing it further. The exposure was the permissive layer alone, and NX910 replaced only that layer. The restrictive policies are untouched.
+- **FACT-122** The second named suspect was wrong in its scariest part: `nexus_resolve_channel_tenant()` does **not** call `nexus_scoped_tenant_id()`. Reading the full function body shows the string match was inside a comment. **The WhatsApp inbound hot path does not go silent at dealership #2.**
+- **FACT-123** `nexus_scoped_tenant_id()` genuinely does return NULL once a second active non-quarantine tenant exists, and **8 functions read it**. Each returns quietly rather than raising. This is real, it is deferred, and it is now *reported* rather than remembered.
+- **FACT-124** Migration `nx910_an_action_happens_in_the_dealership_you_selected` applied to production 14 Sep and mirrored to `supabase/migrations/20260914065151_*.sql`. `inventory` now reads `ALL_MEMBERSHIPS` for SELECT and `SELECTED_TENANT` for INSERT/UPDATE/DELETE. Verified after apply.
+- **FACT-125** `public.nexus_multi_tenant_blockers()` exists on production, EXECUTE granted to `service_role` only. Its clause 2 is self-maintaining: it fires again if any future migration re-adds a write grant to a table whose permissive policy still spans every membership. Current output: one `BLOCKER` row (FACT-123) and `INFO | no cross-dealership write path found`.
+- **FACT-126** `nexus_tenancy_readiness()` still reports a live WARN: rows sitting in the quarantine tenant (`audit_log` 20, `communication_logs` 2) from a write path that still omits `tenant_id`. Not closed.
+
+## Scale and spend — the owner's rule, recorded
+
+- **FACT-130** Zero auto dealers are onboarded as of 14 Sep 2026. Everything runs on free tiers by deliberate choice.
+- **FACT-131** The owner's spending trigger is explicit: **when 2 paying auto dealers are onboarded**, buy the paid AI model and paid Supabase. Upgrades follow dealer growth from there. Architecture must be scalable from today regardless.
+- **FACT-132** Workflow count must **never** grow with dealer count. One shared set of ~20-25 tenant-parameterised n8n workflows serves every dealer; per-dealer workflow copies are forbidden. See `ops/ADR-002-scaling-ladder-and-when-to-pay.md`.
+- **FACT-133** The breaking order under load, recorded in ADR-002, is: Supabase free-tier limits first, then the free AI model's rate limit, then n8n execution storage, then the single n8n box's worker concurrency. Each has a named upgrade and a named trigger.
+
