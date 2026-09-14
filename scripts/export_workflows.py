@@ -55,7 +55,12 @@ def main():
             "id": d["id"], "active": d["active"], "updatedAt": d["updatedAt"],
             # False means the n8n UI is showing an orange Publish button: the
             # draft on screen differs from the version actually running.
-            "published": d.get("versionId") == d.get("activeVersionId"),
+            # A workflow that was never published has activeVersionId = null.
+            # `None == None` is True, so the naive equality reported exactly the
+            # workflows this check exists to catch as published. Require the id
+            # to exist before comparing.
+            "published": bool(d.get("activeVersionId"))
+                         and d.get("versionId") == d.get("activeVersionId"),
         }
         with open(os.path.join(OUT, slug + ".json"), "w", encoding="utf-8") as f:
             json.dump(doc, f, indent=2, ensure_ascii=False)

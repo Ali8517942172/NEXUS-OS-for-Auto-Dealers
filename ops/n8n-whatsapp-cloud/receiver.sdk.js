@@ -262,7 +262,7 @@ const recordEvent = node({
       sendBody: true,
       contentType: 'json',
       specifyBody: 'json',
-      jsonBody: "={{ JSON.stringify({ p_integration_id: $json.integration_id, p_direction: 'inbound', p_external_message_id: $('Verify Or Refuse').item.json.message_id, p_origin_verified: 'hmac_sha256_x_hub', p_received_at: $('Verify Or Refuse').item.json.occurred_at, p_customer_external_id: $('Verify Or Refuse').item.json.customer_wa_id, p_customer_phone: '+' + $('Verify Or Refuse').item.json.customer_wa_id, p_message_kind: $('Verify Or Refuse').item.json.message_kind, p_provider_account_id: $('Verify Or Refuse').item.json.waba_id }) }}",
+      jsonBody: "={{ JSON.stringify({ p_integration_id: $json.integration_id, p_direction: 'inbound', p_external_message_id: $('Verify Or Refuse').item.json.message_id, p_origin_verified: 'hmac_sha256_x_hub', p_received_at: $('Verify Or Refuse').item.json.occurred_at, p_customer_external_id: $('Verify Or Refuse').item.json.customer_wa_id, p_customer_phone: (String($('Verify Or Refuse').item.json.customer_wa_id || '').replace(/[^0-9]/g, '') || null), p_message_kind: $('Verify Or Refuse').item.json.message_kind, p_provider_account_id: $('Verify Or Refuse').item.json.waba_id }) }}",
       options: { timeout: 10000 },
     },
   },
