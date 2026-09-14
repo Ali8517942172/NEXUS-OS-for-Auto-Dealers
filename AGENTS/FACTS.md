@@ -129,3 +129,19 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 - **FACT-132** Workflow count must **never** grow with dealer count. One shared set of ~20-25 tenant-parameterised n8n workflows serves every dealer; per-dealer workflow copies are forbidden. See `ops/ADR-002-scaling-ladder-and-when-to-pay.md`.
 - **FACT-133** The breaking order under load, recorded in ADR-002, is: Supabase free-tier limits first, then the free AI model's rate limit, then n8n execution storage, then the single n8n box's worker concurrency. Each has a named upgrade and a named trigger.
 
+## Scoring provenance — closed 14 September (ADR-003)
+
+- **FACT-140** `leads` had **no provenance columns at all** before today: only `status` and `ai_score`. Migration `nx920_a_score_now_says_who_decided_it` added `score_source`, `rules_score`, `ai_score_raw`, `ai_intent_raw`, `ai_parse_failed`, with CHECK `leads_score_source_is_a_known_label` over exactly four values.
+- **FACT-141** All **7 existing rows** were labelled `AI_SCORE_UNKNOWN`. That is the honest value — provenance was never recorded for them. `nexus_scoring_health()` verified after apply: `AI_SCORE_UNKNOWN | 7 | avg 25.8 | "Provenance never recorded. UNKNOWN is not ZERO."` **Nothing in the database is yet labelled as a real model verdict.**
+- **FACT-142** Authority decision: **RULES decide today.** One constant `AUTHORITY` in the `Parse AI Decision` node flips it to `'AI'` when the paid structured model arrives at 2 paying dealers. No schema change needed.
+- **FACT-143** The `{}` hole is closed by requiring **both** a valid intent *and* a finite score before an answer counts as structured. `{}`, `{"intent":"HOT"}`, `{"score":90}`, `{"intent":"BOILING","score":90}` and `{"intent":"HOT","score":"very high"}` are all now `parse_failed: true` — proven by test, not asserted.
+- **FACT-144** `parse_failed` is now **persisted** as `leads.ai_parse_failed`, and `score_source` travels with every row. The audit row carries `[RULES]` / `[AI_SCORE_CONFIRMED]` / `[AI_SCORE_FALLBACK]` as a prefix.
+- **FACT-145** `ops/scoring/parse-ai-decision.test.js` runs the **exact jsCode body lifted out of the workflow JSON** — not a copy that can drift — against 18 adversarial assertions including the real 13 Sep decoder-babble string. **18 passed, 0 failed.** Wired into CI as the `Scoring provenance` job. Scoring test coverage went 0 → 18.
+- **FACT-146** The rules scorer is deterministic and explainable: base 20, `+25` reachable by phone, `+10` email, `+20` named an enquiry (`-10` greeting only, `-15` no text), `+25` buying-intent phrase, `+15` urgency phrase, `+15` budget ≥ AED 100k (`+10` any budget), `+10` already in a live WhatsApp thread; clamp 0–100; HOT ≥ 70, WARM ≥ 40, else COLD. A lead with **no enquiry text and no budget returns `UNKNOWN`** and goes to the Slack human-review branch rather than being given an invented temperature.
+- **FACT-147** **The workflow change is in the repo only. It is NOT on the box.** `n8n-workflows/nexus_master_lead_router_ai_agent.json` is patched; the live Master Router still runs the old node until it is imported. Repo ≠ box (FACT-100).
+
+## CI caught two things the same day
+
+- **FACT-150** `ops/ci/function-grants.mjs --census` **blocked the NX910 mirror** for splitting the revoke into three statements instead of `revoke ... from public, anon, authenticated;`. Not cosmetic — see the next fact.
+- **FACT-151** Measured on production: `nexus_multi_tenant_blockers()` carried `authenticated=X/postgres` in `proacl` — **any signed-in dealer user could execute the blockers report.** The as-applied migration granted to `service_role` but never revoked the born-open default. Revoked and re-verified: ACL is now `postgres=X | service_role=X`. The repo mirror is the stricter, correct version. *The CI rule that looked pedantic found a live exposure.*
+

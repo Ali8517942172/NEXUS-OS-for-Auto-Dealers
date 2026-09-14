@@ -134,9 +134,7 @@ as $function$
   );
 $function$;
 
-revoke all on function public.nexus_multi_tenant_blockers() from public;
-revoke all on function public.nexus_multi_tenant_blockers() from anon;
-revoke all on function public.nexus_multi_tenant_blockers() from authenticated;
+revoke all on function public.nexus_multi_tenant_blockers() from public, anon, authenticated;
 grant execute on function public.nexus_multi_tenant_blockers() to service_role;
 
 commit;
