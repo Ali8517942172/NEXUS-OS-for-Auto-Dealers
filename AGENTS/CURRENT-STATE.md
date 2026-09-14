@@ -57,6 +57,13 @@ Read `FACTS.md` for the evidence behind every line.
 - `nexus_multi_tenant_blockers()` on production reports: 1 BLOCKER (P0-07) + `INFO | no cross-dealership write path found`.
 - Run it before onboarding dealer #2. It is self-maintaining — a future migration that re-adds a write grant behind an all-memberships policy makes it fire again.
 
+## Onboarding a second dealership onto WhatsApp
+
+Path chosen: **dealer brings their own Meta app** (ADR-004). Needs no NEXUS trade licence and no Meta verification of NEXUS — the dealer verifies their own business, which they can, having a licence.
+- Per-dealer encrypted credentials: **BUILT** (NX930, Vault, round-trip proven).
+- Receiver using them: **NOT WIRED** — still reads one global `$env.META_APP_SECRET` (FACT-169). **Live limit is still one dealership.**
+- Unverified dealer ceiling is 250 unique customers / 24h. Not a pilot constraint.
+
 ## Scoring
 
 Authority: **RULES**. The model runs, its answer is recorded in `ai_score_raw`, and it decides nothing.
