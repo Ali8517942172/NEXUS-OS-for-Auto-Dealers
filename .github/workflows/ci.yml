@@ -130,6 +130,23 @@ jobs:
       - name: Parse AI Decision — adversarial cases
         run: node ops/scoring/parse-ai-decision.test.js
 
+  # ── The gate that decides whose message this is ──────────────────────────
+  # The Cloud receiver now resolves each dealership's app secret per delivery.
+  # The case that must never regress is the last one added: a delivery for
+  # dealership B, signed with dealership A's secret, is refused.
+  receiver:
+    name: WhatsApp Cloud gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Verify Or Refuse — multi-tenant and adversarial cases
+        run: node ops/n8n-whatsapp-cloud/verify-or-refuse.test.js
+      - name: Pure HMAC against node:crypto
+        run: node ops/n8n-whatsapp-cloud/hmac-pure.test.js
+
   # ── A service_role key must never reach main ─────────────────────────────
   # The scan decodes every JWT it finds and judges the `role` claim. The anon
   # keys committed in n8n-workflows/ and ops/DEMO.md pass because they are anon,
