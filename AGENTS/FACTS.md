@@ -20,18 +20,20 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 - **FACT-011** Webhook callback URL at Meta = `https://35.224.126.225.nip.io/webhook/whatsapp-cloud-inbound`, read out of the input field. Correct. — 2026-09-13
 - **FACT-012** Webhook field `messages` is **Subscribed** at v26.0 — the only subscribed field of 33. — 2026-09-13
 - **FACT-013** A **real inbound message** reached Meta 13 Sep 17:21:54 (UTC+4): `from 918517942172`, `profile.name "Ali"`, `country_code IN`, correct `phone_number_id`. **Recipient eligibility is PROVEN; the allowlist is NOT the blocker.** — 2026-09-13
-- **FACT-014** n8n produced **zero executions** for that event. Last executions were 14:05:09/14:05:10 box-time, both orchestrator curl probes. Meta appears never to have attempted delivery. — 2026-09-13
+- **FACT-014** *(superseded by FACT-021)* On 13 Sep n8n produced zero executions for that event. Cause: the WABA was not subscribed to this app.
 - **FACT-015** Receiver refuses correctly on the wire: GET with wrong verify token → `403 HUB_VERIFY_TOKEN_MISMATCH`; POST without signature → `401 SIGNATURE_HEADER_MISSING`. Neither wrote any row. — 2026-09-13
 - **FACT-016** Both `META_WEBHOOK_VERIFY_TOKEN` and `META_APP_SECRET` ARE set and DO reach the worker — the probes returned branches *past* the not-configured guards (`receiver.sdk.js:62-66`, `:81-87`). Closes the open question in `ops/v1-certification/META-CLOUD-COMPLETION.md §3`. — 2026-09-13
 - **FACT-017** Execution 12968 was Meta's own **Test button**, carrying the dummy `phone_number_id 123456123`. It passed HMAC verification and tenant resolution, then correctly failed closed at `Raise Unregistered Channel`. So the deployed app secret is the right one. — 2026-09-13
 - **FACT-018** `channel_registry` holds an **active** row for `whatsapp_cloud_phone_number_id` = `1306545252542419`, tenant ALBA. Also an active `whatsapp_waha_session` row. — 2026-09-13
 - **FACT-019** "Number claimed but not `/register`-ed" is **REFUTED** as the cause: an unregistered number never produces a `messages` object with resolved `metadata`, `profile.name` and `country_code`. All five were present. — 2026-09-13
 - **FACT-020** Business Verification on the WABA is **Unverified**. It gates messaging tier and volume, **not** webhook delivery on a test number. — 2026-09-13
+- **FACT-021** **The blocker was the WABA-level app subscription, and it is fixed.** `GET /1098665496068509/subscribed_apps` returned only `WA DevX Webhook Events 1P App` (2202427980234937) — Meta's own first-party test-webhook app. Our app was absent, which is exactly why the message appeared in Meta's "Check test webhooks" panel and never reached our endpoint. `POST` returned `{"success": true}`; the re-read now lists `NEXUS for AutoDealers` (1406045581736122). App-level field subscription and WABA-level app subscription are separate mechanisms. — 2026-09-14
+- **FACT-022** The app is in **live mode** (Alert Inbox: "NEXUS for AutoDealers was switched to live mode on 13 Sep, 2026"). App Review "Published" and the Development/Live state are distinct; both are now correct.
 
 ## The `'+'` defect — repo and box DISAGREE
 
-- **FACT-030** The live n8n box was patched on 13 Sep: node `Record Channel Event` in `J8MXprxVw1yhjBpp` now sends `(String(...||'').replace(/[^0-9]/g,'') || null)`. Published as version "customer_phone is digits, not +digits". Verified by DOM read. **UNPROVEN against real traffic.**
-- **FACT-031** The **repo still carries the defect**: `ops/n8n-whatsapp-cloud/receiver.sdk.js:265` still builds `'+' + customer_wa_id`. Repo and box have diverged. Any re-import of the repo export would reintroduce the bug.
+- **FACT-030** The live n8n box was patched on 13 Sep: node `Record Channel Event` in `J8MXprxVw1yhjBpp` now sends `(String(...||'').replace(/[^0-9]/g,'') || null)`. Published as version "customer_phone is digits, not +digits". **PROVEN against real traffic on 14 Sep — see FACT-110.**
+- **FACT-031** *(closed 14 Sep)* The repo carried the defect at `ops/n8n-whatsapp-cloud/receiver.sdk.js:265` while the box was patched. Repo and box now agree.
 - **FACT-032** `ops/whatsapp-cloud-send/SEND-DESIGN.md §6` instructs applying `ops/whatsapp-cloud-send/phase-plus-defect.patch`. **That file does not exist.** The repo documents a remediation it cannot perform.
 - **FACT-033** DB constraint `channel_message_events_customer_phone_is_digits_or_null` = `customer_phone IS NULL OR customer_phone ~ '^[0-9]{6,20}$'`. `'+9185...'` raises 23514.
 
@@ -98,6 +100,15 @@ Format: `FACT-nnn` | claim | how it was proven | date.
 - **FACT-096** Model ladder is entirely free-tier: `nvidia/nemotron-3.5-lightning:free`, `nvidia/nemotron-3-super-120b-a12b:free`, `minimax/minimax-m2.7:free`, with `openai/gpt-oss-120b` on Groq. The agent node has **no structured-output / response-format / output-parser configured** — JSON is requested in prose only.
 - **FACT-097** A second, independent score writer exists: `apps/ai-crm/backend/server.js:129` hardcodes `status:'HOT', ai_score:90`. Whether it still writes to production is UNKNOWN.
 - **FACT-098** Zero test coverage of the scoring parser. The repo's 7 test files touch none of it.
+
+## Stale-evidence warning
+
+## The first real Cloud message — 14 September 2026
+
+- **FACT-110** **Cloud inbound is PROVEN end to end.** `channel_message_events` 0 → 1, `whatsapp_conversation_state` 0 → 1. The row, in full: `provider whatsapp_cloud`, `direction inbound`, `external_message_id wamid.HBgMOTE4NTE3OTQyMTcy…`, `customer_external_id 918517942172`, **`customer_phone 918517942172` — digits, no `+`**, `message_kind text`, `provider_account_id 1098665496068509`, **`origin_verified hmac_sha256_x_hub`** (rank 90), `tenant_id` ALBA. `received_at 05:26:06` → `recorded_at 05:26:12` — six seconds.
+- **FACT-111** `whatsapp_conversation_state` carries `last_customer_message_source = whatsapp_cloud_webhook_hmac_verified`. The 24-hour customer-service window is open for `918517942172`.
+- **FACT-112** **The chain stops there, by construction.** Measured immediately after: `leads` still 7, no new `audit_log` row, `channel_send_directive` 0, no new `communication_logs` row. The receiver's three terminal nodes only respond. A customer who messages the Cloud number gets a 200 and silence. This is the next thing to build, not a regression.
+- **FACT-113** Outbound is still blocked on three owner-side facts, unchanged: `META_WA_SYSTEM_USER_TOKEN` does not exist as a Meta object; `whatsapp_templates` = 0 rows; `WA_CUSTOMER_SERVICE_WINDOW_HOURS` is `NOT_VERIFIED`, so the policy engine refuses every send fail-closed.
 
 ## Stale-evidence warning
 

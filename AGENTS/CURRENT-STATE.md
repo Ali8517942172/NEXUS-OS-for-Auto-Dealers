@@ -1,4 +1,4 @@
-# CURRENT STATE — 13 September 2026
+# CURRENT STATE — 14 September 2026
 
 Single source of truth for status. Only the orchestrator updates this.
 Read `FACTS.md` for the evidence behind every line.
@@ -24,16 +24,17 @@ Read `FACTS.md` for the evidence behind every line.
 | Meta app published | DONE |
 | Callback URL + `messages` field | DONE |
 | Real message reaches Meta | PROVEN |
-| Meta delivers to our endpoint | **NOT PROVEN — blocker** |
-| `channel_message_events` | 0 rows |
+| Meta delivers to our endpoint | **PROVEN** 14 Sep — WABA subscription was the blocker |
+| `channel_message_events` | **1 row**, HMAC-verified, digits-only phone |
+| Customer / lead / classification / reply | **NOT BUILT** — receiver ends at respond; 200 and silence |
 | Cloud outbound reply | NOT BUILT (workflow exists, not imported; token, templates, policy all missing) |
 | WAHA inbound + AI reply | WORKING — the only proven transport |
 
 ## Open P0s
 
-- **P0-01 Lead deletion.** Mechanism found: manual test-reset SQL against production. Real customer data destroyed, including two HOT-scored leads. Not contained. PITR never checked.
-- **P0-02 Cloud inbound delivery.** Three live hypotheses; the cheapest check (App Mode Live vs Development) costs one glance.
-- **P0-03 Repo/box drift on the `'+'` fix.** The box is patched, the repo is not. A re-import would reintroduce the defect.
+- **P0-01 Lead deletion.** Mechanism found: manual test-reset SQL against production. **Contained 13 Sep** by the NX900 delete guard (verified). Still open: the ~116 lost rows are unrecovered, and PITR availability on the free tier was never confirmed.
+- ~~**P0-02 Cloud inbound delivery.**~~ **CLOSED 14 Sep.** WABA was subscribed only to Meta's own 1P test app.
+- ~~**P0-03 Repo/box drift on the `'+'` fix.**~~ **CLOSED 14 Sep.** Repo patched and the fix proven by real traffic.
 - **P0-04 Scoring provenance.** `parse_failed` never persisted; `{}` silently becomes WARM/50; parse failure recorded as SUCCESS.
 - **P0-05 `lead_event` certifies a fixture as real production data.**
 
