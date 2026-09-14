@@ -10,9 +10,15 @@
  *     passes an English test suite and then refuses every genuine delivery from
  *     a customer called محمد. Everything below hashes the raw body.
  *
- *  2. With no app secret configured this receiver REFUSES. It does not pass
+ *  2. With no app secret available this receiver REFUSES. It does not pass
  *     traffic through the way `WAHA Auth Gate` did when its env var was unset.
  *     A dormant gate is an open door.
+ *
+ *  2b. 14 Sep 2026 -- THE SECRET IS NO LONGER ONE VALUE ON THIS BOX. Each
+ *     dealership owns its own Meta app and therefore its own app secret, so the
+ *     secret is resolved per delivery from the vault (NX930) and the source of
+ *     the one actually used is recorded on every item. One box, many
+ *     dealerships. See ops/ADR-004.
  *
  *  3. The HMAC is implemented here in full, because measured on this box on
  *     7 September 2026 the Code sandbox has neither require('crypto') nor the
@@ -86,8 +92,29 @@ const item = $input.first();
 const j = item.json || {};
 const headers = j.headers || {};
 const query = j.query || {};
-const VERIFY_TOKEN = String($env.META_WEBHOOK_VERIFY_TOKEN || '');
-const APP_SECRET = String($env.META_APP_SECRET || '');
+
+/* ---- Where a secret comes from ------------------------------------------- */
+/* Until today this read one $env.META_APP_SECRET, which is why this receiver
+   could serve exactly one dealership: dealer #2 signs with their own app secret
+   and every delivery of theirs fails the HMAC. Now each secret is fetched, per
+   delivery, from the vault that NX930 installed, keyed on the phone_number_id
+   Meta puts in the payload.
+
+   The env vars below are the MIGRATION PATH, not the design. They let the one
+   dealership already live keep working while their credentials are moved into
+   the vault. Set NEXUS_REQUIRE_PER_DEALER_SECRETS=true once that is done and
+   the fallback stops existing -- a fallback nobody ever turns off is how a
+   single-tenant system goes on looking multi-tenant. */
+const SUPABASE_URL  = String($env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SERVICE_KEY   = String($env.SUPABASE_SERVICE_ROLE_KEY || '');
+const STRICT        = String($env.NEXUS_REQUIRE_PER_DEALER_SECRETS || '')
+                        .trim().toLowerCase() === 'true';
+const LEGACY_APP_SECRET   = String($env.META_APP_SECRET || '');
+const LEGACY_VERIFY_TOKEN = String($env.META_WEBHOOK_VERIFY_TOKEN || '');
+
+const http = (typeof $helpers !== 'undefined' && $helpers && $helpers.httpRequest)
+  ? $helpers.httpRequest.bind($helpers)
+  : null;
 
 const refuse = (status, code, why, extra) => [{ json: Object.assign(
   { verdict: 'REFUSE', respond_status: status, respond_text: code,
@@ -102,28 +129,117 @@ const sameString = (a, b) => {
   return d === 0;
 };
 
+/* One place that talks to the database, so there is one place that can fail.
+   Returns null on any failure rather than throwing: a vault that is unreachable
+   must end in a refusal we can read, not an n8n exception with a stack trace. */
+async function rpc(fn, body) {
+  if (!http || !SUPABASE_URL || !SERVICE_KEY) return null;
+  try {
+    const res = await http({
+      method: 'POST',
+      url: SUPABASE_URL + '/rest/v1/rpc/' + fn,
+      headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY,
+                 'Content-Type': 'application/json' },
+      body: body, json: true, timeout: 8000,
+    });
+    if (Array.isArray(res)) return res.length ? res[0] : null;
+    return res || null;
+  } catch (e) { return null; }
+}
+
 /* ---- Meta's GET subscription handshake ------------------------------------ */
+/* The handshake carries no phone_number_id, so the dealership cannot be looked
+   up by number. The token itself names them -- and the comparison happens in
+   the database (NX940) so no dealer's verify token is ever put on this wire. */
 if (query['hub.mode'] !== undefined || query['hub.challenge'] !== undefined) {
-  if (!VERIFY_TOKEN) {
-    return refuse(500, 'VERIFY_TOKEN_NOT_CONFIGURED',
-      'META_WEBHOOK_VERIFY_TOKEN is unset on this box. Confirming a subscription ' +
-      'we cannot authenticate would let anyone point Meta deliveries at us.');
-  }
   if (String(query['hub.mode']) !== 'subscribe') {
     return refuse(400, 'HUB_MODE_NOT_SUBSCRIBE', 'hub.mode was not subscribe.');
   }
-  if (!sameString(String(query['hub.verify_token'] || ''), VERIFY_TOKEN)) {
-    return refuse(403, 'HUB_VERIFY_TOKEN_MISMATCH', 'The verify token did not match.');
+  const candidate = String(query['hub.verify_token'] || '');
+  if (!candidate) {
+    return refuse(403, 'HUB_VERIFY_TOKEN_MISSING', 'No verify token on the handshake.');
   }
-  return [{ json: {
-    verdict: 'CHALLENGE', respond_status: 200,
-    respond_text: String(query['hub.challenge'] || ''),
-    reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true } }];
+
+  const hit = await rpc('nexus_channel_verify_token_matches', { p_token: candidate });
+  if (hit && hit.tenant_id) {
+    return [{ json: {
+      verdict: 'CHALLENGE', respond_status: 200,
+      respond_text: String(query['hub.challenge'] || ''),
+      reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true,
+      tenant_id: hit.tenant_id, phone_number_id: hit.phone_number_id || null,
+      verify_token_source: 'vault_per_dealer' } }];
+  }
+
+  if (!STRICT && LEGACY_VERIFY_TOKEN && sameString(candidate, LEGACY_VERIFY_TOKEN)) {
+    return [{ json: {
+      verdict: 'CHALLENGE', respond_status: 200,
+      respond_text: String(query['hub.challenge'] || ''),
+      reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true,
+      tenant_id: null, phone_number_id: null,
+      verify_token_source: 'env_global_fallback' } }];
+  }
+
+  return refuse(403, 'HUB_VERIFY_TOKEN_UNKNOWN',
+    'The verify token matched no installed dealership' +
+    (STRICT ? '.' : ' and did not match the migration token on this box.'));
 }
 
 /* ---- Everything below is a POST delivery ---------------------------------- */
-/* 5XX, not 4XX. A 4XX tells Meta not to retry, and for a lead that means it is
-   gone. Our missing configuration is our failure, so we answer like one. */
+let raw = null, raw_source = null;
+const bin = item.binary && (item.binary.data || item.binary.body);
+if (bin && bin.data) { raw = Buffer.from(bin.data, 'base64'); raw_source = 'binary'; }
+else if (typeof j.body === 'string') { raw = Buffer.from(j.body, 'utf8'); raw_source = 'string'; }
+if (!raw) {
+  /* 5XX, not 4XX. A 4XX tells Meta not to retry, and for a lead that means it is
+     gone. Our missing configuration is our failure, so we answer like one. */
+  return refuse(500, 'RAW_BODY_NOT_AVAILABLE',
+    'The webhook node did not hand this node the raw body, so the bytes Meta ' +
+    'signed are already gone and no care downstream gets them back. Turn on ' +
+    'Raw Body on the webhook node.');
+}
+
+const sigHeader = String(headers['x-hub-signature-256'] || '');
+if (!sigHeader.startsWith('sha256=')) {
+  return refuse(401, 'SIGNATURE_HEADER_MISSING',
+    'No X-Hub-Signature-256 on the request. Meta always sends one.');
+}
+
+/* WHY IT IS SAFE TO READ THIS BODY BEFORE VERIFYING IT.
+   The signature cannot be checked without knowing which dealership's secret to
+   check it under, and the only thing identifying them -- phone_number_id -- is
+   inside the body. So the body is parsed here, unverified, for ONE purpose: to
+   choose which secret to try. Nothing is decided and nothing is written on it.
+   A forger who writes someone else's phone_number_id has merely asked us to
+   verify their forgery under a secret they do not hold, and the HMAC below
+   fails. Once it passes, the bytes are authentic and so is the id inside them. */
+let routingPnid = '';
+try {
+  const peek = JSON.parse(raw.toString('utf8'));
+  for (const entry of (peek.entry || [])) {
+    for (const ch of (entry.changes || [])) {
+      const p = String((((ch.value || {}).metadata) || {}).phone_number_id || '');
+      if (p) { routingPnid = p; break; }
+    }
+    if (routingPnid) break;
+  }
+} catch (e) { /* unparseable — handled by the resolution below */ }
+
+let APP_SECRET = '', app_secret_source = null, resolved_tenant_id = null;
+if (routingPnid) {
+  const got = await rpc('nexus_channel_secret_reveal', {
+    p_phone_number_id: routingPnid, p_kind: 'meta_app_secret',
+    p_reason: 'inbound webhook verification' });
+  if (got && got.secret) {
+    APP_SECRET = String(got.secret);
+    app_secret_source = 'vault_per_dealer';
+    resolved_tenant_id = got.tenant_id || null;
+  }
+}
+if (!APP_SECRET && !STRICT && LEGACY_APP_SECRET) {
+  APP_SECRET = LEGACY_APP_SECRET;
+  app_secret_source = 'env_global_fallback';
+}
+
 if (!APP_SECRET) {
   /* Nothing here is secret: three published HMAC-SHA256 vectors, two of them at
      the block-boundary lengths where the padding bug above hid. They answer,
@@ -147,32 +263,27 @@ if (!APP_SECRET) {
   } catch (e) {
     selftest = { ok: false, error: String((e && e.message) || e) };
   }
-  return refuse(500, 'APP_SECRET_NOT_CONFIGURED',
-    'META_APP_SECRET is unset on this box, so no delivery can be verified. ' +
-    'Refusing every request until it is set - this gate is never dormant.',
-    { hmac_selftest: selftest });
+  return refuse(500, 'NO_APP_SECRET_FOR_THIS_DELIVERY',
+    routingPnid
+      ? ('No dealership registered for phone_number_id ' + routingPnid +
+         ' holds a meta_app_secret' +
+         (STRICT ? '' : ', and no migration secret is set on this box') +
+         '. Refusing - this gate is never dormant.')
+      : ('This delivery named no phone_number_id, so no dealership could be ' +
+         'identified' + (STRICT ? '' : ' and no migration secret is set on this box') +
+         '. Refusing - this gate is never dormant.'),
+    { hmac_selftest: selftest, phone_number_id: routingPnid || null,
+      strict_per_dealer: STRICT });
 }
 
-let raw = null, raw_source = null;
-const bin = item.binary && (item.binary.data || item.binary.body);
-if (bin && bin.data) { raw = Buffer.from(bin.data, 'base64'); raw_source = 'binary'; }
-else if (typeof j.body === 'string') { raw = Buffer.from(j.body, 'utf8'); raw_source = 'string'; }
-if (!raw) {
-  return refuse(500, 'RAW_BODY_NOT_AVAILABLE',
-    'The webhook node did not hand this node the raw body, so the bytes Meta ' +
-    'signed are already gone and no care downstream gets them back. Turn on ' +
-    'Raw Body on the webhook node.');
-}
-
-const sigHeader = String(headers['x-hub-signature-256'] || '');
-if (!sigHeader.startsWith('sha256=')) {
-  return refuse(401, 'SIGNATURE_HEADER_MISSING',
-    'No X-Hub-Signature-256 on the request. Meta always sends one.');
-}
 if (!sameString(sigHeader, 'sha256=' + hmacHex(Buffer.from(APP_SECRET, 'utf8'), raw))) {
   return refuse(401, 'SIGNATURE_MISMATCH',
     'X-Hub-Signature-256 did not match an HMAC-SHA256 of the raw body under the ' +
-    'app secret. Nothing was written.');
+    'app secret' +
+    (app_secret_source === 'vault_per_dealer'
+      ? ' held for this dealership. Either it is the wrong secret or the body was altered.'
+      : ' on this box. Nothing was written.'),
+    { phone_number_id: routingPnid || null, app_secret_source });
 }
 
 let payload;
@@ -208,6 +319,12 @@ for (const entry of (payload.entry || [])) {
         occurred_at: measurable ? new Date(ts * 1000).toISOString() : null,
         text: m.text ? String(m.text.body || '') : '',
         origin_verified: 'hmac_sha256_x_hub',
+        /* Which dealership, and how we know. `env_global_fallback` means this
+           delivery was verified with the migration secret and NOT with a secret
+           held for a named dealership -- it is not evidence of tenant
+           isolation and must never be counted as such. */
+        tenant_id: resolved_tenant_id,
+        app_secret_source: app_secret_source,
       } });
     }
   }
@@ -216,6 +333,7 @@ if (!out.length) {
   return [{ json: {
     verdict: 'ACCEPT_NO_MESSAGE', respond_status: 200, respond_text: 'ok',
     reason_code: 'NO_INBOUND_MESSAGE_IN_DELIVERY', wrote_nothing: true, raw_source,
+    tenant_id: resolved_tenant_id, app_secret_source,
     note: 'Signature verified. This delivery carried no inbound message - a ' +
           'status callback or a change we do not consume yet.' } }];
 }
