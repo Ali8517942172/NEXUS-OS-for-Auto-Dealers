@@ -1,0 +1,489 @@
+{
+  "name": "Gmail Inbound - Lead Email Receiver",
+  "meta": {
+    "instanceId": "nexus-os"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "is:unread",
+          "includeSpamTrash": false
+        },
+        "options": {
+          "downloadAttachments": false
+        }
+      },
+      "id": "gm-in-trigger",
+      "name": "Gmail Inbound Poll",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "PENDING-INBOUND-GMAIL-OAUTH2",
+          "name": "Gmail Inbound Leads OAuth2"
+        }
+      },
+      "notes": "Polls a DEDICATED inbox once a minute for is:unread. This credential is NOT 1Cgivoyjt7psAirH -- that one is the outbound sender and must stay outbound-only; the id above is a placeholder and the import will show this node unbound until the inbound credential is created and selected by hand. simple=false on purpose: the simplified output drops payload.headers, and Message-ID lives there. THE FAILURE MODE THAT KILLS THIS WORKFLOW SILENTLY: if the Google Cloud OAuth consent screen is left in Testing, the refresh token expires every 7 days, the poll starts failing, and leads pile up unread with nothing shouting about it. Publish the consent screen. See SETUP-RUNBOOK.md."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* The exact body of the \"Parse Lead Email\" Code node in the n8n workflow\n * \"Gmail Inbound - Lead Email Receiver\".\n *\n * WHAT THIS NODE IS ALLOWED TO CLAIM\n *\n * It turns ONE Gmail message into the arguments for nexus_record_lead_event.\n * It authenticates nothing. It is downstream of a Gmail Trigger polling a\n * mailbox we hold an OAuth token for, and that is the whole of the provenance:\n *\n *   origin_verified = 'mailbox_read_oauth'\n *\n * Read that literally. It attests THE FETCH, not THE MESSAGE:\n *\n *   - It says: these bytes were really in that inbox, and we really are the\n *     account that read them. Nobody can hand us this payload over HTTP; they\n *     have to get mail delivered to a mailbox we control.\n *   - It does NOT say the sender is who the From header claims. SPF is a\n *     statement about the connecting IP, and it breaks across a forward BY\n *     DESIGN -- the moment a dealer auto-forwards their enquiry address to our\n *     inbox, SPF for the original domain fails and means nothing. DKIM would\n *     survive a plain forward, but this node does NOT verify DKIM: it reads\n *     Gmail's already-parsed headers and has no access to the raw signed\n *     message or the sender's public key. Authentication-Results, if present,\n *     is Gmail's opinion recorded as evidence, never used as a gate.\n *   - Therefore the ONLY thing standing between this pipeline and a stranger\n *     injecting a fake customer is the SECRECY OF THE INGEST ADDRESS. That is\n *     a weak gate and it must be written down as one. Anyone who learns the\n *     address can post a lead into a dealership's funnel.\n *\n * Nothing here is inferred. A field that is not literally written in the\n * message is absent from `normalized`. That rule is the point of this file, and\n * every place it would be convenient to break it is marked below.\n */\n\n/* ------------------------------------------------------------------ headers */\n\n/* The Gmail Trigger's output shape is NOT stable across n8n versions. With\n   \"Simplify\" on, headers arrive as a flat object with lowercase keys. With it\n   off, they arrive as payload.headers, an ARRAY of { name, value } with the\n   original mixed case. A node that handles only one of them works on the box it\n   was written on and silently stops finding Message-ID after an upgrade -- and\n   \"no Message-ID\" is a refusal, so the failure is total, not partial. Both\n   shapes are handled here and both are covered by the tests. */\nfunction headerIndex(msg) {\n  const out = {};\n  const put = (name, value) => {\n    const k = String(name || '').trim().toLowerCase();\n    if (!k) return;\n    const v = String(value == null ? '' : value).trim();\n    if (out[k] === undefined) out[k] = v; else out[k] += '\\n' + v;\n  };\n  const payload = msg.payload || {};\n  if (Array.isArray(payload.headers)) {\n    for (const h of payload.headers) if (h && typeof h === 'object') put(h.name, h.value);\n  }\n  if (Array.isArray(msg.headers)) {\n    for (const h of msg.headers) if (h && typeof h === 'object') put(h.name, h.value);\n  }\n  if (msg.headers && typeof msg.headers === 'object' && !Array.isArray(msg.headers)) {\n    for (const k of Object.keys(msg.headers)) put(k, msg.headers[k]);\n  }\n  if (payload.headers && typeof payload.headers === 'object' && !Array.isArray(payload.headers)) {\n    for (const k of Object.keys(payload.headers)) put(k, payload.headers[k]);\n  }\n  return out;\n}\n\n/* --------------------------------------------------------------------- body */\n\nfunction decodeB64Url(s) {\n  try { return Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'); }\n  catch (e) { return ''; }\n}\n\nfunction stripHtml(html) {\n  return String(html || '')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/(p|div|tr|li|h[1-6]|table)>/gi, '\\n')\n    /* A two-cell table row IS a labelled field -- \"Name | Khalid Al Marri\" is\n       how most marketplace notifications are laid out -- so the cell boundary\n       becomes a tab and labelMap() treats a tab exactly like a colon. The tab\n       must therefore survive the whitespace collapse below, which is why only\n       runs of SPACES are collapsed here and tabs are collapsed separately. */\n    .replace(/<\\/?(td|th)[^>]*>/gi, '\\t')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>').replace(/&quot;/gi, '\"').replace(/&#39;/gi, \"'\")\n    .replace(/ +/g, ' ')\n    .replace(/\\t+/g, '\\t')\n    .replace(/\\n{3,}/g, '\\n\\n');\n}\n\nfunction walkParts(part, acc) {\n  if (!part || typeof part !== 'object') return;\n  const mime = String(part.mimeType || '').toLowerCase();\n  const data = part.body && part.body.data;\n  if (data) {\n    if (mime === 'text/plain') acc.plain.push(decodeB64Url(data));\n    else if (mime === 'text/html') acc.html.push(decodeB64Url(data));\n  }\n  if (Array.isArray(part.parts)) for (const p of part.parts) walkParts(p, acc);\n}\n\nfunction bodyText(msg) {\n  const acc = { plain: [], html: [] };\n  walkParts(msg.payload, acc);\n  /* The simplified trigger output puts the body on the item directly. */\n  for (const k of ['text', 'textPlain', 'body']) {\n    if (typeof msg[k] === 'string' && msg[k].trim()) acc.plain.push(msg[k]);\n  }\n  for (const k of ['html', 'textHtml', 'textAsHtml']) {\n    if (typeof msg[k] === 'string' && msg[k].trim()) acc.html.push(msg[k]);\n  }\n  const plain = acc.plain.join('\\n').trim();\n  if (plain) return { text: plain, from: 'text/plain' };\n  const html = acc.html.join('\\n').trim();\n  if (html) return { text: stripHtml(html), from: 'text/html' };\n  /* The snippet is Gmail's own truncated preview. It is a LAST resort and is\n     recorded as such, because a truncated body can cut a phone number in half\n     and a half phone number is worse than none. */\n  const snip = String(msg.snippet || '').trim();\n  return { text: snip, from: snip ? 'snippet_only' : 'none' };\n}\n\n/* ------------------------------------------------------------- the addresses */\n\n/* Addresses we will never store as \"the customer\". A marketplace notification\n   is sent BY the marketplace, so the From address is the marketplace's robot,\n   and writing it into leads.email gives the dealership a contact that bounces\n   or, worse, replies to a no-reply queue nobody reads. */\nconst ROBOT_LOCALPART = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|notification[s]?|notify|mailer[-_.]?daemon|postmaster|bounce[s]?|auto[-_.]?reply|alerts?|noreply)$/i;\n\nfunction parseAddress(raw) {\n  const s = String(raw || '').trim();\n  if (!s) return null;\n  /* \"Display Name\" <local@domain>   |   local@domain   |   <local@domain> */\n  const m = s.match(/^\\s*(?:\"?([^\"<]*?)\"?\\s*)?<\\s*([^>\\s]+@[^>\\s]+)\\s*>\\s*$/) ||\n            s.match(/^\\s*()([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)\\s*$/);\n  if (!m) return null;\n  const display = String(m[1] || '').trim().replace(/^'+|'+$/g, '');\n  const address = String(m[2] || '').trim().toLowerCase();\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/.test(address)) return null;\n  const local = address.split('@')[0];\n  return { display, address, local, is_robot: ROBOT_LOCALPART.test(local) };\n}\n\n/* ------------------------------------------------------------------- phones */\n\n/* E.164 or nothing. Identical rule, and deliberately identical code, to\n   ops/n8n-google-lead-form/verify-and-redact.node.js. A number that does not\n   land in +[1-9][0-9]{7,14} is REPORTED as unparseable and dropped from\n   `normalized`: a mangled number is a customer the dealer cannot reach wearing\n   the shape of one who can, and it is worse than an obviously missing field,\n   because nobody goes looking for it. */\nfunction toE164(rawPhone) {\n  const s = String(rawPhone || '').replace(/[^\\d+]/g, '');\n  if (/^\\+[1-9][0-9]{7,14}$/.test(s)) return s;\n  const dg = s.replace(/\\D/g, '');\n  if (/^00[1-9]\\d{7,14}$/.test(dg)) return '+' + dg.slice(2);\n  if (/^971\\d{9}$/.test(dg)) return '+' + dg;\n  if (/^0?5\\d{8}$/.test(dg)) return '+971' + dg.replace(/^0/, '');\n  if (/^91[6-9]\\d{9}$/.test(dg)) return '+' + dg;\n  return null;\n}\n\n/* -------------------------------------------------------------- body labels */\n\n/* Labelled fields ONLY. The body is not scanned for a loose run of digits that\n   \"looks like\" a phone number: a marketplace notification is full of stock\n   numbers, prices, mileages, VINs and listing ids, and the first one that\n   happens to be nine digits long would be handed to a salesperson as a\n   customer's mobile. If the message does not say \"Phone:\", this message does\n   not contain a phone number as far as this node is concerned. */\nconst LABELS = {\n  full_name: ['name', 'full name', 'customer name', 'buyer name', 'contact name',\n              'sender name', 'lead name', 'from name', 'client name', 'enquirer'],\n  email:     ['email', 'e-mail', 'email address', 'customer email', 'buyer email',\n              'contact email', 'reply to', 'reply-to'],\n  phone:     ['phone', 'phone number', 'mobile', 'mobile number', 'telephone',\n              'tel', 'contact number', 'whatsapp', 'cell'],\n  vehicle:   ['vehicle', 'vehicle of interest', 'car', 'car model', 'model',\n              'listing', 'listing title', 'ad title', 'stock', 'interested in'],\n  message:   ['message', 'comments', 'comment', 'enquiry', 'inquiry', 'note',\n              'notes', 'question', 'customer message'],\n};\n\nfunction labelMap(text) {\n  const found = {};\n  const lines = String(text || '').split(/\\r?\\n/);\n  for (const line of lines) {\n    /* \"Label: value\" and \"Label\\tvalue\" (the shape an HTML table collapses to).\n       A label is short by definition; anything long before the colon is prose\n       that happens to contain one, e.g. \"Note: he said ...\". */\n    const m = line.match(/^[ \\t]*([A-Za-z][A-Za-z \\-_/]{1,28}?)[ ]*[:\\t]+[ \\t]*(.+?)[ \\t]*$/);\n    if (!m) continue;\n    const key = m[1].trim().toLowerCase().replace(/[_\\-/]+/g, ' ').replace(/\\s+/g, ' ');\n    const val = m[2].trim();\n    if (!val) continue;\n    if (found[key] === undefined) found[key] = val;\n  }\n  return found;\n}\n\nfunction pickLabel(found, names) {\n  for (const n of names) if (found[n]) return found[n];\n  return '';\n}\n\n/* --------------------------------------------------------------------- main */\n\nconst out = [];\n\n/* pairedItem is set on EVERY emitted item, including refusals. This node runs\n   in runOnceForAllItems mode because one poll can return several messages, and\n   in that mode n8n does not infer item linking for you. Without pairedItem the\n   downstream expressions that reach back with $('Parse Lead Email').item throw\n   \"Can't determine which item to use\" -- and they are the expressions that\n   carry the Gmail message id to the label and mark-read nodes, so the failure\n   is: the lead is ingested, the mail is never marked read, and the next poll\n   ingests it again. The database deduplicates it on Message-ID, so nothing is\n   corrupted, but the inbox grows forever and every poll does needless work. */\nconst all = $input.all();\n\nfor (let idx = 0; idx < all.length; idx++) {\n  const item = all[idx];\n  const msg = (item && item.json) || {};\n  const H = headerIndex(msg);\n  const gmail_message_id = String(msg.id || msg.messageId || '').trim() || null;\n  const gmail_thread_id = String(msg.threadId || '').trim() || null;\n\n  const refuse = (code, why, extra) => {\n    out.push({ pairedItem: { item: idx }, json: Object.assign({\n      verdict: 'REFUSED',\n      reason_code: code,\n      why,\n      wrote_nothing: true,\n      gmail_message_id,\n      gmail_thread_id,\n      subject: String(H.subject || '').slice(0, 300) || null,\n    }, extra || {}) });\n  };\n\n  /* ---- idempotency, and why nothing else will do -------------------------\n     The RFC 5322 Message-ID is the ONLY stable identifier of this message as a\n     message. Gmail's own `id` is stable per mailbox, but the poll is the thing\n     that repeats: a re-poll, a workflow re-run, a restored backup or a manual\n     \"execute\" replays the same customer, and without a key that is a property\n     of the MESSAGE we cannot tell a replay from a second person asking about a\n     second car.\n\n     A hash of the body is explicitly NOT a substitute, and the temptation to\n     use one is the defect this comment exists to prevent. Two different\n     customers on the same marketplace listing can produce byte-identical\n     notifications -- same template, same vehicle, same \"A buyer is interested\"\n     text -- and hashing them collapses two real people into one lead. The\n     failure is silent and the second customer is simply never called.\n\n     So: no Message-ID, no ingestion. The message stays unread in the inbox and\n     a human can look at it. That is a loud, recoverable failure; a wrong\n     dedup key is a quiet, unrecoverable one. */\n  const rawMessageId = String(H['message-id'] || '').trim();\n  const messageId = rawMessageId.replace(/^</, '').replace(/>$/, '').trim();\n  if (!messageId) {\n    refuse('NO_RFC_MESSAGE_ID',\n      'This message carries no Message-ID header, so a re-poll of it could not be ' +\n      'told apart from a second customer. It is left unread for a human. A hash of ' +\n      'the body is not an acceptable substitute: two customers enquiring about the ' +\n      'same listing produce identical bytes.');\n    continue;\n  }\n\n  const body = bodyText(msg);\n  const labels = labelMap(body.text);\n\n  const fromAddr = parseAddress(H.from);\n  const replyToAddr = parseAddress(H['reply-to']);\n\n  /* ---- the customer's name ----------------------------------------------\n     Three sources are considered and one is BANNED.\n\n     BANNED: the email local-part. \"khalid.almarri@example.com\" is not evidence\n     that anyone is called Khalid Al Marri -- it is a string a mail admin chose.\n     Splitting it on a dot and title-casing it produces a name that looks real,\n     is never flagged, and is read aloud on a phone call to a stranger. Also\n     banned for the same reason: the marketplace's own display name. \"Dubizzle\n     Notifications\" is the robot, not the buyer, and a lead row reading\n     full_name = 'Dubizzle Notifications' is a fabricated person. */\n  let full_name = pickLabel(labels, LABELS.full_name);\n  let full_name_source = full_name ? 'body_label' : null;\n\n  if (!full_name && fromAddr && !fromAddr.is_robot && fromAddr.display) {\n    const d = fromAddr.display;\n    const flat = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');\n    const looksLikeAddress = /@/.test(d);\n    const isJustTheLocalPart = flat(d) === flat(fromAddr.local);\n    if (!looksLikeAddress && !isJustTheLocalPart && /[A-Za-z]{2}/.test(d)) {\n      /* A display name the sender themselves set on a message they themselves\n         sent. That is a claim literally present in the message, so it is\n         allowed -- and recorded as the weaker source it is. */\n      full_name = d;\n      full_name_source = 'from_display_name';\n    }\n  }\n  full_name = String(full_name || '').replace(/[\\x00-\\x1F\\x7F]/g, '').trim().slice(0, 120);\n\n  /* ---- the customer's email ---------------------------------------------- */\n  let email = '';\n  let email_source = null;\n  const labelledEmail = parseAddress(pickLabel(labels, LABELS.email));\n  if (labelledEmail && !labelledEmail.is_robot) {\n    email = labelledEmail.address; email_source = 'body_label';\n  } else if (replyToAddr && !replyToAddr.is_robot) {\n    email = replyToAddr.address; email_source = 'reply_to_header';\n  } else if (fromAddr && !fromAddr.is_robot) {\n    email = fromAddr.address; email_source = 'from_header';\n  }\n\n  /* Recorded so the dealership can see WHY no email was stored, rather than\n     wondering whether the parser lost one. */\n  const discarded_robot_addresses = [];\n  if (labelledEmail && labelledEmail.is_robot) discarded_robot_addresses.push(labelledEmail.address);\n  if (replyToAddr && replyToAddr.is_robot) discarded_robot_addresses.push(replyToAddr.address);\n  if (fromAddr && fromAddr.is_robot) discarded_robot_addresses.push(fromAddr.address);\n\n  /* ---- the customer's phone ---------------------------------------------- */\n  const phoneRaw = pickLabel(labels, LABELS.phone);\n  const phone_e164 = toE164(phoneRaw);\n\n  const vehicle = pickLabel(labels, LABELS.vehicle).slice(0, 200);\n  const message = pickLabel(labels, LABELS.message).slice(0, 1500);\n\n  /* ---- normalized: only what was literally there -------------------------- */\n  const normalized = {};\n  if (full_name) normalized.full_name = full_name;\n  if (phone_e164) normalized.phone_e164 = phone_e164;\n  if (email) normalized.email = email;\n  if (vehicle) normalized.vehicle_of_interest = vehicle;\n  if (message) normalized.message = message;\n\n  /* The same contract nexus_lead_normalized_defect enforces, checked here so\n     the refusal names the missing field instead of arriving as an opaque 500\n     from a database function nobody outside this repo can read. */\n  let defect = null;\n  if (!full_name) defect = 'NORMALIZED_FULL_NAME_REQUIRED';\n  else if (!phone_e164 && !email) defect = 'NORMALIZED_NEEDS_EMAIL_OR_PHONE';\n\n  /* ---- occurred_at ------------------------------------------------------- */\n  let occurred_at = null;\n  const dateHeader = String(H.date || '').trim();\n  if (dateHeader) {\n    const t = Date.parse(dateHeader);\n    if (!isNaN(t)) occurred_at = new Date(t).toISOString();\n  }\n  if (!occurred_at && msg.internalDate) {\n    const t = Number(msg.internalDate);\n    if (!isNaN(t) && t > 0) occurred_at = new Date(t).toISOString();\n  }\n\n  const payload_raw = {\n    provider: 'email',\n    transport: 'gmail_poll',\n    rfc_message_id: messageId,\n    gmail_message_id,\n    gmail_thread_id,\n    from: fromAddr ? fromAddr.address : null,\n    from_display: fromAddr ? (fromAddr.display || null) : null,\n    reply_to: replyToAddr ? replyToAddr.address : null,\n    to: String(H.to || '').slice(0, 320) || null,\n    delivered_to: String(H['delivered-to'] || '').slice(0, 320) || null,\n    subject: String(H.subject || '').slice(0, 300) || null,\n    date_header: dateHeader || null,\n    body_source: body.from,\n    body_excerpt: body.text.slice(0, 4000),\n    label_keys_seen: Object.keys(labels).slice(0, 40),\n    full_name_source,\n    email_source,\n    phone_unparseable: phone_e164 ? null : (phoneRaw || null),\n    discarded_robot_addresses,\n    /* Gmail's opinion, recorded as evidence and used as a gate by nothing. */\n    authentication_results: String(H['authentication-results'] || '').slice(0, 500) || null,\n    received_spf: String(H['received-spf'] || '').slice(0, 300) || null,\n    origin_note:\n      'origin_verified=mailbox_read_oauth attests that these bytes were read from ' +\n      'a mailbox we hold an OAuth token for. It does NOT attest the sender. SPF ' +\n      'does not survive a forward, DKIM is not verified in this node, and the ' +\n      'secrecy of the ingest address is the only gate on who can put a lead here.',\n  };\n\n  out.push({ pairedItem: { item: idx }, json: {\n    verdict: 'PARSED',\n    reason_code: defect === null ? 'EMAIL_PARSED' : defect,\n    external_event_id: messageId,\n    origin_verified: 'mailbox_read_oauth',\n    occurred_at,\n    gmail_message_id,\n    gmail_thread_id,\n    subject: payload_raw.subject,\n    payload_raw,\n    normalized,\n    normalized_defect: defect,\n    can_promote: defect === null,\n  } });\n}\n\nreturn out;\n"
+      },
+      "id": "gm-in-parse",
+      "name": "Parse Lead Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "Verbatim copy of ops/n8n-gmail-inbound/parse-lead-email.node.js, which is what parse-lead-email.test.js runs (47 assertions). Edit the file, rebuild this workflow, re-import -- never hand-edit the node in the n8n UI, because then the tested body and the running body are different programs."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "gm-in-parsed-c1",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "gm-in-parsed",
+      "name": "Parsed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "TRUE -> record. FALSE -> the message is left UNREAD and untouched so a human sees it in the inbox. The only refusal this node body produces is a missing Message-ID, and a missing Message-ID is a message we cannot safely ingest at all, not one we can retry."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_public_key: $env.NEXUS_EMAIL_ENDPOINT_PUBLIC_KEY, p_external_event_id: $json.external_event_id, p_origin_verified: 'mailbox_read_oauth', p_payload_raw: $json.payload_raw, p_occurred_at: $json.occurred_at, p_normalized: $json.normalized_defect === null ? $json.normalized : null }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "gm-in-record",
+      "name": "Record Lead Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "p_public_key comes from $env.NEXUS_EMAIL_ENDPOINT_PUBLIC_KEY and is NOT written into this file: a workflow JSON is exported, pasted and committed, and a key pasted into one has left the building. If that variable is unset the RPC is called with null and refuses -- the workflow fails loudly rather than writing a lead into the wrong tenant. p_normalized is sent ONLY when the local contract check passed; a defective normalized object makes the function raise, and this way the defect is recorded as a fact about the email instead of an exception."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "gm-in-dup-c1",
+              "leftValue": "={{ $json.was_duplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "gm-in-dup",
+      "name": "Already Have This Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        0
+      ],
+      "notes": "A re-poll of the same Message-ID lands here. TRUE -> stop, without touching the stored row: re-promoting is harmless but re-rejecting is not, and neither is worth the risk for a row we already hold. The mail is still labelled and marked read, because the reason it was polled twice is usually that it never got marked read the first time."
+    },
+    {
+      "parameters": {},
+      "id": "gm-in-stop",
+      "name": "Stop: Already Ingested",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        -180
+      ],
+      "notes": "Deliberately does nothing to the lead_event row."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "gm-in-promotable-c1",
+              "leftValue": "={{ $('Parse Lead Email').item.json.can_promote }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "gm-in-promotable",
+      "name": "A Real Customer We Can Reach?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        120
+      ],
+      "notes": "Reads the parse node rather than the RPC response, because the promotability decision was made where the evidence is. Requires pairedItem, which the Code node sets on every item it emits."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_promote_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_event_id: $('Record Lead Event').item.json.event_id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "gm-in-promote",
+      "name": "Promote To Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        40
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Creates the lead the dealership actually sees."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_reject_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_event_id: $('Record Lead Event').item.json.event_id, p_phase: 'REJECTED', p_reason: ('The email was received and is recorded, but it does not contain enough to contact anyone: ' + $('Parse Lead Email').item.json.normalized_defect + '. Nothing was inferred from the sender address on purpose. Subject: ' + ($('Parse Lead Email').item.json.subject || '(none)')) }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "gm-in-hold",
+      "name": "Hold Without Promoting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "REJECTED, not QUARANTINED: this is a real delivery whose CONTENT was insufficient. The row stays visible as evidence that the marketplace's notification template does not carry a contactable customer -- which is a fact worth someone's attention, not a bug to hide."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $('Parse Lead Email').item.json.gmail_message_id }}",
+        "labelIds": "={{ [ $env.NEXUS_EMAIL_INGESTED_LABEL_ID ] }}"
+      },
+      "id": "gm-in-label",
+      "name": "Label As Ingested",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1560,
+        120
+      ],
+      "webhookId": "7c1e4b02-93a5-4f18-8d63-2ea1f6b9c007",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "PENDING-INBOUND-GMAIL-OAUTH2",
+          "name": "Gmail Inbound Leads OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Label id comes from $env.NEXUS_EMAIL_INGESTED_LABEL_ID. onError continues so that a labelling failure never rolls back an ingestion that already succeeded -- the lead is the valuable thing here, the label is bookkeeping. The cost of that choice is an inbox that can drift out of step with the database; the Message-ID idempotency key is what makes the drift harmless."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "markAsRead",
+        "messageId": "={{ $('Parse Lead Email').item.json.gmail_message_id }}"
+      },
+      "id": "gm-in-read",
+      "name": "Mark Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1780,
+        120
+      ],
+      "webhookId": "7c1e4b02-93a5-4f18-8d63-2ea1f6b9c008",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "PENDING-INBOUND-GMAIL-OAUTH2",
+          "name": "Gmail Inbound Leads OAuth2"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "This is what stops the is:unread poll returning the same message forever. If it fails the message is re-polled and nexus_record_lead_event answers was_duplicate on the Message-ID, so the dealership is not handed the same person twice -- that database call, not this node, is the real guard."
+    }
+  ],
+  "connections": {
+    "Gmail Inbound Poll": {
+      "main": [
+        [
+          {
+            "node": "Parse Lead Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Lead Email": {
+      "main": [
+        [
+          {
+            "node": "Parsed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsed?": {
+      "main": [
+        [
+          {
+            "node": "Record Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Record Lead Event": {
+      "main": [
+        [
+          {
+            "node": "Already Have This Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Have This Email?": {
+      "main": [
+        [
+          {
+            "node": "Stop: Already Ingested",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "A Real Customer We Can Reach?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A Real Customer We Can Reach?": {
+      "main": [
+        [
+          {
+            "node": "Promote To Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hold Without Promoting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Promote To Lead": {
+      "main": [
+        [
+          {
+            "node": "Label As Ingested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hold Without Promoting": {
+      "main": [
+        [
+          {
+            "node": "Label As Ingested",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label As Ingested": {
+      "main": [
+        [
+          {
+            "node": "Mark Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "tags": [],
+  "pinData": {}
+}
