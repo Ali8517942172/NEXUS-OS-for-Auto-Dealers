@@ -268,7 +268,9 @@ from inventory order by id;
 
 All twelve ids are `NX-1001` … `NX-1012` — a NEXUS numbering scheme, not a
 dealer stock number. VINs are plausible WMI prefixes and no `DEMOVIN` marker.
-They are not in `setup_real_data.sql` (`grep -c "NX-10" setup_real_data.sql` →
+They are not in `ops/journey-lab/DO-NOT-RUN-IN-PRODUCTION/setup_real_data.sql` (quarantined
+2026-09-14; was `setup_real_data.sql` at the repo root — do not execute it)
+(`grep -c "NX-10" ops/journey-lab/DO-NOT-RUN-IN-PRODUCTION/setup_real_data.sql` →
 `0`), and `grep -rln NX-1001` finds them only in evidence docs, one tenancy
 migration, and the dashboard unit-form fixtures — **never in an insert script in
 this repo.** Whether ALBA's real stock was entered under NEXUS ids or a fixture

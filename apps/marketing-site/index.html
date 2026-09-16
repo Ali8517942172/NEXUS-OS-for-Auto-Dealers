@@ -81,12 +81,17 @@
         {
           "@type": "Question",
           "name": "How fast does it reply to a customer?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Replies take seconds to a couple of minutes. Measured across live replies: fastest 13.3 seconds, median 38.8 seconds, slowest 3 minutes 38 seconds. We publish the slow end as well as the fast one." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Replies take seconds to a couple of minutes. Measured in our pilot dealership across live replies: fastest 13.3 seconds, median 38.8 seconds, slowest 3 minutes 38 seconds. We publish the slow end as well as the fast one." }
         },
         {
           "@type": "Question",
           "name": "Will the AI invent a price?",
           "acceptedAnswer": { "@type": "Answer", "text": "No. The price it quotes is read from your stock list. It also holds your cost price and is blocked from disclosing it to a customer." }
+        },
+        {
+          "@type": "Question",
+          "name": "How many dealerships are using NEXUS today?",
+          "acceptedAnswer": { "@type": "Answer", "text": "One, as a pilot, in Dubai. NEXUS has no paying customers yet and no case studies. That is why the dealer audit is free and the first month is free." }
         },
         {
           "@type": "Question",
@@ -158,7 +163,7 @@ nav a:hover{color:var(--deep)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--copper)}
 .hero h1{font-size:clamp(40px,5vw,60px);margin-bottom:22px}
 .hero h1 em{font-style:normal;color:var(--deep)}
-.lede{font-size:20px;line-height:1.6;color:var(--body);max-width:35ch;margin-bottom:30px}
+.lede{font-size:20px;line-height:1.6;color:var(--body);max-width:44ch;margin-bottom:30px}
 .cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}
 .hero-note{font-size:14px;color:#6B756E}
 .hero-note b{color:var(--ink);font-weight:600}
@@ -279,7 +284,7 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
       <a href="#limits">What it does</a>
       <a href="#price">Price</a>
     </nav>
-    <a class="btn btn-primary" href="#talk">Book a walkthrough</a>
+    <a class="btn btn-primary" href="#talk">Get a Free Dealer Audit</a>
   </div>
 </header>
 
@@ -289,38 +294,34 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
   <div class="hero-grid">
     <div>
       <div class="badge"><span class="dot"></span> First month free · then AED 399/month · Dubai &amp; UAE</div>
-      <h1>Your next customer already messaged you. <em>Did anyone answer?</em></h1>
-      <p class="lede">NEXUS sits above the systems your showroom already runs, finds where money is leaking right now, and acts on it — with your team in control.</p>
+      <h1>Your dealership doesn't need more enquiries. <em>It needs to lose fewer of them.</em></h1>
+      <p class="lede">NEXUS finds missed follow-ups, hot buyers and revenue leaking out of your pipeline — and tells your team what to do next.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="#talk">Book a walkthrough</a>
-        <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20to%20see%20NEXUS" target="_blank" rel="noopener">WhatsApp us</a>
+        <a class="btn btn-primary" href="#talk">Get a Free Dealer Audit</a>
+        <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20to%20book%20a%20NEXUS%20demo" target="_blank" rel="noopener">Book a Demo</a>
       </div>
-      <p class="hero-note">Built in Dubai, for UAE showrooms. <b>No setup fee, no contract</b> — try it for a month and keep it only if it pays for itself.</p>
+      <p class="hero-note">Built in Dubai, for UAE showrooms. <b>No setup fee, no contract</b> — try it for a month and keep it only if it pays for itself.<br><b>NEXUS is a new product.</b> One pilot dealership runs it today and we have no paying customers yet. Everything on this page is what it does, not what a hundred showrooms have already bought.</p>
     </div>
 
     <div class="card" id="talk">
-      <h3>See it on your own stock</h3>
-      <p class="sub">Tell us a little and we'll walk you through it on your own inventory — not a canned demo.</p>
+      <h3>Get a free dealer audit</h3>
+      <p class="sub">Five questions. We look at where your showroom is losing enquiries and walk you through what we find — on your own inventory, not a canned demo.</p>
       <form id="lead-form" novalidate>
         <div class="field">
-          <label for="name">Your name</label>
+          <label for="name">Name</label>
           <input id="name" name="full_name" type="text" autocomplete="name" required placeholder="Ahmed Al Mansoori">
         </div>
         <div class="field">
-          <label for="dealership">Dealership</label>
-          <input id="dealership" name="dealership" type="text" autocomplete="organization" placeholder="Al Mansoori Motors, Deira">
+          <label for="dealership">Dealership name</label>
+          <input id="dealership" name="dealership" type="text" autocomplete="organization" required placeholder="Al Mansoori Motors, Deira">
         </div>
         <div class="field">
           <label for="phone">WhatsApp number</label>
           <input id="phone" name="phone" type="tel" autocomplete="tel" required placeholder="+971 50 000 0000">
         </div>
         <div class="field">
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" autocomplete="email" placeholder="you@dealership.ae">
-        </div>
-        <div class="field">
-          <label for="stock">Roughly how many cars in stock?</label>
-          <select id="stock" name="stock_size">
+          <label for="stock">Roughly how many cars in stock</label>
+          <select id="stock" name="stock_size" required>
             <option value="">Select…</option>
             <option>Under 25</option>
             <option>25 to 50</option>
@@ -329,16 +330,16 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
           </select>
         </div>
         <div class="field">
-          <label for="msg">What's leaking? (optional)</label>
-          <textarea id="msg" name="message" placeholder="Enquiries at night go unanswered until the morning…"></textarea>
+          <label for="msg">Biggest challenge right now</label>
+          <textarea id="msg" name="message" required placeholder="Enquiries at night go unanswered until the morning…"></textarea>
         </div>
         <div class="hp" aria-hidden="true">
           <label for="company_website">Leave this empty</label>
           <input id="company_website" name="company_website" type="text" tabindex="-1" autocomplete="off">
         </div>
-        <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn">Request a walkthrough</button>
+        <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn">Get my free audit</button>
         <div class="msg" id="form-msg" role="status" aria-live="polite"></div>
-        <p class="form-note">We reply from a real Dubai number, usually the same day. Your details are used to contact you about NEXUS and nothing else.</p>
+        <p class="form-note">This goes to a real person in Deira, Dubai — we reply on WhatsApp, usually the same day. Your details are used to contact you about NEXUS and nothing else.</p>
       </form>
     </div>
   </div>
@@ -484,8 +485,8 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
         <li><span>Minimum term</span><span>None</span></li>
         <li><span>Number of cars in stock</span><span>Unlimited</span></li>
       </ul>
-      <a class="btn btn-primary" href="#talk" style="width:100%">Start the free month</a>
-      <p class="form-note" style="text-align:center"><b>Founding rate.</b> We are onboarding the first 50 showrooms in the UAE. Join in that group and AED 399 is your price for good, whatever we charge later.</p>
+      <a class="btn btn-primary" href="#talk" style="width:100%">Get a Free Dealer Audit</a>
+      <p class="form-note" style="text-align:center"><b>Founding rate.</b> NEXUS is new — one pilot dealership, no paying customers yet. The first 50 UAE showrooms to come on keep AED 399 for good, whatever we charge later.</p>
     </div>
   </div>
 </section>
@@ -499,15 +500,17 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
     <details><summary>Do I have to throw away my DMS or CRM?</summary>
       <p>No. NEXUS sits above the systems you already run. It reads from them, reasons across them, and acts. It replaces nothing — that is the whole point of it.</p></details>
     <details><summary>How fast does it actually reply?</summary>
-      <p>Seconds to a couple of minutes. Measured across live replies: fastest 13.3 seconds, median 38.8 seconds, slowest 3 minutes 38 seconds. We publish the slow end deliberately — a vendor who only quotes their best number is telling you about their best number.</p></details>
+      <p>Seconds to a couple of minutes. Measured in our pilot dealership across live replies: fastest 13.3 seconds, median 38.8 seconds, slowest 3 minutes 38 seconds. We publish the slow end deliberately — a vendor who only quotes their best number is telling you about their best number.</p></details>
     <details><summary>Will the AI invent a price and embarrass me?</summary>
-      <p>The price it quotes is read from your stock list, not generated. It also holds your cost price and is blocked from disclosing it. In a live test it quoted AED 152,000 for a Fortuner — the exact asking price on that VIN — and never mentioned the cost.</p></details>
+      <p>The price it quotes is read from your stock list, not generated. It also holds your cost price and is blocked from disclosing it. In a pilot test it quoted AED 152,000 for a Fortuner — the exact asking price on that VIN — and never mentioned the cost.</p></details>
     <details><summary>What happens when my salesperson is already replying?</summary>
       <p>It checks before it writes and stays out. It is there for the hours and the messages your team cannot cover, not to talk over them.</p></details>
     <details><summary>Is my data separated from other dealerships?</summary>
-      <p>Yes, at the database level. Every table holding your data carries a dealership id and every access rule checks it. It was tested with two dealerships sharing a deliberately identical customer email and phone number — each saw only its own records. We still run one dealership per system.</p></details>
+      <p>Yes, at the database level. Every table holding your data carries a dealership id and every access rule checks it. It was tested with two test dealerships sharing a deliberately identical customer email and phone number — each saw only its own records. We still run one dealership per system.</p></details>
+    <details><summary>How many dealerships are using NEXUS today?</summary>
+      <p>One, as a pilot, in Dubai. We have no paying customers yet and no case studies to show you — which is why the audit is free and the first month is free. If you want a vendor with a wall of logos, we are not it yet. If you want to be early and keep AED 399 for good, this is the moment.</p></details>
     <details><summary>What do I need to give you to start?</summary>
-      <p>Your stock list and access to the number your enquiries arrive on. Setup is done by hand, by us, which is what the setup fee pays for.</p></details>
+      <p>Your stock list and access to the number your enquiries arrive on. Setup is done by hand, by us, and it is included — there is no setup fee.</p></details>
   </div>
 </section>
 
@@ -584,7 +587,15 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
     e.preventDefault();
     var d=Object.fromEntries(new FormData(f).entries());
     if(!d.full_name||!d.full_name.trim()){show('err','Please tell us your name.');return;}
-    if(!d.phone||!d.phone.trim()){show('err','We need a number to reach you on.');return;}
+    if(!d.dealership||!d.dealership.trim()){show('err','Which dealership is this for?');return;}
+    /* The API accepts a phone OR an email, and this form no longer collects an
+       email -- so a number it cannot parse is now the only way to be left with
+       no way of reaching the person. Checked here so the visitor is told in the
+       form rather than by a 400 they have to interpret. */
+    if(!d.phone||String(d.phone).replace(/\D/g,'').length<9){
+      show('err','Please enter a WhatsApp number we can reach you on, e.g. +971 50 000 0000.');return;}
+    if(!d.stock_size){show('err','Roughly how many cars do you hold?');return;}
+    if(!d.message||!d.message.trim()){show('err','Tell us the one thing costing you most right now.');return;}
     d.elapsed_ms=Date.now()-started;
     if(submissionId) d.submission_id=submissionId;
     b.disabled=true;b.textContent='Sending…';
@@ -593,7 +604,7 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
       .then(function(res){
         if(res.ok){
           f.reset();
-          show('ok','Thank you — that reached us. We will message you on WhatsApp, usually the same day.');
+          show('ok','Thank you — that reached us. We will message you on WhatsApp with your audit, usually the same day.');
         } else {
           show('err','That did not send. Please WhatsApp +971 52 664 7253 directly — it reaches the same person.');
         }
@@ -601,7 +612,7 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
       .catch(function(){
         show('err','That did not send. Please WhatsApp +971 52 664 7253 directly — it reaches the same person.');
       })
-      .finally(function(){b.disabled=false;b.textContent='Request a walkthrough';});
+      .finally(function(){b.disabled=false;b.textContent='Get my free audit';});
   });
 })();
 </script>

@@ -120,6 +120,17 @@ Save to the repo under `docs/journeys/` **and** to the Claude project, so a futu
 session can compare journey 3 against journey 8 without the database.
 
 ### 2.3 Teardown — exact order (FK-safe)
+> [!WARNING]
+> **PRODUCTION DESTRUCTIVE — DO NOT PASTE THIS INTO A SQL EDITOR.**
+> The statements below delete rows from `leads`, `communication_logs`,
+> `customer_360_profiles` and others. They are scoped by **e-mail only** — there is
+> no tenant predicate and no project guard, so run against the wrong project they
+> remove another dealership's data. DML like this is *not* stopped by the NX900/NX950
+> delete guards in every path.
+> Production is `dsvuoovivysszdoiorch` (ALBA CARS). Staging is `wwspuxrbiyagnrnzgate`.
+> They are reproduced here **as historical evidence of the journey-lab teardown**, not
+> as a runbook step. Do not execute.
+
 ```sql
 -- scope: the one customer, this journey only
 delete from kyc_documents        where lead_email = 'shabbir53ujjainwala@gmail.com';

@@ -61,6 +61,7 @@ import './screens/leads.js';
 import './screens/overview.js';
 import './screens/revenue.js';
 import './screens/settings.js';
+import './screens/setup.js';
 import './screens/team.js';
 
 /* ── The Revenue Recovery engine screens ────────────────────────────────────
