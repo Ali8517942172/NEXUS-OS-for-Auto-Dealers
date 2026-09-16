@@ -268,6 +268,32 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
   .hero{padding:52px 0 46px}
 }
 </style>
+<!-- META PIXEL. INERT UNTIL A PIXEL ID IS PUT IN THE META TAG BELOW.
+
+     One thing to edit, one place: put the numeric Pixel ID from Meta Events
+     Manager into content="" and nothing else changes. It is deliberately a
+     meta tag and not a hard-coded id in the script: an empty value loads
+     nothing at all, so the page never fires a PageView at somebody else's
+     pixel because a placeholder was left in. A Pixel ID is a public
+     identifier -- it ships in every page that uses it -- not a secret.
+
+     Without this, Meta optimises the campaign blind: it cannot learn which
+     click became an enquiry, and cost per lead does not come down. The Lead
+     event is fired in the form handler, on a 200 only. -->
+<meta name="nexus:meta-pixel-id" content="">
+<script>
+(function(){
+  var el=document.querySelector('meta[name="nexus:meta-pixel-id"]');
+  var id=el&&el.getAttribute('content')?el.getAttribute('content').trim():'';
+  if(!/^[0-9]{6,20}$/.test(id)) return;   /* not configured: load nothing */
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+  n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+  (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init',id); fbq('track','PageView');
+})();
+</script>
 </head>
 <body>
 
@@ -555,6 +581,33 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
       b=document.getElementById('submit-btn');
   if(!f) return;
   var started=Date.now();
+  /* WHICH AD PAID FOR THIS VISITOR.
+     Read once, at load, because the click ids only exist on the landing URL:
+     an in-page anchor to #talk does not carry them, and a visitor who reads
+     the page before filling the form would otherwise arrive at the server
+     looking organic. Stored in sessionStorage so a reload inside the same
+     visit does not erase the attribution of a click already paid for.
+     An allowlist, and the server holds the same one -- the query string is a
+     field a stranger controls, not a field we trust. */
+  var NEXUS_ATTRIBUTION=(function(){
+    var KEYS=['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
+              'fbclid','gclid','ttclid'];
+    var out={},qs=null;
+    try{qs=new URLSearchParams(location.search);}catch(e){qs=null;}
+    if(qs){for(var i=0;i<KEYS.length;i++){var v=qs.get(KEYS[i]);
+      if(v) out[KEYS[i]]=String(v).slice(0,200);}}
+    try{
+      var prev=JSON.parse(sessionStorage.getItem('nexus_attr')||'{}');
+      /* First touch wins. The ad that brought them is the one that earned it;
+         a later organic pageview inside the same visit must not overwrite it. */
+      if(Object.keys(out).length===0&&prev&&typeof prev==='object') out=prev;
+      else sessionStorage.setItem('nexus_attr',JSON.stringify(out));
+    }catch(e){/* private mode, blocked storage: attribution is a nice-to-have,
+                 never a reason to lose the enquiry */}
+    if(document.referrer&&!out.referrer) out.referrer=String(document.referrer).slice(0,200);
+    out.landing_path=String(location.pathname||'/').slice(0,200);
+    return out;
+  })();
   /* MINTED ONCE, WHEN THE PAGE LOADS -- not inside the submit handler.
      submission_id is sent to /api/lead as p_external_event_id, which is the
      idempotency key of nexus_record_lead_event. The failure it has to survive
@@ -598,13 +651,19 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
     if(!d.message||!d.message.trim()){show('err','Tell us the one thing costing you most right now.');return;}
     d.elapsed_ms=Date.now()-started;
     if(submissionId) d.submission_id=submissionId;
+    d.attribution=NEXUS_ATTRIBUTION;
     b.disabled=true;b.textContent='Sending…';
     fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)})
       .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})
       .then(function(res){
         if(res.ok){
           f.reset();
-          show('ok','Thank you — that reached us. We will message you on WhatsApp with your audit, usually the same day.');
+          /* 200 now means the enquiry is held, not that a human has seen it
+             (see api/lead.js, NX974). The promise made here must be one the
+             stored row can keep on its own, so it says the same thing either
+             way and does not claim someone is already reading it. */
+          show('ok','Thank you — we have your details. We will message you on WhatsApp with your audit, usually the same day.');
+          try{ if(window.fbq) fbq('track','Lead'); }catch(e){}
         } else {
           show('err','That did not send. Please WhatsApp +971 52 664 7253 directly — it reaches the same person.');
         }
