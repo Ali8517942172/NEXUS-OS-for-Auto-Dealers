@@ -419,10 +419,19 @@ export function readSetup() {
       settle(db('rpc/nexus_team_roster')),
       settle(db('inventory?select=id&limit=500')),
       settle(db('rpc/nexus_meta_onboarding_status')),
-      tenantId
-        ? settle(db(`journey_step?select=id,at,status&step=eq.MESSAGE&tenant_id=eq.${encodeURIComponent(tenantId)}`
-            + '&order=id.desc&limit=1'))
-        : Promise.resolve({ v: null, err: null }),
+      /* NO tenant_id FILTER HERE, AND THAT IS THE FIX, NOT AN OMISSION.
+         This read used to carry `tenant_id=eq.${tenantId}`, and the gate's
+         check S4 exists to forbid exactly that: a filter the browser applies
+         is a filter an operator can remove in devtools. Chasing why it was
+         here found the real defect -- customer, conversation and journey_step
+         were created by NX960 with row security OFF and `authenticated` able
+         to SELECT, so one dealership could read another's customers and their
+         whole evidence trail. NX982 closed all three. The scoping now happens
+         where the tenant pill has always claimed it happens: in the database,
+         which refuses the rows rather than the browser hiding them.
+         tenantId is still read, because the steps below use it to say WHICH
+         dealership is being set up -- labelling, not scoping. */
+      settle(db('journey_step?select=id,at,status&step=eq.MESSAGE&order=id.desc&limit=1')),
     ]);
 
     const steps = [
