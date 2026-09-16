@@ -72,6 +72,35 @@ const WATERMARK = '20260907140000';
 
 const SHOW_CENSUS = process.argv.includes('--census');
 
+/* ── born open, then closed ───────────────────────────────────────────────
+   Rule 1 asks for the revoke in the SAME migration that creates the function,
+   and that is the right default: it is the only version of the rule you cannot
+   forget halfway through. But a finding that has genuinely been closed by a
+   later migration is not an open hole, and leaving CI red over it teaches
+   people to ignore CI — which is the expensive failure, not the tidy one.
+
+   So each entry below names the function and the migration that closed it, and
+   the gate VERIFIES both: that migration must exist in this folder and must
+   really contain a revoke naming `public` for that function. If someone
+   deletes or edits the remediating migration, this stops exempting anything
+   and the failure comes straight back. It cannot rot into a blanket pass. */
+const REMEDIATED = [
+  { fn: 'nexus_classify_message_intent',     by: 'nx972' },
+  { fn: 'nexus_journey_on_message_recorded', by: 'nx972' },
+];
+
+function remediatedBy(fnName) {
+  const entry = REMEDIATED.find(r => r.fn === fnName);
+  if (!entry) return null;
+  const file = readdirSync(DIR).find(f => f.endsWith('.sql') && f.includes(entry.by));
+  if (!file) return null;
+  const sql = readFileSync(join(DIR, file), 'utf8');
+  const pattern = new RegExp(
+    'revoke\\s+all\\s+on\\s+function\\s+public\\.' + fnName + '\\s*\\([^)]*\\)\\s+from\\s+[^;]*\\bpublic\\b',
+    'is');
+  return pattern.test(sql) ? file : null;
+}
+
 /* ── parsing ──────────────────────────────────────────────────────────────
    Deliberately conservative. These patterns are matched against SQL that was
    extracted verbatim from the database, so they must tolerate the formatting a
@@ -154,7 +183,10 @@ for (const file of files) {
 
     if (!missing.length) continue;
     const where = `${file}: ${d.name}()${d.isTrigger ? ' [trigger]' : ''} — missing ${missing.join(' and ')}`;
-    if (isNew) {
+    const closedBy = remediatedBy(d.name);
+    if (isNew && closedBy) {
+      census.unstated.push(`${where}  — CLOSED by ${closedBy}`);
+    } else if (isNew) {
       failures.push({
         rule: 1,
         text: `${where}\n        A function is born with EXECUTE granted to PUBLIC. Say who may ` +
