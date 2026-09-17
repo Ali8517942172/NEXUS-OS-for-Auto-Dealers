@@ -80,3 +80,20 @@ Breaking order under load and the named upgrade for each: `ops/ADR-002-scaling-l
 ## Pilot
 
 NOT READY. Gate order: data durability → one channel end-to-end → scoring provenance → second-tenant isolation → pilot.
+
+## How work ships now (17 Sep 2026)
+
+Claude pushes, opens and completes PRs, reads CI and merges **without Ali**.
+The method, the two traps and the three things that still need him are in
+`ops/GIT-AND-GITHUB-RUNBOOK.md`. Short version:
+
+- Shell commands go through `device_bash` (a Linux VM), never Windows PowerShell
+  — computer use resolves terminals to `click` tier and cannot type into them.
+- A GitHub device-flow token lives in `~/.git-credentials` on that VM. It was
+  never printed and never entered a transcript. `git push` works; everything
+  else is the REST API.
+- **Still Ali's, always:** OTPs and verification codes, any password or key in
+  any field, spending money, and decisions that are his — a domain, an ad
+  budget, onboarding dealership #2, changing what a live 03:00 job does.
+
+Revoke at GitHub → Settings → Applications → Authorized OAuth Apps → GitHub CLI.
