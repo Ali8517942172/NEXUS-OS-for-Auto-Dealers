@@ -44,6 +44,7 @@ import './screens/actions.js';
 import './screens/ask.js';
 import './screens/automation.js';
 import './screens/campaigns.js';
+import './screens/channels.js';
 import './screens/competitors.js';
 import './screens/compliance.js';
 import './screens/conversations.js';
