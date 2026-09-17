@@ -64,8 +64,11 @@ there will not be one.** Judge delivery and creative only.
 - **≥ 40 landing page views** at CPC ≤ AED 6 with CTR ≥ 0.8% and no rejections
 
 The first of those is the real one. **One right-fit dealer conversation
-justifies the entire AED 560**, because the product sells at AED 399/month with
-no contract — a single retained pilot returns the test cost in under two months.
+justifies the entire AED 560**, because the product sells at AED 399/month, flat
+and permanent, first month free, no setup fee and no minimum term — a single
+retained dealer returns the test cost in under two months. The price is not
+capped, not time-limited and not scheduled to rise, so nothing in these criteria
+may be justified by an expiring rate.
 
 **Not working:**
 

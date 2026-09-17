@@ -72,7 +72,9 @@ that their enquiry went nowhere.
 
 One consequence worth stating plainly: the site publishes a price, an offer and a
 founding-rate scarcity line. Any traffic driven to it converts at zero by
-construction.
+construction. *(Record of the page as it stood on 12 September 2026. The scarcity
+line was withdrawn on 17 September 2026 — the price is flat and permanent with no
+cap and no deadline. See `ops/landing-page/PRICE-DECISION.md`.)*
 
 A distinction the test made visible: **this form is NEXUS selling to dealerships.
 It is not a dealership capturing car buyers.** They are different products and

@@ -5,12 +5,15 @@
 > verified by hand and every conversation is read each morning. It is NOT the price
 > on the public website, and the two were contradicting each other in public.
 >
-> The website now sells a **founding rate**: AED 399/month, first month free, no
-> setup fee, no minimum term, held for twelve months, open to the **first 10 UAE
-> dealerships** to sign or until **31 October 2026**, whichever comes first. That
-> rate is deliberately below the per-dealer infrastructure floor recorded in this
-> repository (AED 402–512/month) and is a budgeted acquisition cost with a stated
-> cap and a stated end date — not a mistake and not an accident.
+> The website sells the product: **AED 399 per month, flat and permanent, with
+> the first month free. No setup fee, no minimum term, no cap on how many
+> dealerships can take it, and no end date.** There is no "founding rate" and no
+> deadline; an earlier version of this header said otherwise and was wrong.
+>
+> AED 399 is below the whole-stack cost attributed to a *single* dealer
+> (AED 402–512/month), but the GCP VM and Supabase in that figure are shared
+> infrastructure, not per-dealer costs. The marginal cost of one more dealership
+> is roughly **AED 210–320/month**. See `ops/landing-page/PRICE-DECISION.md`.
 >
 > Use THIS document only for a hand-run managed pilot that Ali has agreed
 > separately. Never quote both to the same dealer.
