@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NEXUS for AutoDealers — Revenue Recovery OS for Dubai & UAE Car Dealerships</title>
-<meta name="description" content="NEXUS finds where a UAE car dealership is losing money and acts on it. Automatic replies to inbound WhatsApp enquiries, high-intent leads routed to the right salesperson, ageing stock flagged nightly. One month free, then AED 399 a month.">
-<link rel="canonical" href="https://nexusforautodealers.vercel.app/">
+<meta name="description" content="NEXUS answers the WhatsApp enquiries your UAE showroom cannot get to, tells your team which ones are real buyers, and flags ageing stock nightly. Free dealer audit, no obligation. First month free, then AED 399 a month.">
+<link rel="canonical" href="https://nexus-for-autodealers.vercel.app/">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="author" content="Ali Asgher">
 <meta name="geo.region" content="AE-DU">
@@ -14,12 +14,12 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="NEXUS for AutoDealers">
 <meta property="og:title" content="NEXUS for AutoDealers — Revenue Recovery OS for UAE Car Dealerships">
-<meta property="og:description" content="Every enquiry answered in minutes, not hours. High-intent buyers routed to the right salesperson. Ageing stock flagged before it eats your margin. One month free, then AED 399 a month.">
-<meta property="og:url" content="https://nexusforautodealers.vercel.app/">
+<meta property="og:description" content="The enquiries that arrive when nobody is on the floor, answered and scored. Ageing stock flagged before it eats your margin. Start with a free dealer audit — no obligation.">
+<meta property="og:url" content="https://nexus-for-autodealers.vercel.app/">
 <meta property="og:locale" content="en_AE">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="NEXUS for AutoDealers — Revenue Recovery OS for UAE Car Dealerships">
-<meta name="twitter:description" content="Every enquiry answered in minutes, not hours. One month free, then AED 399 a month.">
+<meta name="twitter:description" content="The enquiries that arrive when nobody is on the floor, answered and scored. Start with a free dealer audit — no obligation.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,7 +31,7 @@
   "@graph": [
     {
       "@type": "Organization",
-      "@id": "https://nexusforautodealers.vercel.app/#org",
+      "@id": "https://nexus-for-autodealers.vercel.app/#org",
       "name": "NEXUS for AutoDealers",
       "description": "Revenue Recovery and Action OS for car dealerships in the UAE.",
       "email": "aliasgher892@gmail.com",
@@ -52,7 +52,7 @@
     {
       "@type": "Service",
       "name": "NEXUS for AutoDealers — Revenue Recovery OS",
-      "provider": { "@id": "https://nexusforautodealers.vercel.app/#org" },
+      "provider": { "@id": "https://nexus-for-autodealers.vercel.app/#org" },
       "serviceType": "Automotive dealership lead response and revenue recovery software",
       "areaServed": { "@type": "Country", "name": "United Arab Emirates" },
       "offers": {
@@ -221,6 +221,13 @@ section{padding:78px 0;border-top:1px solid var(--line)}
 .honest .foot{margin-top:34px;padding-top:26px;border-top:1px solid rgba(255,255,255,.14);
   font-size:16px;color:#CBDDF8;max-width:70ch}
 
+.audit-list{list-style:none;padding:0;margin:0 0 20px}
+.audit-list li{font-size:14.5px;line-height:1.55;color:var(--body);padding:9px 0;
+  border-bottom:1px solid var(--line)}
+.audit-list li:last-child{border-bottom:0}
+.audit-list b{color:var(--ink)}
+.trust{font-size:13.5px;line-height:1.6;color:var(--body);margin-top:14px;
+  padding-top:14px;border-top:1px solid var(--line)}
 /* price */
 .price-card{background:var(--paper);border:1px solid var(--line);border-radius:18px;
   padding:40px;box-shadow:var(--shadow);max-width:600px}
@@ -268,30 +275,111 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
   .hero{padding:52px 0 46px}
 }
 </style>
-<!-- META PIXEL. INERT UNTIL A PIXEL ID IS PUT IN THE META TAG BELOW.
+<!-- AD TRACKING. INERT UNTIL AN ID IS PUT IN A META TAG BELOW.
 
-     One thing to edit, one place: put the numeric Pixel ID from Meta Events
-     Manager into content="" and nothing else changes. It is deliberately a
-     meta tag and not a hard-coded id in the script: an empty value loads
-     nothing at all, so the page never fires a PageView at somebody else's
-     pixel because a placeholder was left in. A Pixel ID is a public
-     identifier -- it ships in every page that uses it -- not a secret.
+     Five meta tags, one place, nothing else to edit. Every one of them is
+     regex-checked before anything loads: an empty or malformed value loads
+     NOTHING AT ALL -- no fbevents.js, no gtag.js, no network call, no cookie.
+     That is the point of the shape. A placeholder left in must not fire a
+     PageView at somebody else's pixel, and an unconfigured site must not ship
+     third-party script to a visitor who gained nothing from it.
 
-     Without this, Meta optimises the campaign blind: it cannot learn which
-     click became an enquiry, and cost per lead does not come down. The Lead
-     event is fired in the form handler, on a 200 only. -->
+     All five are public identifiers. A Pixel ID, a Google Ads conversion ID
+     and label, and a GA4 measurement ID are visible in the page source of
+     every site that uses them by design. None of them is a secret, and none
+     of them is an API key. The Meta App Secret, the Google Ads developer
+     token and the CAPI access token are secrets -- and none of those belong
+     in a browser, which is exactly why server-side conversions are not here.
+
+     Without this, Meta and Google optimise the campaign blind: they cannot
+     learn which click became an enquiry, and cost per lead does not come
+     down. Events are fired from NEXUS_TRACK, never on page load alone:
+     - lead()    on a 200 from /api/lead -- an enquiry that is actually stored
+     - contact() on a click through to WhatsApp -- the visitor leaves the site
+
+     NO PERSONAL DATA IS EVER PASSED TO EITHER PLATFORM. No name, no phone, no
+     email, no message text -- not raw and not hashed. The only id sent is the
+     submission_id, a random UUID minted in the browser, which exists so the
+     same event counted twice is recognised as one. Meta's Automatic Advanced
+     Matching, which scrapes form fields for email and phone, is switched OFF
+     from here (autoConfig false) and must also be left off in Events Manager.
+     See ops/ad-tracking/SETUP.md and ops/ad-tracking/WHAT-IS-NOT-MEASURED.md. -->
 <meta name="nexus:meta-pixel-id" content="">
+<meta name="nexus:google-ads-id" content="">
+<meta name="nexus:google-ads-lead-label" content="">
+<meta name="nexus:google-ads-whatsapp-label" content="">
+<meta name="nexus:ga4-id" content="">
 <script>
-(function(){
-  var el=document.querySelector('meta[name="nexus:meta-pixel-id"]');
-  var id=el&&el.getAttribute('content')?el.getAttribute('content').trim():'';
-  if(!/^[0-9]{6,20}$/.test(id)) return;   /* not configured: load nothing */
-  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-  n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-  n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-  t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
-  (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-  fbq('init',id); fbq('track','PageView');
+window.NEXUS_TRACK=(function(){
+  function cfg(name,re){
+    var el=document.querySelector('meta[name="'+name+'"]');
+    var v=el&&el.getAttribute('content')?el.getAttribute('content').trim():'';
+    return re.test(v)?v:'';   /* malformed is treated exactly like unset */
+  }
+  var PIXEL     = cfg('nexus:meta-pixel-id',              /^[0-9]{6,20}$/);
+  var AW        = cfg('nexus:google-ads-id',              /^AW-[0-9]{6,15}$/);
+  var LEAD_LBL  = cfg('nexus:google-ads-lead-label',      /^[A-Za-z0-9_-]{5,40}$/);
+  var WA_LBL    = cfg('nexus:google-ads-whatsapp-label',  /^[A-Za-z0-9_-]{5,40}$/);
+  var GA4       = cfg('nexus:ga4-id',                     /^G-[A-Z0-9]{6,15}$/);
+
+  if(PIXEL){
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+    (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    /* BEFORE init, deliberately. autoConfig false turns off Automatic Advanced
+       Matching, which would otherwise read the name and phone number out of
+       the form on this page and send them to Meta hashed. Hashed is still
+       personal data, the visitor was told it would not happen, and no dealer
+       signed anything permitting it. Turning it off costs a little match
+       quality and is the correct trade. */
+    fbq('set','autoConfig',false,PIXEL);
+    fbq('init',PIXEL);
+    fbq('track','PageView');
+  }
+
+  if(AW||GA4){
+    /* ONE gtag.js, loaded under whichever id is present, then configured for
+       each. Loading it twice is the usual way a Google Ads conversion ends up
+       counted twice. */
+    window.dataLayer=window.dataLayer||[];
+    window.gtag=function(){window.dataLayer.push(arguments);};
+    gtag('js',new Date());
+    var sc=document.createElement('script');sc.async=true;
+    sc.src='https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(AW||GA4);
+    document.head.appendChild(sc);
+    /* Enhanced Conversions is OFF on purpose: it works by sending the email
+       and phone the visitor typed, hashed, to Google. Same reasoning as
+       autoConfig above. It must also be left off in the Google Ads UI. */
+    if(AW)  gtag('config',AW,{allow_enhanced_conversions:false});
+    if(GA4) gtag('config',GA4,{anonymize_ip:true});
+  }
+
+  function metaEvent(name,id){
+    try{ if(window.fbq) fbq('track',name,{},id?{eventID:id}:undefined); }catch(e){}
+  }
+  function adsEvent(label,id){
+    /* value 0, currency AED. A NEXUS enquiry has no revenue attached at the
+       moment it arrives -- AED 399/month is earned months later, offline, and
+       claiming a number here would teach Google to optimise for a figure that
+       is not real. Counted, not valued. */
+    try{ if(AW&&label&&window.gtag)
+      gtag('event','conversion',{send_to:AW+'/'+label,value:0,currency:'AED',
+                                 transaction_id:id||''}); }catch(e){}
+  }
+  function ga4Event(name){
+    try{ if(GA4&&window.gtag) gtag('event',name,{currency:'AED',value:0}); }catch(e){}
+  }
+  return {
+    /* id is the submission_id: the same random UUID already sent to
+       /api/lead as the idempotency key. It is here so a Conversions API
+       event sent later from the server can be recognised as the same event
+       and not double-counted. It carries no information about the person. */
+    lead:    function(id){ metaEvent('Lead',id);    adsEvent(LEAD_LBL,id); ga4Event('generate_lead'); },
+    contact: function(id){ metaEvent('Contact',id); adsEvent(WA_LBL,id);   ga4Event('contact'); },
+    configured: { pixel:!!PIXEL, googleAds:!!(AW&&LEAD_LBL), ga4:!!GA4 }
+  };
 })();
 </script>
 </head>
@@ -319,45 +407,48 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
 <div class="hero wrap">
   <div class="hero-grid">
     <div>
-      <div class="badge"><span class="dot"></span> First month free · then AED 399/month · Dubai &amp; UAE</div>
+      <div class="badge"><span class="dot"></span> Free dealer audit · price published below · Dubai &amp; UAE</div>
       <h1>Your dealership doesn't need more enquiries. <em>It needs to lose fewer of them.</em></h1>
-      <p class="lede">NEXUS finds missed follow-ups, hot buyers and revenue leaking out of your pipeline — and tells your team what to do next.</p>
+      <p class="lede">NEXUS captures your showroom’s WhatsApp enquiries, works out which conversations are real buyers, tells your team what to do next, and keeps an auditable record of what happened — including at 2am, when nobody is on the floor.</p>
+      <p class="hero-note" style="margin-bottom:22px"><b>What it actually is:</b> an AI layer that sits on the WhatsApp number your enquiries already arrive on, and on your stock list. It is not a CRM, it is not a website chatbot, and it replaces nothing you already run. <b>AED 399 a month, first month free</b> — the whole price is further down this page, because a dealer should not have to book a call to find out what something costs.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="#talk">Get a Free Dealer Audit</a>
-        <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20to%20book%20a%20NEXUS%20demo" target="_blank" rel="noopener">Book a Demo</a>
+        <a class="btn btn-primary" href="#talk">Get my free dealer audit</a>
+        <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20a%20free%20dealer%20audit" target="_blank" rel="noopener">WhatsApp Ali directly</a>
       </div>
       <p class="hero-note">Built in Dubai, for UAE showrooms. <b>No setup fee, no contract</b> — try it for a month and keep it only if it pays for itself.<br><b>NEXUS is a new product.</b> One pilot dealership runs it today and we have no paying customers yet. Everything on this page is what it does, not what a hundred showrooms have already bought.</p>
     </div>
 
     <div class="card" id="talk">
-      <h3>Get a free dealer audit</h3>
-      <p class="sub">Five questions. We look at where your showroom is losing enquiries and walk you through what we find — on your own inventory, not a canned demo.</p>
+      <h3>Free Dealer Audit</h3>
+      <p class="sub">Three fields. No obligation, nothing installed, no contract at the end of it.</p>
+      <ul class="audit-list">
+        <li><b>What you get.</b> A one-page written note, sent to you on WhatsApp: how long an enquiry sent to your own number actually takes to get answered — with your say-so we send three and time them — which enquiries are going unanswered, and plainly what NEXUS would and would not change about it.</li>
+        <li><b>How long it takes.</b> About 20 minutes of your time. The note comes back within two working days.</li>
+        <li><b>What we need from you.</b> Your WhatsApp number. No logins, no access to your DMS, no connection to your stock file.</li>
+        <li><b>What it costs.</b> Nothing. If the honest answer is that you don’t need us, that is what the note will say.</li>
+      </ul>
       <form id="lead-form" novalidate>
         <div class="field">
-          <label for="name">Name</label>
+          <label for="name">Your name</label>
           <input id="name" name="full_name" type="text" autocomplete="name" required placeholder="Ahmed Al Mansoori">
         </div>
         <div class="field">
-          <label for="dealership">Dealership name</label>
+          <label for="dealership">Dealership</label>
           <input id="dealership" name="dealership" type="text" autocomplete="organization" required placeholder="Al Mansoori Motors, Deira">
         </div>
         <div class="field">
           <label for="phone">WhatsApp number</label>
-          <input id="phone" name="phone" type="tel" autocomplete="tel" required placeholder="+971 50 000 0000">
+          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="+971 50 000 0000">
         </div>
         <div class="field">
-          <label for="stock">Roughly how many cars in stock</label>
-          <select id="stock" name="stock_size" required>
-            <option value="">Select…</option>
+          <label for="stock">Roughly how many cars in stock <span style="font-weight:400;opacity:.6">— optional</span></label>
+          <select id="stock" name="stock_size">
+            <option value="">Rather not say</option>
             <option>Under 25</option>
             <option>25 to 50</option>
             <option>50 to 150</option>
             <option>More than 150</option>
           </select>
-        </div>
-        <div class="field">
-          <label for="msg">Biggest challenge right now</label>
-          <textarea id="msg" name="message" required placeholder="Enquiries at night go unanswered until the morning…"></textarea>
         </div>
         <div class="hp" aria-hidden="true">
           <label for="company_website">Leave this empty</label>
@@ -366,6 +457,7 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
         <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn">Get my free audit</button>
         <div class="msg" id="form-msg" role="status" aria-live="polite"></div>
         <p class="form-note">This goes to a real person in Deira, Dubai — we reply on WhatsApp, usually the same day. Your details are used to contact you about NEXUS and nothing else.</p>
+        <p class="trust"><b>Before you type anything.</b> No salesperson will call you — the reply comes on WhatsApp from Ali. We never ask for your cost prices, and the audit touches nothing you run. We speak English and Arabic on WhatsApp; this page is English-only for now. If you would rather not fill a form at all, <a href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20a%20free%20dealer%20audit" target="_blank" rel="noopener">message the number directly</a> — it reaches the same person.</p>
       </form>
     </div>
   </div>
@@ -466,24 +558,24 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
   <div class="wrap">
     <div class="sec-head">
       <p class="eyebrow">Why this is worth a month of your time</p>
-      <h2>The gap between a two-minute reply and a twelve-hour one is the whole business.</h2>
-      <p>These are the market's numbers, not ours — published research on how buyers behave. We are showing you the problem honestly so you can judge whether the fix is worth AED 399.</p>
+      <h2>The gap between a fast reply and a next-morning one is the whole business.</h2>
+      <p>One published figure below, named and linked so you can check it yourself, and two plain observations that are <em>not</em> statistics and are not dressed up as any. Nothing here is measured from your showroom — we have not seen it.</p>
     </div>
     <div class="grid-3">
       <div class="tile">
-        <span class="num">The five-minute rule</span>
-        <h3>Odds collapse after five minutes</h3>
-        <p>Contacting a lead within five minutes rather than thirty makes it dramatically more likely to qualify. Most showroom enquiries arrive when nobody is on the floor.</p>
+        <span class="num">Published research</span>
+        <h3>An hour late is a different business</h3>
+        <p>Firms that tried to contact an online enquiry within an hour were nearly <b>seven times</b> as likely to qualify it as those that tried an hour later, and more than sixty times as likely as those who waited a day. Source: <a href="https://hbr.org/2011/03/the-short-life-of-online-sales-leads" target="_blank" rel="noopener">Oldroyd, McElheran &amp; Elkington, “The Short Life of Online Sales Leads”, Harvard Business Review, March 2011</a>. It is not an automotive study and it is not from the UAE — read it as the shape of the problem, not as your number.</p>
       </div>
       <div class="tile">
-        <span class="num">First to answer</span>
-        <h3>The first reply usually wins</h3>
-        <p>Buyers message several showrooms at once. The one that answers first sets the price expectation and gets the test drive booked.</p>
+        <span class="num">Observation, not a statistic</span>
+        <h3>Buyers message several showrooms at once</h3>
+        <p>A buyer on Dubizzle or Instagram sends the same question to four listings in a row. The showroom that answers first is the one setting the price expectation and booking the test drive. We have no survey to put behind that — it is the behaviour every dealer already describes.</p>
       </div>
       <div class="tile">
-        <span class="num">Holding cost</span>
+        <span class="num">Observation, not a statistic</span>
         <h3>Every day a car sits, it costs</h3>
-        <p>Depreciation, floorplan and space run whether the unit moves or not. NEXUS recomputes days-in-stock nightly and flags units before the margin is gone.</p>
+        <p>Depreciation, floorplan and showroom space run whether the unit moves or not — arithmetic, not a finding. NEXUS recomputes days-in-stock nightly and flags units before the margin is gone. What it costs <em>you</em> is a number only your own figures can produce.</p>
       </div>
     </div>
     <p class="hero-note" style="margin-top:26px;max-width:80ch">
@@ -509,10 +601,10 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
         <li><span>Every month after</span><span>AED 399</span></li>
         <li><span>Setup and onboarding</span><span>Included</span></li>
         <li><span>Minimum term</span><span>None</span></li>
-        <li><span>Number of cars in stock</span><span>Unlimited</span></li>
+        <li><span>Stock size</span><span>Sized with you in the audit</span></li>
       </ul>
       <a class="btn btn-primary" href="#talk" style="width:100%">Get a Free Dealer Audit</a>
-      <p class="form-note" style="text-align:center"><b>Founding rate.</b> NEXUS is new — one pilot dealership, no paying customers yet. The first 50 UAE showrooms to come on keep AED 399 for good, whatever we charge later.</p>
+      <p class="form-note" style="text-align:center"><b>Early rate.</b> NEXUS is new — one pilot dealership, no paying customers yet, so this is an early price and we are not going to pretend otherwise. If it changes, it changes for new showrooms first and you get told before your renewal, not after it.</p>
     </div>
   </div>
 </section>
@@ -534,7 +626,7 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
     <details><summary>Is my data separated from other dealerships?</summary>
       <p>Yes, at the database level. Every table holding your data carries a dealership id and every access rule checks it. It was tested with two test dealerships sharing a deliberately identical customer email and phone number — each saw only its own records. We still run one dealership per system.</p></details>
     <details><summary>How many dealerships are using NEXUS today?</summary>
-      <p>One, as a pilot, in Dubai. We have no paying customers yet and no case studies to show you — which is why the audit is free and the first month is free. If you want a vendor with a wall of logos, we are not it yet. If you want to be early and keep AED 399 for good, this is the moment.</p></details>
+      <p>One, as a pilot, in Dubai. We have no paying customers yet and no case studies to show you — which is why the audit is free and the first month is free. If you want a vendor with a wall of logos, we are not it yet. If you would rather be early and judge it on your own showroom for a month, this is the moment.</p></details>
     <details><summary>What do I need to give you to start?</summary>
       <p>Your stock list and access to the number your enquiries arrive on. Setup is done by hand, by us, and it is included — there is no setup fee.</p></details>
   </div>
@@ -559,7 +651,8 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
       <h3>Prefer to write?</h3>
       <p class="sub">Same form, same inbox. It reaches the same person.</p>
       <a class="btn btn-primary" href="#talk" style="width:100%;margin-bottom:10px">Go to the form</a>
-      <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20to%20see%20NEXUS" target="_blank" rel="noopener" style="width:100%">Open WhatsApp instead</a>
+      <a class="btn btn-wa" href="https://wa.me/971526647253?text=I%20run%20a%20dealership%20in%20the%20UAE%20and%20I%27d%20like%20a%20free%20dealer%20audit" target="_blank" rel="noopener" style="width:100%">Open WhatsApp instead</a>
+      <p class="trust" dir="auto">نتحدّث العربية على الواتساب. <a href="https://wa.me/971526647253?text=%D8%A3%D8%AF%D9%8A%D8%B1%20%D9%85%D8%B9%D8%B1%D8%B6%20%D8%B3%D9%8A%D8%A7%D8%B1%D8%A7%D8%AA%20%D9%81%D9%8A%20%D8%A7%D9%84%D8%A5%D9%85%D8%A7%D8%B1%D8%A7%D8%AA%20%D9%88%D8%A3%D9%88%D8%AF%20%D8%AA%D8%AF%D9%82%D9%8A%D9%82%D8%A7%D9%8B%20%D9%85%D8%AC%D8%A7%D9%86%D9%8A%D8%A7%D9%8B%20%D9%84%D9%85%D8%B9%D8%B1%D8%B6%D9%8A" target="_blank" rel="noopener">راسلنا بالعربية</a> — وصفحة عربية كاملة قيد الإعداد.<br><span dir="ltr">We answer in Arabic on WhatsApp. A full Arabic version of this page is not built yet — we are not going to claim one that does not exist.</span></p>
     </div>
   </div>
 </section>
@@ -591,7 +684,14 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
      field a stranger controls, not a field we trust. */
   var NEXUS_ATTRIBUTION=(function(){
     var KEYS=['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
-              'fbclid','gclid','ttclid'];
+              'utm_id','fbclid','gclid','wbraid','gbraid','ttclid'];
+    /* wbraid and gbraid are what Google Ads puts on the URL INSTEAD of gclid
+       when the click came from an iOS app surface and consent for gclid was
+       not available. Without them an iOS Google click lands with no id at all
+       and cannot be joined to anything. utm_id is what Meta's dynamic URL
+       parameters fill with the ad id. All three are in ATTRIBUTION_KEYS in
+       api/lead.js as well -- a key this list captures and the server drops is
+       a key that does not exist. */
     var out={},qs=null;
     try{qs=new URLSearchParams(location.search);}catch(e){qs=null;}
     if(qs){for(var i=0;i<KEYS.length;i++){var v=qs.get(KEYS[i]);
@@ -635,6 +735,22 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
        that looks unique and is not. */
     return '';
   })();
+  /* THE CONVERSION THAT LEAVES THE SITE. Two of the strongest calls to action
+     on this page are wa.me links: the visitor goes to WhatsApp and never
+     returns to a page we can measure. Untracked, Meta and Google would learn
+     that those clicks are worth nothing and stop buying the people who make
+     them. Fired on click, not on reply -- this measures intent to talk, and
+     WHAT-IS-NOT-MEASURED.md says so plainly rather than calling it a lead.
+     Reuses submissionId with a suffix so repeated clicks by one visitor
+     dedupe to one Contact, which is what they are. */
+  try{
+    var wa=document.querySelectorAll('a[href^="https://wa.me/"]');
+    for(var wi=0;wi<wa.length;wi++){
+      wa[wi].addEventListener('click',function(){
+        try{ if(window.NEXUS_TRACK) NEXUS_TRACK.contact(submissionId?submissionId+'-wa':''); }catch(e){}
+      });
+    }
+  }catch(e){}
   function show(cls,text){m.className='msg '+cls;m.textContent=text;}
   f.addEventListener('submit',function(e){
     e.preventDefault();
@@ -647,8 +763,6 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
        form rather than by a 400 they have to interpret. */
     if(!d.phone||String(d.phone).replace(/\D/g,'').length<9){
       show('err','Please enter a WhatsApp number we can reach you on, e.g. +971 50 000 0000.');return;}
-    if(!d.stock_size){show('err','Roughly how many cars do you hold?');return;}
-    if(!d.message||!d.message.trim()){show('err','Tell us the one thing costing you most right now.');return;}
     d.elapsed_ms=Date.now()-started;
     if(submissionId) d.submission_id=submissionId;
     d.attribution=NEXUS_ATTRIBUTION;
@@ -663,7 +777,11 @@ footer{border-top:1px solid var(--line);padding:40px 0;font-size:14px;color:#7A8
              stored row can keep on its own, so it says the same thing either
              way and does not claim someone is already reading it. */
           show('ok','Thank you — we have your details. We will message you on WhatsApp with your audit, usually the same day.');
-          try{ if(window.fbq) fbq('track','Lead'); }catch(e){}
+          /* Fired on a 200 only -- a 200 now means the enquiry is durably
+             stored (api/lead.js, NX974). A conversion reported for an enquiry
+             that was never kept is a number that trains the campaign on a
+             lie. */
+          try{ if(window.NEXUS_TRACK) NEXUS_TRACK.lead(submissionId||''); }catch(e){}
         } else {
           show('err','That did not send. Please WhatsApp +971 52 664 7253 directly — it reaches the same person.');
         }

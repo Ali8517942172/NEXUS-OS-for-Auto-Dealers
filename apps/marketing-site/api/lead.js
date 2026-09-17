@@ -156,7 +156,14 @@ export default async function handler(req, res) {
      being bad. An allowlist, not a passthrough: an open jsonb column filled
      from the query string is a place to put anything. */
   const ATTRIBUTION_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content',
-                            'utm_term', 'fbclid', 'gclid', 'ttclid', 'referrer', 'landing_path'];
+                            'utm_term', 'utm_id', 'fbclid', 'gclid', 'wbraid', 'gbraid',
+                            'ttclid', 'referrer', 'landing_path'];
+  /* wbraid and gbraid are the click ids Google Ads sets INSTEAD of gclid on
+     iOS app surfaces. utm_id is what Meta's dynamic URL parameters fill with
+     the ad id. This list and the KEYS array in index.html are the same list in
+     two places by necessity -- the browser decides what to send, this decides
+     what to keep -- so a key added to one and not the other is silently lost.
+     Both were changed together. */
   const attribution = {};
   const rawAttr = (body && typeof body.attribution === 'object' && body.attribution) || {};
   for (const k of ATTRIBUTION_KEYS) {

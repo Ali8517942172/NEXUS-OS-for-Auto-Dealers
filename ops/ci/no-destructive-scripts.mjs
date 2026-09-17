@@ -95,6 +95,26 @@ const EXEMPT_LINES = new Map([
   // fixture prefix, not to a tenant. KNOWN GAP: this pair should carry a
   // tenant_id predicate before it is ever pointed at a shared project.
   ['ops/journey-lab/CONCURRENCY-REGRESSION.sql', new Set([106, 107])],
+
+  // Two-tenant adversarial isolation suite. STAGING ONLY (wwspuxrbiyagnrnzgate);
+  // the file's own header says so in the first thirty lines and says why.
+  // Part 1 tears the public schema down so it can rebuild it byte-for-byte from
+  // production's DDL, and Part 4 fires unscoped, unpredicated row removals at
+  // guarded and unguarded tables ON PURPOSE -- proving which ones the NX900
+  // trigger refuses IS the test. Those probes run in a subtransaction that is
+  // always rolled back (`zz_write_rb`); the Part 1 teardown is not, which is
+  // exactly why this must never touch production.
+  // Pinned line by line, not directory-exempted: EXEMPT_DIRS is for frozen
+  // historical evidence, and this suite is live and will be edited. Any edit
+  // that moves these statements re-fires the guard and a human re-reads them.
+  // Line numbers are as of 17 Sep 2026, after the destructive-by-design header
+  // was added to the .sql (which pushed every statement down 26 lines).
+  // KNOWN GAP, same as the QUALITY_GATE pin above: a pin catches movement, not
+  // substitution. Eleven pins in one file is the largest waiver in this map;
+  // if it grows again, that is the signal to move the suite behind a real
+  // staging-only mechanism rather than to keep adding numbers here.
+  ['ops/tenant-isolation-tests/two-tenant-suite.sql',
+    new Set([76, 79, 80, 82, 83, 84, 85, 88, 1023, 1027, 1030])],
 ]);
 
 // Frozen git patch archives. A .patch is a byte-for-byte record of a past commit,

@@ -42,10 +42,10 @@ footer a{margin-right:18px}
 <main><div class="wrap">
 
 <h1>Privacy policy</h1>
-<p class="sub">NEXUS for AutoDealers &middot; last updated 13 September 2026</p>
+<p class="sub">NEXUS for AutoDealers &middot; last updated 17 September 2026</p>
 
 <div class="callout">
-<p><strong>In one sentence.</strong> NEXUS handles a dealership's own customer conversations on that dealership's behalf. Each dealership's data is kept separate from every other dealership's. Nothing is sold, nothing is shared with advertisers or data brokers, and nothing is used to train machine-learning models.</p>
+<p><strong>In one sentence.</strong> NEXUS handles a dealership's own customer conversations on that dealership's behalf. Each dealership's data is kept separate from every other dealership's. That data is never sold, never shared with advertisers or data brokers, and never used to train machine-learning models. This marketing website is a separate thing and is measured with advertising cookies &mdash; <a href="#this-website">what that means is set out below</a>.</p>
 </div>
 
 <h2>Who we are, and who controls the data</h2>
@@ -90,10 +90,19 @@ footer a{margin-right:18px}
 
 <h2>What is never done</h2>
 <ul>
-<li>Data is never sold, rented or shared with advertisers or data brokers.</li>
+<li>Dealership and customer data is never sold, rented or shared with advertisers or data brokers. No name, phone number, email address, message or identity document held for a dealership is ever sent to Meta, Google or any other advertising platform &mdash; not raw, and not hashed.</li>
 <li>Data is never used to train machine-learning models.</li>
 <li>Data is never transferred to a third party except a service provider needed to run NEXUS (hosting, database, AI inference, the messaging platform itself), or where production is legally required.</li>
 </ul>
+
+<h2 id="this-website">This marketing website, and advertising</h2>
+<p>Everything above is about data a dealership entrusts to NEXUS. This section is about this website only &mdash; the pages you are reading now.</p>
+<p>NEXUS buys advertising on Meta (Facebook and Instagram) and Google to reach dealerships. To know which advert produced an enquiry, and therefore whether the money was worth spending, this site loads the Meta Pixel and the Google tag, which set cookies in your browser. If those tools have not been switched on for this site, no advertising script is loaded and no advertising cookie is set at all.</p>
+<p><strong>What is sent to Meta and Google:</strong> that a page was viewed, that a form was submitted, and that a WhatsApp link was clicked, together with a random identifier that exists only to stop the same event being counted twice.</p>
+<p><strong>What is never sent to Meta or Google:</strong> your name, your phone number, your email address, your dealership's name, or anything you typed into the form. Not in plain text, and not hashed. The features that would do this automatically &mdash; Meta's Automatic Advanced Matching and Google's Enhanced Conversions &mdash; are deliberately switched off.</p>
+<p>The enquiry form is submitted as a POST request, so nothing you type ever appears in a web address, in a browser history, or in a referrer header passed to a third party.</p>
+<p>The site also records which advert or link brought you here &mdash; the campaign tags and click identifiers on the address you arrived at, the referring site, and the page you landed on. That is stored alongside your enquiry so we know which advert to keep paying for. It is a fixed list of fields; nothing else from the address is kept.</p>
+<p>To refuse all of this: block third-party cookies or use a content blocker, or use your browser's private mode. The enquiry form works normally either way, and refusing changes nothing about how quickly anyone replies to you.</p>
 
 <h2>Where data lives</h2>
 <p>On managed infrastructure: a private database (Supabase, PostgreSQL), a private virtual machine for automation, and static hosting for the dashboard. AI inference is performed by third-party model providers who receive only the text needed to produce a reply.</p>

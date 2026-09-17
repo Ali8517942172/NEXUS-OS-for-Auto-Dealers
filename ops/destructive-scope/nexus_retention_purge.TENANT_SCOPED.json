@@ -1,0 +1,1055 @@
+{
+  "name": "NEXUS Retention Purge (TENANT SCOPED - PROPOSAL, DRY RUN)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "tsp-trigger-0001",
+      "name": "Every Night 03:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 3,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "notes": "Same 03:00 Asia/Dubai slot as the original. This workflow ships with active:false and DRY RUN on; it deletes nothing until both are deliberately changed."
+    },
+    {
+      "id": "tsp-mode-0002",
+      "name": "Read Run Mode",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------\n// RUN MODE. Read once, at the top, so every downstream node agrees.\n//\n// DRY RUN IS THE DEFAULT. Anything other than the exact string 'false'\n// (case-insensitive) leaves this workflow in dry run. An unset variable, a\n// typo, a variable that did not reach the container -- all of them mean\n// \"delete nothing\". A destructive nightly job should need an explicit,\n// correctly-spelled instruction to destroy, not an explicit instruction to\n// hold back.\n//\n// n8n only exposes $env when N8N_BLOCK_ENV_ACCESS_IN_NODE=false is set on the\n// container. If it is not, the reads below throw, and the catch leaves DRY_RUN\n// true -- which is the safe direction.\n// ---------------------------------------------------------------------\nfunction env(key, fallback) {\n  try {\n    const v = $env[key];\n    return (v === undefined || v === null || String(v) === '') ? fallback : String(v);\n  } catch (e) {\n    return fallback;   // env access blocked -> fall back, which is the safe value\n  }\n}\n\nconst DRY_RUN = String(env('NEXUS_PURGE_DRY_RUN', 'true')).trim().toLowerCase() !== 'false';\n\n// Every storage path must begin with kyc/<tenant>/ before anything is deleted.\n// Also default-on. See ops/destructive-scope/PROPOSED_storage_path_tenant_segment.md:\n// production paths are kyc/YYYY/MM/uuid.ext today and carry NO tenant, so with\n// this flag on and the paths unmigrated, every batch is abandoned and reported\n// rather than deleted. That is the intended behaviour, not a bug: an\n// unverifiable delete of a passport scan does not happen.\nconst REQUIRE_TENANT_PREFIX =\n  String(env('NEXUS_PURGE_REQUIRE_TENANT_PREFIX', 'true')).trim().toLowerCase() !== 'false';\n\nconst BATCH_LIMIT = Math.max(1, Math.min(1000, parseInt(env('NEXUS_PURGE_BATCH_LIMIT', '500'), 10) || 500));\nconst DEDUPE_DAYS = Math.max(1, parseInt(env('NEXUS_PURGE_DEDUPE_DAYS', '7'), 10) || 7);\n\nreturn [{ json: {\n  DRY_RUN: DRY_RUN,\n  REQUIRE_TENANT_PREFIX: REQUIRE_TENANT_PREFIX,\n  BATCH_LIMIT: BATCH_LIMIT,\n  DEDUPE_DAYS: DEDUPE_DAYS,\n  cutoff_documents: $now.startOf('day').toUTC().toISO(),\n  mode_line: (DRY_RUN ? 'DRY RUN - nothing will be deleted.' : 'LIVE - objects and rows WILL be deleted.')\n             + ' Tenant prefix check: ' + (REQUIRE_TENANT_PREFIX ? 'REQUIRED' : 'DISABLED')\n             + '. Batch limit ' + BATCH_LIMIT + ' per dealership. Dedupe window ' + DEDUPE_DAYS + ' days.',\n} }];\n"
+      },
+      "notes": "Single source of truth for DRY_RUN and the prefix check. Both default ON (safe). Unset or unreadable env = dry run."
+    },
+    {
+      "id": "tsp-tenants-0003",
+      "name": "List Dealerships",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenants?select=id,name,status,is_quarantine,is_unattributed_default&status=eq.active&order=name.asc",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "stopWorkflow",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Active dealerships only. The quarantine / unattributed tenant is filtered out in the next node rather than in the URL, so the reason is visible in the run."
+    },
+    {
+      "id": "tsp-enum-0004",
+      "name": "Enumerate Dealerships",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// One item per dealership, explicitly. There is no \"null means everyone\" in\n// this workflow: every read, every delete and every PATCH downstream carries a\n// tenant_id, and it comes from here.\n//\n// The quarantine / unattributed tenant is excluded for the same reason every\n// tenant-carrying view excludes it: it is not a dealership, and its rows are\n// unattributed data awaiting a human decision. Purging on a schedule is not\n// that decision.\nconst mode = $('Read Run Mode').first().json;\n\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\nconst kept = rows.filter(r => r.is_quarantine !== true && r.is_unattributed_default !== true);\nconst skipped = rows.filter(r => r.is_quarantine === true || r.is_unattributed_default === true);\n\nif (kept.length === 0) {\n  // Not an error, and deliberately not silent.\n  return [];\n}\n\nreturn kept.map(t => ({ json: {\n  tenant_id: t.id,\n  tenant_name: t.name || t.id,\n  skipped_non_dealerships: skipped.map(s => (s.name || s.id)),\n  DRY_RUN: mode.DRY_RUN,\n  REQUIRE_TENANT_PREFIX: mode.REQUIRE_TENANT_PREFIX,\n  BATCH_LIMIT: mode.BATCH_LIMIT,\n  DEDUPE_DAYS: mode.DEDUPE_DAYS,\n  cutoff_documents: mode.cutoff_documents,\n} }));\n"
+      },
+      "notes": "Excludes the quarantine/unattributed tenant. Emits one item per real dealership."
+    },
+    {
+      "id": "tsp-loop-0005",
+      "name": "For Each Dealership",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        420,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "notes": "batchSize 1. Every dealership is purged on its own, with its own counts, its own audit row and its own Slack channel. Output 0 = done (roll-up), output 1 = one dealership."
+    },
+    {
+      "id": "tsp-find-0006",
+      "name": "Find Expired Documents (Tenant)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        140
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?select=id,tenant_id,storage_path,retain_until' + '&tenant_id=eq.' + encodeURIComponent($json.tenant_id) + '&storage_path=not.is.null&purged_at=is.null' + '&retain_until=lt.' + $json.cutoff_documents + '&limit=' + $json.BATCH_LIMIT }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "stopWorkflow",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "THE FIX. tenant_id=eq.<t> is the predicate the original had no equivalent of. select now also returns tenant_id so the next node can re-check ownership rather than trust the filter."
+    },
+    {
+      "id": "tsp-plan-0007",
+      "name": "Plan + Verify Scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        140
+      ],
+      "parameters": {
+        "jsCode": "// Build this dealership's delete plan, and REFUSE to build one that cannot be\n// proven in scope.\n//\n// Two independent checks, because the filter in the URL is a request and not a\n// guarantee -- a typo, a PostgREST quirk or a future refactor could widen it:\n//   1. every returned row's tenant_id must equal the dealership we asked for;\n//   2. every storage_path must begin with 'kyc/<tenant>/'.\n//\n// Check 2 CANNOT PASS on production as it stands. Paths are kyc/YYYY/MM/uuid.ext\n// and carry no tenant segment at all (measured 2026-09-17: 9 of 9 rows). That is\n// the point: with NEXUS_PURGE_REQUIRE_TENANT_PREFIX on, this workflow abandons\n// the batch and says so, rather than deleting identity documents it cannot prove\n// it owns. Migrate the paths first -- see\n// ops/destructive-scope/PROPOSED_storage_path_tenant_segment.md -- or set the\n// flag to 'false' knowingly and accept that the delete is scoped by the database\n// query alone.\nconst t = $('For Each Dealership').first().json;\nconst tenant = String(t.tenant_id);\nconst prefix = 'kyc/' + tenant + '/';\n\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id && r.storage_path);\n\nconst foreign = rows.filter(r => String(r.tenant_id) !== tenant);\nconst unprefixed = rows.filter(r => !String(r.storage_path).startsWith(prefix));\n\nconst base = {\n  tenant_id: tenant,\n  tenant_name: t.tenant_name,\n  DRY_RUN: t.DRY_RUN,\n  REQUIRE_TENANT_PREFIX: t.REQUIRE_TENANT_PREFIX,\n  DEDUPE_DAYS: t.DEDUPE_DAYS,\n  candidates: rows.length,\n  oldest_due: rows.map(r => r.retain_until).sort()[0] || null,\n};\n\n// A row belonging to another dealership in a query we scoped to this one is not\n// a warning. It is a scoping failure, and nothing is deleted for anybody.\nif (foreign.length) {\n  return [{ json: Object.assign({}, base, {\n    abandoned: true,\n    abandon_reason: 'SCOPE FAILURE: ' + foreign.length + ' of ' + rows.length + ' row(s) returned by a '\n      + 'query filtered to tenant_id=eq.' + tenant + ' carry a different tenant_id. Nothing was deleted '\n      + 'for this dealership. Investigate before the next run.',\n    pairs: [], paths: [], plan_count: 0,\n  }) }];\n}\n\nif (t.REQUIRE_TENANT_PREFIX && unprefixed.length) {\n  return [{ json: Object.assign({}, base, {\n    abandoned: true,\n    abandon_reason: 'PREFIX CHECK FAILED: ' + unprefixed.length + ' of ' + rows.length + ' storage path(s) '\n      + 'do not begin with ' + prefix + ', so a bulk delete of them cannot be proven to stay inside this '\n      + 'dealership. Nothing was deleted. Example: ' + String(unprefixed[0].storage_path)\n      + '. This is expected until the KYC object keys are migrated to carry a tenant segment.',\n    pairs: [], paths: [], plan_count: 0,\n  }) }];\n}\n\nif (rows.length === 0) {\n  return [{ json: Object.assign({}, base, {\n    abandoned: false, abandon_reason: null, pairs: [], paths: [], plan_count: 0,\n  }) }];\n}\n\nreturn [{ json: Object.assign({}, base, {\n  abandoned: false,\n  abandon_reason: null,\n  plan_count: rows.length,\n  ids: rows.map(r => r.id),\n  paths: rows.map(r => r.storage_path),\n  pairs: rows.map(r => ({ id: r.id, path: r.storage_path })),\n}) }];\n"
+      },
+      "notes": "Re-checks ownership on every returned row AND requires the tenant prefix on every path. Either failure abandons this dealership's batch without deleting anything."
+    },
+    {
+      "id": "tsp-gate-0008",
+      "name": "Delete For Real?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        140
+      ],
+      "notes": "TRUE only when the batch is in scope, non-empty, AND DRY_RUN is off. Every other combination goes to the dry-run reporter and deletes nothing.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "tsp-gate-0008-c",
+              "leftValue": "={{ $json.abandoned === false && $json.plan_count > 0 && $json.DRY_RUN === false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "tsp-del-0009",
+      "name": "Delete Storage Objects (Tenant)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        40
+      ],
+      "parameters": {
+        "method": "DELETE",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/storage/v1/object/kyc-documents",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ prefixes: $json.paths }) }}"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Only ever reached with a batch whose every path was proven to start with kyc/<this tenant>/. The 'prefixes' parameter name is Supabase's own; the reconcile node below still checks for objects deleted that were NOT requested."
+    },
+    {
+      "id": "tsp-dry-0010",
+      "name": "Dry Run Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        260
+      ],
+      "parameters": {
+        "jsCode": "// DRY RUN, or a batch that was abandoned, or nothing due. Nothing was deleted.\n// Emit the same shape the reconcile node emits, so one summary node serves both\n// paths and the audit row reads identically apart from the verdict.\nconst p = $('Plan + Verify Scope').first().json;\n\nlet why;\nif (p.abandoned)            why = p.abandon_reason;\nelse if (p.plan_count === 0) why = 'Nothing due for this dealership.';\nelse if (p.DRY_RUN)          why = 'DRY RUN: ' + p.plan_count + ' object(s) WOULD have been deleted for '\n                                   + p.tenant_name + ' and were not. Set NEXUS_PURGE_DRY_RUN=false to arm.';\nelse                         why = 'Not deleted (gate closed).';\n\nreturn [{ json: {\n  tenant_id: p.tenant_id, tenant_name: p.tenant_name,\n  dry_run: true, abandoned: !!p.abandoned,\n  requested: p.plan_count || 0,\n  would_delete: p.plan_count || 0,\n  deleted: 0, unaccounted: 0,\n  confirmed_ids: [], confirmed_paths: [],\n  unaccounted_paths: (p.paths || []),\n  extra_returned: [], transport_error: null, shape_unknown: false,\n  oldest_due: p.oldest_due || null,\n  note: why,\n} }];\n"
+      },
+      "notes": "The dry-run half. Reports WOULD-delete counts per dealership and deletes nothing."
+    },
+    {
+      "id": "tsp-rec-0011",
+      "name": "Reconcile (Tenant)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        40
+      ],
+      "parameters": {
+        "jsCode": "// Match what Storage ACTUALLY deleted against what we asked it to, for THIS\n// dealership. Carried over from the original workflow, which had this right:\n//\n//   Supabase Storage's bulk delete returns ONLY the objects it removed. An\n//   object it could not touch is simply ABSENT -- no error key, no null.\n//   ABSENCE IS NOT SUCCESS. A path that does not come back is still in the\n//   bucket, and its kyc_documents row must stay UNMARKED so the next run picks\n//   it up again. Unmarked self-heals. Wrongly-marked does not.\nconst p = $('Plan + Verify Scope').first().json;\nconst pairs = Array.isArray(p.pairs) ? p.pairs : [];\nconst requested = pairs.length;\nconst items = $input.all().map(i => i.json || {});\n\nconst errItems = items.filter(j => j && j.error !== undefined);\nlet transport_error = null;\nif (errItems.length) {\n  const e = errItems[0].error;\n  transport_error = String((e && (e.message || e.description)) || e).slice(0, 300);\n}\n\n// Normalise for COMPARISON ONLY. What we SEND is never rewritten.\nconst norm = s => String(s == null ? '' : s).replace(/^\\/+/, '').replace(/^kyc-documents\\//, '');\n\nconst returned = [];\nfor (const j of items) {\n  if (!j || j.error !== undefined) continue;\n  if (typeof j.name === 'string' && j.name.length) returned.push(j.name);\n}\nconst returnedSet = new Set();\nfor (const n of returned) { returnedSet.add(n); returnedSet.add(norm(n)); }\n\nconst confirmed = [], unaccounted = [];\nfor (const pr of pairs) {\n  const raw = String((pr && pr.path) || '');\n  if (raw && (returnedSet.has(raw) || returnedSet.has(norm(raw)))) confirmed.push(pr);\n  else unaccounted.push(pr);\n}\n\nconst payload = items.filter(j => j && j.error === undefined && Object.keys(j).length > 0);\nconst shape_unknown = !transport_error && payload.length > 0 && returned.length === 0;\n\nconst requestedSet = new Set();\nfor (const pr of pairs) { const r = String((pr && pr.path) || ''); requestedSet.add(r); requestedSet.add(norm(r)); }\nconst extra_returned = returned.filter(n => !requestedSet.has(n) && !requestedSet.has(norm(n)));\n\n// Cross-tenant paranoia, new here: anything Storage deleted that does not carry\n// THIS dealership's prefix is a cross-tenant destruction and must be shouted\n// about, not counted.\nconst prefix = 'kyc/' + String(p.tenant_id) + '/';\nconst foreign_deleted = returned.filter(n => !norm(n).startsWith(prefix));\n\nreturn [{ json: {\n  tenant_id: p.tenant_id, tenant_name: p.tenant_name,\n  dry_run: false, abandoned: false,\n  requested: requested, would_delete: requested,\n  deleted: confirmed.length, unaccounted: unaccounted.length,\n  confirmed_ids: confirmed.map(x => x.id),\n  confirmed_paths: confirmed.map(x => x.path),\n  unaccounted_paths: unaccounted.map(x => x.path),\n  returned_count: returned.length,\n  extra_returned: extra_returned,\n  foreign_deleted: foreign_deleted,\n  transport_error: transport_error,\n  shape_unknown: shape_unknown,\n  oldest_due: p.oldest_due || null,\n  note: null,\n} }];\n"
+      },
+      "notes": "Per dealership. Absence from the delete response means NOT DELETED. Also flags any deleted object that does not carry this dealership's prefix.",
+      "onError": "stopWorkflow",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "tsp-gate2-0012",
+      "name": "Anything Confirmed Deleted?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1800,
+        40
+      ],
+      "notes": "TRUE = at least one object confirmed gone, so its ids may be marked. FALSE = skip the PATCH entirely; id=in.() is a malformed PostgREST filter.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "tsp-gate2-0012-c",
+              "leftValue": "={{ $json.deleted }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "tsp-patch-0013",
+      "name": "Mark Rows Purged (Tenant)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2020,
+        -60
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?id=in.(' + $json.confirmed_ids.map(v => '\"' + String(v).replace(/\"/g, '') + '\"').join(',') + ')&tenant_id=eq.' + encodeURIComponent($json.tenant_id) + '&purged_at=is.null' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ purged_at: $now.toISO() }) }}"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "THE FIX. tenant_id=eq.<t> on the PATCH, so a compliance field cannot be written across dealerships even if the id list were wrong. purged_at=is.null makes it idempotent - a re-run cannot overwrite an earlier, truthful purge timestamp. ids are still only the ones Storage CONFIRMED it deleted."
+    },
+    {
+      "id": "tsp-prune-0014",
+      "name": "Prune Dedupe Guard (Tenant)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_prune_processed_messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_tenant_id: $('For Each Dealership').first().json.tenant_id, p_older_than: $('For Each Dealership').first().json.DEDUPE_DAYS + ' days', p_dry_run: $('For Each Dealership').first().json.DRY_RUN }) }}"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "THE FIX. Was an unscoped DELETE /rest/v1/processed_messages?processed_at=lt.<now-7d> that cleared every dealership's dedupe ledger in one statement. Now an RPC that takes a dealership, honours the dry run, and is the only sanctioned delete path once the guard in PROPOSED_guard_extension.sql section A is applied. THAT MIGRATION MUST BE APPLIED FOR THIS NODE TO WORK - until then the function does not exist and this node 404s."
+    },
+    {
+      "id": "tsp-gaps-0015",
+      "name": "Find Archive Gaps (Tenant)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2460,
+        140
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?select=id,tenant_id,lead_email,created_at' + '&tenant_id=eq.' + encodeURIComponent($('For Each Dealership').first().json.tenant_id) + '&storage_path=is.null&purged_at=is.null&order=created_at.asc&limit=100' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Scoped to this dealership. The original also carried a hard-coded created_at floor of 2026-08-17T16:01:48Z - a one-off cut-off for one dealership's history, which would silently hide a second dealership's older gaps. Removed."
+    },
+    {
+      "id": "tsp-cfg-0016",
+      "name": "Read Tenant Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2680,
+        140
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_configuration?select=*&tenant_id=eq.' + encodeURIComponent($('For Each Dealership').first().json.tenant_id) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "select=* on purpose. The Slack channel column does not exist yet (see the resolve node); selecting it by name would 400. This reads whatever the row has and the next node picks the field if it is there."
+    },
+    {
+      "id": "tsp-slack-res-0017",
+      "name": "Resolve Slack Channel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2900,
+        140
+      ],
+      "parameters": {
+        "jsCode": "// PER-DEALERSHIP SLACK ROUTING.\n//\n// HONEST STATE OF PLAY: there is no per-dealership Slack channel column in this\n// database today. Measured 2026-09-17 - public.tenants is\n// (id, slug, name, status, is_unattributed_default, is_quarantine, created_at)\n// and public.tenant_configuration has no Slack field. public.channel_registry\n// cannot hold it either: its channel_type CHECK constraint allows only\n// 'whatsapp_waha_session' and 'whatsapp_cloud_phone_number_id'.\n//\n// The original workflow posted to the constant channel C0BKTLL1X54. With two\n// dealerships live, that means dealership A reads alerts naming dealership B's\n// compliance gaps.\n//\n// Until a column exists, this node does the only honest thing available: it\n// still posts (losing a compliance alert is worse than misrouting one), but it\n// LABELS the message with the dealership by name and says out loud that the\n// channel is shared. The moment a column named slack_alert_channel_id appears\n// on tenant_configuration, this node starts using it with no further change.\nconst t = $('For Each Dealership').first().json;\nconst cfgRows = $input.all().map(i => i.json).filter(r => r && !r.error);\nconst cfg = cfgRows[0] || {};\n\nconst configured = String(cfg.slack_alert_channel_id || '').trim();\nconst FALLBACK = 'C0BKTLL1X54';\n\nconst gaps = $('Find Archive Gaps (Tenant)').all()\n  .map(i => i.json).filter(r => r && r.id && !r.error);\n\nreturn [{ json: {\n  tenant_id: t.tenant_id,\n  tenant_name: t.tenant_name,\n  channel_id: configured || FALLBACK,\n  channel_is_shared: !configured,\n  gap_count: gaps.length,\n  gap_oldest: gaps.map(r => r.created_at).sort()[0] || null,\n  post: gaps.length > 0,\n  text: gaps.length === 0 ? '' :\n    ':warning: *KYC archive gap* - *' + t.tenant_name + '*'\n    + (configured ? '' : ' _(posted to the shared alert channel: no per-dealership Slack channel is '\n       + 'configured for this dealership, so this alert is visible to every dealership on the shared '\n       + 'channel. Add tenant_configuration.slack_alert_channel_id to fix.)_')\n    + '\\n' + gaps.length + ' document(s) in `kyc_documents` for this dealership have no stored file '\n    + '(`storage_path IS NULL AND purged_at IS NULL`). Oldest: '\n    + (gaps.map(r => r.created_at).sort()[0] || 'unknown')\n    + '. The verdict was recorded but the image was never archived, so the retention record is '\n    + 'incomplete for those customers.',\n} }];\n"
+      },
+      "notes": "Per-dealership channel if one is ever configured; otherwise the shared channel WITH the dealership named and the sharing disclosed in the message itself."
+    },
+    {
+      "id": "tsp-gate3-0018",
+      "name": "Any Gaps To Report?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3120,
+        140
+      ],
+      "notes": "No gaps, no Slack post. Silence here is a true statement.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "tsp-gate3-0018-c",
+              "leftValue": "={{ $json.post }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "tsp-slack-0019",
+      "name": "Slack: Archive Gap Alert (Tenant)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.5,
+      "position": [
+        3340,
+        60
+      ],
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $json.channel_id }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {},
+        "resource": "message",
+        "operation": "post"
+      },
+      "credentials": {
+        "slackApi": {
+          "id": "oOf93CGdFiAxHkHF",
+          "name": "Slack account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "webhookId": "b203793f-fd40-48d7-998a-1897429a3b17",
+      "notes": "Channel comes from the resolve node, not a constant."
+    },
+    {
+      "id": "tsp-sum-0020",
+      "name": "Summarise Dealership",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        140
+      ],
+      "parameters": {
+        "jsCode": "// One audit row per dealership. A retention policy you cannot evidence per\n// dealership is not evidence for any of them: \"500 documents purged\" across two\n// customers answers neither customer's question.\nfunction firstOf(node, fallback) {\n  try { const a = $(node).all(); return a.length ? (a[0].json || fallback) : fallback; }\n  catch (e) { return fallback; }\n}\n\n// Whichever branch ran.\nlet r = firstOf('Reconcile (Tenant)', null);\nif (!r || r.tenant_id === undefined) r = firstOf('Dry Run Report', null);\nif (!r) r = { tenant_id: null, tenant_name: 'unknown', requested: 0, deleted: 0, unaccounted: 0 };\n\nconst prune = firstOf('Prune Dedupe Guard (Tenant)', null);\nconst slack = firstOf('Resolve Slack Channel', { gap_count: null });\n\nconst N = Number(r.requested) || 0;\nconst M = Number(r.deleted)   || 0;\nconst U = N - M;\n\nlet status;\nif (r.abandoned)                            status = 'REJECTED';\nelse if (r.dry_run)                         status = 'DRY_RUN';\nelse if (r.transport_error || r.shape_unknown) status = 'FAILED';\nelse if (N === 0)                           status = 'SUCCESS';\nelse if (M === 0)                           status = 'FAILED';\nelse if (M === N)                           status = 'SUCCESS';\nelse                                        status = 'PARTIAL';\n\nconst parts = [];\nparts.push('[' + (r.tenant_name || r.tenant_id) + '] Retention purge: requested ' + N\n  + ', deleted ' + M + ', unaccounted ' + U\n  + (r.oldest_due ? ' (oldest due ' + r.oldest_due + ')' : '') + '.');\n\nif (r.note) parts.push(r.note);\n\nif (U > 0 && !r.dry_run) {\n  const paths = (r.unaccounted_paths || []).map(String);\n  const shown = paths.slice(0, 20);\n  parts.push('NOT deleted and deliberately NOT marked (still in the bucket, retried next run): '\n    + shown.join(', ')\n    + (paths.length > shown.length ? ' ...and ' + (paths.length - shown.length) + ' more' : '') + '.');\n}\nif ((r.extra_returned || []).length) {\n  status = (status === 'SUCCESS') ? 'PARTIAL' : status;\n  parts.push('WARNING: Storage deleted ' + r.extra_returned.length + ' object(s) that were NOT requested: '\n    + r.extra_returned.slice(0, 10).join(', ') + '.');\n}\nif ((r.foreign_deleted || []).length) {\n  status = 'FAILED';\n  parts.push('CROSS-TENANT DELETION: ' + r.foreign_deleted.length + ' deleted object(s) do not carry this '\n    + 'dealership prefix: ' + r.foreign_deleted.slice(0, 10).join(', ')\n    + '. Stop the workflow and investigate before the next run.');\n}\nif (r.transport_error) parts.push('Storage delete call errored: ' + r.transport_error);\nif (r.shape_unknown)   parts.push('Storage response shape unrecognised; nothing reconciled, nothing marked.');\n\n// Dedupe prune, reported per dealership rather than as one global number.\nif (prune && !prune.error) {\n  const pr = Array.isArray(prune) ? prune[0] : prune;\n  if (pr && pr.would_delete !== undefined) {\n    parts.push('Dedupe ledger: ' + (r.dry_run\n      ? (pr.would_delete + ' row(s) WOULD be pruned (dry run).')\n      : (pr.deleted + ' of ' + pr.would_delete + ' row(s) pruned before ' + pr.cutoff + '.')));\n  }\n} else if (prune && prune.error) {\n  parts.push('Dedupe prune FAILED for this dealership: '\n    + String(prune.error.message || prune.error).slice(0, 200)\n    + ' (is nexus_prune_processed_messages applied?).');\n  if (status === 'SUCCESS') status = 'PARTIAL';\n}\n\nif (slack && slack.gap_count !== null && slack.gap_count > 0) {\n  parts.push('Archive gaps for this dealership: ' + slack.gap_count\n    + (slack.channel_is_shared ? ' (alert posted to the SHARED Slack channel - no per-dealership channel configured).' : '.'));\n}\n\nreturn [{ json: {\n  workflow: 'NEXUS Retention Purge (tenant-scoped)',\n  tenant_id: r.tenant_id,\n  tenant_name: r.tenant_name,\n  status: status,\n  requested: N, deleted: M, unaccounted: U,\n  summary: parts.join(' '),\n} }];\n"
+      },
+      "notes": "One audit row per dealership, with its own status. DRY_RUN and REJECTED are first-class statuses, not dressed up as SUCCESS."
+    },
+    {
+      "id": "tsp-audit-0021",
+      "name": "Log Dealership Purge to Audit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3780,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, status: $json.status, summary: $json.summary }) }}"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "notes": "Written per dealership, BEFORE the run is allowed to go red. A shortfall reaches the compliance record even if a later node stops the workflow."
+    },
+    {
+      "id": "tsp-collect-0022",
+      "name": "Collect Dealership Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        140
+      ],
+      "parameters": {
+        "jsCode": "// Hand this dealership's verdict back to the loop node, which will pass it and\n// every earlier one to the roll-up when the last dealership is done.\nconst s = $('Summarise Dealership').first().json;\nreturn [{ json: {\n  tenant_id: s.tenant_id, tenant_name: s.tenant_name, status: s.status,\n  requested: s.requested, deleted: s.deleted, unaccounted: s.unaccounted,\n  summary: s.summary,\n} }];\n"
+      }
+    },
+    {
+      "id": "tsp-roll-0023",
+      "name": "Roll Up All Dealerships",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -220
+      ],
+      "parameters": {
+        "jsCode": "// Runs once, after every dealership has been through the loop. The per-dealership\n// audit rows are already written by this point; this is the one-line answer to\n// \"what happened last night\", and it must not flatten a per-dealership failure\n// into an aggregate SUCCESS.\nconst mode = $('Read Run Mode').first().json;\nconst results = $input.all().map(i => i.json).filter(r => r && r.tenant_id !== undefined);\n\nconst byStatus = {};\nresults.forEach(r => { byStatus[r.status] = (byStatus[r.status] || 0) + 1; });\n\nconst bad = results.filter(r => r.status === 'FAILED' || r.status === 'REJECTED');\nconst partial = results.filter(r => r.status === 'PARTIAL');\n\nlet status;\nif (results.length === 0)   status = 'NO_RESULT';\nelse if (bad.length)        status = 'FAILED';\nelse if (partial.length)    status = 'PARTIAL';\nelse if (results.every(r => r.status === 'DRY_RUN')) status = 'DRY_RUN';\nelse                        status = 'SUCCESS';\n\nconst lines = [];\nlines.push(mode.mode_line);\nlines.push(results.length + ' dealership(s) processed: '\n  + Object.keys(byStatus).map(k => byStatus[k] + ' ' + k).join(', ') + '.');\nresults.forEach(r => {\n  lines.push('- ' + (r.tenant_name || r.tenant_id) + ': ' + r.status\n    + ' (requested ' + r.requested + ', deleted ' + r.deleted + ', unaccounted ' + r.unaccounted + ')');\n});\nif (bad.length) {\n  lines.push('DEALERSHIPS NEEDING ATTENTION: ' + bad.map(r => r.tenant_name + ' [' + r.status + ']').join(', ')\n    + '. Their per-dealership audit_log rows carry the detail.');\n}\n\nreturn [{ json: {\n  workflow: 'NEXUS Retention Purge (tenant-scoped) - ROLL UP',\n  status: status,\n  tenants: results.length,\n  summary: lines.join(' '),\n  per_tenant: results,\n} }];\n"
+      },
+      "notes": "Aggregate verdict. A single FAILED or REJECTED dealership makes the whole run FAILED - an average is not a compliance statement."
+    },
+    {
+      "id": "tsp-rollaudit-0024",
+      "name": "Log Roll Up to Audit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 30000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $json.workflow, status: $json.status, summary: $json.summary }) }}"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "tsp-gate4-0025",
+      "name": "Run Clean?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        -220
+      ],
+      "notes": "Runs AFTER the audit rows are written, on purpose: the record is on file before the run is allowed to go red.",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "tsp-gate4-0025-c",
+              "leftValue": "={{ $('Roll Up All Dealerships').first().json.status }}",
+              "rightValue": "FAILED",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "tsp-stop-0026",
+      "name": "Purge Failed - Rows NOT Marked",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        -140
+      ],
+      "parameters": {
+        "errorMessage": "Tenant-scoped retention purge did not fully verify for at least one dealership. The per-dealership audit_log rows were written FIRST, so every shortfall is already on the compliance record before this stop: each names its dealership, its requested / deleted / unaccounted counts, and every storage_path still sitting in the kyc-documents bucket. purged_at was written ONLY for objects Supabase confirmed it deleted, and only with tenant_id=eq.<that dealership> on the PATCH. Every unaccounted row is deliberately left unmarked so the next run selects it again. Absence from Supabase Storage's bulk-delete response means NOT DELETED - it never means fine. A REJECTED status means a batch was abandoned because it could not be proven in scope; that is the guard working, not a malfunction. This stop exists so the execution shows red and reaches the error workflow; it undoes nothing and suppresses no audit row."
+      }
+    }
+  ],
+  "connections": {
+    "Every Night 03:00": {
+      "main": [
+        [
+          {
+            "node": "Read Run Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Run Mode": {
+      "main": [
+        [
+          {
+            "node": "List Dealerships",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Dealerships": {
+      "main": [
+        [
+          {
+            "node": "Enumerate Dealerships",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enumerate Dealerships": {
+      "main": [
+        [
+          {
+            "node": "For Each Dealership",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "For Each Dealership": {
+      "main": [
+        [
+          {
+            "node": "Roll Up All Dealerships",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find Expired Documents (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Expired Documents (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Plan + Verify Scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan + Verify Scope": {
+      "main": [
+        [
+          {
+            "node": "Delete For Real?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete For Real?": {
+      "main": [
+        [
+          {
+            "node": "Delete Storage Objects (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dry Run Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Storage Objects (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Reconcile (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconcile (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Anything Confirmed Deleted?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything Confirmed Deleted?": {
+      "main": [
+        [
+          {
+            "node": "Mark Rows Purged (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prune Dedupe Guard (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Rows Purged (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Prune Dedupe Guard (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dry Run Report": {
+      "main": [
+        [
+          {
+            "node": "Prune Dedupe Guard (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prune Dedupe Guard (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Find Archive Gaps (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Archive Gaps (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Read Tenant Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Tenant Config": {
+      "main": [
+        [
+          {
+            "node": "Resolve Slack Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Slack Channel": {
+      "main": [
+        [
+          {
+            "node": "Any Gaps To Report?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Gaps To Report?": {
+      "main": [
+        [
+          {
+            "node": "Slack: Archive Gap Alert (Tenant)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Summarise Dealership",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: Archive Gap Alert (Tenant)": {
+      "main": [
+        [
+          {
+            "node": "Summarise Dealership",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarise Dealership": {
+      "main": [
+        [
+          {
+            "node": "Log Dealership Purge to Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Dealership Purge to Audit": {
+      "main": [
+        [
+          {
+            "node": "Collect Dealership Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Dealership Result": {
+      "main": [
+        [
+          {
+            "node": "For Each Dealership",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Roll Up All Dealerships": {
+      "main": [
+        [
+          {
+            "node": "Log Roll Up to Audit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Roll Up to Audit": {
+      "main": [
+        [
+          {
+            "node": "Run Clean?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Clean?": {
+      "main": [
+        null,
+        [
+          {
+            "node": "Purge Failed - Rows NOT Marked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Dubai",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionTimeout": 900,
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "availableInMCP": false
+  },
+  "_proposal": {
+    "author": "agent PURGE-FIX",
+    "written": "2026-09-17",
+    "status": "PROPOSAL ONLY - NOT IMPORTED, NOT ACTIVE, NOT RUN",
+    "replaces": "n8n-workflows/nexus_retention_purge.json (n8n id aIYwwoYStDAi9kHy, active, runs 03:00 Asia/Dubai)",
+    "original_is_untouched": true,
+    "warning": "Importing this and switching it on CHANGES WHAT RUNS NIGHTLY. It needs Ali's explicit yes. It ships active:false and dry-run-by-default so that an accidental import deletes nothing.",
+    "hard_dependency": "The node 'Prune Dedupe Guard (Tenant)' calls public.nexus_prune_processed_messages(uuid, interval, boolean), which does NOT exist on production yet. It is defined in ops/destructive-scope/PROPOSED_guard_extension.sql section A3. Without that migration this node 404s every run (reported per dealership as PARTIAL, not silently swallowed).",
+    "known_limitation_paths": "Production KYC object keys are kyc/YYYY/MM/uuid.ext and carry no tenant segment (9 of 9 rows, measured 2026-09-17). With NEXUS_PURGE_REQUIRE_TENANT_PREFIX at its default of on, EVERY batch is abandoned with status REJECTED and nothing is deleted. That is deliberate. See PROPOSED_storage_path_tenant_segment.md.",
+    "known_limitation_slack": "There is no per-dealership Slack channel column in the database. Alerts still post to the shared channel C0BKTLL1X54 but are labelled with the dealership and disclose the sharing in the message text. Add tenant_configuration.slack_alert_channel_id and this workflow uses it with no further change.",
+    "env": {
+      "NEXUS_PURGE_DRY_RUN": "default 'true'. ONLY the exact string 'false' arms the deletes. Requires N8N_BLOCK_ENV_ACCESS_IN_NODE=false on the n8n container for $env to be readable; if it is not, every read falls back and the workflow stays in dry run.",
+      "NEXUS_PURGE_REQUIRE_TENANT_PREFIX": "default 'true'. Every storage path must start with kyc/<tenant>/ or the batch is abandoned.",
+      "NEXUS_PURGE_BATCH_LIMIT": "default '500', per dealership rather than globally - so one dealership can no longer starve another out of the nightly run.",
+      "NEXUS_PURGE_DEDUPE_DAYS": "default '7'."
+    },
+    "changes_from_original": [
+      "Iterates dealerships explicitly (List Dealerships -> Enumerate -> splitInBatches batchSize 1); excludes the quarantine / unattributed tenant.",
+      "tenant_id=eq.<t> added to the expired-document read, the archive-gap read and the purged_at PATCH.",
+      "PATCH also carries purged_at=is.null, so a re-run cannot overwrite an earlier truthful purge timestamp.",
+      "Every returned row's tenant_id is re-checked against the dealership asked for; a mismatch abandons the batch.",
+      "Every storage path must start with kyc/<tenant>/ before any delete (flag-controlled, default on).",
+      "The unscoped DELETE on processed_messages is replaced by a per-dealership, dry-runnable RPC.",
+      "Slack channel resolved per dealership, with the shared-channel fallback disclosed in the message.",
+      "Removed the hard-coded created_at floor 2026-08-17T16:01:48Z from the archive-gap query - a one-dealership artefact that would hide a second dealership's older gaps.",
+      "DRY RUN mode: reports per-dealership WOULD-delete counts and deletes nothing.",
+      "One audit_log row per dealership plus a roll-up; DRY_RUN and REJECTED are first-class statuses.",
+      "The batch limit is per dealership rather than a single global 500."
+    ]
+  }
+}
