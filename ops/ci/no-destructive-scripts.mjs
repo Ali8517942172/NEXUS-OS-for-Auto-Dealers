@@ -61,6 +61,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'co
 const EXEMPT_LINES = new Map([
   // Template literal that PRINTS operator cleanup instructions after a gate run.
   // It is an error message, not SQL this process executes. Dashboard-owned file.
+  // Moved 4486 -> 4529 on 17 Sep 2026: the snapshot was retaken again
+  // (118 relations -> 119, nexus_channel_status arrived with NX986) and one
+  // import line was added at the top of the file, pushing everything below
+  // down 43 lines. Read again, same `fixtureResidue` template, same four
+  // fixture-scoped deletes, still only printed.
   // Moved 4340 -> 4486 on 16 Sep 2026: the gate's embedded schema snapshot was
   // retaken from production (110 relations -> 118) and grew ~3.4KB, which
   // pushed everything below it down 146 lines. The pin fired, a human read the
@@ -69,9 +74,9 @@ const EXEMPT_LINES = new Map([
   // operator to run by hand, never executed here. The pin working is the
   // reason this comment exists.
   // KNOWN GAP, and it cuts the other way too: a pin is a line number, so if a
-  // genuinely destructive statement ever lands on line 4486 of this file it
+  // genuinely destructive statement ever lands on line 4529 of this file it
   // would be waived silently. The pin catches movement, not substitution.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4486])],
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4529])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.

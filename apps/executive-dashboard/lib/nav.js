@@ -28,6 +28,7 @@ const NAV = [
        how much of that origin NEXUS could verify, and what arrived and was
        then lost before anybody saw it. */
     { id:'leadsources',   title:'Lead Sources',    icon:'alt_route' },
+    { id:'channels',      title:'Channels',        icon:'hub' },
     { id:'conversations', title:'Conversations',   icon:'forum' },
     { id:'compliance',    title:'Compliance',      icon:'verified_user' },
   ]},
