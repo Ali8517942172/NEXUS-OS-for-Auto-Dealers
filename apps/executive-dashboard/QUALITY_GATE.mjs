@@ -211,8 +211,9 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const HERE = new URL('.', import.meta.url).pathname;
+const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ARGV = process.argv.slice(2);
 const flag = n => ARGV.includes(n);
 const opt  = n => { const i = ARGV.indexOf(n); return i >= 0 ? ARGV[i + 1] : null; };
@@ -250,8 +251,8 @@ if (ARGV.includes('--no-db')) {
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-16T19:25:42Z",
-  "source": "--catalogue /tmp/claude-0/-home-claude/159b42c1-0f17-5d3a-b048-20588de94c14/scratchpad/catalogue.json — production dsvuoovivysszdoiorch, 16 Sep 2026, anchor 20260916191116 at count 332. This run had no NEXUS_DB_URL, no psql and no service-role key, so the catalogue was taken through the Supabase MCP by running CATALOGUE_SQL (from --print-sql) as ONE read-only SELECT -- no temporary tables, no writes of any kind, nothing dropped afterwards because nothing was created. One statement means takenAt, the migration anchor and every count in meta describe the same instant. It was carried out in one transfer as base64 of the whole JSON and verified after decoding against the length and md5 Postgres computed in that same statement (527,320 chars, md5 9e721f109b3a7924186bf7378678eec5): byte-for-byte equal. ONE DELIBERATE DEPARTURE FROM CATALOGUE_SQL, AND A READER SHOULD KNOW IT. meta.body_chars_expected is selected as UTF-16 code units, not as Postgres length(). CATALOGUE_SQL selects sum(length(prosrc)) and catalogueIntegrity compares it against a sum of JavaScript String.length -- two different units. They agreed for as long as every function body was BMP-only. They do not agree any more: nexus_classify_message_intent now carries three non-BMP characters in its body (U+1F44D, U+1F64F, U+1F44C), so Postgres counted 427,171 and JavaScript counted 427,174 and the seal rejected a catalogue that had arrived complete and md5-identical. Measured in the receiver's own unit the two agree exactly, and the seal keeps the whole of its power -- the count is still computed by Postgres over the same rows in the same statement, so a truncated transfer is caught exactly as before. meta.body_chars_codepoints carries the length() figure alongside it so the two are never confused. THE GATE ITSELF STILL HAS THE DEFECT: catalogueIntegrity's body_chars_expected comparison is unit-mismatched, and until it is fixed every catalogue built by CATALOGUE_SQL verbatim will be refused as a live source for as long as one emoji lives in one function body. That is a fix for the file's owner, not for a snapshot refresh.",
+  "takenAt": "2026-09-17T05:34:24Z",
+  "source": "--catalogue catalogue.json — production dsvuoovivysszdoiorch, 17 Sep 2026, 119 relations. This run had no NEXUS_DB_URL, no psql and no service-role key in the environment, so CATALOGUE_SQL (from --print-sql, 27,489 bytes, unmodified) was run as ONE statement on production through a pair of temporary objects created and dropped by the orchestrator in the same session: table public.nexus_tmp_sql and function public.nexus_tmp_run_catalogue(), both revoked from public/anon/authenticated and granted only to service_role, which already bypasses RLS and can already run any statement — so no privilege was created that did not exist. The SQL text was staged over PostgREST from the operator machine (which read the service key out of .env itself; no credential passed through an agent transcript) and the 539,612-byte JSON came back over the same connection straight to disk, never through a chat context. Both objects were dropped immediately afterwards and their absence verified (leftover=0). ONE statement means takenAt, the migration anchor and every count in meta describe the same instant. THE UNIT-MISMATCH NOTE FROM 16 SEP STILL APPLIES: meta.body_chars_expected is compared against a sum of JavaScript String length, and catalogueIntegrity counts code points via [...str].length so the two agree; meta.body_chars_codepoints carries Postgres length() alongside it.",
   "relations": {
     "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
     "attribution_event_type": "event,seq,state,source_ref,finding",
@@ -302,6 +303,7 @@ const SNAPSHOT = {
     "leads": "id,name,email,phone,source,vehicle_interest,budget_aed,status,ai_score,assigned_to,response_time_minutes,created_at,assigned_to_id,escalated_at,bitrix_lead_id,crm_synced_at,tenant_id,score_source,rules_score,ai_score_raw,ai_intent_raw,ai_parse_failed",
     "message_intent": "intent,promote_eligible,meaning",
     "nexus_sales_lead": "id,submission_id,full_name,phone_e164,email,dealership,stock_size,message,attribution,ip_country,received_at,status,contacted_at,notes",
+    "nexus_tmp_sql": "id,body",
     "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
     "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
     "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
@@ -661,6 +663,14 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_channel_status": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_channel_verify_token_matches": {
       "secdef": true,
       "tenantArg": false,
@@ -799,7 +809,6 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
-        "authenticated",
         "service_role"
       ]
     },
@@ -823,6 +832,20 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_kyc_documents_due": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_kyc_mark_purged": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
         "service_role"
       ]
     },
@@ -1035,6 +1058,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_prune_processed_messages": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_public_exposure_report": {
       "secdef": false,
       "tenantArg": false,
@@ -1142,6 +1172,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_retention_preview": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_route_message": {
       "secdef": true,
       "tenantArg": true,
@@ -1153,7 +1190,6 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
-        "authenticated",
         "service_role"
       ]
     },
@@ -1258,6 +1294,13 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_tmp_run_catalogue": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -1673,9 +1716,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260916191116",
-    "count": 332,
-    "newest": "20260916191116,20260916190507,20260916190319,20260916184725,20260916183624"
+    "head": "20260917051320",
+    "count": 336,
+    "newest": "20260917051320,20260917034353,20260917032155,20260916200020,20260916191116"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */
