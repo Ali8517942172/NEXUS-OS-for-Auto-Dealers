@@ -15,8 +15,19 @@ Every sentence is one of exactly three things:
    when a human steps in.*
 2. **A question** — about the reader's situation, never an assertion about it.
 3. **A disclosed fact about the offer** — AED 399/month, first month free, no
-   setup fee, no contract, free audit, built in Dubai, one pilot dealership,
-   no paying customers yet.
+   setup fee, no minimum term, no contract, free audit, built in Dubai, one pilot
+   dealership, no paying customers yet.
+
+**The offer of record (decided 17 September 2026): AED 399 per month, flat and
+permanent, first month free, no setup fee, no minimum term.** There is no cap on
+how many dealerships may take it and no expiry date.
+
+**No scarcity, ever.** No "only 10 places", no "first 10 dealerships", no "until
+31 October", no countdown, no "founding rate", no "price goes up soon". Earlier
+drafts of the offer carried a cap and a deadline; **neither exists now**, so any
+such line would be manufactured urgency — prohibited by Meta Advertising
+Standards (`POLICY-RISK.md` §3) and untrue besides. The only urgency this funnel
+is allowed is the dealer's own unanswered enquiries.
 
 **Nothing below is a result claim.** No recovered revenue. No percentage
 uplift. No "dealers using NEXUS see…". No testimonial. No named dealership.

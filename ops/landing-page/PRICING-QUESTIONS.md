@@ -33,6 +33,9 @@ your hours. AED 399 is below that. Free month one makes it worse. If the answer 
 "deliberate, for the first N dealers, until D" — write N and D down, put them on the
 page, and it becomes a credible early-access offer instead of a mistake. If the
 answer is "accident," the number has to move before you spend on ads.
+*(Answered below on 17 September 2026: neither. It is the standing list price,
+flat and permanent, and the premise that it loses money on every dealer was
+itself wrong — see the DECIDED section and `PRICE-DECISION.md`.)*
 
 **3. Does the price scale with anything — stock, message volume, logins — or is it
 genuinely flat?**
@@ -66,26 +69,39 @@ again: the hero paragraph, the price card, the FAQ answer on cost, the JSON-LD
 
 ## DECIDED — 17 September 2026, by Ali
 
-**Question 1 — which product is on sale?** The **AED 399 founding subscription**.
-The AED 2,500–3,500 managed pilot stays a separate, hand-run offer and
-`commercial/PILOT-OFFER.md` now carries a header saying so. Never quote both to
-the same dealer.
+**The offer is AED 399 per month, flat, permanent, with the first month free.
+No cap on the number of dealerships. No deadline. No setup fee. No minimum
+term. No 12-month hold, because there is nothing to hold it against — the price
+does not go up afterwards.**
 
-**Question 2 — deliberate or accident?** *Deliberate, budgeted, and capped.*
-N = **10 UAE dealerships**. D = **31 October 2026**, whichever comes first.
-Held for **12 months** from each dealer's start date. Both the cap and the date
-are now on the public page, in the JSON-LD `priceValidUntil` and
-`eligibleQuantity`, and in the FAQ answer — so the page states the loss rather
-than hiding it. Maximum exposure at the floor: 10 dealers x 12 months x roughly
-AED 100–115 below cost = on the order of **AED 12,000–14,000** of subsidy, plus
-Ali's own hours, which are not in that number.
+Any earlier text in this repository describing a *capped founding rate*, a
+*first 10 UAE dealerships* limit, a *31 October 2026* end date, or a *price held
+for twelve months* is **withdrawn**. The price itself never changed; the
+scarcity wrapped around it did, and that wrapper was wrong.
 
-**Question 3 — does it scale with anything?** Not answered, and deliberately so.
-The page says stock size is *"sized with you in the audit"*, which is true and
-holds the door open. A 400-car Sharjah trader on a flat AED 399 is still the
-worst customer this offer can attract, and nothing on the page prevents that
-today. **This is the first thing to revisit once a real dealer signs.**
+**Question 1 — which product is on sale?** The **AED 399/month subscription**.
+That is the product. The AED 2,500–3,500 managed pilot in
+`commercial/PILOT-OFFER.md` is a separate, hand-run service that Ali agrees
+case by case; that document carries a header saying so. Never quote both to the
+same dealer.
 
-N and D were chosen by this session as the smallest cap that is still a real
-offer, and stated here so they can be changed in one place. Everything on the
-page reads from these two numbers.
+**Question 2 — deliberate, or an accident?** Deliberate, and **not** a capped
+acquisition cost. It is the standing list price. The earlier answer here framed
+AED 399 as a subsidy with an expiry so the loss could be bounded; that framing
+is retired, and so is the premise underneath it. AED 399 is below cost at *one*
+dealer and above marginal cost at every dealer after that, because the GCP VM
+and Supabase are shared infrastructure rather than per-dealer costs. The
+arithmetic is in `PRICE-DECISION.md` and in `AUDIT.md`. Short version: the
+marginal cost of one more dealership is roughly **AED 210–320/month** (AI calls
+110–220 + WhatsApp Cloud ~100), against AED 399 of revenue.
+
+**Question 3 — does the price scale with stock, message volume, or logins?**
+**Still unanswered, and deliberately so.** Nothing has been decided here. The
+page says stock size is *"sized with you in the audit"*, which is true and holds
+the door open without promising anything. A 400-car Sharjah trader on a flat AED
+399 is still the worst customer this offer can attract, and nothing today
+prevents that. This is the one open question, and it is the first thing to
+revisit once a real dealer signs. Do not invent an answer to it in a file.
+
+Before changing a price anywhere in this repository, read
+`ops/landing-page/PRICE-DECISION.md`.

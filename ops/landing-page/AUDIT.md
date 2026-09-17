@@ -53,12 +53,53 @@ Those are not two framings of one offer. They disagree on every axis:
 | Logins | not mentioned | **+AED 250 above 5 people** |
 | Q1 total | AED 0 | **AED 12,500 – 15,500** |
 
-**AED 399 is below your own documented cost of delivery.** The same PILOT-OFFER
-costs infrastructure at Google Cloud VM ~100 + Supabase ~92 + AI calls 110–220 +
-WhatsApp Cloud ~100 = **AED 402–512 per month, per dealer, before a single hour of
-your time.** At AED 399 you lose money on every customer from the day they sign,
-and the free first month makes month one worse. The document says of AED 2,500,
-"Honestly: only just."
+**Correction, 17 September 2026.** This section previously read *"AED 399 is below
+your own documented cost of delivery… at AED 399 you lose money on every customer
+from the day they sign."* **That was wrong as stated**, and the error was treating a
+shared cost as a per-dealer one. It is corrected here rather than deleted.
+
+The AED 402–512 figure is real, but it is the **whole-stack cost attributed to a
+single dealer** — true only when there is exactly one.
+`ops/ADR-002-scaling-ladder-and-when-to-pay.md` is explicit that the GCP VM and
+Supabase are **shared**: one
+workflow set and one webhook URL serve every dealership, the single GCP VM is rated
+to **200+ dealers**, and Supabase free tier holds to **10–30 dealers**. Those two
+lines do not repeat per customer.
+
+Splitting the same table into fixed and marginal:
+
+| | AED/month | Fixed or marginal |
+|---|---|---|
+| Google Cloud VM | ~100 | **Fixed** — one box, 200+ dealers |
+| Supabase | ~92 | **Fixed** — free to 10–30 dealers, then one paid project |
+| AI model calls | 110–220 | **Marginal** — per dealer, per message |
+| WhatsApp Cloud API | ~100 | **Marginal** — per dealer's own number and volume |
+| **Fixed subtotal** | **~192** | shared across every dealer on the platform |
+| **Marginal, per additional dealer** | **210–320** | |
+
+**So the marginal cost of one more dealership is AED 210–320/month, against AED 399
+of revenue — a contribution margin of roughly AED 79–189 per dealer per month.**
+Cost per dealer at N dealers is `192/N + (210…320)`:
+
+| N | Cost/dealer, best case | Cost/dealer, worst case | Against AED 399 |
+|---|---|---|---|
+| 1 | 402 | 512 | **−3 to −113** (loses money) |
+| 2 | 306 | 416 | +93 to −17 |
+| 3 | 274 | 384 | **+15 to +125** |
+| 5 | 248 | 358 | +41 to +151 |
+
+**On the paid months alone, AED 399 stops losing money at the second dealer in the
+best case and the third in the worst.** Fold the free first month back in — over a
+first year a dealer pays 11 of 12 months, so effective revenue is ~AED 366/month —
+and on the pessimistic marginal cost (AED 320) break-even moves to the **fifth**
+dealer: `192/5 = 38`, `38 + 320 = 358` against `366`.
+
+**Do not oversell this.** The margin is thin — AED 8 per dealer per month at the
+pessimistic end of the fifth-dealer case — and **Ali's own hours are not in any of
+these numbers.** The PILOT-OFFER document costs those hours at AED 150/hour and they
+dominate everything above. AED 399 is a viable price for a self-serve product that
+nobody reads the messages of daily. It is not a viable price for the supervised
+service PILOT-OFFER describes, which is why that is a separate offer.
 
 Worse, the page bound you to it: *"The first 50 UAE showrooms to come on keep AED
 399 for good, whatever we charge later."* That is a lifetime price lock, below
@@ -172,8 +213,10 @@ message branches word for word.
   prices, the audit touches nothing you run, English and Arabic on WhatsApp, and a
   direct WhatsApp link for dealers who will not fill a form at all.
 - **Proof section:** HBR 2011 named and linked; two tiles relabelled as observations.
-- **Price section:** lifetime founding-rate lock removed; "Unlimited" removed; FAQ
-  answer that repeated the lifetime lock rewritten.
+- **Price section:** lifetime price-lock promise removed; "Unlimited" removed; FAQ
+  answer that repeated the lifetime lock rewritten. *(Superseded 17 September 2026:
+  the price is flat and permanent at AED 399, so there is no lock to promise and no
+  later increase to be locked against — `PRICE-DECISION.md`.)*
 - **Contact:** Arabic line (`dir="auto"`) with an Arabic-prefilled `wa.me` link,
   stating plainly that a full Arabic page is **not built yet**.
 - **CSS:** two small classes added (`.audit-list`, `.trust`). No layout rewrite.
@@ -194,7 +237,10 @@ convert yet.
 
 ## Not fixed, deliberately
 
-- **The AED 399 figure itself.** Ali's call. `PRICING-QUESTIONS.md`.
+- **The AED 399 figure itself.** Ali's call — **decided 17 September 2026: AED 399
+  per month, flat and permanent, first month free, no cap, no deadline, no minimum
+  term.** See `PRICE-DECISION.md`, which is the file to read before touching a price
+  anywhere in this repository.
 - **The `/api/lead` delivery path.** Needs Vercel environment variables, which is
   secret-handling and outside my remit.
 - **Any social proof.** There is none to show. One pilot, zero paying customers, and

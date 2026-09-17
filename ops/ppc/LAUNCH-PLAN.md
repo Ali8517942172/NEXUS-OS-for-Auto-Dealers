@@ -435,7 +435,16 @@ Two consequences to hold in mind, because they are real and not cosmetic:
    has its own Page, move the spend and accept that the social proof does not
    move with it.
 
-**Offer on the page the ads point at: the capped founding rate** — AED 399/month,
-first month free, first 10 UAE dealerships or 31 October 2026. The ads may state
-the price and the cap, because both are published and both are true. The ads may
-NOT state a result, because no dealer has produced one.
+**Offer on the page the ads point at (decided 17 September 2026): AED 399/month,
+first month free, no setup fee, no minimum term.** Flat and permanent — there is
+no cap on the number of dealerships, no deadline, and no expiring rate. The ads
+may state the price and the free first month, because both are published and
+both are true.
+
+The ads may **NOT** state a result, because no dealer has produced one, and they
+may **NOT** use scarcity of any kind — no "only 10 places", no "until 31 October",
+no countdown, no "founding rate ends soon". An earlier version of this plan told
+ads to run a cap and a deadline. **That cap and that deadline no longer exist**, so
+stating them would be false urgency: a Meta Advertising Standards problem
+(see `POLICY-RISK.md`) and, more simply, a lie. The urgency in this funnel comes
+from the dealer's own unanswered enquiries, never from an invented clock.

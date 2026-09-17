@@ -83,6 +83,15 @@ income promises, fake urgency or scarcity, or before/after transformations
 implied as typical. Critically, **the policy applies to the ad creative, every
 text field, AND the landing page** — all three must be consistent.
 
+**Scarcity is banned outright here, and not only as a policy matter.** The offer
+decided on 17 September 2026 is **AED 399/month, flat and permanent, first month
+free, no setup fee, no minimum term** — no cap on dealership count, no end date.
+Earlier copy in this repository advertised "the first 10 UAE dealerships" and
+"until 31 October 2026". **Those limits no longer exist.** Running them now would
+be fake urgency about a non-existent limit: squarely the prohibited pattern
+above, and a lie told to a buyer. Strip any such line from creative, from every
+text field, and from the landing page before spend starts.
+
 **This is where NEXUS is genuinely exposed**, because the product's real value
 is a result claim and we have no results to claim. The database cannot back a
 single outcome number: one pilot dealership, no paying customers, no completed
@@ -124,8 +133,8 @@ review. Do not "improve" the page by adding social proof it cannot back.
 **"Free" claims.** "Free dealer audit" and "first month free" are both
 policy-sensitive because Meta and Google both police free offers that are not
 actually free. Both are true, both are stated on the landing page with the
-follow-on price (AED 399/month) visible in the same viewport, and neither
-requires a card. Keep it that way — the moment the audit requires a payment
+follow-on price (AED 399/month, with no setup fee and no minimum term) visible in
+the same viewport, and neither requires a card. Keep it that way — the moment the audit requires a payment
 method, every ad in this file becomes non-compliant.
 
 ---
@@ -178,8 +187,10 @@ Business-qualification fields (dealership name, stock size) are fine.
 
 - **Misrepresentation** is Google's equivalent catch-all and covers unclear
   billing, hidden costs and "unavailable offers". "First month free, then
-  AED 399/month" must remain visible on the landing page in the same state as
-  the ad says it.
+  AED 399/month, no setup fee, no minimum term" must remain visible on the
+  landing page in the same state as the ad says it. Because the price is flat and
+  permanent, an ad must never imply the AED 399 is introductory or expiring —
+  that is precisely an "unavailable offer".
 - **Destination requirements:** the final URL must work on mobile, must not
   pop an interstitial before content, must not break the back button, and the
   domain in the display URL must match the final URL. The current landing page
