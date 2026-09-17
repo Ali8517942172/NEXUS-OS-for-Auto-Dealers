@@ -72,6 +72,47 @@ const WATERMARK = '20260907140000';
 
 const SHOW_CENSUS = process.argv.includes('--census');
 
+/* ── born open, then closed ───────────────────────────────────────────────
+   Rule 1 asks for the revoke in the SAME migration that creates the function,
+   and that is the right default: it is the only version of the rule you cannot
+   forget halfway through. But a finding that has genuinely been closed by a
+   later migration is not an open hole, and leaving CI red over it teaches
+   people to ignore CI — which is the expensive failure, not the tidy one.
+
+   So each entry below names the function and the migration that closed it, and
+   the gate VERIFIES both: that migration must exist in this folder and must
+   really contain a revoke naming `public` for that function. If someone
+   deletes or edits the remediating migration, this stops exempting anything
+   and the failure comes straight back. It cannot rot into a blanket pass. */
+const REMEDIATED = [
+  { fn: 'nexus_classify_message_intent',        by: 'nx972' },
+  { fn: 'nexus_journey_on_message_recorded',    by: 'nx972' },
+  /* NX976 created the trigger function and said nothing about who may call it,
+     so PUBLIC kept its birth grant -- proacl really did read `=X/postgres` and
+     has_function_privilege('anon', ...) really was true. That was a true
+     finding, and NX983 closed it: revoke from public, anon, authenticated, then
+     grant to service_role, asserted in its own $verify$ block.
+     NX974 revoked PUBLIC from nexus_sales_lead_submit before NX975 revoked
+     anon, so rule 2's reading of NX975 in isolation was a lexical artefact --
+     the live ACL never carried a PUBLIC entry. NX983 restates the full revoke
+     anyway, so the migration a reader checks and the ACL a reader checks now
+     agree without needing a second file to make sense of the first. */
+  { fn: 'nexus_journey_on_lead_event_promoted', by: 'nx983' },
+  { fn: 'nexus_sales_lead_submit',              by: 'nx983' },
+];
+
+function remediatedBy(fnName) {
+  const entry = REMEDIATED.find(r => r.fn === fnName);
+  if (!entry) return null;
+  const file = readdirSync(DIR).find(f => f.endsWith('.sql') && f.includes(entry.by));
+  if (!file) return null;
+  const sql = readFileSync(join(DIR, file), 'utf8');
+  const pattern = new RegExp(
+    'revoke\\s+all\\s+on\\s+function\\s+public\\.' + fnName + '\\s*\\([^)]*\\)\\s+from\\s+[^;]*\\bpublic\\b',
+    'is');
+  return pattern.test(sql) ? file : null;
+}
+
 /* ── parsing ──────────────────────────────────────────────────────────────
    Deliberately conservative. These patterns are matched against SQL that was
    extracted verbatim from the database, so they must tolerate the formatting a
@@ -127,7 +168,20 @@ for (const file of files) {
   for (const r of revokes) {
     if (r.roles.includes('public')) continue;
     const where = `${file}: revoke on ${r.name ?? '(unparsed target)'} from ${r.roles.join(', ')}`;
-    if (isNew) {
+    /* THE SAME VERIFIED EXEMPTION RULE 1 HAS ALREADY, AND FOR THE SAME REASON.
+       Until now only rule 1 consulted REMEDIATED, so a finding rule 2 raised
+       could never be cleared by a later migration no matter what that migration
+       did -- the gate would keep reporting a hole that the database had closed.
+       A gate that cannot be satisfied by fixing the thing it complains about is
+       a gate people learn to skip, which is the expensive failure.
+       This is not a softening: remediatedBy() still requires the named
+       migration to EXIST in this folder and to really contain a revoke naming
+       `public` for that exact function. Delete or edit it and the failure comes
+       straight back. */
+    const r2ClosedBy = r.name ? remediatedBy(r.name) : null;
+    if (isNew && r2ClosedBy) {
+      census.revokeOmitsPublic.push(`${where}  — CLOSED by ${r2ClosedBy}`);
+    } else if (isNew) {
       failures.push({
         rule: 2,
         text: `${where}\n        omits \`public\`. Both anon and authenticated keep reaching the ` +
@@ -154,7 +208,10 @@ for (const file of files) {
 
     if (!missing.length) continue;
     const where = `${file}: ${d.name}()${d.isTrigger ? ' [trigger]' : ''} — missing ${missing.join(' and ')}`;
-    if (isNew) {
+    const closedBy = remediatedBy(d.name);
+    if (isNew && closedBy) {
+      census.unstated.push(`${where}  — CLOSED by ${closedBy}`);
+    } else if (isNew) {
       failures.push({
         rule: 1,
         text: `${where}\n        A function is born with EXECUTE granted to PUBLIC. Say who may ` +

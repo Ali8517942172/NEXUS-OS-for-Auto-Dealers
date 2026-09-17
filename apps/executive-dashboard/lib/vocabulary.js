@@ -499,6 +499,50 @@ export const TEST_TRAFFIC_UNCLASSIFIED =
   'Some arrivals do not say whether they are test traffic. They are counted in neither figure: calling them business '
   + 'would inflate the real number, and calling them test would hide a real enquiry.';
 
+/* ── How a headline number was arrived at ──────────────────────────────────
+   Added 14 September 2026 for the owner strip on Today's Money Leaks, and put
+   here rather than in that screen because it is the same kind of object as
+   ATTRIBUTION_CONFIDENCE above — a closed set of words the database's own state
+   maps onto, with one lookup — and because the moment a SECOND screen wants to
+   label a tile, a second copy of these three words is a second definition of
+   what "confirmed" means. There is one.
+
+   Three words, and the distinction between the first two is the population, not
+   the arithmetic:
+
+     CONFIRMED  the rows counted ARE the thing the tile names.
+     ESTIMATED  the rows counted STAND IN for the thing the tile names, because
+                the thing itself cannot be counted today. A tile carrying this
+                word must say on its surface which population it counted and
+                how that population differs.
+     UNKNOWN    nothing in the database answers the question.
+
+   THE RULE THIS VOCABULARY EXISTS TO ENFORCE, and the only one worth writing
+   down twice: UNKNOWN IS NEVER RENDERED AS A NUMBER, and least of all as zero.
+   A zero on an owner's morning screen is a finding — "nothing is waiting" — and
+   an unmeasured question is not a finding. The tile constructor in
+   screens/money-leaks.js gates on exactly this and will not print a figure
+   beside this word. */
+export const TILE_PROVENANCE = Object.freeze({
+  CONFIRMED: { label: 'Confirmed', tone: 'ok',
+    blurb: 'Counted from the rows this figure is about, in the table it names. It is the count itself and not a '
+         + 'sample, a projection or a proxy for one.' },
+  ESTIMATED: { label: 'Estimated', tone: 'warm',
+    blurb: 'Counted from a population that stands in for the one named above, because that one cannot be counted '
+         + 'from what the database holds today. The tile says which rows were counted and what the difference is — '
+         + 'an estimate whose substitution is not stated is a guess wearing a number.' },
+  UNKNOWN: { label: 'Not known', tone: 'unknown',
+    blurb: 'Nothing in the database answers this today, so no figure is shown. This is not zero. Zero would mean '
+         + 'the check ran and found nothing, and no check ran.' },
+});
+export const tileProvenance = v => TILE_PROVENANCE[String(v || '').trim().toUpperCase()] || null;
+
+/* The sentence that says why a tile is blank rather than nought. Kept as a
+   constant so every screen refuses in the same words. */
+export const UNKNOWN_IS_NOT_ZERO =
+  'Unknown is not zero. A zero here would say the question was asked and the answer was none; nothing in this '
+  + 'database asks it, so the figure is withheld instead of invented.';
+
 /* ── Two refusals this screen makes in the dealership's own interest ───────*/
 export const NO_MONEY_ON_LEAD_SOURCES =
   'No figure on this screen is money. What a lost enquiry would have been worth is recorded nowhere in this '

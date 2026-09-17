@@ -51,6 +51,28 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
 const INGEST_KEY = process.env.NEXUS_LEAD_ENDPOINT_KEY || '';
 
+/* THE DURABLE WRITE USES THE PUBLISHABLE KEY, NOT service_role.
+
+   Measured 16 Sep 2026: this endpoint answered 503 to every enquiry it has
+   ever received, because NEXUS_NOTIFY_WEBHOOK_SECRET was never set on the
+   Vercel project -- which held no environment variables at all. Durability
+   therefore depended on three variables that were also absent, one of them a
+   service_role key that can read every dealership's customers. A public
+   marketing page is the last place that key belongs.
+
+   NX974 replaced it with one function, nexus_sales_lead_submit, that anon may
+   execute and nothing else: it inserts a single NEXUS sales prospect and
+   returns only what it was handed. anon cannot select the table, cannot insert
+   into it directly, and cannot reach a tenant from it. So the key below is the
+   PUBLISHABLE key -- the one designed to ship in a browser -- and leaking it
+   buys an attacker the ability to submit a contact form they can already
+   submit.
+
+   SUPABASE_URL + SUPABASE_KEY + INGEST_KEY above remain wired for the
+   simulation lead_event write. They are optional and unset today. */
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY
+  || process.env.SUPABASE_ANON_KEY || '';
+
 const ALLOWED_ORIGIN_SUFFIXES = ['.vercel.app', 'nexusforautodealers.com'];
 
 /* Best-effort per-instance rate limit. Serverless means many instances, so
@@ -129,6 +151,19 @@ export default async function handler(req, res) {
      absent rather than faked into something that looks idempotent and is not. */
   const submission_id = clean(body.submission_id, 80);
 
+  /* WHICH AD PRODUCED THIS. Without it the spend cannot be judged, and the
+     first thing a paid campaign needs is the ability to be switched off for
+     being bad. An allowlist, not a passthrough: an open jsonb column filled
+     from the query string is a place to put anything. */
+  const ATTRIBUTION_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content',
+                            'utm_term', 'fbclid', 'gclid', 'ttclid', 'referrer', 'landing_path'];
+  const attribution = {};
+  const rawAttr = (body && typeof body.attribution === 'object' && body.attribution) || {};
+  for (const k of ATTRIBUTION_KEYS) {
+    const v = clean(rawAttr[k], 200);
+    if (v) attribution[k] = v;
+  }
+
   if (!full_name) return res.status(400).json({ error: 'name_required' });
   if (!phone && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'contact_required' });
@@ -171,7 +206,53 @@ export default async function handler(req, res) {
     notifyError = 'notify_secret_not_configured';
   }
 
-  /* Optional second write, into the ingestion contract, under a SIMULATION
+  /* THE DURABLE WRITE. It happens whether or not anyone can be notified,
+     because those are different failures: "nobody was told" is recoverable
+     tomorrow morning, "we never had it" is not. Until 16 Sep 2026 this
+     endpoint had only the notification, so a missing environment variable and
+     a lost customer were the same event. */
+  let stored = null, storeError = null;
+  if (SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY) {
+    try {
+      const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/submit_sales_lead', {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: 'Bearer ' + SUPABASE_PUBLISHABLE_KEY,
+          /* The function lives in `nexus_intake`, not `public` -- anon has no
+             USAGE on public and that is deliberate (NX975). PostgREST routes an
+             RPC by this header, so without it the call resolves in `public` and
+             answers 401 "permission denied for schema public". */
+          'Content-Profile': 'nexus_intake',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          p_submission_id: submission_id || null,
+          p_full_name: full_name,
+          p_phone_e164: phone,
+          p_email: email || null,
+          p_dealership: dealership || null,
+          p_stock_size: stock_size || null,
+          p_message: message || null,
+          p_attribution: attribution,
+          p_ip_country: req.headers['x-vercel-ip-country'] || null,
+        }),
+      });
+      if (r.ok) {
+        const rows = await r.json().catch(() => null);
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        stored = row && row.was_duplicate ? 'duplicate' : 'stored';
+      } else {
+        storeError = 'store_' + r.status;
+      }
+    } catch (e) {
+      storeError = 'store_unreachable';
+    }
+  } else {
+    storeError = 'store_not_configured';
+  }
+
+  /* Optional third write, into the ingestion contract, under a SIMULATION
      endpoint. A failure here never fails the request: this is instrumentation,
      and losing a real enquiry to prove a test path would be the wrong trade. */
   let recorded = null;
@@ -209,32 +290,40 @@ export default async function handler(req, res) {
     }
   }
 
-  if (!notified) {
-    /* THE COMMENT HERE USED TO SAY "Nothing durable happened", AND THE BRANCH
-       DID NOT CHECK. `recorded` can be 'recorded' -- the enquiry IS in
-       lead_event -- and this branch still asserted the opposite. Today the
-       assertion happens to be true, because production carries zero simulation
-       endpoints (measured 7 Sep 2026: 4 endpoints, all production, none
-       simulation), so the optional write cannot succeed and `recorded` is null.
-       The day that endpoint exists, the sentence would have been false while
-       reading like a fact -- the house rule about captions asserting the
-       opposite of their own branch, which this project has now found eight
-       times.
+  const durable = stored === 'stored' || stored === 'duplicate' || recorded === 'recorded';
 
-       The status code deliberately does NOT change. A stored enquiry nobody is
-       notified about still means no human will call this person back, so the
-       browser must still show the WhatsApp fallback. What changes is that the
-       response and the log say which of the two happened. */
-    const durable = recorded === 'recorded';
-    console.error('lead notify failed', { notifyError, recorded, durable, submission_id });
+  /* THE STATUS CODE NOW FOLLOWS DURABILITY, NOT NOTIFICATION, AND THAT IS A
+     DELIBERATE REVERSAL.
+
+     The previous rule was: if nobody was notified, answer 503 so the browser
+     shows the WhatsApp fallback, because a stored enquiry nobody is told about
+     still means no human calls this person back. That reasoning was sound when
+     nothing was stored -- and for five months nothing was, so the two were the
+     same thing and the 503 was simply "we lost it".
+
+     They are not the same thing. Once the enquiry is in nexus_sales_lead it
+     cannot be lost, only delayed, and answering 503 to a visitor whose details
+     we are holding tells them a lie in the direction that costs the most: they
+     retry, give up, or go to a competitor, and the row sits there unread. So a
+     durable enquiry answers 200 and says plainly in `notified` whether a human
+     has been paged yet. An enquiry nothing kept still answers 503, still shows
+     the WhatsApp fallback, and now names which of the two paths failed. */
+  if (!durable) {
+    console.error('lead not stored', { storeError, notifyError, recorded, submission_id });
     return res.status(503).json({
       error: 'not_delivered',
-      detail: notifyError,
+      detail: storeError || notifyError,
+      notify_detail: notifyError,
       /* Named so a later reader cannot mistake it for "we have your details and
          someone will call": stored is not contacted. */
-      stored_for_replay: durable,
+      stored_for_replay: false,
     });
   }
 
-  return res.status(200).json({ ok: true, recorded });
+  if (!notified) {
+    /* Kept, not lost. Loud in the log so the queue is read in the morning. */
+    console.error('lead stored but nobody notified', { notifyError, stored, submission_id });
+  }
+
+  return res.status(200).json({ ok: true, stored, notified, recorded });
 }

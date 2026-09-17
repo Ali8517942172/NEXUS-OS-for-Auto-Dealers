@@ -77,6 +77,17 @@ const NAV = [
     { id:'team',       title:'Team',       icon:'groups' },
   ]},
   { group: '', items: [
+    /* ── Setup ───────────────────────────────────────────────────────────────
+       Added 14 Sep 2026. It sits beside Settings, at the bottom and outside
+       every working group, because it is not a screen anybody works from: it
+       is read once at the beginning of a dealership's life and then, ideally,
+       never again. Putting it at the top would give a dealership that is
+       already running a permanent reminder of a job it finished months ago.
+
+       An owner who has NOT finished is not expected to find it here. The banner
+       at the top of Today's Money Leaks brings them to it, and it renders only
+       while something is still outstanding. */
+    { id:'setup',    title:'Setup',    icon:'rocket_launch' },
     { id:'settings', title:'Settings', icon:'settings' },
   ]},
 ];

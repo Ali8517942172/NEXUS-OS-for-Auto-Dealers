@@ -119,10 +119,18 @@
 
 import { db, onIdentityChange } from '../lib/data.js';
 import { el } from '../lib/dom.js';
-import { aed, ago, dubaiStamp, esc, n0, num } from '../lib/format.js';
+import { UNKNOWN_WHY, aed, ago, dubaiStamp, esc, n0, num, tone } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { panel } from '../lib/ui.js';
+/* The three words a headline number may be labelled with, and the sentence that
+   refuses a nought in place of a measurement. Owned by lib/vocabulary.js for
+   the same reason ATTRIBUTION_CONFIDENCE is: a second copy of "confirmed" is a
+   second definition of it. */
+import { TILE_PROVENANCE, UNKNOWN_IS_NOT_ZERO } from '../lib/vocabulary.js';
+/* The six setup steps, read by lib/setup.js and never re-derived here. This
+   screen renders ONE line about them and owns none of the reasoning. */
+import { readSetup, resetSetupReads } from '../lib/setup.js';
 /* ── The design system, adopted here first ────────────────────────────────
    6 Sep 2026. This screen is the app's default landing screen, so it is what a
    buyer sees before anything else, and it is the first one converted to
@@ -416,6 +424,175 @@ const readWorkflows = shared(() => db('v_workflow_health?select=name,category,is
   + 'successes_30d,failures_30d,no_result_30d,effective_runs_30d,success_rate_30d,last_run,last_success&limit=200'));
 
 const one = rows => (Array.isArray(rows) ? rows[0] : rows) || null;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE OWNER STRIP — added 14 September 2026
+   ══════════════════════════════════════════════════════════════════════════
+   Everything from here to the end of this block is new, and it is ADDITIVE:
+   not one read, threshold or derivation above or below it changed. It exists
+   because the four registers underneath answer "where is money leaking", and
+   the four things an owner actually walks in asking are narrower and more
+   immediate than that — who is hot, what is waiting on me, who have we left
+   on read, and did any of it come back.
+
+   It sits ABOVE "Today's money leaks" rather than replacing it for the reason
+   the file header gives about Overview: a leak register is the argument, and
+   this is the order of work. The argument stays.
+
+   THE ONE RULE THIS STRIP ADDS TO THE SCREEN. Every tile carries how its
+   number was arrived at, in one of three words owned by lib/vocabulary.js —
+   CONFIRMED, ESTIMATED, NOT KNOWN — and ownerTile() below will not print a
+   figure under the third. That is the same shape as the MONEY_WORD gate a
+   hundred lines up: the word decides whether a number is allowed, in one
+   place, so no caller can put a zero where a measurement never happened. */
+
+/* Every lead on file, once. The HOT count and the Action Center's lead lookup
+   are both taken from THIS array rather than from two reads, so the tile can
+   never report a lead the list below cannot show — the same "one figure, one
+   derivation" rule the leak strip states about its own readiness read. */
+const readAllLeads = shared(() => db('leads?select=id,name,status,ai_score,score_source,rules_score,ai_score_raw,'
+  + 'ai_intent_raw,ai_parse_failed,vehicle_interest,source,created_at&order=id.desc&limit=1000'));
+
+/* The action queue itself, not v_lead_recovery_queue. The view is the right
+   read for screens/lead-recovery.js, which needs the decided-by and outcome
+   joins; this strip needs the four recovery-evidence columns and the raw
+   recommendation, and reading the table means the count and the list below it
+   come from the same rows. */
+const readActions = shared(() => db('lead_recovery_actions?select=id,lead_id,recommendation,status,engine_state,'
+  + 'engine_reason,engine_confidence,engine_confidence_basis,engine_risk_level,engine_risk_basis,proposed_at,'
+  + 'proposed_source,outcome_state,outcome_purchase_id,attribution_basis,recovered_value_aed,'
+  + 'recovered_value_basis&order=proposed_at.desc&limit=500'));
+
+/* The ONLY place in this database where a message's direction is recorded
+   against a thread. `public.conversation` has no direction column at all and
+   `channel_message_events.conversation_id` does not resolve to one, so
+   "has anybody replied to this conversation" cannot be asked of the
+   conversation table. See the UNANSWERED tile, which says so on its face
+   rather than counting the wrong population quietly. */
+const readThreads = shared(() => db('v_conversations?select=thread_key,display_name,identified,lead_name,'
+  + 'lead_status,inbound_count,outbound_count,awaiting_reply,last_message_at&limit=500'));
+
+/* Read only so the UNANSWERED tile can state the size of the population it did
+   NOT count. Nothing is derived from it. */
+const readConvRows = shared(() => db('conversation?select=id,channel,state,message_count,opened_at,'
+  + 'last_message_at&limit=500'));
+
+/* The trail. CLASSIFY carries the intent and no ref, PROMOTE carries the same
+   intent AND the lead it was written against, so the lead is found through
+   PROMOTE/SCORE and the correlation id is what ties CLASSIFY to it. Read as
+   rows rather than through nexus_journey_trace(p_correlation_id) because the
+   RPC answers for one correlation and this panel needs the reason for every
+   proposed action in one request. */
+const readTrail = shared(() => db('journey_step?select=correlation_id,step,status,ref_table,ref_id,detail,at'
+  + '&step=in.(CLASSIFY,PROMOTE,SCORE)&order=id.desc&limit=500'));
+
+/* ── The tile constructor, and the gate it carries ─────────────────────────
+   One way to build an owner tile, for the same reason makeLeak() is the only
+   way to build a leak line: the check has to be somewhere a caller cannot
+   forget it. */
+const PROV_ICON = { CONFIRMED: 'check', ESTIMATED: 'alert', UNKNOWN: 'question' };
+const provChip = key => {
+  const p = TILE_PROVENANCE[key];
+  return dsChip(p.label, dsIntent(p.tone), { name: PROV_ICON[key], title: p.blurb });
+};
+
+function ownerTile({ label, prov, count, phrase = '', meta = '', note = '', intent = '' }) {
+  const p = TILE_PROVENANCE[prov];
+  if (!p) {
+    return dsStat({ label, value: 'Unlabelled', words: true, intent: 'danger',
+      note: para(`This tile was built claiming a provenance of "${esc(str(prov)) || 'nothing'}", which is not one of `
+        + 'the three words a tile is allowed to carry. No figure is shown: a number nobody can account for is worse '
+        + 'than no number.') });
+  }
+  /* THE GATE. Not known may not carry a figure, and in particular may not carry
+     a nought — which is the single defect this strip was written to avoid. The
+     value slot gets WORDS at heading size, exactly as the leak strip does for a
+     read that failed, so nothing in it can be misread as a quantity. */
+  if (prov === 'UNKNOWN') {
+    return dsStat({ label, value: phrase || 'Not known', words: true, intent: 'unknown',
+      meta: provChip('UNKNOWN') + (meta ? `<span>${meta}</span>` : ''),
+      note: para(esc(UNKNOWN_IS_NOT_ZERO)) + note + para(esc(p.blurb)) });
+  }
+  const n = n0(count);
+  if (n == null) {
+    return dsStat({ label, value: 'No figure', words: true, intent: 'danger', meta: provChip(prov),
+      note: para(`This tile is labelled ${esc(p.label.toLowerCase())} and no number came with it, so nothing is `
+        + 'shown. A provenance without a figure is a claim this screen cannot make.') + note });
+  }
+  return dsStat({ label, value: num(n), intent: intent || (n ? 'warning' : 'success'),
+    meta: provChip(prov) + (meta ? `<span>${meta}</span>` : ''),
+    note: para(esc(p.blurb)) + note });
+}
+
+/* ── The Action Center list ────────────────────────────────────────────────
+   The recommendation IS the instruction, so it is what the button says. The
+   map is closed: a recommendation this product has no wording for renders the
+   database's own word verbatim and says it has no wording, rather than being
+   quietly relabelled as one of the four below. */
+const REC_LABEL = {
+  ESCALATE:       'Contact now',
+  FOLLOW_UP:      'Follow up',
+  ASSIGN_OWNER:   'Assign an owner',
+  MANAGER_REVIEW: 'Manager review',
+};
+const recLabel = v => REC_LABEL[up(v)] || null;
+
+/* Why the primary button is dead, in the dealership's language and not the
+   database's. It is disabled and says so on its face rather than being wired
+   to something that looks live: screens/overview.js states the rule this obeys
+   — "a click that silently does nothing is the one outcome that must not
+   happen". The lane that CAN take a decision is linked beside it. */
+const NOT_WIRED = 'NEXUS cannot record this decision from this screen yet. The dashboard is allowed to READ the '
+  + 'recovery queue and has not been given a way to write a decision back to it, so this button would change '
+  + 'nothing — it is disabled rather than shown as live. Open Lead Recovery to see the queue in full.';
+
+const actionButton = a => {
+  const label = recLabel(a.recommendation);
+  return label
+    ? `<button class="btn sm ghost" disabled title="${esc(NOT_WIRED)}">${esc(label)} — not wired yet</button>`
+    : `<button class="btn sm ghost" disabled title="${esc('The engine recommends "' + (str(a.recommendation) || 'nothing') + '" and this screen has no wording for it, so no instruction is put in the reader’s mouth. ' + NOT_WIRED)}">No wording for this recommendation</button>`;
+};
+
+/* The score's provenance, straight out of leads.score_source and never
+   translated. Rendered VERBATIM — lib/format.js's pill() explains why that is
+   the caller's claim to make — with the meaning behind the row's disclosure.
+   The tone follows confIntent()'s reasoning forty lines up: a provenance is not
+   a severity, so a rules score is not painted redder than a model score. Only
+   "we do not know how this was scored" gets a colour, and it is the unknown
+   one. */
+const SCORE_SOURCE_MEANING = {
+  RULES: 'Scored by the deterministic rules in NEXUS. No model was consulted, so the same message scores the same '
+       + 'way every time.',
+  AI_SCORE_CONFIRMED: 'A model scored this and its answer parsed cleanly into the score on the row.',
+  AI_SCORE_FALLBACK: 'A model was asked and its answer could not be used, so the rules score was kept instead. The '
+       + 'number on this row is the rules number.',
+  AI_SCORE_UNKNOWN: 'Nothing on this row records how it was scored. The number is whatever was written at the time '
+       + 'and its basis was not kept.',
+  AI_SCORE_FAILED: 'The scoring attempt failed. Treat the number as unearned rather than as a low score.',
+};
+const scoreSourceIntent = v => (SCORE_SOURCE_MEANING[up(v)] && up(v) !== 'AI_SCORE_UNKNOWN'
+  && up(v) !== 'AI_SCORE_FAILED' ? 'neutral' : 'unknown');
+
+/* The reason, in the order of how close the evidence sits to the decision.
+   NOTHING here composes a sentence: every branch returns text a row already
+   holds, with the row it came from beside it, and the last branch returns null
+   so the cell can say that no reason was recorded rather than fill one in. */
+function actionReason(a, lead, trail) {
+  if (str(a.engine_reason)) return { text: str(a.engine_reason), from: 'lead_recovery_actions.engine_reason' };
+  if (Array.isArray(trail) && trail.length) {
+    const mine = trail.filter(s => str(s.ref_table) === 'leads' && str(s.ref_id) === str(a.lead_id));
+    const corr = new Set(mine.map(s => str(s.correlation_id)).filter(Boolean));
+    const pick = up => trail.find(s => corr.has(str(s.correlation_id)) && String(s.step).toUpperCase() === up && str(s.detail));
+    const step = pick('PROMOTE') || pick('CLASSIFY');
+    if (step) return { text: str(step.detail), from: `journey_step ${str(step.step)}, correlation ${str(step.correlation_id)}` };
+  }
+  if (lead && str(lead.ai_intent_raw)) return { text: str(lead.ai_intent_raw), from: 'leads.ai_intent_raw' };
+  return null;
+}
+
+const NO_REASON = 'No reason was recorded anywhere for this one — not on the action, not on the trail that raised it, '
+  + 'and not on the lead. It is left blank rather than filled in: a recommendation whose reason this screen invents '
+  + 'is a recommendation nobody can argue with.';
 
 /* ══════════════════════════════════════════════════════════════════════════
    REGISTER 1 — the leaks
@@ -724,6 +901,274 @@ SCREENS.moneyleaks = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. */
   const root = el('div', 'ds-screen');
   host.appendChild(root);
+
+  /* ────────────────────────────────────────────────────────────────────────
+     The setup banner — above P0, and not one of the numbered registers
+
+     ONE LINE, AT THE TOP, AND ONLY WHILE IT IS TRUE.
+
+     A dealership whose WhatsApp is not connected has no leaks to read, because
+     nothing is arriving for anything to leak from — and this screen would
+     report that as a clean morning. So the banner has to be here, above the
+     figures it qualifies.
+
+     What it must NOT be is a takeover. An owner who is mid-setup knows they are
+     mid-setup; what they need is one sentence and a way through to the detail,
+     not a wall in front of the screen they opened. So: one callout, no stat
+     tiles, no step list, and nothing at all once every step is done.
+
+     It is appended BEFORE the panels below so that it holds its place at the
+     top while its own read is in flight, and it removes itself if there is
+     nothing to say — an empty holder would otherwise leave a gap the width of
+     one flex gap and no explanation for it. Nothing here is awaited: the four
+     panels underneath must not wait on a setup check to start reading. */
+  const setupHolder = el('div');
+  root.appendChild(setupHolder);
+  resetSetupReads();
+  readSetup().then(s => {
+    if (!s.prompt) { setupHolder.remove(); return; }
+    const left = s.steps.filter(x => x.state === 'INCOMPLETE');
+    const unmeasured = s.steps.filter(x => x.state === 'UNKNOWN');
+    const names = left.map(x => x.title).join(', ');
+    setupHolder.innerHTML = dsCallout({
+      intent: left.length ? 'warning' : 'unknown',
+      lede: `Setup: ${num(s.done)} of ${num(s.denominator)} steps done.`,
+      body: (left.length
+              ? `Still to do: ${esc(names)}.`
+              : 'Nothing is outstanding that could be checked.')
+          + (unmeasured.length
+              ? ` ${num(unmeasured.length)} ${plural(unmeasured.length, 'step', 'steps')} could not be checked at all.`
+              : '')
+          + ` ${linkBtn('setup', 'Open Setup')}`,
+      note: para('The figure is steps confirmed done divided by six, and a step nobody could measure is not counted '
+              + 'as done — so this line is not a claim that the rest of the setup is unfinished, only that six '
+              + 'checks did not all come back done.')
+        + para('It matters on this screen in particular: an unfinished setup means nothing is arriving, and a '
+              + 'morning with no arrivals reads exactly like a morning with no leaks.'),
+      noteLabel: 'How this line is counted' });
+    wireGo(setupHolder);
+  }).catch(() => {
+    /* A setup check that fails is not news an owner opened this screen for, and
+       lib/setup.js does not reject in any case. Nothing is painted rather than
+       a banner about a banner. */
+    setupHolder.remove();
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────
+     P0 · The four things an owner walks in asking
+
+     Above the leak register on purpose — see THE OWNER STRIP block near the
+     reads for why, and for the one rule these four tiles add to this screen.
+     ──────────────────────────────────────────────────────────────────────── */
+  panel(root, {
+    title: 'Right now',
+    sub: 'Who is hot, what is waiting on a decision, who has been left on read, and what came back. Every tile says '
+       + 'how its number was arrived at, and a question nothing in the database answers is shown as NOT KNOWN — '
+       + 'never as nought',
+    actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('conversations', 'Open Conversations'),
+    load: async () => {
+      const [ld, ac, th, cv] = await Promise.all([settle(readAllLeads()), settle(readActions()),
+                                                  settle(readThreads()), settle(readConvRows())]);
+      if (ld.err && ac.err && th.err && cv.err) throw ld.err;
+      return { ld, ac, th, cv };
+    },
+    render: ({ ld, ac, th, cv }) => {
+      const leads   = ld.err ? null : (ld.v || []);
+      const actions = ac.err ? null : (ac.v || []);
+      const threads = th.err ? null : (th.v || []);
+      const convs   = cv.err ? null : (cv.v || []);
+
+      /* ── HOT LEADS ─────────────────────────────────────────────────────
+         leads.status is the column the rest of this product routes on, so
+         this is the count itself and not a proxy for it. CONFIRMED. */
+      const hot = leads ? leads.filter(l => up(l.status) === 'HOT') : null;
+      const hotTile = leads == null
+        ? ownerTile({ label: 'Hot leads', prov: 'UNKNOWN', phrase: 'Not read',
+            note: readFailed('The leads table', ld.err) })
+        : ownerTile({ label: 'Hot leads', prov: 'CONFIRMED', count: hot.length,
+            intent: hot.length ? 'danger' : 'success',
+            meta: `<span>of ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} on file</span>`,
+            note: para('Counted on <span class="ds-mono">leads.status</span>, which is the same column the router '
+              + 'and every other screen in NEXUS routes on. It is not a re-scoring of anything.') });
+
+      /* ── URGENT ACTIONS ────────────────────────────────────────────────
+         PROPOSED is the one status that means a person has not answered yet.
+         Counted over the same rows the list below renders. CONFIRMED. */
+      const proposed = actions ? actions.filter(a => up(a.status) === 'PROPOSED') : null;
+      const actionTile = actions == null
+        ? ownerTile({ label: 'Urgent actions', prov: 'UNKNOWN', phrase: 'Not read',
+            note: readFailed('The recovery action queue', ac.err) })
+        : ownerTile({ label: 'Urgent actions', prov: 'CONFIRMED', count: proposed.length,
+            intent: proposed.length ? 'warning' : 'success',
+            meta: `<span>of ${num(actions.length)} action ${plural(actions.length, 'record', 'records')}</span>`,
+            note: para('Every recovery action whose status is still PROPOSED — raised by the engine and not yet '
+              + 'answered by a person. The list underneath is these same rows, so the two cannot disagree.') });
+
+      /* ── UNANSWERED ────────────────────────────────────────────────────
+         ESTIMATED, and the reason is the whole tile. `public.conversation`
+         records no message direction, so a conversation cannot be asked
+         whether anybody replied to it. The only place direction IS recorded
+         against a thread is the communication ledger, and those threads are a
+         DIFFERENT population — the file header above states the rule this
+         obeys: a thread is not known to be a waiting customer. So the number
+         is real, the substitution is named on the surface, and the word on
+         the tile is ESTIMATED rather than CONFIRMED. */
+      const waiting = threads ? threads.filter(t => t.awaiting_reply === true) : null;
+      const convLine = convs == null
+        ? 'The conversation table could not be read on this load, so its size is not stated here.'
+        : `The conversation table holds ${num(convs.length)} ${plural(convs.length, 'row', 'rows')}, and not one of `
+          + 'them can be asked this question.';
+      const unansweredTile = threads == null
+        ? ownerTile({ label: 'Unanswered', prov: 'UNKNOWN', phrase: 'Not read',
+            note: readFailed('The message ledger', th.err) })
+        : ownerTile({ label: 'Unanswered', prov: 'ESTIMATED', count: waiting.length,
+            intent: waiting.length ? 'warning' : 'success',
+            meta: `<span>of ${num(threads.length)} message ${plural(threads.length, 'thread', 'threads')} — not from `
+                + '<span class="ds-mono">conversation</span></span>',
+            note: para('Counted as threads whose LAST message came from the customer, in the communication ledger, '
+                + 'which is the only place in this database where a message direction is recorded against a thread.')
+              + para('It is labelled estimated and not confirmed because it is not the population the tile names. '
+                + `<span class="ds-mono">conversation</span> carries no direction column, and no message event `
+                + 'resolves to a conversation row, so "has this conversation been replied to" cannot be asked of it. '
+                + esc(convLine))
+              + para('A thread is also not known to be a customer: these threads do not all resolve to a lead, so '
+                + 'this is a count of conversations awaiting a reply and NOT a count of buyers left waiting.') });
+
+      /* ── RECOVERED ─────────────────────────────────────────────────────
+         Through recoveryEvidence() — the four-column test imported from
+         screens/actions.js and never re-implemented here. A nought under this
+         label is only allowed BECAUSE the test ran on every action record and
+         the denominator is printed beside it. */
+      const evs = actions ? actions.map(a => ({ a, ev: recoveryEvidence(a) })) : null;
+      const attributed = evs ? evs.filter(x => x.ev.state === 'ATTRIBUTED') : null;
+      const unsupported = evs ? evs.filter(x => x.ev.state === 'UNSUPPORTED') : [];
+      const recoveredTile = actions == null
+        ? ownerTile({ label: 'Recovered', prov: 'UNKNOWN', phrase: 'Not read',
+            note: readFailed('The recovery evidence behind this count', ac.err) })
+        : ownerTile({ label: 'Recovered', prov: 'CONFIRMED', count: attributed.length,
+            intent: attributed.length ? 'success' : 'neutral',
+            meta: `<span>${num(actions.length)} ${plural(actions.length, 'action', 'actions')} tested on four `
+                + 'columns</span>',
+            note: para('An action counts as recovered only when all four of these are on the row: the outcome is '
+                + 'ATTRIBUTED, a recorded sale is linked to it, somebody recorded on what basis, and somebody '
+                + 'recorded how the figure was arrived at. The test is the one in the Action Center and is imported, '
+                + 'not repeated.')
+              + para(attributed.length
+                  ? 'The figure is a count of actions, not an amount of money. No currency total is offered here.'
+                  : 'Nought here is a finding and not a blank: the test ran on every action record above and none '
+                    + 'of them carried all four columns.')
+              + (unsupported.length
+                  ? para(esc(unsupportedRecoverySentence(unsupported[0].ev)))
+                  : '') });
+
+      return `<div style="padding:16px">${dsStatRow(hotTile + actionTile + unansweredTile + recoveredTile)}</div>`;
+    },
+  }).then(wireGo);
+
+  /* ────────────────────────────────────────────────────────────────────────
+     P0b · The Action Center — what is waiting on a person
+
+     The same PROPOSED rows the tile above counts, with the lead they are about
+     joined on in this file rather than in a view, because the columns this
+     list needs (the enquiry text, the score and the score's provenance) are on
+     `leads` and the columns it needs about the decision are on
+     `lead_recovery_actions`. A missing lead row is SAID, not blanked.
+     ──────────────────────────────────────────────────────────────────────── */
+  panel(root, {
+    title: 'Waiting on you',
+    sub: 'Every recovery action the engine has raised and nobody has answered. The button on each row is the '
+       + 'recommendation itself — and it is disabled, with the reason on it, because this build cannot write a '
+       + 'decision back',
+    actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('actions', 'Open the Action Center'),
+    load: async () => {
+      const [ac, ld, tr] = await Promise.all([settle(readActions()), settle(readAllLeads()), settle(readTrail())]);
+      if (ac.err) throw ac.err;
+      return { ac, ld, tr };
+    },
+    render: ({ ac, ld, tr }) => {
+      const actions = ac.v || [];
+      const leads = ld.err ? null : (ld.v || []);
+      const trail = tr.err ? null : (tr.v || []);
+      const proposed = actions.filter(a => up(a.status) === 'PROPOSED');
+
+      if (!proposed.length) {
+        return dsEmpty({ title: 'Nothing is waiting on a decision', name: 'check', intent: 'success',
+          body: `The queue was read and holds ${num(actions.length)} action `
+            + `${plural(actions.length, 'record', 'records')}, none of them still PROPOSED. That is a measured `
+            + 'clear, not an empty screen.' });
+      }
+
+      const rows = proposed.map(a => {
+        const lead = leads ? (leads.find(l => str(l.id) === str(a.lead_id)) || null) : null;
+        return { a, lead, leadUnread: leads == null, reason: actionReason(a, lead, trail) };
+      });
+
+      const leadCell = r => {
+        if (r.lead) return `${bold(esc(str(r.lead.name) || 'Unnamed'))}${muted('Lead ' + mono(r.a.lead_id))}`;
+        return `${bold('Lead ' + esc(str(r.a.lead_id)))}`
+          + (r.leadUnread
+              ? hot('The leads table could not be read on this load, so nothing about this customer is shown. '
+                  + 'It is not a lead that is missing.')
+              : hot('No lead row came back for this id. The action exists and the customer it is about does not '
+                  + 'read back, which is a fault to report rather than a row to tidy away.'));
+      };
+
+      const askCell = r => {
+        if (!r.lead) return muted('Not shown — see the lead column.');
+        const txt = str(r.lead.vehicle_interest);
+        return txt ? said(txt, 'The enquiry in full')
+          : muted('Nothing was recorded as the enquiry on this lead.');
+      };
+
+      const scoreCell = r => {
+        if (!r.lead) return muted('—');
+        const n = n0(r.lead.ai_score);
+        const src = up(r.lead.score_source);
+        const meaning = SCORE_SOURCE_MEANING[src];
+        const chip = src
+          ? dsChip(str(r.lead.score_source), scoreSourceIntent(src),
+              { verbatim: true, title: meaning || 'This screen has no meaning recorded for that value. It is shown '
+                + 'exactly as the database holds it rather than folded into a word it might mean.' })
+          : dsChip('no source recorded', 'unknown');
+        return `${bold(n == null ? 'No score' : num(n))}<div class="ds-cell-sub">${chip}</div>`;
+      };
+
+      /* Verbatim, and toned through lib/format.js's own table so a status word
+         means the same colour here as it does on Leads. A word that table has
+         never been taught carries the same hover sentence it carries there,
+         rather than a silent grey chip. */
+      const statusCell = r => {
+        if (!r.lead) return muted('—');
+        const v = str(r.lead.status);
+        const t = tone(v);
+        return dsChip(v || 'no status recorded', dsIntent(t),
+          { verbatim: !!v, title: t === 'unknown' && v ? UNKNOWN_WHY : '' });
+      };
+
+      const reasonCell = r => (r.reason
+        ? dsCell(esc(firstSentence(r.reason.text)),
+            para(esc(r.reason.text)) + muted('Read from ' + mono(r.reason.from)), 'The reason in full')
+        : dsCell('<span class="ds-t-unknown">No reason recorded</span>', para(esc(NO_REASON)), 'Why this is blank'));
+
+      const table = dsTable([
+        { label: 'Lead', prose: true, render: leadCell },
+        { label: 'What they asked for', prose: true, render: askCell },
+        { label: 'Score', align: 'r', render: scoreCell },
+        { label: 'Status', mid: true, render: statusCell },
+        { label: 'Why it was raised', prose: true, render: reasonCell },
+        { label: 'Next step', mid: true, render: r => actionButton(r.a) },
+      ], rows, { caption: 'Recovery actions awaiting a decision' });
+
+      return table + `<div style="padding:12px 16px 16px">${dsCallout({
+        intent: 'warning', name: 'alert',
+        lede: 'The button on each row cannot be pressed, and that is deliberate.',
+        noteLabel: 'why',
+        note: para(esc(NOT_WIRED))
+          + para('The alternative — a live-looking button that quietly does nothing — is the one outcome this app '
+            + 'refuses everywhere. The decision itself is taken in Lead Recovery.'),
+      })}</div>`;
+    },
+  }).then(wireGo);
 
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers

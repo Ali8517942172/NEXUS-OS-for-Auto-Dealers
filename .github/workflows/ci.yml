@@ -166,3 +166,5 @@ jobs:
       - name: Name what this change introduced
         if: github.event_name == 'pull_request'
         run: node ops/ci/secret-scan.mjs --diff "origin/${{ github.base_ref }}"
+      - name: No destructive script may reach main
+        run: node ops/ci/no-destructive-scripts.mjs

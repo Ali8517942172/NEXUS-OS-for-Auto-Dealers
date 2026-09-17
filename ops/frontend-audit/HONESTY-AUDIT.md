@@ -632,7 +632,9 @@ select doc_title, section, source_file, page_number from rag_documents;
 -- Trade-In Appraisal SOP     | Inspection / Diagnostic / …  | trade_in_appraisal_sop.pdf    |  8–11
 ```
 
-Every one of the 15 rows is in `setup_real_data.sql:111-125`. The warranty text reads
+Every one of the 15 rows is in `ops/journey-lab/DO-NOT-RUN-IN-PRODUCTION/setup_real_data.sql:121-135`
+(quarantined 2026-09-14; was `setup_real_data.sql:111-125` at the repo root before a
+10-line DO-NOT-RUN header was prepended — do not execute that file). The warranty text reads
 *"All new vehicles sold by NEXUS OS come with a standard warranty of 3 years or
 100,000 km."*
 
