@@ -39,7 +39,7 @@
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ q: $json.question, match_limit: 6 }) }}",
+        "jsonBody": "={{ JSON.stringify({ q: $json.question, match_limit: 6, p_tenant: $json.tenant_id }) }}",
         "options": {
           "timeout": 8000
         }
@@ -400,6 +400,65 @@
       "parameters": {
         "jsCode": "// Verify every node whose success this audit row is about to claim.\n// 'Respond to Webhook' swallows with onError: continueRegularOutput: if the\n// response never reaches the caller the run still carries on to 'Audit Log'.\nconst CLAIMED = [\n  { node: 'Respond to Webhook', what: 'HTTP answer returned to the caller', critical: true },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return Object.assign({}, c, { ok: false, why: 'node did not run on this branch' }); }\n  if (!items.length) return Object.assign({}, c, { ok: false, why: 'node produced no items' });\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = (j.error && (j.error.message || j.error.description)) || j.error;\n    return Object.assign({}, c, { ok: false, why: String(m).slice(0, 300) });\n  }\n  return Object.assign({}, c, { ok: true });\n}\n\nconst results = check ? CLAIMED.map(check) : [];\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nlet status = fatal.length   ? 'FAILED'\n           : dropped.length ? 'PARTIAL'\n           : 'SUCCESS';\n\nconst base = $input.first().json || {};\n\nlet fr = {};\ntry { fr = $('Format Response').first().json || {}; } catch (e) { fr = {}; }\n\n/* 30 Aug 2026: delivering an HTTP 200 that says \"both model tiers failed\" is a\n   delivered response, not a successful answer, and the audit row must not read\n   SUCCESS for it. Same family of defect as the citations: do not record an\n   outcome the run did not achieve. */\nconst g = base.grounding || fr.grounding || null;\nconst gstate = g ? g.state : null;\nconst extra = [];\nif (gstate === 'model_unavailable') {\n  if (status === 'SUCCESS') status = 'PARTIAL';\n  extra.push('no model answered - response delivered but not sourced');\n}\nif (gstate === 'uncited') extra.push('answer carried no citation markers - shown to the user as uncited');\nif (gstate === 'declined') extra.push('model declined: NOT_IN_CONTEXT');\nif (g && g.dropped_from_prompt && g.dropped_from_prompt.length)\n  extra.push('retrieved but not sent to the model: ' + g.dropped_from_prompt.join(','));\nif (g && g.unsupported_figures && g.unsupported_figures.length)\n  extra.push('figures not found in retrieved text: ' + g.unsupported_figures.slice(0, 8).join(','));\nif (g && g.invalid_refs && g.invalid_refs.length)\n  extra.push('model cited non-existent sources: ' + g.invalid_refs.join(','));\n\nreturn [{ json: Object.assign({}, base, {\n  question: base.question !== undefined ? base.question : (fr.question != null ? fr.question : null),\n  documents_consulted: base.documents_consulted !== undefined ? base.documents_consulted : (fr.documents_consulted != null ? fr.documents_consulted : null),\n  documents_cited: base.documents_cited !== undefined ? base.documents_cited : (fr.documents_cited != null ? fr.documents_cited : null),\n  grounding: g,\n  delivery: {\n    status: status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' - ' + r.why),\n    grounding_state: gstate,\n    notes: extra,\n    note: (dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified')\n      + (extra.length ? ' | ' + extra.join(' | ') : '')\n  }\n}) }];"
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_current_tenant_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $('Webhook - Ask AI').first().json.headers.authorization || '' }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "nx991-resolve-caller-dealership",
+      "name": "Resolve Caller Dealership",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        388,
+        160
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "/* NX991 CUTOVER (17 Sep 2026).\n *\n * This workflow used to call search_rag_documents(q, match_limit). NX991 made\n * that 2-argument form RAISE for a backend caller once a SECOND dealership\n * exists, because the honest alternative -- returning zero rows -- is\n * indistinguishable from \"the company has no document about that\", and that is\n * a wrong answer rather than a missing one.\n *\n * The fix is the 3-argument tenant-taking form:\n *     public.search_rag_documents(q text, match_limit integer, p_tenant uuid)\n *\n * The dealership is the SIGNED-IN USER'S OWN, taken from\n * nexus_current_tenant_id() called with their JWT -- never from anything in\n * the request body. A user who belongs to no dealership gets a loud refusal\n * here rather than a confident empty answer downstream.\n */\nconst raw = $input.first().json;\nconst tenant =\n  (raw && typeof raw === 'object'\n    ? (raw.tenant_id || raw.nexus_current_tenant_id || raw.data || null)\n    : (typeof raw === 'string' ? raw : null));\n\nif (!tenant || typeof tenant !== 'string') {\n  throw new Error(\n    'NX991_TENANT_UNRESOLVED: the caller\\'s dealership could not be established from their JWT via ' +\n    'nexus_current_tenant_id(), so search_rag_documents has no tenant to scope to. Refusing rather than ' +\n    'searching unscoped: at one dealership an unscoped search happens to be right, and at two it silently ' +\n    'answers from the wrong company\\'s documents or returns nothing at all. Check that the bearer token ' +\n    'belongs to a user with a row in tenant_members for an active tenant.'\n  );\n}\n\nreturn [{ json: { question: $('Extract Question').first().json.question, tenant_id: tenant } }];\n"
+      },
+      "id": "nx991-require-a-dealership",
+      "name": "Require A Dealership",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        498,
+        160
+      ]
     }
   ],
   "connections": {
@@ -458,7 +517,7 @@
       "main": [
         [
           {
-            "node": "Supabase Knowledge Search",
+            "node": "Resolve Caller Dealership",
             "type": "main",
             "index": 0
           }
@@ -583,6 +642,28 @@
         [
           {
             "node": "Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Caller Dealership": {
+      "main": [
+        [
+          {
+            "node": "Require A Dealership",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Require A Dealership": {
+      "main": [
+        [
+          {
+            "node": "Supabase Knowledge Search",
             "type": "main",
             "index": 0
           }

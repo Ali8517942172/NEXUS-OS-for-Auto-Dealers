@@ -30,6 +30,13 @@ const NAV = [
     { id:'leadsources',   title:'Lead Sources',    icon:'alt_route' },
     { id:'channels',      title:'Channels',        icon:'hub' },
     { id:'conversations', title:'Conversations',   icon:'forum' },
+    /* Appointments sits under Conversations because that is where a visit is
+       arranged and this is the only screen that says what became of it. It
+       renders the six words a showroom visit can be in separately and never
+       averages them: asked, offered and agreed are three different facts and
+       only the third is a booking. NX995 built the tables; until this screen
+       there was nothing that could read them. */
+    { id:'appointments',  title:'Appointments',    icon:'event' },
     { id:'compliance',    title:'Compliance',      icon:'verified_user' },
   ]},
   /* ── Revenue Recovery ────────────────────────────────────────────────────
