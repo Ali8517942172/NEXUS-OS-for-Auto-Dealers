@@ -74,7 +74,7 @@ Destination: `https://nexus-for-autodealers.vercel.app/`
 > right salesperson — at 11:40pm as readily as at 11am. Grounded in your real
 > prices. Silent the moment your team steps in. Every word on the record.
 >
-> Free dealer audit: five questions, on your own stock, not a canned demo.
+> Free dealer audit: four questions, on your own stock, not a canned demo.
 >
 > Built in Dubai for UAE showrooms. First month free, then AED 399/month.
 > No setup fee, no contract.
@@ -101,7 +101,7 @@ up. No stock photo of a handshake. No car logos visible.
 > NEXUS answers on arrival, scores the enquiry, and puts it in front of the
 > right salesperson with what they need to say next.
 >
-> Free dealer audit — five questions, on your own inventory.
+> Free dealer audit — four questions, on your own inventory.
 > AED 399/month after a free first month. No contract.
 
 **Headline:** `Who answers first, wins the test drive`
@@ -202,7 +202,7 @@ say the same thing, which Meta's review explicitly checks for.
 > arrive at 2am. Days-in-stock recomputed nightly. Every conversation on the
 > record and readable back.
 >
-> Start with a free audit — five questions, on your own showroom, not a canned
+> Start with a free audit — four questions, on your own showroom, not a canned
 > demo. Built in Dubai, for UAE dealerships.
 
 **Headline:** `AED 399/month. Published, not pitched`
@@ -353,7 +353,7 @@ piece of its machine learning worth accepting at low budget.
 
 1. `Enquiries arriving after closing are answered, scored and routed to a salesperson.` (82)
 2. `Grounded in your real prices. Goes silent the moment your team takes over.` (74)
-3. `Free dealer audit, five questions, on your inventory. Reply on WhatsApp same day.` (81)
+3. `Free dealer audit, four questions, on your inventory. Reply on WhatsApp same day.` (81)
 4. `New product, one pilot showroom, no paying customers yet. So the audit is free.` (79)
 
 ---
