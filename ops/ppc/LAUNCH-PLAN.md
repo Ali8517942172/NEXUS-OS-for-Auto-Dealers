@@ -414,3 +414,28 @@ the reliable identifier; the UTMs are the human-readable backup.
 - AED 560 is a price for information, not an investment with an expected
   return. The information it buys is: *will a UAE dealer give up five answers
   for a free audit?* If the answer is no, that is worth knowing for AED 560.
+
+---
+
+## DECIDED — 17 September 2026, by Ali
+
+**Meta Page: run from the "Adqonic" Page** (business portfolio `Adqonic`,
+`business_id 1414977205987811`). There is **no ALBA CARS Page** in the Business
+Manager and NEXUS has no Page of its own, so this was the only option that lets
+spend start today.
+
+Two consequences to hold in mind, because they are real and not cosmetic:
+
+1. A dealer who clicks the Page name lands on a **marketing agency**, not on
+   NEXUS. The ad copy must therefore carry the product name itself and not rely
+   on the Page for identity, and the landing page has to finish the introduction
+   the Page did not make.
+2. Every follower, review and piece of social proof this spend generates accrues
+   to **Adqonic**, not to NEXUS. That is a cost paid quietly. The moment NEXUS
+   has its own Page, move the spend and accept that the social proof does not
+   move with it.
+
+**Offer on the page the ads point at: the capped founding rate** — AED 399/month,
+first month free, first 10 UAE dealerships or 31 October 2026. The ads may state
+the price and the cap, because both are published and both are true. The ads may
+NOT state a result, because no dealer has produced one.

@@ -1,5 +1,20 @@
 # NEXUS OS — Managed AI Dealership Pilot
 
+> **17 September 2026 — WHICH PRICE IS ON SALE.**
+> This document prices the **managed pilot**: a supervised service where prices are
+> verified by hand and every conversation is read each morning. It is NOT the price
+> on the public website, and the two were contradicting each other in public.
+>
+> The website now sells a **founding rate**: AED 399/month, first month free, no
+> setup fee, no minimum term, held for twelve months, open to the **first 10 UAE
+> dealerships** to sign or until **31 October 2026**, whichever comes first. That
+> rate is deliberately below the per-dealer infrastructure floor recorded in this
+> repository (AED 402–512/month) and is a budgeted acquisition cost with a stated
+> cap and a stated end date — not a mistake and not an accident.
+>
+> Use THIS document only for a hand-run managed pilot that Ali has agreed
+> separately. Never quote both to the same dealer.
+
 **Version 2.1 · 3 September 2026 · Ali Asgher**
 **Every figure re-verified against the live database on 3 September 2026**, scoped to the one
 real dealership on the system. Where a count has moved since the 2 September version it has

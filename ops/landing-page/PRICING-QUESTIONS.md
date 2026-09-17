@@ -61,3 +61,31 @@ both are unbackable and one is a liability:
 Whatever you decide, it changes in **five** places or it will contradict itself
 again: the hero paragraph, the price card, the FAQ answer on cost, the JSON-LD
 `Offer` block, and the three meta/og/twitter descriptions in `<head>`.
+
+---
+
+## DECIDED — 17 September 2026, by Ali
+
+**Question 1 — which product is on sale?** The **AED 399 founding subscription**.
+The AED 2,500–3,500 managed pilot stays a separate, hand-run offer and
+`commercial/PILOT-OFFER.md` now carries a header saying so. Never quote both to
+the same dealer.
+
+**Question 2 — deliberate or accident?** *Deliberate, budgeted, and capped.*
+N = **10 UAE dealerships**. D = **31 October 2026**, whichever comes first.
+Held for **12 months** from each dealer's start date. Both the cap and the date
+are now on the public page, in the JSON-LD `priceValidUntil` and
+`eligibleQuantity`, and in the FAQ answer — so the page states the loss rather
+than hiding it. Maximum exposure at the floor: 10 dealers x 12 months x roughly
+AED 100–115 below cost = on the order of **AED 12,000–14,000** of subsidy, plus
+Ali's own hours, which are not in that number.
+
+**Question 3 — does it scale with anything?** Not answered, and deliberately so.
+The page says stock size is *"sized with you in the audit"*, which is true and
+holds the door open. A 400-car Sharjah trader on a flat AED 399 is still the
+worst customer this offer can attract, and nothing on the page prevents that
+today. **This is the first thing to revisit once a real dealer signs.**
+
+N and D were chosen by this session as the smallest cap that is still a real
+offer, and stated here so they can be changed in one place. Everything on the
+page reads from these two numbers.
