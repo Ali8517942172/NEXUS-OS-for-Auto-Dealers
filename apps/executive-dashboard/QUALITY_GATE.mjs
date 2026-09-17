@@ -251,9 +251,13 @@ if (ARGV.includes('--no-db')) {
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-17T05:34:24Z",
-  "source": "--catalogue catalogue.json — production dsvuoovivysszdoiorch, 17 Sep 2026, 119 relations. This run had no NEXUS_DB_URL, no psql and no service-role key in the environment, so CATALOGUE_SQL (from --print-sql, 27,489 bytes, unmodified) was run as ONE statement on production through a pair of temporary objects created and dropped by the orchestrator in the same session: table public.nexus_tmp_sql and function public.nexus_tmp_run_catalogue(), both revoked from public/anon/authenticated and granted only to service_role, which already bypasses RLS and can already run any statement — so no privilege was created that did not exist. The SQL text was staged over PostgREST from the operator machine (which read the service key out of .env itself; no credential passed through an agent transcript) and the 539,612-byte JSON came back over the same connection straight to disk, never through a chat context. Both objects were dropped immediately afterwards and their absence verified (leftover=0). ONE statement means takenAt, the migration anchor and every count in meta describe the same instant. THE UNIT-MISMATCH NOTE FROM 16 SEP STILL APPLIES: meta.body_chars_expected is compared against a sum of JavaScript String length, and catalogueIntegrity counts code points via [...str].length so the two agree; meta.body_chars_codepoints carries Postgres length() alongside it.",
+  "takenAt": "2026-09-17T20:21:20Z",
+  "source": "--catalogue catalogue2.json — production dsvuoovivysszdoiorch, 17 Sep 2026, 126 relations (was 119). Retaken because NX990 (subscriptions), NX991 (the scoped-tenant fuse) and NX995 (appointments) were all applied to production after the previous snapshot, and screens/appointments.js calls rpc/nexus_appointment_status, which the old snapshot did not contain — the gate reported that itself as S3 WARN and named the migration responsible. Same method as the 17 Sep 05:34 refresh and recorded in AGENTS/FACTS.md FACT-193: CATALOGUE_SQL from --print-sql, unmodified, run as ONE statement on production through a temporary table and a temporary SECURITY DEFINER function, both revoked from public/anon/authenticated and granted only to service_role, both dropped immediately afterwards with absence verified (leftover=0). The operator machine read its own service key out of .env and pulled the 580,187-byte result straight to disk; no credential passed through an agent transcript. ONE statement means takenAt, the migration anchor and every count in meta describe the same instant. The unit-mismatch note still applies: meta.body_chars_expected is compared against a sum of JavaScript String length and catalogueIntegrity counts code points via [...str].length, with meta.body_chars_codepoints carrying the Postgres length() figure alongside.",
   "relations": {
+    "appointment": "appointment_id,tenant_id,customer_id,lead_id,inventory_id,assigned_to_id,state,channel,starts_at,duration_minutes,ends_at,location,resource,offered_slots,confirmed_slot_was_offered,requested_at,offered_at,confirmed_at,closed_at,outcome_reason,booked_by,notes,created_at,updated_at",
+    "appointment_event": "event_id,appointment_id,tenant_id,event_type,from_state,to_state,occurred_at,actor,slots,starts_at,reason",
+    "appointment_state": "state,meaning,counts_as_booked,counts_as_attended,is_terminal,sort_order",
+    "appointment_transition": "from_state,to_state,verb",
     "attribution_edge_type": "edge,seq,from_node,to_node,state,basis,source_ref,finding,unlocked_by,unlock_rank",
     "attribution_event_type": "event,seq,state,source_ref,finding",
     "attribution_link_basis": "basis,rank,is_evidence,default_confidence,label,description",
@@ -314,12 +318,15 @@ const SNAPSHOT = {
     "processed_messages": "message_id,source,chat_id,processed_at,tenant_id",
     "purchase_history": "id,customer_name,email,phone,vehicle,purchase_date,amount_aed,created_at,deal_id,lead_id,tenant_id",
     "rag_documents": "id,doc_title,section,content,source_file,page_number,search_vector,tenant_id",
+    "subscription_event": "event_id,tenant_id,event_type,from_state,to_state,price_aed,occurred_at,actor,reason",
+    "subscription_state": "state,meaning,entitled,sort_order",
     "tenant_capability": "tenant_id,capability_key,state,evidence,source,set_by,verified_at,created_at,updated_at",
     "tenant_capability_catalogue": "capability_key,label,what_it_unlocks,requires,absent_means,sort,created_at",
     "tenant_configuration": "tenant_id,brand_name,default_language,timezone,currency,business_hours,business_hours_source,business_hours_set_by,business_hours_verified_at,business_hours_basis,ai_tone,ai_tone_source,ai_tone_set_by,ai_tone_verified_at,ai_tone_basis,followup_policy,followup_policy_source,followup_policy_set_by,followup_policy_verified_at,followup_policy_basis,approval_rules,approval_rules_source,approval_rules_set_by,approval_rules_verified_at,approval_rules_basis,created_at,updated_at",
     "tenant_configuration_default": "setting_key,applies_to,value_kind,default_state,default_value,who_decides,provenance_required,rationale,engine_rule_when_absent,created_at",
     "tenant_member_invite": "id,tenant_id,email,role,staff_user_id,created_by,created_at,revoked_at,revoked_by,claimed_at,claimed_auth_user_id",
     "tenant_members": "tenant_id,auth_user_id,role,staff_user_id,created_at",
+    "tenant_subscription": "tenant_id,state,price_aed,currency,trial_started_at,trial_ends_at,started_at,cancelled_at,cancel_reason,notes,created_at,updated_at",
     "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine",
     "users": "id,name,email,role,status,slack_user_id,created_at,tenant_id",
     "v_action_center_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,undecided_exposure_aed,undecided_with_no_figure,last_proposed_at,last_decided_at,last_executed_at,last_activity_at,newest_undecided_days,oldest_undecided_days,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
@@ -635,6 +642,71 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_appointment_cancel": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_confirm": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_event_is_append_only": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_mark_attended": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_offer_slots": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_request": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_stamp_ends_at": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_appointment_status": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_caller_tenant_scope": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_channel_capability_state": {
       "secdef": false,
       "tenantArg": false,
@@ -744,6 +816,13 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_fuse_dependent_objects": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
         "service_role"
       ]
     },
@@ -1202,6 +1281,42 @@ const SNAPSHOT = {
       ]
     },
     "nexus_scoring_health": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_subscription_cancel": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_subscription_convert_to_paid": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_subscription_event_is_append_only": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_subscription_start_trial": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_subscription_status": {
       "secdef": true,
       "tenantArg": false,
       "grants": [
@@ -1716,9 +1831,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260917051320",
-    "count": 336,
-    "newest": "20260917051320,20260917034353,20260917032155,20260916200020,20260916191116"
+    "head": "20260917101500",
+    "count": 339,
+    "newest": "20260917101500,20260917080000,20260917062500,20260917051320,20260917034353"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */
