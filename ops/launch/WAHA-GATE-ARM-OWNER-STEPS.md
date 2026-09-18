@@ -72,6 +72,10 @@ PC plus unlinking device 8.
 
 ## The alternative that closes the hole now, with no secret
 
+> **OBSOLETE — the hole was measured closed on 18 Sep 2026 (ENFORCE, header present,
+> compare passing). Do NOT unpublish `BiyHk9ZXxJUVGbf6`; that would now stop working
+> WhatsApp intake for no security gain. See `WAHA-GATE-MEASURED-2026-09-18.md`.**
+
 Unpublish `BiyHk9ZXxJUVGbf6` via the n8n MCP. Reversible in one call. Cost: inbound
 WhatsApp stops. Measured context — sampled traffic was group / `status@broadcast` /
 `@newsletter` only, zero genuine customer conversations, and what does arrive lands
