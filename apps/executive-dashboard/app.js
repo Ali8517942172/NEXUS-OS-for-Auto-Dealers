@@ -61,6 +61,10 @@ import './screens/inventory.js';
 import './screens/lead-sources.js';
 import './screens/leads.js';
 import './screens/overview.js';
+/* Record a Lead. A plain static import like the rest: the file is on disk, and
+   removing this line removes from the app the only surface through which a
+   walk-in or a phone call can be entered at all. */
+import './screens/record-lead.js';
 import './screens/revenue.js';
 import './screens/settings.js';
 import './screens/setup.js';

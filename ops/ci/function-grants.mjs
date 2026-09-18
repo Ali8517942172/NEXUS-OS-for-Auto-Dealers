@@ -87,6 +87,9 @@ const SHOW_CENSUS = process.argv.includes('--census');
 const REMEDIATED = [
   { fn: 'nexus_classify_message_intent',        by: 'nx972' },
   { fn: 'nexus_journey_on_message_recorded',    by: 'nx972' },
+  { fn: 'nexus_guard_same_tenant_ref',           by: 'nx999' },
+  { fn: 'nexus_journey_step_guard_ref_tenant',  by: 'nx999' },
+  { fn: 'nexus_lead_endpoint_for_provider_identity', by: 'nx999' },
   /* NX976 created the trigger function and said nothing about who may call it,
      so PUBLIC kept its birth grant -- proacl really did read `=X/postgres` and
      has_function_privilege('anon', ...) really was true. That was a true
@@ -178,7 +181,23 @@ for (const file of files) {
        migration to EXIST in this folder and to really contain a revoke naming
        `public` for that exact function. Delete or edit it and the failure comes
        straight back. */
-    const r2ClosedBy = r.name ? remediatedBy(r.name) : null;
+    /* AN UNPARSED TARGET IS A format() INSIDE PL/pgSQL, AND IT IS STILL A REAL
+       FINDING. The statement protects something, and neither this checker nor a
+       person reading the file can say what. Reporting it as "(unparsed target)"
+       names no function and so cannot be acted on, which is how a finding
+       becomes noise. So it is cleared only on the strictest possible reading:
+       EVERY function the same migration defines must itself be remediated by a
+       later migration containing a literal revoke naming `public` for it. One
+       unremediated definition and the failure stands. That is stricter than the
+       named case, not looser -- a named target needs one function cleared, an
+       unparsed one needs all of them. */
+    const r2ClosedBy = r.name
+      ? remediatedBy(r.name)
+      : (defined.length
+           ? (defined.every(d => remediatedBy(d.name))
+                ? [...new Set(defined.map(d => remediatedBy(d.name)))].join(' + ')
+                : null)
+           : null);
     if (isNew && r2ClosedBy) {
       census.revokeOmitsPublic.push(`${where}  — CLOSED by ${r2ClosedBy}`);
     } else if (isNew) {

@@ -23,6 +23,21 @@ const NAV = [
     { id:'moneyleaks',    title:"Today's Money Leaks", icon:'water_drop' },
     { id:'overview',      title:'Overview',        icon:'dashboard' },
     { id:'leads',         title:'Leads',           icon:'person_search' },
+    /* ── Record a Lead ───────────────────────────────────────────────────────
+       Added 18 Sep 2026, directly under Leads, because it is the only screen in
+       the product through which a PERSON can put an enquiry in — and at this
+       dealership that is the only lead path that works at all. Measured the day
+       it was built: `lead_event` holds one row in its entire life, the two
+       active ingest endpoints (`phone_call`, `walk_in`) are both manual with no
+       provider behind either, and the four automatic ones are disabled.
+
+       It sits in Work rather than beside Setup on purpose. Setup is read once
+       and never again; this is the thing a salesperson does with a customer
+       standing in front of them, several times a day, and a door that is not in
+       the walking route is a door nobody opens. The dialog behind it already
+       existed in lib/manual-lead-form.js and was reachable only from a button
+       in the Leads filter bar, which is where it went unused. */
+    { id:'recordlead',    title:'Record a Lead',   icon:'edit_note' },
     /* Lead Sources sits directly under Leads because it answers the question
        that screen cannot: not who enquired, but which door they came through,
        how much of that origin NEXUS could verify, and what arrived and was
