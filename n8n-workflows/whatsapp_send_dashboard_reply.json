@@ -115,6 +115,12 @@
               "name": "sent_by",
               "type": "string",
               "value": "={{ $('Verify JWT').first().json.email || 'dashboard' }}"
+            },
+            {
+              "id": "b1a3c7d2-0000-4000-8000-tenantassign01",
+              "name": "tenant_id",
+              "type": "string",
+              "value": "={{ (() => { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); let t = ''; try { const r = $('Tenant For JWT User').all().map(i => i.json).find(x => x && x.tenant_id); if (r) t = String(r.tenant_id); } catch (e) { t = ''; } if (!U.test(t) && k.length === 1) t = String(m[k[0]] || ''); return U.test(t) ? t : ''; })() }}"
             }
           ]
         }
@@ -241,7 +247,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ lead_email: $('Prepare Send').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: $('Prepare Send').first().json.text, sent_by: String($('Prepare Send').first().json.sent_by || 'dashboard').trim().toLowerCase() }) }}",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Prepare Send').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: $('Prepare Send').first().json.text, sent_by: String($('Prepare Send').first().json.sent_by || 'dashboard').trim().toLowerCase() }, $('Prepare Send').first().json.tenant_id ? { tenant_id: $('Prepare Send').first().json.tenant_id } : {})) }}",
         "options": {
           "timeout": 10000
         }
@@ -373,6 +379,52 @@
         1340,
         -180
       ]
+    },
+    {
+      "id": "8b87d5ae-6c83-434a-8cee-3b64e2610143",
+      "name": "Tenant For JWT User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        -100
+      ],
+      "parameters": {
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "tenant_id"
+            },
+            {
+              "name": "auth_user_id",
+              "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -402,7 +454,7 @@
       "main": [
         [
           {
-            "node": "Prepare Send",
+            "node": "Tenant For JWT User",
             "type": "main",
             "index": 0
           }
@@ -484,6 +536,17 @@
           }
         ]
       ]
+    },
+    "Tenant For JWT User": {
+      "main": [
+        [
+          {
+            "node": "Prepare Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -500,7 +563,7 @@
   "_exported_from": {
     "id": "yx6m55p1Kj8V7koR",
     "active": true,
-    "updatedAt": "2026-08-30T06:07:24.225Z",
+    "updatedAt": "2026-09-02T10:37:43.166Z",
     "published": true
   }
 }

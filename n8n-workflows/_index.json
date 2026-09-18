@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-08-30T18:01:07.225960+00:00",
+  "exported_at": "2026-09-18T19:26:38.133455+00:00",
   "source": "https://35.224.126.225.nip.io/api/v1",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
@@ -8,7 +8,7 @@
       "id": "G7FhvMY2ucW5Fg7X",
       "name": "7-Day Warm Lead Drip Campaign",
       "active": true,
-      "nodes": 36,
+      "nodes": 41,
       "published": true
     },
     {
@@ -16,7 +16,7 @@
       "id": "qHAtd3RckAKRBUkE",
       "name": "Ask-AI \u2014 RAG Query Agent",
       "active": true,
-      "nodes": 16,
+      "nodes": 17,
       "published": true
     },
     {
@@ -40,7 +40,15 @@
       "id": "unMMpeL9uuPO79pp",
       "name": "Finance Calc: Auto Loan Equity & Credit Score",
       "active": true,
-      "nodes": 9,
+      "nodes": 11,
+      "published": true
+    },
+    {
+      "file": "google_ads_lead_form_inbound_receiver.json",
+      "id": "EYva4c2bMV5MGq0o",
+      "name": "Google Ads Lead Form - Inbound Receiver",
+      "active": true,
+      "nodes": 18,
       "published": true
     },
     {
@@ -48,7 +56,7 @@
       "id": "ZUc42jcwwHoBeEr8",
       "name": "Inventory Ageing Recompute",
       "active": true,
-      "nodes": 3,
+      "nodes": 5,
       "published": true
     },
     {
@@ -56,7 +64,7 @@
       "id": "qTnh3nwWheFJbFkU",
       "name": "KYC/AML Document Auditor + Re-upload Loop (Phase 5)",
       "active": true,
-      "nodes": 31,
+      "nodes": 32,
       "published": true
     },
     {
@@ -64,8 +72,24 @@
       "id": "KI6P1Qcf3MIZakNa",
       "name": "Lead Escalation - AI Agent",
       "active": true,
-      "nodes": 23,
+      "nodes": 26,
       "published": true
+    },
+    {
+      "file": "meta_lead_ads_inbound_receiver.json",
+      "id": "JDqy54w2HUH7pHgW",
+      "name": "Meta Lead Ads - Inbound Receiver",
+      "active": true,
+      "nodes": 19,
+      "published": true
+    },
+    {
+      "file": "nexus_appointment_booking_candidate_do_not_activate.json",
+      "id": "IsdF6LbuBnq0z3K7",
+      "name": "NEXUS Appointment Booking \u2014 CANDIDATE (do not activate)",
+      "active": false,
+      "nodes": 34,
+      "published": false
     },
     {
       "file": "nexus_error_handler.json",
@@ -88,7 +112,7 @@
       "id": "JnlZFAVmFAuNXVya",
       "name": "NEXUS Master Lead Router - AI Agent",
       "active": true,
-      "nodes": 25,
+      "nodes": 26,
       "published": true
     },
     {
@@ -124,6 +148,14 @@
       "published": true
     },
     {
+      "file": "nexus_site_enquiry_to_gmail_notification.json",
+      "id": "Oz2W6EWG6n6XW0HQ",
+      "name": "NEXUS Site Enquiry to Gmail Notification",
+      "active": false,
+      "nodes": 5,
+      "published": false
+    },
+    {
       "file": "phase_6_12_hour_silence_detector.json",
       "id": "B3TcpfzOMWj8oWgF",
       "name": "Phase 6 - 12-Hour Silence Detector",
@@ -136,7 +168,7 @@
       "id": "VmnIXo7tM30zqawp",
       "name": "Slack Command Center - AI Agent",
       "active": true,
-      "nodes": 15,
+      "nodes": 16,
       "published": true
     },
     {
@@ -144,15 +176,31 @@
       "id": "dhy2DDjWUqwuzHLW",
       "name": "Sync Closed-Won Deals to Supabase pgvector",
       "active": true,
-      "nodes": 9,
-      "published": true
+      "nodes": 17,
+      "published": false
     },
     {
       "file": "whatsapp_bdc_ai_agent.json",
       "id": "BiyHk9ZXxJUVGbf6",
       "name": "WhatsApp BDC AI Agent",
       "active": true,
-      "nodes": 43,
+      "nodes": 45,
+      "published": true
+    },
+    {
+      "file": "whatsapp_bdc_tenant_scoped_candidate_do_not_activate.json",
+      "id": "LTBExI7QzFeANeFg",
+      "name": "WhatsApp BDC \u2014 TENANT SCOPED CANDIDATE (do not activate)",
+      "active": false,
+      "nodes": 54,
+      "published": false
+    },
+    {
+      "file": "whatsapp_cloud_inbound_receiver_meta.json",
+      "id": "J8MXprxVw1yhjBpp",
+      "name": "WhatsApp Cloud - Inbound Receiver (Meta)",
+      "active": true,
+      "nodes": 11,
       "published": true
     },
     {
@@ -160,7 +208,7 @@
       "id": "yx6m55p1Kj8V7koR",
       "name": "WhatsApp Send (Dashboard Reply)",
       "active": true,
-      "nodes": 12,
+      "nodes": 13,
       "published": true
     },
     {
@@ -168,7 +216,7 @@
       "id": "bxNBzBrcOtcFpMPn",
       "name": "wf_108 ERP Sync - Bitrix24 CRM",
       "active": true,
-      "nodes": 20,
+      "nodes": 21,
       "published": true
     }
   ]

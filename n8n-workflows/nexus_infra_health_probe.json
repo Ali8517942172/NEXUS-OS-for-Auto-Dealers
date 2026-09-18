@@ -15,7 +15,8 @@
         "path": "infra-probe",
         "responseMode": "responseNode",
         "options": {}
-      }
+      },
+      "disabled": true
     },
     {
       "id": "probe-waha",
@@ -386,7 +387,7 @@
   "_exported_from": {
     "id": "57QpbNQGwlFKb0q3",
     "active": true,
-    "updatedAt": "2026-08-30T17:57:32.131Z",
+    "updatedAt": "2026-09-06T14:16:36.523Z",
     "published": true
   }
 }
