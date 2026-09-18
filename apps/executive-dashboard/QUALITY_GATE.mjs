@@ -251,8 +251,8 @@ if (ARGV.includes('--no-db')) {
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-17T20:21:20Z",
-  "source": "--catalogue catalogue2.json — production dsvuoovivysszdoiorch, 17 Sep 2026, 126 relations (was 119). Retaken because NX990 (subscriptions), NX991 (the scoped-tenant fuse) and NX995 (appointments) were all applied to production after the previous snapshot, and screens/appointments.js calls rpc/nexus_appointment_status, which the old snapshot did not contain — the gate reported that itself as S3 WARN and named the migration responsible. Same method as the 17 Sep 05:34 refresh and recorded in AGENTS/FACTS.md FACT-193: CATALOGUE_SQL from --print-sql, unmodified, run as ONE statement on production through a temporary table and a temporary SECURITY DEFINER function, both revoked from public/anon/authenticated and granted only to service_role, both dropped immediately afterwards with absence verified (leftover=0). The operator machine read its own service key out of .env and pulled the 580,187-byte result straight to disk; no credential passed through an agent transcript. ONE statement means takenAt, the migration anchor and every count in meta describe the same instant. The unit-mismatch note still applies: meta.body_chars_expected is compared against a sum of JavaScript String length and catalogueIntegrity counts code points via [...str].length, with meta.body_chars_codepoints carrying the Postgres length() figure alongside.",
+  "takenAt": "2026-09-18T16:14:31Z",
+  "source": "--catalogue catalogue3.json — production dsvuoovivysszdoiorch, 18 Sep 2026, 130 relations (was 126). Retaken because NX996 (notification outbox), NX997 (cross-tenant composite keys) and NX998 (channel identity schema, which adds a tenant_id column to the provider-identity table) were applied to production after the previous snapshot. Method is FACT-193 exactly: CATALOGUE_SQL from --print-sql unmodified, run as ONE statement through a temporary table and a temporary SECURITY DEFINER function, both granted only to service_role and both dropped immediately with absence verified (leftover=0). The operator machine read its own service key out of .env and pulled the 604,747-byte result straight to disk; no credential passed through an agent transcript.",
   "relations": {
     "appointment": "appointment_id,tenant_id,customer_id,lead_id,inventory_id,assigned_to_id,state,channel,starts_at,duration_minutes,ends_at,location,resource,offered_slots,confirmed_slot_was_offered,requested_at,offered_at,confirmed_at,closed_at,outcome_reason,booked_by,notes,created_at,updated_at",
     "appointment_event": "event_id,appointment_id,tenant_id,event_type,from_state,to_state,occurred_at,actor,slots,starts_at,reason",
@@ -293,7 +293,7 @@ const SNAPSHOT = {
     "kyc_documents": "id,lead_email,lead_name,chat_id,document_type,full_name,date_of_birth,expiry_date,is_valid,tampering,confidence_score,remarks,attempt_number,max_attempts,verdict,reviewed_by,reviewed_at,created_at,storage_path,retain_until,purged_at,void_reason,voided_at,tenant_id",
     "lead_event": "event_id,tenant_id,endpoint_id,source_key,environment,origin_verified,provenance_counts_as_real,external_event_id,occurred_at,received_at,phase,disposition_reason,payload_raw,hydrated_payload,hydrated_at,hydration_error,normalized,lead_id,promoted_at",
     "lead_ingest_endpoint": "endpoint_id,tenant_id,source_key,required_provenance_for_source,declared_provenance,provenance_counts_as_real,environment,public_key,secret_ref,origin_allowlist,ingest_address,status,rate_limit_per_minute,label,created_at,updated_at",
-    "lead_ingest_provider_identity": "identity_id,endpoint_id,source_key,provider,identity_kind,identity_value,label,status,created_at,updated_at",
+    "lead_ingest_provider_identity": "identity_id,endpoint_id,source_key,provider,identity_kind,identity_value,label,status,created_at,updated_at,tenant_id",
     "lead_ingest_secret": "endpoint_id,kind,vault_secret_id,fingerprint,installed_at,rotated_at,installed_by",
     "lead_ingest_secret_kind": "kind,description",
     "lead_owner_events": "id,tenant_id,lead_id,at,event,actor_auth_id,actor_staff_id,actor_authority,from_staff_id,to_staff_id,from_name,to_name,reason,audit_log_id",
@@ -306,8 +306,12 @@ const SNAPSHOT = {
     "lead_source_catalogue": "source_key,display_name,channel_family,integration_status,delivery_shape,required_provenance,dedup_field,evidence_note,manual_entry_surface",
     "leads": "id,name,email,phone,source,vehicle_interest,budget_aed,status,ai_score,assigned_to,response_time_minutes,created_at,assigned_to_id,escalated_at,bitrix_lead_id,crm_synced_at,tenant_id,score_source,rules_score,ai_score_raw,ai_intent_raw,ai_parse_failed",
     "message_intent": "intent,promote_eligible,meaning",
+    "nexus_notification_outbox": "notification_id,sales_lead_id,channel,state,reason,attempt_count,max_attempts,next_attempt_at,claimed_at,claimed_by,last_error_code,last_error_detail,sent_at,acknowledged_at,acknowledged_by,created_at,updated_at",
     "nexus_sales_lead": "id,submission_id,full_name,phone_e164,email,dealership,stock_size,message,attribution,ip_country,received_at,status,contacted_at,notes",
     "nexus_tmp_sql": "id,body",
+    "notification_attempt": "attempt_id,notification_id,attempt_no,event,from_state,to_state,worker,error_code,error_detail,occurred_at",
+    "notification_state": "state,meaning,is_live,is_terminal,needs_attention,sort_order",
+    "notification_transition": "from_state,to_state,verb",
     "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
     "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
     "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
@@ -833,6 +837,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_guard_same_tenant_ref": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_hydrate_lead_event": {
       "secdef": false,
       "tenantArg": false,
@@ -892,6 +903,13 @@ const SNAPSHOT = {
       ]
     },
     "nexus_journey_on_message_recorded": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_journey_step_guard_ref_tenant": {
       "secdef": true,
       "tenantArg": false,
       "grants": [
@@ -1108,6 +1126,62 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_notification_acknowledge": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_attempt_is_append_only": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_claim": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_enqueue": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_mark_failed": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_mark_sent": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_refuse_transition": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_notification_status": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_onboard_dealership": {
       "secdef": true,
       "tenantArg": false,
@@ -1261,6 +1335,13 @@ const SNAPSHOT = {
     "nexus_route_message": {
       "secdef": true,
       "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_sales_lead_enqueue_notification": {
+      "secdef": true,
+      "tenantArg": false,
       "grants": [
         "service_role"
       ]
@@ -1831,9 +1912,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260917101500",
-    "count": 339,
-    "newest": "20260917101500,20260917080000,20260917062500,20260917051320,20260917034353"
+    "head": "20260918161500",
+    "count": 342,
+    "newest": "20260918161500,20260918140000,20260918120000,20260917101500,20260917080000"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */

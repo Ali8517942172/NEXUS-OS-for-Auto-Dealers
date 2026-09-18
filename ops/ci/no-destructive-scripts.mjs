@@ -65,6 +65,9 @@ const EXEMPT_LINES = new Map([
   // time (119 relations -> 126) after NX990, NX991 and NX995 were applied to
   // production. Read again: same `fixtureResidue` template, same four
   // fixture-scoped deletes, still only printed for an operator.
+  // Moved 4644 -> 4725 on 18 Sep 2026 after NX996/NX997/NX998 grew the
+  // snapshot again (126 relations -> 130). Read again: same fixtureResidue
+  // template, same four fixture-scoped deletes, still only printed.
   // Moved 4486 -> 4529 on 17 Sep 2026: the snapshot was retaken again
   // (118 relations -> 119, nexus_channel_status arrived with NX986) and one
   // import line was added at the top of the file, pushing everything below
@@ -78,9 +81,9 @@ const EXEMPT_LINES = new Map([
   // operator to run by hand, never executed here. The pin working is the
   // reason this comment exists.
   // KNOWN GAP, and it cuts the other way too: a pin is a line number, so if a
-  // genuinely destructive statement ever lands on line 4644 of this file it
+  // genuinely destructive statement ever lands on line 4725 of this file it
   // would be waived silently. The pin catches movement, not substitution.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4644])],
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4725])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.
