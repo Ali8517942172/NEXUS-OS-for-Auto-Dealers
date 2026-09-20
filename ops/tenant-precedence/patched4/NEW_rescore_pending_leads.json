@@ -1,0 +1,719 @@
+{
+ "updatedAt": "2026-09-20T20:30:01.552Z",
+ "createdAt": "2026-09-20T20:26:31.079Z",
+ "id": "dCRmzWHCz7bniIBr",
+ "name": "NEW: Rescore Pending Leads (Hourly)",
+ "description": "NX1002 hourly sweep: re-scores leads left scoring_state=PENDING (persisted first, before the AI model ladder ran) by walking active dealerships, fetching each tenant's pending leads, and re-running a scoring agent with its own model ladder. Only the AI tr",
+ "active": false,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "009052f5-7630-475e-a159-dd230028b7d6",
+   "name": "Schedule Trigger (Hourly)",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "cronExpression",
+       "expression": "0 * * * *"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "rs-get-dealerships-01",
+   "name": "Get Active Dealerships",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    220,
+    0
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_active_dealership_ids",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({}) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "notes": "Same call as n8n AZkGM5M4c1uzSH7S 'Get Active Dealerships' (NX1000 wave): public.nexus_active_dealership_ids(), service_role, no tenant argument needed for THIS call because its job is to enumerate tenants, not read their rows.",
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "id": "rs-norm-dealerships-01",
+   "name": "Normalise Dealership List",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ],
+   "parameters": {
+    "jsCode": "// Same defensive unwrap as AZkGM5M4c1uzSH7S 'Normalise Dealership List' (NX1000 wave): nexus_active_dealership_ids() returns setof uuid, PostgREST wraps it as an array of {nexus_active_dealership_ids: <uuid>} objects, but this also accepts a bare uuid string per item and the whole-array-in-one-item shape some HTTP node versions hand back.\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nfunction extract(v) {\n  if (typeof v === 'string') return v;\n  if (v && typeof v === 'object') {\n    if (typeof v.nexus_active_dealership_ids === 'string') return v.nexus_active_dealership_ids;\n    const only = Object.values(v).find(x => typeof x === 'string' && UUID.test(x));\n    if (only) return only;\n  }\n  return null;\n}\nlet raw = $input.all().map(i => i.json);\nif (raw.length === 1 && Array.isArray(raw[0])) raw = raw[0];\nconst ids = raw.map(extract).filter(id => id && UUID.test(id));\nreturn ids.map(id => ({ json: { tenant_id: id } }));\n"
+   }
+  },
+  {
+   "id": "rs-dealership-batches-01",
+   "name": "Dealership Batches",
+   "type": "n8n-nodes-base.splitInBatches",
+   "typeVersion": 3,
+   "position": [
+    660,
+    0
+   ],
+   "parameters": {
+    "batchSize": 1,
+    "options": {}
+   }
+  },
+  {
+   "id": "rs-get-pending-01",
+   "name": "Get Pending Leads For Tenant",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    880,
+    -80
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_pending_scoring_leads_for_tenant",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_tenant: $json.tenant_id, p_limit: 25 }) }}",
+    "options": {
+     "timeout": 20000
+    }
+   },
+   "notes": "public.nexus_pending_scoring_leads_for_tenant(p_tenant, p_limit) -- NX1002, same migration as the two scoring_state columns. Returns only scoring_state='PENDING' rows for THIS tenant, oldest first, capped at 25/tenant/hour so one dealership's backlog can never starve the others in a single sweep run. onError=continueRegularOutput: a failure to read one tenant's backlog must not stop the sweep from reaching the next tenant.",
+   "onError": "continueRegularOutput",
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "id": "rs-norm-pending-01",
+   "name": "Normalise Pending Leads",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1100,
+    -80
+   ],
+   "parameters": {
+    "jsCode": "// nexus_pending_scoring_leads_for_tenant returns one row per lead. Reshape to the same { lead, attempt: -1 } envelope 'Model Ladder' (in the Master Lead Router, JnlZFAVmFAuNXVya) already expects, so 'Rescore Model Ladder' below can reuse that exact tier logic unmodified.\nlet rows = $input.all().map(i => i.json);\nif (rows.length === 1 && Array.isArray(rows[0])) rows = rows[0];\nreturn rows\n  .filter(r => r && r.id != null && r.tenant_id)\n  .map(r => ({ json: {\n    lead_id: r.id,\n    tenant_id: r.tenant_id,\n    scoring_attempts: r.scoring_attempts || 0,\n    attempt: -1,\n    lead: {\n      name: r.name, email: r.email, phone: r.phone,\n      vehicle_interest: r.vehicle_interest, budget_aed: r.budget_aed,\n      source: r.source, tenant_id: r.tenant_id\n    }\n  } }));\n"
+   }
+  },
+  {
+   "id": "rs-lead-batches-01",
+   "name": "Lead Batches",
+   "type": "n8n-nodes-base.splitInBatches",
+   "typeVersion": 3,
+   "position": [
+    1320,
+    -80
+   ],
+   "parameters": {
+    "batchSize": 1,
+    "options": {}
+   }
+  },
+  {
+   "id": "rs-model-ladder-01",
+   "name": "Rescore Model Ladder",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1540,
+    -80
+   ],
+   "parameters": {
+    "jsCode": "// Tier table copied from the Master Lead Router (JnlZFAVmFAuNXVya) node 'Model Ladder' -- keep the two in sync by hand; NX1002 did not extract a shared sub-workflow for this because n8n has no code-sharing primitive that survives 'n8n is read-only for this task'. See that node's own comments (16/29/30 Aug 2026) for why each tier id is what it is.\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',     groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free', groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',              groqModel: GROQ_FALLBACK }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  // NX1002: the router's equivalent node THROWS here, which used to be fatal to the whole execution because nothing set onError on it (exec 16069, 16072). This node has onError=continueErrorOutput, so an uncaught throw here would already be safe for the SWEEP AS A WHOLE (only this lead's branch dies) -- but we still want scoring_attempts incremented and scoring_last_error set for a human to see, not just a silently-dropped item. So this branch RETURNS (does not throw) a small marker item instead, which 'Route: Exhausted?' below sends to 'Record Scoring Result (Failure)'.\n  return [{ json: { exhausted: true, lead_id: prev.lead_id, tenant_id: prev.tenant_id, lead: prev.lead, error: 'All ' + TIERS.length + ' free-tier model tiers failed for lead ' + ((prev.lead && prev.lead.email) || prev.lead_id || 'unknown') + '. Tried: ' + TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', ') } }];\n}\n\nreturn [{ json: {\n  exhausted: false,\n  lead_id: prev.lead_id, tenant_id: prev.tenant_id, lead: prev.lead,\n  attempt, maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel\n} }];\n"
+   },
+   "onError": "continueErrorOutput"
+  },
+  {
+   "id": "rs-if-exhausted-01",
+   "name": "Route: Exhausted?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1760,
+    -80
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 1
+     },
+     "conditions": [
+      {
+       "id": "rs-cond-exhausted",
+       "leftValue": "={{ $json.exhausted }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "true"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "rs-openrouter-01",
+   "name": "Rescore OpenRouter Chat Model",
+   "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+   "typeVersion": 1,
+   "position": [
+    1980,
+    80
+   ],
+   "parameters": {
+    "model": "={{ $json.orModel }}",
+    "options": {
+     "maxTokens": 1024,
+     "temperature": 0.2
+    }
+   },
+   "credentials": {
+    "openRouterApi": {
+     "id": "UUtKrBzkQOztAOzZ",
+     "name": "OpenRouter account"
+    }
+   }
+  },
+  {
+   "id": "rs-groq-01",
+   "name": "Rescore Groq Fallback",
+   "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+   "typeVersion": 1,
+   "position": [
+    2140,
+    110
+   ],
+   "parameters": {
+    "model": "={{ $json.groqModel }}",
+    "options": {}
+   },
+   "credentials": {
+    "groqApi": {
+     "id": "JgOg4w1ZMJc37lmL",
+     "name": "Groq account"
+    }
+   }
+  },
+  {
+   "id": "rs-lead-lookup-01",
+   "name": "Rescore Lead Lookup",
+   "type": "n8n-nodes-base.supabaseTool",
+   "typeVersion": 1,
+   "position": [
+    2300,
+    140
+   ],
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "leads",
+    "limit": 20,
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "email",
+       "condition": "eq",
+       "keyValue": "={{ $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
+      },
+      {
+       "keyName": "tenant_id",
+       "condition": "eq",
+       "keyValue": "={{ $json.lead.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      }
+     ]
+    },
+    "matchType": "allFilters"
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "id": "rs-purchase-history-01",
+   "name": "Rescore Purchase History",
+   "type": "n8n-nodes-base.supabaseTool",
+   "typeVersion": 1,
+   "position": [
+    2140,
+    200
+   ],
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "purchase_history",
+    "limit": 5,
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "email",
+       "condition": "eq",
+       "keyValue": "={{ $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
+      },
+      {
+       "keyName": "tenant_id",
+       "condition": "eq",
+       "keyValue": "={{ $json.lead.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      }
+     ]
+    },
+    "matchType": "allFilters"
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "id": "rs-memory-01",
+   "name": "Rescore Memory",
+   "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+   "typeVersion": 1.4,
+   "position": [
+    1980,
+    200
+   ],
+   "parameters": {
+    "sessionIdType": "customKey",
+    "sessionKey": "={{ ($json.lead && ($json.lead.email || $json.lead.phone)) || 'rescore-' + $json.lead_id }}",
+    "contextWindowLength": "={{ 10 }}"
+   }
+  },
+  {
+   "id": "rs-agent-01",
+   "name": "Rescore Scoring Agent",
+   "type": "@n8n/n8n-nodes-langchain.agent",
+   "typeVersion": 3.1,
+   "position": [
+    1980,
+    -80
+   ],
+   "parameters": {
+    "promptType": "define",
+    "text": "=Lead data: {{ JSON.stringify($json.lead) }}\n\nStep 1: Use the Rescore Lead Lookup tool to check whether this lead already exists in the CRM.\nStep 2: Use the Rescore Purchase History tool to see whether this person has bought a vehicle from us before (a returning/VIP customer).\nStep 3: Score the lead from 1-100 and classify intent as HOT, WARM or COLD.\n  - If Rescore Purchase History returns ANY prior purchase, this is a RETURNING VIP CUSTOMER: score 90-100 and intent HOT, regardless of how casual the new enquiry sounds.\n  - Otherwise: HOT = ready to buy now, specific vehicle, clear budget or urgent language; WARM = genuine interest but no urgency/budget; COLD = just browsing, no budget, no timeline.\nStep 4: If the customer states a budget anywhere in their message, report it as budget_aed: a plain number in AED, so 600000 - not \"600k\", not \"AED 600,000\", no commas, no currency. If they state no budget at all, use null. Do not guess or infer a budget from the vehicle they asked about.\nStep 5: Return your decision.\n\nDo NOT try to save the lead. This is the hourly rescore sweep for a lead that already exists in the CRM (it was persisted as PENDING by the Master Lead Router before scoring ever ran) -- the workflow PATCHes the existing row deterministically from the decision you return, so the accuracy of your score, intent and budget_aed is what actually gets written.\n\nBoth lookup tools are pre-filtered to this exact lead; call them with no arguments and read the result.\n\nReturn ONLY a raw JSON object and nothing else. No markdown, no code fences, no commentary.\nSchema: {\"score\": 95, \"intent\": \"HOT\", \"reason\": \"one short sentence\", \"vip\": true, \"budget_aed\": 600000}",
+    "needsFallback": true,
+    "options": {
+     "systemMessage": "You are NEXUS AI, an expert lead scoring agent for a premium car dealership in the UAE, running as the hourly rescore sweep for leads the router could not score inline (free-tier model quota exhaustion). Returning customers are extremely valuable and must always be routed as HOT.",
+     "maxIterations": 3,
+     "enableStreaming": false
+    }
+   },
+   "onError": "continueErrorOutput"
+  },
+  {
+   "id": "rs-parse-decision-01",
+   "name": "Parse Rescore Decision",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2200,
+    -80
+   ],
+   "parameters": {
+    "jsCode": "// Same extractJson/prose-fallback logic as the Master Router's 'Parse AI Decision' -- kept byte-identical on purpose, same reasoning as 'Rescore Model Ladder' above.\nconst src = $('Rescore Model Ladder').first().json;\nconst rawOut = $input.first().json;\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  try { return JSON.parse(s); } catch (e) {}\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nif (!parsed || typeof parsed !== 'object') {\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n}\n\nconst rawBudget = Number(parsed.budget_aed);\nconst budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\nconst intent = String(parsed.intent || '').toUpperCase();\n\nreturn [{ json: {\n  lead_id: src.lead_id, tenant_id: src.tenant_id,\n  ai_decision: {\n    intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n    score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n    budget_aed\n  }\n} }];\n"
+   }
+  },
+  {
+   "id": "rs-record-success-01",
+   "name": "Record Scoring Result (Success)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    2420,
+    -80
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_lead_scoring_result",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_tenant: $json.tenant_id, p_lead_id: $json.lead_id, p_success: true, p_ai_score: $json.ai_decision.score, p_intent: $json.ai_decision.intent }) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "notes": "public.nexus_record_lead_scoring_result(...) -- NX1002. tenant_id+lead_id scope the update even under service_role's RLS bypass. The function's own `scoring_state <> 'SCORED'` guard is what makes this a no-op if the row was already scored by something else between the read and now (idempotent by construction, not by locking).",
+   "onError": "continueRegularOutput",
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "id": "rs-record-failure-01",
+   "name": "Record Scoring Result (Failure)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    2000,
+    -260
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_lead_scoring_result",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_tenant: $json.tenant_id, p_lead_id: $json.lead_id, p_success: false, p_error: $json.error, p_max_attempts: 5 }) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "notes": "Every free-tier tier failed again this hour (same shape of failure NX1002 fixes: e.g. OpenRouter's free-models-per-day quota). Increments scoring_attempts and records scoring_last_error; the row stays PENDING for next hour's sweep until scoring_attempts reaches p_max_attempts (5), then becomes FAILED. It is never deleted.",
+   "onError": "continueRegularOutput",
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Schedule Trigger (Hourly)": {
+   "main": [
+    [
+     {
+      "node": "Get Active Dealerships",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Get Active Dealerships": {
+   "main": [
+    [
+     {
+      "node": "Normalise Dealership List",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalise Dealership List": {
+   "main": [
+    [
+     {
+      "node": "Dealership Batches",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Dealership Batches": {
+   "main": [
+    null,
+    [
+     {
+      "node": "Get Pending Leads For Tenant",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Get Pending Leads For Tenant": {
+   "main": [
+    [
+     {
+      "node": "Normalise Pending Leads",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalise Pending Leads": {
+   "main": [
+    [
+     {
+      "node": "Lead Batches",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Lead Batches": {
+   "main": [
+    [
+     {
+      "node": "Dealership Batches",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Rescore Model Ladder",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rescore Model Ladder": {
+   "main": [
+    [
+     {
+      "node": "Route: Exhausted?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Route: Exhausted?": {
+   "main": [
+    [
+     {
+      "node": "Record Scoring Result (Failure)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Rescore Scoring Agent",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rescore Scoring Agent": {
+   "main": [
+    [
+     {
+      "node": "Parse Rescore Decision",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Rescore Model Ladder",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse Rescore Decision": {
+   "main": [
+    [
+     {
+      "node": "Record Scoring Result (Success)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Record Scoring Result (Success)": {
+   "main": [
+    [
+     {
+      "node": "Lead Batches",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Record Scoring Result (Failure)": {
+   "main": [
+    [
+     {
+      "node": "Lead Batches",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rescore OpenRouter Chat Model": {
+   "ai_languageModel": [
+    [
+     {
+      "node": "Rescore Scoring Agent",
+      "type": "ai_languageModel",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rescore Groq Fallback": {
+   "ai_languageModel": [
+    [
+     {
+      "node": "Rescore Scoring Agent",
+      "type": "ai_languageModel",
+      "index": 1
+     }
+    ]
+   ]
+  },
+  "Rescore Lead Lookup": {
+   "ai_tool": [
+    [
+     {
+      "node": "Rescore Scoring Agent",
+      "type": "ai_tool",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rescore Purchase History": {
+   "ai_tool": [
+    [
+     {
+      "node": "Rescore Scoring Agent",
+      "type": "ai_tool",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rescore Memory": {
+   "ai_memory": [
+    [
+     {
+      "node": "Rescore Scoring Agent",
+      "type": "ai_memory",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "availableInMCP": true,
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "timezone": "Asia/Dubai",
+  "saveExecutionProgress": false,
+  "saveManualExecutions": true,
+  "saveDataErrorExecution": "all",
+  "saveDataSuccessExecution": "all",
+  "executionTimeout": 1800,
+  "callerPolicy": "workflowsFromSameOwner"
+ },
+ "staticData": null,
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": null,
+ "versionId": "fd371add-0e6f-49e4-8087-3d7c8aea56dc",
+ "activeVersionId": null,
+ "versionCounter": 3,
+ "triggerCount": 0,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-09-20T20:26:31.079Z",
+   "createdAt": "2026-09-20T20:26:31.079Z",
+   "role": "workflow:owner",
+   "workflowId": "dCRmzWHCz7bniIBr",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": null
+}

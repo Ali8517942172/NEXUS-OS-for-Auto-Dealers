@@ -250,3 +250,123 @@ result from the prior run stands; see `JOURNEYS-RESULTS.md`).
 error message instead of an inference, and confirmed to be a *daily* ceiling
 that pacing cannot work around -- further live retries today would hit the
 same wall.
+
+## NX1002 + model-ladder terminal rules tier — merged, applied, live-verified (20 Sep 2026)
+
+**Merged two authored patches into `JnlZFAVmFAuNXVya`** (persist-first from
+`patched4/JnlZFAVmFAuNXVya.json` + the terminal-rules-tier spec in
+`patched4/model-ladder.md`), applied via `update_workflow` (never the public
+PUT), published, verified 0 mismatches with `wf.py verify` after every change:
+
+1. `Persist Lead (deterministic)` moved to run immediately after `Validate &
+   Enrich Input`, before the model ladder, writing `scoring_state:'PENDING'`.
+2. New `Update Lead Scoring (PATCH)` node (id `nx1002-update-scoring-01`)
+   PATCHes the same row to `SCORED` once a decision exists.
+3. New `Rule-Based Lead Scorer` code node (id `mr-rules-01`,
+   `code/rule-based-scorer.js`, 10/10 `rule-scorer.test.mjs` PASS) wired off
+   `Model Ladder`'s error output (index 1) → `Parse AI Decision`, which got a
+   `score_source==='RULES'` short-circuit plus NX920 tagging
+   (`AI_SCORE_CONFIRMED`/`AI_SCORE_FALLBACK`) on the AI path.
+4. `Model Ladder.onError` → `continueErrorOutput` (was already set in the
+   persist-first file; confirmed live).
+
+**Two live bugs found and fixed post-merge, both from the persist-first
+reorder, neither present in the original two source patches on their own —
+only visible once combined and pushed through a real execution:**
+
+- **Bug A:** `Persist Lead (deterministic)` uses `Prefer: return=minimal`
+  (empty HTTP response body), so once it sits *before* `Model Ladder`,
+  `Model Ladder`'s `prev.lead` was silently `undefined` on every tier —
+  exec 16124/16127 both show `Model Ladder` outputting `attempt/maxTiers/
+  orModel/groqModel` with no `lead` at all. Fixed: `Model Ladder` now reads
+  `lead` from `$('Validate & Enrich Input')` directly (same named-node
+  pattern `Parse AI Decision` already used), not from its own chained input.
+- **Bug B:** `model-ladder.md`'s spec assumed n8n passes a Code node's own
+  *input* item through on `onError:'continueErrorOutput'` when the node
+  *throws*. Live evidence (exec 16124/16127) shows this is wrong for a throw:
+  the error-output item is just `{ error: <message> }`, nothing else. This
+  made `Rule-Based Lead Scorer`'s `prev.lead || prev` fallback score garbage
+  (the error object itself) instead of the real lead. Fixed the same way:
+  `Rule-Based Lead Scorer` now reads `lead` from `$('Validate & Enrich
+  Input')` directly, with a try/catch fallback to the old behavior.
+- **Bug C (design gap, not a regression):** `Update Lead Scoring (PATCH)`'s
+  `jsonBody` never forwarded `ai_decision.score_source` — flagged as a
+  deliberate deferral in `model-ladder.md` section 4.6, but it made the
+  column permanently read the `AI_SCORE_UNKNOWN` default regardless of which
+  tier actually scored the lead, defeating NX920's whole purpose. Fixed:
+  `jsonBody` now always writes `score_source`, plus `rules_score` (RULES
+  path) or `ai_score_raw`/`ai_intent_raw` (AI path).
+
+**Live proof, dealer A's own token, `nexus-inbound-lead` webhook** (OpenRouter's
+daily free-tier quota was exhausted the whole session — confirmed by the
+provider's own `"Rate limit exceeded: free-models-per-day"` text on every
+tier — so every push below exercised the RULES tier for real, for free):
+
+- Lead id `151`, created `20:39:26Z`. Read back **3 seconds** after the POST
+  (well before the ~9s scoring chain finished): row already existed,
+  `scoring_state:'PENDING'`, `ai_score:null` — proves persist-first, the row
+  is never lost to a scoring-provider outage.
+- Same row re-read after scoring: `scoring_state:'SCORED'`,
+  `score_source:'RULES'`, `ai_score:33`, `rules_score:33`,
+  `status:'COLD'`, `scored_at:'20:39:35Z'`, `tenant_id:'fff6a2b5-...'`
+  (dealer A's own — no leakage). Confirmed via `mcp__n8n__get_execution` on
+  16127/16130-range executions: `Model Ladder` tiers 0/1/2 each carried the
+  real lead (name/email/budget_aed/tenant_id) after the Bug-A fix; tier
+  exhaustion still throws (by design, per `model-ladder.md` — the message is
+  useful evidence) but now lands cleanly on `Rule-Based Lead Scorer` with the
+  real lead after the Bug-B fix.
+
+`patched4/JnlZFAVmFAuNXVya.json` in this repo is kept as a byte-for-byte
+mirror of the live/published workflow (re-fetched and overwritten after each
+fix); `python3 wf.py verify JnlZFAVmFAuNXVya patched4/JnlZFAVmFAuNXVya.json`
+passes with 0 mismatches as of the last publish above.
+
+## New workflow: hourly rescore sweep, created + activated (20 Sep 2026)
+
+**`NEW: Rescore Pending Leads (Hourly)` — workflow id `dCRmzWHCz7bniIBr`**,
+built from `patched4/NEW_rescore_pending_leads.json` (18 nodes: dealership
+enumeration/batching → per-tenant pending-lead fetch/batching →
+`Rescore Model Ladder` (same 3-tier table as the router, kept in sync by
+hand) → `Route: Exhausted?` → `Rescore Scoring Agent` (OpenRouter primary +
+Groq fallback, Supabase lead-lookup + purchase-history tools, memory) →
+`Parse Rescore Decision` → `nexus_record_lead_scoring_result` RPC on success
+or failure). Created inactive first via `create_workflow_from_code` (trigger
+only, since the SDK requires generated code, not raw JSON) then built out
+node-by-node via `update_workflow` for byte fidelity, verified with
+`wf.py verify` (all 18 nodes + connections MATCH), then activated + published.
+`active=true`, `versionId==activeVersionId` (`fd371add-...`).
+
+One deliberate deviation from the source file: `Rescore Groq Fallback`'s
+`ai_languageModel` connection was wired to index 1 (fallback slot) instead of
+the source's index 0 — the source wired both `Rescore OpenRouter Chat Model`
+and `Rescore Groq Fallback` to index 0, which would have silently disabled
+the fallback slot on this `needsFallback:true` agent. Corrected to match the
+already-verified, published sibling node in the Master Lead Router
+(`OpenRouter Chat Model`=index0 / `Groq Fallback`=index1).
+
+Hourly cron (`0 * * * *`, Asia/Dubai), `errorWorkflow: iYJkh1kztWxZXDbT`
+(NEXUS Error Handler), `executionTimeout: 1800`. Not yet exercised live (no
+PENDING backlog older than an hour existed at publish time) — the persist-first
+test lead above proves the *router's* inline path; the sweep itself will get
+its first real PENDING row only if a future lead exhausts the rescore
+workflow's own ladder too, or is manually seeded.
+
+## Settings-only: saveDataErrorExecution=all on KYC; BDC candidate left as-is
+
+- `qTnh3nwWheFJbFkU` (KYC/AML Document Auditor): `setWorkflowSettings` →
+  `saveDataErrorExecution:'all'`, published. `saveDataSuccessExecution`
+  confirmed unchanged at `'none'` post-publish (KYC success-path execution
+  data contains customers' ID documents — must never be stored).
+- `LTBExI7QzFeANeFg` (`WhatsApp BDC — TENANT SCOPED CANDIDATE (do not
+  activate)`): **left untouched, per coordinator instruction — inactive,
+  not on any live path, not a blocker.** Both `saveDataErrorExecution` and
+  `saveDataSuccessExecution` are still `'none'` on this workflow. It cannot
+  be read or written by any `mcp__n8n__*` tool right now: `availableInMCP`
+  is `false` on it (confirmed via `search_workflows`, and both
+  `get_workflow_details` and `update_workflow` refuse it with "Workflow is
+  not available in MCP. Enable MCP access from the workflow card in the
+  workflows list, or from the workflow settings."). There is no MCP tool to
+  flip that flag, and the public-API PUT is explicitly off-limits for this
+  work. **Needs a human to toggle "Available in MCP" on this workflow's
+  card/settings in the n8n UI** before its settings can be fixed or it can
+  be activated.

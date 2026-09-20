@@ -1,0 +1,2338 @@
+{
+ "updatedAt": "2026-09-20T20:39:13.239Z",
+ "createdAt": "2026-07-23T19:16:39.602Z",
+ "id": "JnlZFAVmFAuNXVya",
+ "name": "NEXUS Master Lead Router - AI Agent",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "nexus-inbound-lead",
+    "options": {}
+   },
+   "id": "1",
+   "name": "Webhook Catch-All",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 1.1,
+   "position": [
+    0,
+    304
+   ],
+   "webhookId": "d0ba4bc1-47b4-4ad0-8ae9-83df19614c9a"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Accept a raw webhook POST (data under .body) or a direct/sub-workflow call.\nconst raw = $input.first().json;\nconst src = raw.body || raw.lead || raw;\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v).trim();\n\nconst email = clean(src.email);\nconst phone = clean(src.phone) || clean(src.whatsapp);\n\nif (!email && !phone) {\n  throw new Error('Rejected: inbound lead has neither an email nor a phone number. Keys received: ' + Object.keys(src).join(', '));\n}\n\n// ---- TENANT (18 Sep 2026) -------------------------------------------------\n// REPLACES the 2 Sep resolver, which read `src.tenant_id` FIRST and only fell\n// back to the JWT. That order let an authenticated user of dealership A post\n// `tenant_id: <B>` and have this workflow create the leads row under B --\n// n8n writes as service_role, which is BYPASSRLS, so nothing downstream would\n// have stopped it. The caller's tenant_id is now never a source. It is only\n// ever a claim, and a claim that disagrees with the membership row is refused.\n//\n// Two doors, two rules:\n//   * public webhook  -- `Webhook Catch-All` -> `Verify JWT` ->\n//     `Tenant For JWT User` -> `Auth Gate` -> here. The ONLY trusted answer is\n//     the tenant_members row for the Supabase user behind the verified JWT.\n//     No row, or more than one row, means refuse; there is no fallback on this\n//     door, because a fallback is exactly how an unverifiable caller acquires\n//     a dealership.\n//   * internal hop    -- `Called Internally` -> here. The caller is a sibling\n//     workflow that already resolved the dealership; `Auth Gate` never ran, so\n//     that is how this node tells the doors apart.\n//\n// Refusals carry the '[NEXUS-UNATTRIBUTED]' prefix at position 0, the contract\n// with the NEXUS Error Handler (iYJkh1kztWxZXDbT): the failed execution is\n// filed under the quarantine tenant instead of being appended to some real\n// dealership's audit trail.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\n// What the caller ASSERTED. Never authoritative; only ever cross-checked.\nconst claimed = String(src.tenant_id || raw.tenant_id || '');\n\n// Which door? `$()` throws for a node that did not run in this execution.\nlet viaWebhook = true;\ntry { $('Auth Gate').all(); } catch (e) { viaWebhook = false; }\n\nlet tenant = null;\nlet tenantSource = 'unresolved';\n\nif (viaWebhook) {\n  const ids = Array.from(new Set(\n    $('Tenant For JWT User').all()\n      .map((i) => (i && i.json ? i.json.tenant_id : null))\n      .filter(Boolean)\n      .map(String)\n  ));\n  if (ids.length > 1) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: the authenticated user is a member of ' + ids.length + ' dealerships. This endpoint will not choose one on their behalf.');\n  }\n  if (ids.length === 0 || !NEXUS_UUID.test(ids[0])) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: the authenticated user has no tenant_members row. A dealership is never taken from the request body.');\n  }\n  if (claimed && claimed.toLowerCase() !== ids[0].toLowerCase()) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: caller asserted tenant_id ' + claimed + ' but is a member of ' + ids[0] + '. tenant_id is not a caller-selectable field.');\n  }\n  tenant = ids[0];\n  tenantSource = 'jwt_tenant_member';\n} else {\n  if (NEXUS_UUID.test(claimed)) {\n    tenant = claimed;\n    tenantSource = 'internal_caller';\n  } else if (nexusKeys.length === 1 && NEXUS_UUID.test(String(nexusMap[nexusKeys[0]] || ''))) {\n    tenant = String(nexusMap[nexusKeys[0]]);\n    tenantSource = 'sole_configured_tenant';\n  } else {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: the internal caller supplied no resolvable tenant_id and ' + nexusKeys.length + ' dealerships are configured. Refusing rather than filing this lead under a guess.');\n  }\n}\n\nreturn [{\n  json: {\n    lead: {\n      name: clean(src.name) || clean(src.full_name) || 'Unknown',\n      email: email,\n      phone: phone,\n      vehicle_interest: clean(src.vehicle_interest) || clean(src.vehicleInterest) || clean(src.message) || null,\n      budget_aed: src.budget_aed ? Number(src.budget_aed) : null,\n      source: clean(src.source) || 'webhook',\n      // Travels with the lead so the sub-workflows this router fans out to --\n      // the BDC agent, the drip, the ERP sync -- write under the right\n      // dealership too.\n      tenant_id: tenant,\n      tenant_source: tenantSource,\n      // Who handed us this lead. 'whatsapp-bdc' means the person is ALREADY in\n      // a live WhatsApp thread that the BDC agent has just answered, so the\n      // outreach branches below must not fire a canned welcome at them on top\n      // of the reply they are reading right now. Everything else -- scoring,\n      // the Slack alert, the ERP write, the drip -- still applies.\n      origin: clean(src.origin) || 'external',\n      received_at: new Date().toISOString()\n    }\n  }\n}];\n"
+   },
+   "id": "2",
+   "name": "Validate & Enrich Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    176,
+    304
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// The agent usually returns JSON, but often wrapped in ```json fences or with\n// a sentence around it. The old version silently fell back to COLD/0 on any\n// parse failure, which made every single lead look cold.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\n\n// Rules-engine short-circuit: when every AI tier is exhausted, the new\n// \"Rule-Based Lead Scorer\" node hands us an already-finished decision\n// instead of raw agent text. Detect it by score_source and pass it straight\n// through -- do NOT try to regex/JSON-parse it as if it were LLM output.\nif (rawOut.ai_decision && rawOut.ai_decision.score_source === 'RULES') {\n  return [{ json: { lead: rawOut.lead || lead, ai_decision: rawOut.ai_decision } }];\n}\n\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  // 1. straight parse\n  try { return JSON.parse(s); } catch (e) {}\n  // 2. strip markdown code fences\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  // 3. grab the outermost {...} block\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nlet parseFailed = false;\n\nif (!parsed || typeof parsed !== 'object') {\n  parseFailed = true;\n  // Last resort: pull an intent word and a number out of the prose so a\n  // genuinely hot lead is not silently downgraded to COLD.\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n  // Deliberately no budget here: the prose fallback cannot tell a budget from\n  // a price, a year or a phone number, and a wrong budget is worse than none.\n}\n\n// 30 Aug 2026: budget_aed added. A live HOT lead said 'budget around AED 600,000',\n// the agent's own reason quoted it back, and the column was still written NULL --\n// nothing upstream extracts a budget from message text. This object is built\n// field by field, not spread, so a key the agent returns is dropped unless it is\n// named here. Anything not a positive finite number becomes null.\nconst rawBudget = Number(parsed.budget_aed);\nconst budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n\nconst intent = String(parsed.intent || '').toUpperCase();\nconst ai_decision = {\n  intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n  score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n  reason: parsed.reason || null,\n  budget_aed: budget_aed,\n  parse_failed: parseFailed,\n  // NX920 labels (leads.score_source's live CHECK constraint), not 'ai':\n  // a parse failure is explicitly NOT a model verdict (ADR-003) and must\n  // not be filed the same as a genuine structured answer.\n  score_source: parseFailed ? 'AI_SCORE_FALLBACK' : 'AI_SCORE_CONFIRMED',\n  ai_score_raw: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : null,\n  ai_intent_raw: (parsed.intent || null),\n  score_reasons: parseFailed\n    ? ['agent output did not parse as JSON; regex fallback used']\n    : [],\n};\n\nreturn [{ json: { lead, ai_decision } }];"
+   },
+   "id": "6",
+   "name": "Parse AI Decision",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    752,
+    288
+   ]
+  },
+  {
+   "parameters": {
+    "rules": {
+     "values": [
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict",
+         "version": 1
+        },
+        "conditions": [
+         {
+          "id": "1f148bc7-4925-4a66-97cb-0c92b32bcf74",
+          "leftValue": "={{ $json.ai_decision.intent }}",
+          "rightValue": "HOT",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       }
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict",
+         "version": 1
+        },
+        "conditions": [
+         {
+          "id": "164b5a5f-dead-4549-a81b-e725ed8dd6eb",
+          "leftValue": "={{ $json.ai_decision.intent }}",
+          "rightValue": "WARM",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       }
+      },
+      {
+       "conditions": {
+        "options": {
+         "caseSensitive": true,
+         "leftValue": "",
+         "typeValidation": "strict",
+         "version": 1
+        },
+        "conditions": [
+         {
+          "id": "3ac91d22-7b41-4f6e-9a02-5f0c2b8ad901",
+          "leftValue": "={{ $json.ai_decision.intent }}",
+          "rightValue": "COLD",
+          "operator": {
+           "type": "string",
+           "operation": "equals"
+          }
+         }
+        ],
+        "combinator": "and"
+       }
+      }
+     ]
+    },
+    "options": {
+     "fallbackOutput": "extra",
+     "renameFallbackOutput": "UNKNOWN"
+    }
+   },
+   "id": "7",
+   "name": "Intent Switch",
+   "type": "n8n-nodes-base.switch",
+   "typeVersion": 3,
+   "position": [
+    880,
+    176
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const p = $('Parse AI Decision').first().json; const t = (p.lead && p.lead.tenant_id) || null; const src = (p.lead && p.lead.tenant_source) || 'unknown'; const base = { workflow: 'Master Router', status: $json.delivery ? $json.delivery.status : (p.ai_decision.parse_failed ? 'FAILED' : 'SUCCESS'), lead_name: p.lead.name, lead_email: p.lead.email, lead_score: p.ai_decision.score, intent: p.ai_decision.intent, summary: ((p.ai_decision.parse_failed ? ('Scored by the regex fallback, not by the agent. ' + (p.ai_decision.reason || '')) : (p.ai_decision.reason || 'Completed')) + ($json.delivery ? ' | ' + $json.delivery.note + ($json.delivery.dropped.length ? ' [' + $json.delivery.dropped.join('; ') + ']' : '') : '') + (t ? ' | tenant: ' + src : ' | TENANT UNRESOLVED - row written without tenant_id')).substring(0, 900), logged_at: $now.toISO() }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+    "options": {}
+   },
+   "id": "11",
+   "name": "Audit Log",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1456,
+    304
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "model": "={{ $json.orModel }}",
+    "options": {
+     "maxTokens": 1024,
+     "temperature": 0.2
+    }
+   },
+   "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+   "typeVersion": 1,
+   "position": [
+    288,
+    512
+   ],
+   "id": "bff6b3f4-2118-4f5b-b55c-daae3051339d",
+   "name": "OpenRouter Chat Model",
+   "credentials": {
+    "openRouterApi": {
+     "id": "UUtKrBzkQOztAOzZ",
+     "name": "OpenRouter account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "workflowId": {
+     "__rl": true,
+     "value": "bxNBzBrcOtcFpMPn",
+     "mode": "id",
+     "cachedResultUrl": "/workflow/bxNBzBrcOtcFpMPn"
+    },
+    "workflowInputs": {
+     "mappingMode": "defineBelow",
+     "value": {},
+     "matchingColumns": [],
+     "schema": [],
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": true
+    },
+    "options": {
+     "waitForSubWorkflow": false
+    }
+   },
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.3,
+   "position": [
+    1408,
+    112
+   ],
+   "id": "6653e464-3099-46a9-8e6c-bad42b96e011",
+   "name": "ERP Sync (HOT)"
+  },
+  {
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "leads",
+    "limit": 20,
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "email",
+       "condition": "eq",
+       "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.email || ('+' + String($('Validate & Enrich Input').first().json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
+      },
+      {
+       "keyName": "tenant_id",
+       "condition": "eq",
+       "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      }
+     ]
+    },
+    "matchType": "allFilters"
+   },
+   "id": "fc00a901-4e3d-4198-bcc8-efb1301cfaff",
+   "name": "Supabase Lead Lookup",
+   "type": "n8n-nodes-base.supabaseTool",
+   "typeVersion": 1,
+   "position": [
+    672,
+    544
+   ],
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "workflowId": {
+     "__rl": true,
+     "value": "KI6P1Qcf3MIZakNa",
+     "mode": "id",
+     "cachedResultUrl": "/workflow/KI6P1Qcf3MIZakNa"
+    },
+    "workflowInputs": {
+     "mappingMode": "defineBelow",
+     "value": {},
+     "matchingColumns": [],
+     "schema": [],
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": true
+    },
+    "options": {
+     "waitForSubWorkflow": false
+    }
+   },
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.3,
+   "position": [
+    1200,
+    112
+   ],
+   "id": "cbfd0609-ac58-4b85-9aaa-52b2403c886b",
+   "name": "Slack Router (HOT)"
+  },
+  {
+   "parameters": {
+    "workflowId": {
+     "__rl": true,
+     "value": "BiyHk9ZXxJUVGbf6",
+     "mode": "id",
+     "cachedResultUrl": "/workflow/BiyHk9ZXxJUVGbf6"
+    },
+    "workflowInputs": {
+     "mappingMode": "defineBelow",
+     "value": {},
+     "matchingColumns": [],
+     "schema": [],
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": true
+    },
+    "options": {
+     "waitForSubWorkflow": false
+    }
+   },
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.3,
+   "position": [
+    1200,
+    304
+   ],
+   "id": "5dcafa2c-756b-4a9f-a644-c1108e1f1689",
+   "name": "WhatsApp BDC (WARM)"
+  },
+  {
+   "parameters": {
+    "workflowId": {
+     "__rl": true,
+     "value": "G7FhvMY2ucW5Fg7X",
+     "mode": "id",
+     "cachedResultUrl": "/workflow/G7FhvMY2ucW5Fg7X"
+    },
+    "workflowInputs": {
+     "mappingMode": "defineBelow",
+     "value": {},
+     "matchingColumns": [],
+     "schema": [],
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": true
+    },
+    "options": {
+     "waitForSubWorkflow": false
+    }
+   },
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.3,
+   "position": [
+    1232,
+    528
+   ],
+   "id": "9f0912bc-d895-4281-aa26-de32622db821",
+   "name": "Marketing Drip (COLD)"
+  },
+  {
+   "parameters": {
+    "promptType": "define",
+    "text": "=Lead data: {{ JSON.stringify($json.lead) }}\n\nStep 1: Use the Supabase Lead Lookup tool to check whether this lead already exists in the CRM.\nStep 2: Use the check_purchase_history tool to see whether this person has bought a vehicle from us before (a returning/VIP customer).\nStep 3: Score the lead from 1-100 and classify intent as HOT, WARM or COLD.\n  - If check_purchase_history returns ANY prior purchase, this is a RETURNING VIP CUSTOMER: score 90-100 and intent HOT, regardless of how casual the new enquiry sounds.\n  - Otherwise: HOT = ready to buy now, specific vehicle, clear budget or urgent language; WARM = genuine interest but no urgency/budget; COLD = just browsing, no budget, no timeline.\nStep 4: If the customer states a budget anywhere in their message, report it as budget_aed: a plain number in AED, so 600000 - not \"600k\", not \"AED 600,000\", no commas, no currency. If they state no budget at all, use null. Do not guess or infer a budget from the vehicle they asked about.\nStep 5: Return your decision.\n\nDo NOT try to save the lead. Persisting it to the CRM is handled downstream by the workflow itself, deterministically, from the decision you return -- so the accuracy of your score, intent and budget_aed is what actually gets written.\n\nBoth lookup tools are pre-filtered to this exact lead; call them with no arguments and read the result.\n\nReturn ONLY a raw JSON object and nothing else. No markdown, no code fences, no commentary.\nSchema: {\"score\": 95, \"intent\": \"HOT\", \"reason\": \"one short sentence\", \"vip\": true, \"budget_aed\": 600000}",
+    "needsFallback": true,
+    "options": {
+     "systemMessage": "You are NEXUS AI, an expert lead scoring agent for a premium car dealership in the UAE. You evaluate inbound leads, check whether they are returning customers, persist them to the CRM, and classify them so the router can dispatch them correctly. Returning customers are extremely valuable and must always be routed as HOT.",
+     "maxIterations": 3,
+     "enableStreaming": false
+    }
+   },
+   "id": "e2f0eb5f-65ab-4a0c-88ff-33463a77662f",
+   "name": "AI Lead Scoring Agent",
+   "type": "@n8n/n8n-nodes-langchain.agent",
+   "typeVersion": 3.1,
+   "position": [
+    464,
+    304
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "purchase_history",
+    "limit": 5,
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "email",
+       "condition": "eq",
+       "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.email || ('+' + String($('Validate & Enrich Input').first().json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
+      },
+      {
+       "keyName": "tenant_id",
+       "condition": "eq",
+       "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      }
+     ]
+    },
+    "matchType": "allFilters"
+   },
+   "id": "6c739b13-27ba-4d04-aa8b-2086cf1f9c43",
+   "name": "check_purchase_history",
+   "type": "n8n-nodes-base.supabaseTool",
+   "typeVersion": 1,
+   "position": [
+    528,
+    672
+   ],
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "model": "={{ $json.groqModel }}",
+    "options": {}
+   },
+   "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+   "typeVersion": 1,
+   "position": [
+    448,
+    544
+   ],
+   "id": "mr-groq-01",
+   "name": "Groq Fallback",
+   "credentials": {
+    "groqApi": {
+     "id": "JgOg4w1ZMJc37lmL",
+     "name": "Groq account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "workflowId": {
+     "__rl": true,
+     "value": "BiyHk9ZXxJUVGbf6",
+     "mode": "id",
+     "cachedResultUrl": "/workflow/BiyHk9ZXxJUVGbf6"
+    },
+    "workflowInputs": {
+     "mappingMode": "defineBelow",
+     "value": {},
+     "matchingColumns": [],
+     "schema": [],
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": true
+    },
+    "options": {
+     "waitForSubWorkflow": false
+    }
+   },
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.3,
+   "position": [
+    1408,
+    -64
+   ],
+   "id": "mr-wa-hot-01",
+   "name": "WhatsApp Outreach (HOT)",
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\n//\n// 30 Aug 2026: groqModel changed from 'llama-3.3-70b-versatile' to\n// 'openai/gpt-oss-120b' on every tier. Groq SHUT DOWN llama-3.3-70b-versatile\n// for free and developer tiers on 16 Aug 2026 -- their deprecations page names\n// openai/gpt-oss-120b as the replacement, their models page marks the old id\n// Enterprise/Contact-Sales, and it has no row at all in the free-tier\n// rate-limit table. Groq is only the FALLBACK slot, so it had never fired in\n// production and nothing surfaced this: it would have failed for the first\n// time on the day OpenRouter was already down. The same fix went into the\n// WhatsApp BDC agent earlier today; this workflow was missed, which meant the\n// two agents disagreed about which model exists.\n// Free-tier ceiling: 30 RPM / 1K RPD / 8K TPM / 200K TPD -- tokens-per-minute\n// binds well before requests-per-minute on an agent this prompt-heavy.\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',                groqModel: GROQ_FALLBACK }\n];\n\nconst prev = $input.first().json;\n// NX1002 persist-first bug fix (20 Sep 2026, found live on exec 16124):\n// 'Persist Lead (deterministic)' now runs BEFORE this node and uses\n// 'Prefer: return=minimal', so its HTTP response body -- and therefore\n// $input.first().json on THIS node's first invocation -- is {} with no\n// .lead at all. prev.lead was silently undefined on every tier, which fed\n// 'undefined' lead data into the AI agent and into 'Rule-Based Lead Scorer',\n// and then made 'Update Lead Scoring (PATCH)' fail outright (tenant_id=\n// eq.undefined is not a valid uuid), leaving every lead stuck at\n// scoring_state='PENDING' forever. Read lead from the named node instead --\n// same pattern 'Parse AI Decision' already uses for the same reason -- so it\n// is available on every iteration of this retry loop, not just derived from\n// this node's own previous (lead-less) output.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((lead && lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
+   },
+   "id": "mr-ladder-01",
+   "name": "Model Ladder",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    352,
+    304
+   ],
+   "onError": "continueErrorOutput"
+  },
+  {
+   "parameters": {
+    "select": "channel",
+    "channelId": {
+     "__rl": true,
+     "value": "C0BKTLL1X54",
+     "mode": "id"
+    },
+    "text": "=:warning: *Lead could not be classified*\n\n*Name:* {{ $json.lead.name }}\n*Email:* {{ $json.lead.email || 'n/a' }}\n*Phone:* {{ $json.lead.phone || 'n/a' }}\n*Enquiry:* {{ $json.lead.vehicle_interest || 'n/a' }}\n\n*Raw AI output:* {{ $json.ai_decision.reason }}\n*Parse failed:* {{ $json.ai_decision.parse_failed }}\n\nThis lead was NOT routed automatically. Please review and assign it manually.",
+    "otherOptions": {},
+    "resource": "message",
+    "operation": "post"
+   },
+   "type": "n8n-nodes-base.slack",
+   "typeVersion": 2.5,
+   "position": [
+    1200,
+    704
+   ],
+   "id": "mr-unknown-01",
+   "name": "Slack: Unclassified Lead",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "webhookId": "eea02491-c358-45ac-a6b6-7d0bba8bafb7",
+   "credentials": {
+    "slackApi": {
+     "id": "oOf93CGdFiAxHkHF",
+     "name": "Slack account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "sessionIdType": "customKey",
+    "sessionKey": "={{ ($json.lead && ($json.lead.email || $json.lead.phone)) || 'lead-' + $execution.id }}",
+    "contextWindowLength": "={{ 10 }}"
+   },
+   "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+   "typeVersion": 1.4,
+   "position": [
+    560,
+    560
+   ],
+   "id": "f83d708b-3116-4af1-a510-187aa359eef4",
+   "name": "Simple Memory"
+  },
+  {
+   "parameters": {
+    "inputSource": "passthrough"
+   },
+   "id": "mr-called-internally-01",
+   "name": "Called Internally",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1.1,
+   "position": [
+    -240,
+    128
+   ],
+   "notes": "Make.com and Zapier are empty -- every workflow was migrated into n8n -- so nothing external POSTs the webhook any more. This is how the rest of the system reaches the Router now: in-process, no HTTP, no token."
+  },
+  {
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "apikey",
+       "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+      },
+      {
+       "name": "Authorization",
+       "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "id": "mr-verify-jwt-0001",
+   "name": "Verify JWT",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -240,
+    480
+   ],
+   "retryOnFail": false,
+   "alwaysOutputData": true,
+   "onError": "continueRegularOutput",
+   "notes": "Public webhook branch only. A rejected token arrives as data, not as a failed node."
+  },
+  {
+   "parameters": {
+    "jsCode": "// This node sits ONLY on the public webhook branch.\n//\n// Until now `POST /webhook/nexus-inbound-lead` was wide open. Anyone who found\n// the URL could invent a lead, have an LLM score it, get a row written into\n// `leads`, and -- on a HOT verdict -- make the dealership send a WhatsApp\n// message to any number they chose. Every other public webhook in this system\n// already checks the caller's Supabase session token; this one never did,\n// because its only intended caller was Make.com, which no longer exists.\n//\n// `Called Internally` (the Execute Workflow trigger) connects straight to\n// `Validate & Enrich Input` and never reaches here, so n8n-to-n8n calls are\n// untouched -- they are already inside the trust boundary.\n//\n// `Verify JWT` runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\n//\n// 2 Sep 2026: `Tenant For JWT User` was inserted between Verify JWT and this\n// node to look the caller's dealership up in tenant_members. That HTTP node\n// REPLACES the item, so the identity check now reaches back to Verify JWT by\n// name. The guard itself is unchanged: no .id on the verified user, no entry.\nlet auth = {};\ntry { auth = $('Verify JWT').first().json || {}; } catch (e) { auth = {}; }\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] Inbound lead rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so `Validate & Enrich Input` sees\n// exactly the shape it saw before this guard was inserted.\nreturn $('Webhook Catch-All').all();"
+   },
+   "id": "mr-auth-gate-0001",
+   "name": "Auth Gate",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -80,
+    592
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "mr-if-hot-outreach-1-c1",
+       "leftValue": "={{ $json.lead.origin }}",
+       "rightValue": "whatsapp-bdc",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "looseTypeValidation": true
+   },
+   "id": "mr-if-hot-outreach-1",
+   "name": "HOT: Already In A Live Chat?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1216,
+    260
+   ],
+   "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "mr-if-warm-outreach-c1",
+       "leftValue": "={{ $json.lead.origin }}",
+       "rightValue": "whatsapp-bdc",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "looseTypeValidation": true
+   },
+   "id": "mr-if-warm-outreach",
+   "name": "WARM: Already In A Live Chat?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1040,
+    304
+   ],
+   "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the audit row is about to make.\n//\n// Only ONE intent branch runs per lead, and `$('Node')` THROWS for a node that\n// did not run -- `?.` cannot rescue it -- so the claim list is built from the\n// intent that actually fired, and every lookup is still wrapped.\nconst decision = $('Parse AI Decision').first().json;\nconst intent = String((decision.ai_decision || {}).intent || 'UNKNOWN').toUpperCase();\nconst origin = String(((decision.lead) || {}).origin || 'external');\n\nconst CLAIMED = [];\n\n// 29 Aug 2026: the lead write is claimed on EVERY branch, unconditionally, and\n// it is pushed FIRST so CLAIMED can never be empty.\n// Before this, a WARM lead with origin 'whatsapp-bdc' pushed nothing at all --\n// the WARM arm has no else -- so results.length was 0 and the report said\n// 'all 0 claimed steps verified' with status SUCCESS. Execution 6253 did exactly\n// that on a run which created no leads row whatsoever. The report only ever\n// verified dispatch; it never verified persistence, which is the one thing every\n// downstream journey depends on.\nCLAIMED.push({ node: 'Persist Lead (deterministic)', what: 'lead row written to the leads table', critical: true });\n\nif (intent === 'HOT') {\n  CLAIMED.push({ node: 'Slack Router (HOT)', what: 'lead escalated to a closer (Slack + email)', critical: true });\n  CLAIMED.push({ node: 'ERP Sync (HOT)',     what: 'lead written into the Bitrix24 CRM',        critical: true });\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp Outreach (HOT)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'WARM') {\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp BDC (WARM)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'COLD') {\n  // Started, not finished: the drip spans seven days and this node is called\n  // with waitForSubWorkflow = false, so the only honest claim is that it began.\n  CLAIMED.push({ node: 'Marketing Drip (COLD)', what: 'lead handed to the 7-day drip (start only)', critical: true });\n} else {\n  CLAIMED.push({ node: 'Slack: Unclassified Lead', what: 'unclassified lead posted to Slack for a human', critical: true });\n}\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  // A sub-workflow can finish green and still have failed to deliver. Lead\n  // Escalation now answers with its own verdict; believe it over the exit code.\n  if (typeof j.status === 'string' && /fail|unverified|error/i.test(j.status)) {\n    return { ...c, ok: false, why: 'sub-workflow reported ' + j.status };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst critical = dropped.filter(r => r.critical);\n\n// -- 01 Sep 2026 - WHY THERE IS NO 'FAILED' RUNG ANY MORE ---------------------\n// Every claim above is tiered critical, so any dropped claim wrote FAILED and\n// the PARTIAL rung was unreachable. A live row reads \"Customer ready to buy this\n// week with clear cash budget. | 2 of 3 claimed steps did not land\" under status\n// FAILED - the lead was persisted and the run completed; two steps did not land.\n// That is a partial delivery, and nexus_outcome_class() in Postgres has been\n// carrying a correction rule to say so on this workflow's behalf.\n//\n// FAILED has exactly one owner: nexus_error_handler, the errorWorkflow set on\n// this workflow, which writes it from an Error Trigger when an execution STOPS.\n// This node only runs on an execution that did NOT stop, so it cannot honestly\n// claim the work could not complete.\n//\n// KNOWN AND NOT FIXED HERE: two of the three claims on the HOT path are\n// UNOBSERVABLE from this node, not dropped. 'Intent Switch' output 0 fans out to\n// 'Slack Router (HOT)', 'ERP Sync (HOT)' and 'HOT: Already In A Live Chat?', and\n// only the third reaches this node - so $('Slack Router (HOT)').item throws and\n// is recorded as \"did not run on this branch\". Proof: this node wrote its\n// verdict at 19:09:41.382Z on 29 Aug; 'Lead Escalation - AI Agent', which runs\n// only when Slack Router (HOT) calls it, logged at 19:09:49.680Z - eight seconds\n// AFTER being reported as not having run. Fixing that needs a graph change (this\n// node would have to run once per branch), so the count above still overstates\n// what was lost. PARTIAL is the honest ceiling either way.\n//\n// `critical` is still computed and still reported; it no longer decides status.\nconst status = dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst suppressed = (origin === 'whatsapp-bdc' && (intent === 'HOT' || intent === 'WARM'))\n  ? ' Outreach deliberately skipped: the customer is already in a live WhatsApp thread.'\n  : '';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    intent,\n    origin,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \u2014 ' + r.why),\n    note: (dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n        + (critical.length ? ' (' + critical.length + ' of them critical)' : '')\n      : 'all ' + results.length + ' claimed steps verified') + suppressed,\n  },\n} }];\n"
+   },
+   "id": "mr-delivery-report-01",
+   "name": "Delivery Report",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1312,
+    304
+   ]
+  },
+  {
+   "id": "8e7f01b0-7092-4945-a38b-d9e74f948863",
+   "name": "Persist Lead (deterministic)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    880,
+    32
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?on_conflict=tenant_id,email",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "resolution=merge-duplicates,return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ name: $json.lead.name || 'Unknown', email: $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead'), phone: $json.lead.phone, vehicle_interest: $json.lead.vehicle_interest, source: 'nexus-master-router', scoring_state: 'PENDING' }, (Number($json.lead.budget_aed) > 0) ? { budget_aed: Number($json.lead.budget_aed) } : {}, $json.lead.tenant_id ? { tenant_id: $json.lead.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "notes": "Added 29 Aug 2026. The lead row must not depend on the model choosing to call a tool - on exec 6253 it simply did not, and the run still audited SUCCESS. Values are bound from Parse AI Decision's item, not from $fromAI.",
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true
+  },
+  {
+   "id": "544fcd09-fb7e-47ec-8e9f-b7cd3f8e8741",
+   "name": "Tenant For JWT User",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -240,
+    640
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "tenant_id"
+      },
+      {
+       "name": "auth_user_id",
+       "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "2"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "nx1002-update-scoring-01",
+   "name": "Update Lead Scoring (PATCH)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.4,
+   "position": [
+    1400,
+    180
+   ],
+   "parameters": {
+    "method": "PATCH",
+    "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?tenant_id=eq.{{ encodeURIComponent($json.lead.tenant_id) }}&email=eq.{{ encodeURIComponent($json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead')) }}",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ ai_score: $json.ai_decision.score, status: $json.ai_decision.intent, scoring_state: 'SCORED', scored_at: new Date().toISOString(), score_source: $json.ai_decision.score_source || 'AI_SCORE_UNKNOWN' }, ($json.ai_decision.score_source === 'RULES') ? { rules_score: $json.ai_decision.rules_score } : { ai_score_raw: ($json.ai_decision.ai_score_raw === undefined ? null : $json.ai_decision.ai_score_raw), ai_intent_raw: ($json.ai_decision.ai_intent_raw === undefined ? null : $json.ai_decision.ai_intent_raw) })) }}",
+    "options": {}
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Added 20 Sep 2026 (NX1002). Second half of persist-first/score-later: 'Persist Lead (deterministic)' already wrote this row as PENDING right after 'Validate & Enrich Input'. This PATCHes the SAME row (same natural key: tenant_id + the same email/synthetic-whatsapp-email derivation Persist Lead uses) to SCORED now that 'Parse AI Decision' has a real ai_decision. Runs in parallel with 'Intent Switch' so a PATCH failure here can never delay or block Slack/ERP/WhatsApp routing. onError=continueRegularOutput: a failure to mark SCORED must not fail the execution -- the row just stays PENDING and the hourly rescore sweep (NEW_rescore_pending_leads) picks it up and finishes the job later; it is idempotent (nexus_record_lead_scoring_result's `scoring_state <> 'SCORED'` guard).",
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true
+  },
+  {
+   "id": "mr-rules-01",
+   "name": "Rule-Based Lead Scorer",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    352,
+    480
+   ],
+   "parameters": {
+    "jsCode": "// mr-rules-01 :: Rule-Based Lead Scorer (deterministic, zero-API, LAST tier)\n// ---------------------------------------------------------------------------\n// Why this file exists: the AI Lead Scoring Agent's Model Ladder tries up to\n// 3 OpenRouter :free models (each with a Groq fallback). When OpenRouter's\n// DAILY free quota is exhausted AND Groq also fails/is exhausted, the Model\n// Ladder code node throws (attempt >= TIERS.length) and, because it has no\n// onError handler, the whole execution dies -- the lead is never scored,\n// never routed, never persisted. Nothing downstream of scoring ever runs.\n//\n// This node is the answer: it makes NO network call, needs NO credential and\n// NEVER runs out of quota, so a lead is ALWAYS scored even at zero AI budget.\n// It is meant to sit as the terminal tier of the ladder (see\n// ops/tenant-precedence/patched4/model-ladder.md for exactly where it is\n// wired in) and produces the SAME { lead, ai_decision } shape that\n// \"Parse AI Decision\" produces today, so it can feed straight into\n// \"Intent Switch\" + \"Persist Lead (deterministic)\" unchanged.\n//\n// score_source is deliberately the literal string 'RULES' (upper-case), NOT\n// 'rules'. This matches leads.score_source's live check constraint\n// (leads_score_source_is_a_known_label, migration\n// 20260914065739_nx920_a_score_now_says_who_decided_it.sql:\n// RULES / AI_SCORE_CONFIRMED / AI_SCORE_FALLBACK / AI_SCORE_UNKNOWN) --\n// writing lowercase 'rules' to that column would fail the constraint outright.\n// `rules_score` is also emitted (== score) because that is the column NX920\n// added for it. See ops/ADR-003-who-decides-the-score.md: per that accepted\n// (but, as of this file, not yet n8n-implemented) decision, RULES is meant to\n// be the AUTHORITATIVE score for every lead today (zero paying dealers, no\n// model on the ladder supports structured output) -- this file only wires it\n// in as the ladder's last tier per this task's brief, but it is written so\n// that promoting it to score-every-lead later is a one-line change in\n// whatever calls it, not a rewrite.\n//\n// Every point added or subtracted is pushed onto `reasons` so the output is\n// auditable by a human (or by Slack: Unclassified Lead) -- this is the whole\n// point of a rules engine standing in for an LLM: you can see exactly why.\n//\n// Inputs used (all already on the `lead` object built by\n// \"Validate & Enrich Input\" -- see master-router.Validate-and-Enrich-Input.js):\n//   lead.budget_aed        number|null   -- stated budget in AED\n//   lead.vehicle_interest  string|null   -- vehicle named AND/OR raw free-text\n//                                           message (Validate & Enrich falls\n//                                           back to the raw message when no\n//                                           explicit vehicle field is sent)\n//   lead.message           string|null   -- optional explicit message text,\n//                                           scanned in addition to\n//                                           vehicle_interest when present\n//   lead.source             string|null  -- lead origin channel\n//   lead.phone              string|null\n//   lead.email               string|null\n//   lead.received_at        ISO string   -- used for the time-of-day signal\n//\n// Output: { intent: 'HOT'|'WARM'|'COLD', score: 0-100, reason: string,\n//           budget_aed: number|null, parse_failed: false,\n//           score_source: 'RULES', rules_score: number, score_reasons: string[] }\n// ---------------------------------------------------------------------------\n\n// Fixed offset: Asia/Dubai is UTC+4 year-round (no DST). Avoids depending on\n// ICU/timezone data being present in whatever sandbox this runs in.\nconst DUBAI_UTC_OFFSET_HOURS = 4;\n\n// ---- keyword dictionaries (lowercased; matched as substrings) -------------\n// English\nconst LUXURY_KEYWORDS = [\n  'range rover', 'land rover', 'bentley', 'rolls royce', 'rolls-royce',\n  'ferrari', 'lamborghini', 'porsche', 'maserati', 'aston martin',\n  'g63', 'g-wagon', 'g wagon', 'g wagen', 'amg', 's-class', 's class',\n  '7 series', 'x7', 'gt3', 'mclaren', 'bentayga', 'cullinan', 'mercedes',\n];\nconst URGENCY_KEYWORDS_EN = [\n  'today', 'right now', 'asap', 'urgent', 'urgently', 'ready to buy',\n  'cash ready', 'this week', 'immediately', 'right away', 'buy now',\n  'need it now', 'visit today', 'test drive today', 'ready to purchase',\n];\n// Arabic (Gulf-dialect friendly) urgency / buying-intent terms\nconst URGENCY_KEYWORDS_AR = [\n  '\u0639\u0627\u062c\u0644', '\u0627\u0644\u064a\u0648\u0645', '\u0627\u0644\u0622\u0646', '\u0628\u0633\u0631\u0639\u0629', '\u062c\u0627\u0647\u0632', '\u0623\u0631\u064a\u062f \u0634\u0631\u0627\u0621', '\u0627\u0634\u062a\u0631\u064a \u0627\u0644\u0627\u0646',\n];\n// Hinglish / Roman Urdu-Hindi urgency / buying-intent terms\nconst URGENCY_KEYWORDS_HINGLISH = [\n  'jaldi', 'abhi', 'turant', 'chahiye', 'kharidna hai', 'abhi chahiye',\n];\nconst BROWSING_KEYWORDS = [\n  'just checking', 'just browsing', 'just looking', 'window shopping',\n  'no rush', 'not in a hurry', 'someday', 'not sure yet', 'just curious',\n];\nconst SPAM_KEYWORDS = [\n  'click here', 'www.', 'http://', 'https://', 'free followers',\n  'crypto', 'bitcoin', 'casino', 'loan approved', 'seo services',\n  'backlink', 'guaranteed income', 'work from home', 'viagra',\n  'subscribe now', '100% free', 'earn money fast', 'act now buy',\n];\nconst REPEAT_KEYWORDS = [\n  'second time', 'third time', 'again', 'as i mentioned', 'as mentioned before',\n  'previously asked', 'following up', 'follow up on my', 'already contacted',\n  'asked before', 'still waiting for a reply', 'still waiting', 'once more',\n];\nconst HIGH_INTENT_SOURCES = /test.?drive|financing|finance.?application|showroom|whatsapp|website.?form/i;\nconst LOW_INTENT_SOURCES = /cold.?list|scrape|bulk.?import|purchased.?list/i;\n\nfunction toText(lead) {\n  return [lead && lead.vehicle_interest, lead && lead.message, lead && lead.name]\n    .filter((v) => typeof v === 'string' && v.trim().length)\n    .join(' \\n ')\n    .toLowerCase();\n}\n\nfunction matchAny(text, keywords) {\n  return keywords.filter((k) => text.includes(k.toLowerCase()));\n}\n\nfunction dubaiHour(isoOrDate) {\n  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate || Date.now());\n  if (Number.isNaN(d.getTime())) return new Date().getUTCHours();\n  const utcHour = d.getUTCHours();\n  return (utcHour + DUBAI_UTC_OFFSET_HOURS) % 24;\n}\n\n/**\n * Pure, deterministic, zero-API lead scorer.\n * @param {object} lead - lead object as built by Validate & Enrich Input.\n * @param {object} [opts]\n * @param {Date|string} [opts.now] - override \"current time\" for time-of-day\n *   scoring/testing. Defaults to lead.received_at, then real now.\n * @returns {{intent:string, score:number, reason:string, budget_aed:(number|null),\n *            parse_failed:boolean, score_source:string, score_reasons:string[]}}\n */\nfunction scoreLead(lead, opts) {\n  lead = lead || {};\n  opts = opts || {};\n  const reasons = [];\n  let score = 0;\n  let forcedIntent = null; // set to override the score->tier mapping entirely\n\n  const text = toText(lead);\n\n  // ---- 1. budget_aed (weight up to 35) -------------------------------\n  const rawBudget = Number(lead.budget_aed);\n  const budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n  if (budget_aed === null) {\n    reasons.push('no budget stated (+0)');\n  } else if (budget_aed >= 300000) {\n    score += 35;\n    reasons.push(`budget_aed ${budget_aed} >= 300,000 AED: high-value buyer (+35)`);\n  } else if (budget_aed >= 100000) {\n    score += 22;\n    reasons.push(`budget_aed ${budget_aed} in the 100k-300k AED band: solid buyer (+22)`);\n  } else {\n    score += 8;\n    reasons.push(`budget_aed ${budget_aed} is a modest stated budget, still a real number (+8)`);\n  }\n\n  // ---- 2. vehicle / message keyword signals --------------------------\n  const luxuryHits = matchAny(text, LUXURY_KEYWORDS);\n  const specificVehicle = !luxuryHits.length && lead.vehicle_interest &&\n    String(lead.vehicle_interest).trim().length > 3;\n  if (luxuryHits.length) {\n    score += 15;\n    reasons.push(`luxury/high-end vehicle keyword(s) matched: ${luxuryHits.join(', ')} (+15)`);\n  } else if (specificVehicle) {\n    score += 8;\n    reasons.push(`a specific vehicle was named (\"${lead.vehicle_interest}\"), genuine interest signal (+8)`);\n  } else {\n    reasons.push('no specific vehicle or luxury signal in the text (+0)');\n  }\n\n  // ---- 3. urgency keywords, English + Arabic + Hinglish --------------\n  const urgencyHitsEn = matchAny(text, URGENCY_KEYWORDS_EN);\n  const urgencyHitsAr = matchAny(text, URGENCY_KEYWORDS_AR);\n  const urgencyHitsHi = matchAny(text, URGENCY_KEYWORDS_HINGLISH);\n  const urgencyHits = [...urgencyHitsEn, ...urgencyHitsAr, ...urgencyHitsHi];\n  if (urgencyHits.length) {\n    score += 20;\n    reasons.push(`urgency/buy-now language matched (EN/AR/Hinglish aware): ${urgencyHits.join(', ')} (+20)`);\n  } else {\n    reasons.push('no urgency language detected (+0)');\n  }\n\n  // ---- 4. browsing / low-intent language ------------------------------\n  const browsingHits = matchAny(text, BROWSING_KEYWORDS);\n  if (browsingHits.length) {\n    score -= 10;\n    reasons.push(`browsing/no-rush language matched: ${browsingHits.join(', ')} (-10)`);\n  }\n\n  // ---- 5. repeat / follow-up enquiry -----------------------------------\n  const repeatHits = matchAny(text, REPEAT_KEYWORDS);\n  if (repeatHits.length) {\n    score += 10;\n    reasons.push(`repeat/follow-up language matched: ${repeatHits.join(', ')} (+10) -- this person has ` +\n      'already contacted us before; rules mode cannot check purchase history (no DB call), so this is a ' +\n      'text-only proxy for \"engaged, possibly getting impatient\" and should be prioritised for a fast human reply');\n  }\n\n  // ---- 6. contact completeness (weight up to 8) ------------------------\n  const hasPhone = !!(lead.phone && String(lead.phone).trim());\n  const hasEmail = !!(lead.email && String(lead.email).trim());\n  if (hasPhone) { score += 5; reasons.push('phone on file, directly callable/WhatsApp-able (+5)'); }\n  if (hasEmail) { score += 3; reasons.push('email on file (+3)'); }\n  if (!hasPhone && !hasEmail) {\n    reasons.push('NO phone and NO email on file -- this lead cannot be reached through any channel we have; ' +\n      'capping the score and forcing COLD regardless of every other signal, because a highly scored but ' +\n      'unreachable lead is worse than a low one (it looks actionable but is not)');\n    forcedIntent = 'COLD';\n  }\n\n  // ---- 7. source signal (weight up to 5) --------------------------------\n  const source = String(lead.source || '');\n  if (HIGH_INTENT_SOURCES.test(source)) {\n    score += 5;\n    reasons.push(`source \"${source}\" is a high-intent channel (test drive / financing / showroom / whatsapp) (+5)`);\n  } else if (LOW_INTENT_SOURCES.test(source)) {\n    score -= 10;\n    reasons.push(`source \"${source}\" looks like a bulk/cold/purchased list (-10)`);\n  }\n\n  // ---- 8. spam detection (dominant, overrides everything above) ---------\n  const spamHits = matchAny(text, SPAM_KEYWORDS);\n  if (spamHits.length) {\n    reasons.push(`spam-pattern keyword(s) matched: ${spamHits.join(', ')} -- overriding score to near-zero ` +\n      'and forcing COLD regardless of any other signal above');\n    score = Math.max(0, 10 - spamHits.length * 3);\n    forcedIntent = 'COLD';\n  }\n\n  // ---- 9. time-of-day (weight +/-5, soft signal only) --------------------\n  const hour = dubaiHour(opts.now || lead.received_at);\n  const isBusinessHours = hour >= 8 && hour < 20;\n  if (isBusinessHours) {\n    score += 5;\n    reasons.push(`received at ${hour}:00 Asia/Dubai, inside business hours (+5)`);\n  } else {\n    score -= 5;\n    reasons.push(`received at ${hour}:00 Asia/Dubai, outside business hours -- follow-up will likely wait for ` +\n      'the next shift, small penalty (-5)');\n  }\n\n  // ---- clamp + classify ---------------------------------------------------\n  score = Math.max(0, Math.min(100, Math.round(score)));\n\n  let intent;\n  if (forcedIntent) {\n    intent = forcedIntent;\n    // A forced-COLD lead should never carry a score that reads as hot to a\n    // human skimming a table, even if the raw signals were strong.\n    score = Math.min(score, 15);\n  } else if (score >= 70) {\n    intent = 'HOT';\n  } else if (score >= 40) {\n    intent = 'WARM';\n  } else {\n    intent = 'COLD';\n  }\n\n  const topReason = reasons[0] || 'deterministic rule-based score';\n  const reason = `Rule-based score ${score}/100 -> ${intent}. No AI quota was available for this lead; ` +\n    `every signal is listed in score_reasons. Top factor: ${topReason}`;\n\n  return {\n    intent,\n    score,\n    reason,\n    budget_aed,\n    parse_failed: false,\n    score_source: 'RULES',   // matches leads.score_source's live check constraint (NX920)\n    rules_score: score,      // matches leads.rules_score (NX920)\n    score_reasons: reasons,\n  };\n}\n\n// ---- CommonJS export for the standalone test harness ---------------------\n// `typeof module` is a safe check even where `module` is never declared (an\n// n8n Code node sandbox): `typeof` never throws on an undeclared identifier.\n// This line never runs inside n8n in a way that affects the node's output --\n// n8n's sandbox has no CommonJS `module`, so the guard is simply false there.\nif (typeof module !== 'undefined' && module.exports) {\n  module.exports = { scoreLead };\n}\n\n// ---- n8n Code node glue ----------------------------------------------------\n// Only executes inside n8n, where the `$input` global exists. Kept last and\n// guarded so this same file can be `require()`d by the test harness (where\n// `$input` is undefined) without touching n8n's execution API.\nif (typeof $input !== 'undefined') {\n  const prev = $input.first().json;\n  // NX1002/model-ladder patch bug fix (20 Sep 2026, found live on exec\n  // 16124/16127): when Model Ladder's retry ladder is exhausted, its\n  // onError=continueErrorOutput error-output item is JUST { error: <msg> }\n  // -- n8n does NOT carry the node's own input (or .lead) through on a Code\n  // node's THROWN error, contrary to this patch's original spec assumption\n  // (which guessed this from reading the code, not from a live throw). Read\n  // the real lead from the named node instead, same fix as 'Model Ladder'.\n  let lead;\n  try {\n    lead = $('Validate & Enrich Input').first().json.lead;\n  } catch (e) {\n    lead = prev.lead || prev;\n  }\n  const ai_decision = scoreLead(lead);\n  return [{ json: { lead, ai_decision } }];\n}"
+   },
+   "onError": "continueRegularOutput"
+  }
+ ],
+ "connections": {
+  "Webhook Catch-All": {
+   "main": [
+    [
+     {
+      "node": "Verify JWT",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse AI Decision": {
+   "main": [
+    [
+     {
+      "node": "Intent Switch",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Update Lead Scoring (PATCH)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Intent Switch": {
+   "main": [
+    [
+     {
+      "node": "Slack Router (HOT)",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "ERP Sync (HOT)",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "HOT: Already In A Live Chat?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "WARM: Already In A Live Chat?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Marketing Drip (COLD)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Slack: Unclassified Lead",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WhatsApp BDC (WARM)": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Marketing Drip (COLD)": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "AI Lead Scoring Agent": {
+   "main": [
+    [
+     {
+      "node": "Parse AI Decision",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Model Ladder",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenRouter Chat Model": {
+   "ai_languageModel": [
+    [
+     {
+      "node": "AI Lead Scoring Agent",
+      "type": "ai_languageModel",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Supabase Lead Lookup": {
+   "ai_tool": [
+    [
+     {
+      "node": "AI Lead Scoring Agent",
+      "type": "ai_tool",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "check_purchase_history": {
+   "ai_tool": [
+    [
+     {
+      "node": "AI Lead Scoring Agent",
+      "type": "ai_tool",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Groq Fallback": {
+   "ai_languageModel": [
+    [
+     {
+      "node": "AI Lead Scoring Agent",
+      "type": "ai_languageModel",
+      "index": 1
+     }
+    ]
+   ]
+  },
+  "WhatsApp Outreach (HOT)": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Model Ladder": {
+   "main": [
+    [
+     {
+      "node": "AI Lead Scoring Agent",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Rule-Based Lead Scorer",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Slack: Unclassified Lead": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Simple Memory": {
+   "ai_memory": [
+    [
+     {
+      "node": "AI Lead Scoring Agent",
+      "type": "ai_memory",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Auth Gate": {
+   "main": [
+    [
+     {
+      "node": "Validate & Enrich Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Called Internally": {
+   "main": [
+    [
+     {
+      "node": "Validate & Enrich Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "HOT: Already In A Live Chat?": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "WhatsApp Outreach (HOT)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WARM: Already In A Live Chat?": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "WhatsApp BDC (WARM)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report": {
+   "main": [
+    [
+     {
+      "node": "Audit Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify JWT": {
+   "main": [
+    [
+     {
+      "node": "Tenant For JWT User",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tenant For JWT User": {
+   "main": [
+    [
+     {
+      "node": "Auth Gate",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validate & Enrich Input": {
+   "main": [
+    [
+     {
+      "node": "Persist Lead (deterministic)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Persist Lead (deterministic)": {
+   "main": [
+    [
+     {
+      "node": "Model Ladder",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rule-Based Lead Scorer": {
+   "main": [
+    [
+     {
+      "node": "Parse AI Decision",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "binaryMode": "separate",
+  "availableInMCP": true,
+  "timezone": "Asia/Dubai",
+  "saveDataErrorExecution": "all",
+  "saveDataSuccessExecution": "all",
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "executionTimeout": 300
+ },
+ "staticData": null,
+ "meta": {
+  "templateCredsSetupCompleted": true,
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": {},
+ "versionId": "6c24af00-a20d-47b4-8331-c31142a35051",
+ "activeVersionId": "6c24af00-a20d-47b4-8331-c31142a35051",
+ "versionCounter": 147,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-07-23T19:16:39.602Z",
+   "createdAt": "2026-07-23T19:16:39.602Z",
+   "role": "workflow:owner",
+   "workflowId": "JnlZFAVmFAuNXVya",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-20T20:39:13.243Z",
+  "createdAt": "2026-09-20T20:39:13.243Z",
+  "versionId": "6c24af00-a20d-47b4-8331-c31142a35051",
+  "workflowId": "JnlZFAVmFAuNXVya",
+  "nodes": [
+   {
+    "parameters": {
+     "httpMethod": "POST",
+     "path": "nexus-inbound-lead",
+     "options": {}
+    },
+    "id": "1",
+    "name": "Webhook Catch-All",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 1.1,
+    "position": [
+     0,
+     304
+    ],
+    "webhookId": "d0ba4bc1-47b4-4ad0-8ae9-83df19614c9a"
+   },
+   {
+    "parameters": {
+     "jsCode": "// Accept a raw webhook POST (data under .body) or a direct/sub-workflow call.\nconst raw = $input.first().json;\nconst src = raw.body || raw.lead || raw;\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v).trim();\n\nconst email = clean(src.email);\nconst phone = clean(src.phone) || clean(src.whatsapp);\n\nif (!email && !phone) {\n  throw new Error('Rejected: inbound lead has neither an email nor a phone number. Keys received: ' + Object.keys(src).join(', '));\n}\n\n// ---- TENANT (18 Sep 2026) -------------------------------------------------\n// REPLACES the 2 Sep resolver, which read `src.tenant_id` FIRST and only fell\n// back to the JWT. That order let an authenticated user of dealership A post\n// `tenant_id: <B>` and have this workflow create the leads row under B --\n// n8n writes as service_role, which is BYPASSRLS, so nothing downstream would\n// have stopped it. The caller's tenant_id is now never a source. It is only\n// ever a claim, and a claim that disagrees with the membership row is refused.\n//\n// Two doors, two rules:\n//   * public webhook  -- `Webhook Catch-All` -> `Verify JWT` ->\n//     `Tenant For JWT User` -> `Auth Gate` -> here. The ONLY trusted answer is\n//     the tenant_members row for the Supabase user behind the verified JWT.\n//     No row, or more than one row, means refuse; there is no fallback on this\n//     door, because a fallback is exactly how an unverifiable caller acquires\n//     a dealership.\n//   * internal hop    -- `Called Internally` -> here. The caller is a sibling\n//     workflow that already resolved the dealership; `Auth Gate` never ran, so\n//     that is how this node tells the doors apart.\n//\n// Refusals carry the '[NEXUS-UNATTRIBUTED]' prefix at position 0, the contract\n// with the NEXUS Error Handler (iYJkh1kztWxZXDbT): the failed execution is\n// filed under the quarantine tenant instead of being appended to some real\n// dealership's audit trail.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\n// What the caller ASSERTED. Never authoritative; only ever cross-checked.\nconst claimed = String(src.tenant_id || raw.tenant_id || '');\n\n// Which door? `$()` throws for a node that did not run in this execution.\nlet viaWebhook = true;\ntry { $('Auth Gate').all(); } catch (e) { viaWebhook = false; }\n\nlet tenant = null;\nlet tenantSource = 'unresolved';\n\nif (viaWebhook) {\n  const ids = Array.from(new Set(\n    $('Tenant For JWT User').all()\n      .map((i) => (i && i.json ? i.json.tenant_id : null))\n      .filter(Boolean)\n      .map(String)\n  ));\n  if (ids.length > 1) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: the authenticated user is a member of ' + ids.length + ' dealerships. This endpoint will not choose one on their behalf.');\n  }\n  if (ids.length === 0 || !NEXUS_UUID.test(ids[0])) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: the authenticated user has no tenant_members row. A dealership is never taken from the request body.');\n  }\n  if (claimed && claimed.toLowerCase() !== ids[0].toLowerCase()) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: caller asserted tenant_id ' + claimed + ' but is a member of ' + ids[0] + '. tenant_id is not a caller-selectable field.');\n  }\n  tenant = ids[0];\n  tenantSource = 'jwt_tenant_member';\n} else {\n  if (NEXUS_UUID.test(claimed)) {\n    tenant = claimed;\n    tenantSource = 'internal_caller';\n  } else if (nexusKeys.length === 1 && NEXUS_UUID.test(String(nexusMap[nexusKeys[0]] || ''))) {\n    tenant = String(nexusMap[nexusKeys[0]]);\n    tenantSource = 'sole_configured_tenant';\n  } else {\n    throw new Error('[NEXUS-UNATTRIBUTED] Lead rejected: the internal caller supplied no resolvable tenant_id and ' + nexusKeys.length + ' dealerships are configured. Refusing rather than filing this lead under a guess.');\n  }\n}\n\nreturn [{\n  json: {\n    lead: {\n      name: clean(src.name) || clean(src.full_name) || 'Unknown',\n      email: email,\n      phone: phone,\n      vehicle_interest: clean(src.vehicle_interest) || clean(src.vehicleInterest) || clean(src.message) || null,\n      budget_aed: src.budget_aed ? Number(src.budget_aed) : null,\n      source: clean(src.source) || 'webhook',\n      // Travels with the lead so the sub-workflows this router fans out to --\n      // the BDC agent, the drip, the ERP sync -- write under the right\n      // dealership too.\n      tenant_id: tenant,\n      tenant_source: tenantSource,\n      // Who handed us this lead. 'whatsapp-bdc' means the person is ALREADY in\n      // a live WhatsApp thread that the BDC agent has just answered, so the\n      // outreach branches below must not fire a canned welcome at them on top\n      // of the reply they are reading right now. Everything else -- scoring,\n      // the Slack alert, the ERP write, the drip -- still applies.\n      origin: clean(src.origin) || 'external',\n      received_at: new Date().toISOString()\n    }\n  }\n}];\n"
+    },
+    "id": "2",
+    "name": "Validate & Enrich Input",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     176,
+     304
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "// The agent usually returns JSON, but often wrapped in ```json fences or with\n// a sentence around it. The old version silently fell back to COLD/0 on any\n// parse failure, which made every single lead look cold.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\n\n// Rules-engine short-circuit: when every AI tier is exhausted, the new\n// \"Rule-Based Lead Scorer\" node hands us an already-finished decision\n// instead of raw agent text. Detect it by score_source and pass it straight\n// through -- do NOT try to regex/JSON-parse it as if it were LLM output.\nif (rawOut.ai_decision && rawOut.ai_decision.score_source === 'RULES') {\n  return [{ json: { lead: rawOut.lead || lead, ai_decision: rawOut.ai_decision } }];\n}\n\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  // 1. straight parse\n  try { return JSON.parse(s); } catch (e) {}\n  // 2. strip markdown code fences\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  // 3. grab the outermost {...} block\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nlet parseFailed = false;\n\nif (!parsed || typeof parsed !== 'object') {\n  parseFailed = true;\n  // Last resort: pull an intent word and a number out of the prose so a\n  // genuinely hot lead is not silently downgraded to COLD.\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n  // Deliberately no budget here: the prose fallback cannot tell a budget from\n  // a price, a year or a phone number, and a wrong budget is worse than none.\n}\n\n// 30 Aug 2026: budget_aed added. A live HOT lead said 'budget around AED 600,000',\n// the agent's own reason quoted it back, and the column was still written NULL --\n// nothing upstream extracts a budget from message text. This object is built\n// field by field, not spread, so a key the agent returns is dropped unless it is\n// named here. Anything not a positive finite number becomes null.\nconst rawBudget = Number(parsed.budget_aed);\nconst budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n\nconst intent = String(parsed.intent || '').toUpperCase();\nconst ai_decision = {\n  intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n  score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n  reason: parsed.reason || null,\n  budget_aed: budget_aed,\n  parse_failed: parseFailed,\n  // NX920 labels (leads.score_source's live CHECK constraint), not 'ai':\n  // a parse failure is explicitly NOT a model verdict (ADR-003) and must\n  // not be filed the same as a genuine structured answer.\n  score_source: parseFailed ? 'AI_SCORE_FALLBACK' : 'AI_SCORE_CONFIRMED',\n  ai_score_raw: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : null,\n  ai_intent_raw: (parsed.intent || null),\n  score_reasons: parseFailed\n    ? ['agent output did not parse as JSON; regex fallback used']\n    : [],\n};\n\nreturn [{ json: { lead, ai_decision } }];"
+    },
+    "id": "6",
+    "name": "Parse AI Decision",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     752,
+     288
+    ]
+   },
+   {
+    "parameters": {
+     "rules": {
+      "values": [
+       {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "strict",
+          "version": 1
+         },
+         "conditions": [
+          {
+           "id": "1f148bc7-4925-4a66-97cb-0c92b32bcf74",
+           "leftValue": "={{ $json.ai_decision.intent }}",
+           "rightValue": "HOT",
+           "operator": {
+            "type": "string",
+            "operation": "equals"
+           }
+          }
+         ],
+         "combinator": "and"
+        }
+       },
+       {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "strict",
+          "version": 1
+         },
+         "conditions": [
+          {
+           "id": "164b5a5f-dead-4549-a81b-e725ed8dd6eb",
+           "leftValue": "={{ $json.ai_decision.intent }}",
+           "rightValue": "WARM",
+           "operator": {
+            "type": "string",
+            "operation": "equals"
+           }
+          }
+         ],
+         "combinator": "and"
+        }
+       },
+       {
+        "conditions": {
+         "options": {
+          "caseSensitive": true,
+          "leftValue": "",
+          "typeValidation": "strict",
+          "version": 1
+         },
+         "conditions": [
+          {
+           "id": "3ac91d22-7b41-4f6e-9a02-5f0c2b8ad901",
+           "leftValue": "={{ $json.ai_decision.intent }}",
+           "rightValue": "COLD",
+           "operator": {
+            "type": "string",
+            "operation": "equals"
+           }
+          }
+         ],
+         "combinator": "and"
+        }
+       }
+      ]
+     },
+     "options": {
+      "fallbackOutput": "extra",
+      "renameFallbackOutput": "UNKNOWN"
+     }
+    },
+    "id": "7",
+    "name": "Intent Switch",
+    "type": "n8n-nodes-base.switch",
+    "typeVersion": 3,
+    "position": [
+     880,
+     176
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const p = $('Parse AI Decision').first().json; const t = (p.lead && p.lead.tenant_id) || null; const src = (p.lead && p.lead.tenant_source) || 'unknown'; const base = { workflow: 'Master Router', status: $json.delivery ? $json.delivery.status : (p.ai_decision.parse_failed ? 'FAILED' : 'SUCCESS'), lead_name: p.lead.name, lead_email: p.lead.email, lead_score: p.ai_decision.score, intent: p.ai_decision.intent, summary: ((p.ai_decision.parse_failed ? ('Scored by the regex fallback, not by the agent. ' + (p.ai_decision.reason || '')) : (p.ai_decision.reason || 'Completed')) + ($json.delivery ? ' | ' + $json.delivery.note + ($json.delivery.dropped.length ? ' [' + $json.delivery.dropped.join('; ') + ']' : '') : '') + (t ? ' | tenant: ' + src : ' | TENANT UNRESOLVED - row written without tenant_id')).substring(0, 900), logged_at: $now.toISO() }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+     "options": {}
+    },
+    "id": "11",
+    "name": "Audit Log",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1456,
+     304
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "model": "={{ $json.orModel }}",
+     "options": {
+      "maxTokens": 1024,
+      "temperature": 0.2
+     }
+    },
+    "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+    "typeVersion": 1,
+    "position": [
+     288,
+     512
+    ],
+    "id": "bff6b3f4-2118-4f5b-b55c-daae3051339d",
+    "name": "OpenRouter Chat Model",
+    "credentials": {
+     "openRouterApi": {
+      "id": "UUtKrBzkQOztAOzZ",
+      "name": "OpenRouter account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "workflowId": {
+      "__rl": true,
+      "value": "bxNBzBrcOtcFpMPn",
+      "mode": "id",
+      "cachedResultUrl": "/workflow/bxNBzBrcOtcFpMPn"
+     },
+     "workflowInputs": {
+      "mappingMode": "defineBelow",
+      "value": {},
+      "matchingColumns": [],
+      "schema": [],
+      "attemptToConvertTypes": false,
+      "convertFieldsToString": true
+     },
+     "options": {
+      "waitForSubWorkflow": false
+     }
+    },
+    "type": "n8n-nodes-base.executeWorkflow",
+    "typeVersion": 1.3,
+    "position": [
+     1408,
+     112
+    ],
+    "id": "6653e464-3099-46a9-8e6c-bad42b96e011",
+    "name": "ERP Sync (HOT)"
+   },
+   {
+    "parameters": {
+     "operation": "getAll",
+     "tableId": "leads",
+     "limit": 20,
+     "filters": {
+      "conditions": [
+       {
+        "keyName": "email",
+        "condition": "eq",
+        "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.email || ('+' + String($('Validate & Enrich Input').first().json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
+       },
+       {
+        "keyName": "tenant_id",
+        "condition": "eq",
+        "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+       }
+      ]
+     },
+     "matchType": "allFilters"
+    },
+    "id": "fc00a901-4e3d-4198-bcc8-efb1301cfaff",
+    "name": "Supabase Lead Lookup",
+    "type": "n8n-nodes-base.supabaseTool",
+    "typeVersion": 1,
+    "position": [
+     672,
+     544
+    ],
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "workflowId": {
+      "__rl": true,
+      "value": "KI6P1Qcf3MIZakNa",
+      "mode": "id",
+      "cachedResultUrl": "/workflow/KI6P1Qcf3MIZakNa"
+     },
+     "workflowInputs": {
+      "mappingMode": "defineBelow",
+      "value": {},
+      "matchingColumns": [],
+      "schema": [],
+      "attemptToConvertTypes": false,
+      "convertFieldsToString": true
+     },
+     "options": {
+      "waitForSubWorkflow": false
+     }
+    },
+    "type": "n8n-nodes-base.executeWorkflow",
+    "typeVersion": 1.3,
+    "position": [
+     1200,
+     112
+    ],
+    "id": "cbfd0609-ac58-4b85-9aaa-52b2403c886b",
+    "name": "Slack Router (HOT)"
+   },
+   {
+    "parameters": {
+     "workflowId": {
+      "__rl": true,
+      "value": "BiyHk9ZXxJUVGbf6",
+      "mode": "id",
+      "cachedResultUrl": "/workflow/BiyHk9ZXxJUVGbf6"
+     },
+     "workflowInputs": {
+      "mappingMode": "defineBelow",
+      "value": {},
+      "matchingColumns": [],
+      "schema": [],
+      "attemptToConvertTypes": false,
+      "convertFieldsToString": true
+     },
+     "options": {
+      "waitForSubWorkflow": false
+     }
+    },
+    "type": "n8n-nodes-base.executeWorkflow",
+    "typeVersion": 1.3,
+    "position": [
+     1200,
+     304
+    ],
+    "id": "5dcafa2c-756b-4a9f-a644-c1108e1f1689",
+    "name": "WhatsApp BDC (WARM)"
+   },
+   {
+    "parameters": {
+     "workflowId": {
+      "__rl": true,
+      "value": "G7FhvMY2ucW5Fg7X",
+      "mode": "id",
+      "cachedResultUrl": "/workflow/G7FhvMY2ucW5Fg7X"
+     },
+     "workflowInputs": {
+      "mappingMode": "defineBelow",
+      "value": {},
+      "matchingColumns": [],
+      "schema": [],
+      "attemptToConvertTypes": false,
+      "convertFieldsToString": true
+     },
+     "options": {
+      "waitForSubWorkflow": false
+     }
+    },
+    "type": "n8n-nodes-base.executeWorkflow",
+    "typeVersion": 1.3,
+    "position": [
+     1232,
+     528
+    ],
+    "id": "9f0912bc-d895-4281-aa26-de32622db821",
+    "name": "Marketing Drip (COLD)"
+   },
+   {
+    "parameters": {
+     "promptType": "define",
+     "text": "=Lead data: {{ JSON.stringify($json.lead) }}\n\nStep 1: Use the Supabase Lead Lookup tool to check whether this lead already exists in the CRM.\nStep 2: Use the check_purchase_history tool to see whether this person has bought a vehicle from us before (a returning/VIP customer).\nStep 3: Score the lead from 1-100 and classify intent as HOT, WARM or COLD.\n  - If check_purchase_history returns ANY prior purchase, this is a RETURNING VIP CUSTOMER: score 90-100 and intent HOT, regardless of how casual the new enquiry sounds.\n  - Otherwise: HOT = ready to buy now, specific vehicle, clear budget or urgent language; WARM = genuine interest but no urgency/budget; COLD = just browsing, no budget, no timeline.\nStep 4: If the customer states a budget anywhere in their message, report it as budget_aed: a plain number in AED, so 600000 - not \"600k\", not \"AED 600,000\", no commas, no currency. If they state no budget at all, use null. Do not guess or infer a budget from the vehicle they asked about.\nStep 5: Return your decision.\n\nDo NOT try to save the lead. Persisting it to the CRM is handled downstream by the workflow itself, deterministically, from the decision you return -- so the accuracy of your score, intent and budget_aed is what actually gets written.\n\nBoth lookup tools are pre-filtered to this exact lead; call them with no arguments and read the result.\n\nReturn ONLY a raw JSON object and nothing else. No markdown, no code fences, no commentary.\nSchema: {\"score\": 95, \"intent\": \"HOT\", \"reason\": \"one short sentence\", \"vip\": true, \"budget_aed\": 600000}",
+     "needsFallback": true,
+     "options": {
+      "systemMessage": "You are NEXUS AI, an expert lead scoring agent for a premium car dealership in the UAE. You evaluate inbound leads, check whether they are returning customers, persist them to the CRM, and classify them so the router can dispatch them correctly. Returning customers are extremely valuable and must always be routed as HOT.",
+      "maxIterations": 3,
+      "enableStreaming": false
+     }
+    },
+    "id": "e2f0eb5f-65ab-4a0c-88ff-33463a77662f",
+    "name": "AI Lead Scoring Agent",
+    "type": "@n8n/n8n-nodes-langchain.agent",
+    "typeVersion": 3.1,
+    "position": [
+     464,
+     304
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "parameters": {
+     "operation": "getAll",
+     "tableId": "purchase_history",
+     "limit": 5,
+     "filters": {
+      "conditions": [
+       {
+        "keyName": "email",
+        "condition": "eq",
+        "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.email || ('+' + String($('Validate & Enrich Input').first().json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead') }}"
+       },
+       {
+        "keyName": "tenant_id",
+        "condition": "eq",
+        "keyValue": "={{ $('Validate & Enrich Input').first().json.lead.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+       }
+      ]
+     },
+     "matchType": "allFilters"
+    },
+    "id": "6c739b13-27ba-4d04-aa8b-2086cf1f9c43",
+    "name": "check_purchase_history",
+    "type": "n8n-nodes-base.supabaseTool",
+    "typeVersion": 1,
+    "position": [
+     528,
+     672
+    ],
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "model": "={{ $json.groqModel }}",
+     "options": {}
+    },
+    "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+    "typeVersion": 1,
+    "position": [
+     448,
+     544
+    ],
+    "id": "mr-groq-01",
+    "name": "Groq Fallback",
+    "credentials": {
+     "groqApi": {
+      "id": "JgOg4w1ZMJc37lmL",
+      "name": "Groq account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "workflowId": {
+      "__rl": true,
+      "value": "BiyHk9ZXxJUVGbf6",
+      "mode": "id",
+      "cachedResultUrl": "/workflow/BiyHk9ZXxJUVGbf6"
+     },
+     "workflowInputs": {
+      "mappingMode": "defineBelow",
+      "value": {},
+      "matchingColumns": [],
+      "schema": [],
+      "attemptToConvertTypes": false,
+      "convertFieldsToString": true
+     },
+     "options": {
+      "waitForSubWorkflow": false
+     }
+    },
+    "type": "n8n-nodes-base.executeWorkflow",
+    "typeVersion": 1.3,
+    "position": [
+     1408,
+     -64
+    ],
+    "id": "mr-wa-hot-01",
+    "name": "WhatsApp Outreach (HOT)",
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\n//\n// 30 Aug 2026: groqModel changed from 'llama-3.3-70b-versatile' to\n// 'openai/gpt-oss-120b' on every tier. Groq SHUT DOWN llama-3.3-70b-versatile\n// for free and developer tiers on 16 Aug 2026 -- their deprecations page names\n// openai/gpt-oss-120b as the replacement, their models page marks the old id\n// Enterprise/Contact-Sales, and it has no row at all in the free-tier\n// rate-limit table. Groq is only the FALLBACK slot, so it had never fired in\n// production and nothing surfaced this: it would have failed for the first\n// time on the day OpenRouter was already down. The same fix went into the\n// WhatsApp BDC agent earlier today; this workflow was missed, which meant the\n// two agents disagreed about which model exists.\n// Free-tier ceiling: 30 RPM / 1K RPD / 8K TPM / 200K TPD -- tokens-per-minute\n// binds well before requests-per-minute on an agent this prompt-heavy.\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',                groqModel: GROQ_FALLBACK }\n];\n\nconst prev = $input.first().json;\n// NX1002 persist-first bug fix (20 Sep 2026, found live on exec 16124):\n// 'Persist Lead (deterministic)' now runs BEFORE this node and uses\n// 'Prefer: return=minimal', so its HTTP response body -- and therefore\n// $input.first().json on THIS node's first invocation -- is {} with no\n// .lead at all. prev.lead was silently undefined on every tier, which fed\n// 'undefined' lead data into the AI agent and into 'Rule-Based Lead Scorer',\n// and then made 'Update Lead Scoring (PATCH)' fail outright (tenant_id=\n// eq.undefined is not a valid uuid), leaving every lead stuck at\n// scoring_state='PENDING' forever. Read lead from the named node instead --\n// same pattern 'Parse AI Decision' already uses for the same reason -- so it\n// is available on every iteration of this retry loop, not just derived from\n// this node's own previous (lead-less) output.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((lead && lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
+    },
+    "id": "mr-ladder-01",
+    "name": "Model Ladder",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     352,
+     304
+    ],
+    "onError": "continueErrorOutput"
+   },
+   {
+    "parameters": {
+     "select": "channel",
+     "channelId": {
+      "__rl": true,
+      "value": "C0BKTLL1X54",
+      "mode": "id"
+     },
+     "text": "=:warning: *Lead could not be classified*\n\n*Name:* {{ $json.lead.name }}\n*Email:* {{ $json.lead.email || 'n/a' }}\n*Phone:* {{ $json.lead.phone || 'n/a' }}\n*Enquiry:* {{ $json.lead.vehicle_interest || 'n/a' }}\n\n*Raw AI output:* {{ $json.ai_decision.reason }}\n*Parse failed:* {{ $json.ai_decision.parse_failed }}\n\nThis lead was NOT routed automatically. Please review and assign it manually.",
+     "otherOptions": {},
+     "resource": "message",
+     "operation": "post"
+    },
+    "type": "n8n-nodes-base.slack",
+    "typeVersion": 2.5,
+    "position": [
+     1200,
+     704
+    ],
+    "id": "mr-unknown-01",
+    "name": "Slack: Unclassified Lead",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "webhookId": "eea02491-c358-45ac-a6b6-7d0bba8bafb7",
+    "credentials": {
+     "slackApi": {
+      "id": "oOf93CGdFiAxHkHF",
+      "name": "Slack account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "sessionIdType": "customKey",
+     "sessionKey": "={{ ($json.lead && ($json.lead.email || $json.lead.phone)) || 'lead-' + $execution.id }}",
+     "contextWindowLength": "={{ 10 }}"
+    },
+    "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+    "typeVersion": 1.4,
+    "position": [
+     560,
+     560
+    ],
+    "id": "f83d708b-3116-4af1-a510-187aa359eef4",
+    "name": "Simple Memory"
+   },
+   {
+    "parameters": {
+     "inputSource": "passthrough"
+    },
+    "id": "mr-called-internally-01",
+    "name": "Called Internally",
+    "type": "n8n-nodes-base.executeWorkflowTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     -240,
+     128
+    ],
+    "notes": "Make.com and Zapier are empty -- every workflow was migrated into n8n -- so nothing external POSTs the webhook any more. This is how the rest of the system reaches the Router now: in-process, no HTTP, no token."
+   },
+   {
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "apikey",
+        "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+       },
+       {
+        "name": "Authorization",
+        "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "id": "mr-verify-jwt-0001",
+    "name": "Verify JWT",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -240,
+     480
+    ],
+    "retryOnFail": false,
+    "alwaysOutputData": true,
+    "onError": "continueRegularOutput",
+    "notes": "Public webhook branch only. A rejected token arrives as data, not as a failed node."
+   },
+   {
+    "parameters": {
+     "jsCode": "// This node sits ONLY on the public webhook branch.\n//\n// Until now `POST /webhook/nexus-inbound-lead` was wide open. Anyone who found\n// the URL could invent a lead, have an LLM score it, get a row written into\n// `leads`, and -- on a HOT verdict -- make the dealership send a WhatsApp\n// message to any number they chose. Every other public webhook in this system\n// already checks the caller's Supabase session token; this one never did,\n// because its only intended caller was Make.com, which no longer exists.\n//\n// `Called Internally` (the Execute Workflow trigger) connects straight to\n// `Validate & Enrich Input` and never reaches here, so n8n-to-n8n calls are\n// untouched -- they are already inside the trust boundary.\n//\n// `Verify JWT` runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\n//\n// 2 Sep 2026: `Tenant For JWT User` was inserted between Verify JWT and this\n// node to look the caller's dealership up in tenant_members. That HTTP node\n// REPLACES the item, so the identity check now reaches back to Verify JWT by\n// name. The guard itself is unchanged: no .id on the verified user, no entry.\nlet auth = {};\ntry { auth = $('Verify JWT').first().json || {}; } catch (e) { auth = {}; }\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] Inbound lead rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so `Validate & Enrich Input` sees\n// exactly the shape it saw before this guard was inserted.\nreturn $('Webhook Catch-All').all();"
+    },
+    "id": "mr-auth-gate-0001",
+    "name": "Auth Gate",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     -80,
+     592
+    ]
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "mr-if-hot-outreach-1-c1",
+        "leftValue": "={{ $json.lead.origin }}",
+        "rightValue": "whatsapp-bdc",
+        "operator": {
+         "type": "string",
+         "operation": "equals"
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "looseTypeValidation": true
+    },
+    "id": "mr-if-hot-outreach-1",
+    "name": "HOT: Already In A Live Chat?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     1216,
+     260
+    ],
+    "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "mr-if-warm-outreach-c1",
+        "leftValue": "={{ $json.lead.origin }}",
+        "rightValue": "whatsapp-bdc",
+        "operator": {
+         "type": "string",
+         "operation": "equals"
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "looseTypeValidation": true
+    },
+    "id": "mr-if-warm-outreach",
+    "name": "WARM: Already In A Live Chat?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     1040,
+     304
+    ],
+    "notes": "TRUE = the person is already mid-conversation on WhatsApp; sending canned outreach on top of the reply they just received would be a duplicate message, so that branch is skipped deliberately (not dropped). FALSE = a genuinely new contact, send the outreach."
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the audit row is about to make.\n//\n// Only ONE intent branch runs per lead, and `$('Node')` THROWS for a node that\n// did not run -- `?.` cannot rescue it -- so the claim list is built from the\n// intent that actually fired, and every lookup is still wrapped.\nconst decision = $('Parse AI Decision').first().json;\nconst intent = String((decision.ai_decision || {}).intent || 'UNKNOWN').toUpperCase();\nconst origin = String(((decision.lead) || {}).origin || 'external');\n\nconst CLAIMED = [];\n\n// 29 Aug 2026: the lead write is claimed on EVERY branch, unconditionally, and\n// it is pushed FIRST so CLAIMED can never be empty.\n// Before this, a WARM lead with origin 'whatsapp-bdc' pushed nothing at all --\n// the WARM arm has no else -- so results.length was 0 and the report said\n// 'all 0 claimed steps verified' with status SUCCESS. Execution 6253 did exactly\n// that on a run which created no leads row whatsoever. The report only ever\n// verified dispatch; it never verified persistence, which is the one thing every\n// downstream journey depends on.\nCLAIMED.push({ node: 'Persist Lead (deterministic)', what: 'lead row written to the leads table', critical: true });\n\nif (intent === 'HOT') {\n  CLAIMED.push({ node: 'Slack Router (HOT)', what: 'lead escalated to a closer (Slack + email)', critical: true });\n  CLAIMED.push({ node: 'ERP Sync (HOT)',     what: 'lead written into the Bitrix24 CRM',        critical: true });\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp Outreach (HOT)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'WARM') {\n  if (origin !== 'whatsapp-bdc') {\n    CLAIMED.push({ node: 'WhatsApp BDC (WARM)', what: 'WhatsApp outreach to the customer', critical: true });\n  }\n} else if (intent === 'COLD') {\n  // Started, not finished: the drip spans seven days and this node is called\n  // with waitForSubWorkflow = false, so the only honest claim is that it began.\n  CLAIMED.push({ node: 'Marketing Drip (COLD)', what: 'lead handed to the 7-day drip (start only)', critical: true });\n} else {\n  CLAIMED.push({ node: 'Slack: Unclassified Lead', what: 'unclassified lead posted to Slack for a human', critical: true });\n}\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  // A sub-workflow can finish green and still have failed to deliver. Lead\n  // Escalation now answers with its own verdict; believe it over the exit code.\n  if (typeof j.status === 'string' && /fail|unverified|error/i.test(j.status)) {\n    return { ...c, ok: false, why: 'sub-workflow reported ' + j.status };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst critical = dropped.filter(r => r.critical);\n\n// -- 01 Sep 2026 - WHY THERE IS NO 'FAILED' RUNG ANY MORE ---------------------\n// Every claim above is tiered critical, so any dropped claim wrote FAILED and\n// the PARTIAL rung was unreachable. A live row reads \"Customer ready to buy this\n// week with clear cash budget. | 2 of 3 claimed steps did not land\" under status\n// FAILED - the lead was persisted and the run completed; two steps did not land.\n// That is a partial delivery, and nexus_outcome_class() in Postgres has been\n// carrying a correction rule to say so on this workflow's behalf.\n//\n// FAILED has exactly one owner: nexus_error_handler, the errorWorkflow set on\n// this workflow, which writes it from an Error Trigger when an execution STOPS.\n// This node only runs on an execution that did NOT stop, so it cannot honestly\n// claim the work could not complete.\n//\n// KNOWN AND NOT FIXED HERE: two of the three claims on the HOT path are\n// UNOBSERVABLE from this node, not dropped. 'Intent Switch' output 0 fans out to\n// 'Slack Router (HOT)', 'ERP Sync (HOT)' and 'HOT: Already In A Live Chat?', and\n// only the third reaches this node - so $('Slack Router (HOT)').item throws and\n// is recorded as \"did not run on this branch\". Proof: this node wrote its\n// verdict at 19:09:41.382Z on 29 Aug; 'Lead Escalation - AI Agent', which runs\n// only when Slack Router (HOT) calls it, logged at 19:09:49.680Z - eight seconds\n// AFTER being reported as not having run. Fixing that needs a graph change (this\n// node would have to run once per branch), so the count above still overstates\n// what was lost. PARTIAL is the honest ceiling either way.\n//\n// `critical` is still computed and still reported; it no longer decides status.\nconst status = dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst suppressed = (origin === 'whatsapp-bdc' && (intent === 'HOT' || intent === 'WARM'))\n  ? ' Outreach deliberately skipped: the customer is already in a live WhatsApp thread.'\n  : '';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    intent,\n    origin,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \u2014 ' + r.why),\n    note: (dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n        + (critical.length ? ' (' + critical.length + ' of them critical)' : '')\n      : 'all ' + results.length + ' claimed steps verified') + suppressed,\n  },\n} }];\n"
+    },
+    "id": "mr-delivery-report-01",
+    "name": "Delivery Report",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1312,
+     304
+    ]
+   },
+   {
+    "id": "8e7f01b0-7092-4945-a38b-d9e74f948863",
+    "name": "Persist Lead (deterministic)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.4,
+    "position": [
+     880,
+     32
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?on_conflict=tenant_id,email",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "resolution=merge-duplicates,return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ name: $json.lead.name || 'Unknown', email: $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead'), phone: $json.lead.phone, vehicle_interest: $json.lead.vehicle_interest, source: 'nexus-master-router', scoring_state: 'PENDING' }, (Number($json.lead.budget_aed) > 0) ? { budget_aed: Number($json.lead.budget_aed) } : {}, $json.lead.tenant_id ? { tenant_id: $json.lead.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "notes": "Added 29 Aug 2026. The lead row must not depend on the model choosing to call a tool - on exec 6253 it simply did not, and the run still audited SUCCESS. Values are bound from Parse AI Decision's item, not from $fromAI.",
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true
+   },
+   {
+    "id": "544fcd09-fb7e-47ec-8e9f-b7cd3f8e8741",
+    "name": "Tenant For JWT User",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -240,
+     640
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "tenant_id"
+       },
+       {
+        "name": "auth_user_id",
+        "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "2"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "nx1002-update-scoring-01",
+    "name": "Update Lead Scoring (PATCH)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.4,
+    "position": [
+     1400,
+     180
+    ],
+    "parameters": {
+     "method": "PATCH",
+     "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?tenant_id=eq.{{ encodeURIComponent($json.lead.tenant_id) }}&email=eq.{{ encodeURIComponent($json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead')) }}",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ ai_score: $json.ai_decision.score, status: $json.ai_decision.intent, scoring_state: 'SCORED', scored_at: new Date().toISOString(), score_source: $json.ai_decision.score_source || 'AI_SCORE_UNKNOWN' }, ($json.ai_decision.score_source === 'RULES') ? { rules_score: $json.ai_decision.rules_score } : { ai_score_raw: ($json.ai_decision.ai_score_raw === undefined ? null : $json.ai_decision.ai_score_raw), ai_intent_raw: ($json.ai_decision.ai_intent_raw === undefined ? null : $json.ai_decision.ai_intent_raw) })) }}",
+     "options": {}
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Added 20 Sep 2026 (NX1002). Second half of persist-first/score-later: 'Persist Lead (deterministic)' already wrote this row as PENDING right after 'Validate & Enrich Input'. This PATCHes the SAME row (same natural key: tenant_id + the same email/synthetic-whatsapp-email derivation Persist Lead uses) to SCORED now that 'Parse AI Decision' has a real ai_decision. Runs in parallel with 'Intent Switch' so a PATCH failure here can never delay or block Slack/ERP/WhatsApp routing. onError=continueRegularOutput: a failure to mark SCORED must not fail the execution -- the row just stays PENDING and the hourly rescore sweep (NEW_rescore_pending_leads) picks it up and finishes the job later; it is idempotent (nexus_record_lead_scoring_result's `scoring_state <> 'SCORED'` guard).",
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true
+   },
+   {
+    "id": "mr-rules-01",
+    "name": "Rule-Based Lead Scorer",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     352,
+     480
+    ],
+    "parameters": {
+     "jsCode": "// mr-rules-01 :: Rule-Based Lead Scorer (deterministic, zero-API, LAST tier)\n// ---------------------------------------------------------------------------\n// Why this file exists: the AI Lead Scoring Agent's Model Ladder tries up to\n// 3 OpenRouter :free models (each with a Groq fallback). When OpenRouter's\n// DAILY free quota is exhausted AND Groq also fails/is exhausted, the Model\n// Ladder code node throws (attempt >= TIERS.length) and, because it has no\n// onError handler, the whole execution dies -- the lead is never scored,\n// never routed, never persisted. Nothing downstream of scoring ever runs.\n//\n// This node is the answer: it makes NO network call, needs NO credential and\n// NEVER runs out of quota, so a lead is ALWAYS scored even at zero AI budget.\n// It is meant to sit as the terminal tier of the ladder (see\n// ops/tenant-precedence/patched4/model-ladder.md for exactly where it is\n// wired in) and produces the SAME { lead, ai_decision } shape that\n// \"Parse AI Decision\" produces today, so it can feed straight into\n// \"Intent Switch\" + \"Persist Lead (deterministic)\" unchanged.\n//\n// score_source is deliberately the literal string 'RULES' (upper-case), NOT\n// 'rules'. This matches leads.score_source's live check constraint\n// (leads_score_source_is_a_known_label, migration\n// 20260914065739_nx920_a_score_now_says_who_decided_it.sql:\n// RULES / AI_SCORE_CONFIRMED / AI_SCORE_FALLBACK / AI_SCORE_UNKNOWN) --\n// writing lowercase 'rules' to that column would fail the constraint outright.\n// `rules_score` is also emitted (== score) because that is the column NX920\n// added for it. See ops/ADR-003-who-decides-the-score.md: per that accepted\n// (but, as of this file, not yet n8n-implemented) decision, RULES is meant to\n// be the AUTHORITATIVE score for every lead today (zero paying dealers, no\n// model on the ladder supports structured output) -- this file only wires it\n// in as the ladder's last tier per this task's brief, but it is written so\n// that promoting it to score-every-lead later is a one-line change in\n// whatever calls it, not a rewrite.\n//\n// Every point added or subtracted is pushed onto `reasons` so the output is\n// auditable by a human (or by Slack: Unclassified Lead) -- this is the whole\n// point of a rules engine standing in for an LLM: you can see exactly why.\n//\n// Inputs used (all already on the `lead` object built by\n// \"Validate & Enrich Input\" -- see master-router.Validate-and-Enrich-Input.js):\n//   lead.budget_aed        number|null   -- stated budget in AED\n//   lead.vehicle_interest  string|null   -- vehicle named AND/OR raw free-text\n//                                           message (Validate & Enrich falls\n//                                           back to the raw message when no\n//                                           explicit vehicle field is sent)\n//   lead.message           string|null   -- optional explicit message text,\n//                                           scanned in addition to\n//                                           vehicle_interest when present\n//   lead.source             string|null  -- lead origin channel\n//   lead.phone              string|null\n//   lead.email               string|null\n//   lead.received_at        ISO string   -- used for the time-of-day signal\n//\n// Output: { intent: 'HOT'|'WARM'|'COLD', score: 0-100, reason: string,\n//           budget_aed: number|null, parse_failed: false,\n//           score_source: 'RULES', rules_score: number, score_reasons: string[] }\n// ---------------------------------------------------------------------------\n\n// Fixed offset: Asia/Dubai is UTC+4 year-round (no DST). Avoids depending on\n// ICU/timezone data being present in whatever sandbox this runs in.\nconst DUBAI_UTC_OFFSET_HOURS = 4;\n\n// ---- keyword dictionaries (lowercased; matched as substrings) -------------\n// English\nconst LUXURY_KEYWORDS = [\n  'range rover', 'land rover', 'bentley', 'rolls royce', 'rolls-royce',\n  'ferrari', 'lamborghini', 'porsche', 'maserati', 'aston martin',\n  'g63', 'g-wagon', 'g wagon', 'g wagen', 'amg', 's-class', 's class',\n  '7 series', 'x7', 'gt3', 'mclaren', 'bentayga', 'cullinan', 'mercedes',\n];\nconst URGENCY_KEYWORDS_EN = [\n  'today', 'right now', 'asap', 'urgent', 'urgently', 'ready to buy',\n  'cash ready', 'this week', 'immediately', 'right away', 'buy now',\n  'need it now', 'visit today', 'test drive today', 'ready to purchase',\n];\n// Arabic (Gulf-dialect friendly) urgency / buying-intent terms\nconst URGENCY_KEYWORDS_AR = [\n  '\u0639\u0627\u062c\u0644', '\u0627\u0644\u064a\u0648\u0645', '\u0627\u0644\u0622\u0646', '\u0628\u0633\u0631\u0639\u0629', '\u062c\u0627\u0647\u0632', '\u0623\u0631\u064a\u062f \u0634\u0631\u0627\u0621', '\u0627\u0634\u062a\u0631\u064a \u0627\u0644\u0627\u0646',\n];\n// Hinglish / Roman Urdu-Hindi urgency / buying-intent terms\nconst URGENCY_KEYWORDS_HINGLISH = [\n  'jaldi', 'abhi', 'turant', 'chahiye', 'kharidna hai', 'abhi chahiye',\n];\nconst BROWSING_KEYWORDS = [\n  'just checking', 'just browsing', 'just looking', 'window shopping',\n  'no rush', 'not in a hurry', 'someday', 'not sure yet', 'just curious',\n];\nconst SPAM_KEYWORDS = [\n  'click here', 'www.', 'http://', 'https://', 'free followers',\n  'crypto', 'bitcoin', 'casino', 'loan approved', 'seo services',\n  'backlink', 'guaranteed income', 'work from home', 'viagra',\n  'subscribe now', '100% free', 'earn money fast', 'act now buy',\n];\nconst REPEAT_KEYWORDS = [\n  'second time', 'third time', 'again', 'as i mentioned', 'as mentioned before',\n  'previously asked', 'following up', 'follow up on my', 'already contacted',\n  'asked before', 'still waiting for a reply', 'still waiting', 'once more',\n];\nconst HIGH_INTENT_SOURCES = /test.?drive|financing|finance.?application|showroom|whatsapp|website.?form/i;\nconst LOW_INTENT_SOURCES = /cold.?list|scrape|bulk.?import|purchased.?list/i;\n\nfunction toText(lead) {\n  return [lead && lead.vehicle_interest, lead && lead.message, lead && lead.name]\n    .filter((v) => typeof v === 'string' && v.trim().length)\n    .join(' \\n ')\n    .toLowerCase();\n}\n\nfunction matchAny(text, keywords) {\n  return keywords.filter((k) => text.includes(k.toLowerCase()));\n}\n\nfunction dubaiHour(isoOrDate) {\n  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate || Date.now());\n  if (Number.isNaN(d.getTime())) return new Date().getUTCHours();\n  const utcHour = d.getUTCHours();\n  return (utcHour + DUBAI_UTC_OFFSET_HOURS) % 24;\n}\n\n/**\n * Pure, deterministic, zero-API lead scorer.\n * @param {object} lead - lead object as built by Validate & Enrich Input.\n * @param {object} [opts]\n * @param {Date|string} [opts.now] - override \"current time\" for time-of-day\n *   scoring/testing. Defaults to lead.received_at, then real now.\n * @returns {{intent:string, score:number, reason:string, budget_aed:(number|null),\n *            parse_failed:boolean, score_source:string, score_reasons:string[]}}\n */\nfunction scoreLead(lead, opts) {\n  lead = lead || {};\n  opts = opts || {};\n  const reasons = [];\n  let score = 0;\n  let forcedIntent = null; // set to override the score->tier mapping entirely\n\n  const text = toText(lead);\n\n  // ---- 1. budget_aed (weight up to 35) -------------------------------\n  const rawBudget = Number(lead.budget_aed);\n  const budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n  if (budget_aed === null) {\n    reasons.push('no budget stated (+0)');\n  } else if (budget_aed >= 300000) {\n    score += 35;\n    reasons.push(`budget_aed ${budget_aed} >= 300,000 AED: high-value buyer (+35)`);\n  } else if (budget_aed >= 100000) {\n    score += 22;\n    reasons.push(`budget_aed ${budget_aed} in the 100k-300k AED band: solid buyer (+22)`);\n  } else {\n    score += 8;\n    reasons.push(`budget_aed ${budget_aed} is a modest stated budget, still a real number (+8)`);\n  }\n\n  // ---- 2. vehicle / message keyword signals --------------------------\n  const luxuryHits = matchAny(text, LUXURY_KEYWORDS);\n  const specificVehicle = !luxuryHits.length && lead.vehicle_interest &&\n    String(lead.vehicle_interest).trim().length > 3;\n  if (luxuryHits.length) {\n    score += 15;\n    reasons.push(`luxury/high-end vehicle keyword(s) matched: ${luxuryHits.join(', ')} (+15)`);\n  } else if (specificVehicle) {\n    score += 8;\n    reasons.push(`a specific vehicle was named (\"${lead.vehicle_interest}\"), genuine interest signal (+8)`);\n  } else {\n    reasons.push('no specific vehicle or luxury signal in the text (+0)');\n  }\n\n  // ---- 3. urgency keywords, English + Arabic + Hinglish --------------\n  const urgencyHitsEn = matchAny(text, URGENCY_KEYWORDS_EN);\n  const urgencyHitsAr = matchAny(text, URGENCY_KEYWORDS_AR);\n  const urgencyHitsHi = matchAny(text, URGENCY_KEYWORDS_HINGLISH);\n  const urgencyHits = [...urgencyHitsEn, ...urgencyHitsAr, ...urgencyHitsHi];\n  if (urgencyHits.length) {\n    score += 20;\n    reasons.push(`urgency/buy-now language matched (EN/AR/Hinglish aware): ${urgencyHits.join(', ')} (+20)`);\n  } else {\n    reasons.push('no urgency language detected (+0)');\n  }\n\n  // ---- 4. browsing / low-intent language ------------------------------\n  const browsingHits = matchAny(text, BROWSING_KEYWORDS);\n  if (browsingHits.length) {\n    score -= 10;\n    reasons.push(`browsing/no-rush language matched: ${browsingHits.join(', ')} (-10)`);\n  }\n\n  // ---- 5. repeat / follow-up enquiry -----------------------------------\n  const repeatHits = matchAny(text, REPEAT_KEYWORDS);\n  if (repeatHits.length) {\n    score += 10;\n    reasons.push(`repeat/follow-up language matched: ${repeatHits.join(', ')} (+10) -- this person has ` +\n      'already contacted us before; rules mode cannot check purchase history (no DB call), so this is a ' +\n      'text-only proxy for \"engaged, possibly getting impatient\" and should be prioritised for a fast human reply');\n  }\n\n  // ---- 6. contact completeness (weight up to 8) ------------------------\n  const hasPhone = !!(lead.phone && String(lead.phone).trim());\n  const hasEmail = !!(lead.email && String(lead.email).trim());\n  if (hasPhone) { score += 5; reasons.push('phone on file, directly callable/WhatsApp-able (+5)'); }\n  if (hasEmail) { score += 3; reasons.push('email on file (+3)'); }\n  if (!hasPhone && !hasEmail) {\n    reasons.push('NO phone and NO email on file -- this lead cannot be reached through any channel we have; ' +\n      'capping the score and forcing COLD regardless of every other signal, because a highly scored but ' +\n      'unreachable lead is worse than a low one (it looks actionable but is not)');\n    forcedIntent = 'COLD';\n  }\n\n  // ---- 7. source signal (weight up to 5) --------------------------------\n  const source = String(lead.source || '');\n  if (HIGH_INTENT_SOURCES.test(source)) {\n    score += 5;\n    reasons.push(`source \"${source}\" is a high-intent channel (test drive / financing / showroom / whatsapp) (+5)`);\n  } else if (LOW_INTENT_SOURCES.test(source)) {\n    score -= 10;\n    reasons.push(`source \"${source}\" looks like a bulk/cold/purchased list (-10)`);\n  }\n\n  // ---- 8. spam detection (dominant, overrides everything above) ---------\n  const spamHits = matchAny(text, SPAM_KEYWORDS);\n  if (spamHits.length) {\n    reasons.push(`spam-pattern keyword(s) matched: ${spamHits.join(', ')} -- overriding score to near-zero ` +\n      'and forcing COLD regardless of any other signal above');\n    score = Math.max(0, 10 - spamHits.length * 3);\n    forcedIntent = 'COLD';\n  }\n\n  // ---- 9. time-of-day (weight +/-5, soft signal only) --------------------\n  const hour = dubaiHour(opts.now || lead.received_at);\n  const isBusinessHours = hour >= 8 && hour < 20;\n  if (isBusinessHours) {\n    score += 5;\n    reasons.push(`received at ${hour}:00 Asia/Dubai, inside business hours (+5)`);\n  } else {\n    score -= 5;\n    reasons.push(`received at ${hour}:00 Asia/Dubai, outside business hours -- follow-up will likely wait for ` +\n      'the next shift, small penalty (-5)');\n  }\n\n  // ---- clamp + classify ---------------------------------------------------\n  score = Math.max(0, Math.min(100, Math.round(score)));\n\n  let intent;\n  if (forcedIntent) {\n    intent = forcedIntent;\n    // A forced-COLD lead should never carry a score that reads as hot to a\n    // human skimming a table, even if the raw signals were strong.\n    score = Math.min(score, 15);\n  } else if (score >= 70) {\n    intent = 'HOT';\n  } else if (score >= 40) {\n    intent = 'WARM';\n  } else {\n    intent = 'COLD';\n  }\n\n  const topReason = reasons[0] || 'deterministic rule-based score';\n  const reason = `Rule-based score ${score}/100 -> ${intent}. No AI quota was available for this lead; ` +\n    `every signal is listed in score_reasons. Top factor: ${topReason}`;\n\n  return {\n    intent,\n    score,\n    reason,\n    budget_aed,\n    parse_failed: false,\n    score_source: 'RULES',   // matches leads.score_source's live check constraint (NX920)\n    rules_score: score,      // matches leads.rules_score (NX920)\n    score_reasons: reasons,\n  };\n}\n\n// ---- CommonJS export for the standalone test harness ---------------------\n// `typeof module` is a safe check even where `module` is never declared (an\n// n8n Code node sandbox): `typeof` never throws on an undeclared identifier.\n// This line never runs inside n8n in a way that affects the node's output --\n// n8n's sandbox has no CommonJS `module`, so the guard is simply false there.\nif (typeof module !== 'undefined' && module.exports) {\n  module.exports = { scoreLead };\n}\n\n// ---- n8n Code node glue ----------------------------------------------------\n// Only executes inside n8n, where the `$input` global exists. Kept last and\n// guarded so this same file can be `require()`d by the test harness (where\n// `$input` is undefined) without touching n8n's execution API.\nif (typeof $input !== 'undefined') {\n  const prev = $input.first().json;\n  // NX1002/model-ladder patch bug fix (20 Sep 2026, found live on exec\n  // 16124/16127): when Model Ladder's retry ladder is exhausted, its\n  // onError=continueErrorOutput error-output item is JUST { error: <msg> }\n  // -- n8n does NOT carry the node's own input (or .lead) through on a Code\n  // node's THROWN error, contrary to this patch's original spec assumption\n  // (which guessed this from reading the code, not from a live throw). Read\n  // the real lead from the named node instead, same fix as 'Model Ladder'.\n  let lead;\n  try {\n    lead = $('Validate & Enrich Input').first().json.lead;\n  } catch (e) {\n    lead = prev.lead || prev;\n  }\n  const ai_decision = scoreLead(lead);\n  return [{ json: { lead, ai_decision } }];\n}"
+    },
+    "onError": "continueRegularOutput"
+   }
+  ],
+  "connections": {
+   "Webhook Catch-All": {
+    "main": [
+     [
+      {
+       "node": "Verify JWT",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Parse AI Decision": {
+    "main": [
+     [
+      {
+       "node": "Intent Switch",
+       "type": "main",
+       "index": 0
+      },
+      {
+       "node": "Update Lead Scoring (PATCH)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Intent Switch": {
+    "main": [
+     [
+      {
+       "node": "Slack Router (HOT)",
+       "type": "main",
+       "index": 0
+      },
+      {
+       "node": "ERP Sync (HOT)",
+       "type": "main",
+       "index": 0
+      },
+      {
+       "node": "HOT: Already In A Live Chat?",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "WARM: Already In A Live Chat?",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Marketing Drip (COLD)",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Slack: Unclassified Lead",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "WhatsApp BDC (WARM)": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Marketing Drip (COLD)": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "AI Lead Scoring Agent": {
+    "main": [
+     [
+      {
+       "node": "Parse AI Decision",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Model Ladder",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "OpenRouter Chat Model": {
+    "ai_languageModel": [
+     [
+      {
+       "node": "AI Lead Scoring Agent",
+       "type": "ai_languageModel",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Supabase Lead Lookup": {
+    "ai_tool": [
+     [
+      {
+       "node": "AI Lead Scoring Agent",
+       "type": "ai_tool",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "check_purchase_history": {
+    "ai_tool": [
+     [
+      {
+       "node": "AI Lead Scoring Agent",
+       "type": "ai_tool",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Groq Fallback": {
+    "ai_languageModel": [
+     [
+      {
+       "node": "AI Lead Scoring Agent",
+       "type": "ai_languageModel",
+       "index": 1
+      }
+     ]
+    ]
+   },
+   "WhatsApp Outreach (HOT)": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Model Ladder": {
+    "main": [
+     [
+      {
+       "node": "AI Lead Scoring Agent",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Rule-Based Lead Scorer",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Slack: Unclassified Lead": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Simple Memory": {
+    "ai_memory": [
+     [
+      {
+       "node": "AI Lead Scoring Agent",
+       "type": "ai_memory",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Auth Gate": {
+    "main": [
+     [
+      {
+       "node": "Validate & Enrich Input",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Called Internally": {
+    "main": [
+     [
+      {
+       "node": "Validate & Enrich Input",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "HOT: Already In A Live Chat?": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "WhatsApp Outreach (HOT)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "WARM: Already In A Live Chat?": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "WhatsApp BDC (WARM)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report": {
+    "main": [
+     [
+      {
+       "node": "Audit Log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Verify JWT": {
+    "main": [
+     [
+      {
+       "node": "Tenant For JWT User",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Tenant For JWT User": {
+    "main": [
+     [
+      {
+       "node": "Auth Gate",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Validate & Enrich Input": {
+    "main": [
+     [
+      {
+       "node": "Persist Lead (deterministic)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Persist Lead (deterministic)": {
+    "main": [
+     [
+      {
+       "node": "Model Ladder",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Rule-Based Lead Scorer": {
+    "main": [
+     [
+      {
+       "node": "Parse AI Decision",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "Fix: PATCH now writes score_source (and rules/ai_* raw)",
+  "description": "Live exec (lead id 150) showed scoring_state correctly flips to SCORED but score_source stayed stuck at its column default 'AI_SCORE_UNKNOWN' regardless of which tier actually scored the lead -- Update Lead Scoring (PATCH) never forwarded ai_decision.score_source, even though both Rule-Based Lead Scorer and the now-tagged Parse AI Decision produce it. This was flagged as a deliberate, explicit deferral in model-ladder.md section 4.6 (\"easy follow-up... left out of this patch deliberately\"), but leaving it out makes the column meaningless for telling RULES-scored leads apart from AI-scored ones, which is the whole point NX920 added it for and what step 4 of this task needs to report. Adds score_source always, plus rules_score on the RULES path or ai_score_raw/ai_intent_raw on the AI path.",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-20T20:39:15.310Z",
+    "id": 906,
+    "workflowId": "JnlZFAVmFAuNXVya",
+    "versionId": "6c24af00-a20d-47b4-8331-c31142a35051",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}
