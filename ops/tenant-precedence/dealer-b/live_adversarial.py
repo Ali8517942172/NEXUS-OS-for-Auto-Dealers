@@ -17,6 +17,14 @@ every row this script is responsible for on sight.
 
     python3 live_adversarial.py                                  # dry run
     python3 live_adversarial.py --live --i-understand-side-effects  # execute
+    python3 live_adversarial.py --reverify RUN.json                # re-judge
+                                                                     an
+                                                                     earlier
+                                                                     --live
+                                                                     run's
+                                                                     executions
+                                                                     -- sends
+                                                                     nothing
 
 --live is not enough on its own. --i-understand-side-effects must also be
 passed, because several of these doors are not idempotent test endpoints --
@@ -71,87 +79,153 @@ SIDE EFFECTS -- READ BEFORE --live
   message in a live channel and a row in production Bitrix24 are real
   regardless of the marker. Get sign-off before --live.
 
-VERIFICATION
-  After every call this queries public.leads and public.audit_log (service
-  role) for rows carrying this call's marker. For a REFUSED case, no row may
-  exist under the tenant that was wrongly claimed. For the RESOLVES case, any
-  row found must carry dealer B's tenant_id. Several doors (finance-calc,
-  erp-sync, audit-kyc, closed-won) do not write to leads/audit_log at all --
-  a clean miss on both tables is reported as NOTE, not FAIL, for those.
+VERIFICATION (n8n EXECUTION DATA, not HTTP status)
+  Three of these doors' webhook trigger node has no responseMode set, which
+  makes n8n's default "onReceived" kick in: the webhook answers HTTP 200 the
+  instant the request is received, before the resolver code even runs. HTTP
+  status therefore cannot tell a refusal from an acceptance on those doors,
+  and a naive substring search over the response body misses several doors'
+  differently-worded refusal messages. So this script no longer grades on
+  HTTP status at all: after every POST it finds the n8n EXECUTION that
+  request created (matched by the marker inside the webhook trigger node's
+  own captured request body -- see exec_judge.py's module docstring for why
+  that node, specifically, is the one place the marker is guaranteed to
+  survive), polls it to a terminal state (timeout 120s -> INCONCLUSIVE), and
+  reads the verdict out of the execution's own node data:
+    * a REFUSED case PASSES only if some node's thrown error description
+      starts with "[NEXUS-UNATTRIBUTED] " AND Supabase has no row for this
+      case's marker under the forbidden tenant.
+    * a RESOLVES case PASSES only if some node's output carries the expected
+      tenant_id AND, if a leads/audit_log row for the marker exists at all,
+      that row's tenant_id also matches (a door that doesn't persist a row
+      for this case isn't penalised for that).
+  See exec_judge.py for the full implementation and rationale.
+
+--reverify RUN.json
+  Re-judges the executions a previous --live run already created, using the
+  same exec_judge logic above, WITHOUT sending a single new request. RUN.json
+  is the case-map this script writes on every --live run (see "raw case
+  mapping" below). If a case in it has no "execution_id" yet (as happens for
+  a manifest reconstructed for a run that predates this case-map, see
+  reconstruct_legacy_run() below), this mode reconstructs it by scanning the
+  door's executions inside RUN.json's recorded time window for one whose
+  trigger-node body matches that case's identifying details (the claimed
+  tenant_id, or its absence), then fills the mapping back in and rewrites
+  RUN.json so the next --reverify is instant.
+
+RAW CASE MAPPING
+  Every --live run writes ADVERSARIAL-RUN.json next to this script: for each
+  (door, case) it records the marker used, the since_iso search floor, and
+  the execution_id exec_judge found (or null if none was found within the
+  timeout). --reverify reads this file back in.
 """
 import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from datetime import datetime, timezone
+
+import exec_judge
 
 ENV_PATH = os.path.join(
     os.path.expanduser("~"), "mnt", "MY RESUMES", "nexus-os", ".env"
 )
 STATE_PATH = os.path.join(os.path.expanduser("~"), ".nexus-dealer-b.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
+RUN_MAP_PATH = os.path.join(HERE, "ADVERSARIAL-RUN.json")
+RESULTS_PATH = os.path.join(HERE, "ADVERSARIAL-RESULTS.md")
 N8N_BASE = "https://35.224.126.225.nip.io"
 TIMEOUT = 30
+# OpenRouter's free tier rate-limits per-key; deals/closed-won and audit-kyc
+# both call it. Keep at least this many seconds between any two live calls
+# in a run so a --doors-limited (or full) run never bursts into that limit.
+MIN_CALL_SPACING_SECONDS = 20
+_last_call_at = [None]
+
+
+def _pace(apply_mode):
+    """Block, if needed, so at least MIN_CALL_SPACING_SECONDS has elapsed
+    since the previous live call this process made. No-op in dry-run and on
+    the first call."""
+    if not apply_mode:
+        return
+    now = time.monotonic()
+    last = _last_call_at[0]
+    if last is not None:
+        wait = MIN_CALL_SPACING_SECONDS - (now - last)
+        if wait > 0:
+            print(f"    (pacing: sleeping {wait:.1f}s before next live call)")
+            time.sleep(wait)
+    _last_call_at[0] = time.monotonic()
 
 ALBA_TENANT_ID = "fff6a2b5-cfd5-4460-8383-875bc5826de0"
 DEALER_B_PHONE = "+918517942172"
 DEALER_B_EMAIL = "aliasgher892+dealerb@gmail.com"
 TEST_VEHICLE = "Toyota Camry"
 
-# path per webhook door, read from n8n-workflows/*.json and
+# path + workflow id per webhook door, read from n8n-workflows/*.json and
 # ops/tenant-precedence/patched/*.json -- never hand-typed against the wave
 # doc, so a future re-export that changes a path breaks this loudly (404) the
-# next time it dry-runs, instead of silently testing the wrong door.
+# next time it dry-runs, instead of silently testing the wrong door. The
+# master router's workflow_id was looked up live (GET /api/v1/workflows) --
+# it is n8n's internal id for "NEXUS Master Lead Router - AI Agent", not
+# something this harness invents.
 DOORS = [
     {
         "id": "master-router",
-        "workflow_id": None,  # not a wave workflow id; the router itself
+        "workflow_id": "JnlZFAVmFAuNXVya",
         "name": "Master Router",
         "path": "nexus-inbound-lead",
     },
     {
         "id": "G7FhvMY2ucW5Fg7X",
+        "workflow_id": "G7FhvMY2ucW5Fg7X",
         "name": "7-Day Warm Lead Drip Campaign",
         "path": "lead-trigger",
     },
     {
         "id": "unMMpeL9uuPO79pp",
+        "workflow_id": "unMMpeL9uuPO79pp",
         "name": "Finance Calc: Auto Loan Equity & Credit Score",
         "path": "finance-calc",
     },
     {
         "id": "dhy2DDjWUqwuzHLW",
+        "workflow_id": "dhy2DDjWUqwuzHLW",
         "name": "Sync Closed-Won Deals to Supabase pgvector",
         "path": "deals/closed-won",
     },
     {
         "id": "qTnh3nwWheFJbFkU",
+        "workflow_id": "qTnh3nwWheFJbFkU",
         "name": "KYC/AML Document Auditor + Re-upload Loop (Phase 5)",
         "path": "audit-kyc",
     },
     {
         "id": "bxNBzBrcOtcFpMPn",
+        "workflow_id": "bxNBzBrcOtcFpMPn",
         "name": "wf_108 ERP Sync - Bitrix24 CRM",
         "path": "erp-sync",
     },
     {
         "id": "KI6P1Qcf3MIZakNa",
+        "workflow_id": "KI6P1Qcf3MIZakNa",
         "name": "Lead Escalation - AI Agent",
         "path": "lead-escalation",
     },
 ]
 
-# Text fragments the resolvers actually throw (see code/*.js). A refusal is
-# only trusted as a TENANT refusal -- not some unrelated validation 400/500 --
-# if one of these appears in the response body.
-REFUSAL_MARKERS = (
-    "tenant_id is not a caller-selectable field",
-    "is a member of",
-    "NEXUS-UNATTRIBUTED",
-    "has no tenant_members row",
-)
+CASE_SPECS = [
+    # (case_label, claims, expect_refused)
+    ("A-claims-B", "dealer_b_tenant_id", True),
+    ("B-claims-A", "alba_tenant_id", True),
+    ("B-no-claim", None, False),
+]
 
 
 def load_env(path):
@@ -304,56 +378,261 @@ def make_rest_get(supabase_url, service_key, apply_mode):
     return get
 
 
+def now_iso_floor():
+    """A since_iso floor for exec_judge's execution search: some time before
+    "now", string-comparable against n8n's own startedAt format
+    ("2026-09-20T11:29:41.451Z").
+
+    HARNESS BUG FOUND AND FIXED 20 Sep 2026: this used to subtract only 5
+    seconds. Measured directly (GET a workflow and diff this machine's clock
+    against the response's own Date header, back to back): this machine's
+    clock runs ~45-50s AHEAD of the n8n host's. With only a 5s buffer, a
+    case's own just-created execution can carry a startedAt (timestamped by
+    the SLOWER n8n clock) that is already earlier than since_iso (computed
+    from the FASTER local clock) the instant it's created -- and since
+    list_recent_executions scans newest-first and stops at the first row
+    older than since_iso, that's the very FIRST row it looks at, so the
+    execution is excluded before ever being added to the candidate list.
+    Confirmed live: execution 16032 (marker b7a45bc6d5, erp-sync) started at
+    14:49:59.394Z but a since_iso of 14:50:40.591Z (5s-buffer, this
+    machine's clock) excluded it -- polling never found it, for the full
+    length of any timeout, no matter how long, because startedAt doesn't
+    change. Not a one-off: every case run under the old 5s buffer while this
+    skew was present would have silently returned INCONCLUSIVE regardless of
+    what the workflow actually did.
+
+    180s comfortably covers this (and any further drift) without meaningful
+    risk of picking up an unrelated earlier execution on a shared workflow
+    (e.g. master-router, which both this script and journeys.py POST to):
+    poll_for_case_execution still filters every candidate by the request's
+    own random marker before accepting it."""
+    from datetime import timedelta
+    t = datetime.now(timezone.utc) - timedelta(seconds=180)
+    return t.strftime("%Y-%m-%dT%H:%M:%S.") + f"{t.microsecond // 1000:03d}Z"
+
+
+# Doors whose fix (confirmed by direct execution inspection, 20 Sep 2026 --
+# see ADVERSARIAL-RESULTS.md) never even reads the body's claimed tenant_id
+# for anything: the caller's OWN authenticated identity is resolved and used
+# unconditionally, so a malicious claim is neither honoured NOR refused --
+# it's simply irrelevant. That is a STRONGER guarantee than "refuse on
+# mismatch" (the claim can never influence the outcome at all), but it means
+# the generic 3-case CASE_SPECS' "A-claims-B/B-claims-A must throw
+# [NEXUS-UNATTRIBUTED]" expectation (written for the other 6 doors, which DO
+# read and act on a claim) doesn't apply here: judging it against that
+# expectation would grade a correctly-behaving door as FAIL for not refusing
+# a claim it never looks at. For these doors, every case (regardless of what
+# was claimed) is graded as "must resolve to the CALLER's own real tenant"
+# instead -- exactly what judge_resolve_case already checks.
+CLAIM_IGNORING_DOORS = {"bxNBzBrcOtcFpMPn"}  # erp-sync: see Resolve Sweep Caller Tenant
+
+
 def run_case(door, case_label, token, claim_tenant_id, expect_refused,
-             expect_tenant_id, forbidden_tenant_id, api_get, apply_mode, results):
+             expect_tenant_id, forbidden_tenant_id, api_get, apply_mode, results,
+             cases_map, caller_real_tenant_id=None):
     marker = uuid.uuid4().hex[:10]
-    status, body = call_door(door, token, marker, claim_tenant_id, apply_mode,
-                              label=f"{door['id']}:{case_label}")
+    case_key = f"{door['id']}:{case_label}"
+
+    if door["id"] in CLAIM_IGNORING_DOORS and expect_refused:
+        if caller_real_tenant_id is None:
+            sys.exit(f"{door['id']} is in CLAIM_IGNORING_DOORS but no "
+                      f"caller_real_tenant_id was passed for case {case_label}")
+        expect_refused = False
+        expect_tenant_id = caller_real_tenant_id
+        forbidden_tenant_id = claim_tenant_id  # the claim itself must never be adopted
 
     if not apply_mode:
-        print(f"    would then verify leads/audit_log for marker {marker}")
+        call_door(door, token, marker, claim_tenant_id, apply_mode,
+                  label=case_key)
+        print(f"    would then find the n8n execution this created and judge it "
+              f"off its own node data (see exec_judge.py) for marker {marker}")
         results.append((door["id"], case_label, "DRY-RUN", ""))
         return
 
-    refused = status is not None and status >= 400
-    refusal_confirmed = refused and isinstance(body, (str, dict)) and any(
-        m in json.dumps(body) for m in REFUSAL_MARKERS
-    )
+    since_iso = now_iso_floor()
+    _pace(apply_mode)
+    status, body = call_door(door, token, marker, claim_tenant_id, apply_mode,
+                              label=case_key)
+    print(f"  [{door['id']}/{case_label}] POST -> HTTP {status} (HTTP status is "
+          f"informational only now -- see exec_judge below for the real verdict)")
 
-    verdict = None
-    detail = f"HTTP {status}"
+    row_check = lambda: verify_rows(api_get, marker, forbidden_tenant_id,
+                                     expect_tenant_id, apply_mode)
 
     if expect_refused:
-        if refused and refusal_confirmed:
-            verdict = "PASS"
-        elif refused and not refusal_confirmed:
-            verdict = "INCONCLUSIVE"
-            detail += " (refused, but not confirmed as the tenant gate -- check body)"
-        else:
-            verdict = "FAIL"
-            detail += " (expected a refusal, request succeeded)"
+        verdict, detail, execution_id = exec_judge.judge_refusal_case(
+            door["workflow_id"], marker, since_iso, forbidden_tenant_id,
+            row_check, log=print)
     else:
-        if not refused:
-            verdict = "PASS"
-        else:
-            verdict = "FAIL"
-            detail += " (expected resolution to dealer B, got a refusal)"
-
-    row_ok, row_notes = verify_rows(api_get, marker, forbidden_tenant_id,
-                                     expect_tenant_id, apply_mode)
-    if not row_ok:
-        verdict = "FAIL"
-        detail += f" | ROW CHECK FAILED: {row_notes}"
-    else:
-        detail += f" | rows: {row_notes}"
+        verdict, detail, execution_id = exec_judge.judge_resolve_case(
+            door["workflow_id"], marker, since_iso, expect_tenant_id,
+            row_check, log=print)
 
     print(f"  [{verdict}] {door['id']} / {case_label} -- {detail}")
-    results.append((door["id"], case_label, verdict, detail))
+    results.append((door["id"], case_label, verdict, f"HTTP {status} | {detail}"))
+    cases_map[case_key] = {
+        "door_id": door["id"],
+        "workflow_id": door["workflow_id"],
+        "case_label": case_label,
+        "marker": marker,
+        "since_iso": since_iso,
+        "http_status": status,
+        "expect_refused": expect_refused,
+        "expect_tenant_id": expect_tenant_id,
+        "forbidden_tenant_id": forbidden_tenant_id,
+        "execution_id": execution_id,
+        "verdict": verdict,
+        "detail": detail,
+    }
 
 
 def print_side_effect_banner():
     print(__doc__.split("SIDE EFFECTS -- READ BEFORE --live")[1]
           .split("VERIFICATION")[0])
+
+
+def write_run_map(cases_map, meta):
+    payload = {"meta": meta, "cases": cases_map}
+    with open(RUN_MAP_PATH, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=1)
+    print(f"\nwrote {RUN_MAP_PATH} (case -> execution_id map, for --reverify)")
+
+
+def reconstruct_legacy_case(door, case_label, claimed_tenant_id, window):
+    """For a case whose mapping entry has no execution_id (a manifest
+    written for a run that predates this script saving one -- see
+    ADVERSARIAL-RUN.json's "reconstructed" runs), find it by scanning the
+    door's executions inside `window` (since_iso, until_iso) for the one
+    whose trigger-node body:
+      * has name/full_name containing "NEXUS TEST Ahmed" (this script's
+        fixed marker prefix, distinguishing our executions from
+        journeys.py's on a shared workflow like the master router), and
+      * has (or lacks) a "tenant_id" claim matching this case's already-
+        resolved claimed_tenant_id (a real tenant UUID, or None for the
+        no-claim case) -- NOT the CASE_SPECS key string, which the caller
+        must resolve first (dealer_b_tenant_id / alba_tenant_id / None).
+    Returns (execution_id, marker) or (None, None) if nothing in the window
+    matches."""
+    since_iso, until_iso = window
+    candidates = exec_judge.executions_in_window(door["workflow_id"], since_iso, until_iso)
+    for execution in candidates:
+        body = exec_judge.trigger_node_body(execution)
+        name = str(body.get("name") or body.get("full_name") or "")
+        if "NEXUS TEST Ahmed" not in name:
+            continue
+        claimed = body.get("tenant_id")
+        if claimed_tenant_id is None:
+            if claimed:
+                continue
+        elif claimed != claimed_tenant_id:
+            continue
+        marker = body.get("lead_marker")
+        if not marker:
+            # fall back to parsing "[marker]" out of the name
+            if "[" in name and "]" in name:
+                marker = name.split("[", 1)[1].rsplit("]", 1)[0]
+        return execution.get("id"), marker
+    return None, None
+
+
+def do_reverify(run_json_path, env, state):
+    with open(run_json_path, encoding="utf-8") as fh:
+        manifest = json.load(fh)
+    meta = manifest.get("meta", {})
+    cases_map = manifest.get("cases", {})
+
+    dealer_b_tenant_id = meta.get("dealer_b_tenant_id") or (state or {}).get("dealer_b_tenant_id")
+    alba_tenant_id = meta.get("alba_tenant_id") or ALBA_TENANT_ID
+    window = meta.get("window")  # [since_iso, until_iso], legacy manifests only
+
+    api_get = make_rest_get(env["SUPABASE_URL"], env["SUPABASE_SERVICE_ROLE_KEY"], True)
+
+    # claim_field (from CASE_SPECS) -> the actual tenant_id the payload
+    # claimed, or None for the no-claim case -- this is what the trigger
+    # node's own captured body will show, so it's what reconstruction must
+    # match against. It is NOT the same thing as forbidden_tenant_id below:
+    # for the no-claim case nothing was claimed (claimed_tenant_id is None)
+    # but a row is still forbidden from landing under ALBA (same asymmetry
+    # main()'s live run always had between claim_tenant_id and
+    # forbidden_tenant_id for that case).
+    claim_field_value = {
+        "dealer_b_tenant_id": dealer_b_tenant_id,
+        "alba_tenant_id": alba_tenant_id,
+        None: None,
+    }
+
+    results = []
+    changed = False
+    for door in DOORS:
+        print(f"\n=== reverify {door['id']} ({door['name']}) ===")
+        for case_label, claim_field, expect_refused in CASE_SPECS:
+            case_key = f"{door['id']}:{case_label}"
+            entry = cases_map.get(case_key, {})
+            expect_tenant_id = dealer_b_tenant_id if not expect_refused else None
+            claimed_tenant_id = claim_field_value.get(claim_field)
+            forbidden_tenant_id = claimed_tenant_id if expect_refused else alba_tenant_id
+            marker = entry.get("marker")
+            execution_id = entry.get("execution_id")
+
+            if not execution_id:
+                if not window:
+                    print(f"  [{case_key}] no execution_id on file and no legacy "
+                          f"time window in this manifest -- cannot reconstruct")
+                    results.append((door["id"], case_label, "INCONCLUSIVE",
+                                     "no execution_id and no window to reconstruct from"))
+                    continue
+                execution_id, found_marker = reconstruct_legacy_case(
+                    door, case_label, claimed_tenant_id, window)
+                if execution_id:
+                    marker = marker or found_marker
+                    entry.update({
+                        "door_id": door["id"], "workflow_id": door["workflow_id"],
+                        "case_label": case_label, "marker": marker,
+                        "execution_id": execution_id, "reconstructed": True,
+                    })
+                    cases_map[case_key] = entry
+                    changed = True
+                    print(f"  [{case_key}] reconstructed -> execution {execution_id} "
+                          f"(marker {marker})")
+                else:
+                    print(f"  [{case_key}] reconstruction found no matching execution "
+                          f"in window {window}")
+                    results.append((door["id"], case_label, "INCONCLUSIVE",
+                                     f"no execution found in legacy window {window} "
+                                     f"matching this case's identifying claim"))
+                    continue
+
+            def row_check(marker=marker, forbidden_tenant_id=forbidden_tenant_id,
+                          expect_tenant_id=expect_tenant_id):
+                return verify_rows(api_get, marker, forbidden_tenant_id,
+                                    expect_tenant_id, True)
+
+            verdict, detail, _ = exec_judge.judge_known_execution(
+                execution_id, expect_refused, forbidden_tenant_id,
+                expect_tenant_id, row_check, log=print)
+            prev_verdict = entry.get("verdict", "?")
+            print(f"  [{verdict}] {case_key} -- {detail}  (previous harness said: {prev_verdict})")
+            entry["reverify_verdict"] = verdict
+            entry["reverify_detail"] = detail
+            cases_map[case_key] = entry
+            changed = True
+            results.append((door["id"], case_label, verdict, detail, prev_verdict))
+
+    if changed:
+        manifest["cases"] = cases_map
+        with open(run_json_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=1)
+        print(f"\nrewrote {run_json_path} with reconstructed/re-judged mapping")
+
+    print("\n=== REVERIFY SUMMARY ===")
+    for row in results:
+        if len(row) == 5:
+            door_id, case, verdict, detail, prev = row
+            print(f"{verdict:12s} {door_id:16s} {case:12s} (was {prev:12s}) {detail}")
+        else:
+            door_id, case, verdict, detail = row
+            print(f"{verdict:12s} {door_id:16s} {case:12s} {detail}")
+    return results
 
 
 def main():
@@ -363,6 +642,13 @@ def main():
                      help="actually call n8n / Supabase (default: dry-run)")
     ap.add_argument("--i-understand-side-effects", action="store_true",
                      help="required together with --live; see SIDE EFFECTS in --help")
+    ap.add_argument("--reverify", metavar="RUN.json",
+                     help="re-judge a previous --live run's executions from n8n "
+                          "execution data, without sending anything new")
+    ap.add_argument("--doors", metavar="ID[,ID...]",
+                     help="limit the run to these door ids (matches DOORS[].id, "
+                          "e.g. erp-sync or kyc's id qTnh3nwWheFJbFkU), comma-"
+                          "separated. Default: all doors.")
     args = ap.parse_args()
 
     apply_mode = args.live
@@ -372,6 +658,16 @@ def main():
             "Run with --help and read SIDE EFFECTS first."
         )
 
+    env = load_env(ENV_PATH)
+    for k in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
+        if not env.get(k):
+            sys.exit(f"missing required env var in {ENV_PATH}: {k}")
+
+    if args.reverify:
+        state = load_state() if os.path.exists(STATE_PATH) else None
+        do_reverify(args.reverify, env, state)
+        return
+
     print("=== SIDE EFFECTS OF THE 'RESOLVES' CASE ===")
     print_side_effect_banner()
 
@@ -380,11 +676,6 @@ def main():
     else:
         print("=== DRY RUN -- printing calls only, nothing executes. "
               "Use --live --i-understand-side-effects to run. ===\n")
-
-    env = load_env(ENV_PATH)
-    for k in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
-        if not env.get(k):
-            sys.exit(f"missing required env var in {ENV_PATH}: {k}")
 
     state = load_state() if apply_mode else {
         "dealer_b_tenant_id": "<dry-run: from state file>",
@@ -417,30 +708,54 @@ def main():
     api_get = make_rest_get(env["SUPABASE_URL"], env["SUPABASE_SERVICE_ROLE_KEY"],
                              apply_mode)
 
+    doors = DOORS
+    if args.doors:
+        wanted = set(x.strip() for x in args.doors.split(",") if x.strip())
+        doors = [d for d in DOORS
+                 if wanted & {d["id"], d["workflow_id"], d["path"]}]
+        matched = set()
+        for d in doors:
+            matched |= (wanted & {d["id"], d["workflow_id"], d["path"]})
+        missing = wanted - matched
+        if missing:
+            sys.exit(f"--doors: unknown door id(s) {sorted(missing)}. Known ids: "
+                      f"{[d['id'] for d in DOORS]}, paths: {[d['path'] for d in DOORS]}")
+        print(f"=== --doors filter: running only {[d['id'] for d in doors]} ===\n")
+
     results = []
-    for door in DOORS:
+    cases_map = {}
+    run_started = datetime.now(timezone.utc).isoformat()
+    for door in doors:
         print(f"\n=== {door['id']} ({door['name']}) -> /webhook/{door['path']} ===")
 
         run_case(door, "A-claims-B", token_a, dealer_b_tenant_id,
                   expect_refused=True, expect_tenant_id=None,
                   forbidden_tenant_id=dealer_b_tenant_id,
-                  api_get=api_get, apply_mode=apply_mode, results=results)
+                  api_get=api_get, apply_mode=apply_mode, results=results,
+                  cases_map=cases_map, caller_real_tenant_id=ALBA_TENANT_ID)
 
         run_case(door, "B-claims-A", token_b, ALBA_TENANT_ID,
                   expect_refused=True, expect_tenant_id=None,
                   forbidden_tenant_id=ALBA_TENANT_ID,
-                  api_get=api_get, apply_mode=apply_mode, results=results)
+                  api_get=api_get, apply_mode=apply_mode, results=results,
+                  cases_map=cases_map, caller_real_tenant_id=dealer_b_tenant_id)
 
         run_case(door, "B-no-claim", token_b, None,
                   expect_refused=False, expect_tenant_id=dealer_b_tenant_id,
                   forbidden_tenant_id=ALBA_TENANT_ID,
-                  api_get=api_get, apply_mode=apply_mode, results=results)
+                  api_get=api_get, apply_mode=apply_mode, results=results,
+                  cases_map=cases_map)
 
     print("\n=== SUMMARY ===")
     for door_id, case, verdict, detail in results:
         print(f"{verdict:12s} {door_id:16s} {case:12s} {detail}")
 
     if apply_mode:
+        write_run_map(cases_map, {
+            "run_started": run_started,
+            "dealer_b_tenant_id": dealer_b_tenant_id,
+            "alba_tenant_id": ALBA_TENANT_ID,
+        })
         fails = [r for r in results if r[2] == "FAIL"]
         if fails:
             print(f"\n{len(fails)} case(s) FAILED.")

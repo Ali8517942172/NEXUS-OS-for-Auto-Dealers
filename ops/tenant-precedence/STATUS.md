@@ -11,7 +11,7 @@ dealership by submitting one.** Unresolved tenant fails closed.
 | 3 | Finance Calc | `unMMpeL9uuPO79pp` | YES | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
 | 4 | KYC/AML Auditor | `qTnh3nwWheFJbFkU` | YES | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
 | 5 | Sync Closed-Won | `dhy2DDjWUqwuzHLW` | YES | 7 PASS, 3 N/A (no internal door exists) | NOT RUN | APPLIED, UNIT-TESTED |
-| 6 | wf_108 ERP Sync | `bxNBzBrcOtcFpMPn` | YES (+Tenant For JWT User) | 9 PASS, 2 N/A, +backlog case PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 6 | wf_108 ERP Sync | `bxNBzBrcOtcFpMPn` | YES (+Tenant For JWT User, +NX1001 Resolve Sweep Caller Tenant, 20 Sep) | 9 PASS, 2 N/A, +backlog case PASS | **live 20 Sep 15:0x UTC: 3/3 PASS** (A-claims-B, B-claims-A, B-no-claim all correctly resolved to the CALLER's own real tenant; malicious claim never adopted) | APPLIED, LIVE-VERIFIED |
 | 7 | Lead Escalation | `KI6P1Qcf3MIZakNa` | YES (+Tenant For JWT User, +Resolve Tenant) | 10 PASS | **exec 15855 (09:00 UTC): Resolve Tenant ran, source `internal_caller`, no refusal** | APPLIED, UNIT-TESTED |
 
 Every touched node independently re-verified against live with `wf.py verify`: 0 mismatches on all 7.
@@ -106,3 +106,147 @@ Only one wave workflow executed between publish (~08:15) and 09:07: Lead Escalat
 no `[NEXUS-UNATTRIBUTED]` refusal. It still ended in `No Lead To Escalate` — the pre-existing
 lookup miss, same as 04:00/05:00/08:00, unrelated to tenancy. The other six had no traffic in
 the window: **NOT RUN, not PASS.**
+
+## NX1001 landed + KYC root-caused + harness bugs found and fixed, 20 Sep 2026 ~14:30-15:10 UTC
+
+### wf_108 ERP Sync: the "no gate at all" finding from the prior wave, fixed and live-verified
+
+`patched3/bxNBzBrcOtcFpMPn.json` adds `Resolve Sweep Caller Tenant` (a Code
+node between `Auth Gate` and `Fetch HOT Leads from Supabase`) and repoints
+the fetch at a new Postgres function, `nexus_erp_bitrix24_hot_leads_backlog(p_tenant uuid)`
+(migration `supabase/migrations/20260920140000_nx1001_the_erp_backlog_read_every_dealership.sql`,
+already applied). The new node resolves the caller's OWN dealership from
+`tenant_members` (refusing on 0 or >1 rows, same `[NEXUS-UNATTRIBUTED]`
+contract as every other resolver) and passes it as `p_tenant`; the SQL
+function's own fixed scoping is what actually limits which rows come back.
+The request body's `tenant_id` is never read by this node at all -- not
+honoured, not refused, simply irrelevant, because this door has no per-request
+"target tenant" concept: it is a sweep, and "whose backlog" can only ever be
+"the authenticated caller's own".
+
+`python3 wf.py verify` confirmed only the two named nodes + connections
+differed before applying; applied via `mcp__n8n__update_workflow` (never the
+public API PUT, which `settings must NOT have additional properties` rejects
+on this workflow same as the rest of the wave), then `publish_workflow` with
+the returned versionId. `versionId == activeVersionId` confirmed
+(`8d899812-0a28-42a8-a97b-1b0b7804778c` both), then `wf.py verify` again: 0
+mismatches.
+
+**Live re-run, 20 Sep ~15:01 UTC, all 3 cases PASS**: A-claims-B resolved to
+dealer A's real tenant (ALBA), B-claims-A resolved to dealer B's real tenant,
+B-no-claim resolved to dealer B's real tenant -- in every case the claimed
+`tenant_id` in the body was completely ignored and the caller's authenticated
+identity won, which is a stronger guarantee than "refuse on mismatch" (the
+claim can never influence the outcome, not merely "when caught"). See
+"Harness bugs found while re-verifying this" below for why the FIRST two
+live-run attempts today showed false FAILs on this same, already-correct
+patch.
+
+### KYC/AML Auditor (`qTnh3nwWheFJbFkU`): why 3 live calls made zero executions -- ROOT CAUSE FOUND, workflow NOT changed
+
+Confirmed live via `GET /workflows/qTnh3nwWheFJbFkU`: this workflow's own
+settings carry `saveDataErrorExecution: "none"` and
+`saveDataSuccessExecution: "none"`. n8n therefore never persists an execution
+record for this workflow AT ALL, regardless of whether a run succeeds or
+errors. A fresh diagnostic call just now got HTTP 200 with body `{}` (a
+genuine, successful run) and `GET /executions?workflowId=qTnh3nwWheFJbFkU`
+still returned zero rows, before, during and after -- confirming this is a
+permanent, by-design characteristic of the workflow's own settings, not a
+transient fluke, not a webhook path/method/binary mismatch (`ReceiveDocument`'s
+`path:"audit-kyc"`, `httpMethod:"POST"` match `live_adversarial.py`'s
+`DOORS` entry exactly, workflow `active:true`, `versionId==activeVersionId`),
+and not fixable from the harness side -- no request shape or wait time can
+make n8n record what its own settings tell it never to keep. **The workflow
+was not touched.** This also fully explains the original report's "HTTP 500,
+zero executions" observation (the response code varies run to run; the
+"zero executions" part never will, by design) and means every future KYC
+adversarial run will keep reporting INCONCLUSIVE for all 3 cases -- correctly,
+not as a bug.
+
+### Harness bugs found while re-verifying erp-sync, and fixed (not the workflow)
+
+Getting erp-sync's real post-patch verdict required finding and fixing two
+separate, previously-undetected bugs in the shared execution-judging harness
+(`exec_judge.py`, `live_adversarial.py`, `journeys.py`) -- both would have
+produced silent false verdicts on ANY door, not just erp-sync, they just
+hadn't been hit yet:
+
+1. **Clock skew excluded a case's own execution from its own search, forever.**
+   Measured directly (this machine's clock vs. the n8n host's own HTTP `Date`
+   response header, back to back): this machine runs **~45-50s ahead** of the
+   n8n host. `now_iso_floor()`'s old 5-second buffer was nowhere near enough:
+   a case's just-created execution, timestamped by the (slower) n8n clock,
+   could carry a `startedAt` that was already earlier than `since_iso`
+   (computed from the faster local clock) the instant it was created.
+   `list_recent_executions` scans newest-first and stops at the first row
+   older than `since_iso` -- so the very execution being searched for was the
+   first row it looked at, and got excluded before ever being added to the
+   candidate list. Confirmed on execution 16032 (marker `b7a45bc6d5`): started
+   at `14:49:59.394Z`, excluded by a since_iso of `14:50:40.591Z` computed
+   under the 5s buffer -- polling never found it, at ANY timeout length,
+   because `startedAt` does not change. **Fix:** widened the buffer to 180s in
+   both `live_adversarial.py` and `journeys.py`'s `now_iso_floor()`. Safe to
+   widen: `poll_for_case_execution` still filters every candidate by the
+   request's own random/deterministic marker before accepting it, so a wider
+   net costs a few more scanned rows, not a false match.
+2. **`find_resolved_tenant` walked into the raw, untouched request body and
+   mistook the caller's OWN malicious claim for a resolved value.** It
+   recursed into every nested dict of every node's output looking for any
+   `tenant_id` key. `Resolve Sweep Caller Tenant` (erp-sync's new node)
+   passes the original item through unchanged apart from one *differently
+   named* key (`_nexus_sweep_caller_tenant_id`) -- so the walk found
+   `body.tenant_id` instead (the attacker's own claim, still sitting
+   unchanged in the passthrough item) and reported it as "the resolver
+   adopted the forbidden tenant_id", failing a case that had in fact
+   correctly ignored that exact claim. **Fix:** `find_resolved_tenant` no
+   longer descends into `headers`/`body`/`query`/`params` -- the raw
+   webhook-trigger shape every door's item carries, never anywhere a
+   resolver's own derived value lives. Re-checked against a known-good past
+   execution from a DIFFERENT door (15855, lead-escalation) to confirm this
+   doesn't weaken real detection: still correctly finds `Resolve Tenant` ->
+   `fff6a2b5-...` there.
+3. **Not a bug, but a needed refinement:** erp-sync's fix ignores the body's
+   claim unconditionally (see above) rather than refusing on a mismatch, so
+   the generic 3-case `CASE_SPECS` (written for the other 6 doors, which DO
+   read and act on the claim) doesn't fit it -- grading A-claims-B/B-claims-A
+   as "must throw `[NEXUS-UNATTRIBUTED]`" would fail a door that is behaving
+   correctly by never looking at the claim at all. Added `CLAIM_IGNORING_DOORS`
+   in `live_adversarial.py`: for `bxNBzBrcOtcFpMPn`, every case (regardless of
+   what was claimed) is now graded as "must resolve to the CALLER's own real
+   tenant" -- exactly `judge_resolve_case`, which is what actually happened.
+
+### Dealer C journeys re-run, live, paced >=19s apart: same 3 fails, now PROVEN to be OpenRouter's exhausted DAILY free-tier quota, not pacing
+
+`journeys.py --live --allow-side-effects --dealers c` (new `--dealers` filter,
+new pacing helper mirroring the adversarial harness's) pushed all 4 dealer-C
+customers (5 pushes incl. the c4 dedupe probe), each >=19s apart. Unlike the
+original (unpaced) run, which only *guessed* rate-limiting from a generic
+execution error, this run's failures carry the OpenRouter provider's own
+error text directly: `"Rate limit exceeded: free-models-per-day. Add 10
+credits to unlock 1000 free model requests per day"` (execution 16074's
+`OpenRouter Chat Model` node) and the `Model Ladder` fallback code exhausting
+its list of free models for the same reason (16069, 16072, 16077). This is a
+**daily** quota, not a per-minute one -- no amount of intra-run pacing fixes
+it, and it will recur on any further live run today. One push (c-c1) produced
+no n8n execution at all despite an accepted webhook call -- the same class of
+"accepted, but nothing recorded" symptom documented for KYC above, on a
+DIFFERENT, otherwise-healthy workflow (master-router's other 4 dealer-C
+pushes today, and its executions all day, save normally) -- most consistent
+with an intermittent proxy-layer drop on this shared box, not yet reproducible
+on demand or fully diagnosed.
+
+Of the 4 executions found: 1 succeeded (16074, c-c4 first dedupe push, via the
+`Groq Fallback` path) and correctly resolved `tenant_id =
+d6c3bc16-83e0-4568-9547-07bd4468415c` (dealer C's own) with exactly 1
+`leads` row written for its marker (the second, duplicate push correctly
+produced no second row -- dedupe still works). Check 4 (JWT-scoped
+PostgREST visibility), re-run fresh for dealer C only (read-only, no side
+effects): PASS, 3 rows visible, all under dealer C's own tenant, none leaked.
+Dealers A and B were not re-pushed (their full 22-PASS/3-genuine-external-fail
+result from the prior run stands; see `JOURNEYS-RESULTS.md`).
+
+**Net effect on the prior wave's dealer-C verdict:** unchanged in substance
+(still not a tenant-precedence defect) but now backed by the AI provider's own
+error message instead of an inference, and confirmed to be a *daily* ceiling
+that pacing cannot work around -- further live retries today would hit the
+same wall.

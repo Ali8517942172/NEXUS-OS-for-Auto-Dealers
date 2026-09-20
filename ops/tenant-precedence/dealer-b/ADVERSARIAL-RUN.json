@@ -1,0 +1,93 @@
+{
+ "meta": {
+  "run_started": "2026-09-20T15:01:46.913866+00:00",
+  "dealer_b_tenant_id": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+  "alba_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0"
+ },
+ "cases": {
+  "qTnh3nwWheFJbFkU:A-claims-B": {
+   "door_id": "qTnh3nwWheFJbFkU",
+   "workflow_id": "qTnh3nwWheFJbFkU",
+   "case_label": "A-claims-B",
+   "marker": "bc5159ba03",
+   "since_iso": "2026-09-20T14:58:46.913Z",
+   "http_status": 500,
+   "expect_refused": true,
+   "expect_tenant_id": null,
+   "forbidden_tenant_id": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+   "execution_id": null,
+   "verdict": "INCONCLUSIVE",
+   "detail": "no matching execution found under workflow qTnh3nwWheFJbFkU within 15s"
+  },
+  "qTnh3nwWheFJbFkU:B-claims-A": {
+   "door_id": "qTnh3nwWheFJbFkU",
+   "workflow_id": "qTnh3nwWheFJbFkU",
+   "case_label": "B-claims-A",
+   "marker": "5b845a453e",
+   "since_iso": "2026-09-20T14:59:05.153Z",
+   "http_status": 500,
+   "expect_refused": true,
+   "expect_tenant_id": null,
+   "forbidden_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+   "execution_id": null,
+   "verdict": "INCONCLUSIVE",
+   "detail": "no matching execution found under workflow qTnh3nwWheFJbFkU within 15s"
+  },
+  "qTnh3nwWheFJbFkU:B-no-claim": {
+   "door_id": "qTnh3nwWheFJbFkU",
+   "workflow_id": "qTnh3nwWheFJbFkU",
+   "case_label": "B-no-claim",
+   "marker": "927f8ec17c",
+   "since_iso": "2026-09-20T14:59:24.235Z",
+   "http_status": 200,
+   "expect_refused": false,
+   "expect_tenant_id": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+   "forbidden_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+   "execution_id": null,
+   "verdict": "INCONCLUSIVE",
+   "detail": "no matching execution found under workflow qTnh3nwWheFJbFkU within 15s"
+  },
+  "bxNBzBrcOtcFpMPn:A-claims-B": {
+   "door_id": "bxNBzBrcOtcFpMPn",
+   "workflow_id": "bxNBzBrcOtcFpMPn",
+   "case_label": "A-claims-B",
+   "marker": "dd2b2232dc",
+   "since_iso": "2026-09-20T14:59:57.450Z",
+   "http_status": 200,
+   "expect_refused": false,
+   "expect_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+   "forbidden_tenant_id": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+   "execution_id": "16063",
+   "verdict": "PASS",
+   "detail": "execution 16063 (Log to Supabase audit_log) correctly resolved tenant_id=fff6a2b5-cfd5-4460-8383-875bc5826de0 | rows: no matching row in leads or audit_log (expected for doors that don't write those tables, or for a refusal that failed before any write)"
+  },
+  "bxNBzBrcOtcFpMPn:B-claims-A": {
+   "door_id": "bxNBzBrcOtcFpMPn",
+   "workflow_id": "bxNBzBrcOtcFpMPn",
+   "case_label": "B-claims-A",
+   "marker": "a41a834fcc",
+   "since_iso": "2026-09-20T15:00:12.433Z",
+   "http_status": 200,
+   "expect_refused": false,
+   "expect_tenant_id": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+   "forbidden_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+   "execution_id": "16064",
+   "verdict": "PASS",
+   "detail": "execution 16064 (Tenant For JWT User) correctly resolved tenant_id=9060a854-ec38-4f0d-a39c-54372f1998b1 | rows: no matching row in leads or audit_log (expected for doors that don't write those tables, or for a refusal that failed before any write)"
+  },
+  "bxNBzBrcOtcFpMPn:B-no-claim": {
+   "door_id": "bxNBzBrcOtcFpMPn",
+   "workflow_id": "bxNBzBrcOtcFpMPn",
+   "case_label": "B-no-claim",
+   "marker": "e783cb1de6",
+   "since_iso": "2026-09-20T15:00:28.844Z",
+   "http_status": 200,
+   "expect_refused": false,
+   "expect_tenant_id": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+   "forbidden_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+   "execution_id": "16066",
+   "verdict": "PASS",
+   "detail": "execution 16066 (Tenant For JWT User) correctly resolved tenant_id=9060a854-ec38-4f0d-a39c-54372f1998b1 | rows: no matching row in leads or audit_log (expected for doors that don't write those tables, or for a refusal that failed before any write)"
+  }
+ }
+}
