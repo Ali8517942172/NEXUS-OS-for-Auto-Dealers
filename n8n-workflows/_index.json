@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-09-18T19:26:38.133455+00:00",
+  "exported_at": "2026-09-20T09:21:48.998165+00:00",
   "source": "https://35.224.126.225.nip.io/api/v1",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
@@ -8,7 +8,7 @@
       "id": "G7FhvMY2ucW5Fg7X",
       "name": "7-Day Warm Lead Drip Campaign",
       "active": true,
-      "nodes": 41,
+      "nodes": 42,
       "published": true
     },
     {
@@ -72,7 +72,7 @@
       "id": "KI6P1Qcf3MIZakNa",
       "name": "Lead Escalation - AI Agent",
       "active": true,
-      "nodes": 26,
+      "nodes": 28,
       "published": true
     },
     {
@@ -177,7 +177,7 @@
       "name": "Sync Closed-Won Deals to Supabase pgvector",
       "active": true,
       "nodes": 17,
-      "published": false
+      "published": true
     },
     {
       "file": "whatsapp_bdc_ai_agent.json",
@@ -216,7 +216,7 @@
       "id": "bxNBzBrcOtcFpMPn",
       "name": "wf_108 ERP Sync - Bitrix24 CRM",
       "active": true,
-      "nodes": 21,
+      "nodes": 22,
       "published": true
     }
   ]

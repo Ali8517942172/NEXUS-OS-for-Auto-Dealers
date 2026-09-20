@@ -243,11 +243,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        0,
+        160,
         480
       ],
       "parameters": {
-        "jsCode": "// This node sits ONLY on the public webhook branch.\n// 'Called by Master Router' connects straight to the next node and never\n// reaches here, so the trusted sub-workflow path is untouched by this guard.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\nconst auth = $input.first().json || {};\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted.\nreturn $('ErpSyncWebhook').all();"
+        "jsCode": "// This node sits ONLY on the public webhook branch.\n// 'Called by Master Router' connects straight to the next node and never\n// reaches here, so the trusted sub-workflow path is untouched by this guard.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\nconst auth = $('Verify JWT').first().json || {};\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted.\nreturn $('ErpSyncWebhook').all();"
       }
     },
     {
@@ -515,9 +515,55 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// NEXUS tenant resolver -- identical contract to the ten workflows converted\n// on 2 Sep 2026. It sits between BOTH entry points and 'Map Lead to Bitrix24\n// Lead', so every node downstream has exactly one place to read the tenant\n// from and 'Map' keeps the phone/identity logic it was audited with.\n//\n// SIGNAL, in order:\n//   * sub-workflow hop -- the Master Router hands us { lead: {...}, ai_decision }\n//     and lead.tenant_id is the tenant it already resolved from the WAHA session\n//     or the authenticated user. That is the same object it writes to\n//     leads?on_conflict=tenant_id,email with, so it is the owner of record.\n//   * backlog sweep -- 'Fetch HOT Leads from Supabase' returns flat leads rows,\n//     each carrying its own tenant_id. The sweep is deliberately NOT narrowed to\n//     one tenant: it walks every dealership's hot leads and each item is scoped\n//     by the value that item carries.\n//\n// UNRESOLVED RULE: with exactly one dealership configured an unresolved signal\n// falls back to it and names it explicitly, so live traffic behaves as it does\n// today. With two or more it returns null; downstream then OMITS tenant_id\n// rather than asserting a wrong owner, the leads PATCH is aimed at a sentinel\n// that matches zero rows, and the audit row says TENANT UNRESOLVED.\nconst B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };\nconst U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet m = {};\ntry { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; }\nif (!m || typeof m !== 'object' || !Object.keys(m).length) m = B;\nconst k = Object.keys(m);\n\nconst j = $json || {};\nconst lead = j.lead || j;\nlet t = String((lead && lead.tenant_id) || j.tenant_id || '');\nif (!U.test(t) && k.length === 1) t = String(m[k[0]] || '');\n\n// Pass the ORIGINAL item through untouched apart from the added key, so\n// 'Map Lead to Bitrix24 Lead' sees exactly the shape it saw before.\nreturn { json: Object.assign({}, j, { _nexus_tenant_id: U.test(t) ? t : null }) };\n"
+        "jsCode": "// NEXUS tenant resolver -- wf_108 ERP Sync (Bitrix24).\n//\n// REPLACES the 2 Sep 2026 resolver, which read the caller's tenant_id FIRST:\n//     let t = String((lead && lead.tenant_id) || j.tenant_id || '');\n// and only fell back to the configured map. On the PUBLIC webhook door that\n// order let any holder of a valid Supabase session token name a dealership in\n// the request and have this workflow push that dealership's leads into\n// Bitrix24 and PATCH its `leads` rows -- n8n writes as service_role, which is\n// BYPASSRLS, so nothing downstream would have stopped it. The caller's\n// tenant_id is now never a SOURCE. It is only ever a CLAIM.\n//\n// THREE signals, and which door each belongs to:\n//\n//   * public webhook -- `ErpSyncWebhook` -> `Verify JWT` ->\n//     `Tenant For JWT User` -> `Auth Gate` -> `Fetch HOT Leads from Supabase`\n//     -> here.  `Tenant For JWT User` (added 18 Sep 2026) is the ONLY trusted\n//     answer for the caller's own identity: the tenant_members row for the\n//     Supabase user behind the verified JWT. No row, or more than one row,\n//     means refuse. There is no fallback on this door, because a fallback is\n//     exactly how an unverifiable caller acquires a dealership.\n//\n//   * backlog sweep -- the items that actually arrive here on that door are\n//     NOT the request body. `Fetch HOT Leads from Supabase` is an HTTP GET\n//     that REPLACES them with flat `leads` rows read straight from Postgres,\n//     each carrying its own tenant_id. That value is database truth, not a\n//     caller assertion, so it stays authoritative per row and the sweep keeps\n//     walking every dealership's hot leads exactly as it does today. A row\n//     whose tenant_id is null or malformed no longer falls back to the\n//     configured map -- it falls back to the VERIFIED CALLER's dealership,\n//     which is the only tenant this execution can justify.\n//\n//   * internal hop -- `Called by Master Router` -> here. `Auth Gate` never\n//     ran, which is how this node tells the doors apart. The caller is a\n//     sibling workflow that already resolved the dealership from the WAHA\n//     session or the authenticated user, so its UUID is accepted. With no\n//     UUID and exactly one dealership configured we name that one explicitly;\n//     with two or more we refuse rather than file the lead under a guess.\n//\n// Refusals carry the '[NEXUS-UNATTRIBUTED]' prefix at POSITION 0 -- the\n// contract with the NEXUS Error Handler (iYJkh1kztWxZXDbT). The failed\n// execution is filed under the quarantine tenant instead of being appended to\n// some real dealership's audit trail. Keep the marker at the start: the\n// handler tests position 0, so a copy embedded in a request payload cannot\n// trigger it.\n//\n// Downstream contract is unchanged: read the tenant as\n//   $('Resolve Tenant').item.json._nexus_tenant_id\n// It is now always a valid UUID when this node returns -- the old `null`\n// (\"TENANT UNRESOLVED\") outcome has become a refusal instead.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\nconst j = $json || {};\n\n// Which door? `$()` throws for a node that did not run in this execution.\nlet viaWebhook = true;\ntry { $('Auth Gate').all(); } catch (e) { viaWebhook = false; }\n\nlet tenant = null;\nlet tenantSource = 'unresolved';\n\nif (viaWebhook) {\n  const ids = Array.from(new Set(\n    $('Tenant For JWT User').all()\n      .map((i) => (i && i.json ? i.json.tenant_id : null))\n      .filter(Boolean)\n      .map(String)\n  ));\n  if (ids.length > 1) {\n    throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: the authenticated user is a member of ' + ids.length + ' dealerships. This endpoint will not choose one on their behalf.');\n  }\n  if (ids.length === 0 || !NEXUS_UUID.test(ids[0])) {\n    throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: the authenticated user has no tenant_members row. A dealership is never taken from the request body.');\n  }\n  const jwtTenant = ids[0];\n\n  // Did this item come out of the Supabase sweep, or is it something else?\n  let viaSweep = true;\n  try { $('Fetch HOT Leads from Supabase').all(); } catch (e) { viaSweep = false; }\n  const rowTenant = viaSweep ? String(j.tenant_id || '') : '';\n\n  if (viaSweep && NEXUS_UUID.test(rowTenant)) {\n    // Database truth for THIS row. Deliberately not narrowed to the caller's\n    // own dealership: the sweep is a cross-tenant backlog walk and each item\n    // is scoped by the value the item itself carries.\n    tenant = rowTenant;\n    tenantSource = 'supabase_row';\n  } else {\n    tenant = jwtTenant;\n    tenantSource = 'jwt_tenant_member';\n  }\n} else {\n  // What the internal caller ASSERTED. Trusted only because `Auth Gate` did\n  // not run, i.e. this is an n8n-to-n8n hop already inside the boundary.\n  const claimed = String(((j.lead || {}).tenant_id) || j.tenant_id || '');\n  if (NEXUS_UUID.test(claimed)) {\n    tenant = claimed;\n    tenantSource = 'internal_caller';\n  } else if (nexusKeys.length === 1 && NEXUS_UUID.test(String(nexusMap[nexusKeys[0]] || ''))) {\n    tenant = String(nexusMap[nexusKeys[0]]);\n    tenantSource = 'sole_configured_tenant';\n  } else {\n    throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: the internal caller supplied no resolvable tenant_id and ' + nexusKeys.length + ' dealerships are configured. Refusing rather than syncing this lead under a guess.');\n  }\n}\n\n// Pass the ORIGINAL item through untouched apart from the added keys, so\n// 'Map Lead to Bitrix24 Lead' sees exactly the shape it saw before.\nreturn { json: Object.assign({}, j, { _nexus_tenant_id: tenant, _nexus_tenant_source: tenantSource }) };\n"
       },
       "notes": "Added 2 Sep 2026. Single source of tenant identity for this workflow; read downstream as $('Resolve Tenant').item.json._nexus_tenant_id."
+    },
+    {
+      "id": "3b65eac7-46ac-4abf-a23c-57206c22dc1b",
+      "name": "Tenant For JWT User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        480
+      ],
+      "parameters": {
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "tenant_id"
+            },
+            {
+              "name": "auth_user_id",
+              "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+            },
+            {
+              "name": "limit",
+              "value": "2"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -604,17 +650,6 @@
         [
           {
             "node": "Verify JWT",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Verify JWT": {
-      "main": [
-        [
-          {
-            "node": "Auth Gate",
             "type": "main",
             "index": 0
           }
@@ -755,6 +790,28 @@
           }
         ]
       ]
+    },
+    "Verify JWT": {
+      "main": [
+        [
+          {
+            "node": "Tenant For JWT User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tenant For JWT User": {
+      "main": [
+        [
+          {
+            "node": "Auth Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -771,7 +828,7 @@
   "_exported_from": {
     "id": "bxNBzBrcOtcFpMPn",
     "active": true,
-    "updatedAt": "2026-09-06T14:37:33.512Z",
+    "updatedAt": "2026-09-20T07:14:51.198Z",
     "published": true
   }
 }

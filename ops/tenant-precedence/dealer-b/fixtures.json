@@ -1,0 +1,93 @@
+{
+  "_readme": [
+    "NEXUS tenant-precedence three-dealer fixture (A/B/C). Consumed by setup.py,",
+    "journeys.py and teardown.py in this directory -- edit this file, not the",
+    "scripts, to change who/what gets created.",
+    "",
+    "OWNER TODO: every contact point below is a plus-addressed alias of",
+    "aliasgher892@gmail.com so all test mail/WhatsApp lands in one inbox during",
+    "development. Swap in your own 4 real mailboxes (one per dealer member user",
+    "A/B/C plus a spare) before handing this fixture to anyone else -- search",
+    "this file for 'aliasgher892' to find every place that needs changing.",
+    "",
+    "PHONES: deliberately only two real-looking numbers are used anywhere in",
+    "this fixture -- PHONE_DUBAI and PHONE_INDIA below -- reused on purpose:",
+    "  * c2 uses PHONE_INDIA in EVERY dealer (A, B and C) -- cross-tenant",
+    "    identity-collision probe: the same phone number reaching three",
+    "    different dealerships must resolve to three separate, tenant-scoped",
+    "    rows, never a merge and never a cross-tenant read.",
+    "  * c1 and c3 within the SAME dealer both use PHONE_DUBAI, but with two",
+    "    different emails (a household/shared-number case) -- same-dealer,",
+    "    non-dedupe probe: leads.leads_tenant_email_key is UNIQUE(tenant_id,",
+    "    email), not phone, so two different people who share a phone number",
+    "    must file as two separate rows, not get merged into one.",
+    "  * c4 uses PHONE_INDIA and is marked dedupe_probe=true -- journeys.py",
+    "    pushes c4's exact payload (same email, same marker) through the lead",
+    "    door TWICE to prove the (tenant_id, email) upsert on_conflict target",
+    "    dedupes to exactly one row instead of creating a duplicate.",
+    "  See supabase/migrations/20260902102629_mt_keys_scope_natural_keys_to_tenant.sql",
+    "  and .../20260902112540_mt_keys_drop_leads_email_global_unique.sql for the",
+    "  schema decision this fixture is built to exercise.",
+    "",
+    "Dealer A is NOT a test tenant -- it is the real, existing ALBA CARS tenant",
+    "(fff6a2b5-cfd5-4460-8383-875bc5826de0). setup.py never creates or deletes",
+    "that tenant; it only ensures a test MEMBER user + membership on it, same as",
+    "the existing dealer-b two-tenant script already did. journeys.py therefore",
+    "writes real NEXUS-TEST rows into the production ALBA tenant -- they are",
+    "all marked and all removable by teardown.py, but they are not sandboxed."
+  ],
+  "phones": {
+    "dubai": "+971526647253",
+    "india": "+918517942172"
+  },
+  "alba_tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+  "dealers": [
+    {
+      "key": "a",
+      "label": "Dealer A (ALBA, real tenant)",
+      "is_existing_tenant": true,
+      "tenant_id": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+      "slug": null,
+      "name": null,
+      "member_email": "aliasgher892+dealera@gmail.com"
+    },
+    {
+      "key": "b",
+      "label": "Dealer B (test tenant)",
+      "is_existing_tenant": false,
+      "tenant_id": null,
+      "slug": "test-dealer-b",
+      "name": "NEXUS TEST DEALER B",
+      "member_email": "aliasgher892+dealerb@gmail.com"
+    },
+    {
+      "key": "c",
+      "label": "Dealer C (test tenant)",
+      "is_existing_tenant": false,
+      "tenant_id": null,
+      "slug": "test-dealer-c",
+      "name": "NEXUS TEST DEALER C",
+      "member_email": "aliasgher892+dealerc@gmail.com"
+    }
+  ],
+  "customers": {
+    "a": [
+      { "id": "a-c1", "name": "NEXUS TEST Dealer A Customer 1", "email": "aliasgher892+a-c1@gmail.com", "phone_ref": "dubai", "vehicle_interest": "Toyota Camry", "dedupe_probe": false, "note": "baseline row" },
+      { "id": "a-c2", "name": "NEXUS TEST Dealer A Customer 2", "email": "aliasgher892+a-c2@gmail.com", "phone_ref": "india", "vehicle_interest": "Nissan Patrol", "dedupe_probe": false, "note": "shares INDIA phone with b-c2 and c-c2: cross-tenant collision probe" },
+      { "id": "a-c3", "name": "NEXUS TEST Dealer A Customer 3", "email": "aliasgher892+a-c3@gmail.com", "phone_ref": "dubai", "vehicle_interest": "Honda Accord", "dedupe_probe": false, "note": "shares DUBAI phone with a-c1: same-dealer non-dedupe probe" },
+      { "id": "a-c4", "name": "NEXUS TEST Dealer A Customer 4", "email": "aliasgher892+a-c4@gmail.com", "phone_ref": "india", "vehicle_interest": "Toyota Land Cruiser", "dedupe_probe": true, "note": "pushed twice by journeys.py to prove (tenant_id,email) upsert dedupes" }
+    ],
+    "b": [
+      { "id": "b-c1", "name": "NEXUS TEST Dealer B Customer 1", "email": "aliasgher892+b-c1@gmail.com", "phone_ref": "dubai", "vehicle_interest": "Toyota Camry", "dedupe_probe": false, "note": "baseline row" },
+      { "id": "b-c2", "name": "NEXUS TEST Dealer B Customer 2", "email": "aliasgher892+b-c2@gmail.com", "phone_ref": "india", "vehicle_interest": "Nissan Patrol", "dedupe_probe": false, "note": "shares INDIA phone with a-c2 and c-c2: cross-tenant collision probe" },
+      { "id": "b-c3", "name": "NEXUS TEST Dealer B Customer 3", "email": "aliasgher892+b-c3@gmail.com", "phone_ref": "dubai", "vehicle_interest": "Honda Accord", "dedupe_probe": false, "note": "shares DUBAI phone with b-c1: same-dealer non-dedupe probe" },
+      { "id": "b-c4", "name": "NEXUS TEST Dealer B Customer 4", "email": "aliasgher892+b-c4@gmail.com", "phone_ref": "india", "vehicle_interest": "Toyota Land Cruiser", "dedupe_probe": true, "note": "pushed twice by journeys.py to prove (tenant_id,email) upsert dedupes" }
+    ],
+    "c": [
+      { "id": "c-c1", "name": "NEXUS TEST Dealer C Customer 1", "email": "aliasgher892+c-c1@gmail.com", "phone_ref": "dubai", "vehicle_interest": "Toyota Camry", "dedupe_probe": false, "note": "baseline row" },
+      { "id": "c-c2", "name": "NEXUS TEST Dealer C Customer 2", "email": "aliasgher892+c-c2@gmail.com", "phone_ref": "india", "vehicle_interest": "Nissan Patrol", "dedupe_probe": false, "note": "shares INDIA phone with a-c2 and b-c2: cross-tenant collision probe" },
+      { "id": "c-c3", "name": "NEXUS TEST Dealer C Customer 3", "email": "aliasgher892+c-c3@gmail.com", "phone_ref": "dubai", "vehicle_interest": "Honda Accord", "dedupe_probe": false, "note": "shares DUBAI phone with c-c1: same-dealer non-dedupe probe" },
+      { "id": "c-c4", "name": "NEXUS TEST Dealer C Customer 4", "email": "aliasgher892+c-c4@gmail.com", "phone_ref": "india", "vehicle_interest": "Toyota Land Cruiser", "dedupe_probe": true, "note": "pushed twice by journeys.py to prove (tenant_id,email) upsert dedupes" }
+    ]
+  }
+}
