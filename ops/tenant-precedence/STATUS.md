@@ -6,13 +6,13 @@ dealership by submitting one.** Unresolved tenant fails closed.
 
 | # | workflow | id | applied (20 Sep) | red-team (unit, 10 cases) | live smoke | status |
 |---|---|---|---|---|---|---|
-| 1 | Master Lead Router | `JnlZFAVmFAuNXVya` | YES + limit 1→2 | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 1 | Master Lead Router | `JnlZFAVmFAuNXVya` | YES + limit 1→2 | 10 PASS | NOT RUN (no execution since publish) | APPLIED, UNIT-TESTED |
 | 2 | 7-Day Warm Lead Drip | `G7FhvMY2ucW5Fg7X` | YES (+Tenant For JWT User) | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
 | 3 | Finance Calc | `unMMpeL9uuPO79pp` | YES | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
 | 4 | KYC/AML Auditor | `qTnh3nwWheFJbFkU` | YES | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
 | 5 | Sync Closed-Won | `dhy2DDjWUqwuzHLW` | YES | 7 PASS, 3 N/A (no internal door exists) | NOT RUN | APPLIED, UNIT-TESTED |
 | 6 | wf_108 ERP Sync | `bxNBzBrcOtcFpMPn` | YES (+Tenant For JWT User) | 9 PASS, 2 N/A, +backlog case PASS | NOT RUN | APPLIED, UNIT-TESTED |
-| 7 | Lead Escalation | `KI6P1Qcf3MIZakNa` | YES (+Tenant For JWT User, +Resolve Tenant) | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 7 | Lead Escalation | `KI6P1Qcf3MIZakNa` | YES (+Tenant For JWT User, +Resolve Tenant) | 10 PASS | **exec 15855 (09:00 UTC): Resolve Tenant ran, source `internal_caller`, no refusal** | APPLIED, UNIT-TESTED |
 
 Every touched node independently re-verified against live with `wf.py verify`: 0 mismatches on all 7.
 Red-team = `redteam.mjs` executing the real resolver code under stubbed n8n globals (A/B tenants,
@@ -98,3 +98,11 @@ on every one. Any future "is it live" check must compare those two ids, not read
 
 Lead Escalation's failure itself (`No Lead To Escalate`, 15838 and pre-wave 15796/15785) is
 **pre-existing and not a tenant refusal**: the lookup returns no row for the address it is handed.
+
+## Live smoke, 20 Sep 09:07 UTC (after publish)
+
+Only one wave workflow executed between publish (~08:15) and 09:07: Lead Escalation 15855.
+`Resolve Tenant` is now in its path and resolved `internal_caller` from the Master Router hop,
+no `[NEXUS-UNATTRIBUTED]` refusal. It still ended in `No Lead To Escalate` — the pre-existing
+lookup miss, same as 04:00/05:00/08:00, unrelated to tenancy. The other six had no traffic in
+the window: **NOT RUN, not PASS.**
