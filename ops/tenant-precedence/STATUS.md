@@ -4,15 +4,20 @@ Rule being enforced everywhere: **authenticated/trusted tenant resolution always
 overrides caller-supplied `body.tenant_id`. A caller may never choose another
 dealership by submitting one.** Unresolved tenant fails closed.
 
-| # | workflow | id | writer | adversarial test | smoke | status |
+| # | workflow | id | applied (20 Sep) | red-team (unit, 10 cases) | live smoke | status |
 |---|---|---|---|---|---|---|
-| 1 | NEXUS Master Lead Router | `JnlZFAVmFAuNXVya` | **DONE 18 Sep** | NOT RUN | NOT RUN | **FIX APPLIED, UNTESTED** |
-| 2 | 7-Day Warm Lead Drip | `G7FhvMY2ucW5Fg7X` | not started | NOT RUN | NOT RUN | NEEDS_FIX |
-| 3 | Finance Calc | `unMMpeL9uuPO79pp` | not started | NOT RUN | NOT RUN | NEEDS_FIX |
-| 4 | KYC/AML Document Auditor | `qTnh3nwWheFJbFkU` | not started | NOT RUN | NOT RUN | NEEDS_FIX |
-| 5 | Sync Closed-Won Deals | `dhy2DDjWUqwuzHLW` | not started | NOT RUN | NOT RUN | NEEDS_FIX |
-| 6 | wf_108 ERP Sync | `bxNBzBrcOtcFpMPn` | not started | NOT RUN | NOT RUN | NEEDS_FIX |
-| 7 | Lead Escalation | `KI6P1Qcf3MIZakNa` | not started | NOT RUN | NOT RUN | NEEDS_FIX |
+| 1 | Master Lead Router | `JnlZFAVmFAuNXVya` | YES + limit 1→2 | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 2 | 7-Day Warm Lead Drip | `G7FhvMY2ucW5Fg7X` | YES (+Tenant For JWT User) | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 3 | Finance Calc | `unMMpeL9uuPO79pp` | YES | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 4 | KYC/AML Auditor | `qTnh3nwWheFJbFkU` | YES | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 5 | Sync Closed-Won | `dhy2DDjWUqwuzHLW` | YES | 7 PASS, 3 N/A (no internal door exists) | NOT RUN | APPLIED, UNIT-TESTED |
+| 6 | wf_108 ERP Sync | `bxNBzBrcOtcFpMPn` | YES (+Tenant For JWT User) | 9 PASS, 2 N/A, +backlog case PASS | NOT RUN | APPLIED, UNIT-TESTED |
+| 7 | Lead Escalation | `KI6P1Qcf3MIZakNa` | YES (+Tenant For JWT User, +Resolve Tenant) | 10 PASS | NOT RUN | APPLIED, UNIT-TESTED |
+
+Every touched node independently re-verified against live with `wf.py verify`: 0 mismatches on all 7.
+Red-team = `redteam.mjs` executing the real resolver code under stubbed n8n globals (A/B tenants,
+claim mismatch both directions, 0 rows, 2 rows, internal door, sole tenant, 2-tenant map, replay).
+Results: `REDTEAM-RESULTS.md`. **Unit-level, not a live two-tenant test** — production has one tenant.
 
 `NOT RUN` is not `PASS`. No row above is `READY`.
 
@@ -65,3 +70,16 @@ breaks no caller that exists today.
 - `Verify JWT` carries the Supabase anon key as a hardcoded header value in
   several workflows. That key is publishable by design, so this is hygiene, not
   a leak — n8n's own validator flags it (`HARDCODED_CREDENTIALS`).
+
+## Behaviour changes shipped with the wave (known, intended)
+
+- Finance Calc public webhook: an unauthenticated caller used to get HTTP 200 with an error body; it now gets a 5xx (node throws, `responseMode: lastNode`).
+- Finance Calc `Called as Tool` cannot pass `tenant_id` (the trigger schema filters it), so the internal door always lands on `sole_configured_tenant`. **Becomes an error at dealer #2** — needs `tenant_id` added to that trigger's schema.
+- Every resolver now resolves or throws; none emits `tenant_id: null` any more.
+- `limit=1 → 2` on every `Tenant For JWT User`, so the ">1 dealership → refuse" rule is reachable.
+- `wf.py apply` (public API PUT) is unusable on these workflows: 400 `settings must NOT have additional properties` (`availableInMCP`, `binaryMode`). All writes went through `mcp__n8n__update_workflow`.
+
+## Still open, outside this wave
+
+- KYC sends on WAHA `session:'default'` and escalates to Slack `C0BKTLL1X54`; Lead Escalation emails one fixed mailbox. Single-tenant sinks.
+- Lead Escalation had errors at 04:00 and 05:00 UTC on 20 Sep, **before** this wave. Cause not investigated yet.

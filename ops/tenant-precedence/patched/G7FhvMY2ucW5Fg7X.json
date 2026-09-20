@@ -1,0 +1,4003 @@
+{
+ "updatedAt": "2026-09-06T14:41:16.278Z",
+ "createdAt": "2026-07-23T19:16:53.085Z",
+ "id": "G7FhvMY2ucW5Fg7X",
+ "name": "7-Day Warm Lead Drip Campaign",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "parameters": {
+    "unit": "days"
+   },
+   "name": "Wait Day 1",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1,
+   "position": [
+    720,
+    304
+   ],
+   "id": "ce50a8c1-2340-4f5d-bff8-1e30858c4a4e",
+   "webhookId": "567313a2-e23a-4ff5-9203-8ef4c2b078d5"
+  },
+  {
+   "parameters": {
+    "amount": 2,
+    "unit": "days"
+   },
+   "name": "Wait Day 3",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1,
+   "position": [
+    2160,
+    304
+   ],
+   "id": "31434088-8d13-435e-a8e9-5cc860e9c656",
+   "webhookId": "e8fba666-7c84-4103-9751-914ece18de0c"
+  },
+  {
+   "parameters": {
+    "amount": 2,
+    "unit": "days"
+   },
+   "name": "Wait Day 5",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1,
+   "position": [
+    3120,
+    304
+   ],
+   "id": "53a6defc-25c8-4314-a9b0-8152d638ebc1",
+   "webhookId": "2fa2a18f-403b-4ff1-ab6c-4a6640efa67f"
+  },
+  {
+   "parameters": {
+    "amount": 2,
+    "unit": "days"
+   },
+   "name": "Wait Day 7",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1,
+   "position": [
+    4240,
+    304
+   ],
+   "id": "00b98382-39f9-4ff0-acb4-e8165bedb324",
+   "webhookId": "636081a8-51cd-4a8b-99eb-e84342e94cf8"
+  },
+  {
+   "parameters": {
+    "jsCode": "// -- Entry-path resolution ------------------------------------------------\n// DripWebhook -> Verify JWT -> Tenant For JWT User -> here  (public HTTP)\n// Called by Master Router -> here          (sub-workflow; already trusted)\n//\n// $('DripWebhook') THROWS when that node did not run in this execution -- it\n// does NOT return undefined, so `?.` and `||` cannot rescue it, and an\n// Expression field cannot hold try/catch. Removing this try/catch breaks the\n// Master Router sub-workflow path.\nlet webhookJson = null;\ntry {\n  webhookJson = $('DripWebhook').first().json;\n} catch (e) {\n  // sub-workflow path -- DripWebhook never executed.\n}\n\nlet item;\nif (webhookJson) {\n  // 'Verify JWT' runs with onError = continueRegularOutput, so a rejected\n  // token arrives as data. Supabase returns the user object on success.\n  // This endpoint is fire-and-forget (the caller only ever sees\n  // 'Workflow was started'), so a failed execution is the right signal.\n  //\n  // 18 Sep 2026: `Tenant For JWT User` was inserted between `Verify JWT`\n  // and this node so that `Resolve Tenant` downstream can look the caller's\n  // dealership up in tenant_members. That HTTP node REPLACES the item, so\n  // the identity check can no longer read $input -- it reaches back to\n  // `Verify JWT` by name. The guard itself is unchanged: no .id on the\n  // verified user, no entry.\n  let auth = {};\n  try { auth = $('Verify JWT').first().json || {}; } catch (e) { auth = {}; }\n  if (!auth.id) {\n    // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n    // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n    // its caller belongs to no dealership, so that workflow omits tenant_id and\n    // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n    // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n    // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n    // audit trail. Keep the marker at the START of the message: the handler tests\n    // position 0, so a copy embedded in a request payload cannot trigger it.\n    //\n    // The two throws further down are deliberately NOT marked: a lead arriving\n    // with no email is the dealership's own automation misfiring, and that row\n    // belongs on the dealership's Automation screen.\n    throw new Error('[NEXUS-UNATTRIBUTED] Drip campaign aborted: unauthorized. A valid Supabase session token is required in the Authorization header.');\n  }\n  item = webhookJson;\n} else {\n  item = $input.first().json;\n}\n\n// -- Normalise the lead ---------------------------------------------------\n// Invoked two ways: webhook POST puts data under .body, the Master Router\n// passes it under .lead. The dashboard posts lead_email / lead_name; the\n// Master Router passes email / name. Both vocabularies are accepted.\nlet lead;\nif (item.lead) {\n  lead = item.lead;                 // Master Router sub-workflow call\n} else if (item.body) {\n  lead = item.body;                 // raw webhook POST\n} else {\n  lead = item;                      // already flat\n}\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v).trim();\n\n// `lead` can legitimately be a non-object here: a manual run from the n8n\n// editor hands this node an empty item, and Object.keys(null) throws a\n// TypeError that n8n surfaces as a bare \"Unknown error [line N]\" -- which is\n// how a guard doing its job came to look like a broken node.\nconst leadKeys = (lead && typeof lead === 'object') ? Object.keys(lead) : [];\n\nconst email = clean(lead && lead.email) || clean(lead && lead.lead_email);\nif (!email) {\n  // This is not a fault. It is the node refusing to start a seven-day email\n  // sequence aimed at nobody. Say which of the two situations it is, because\n  // one needs fixing and the other is just the editor's Execute button.\n  if (leadKeys.length === 0) {\n    throw new Error(\n      'Drip campaign not started: no lead was supplied. This workflow is ' +\n      'triggered by a webhook (POST /webhook/lead-trigger) or called by the ' +\n      'Master Router -- pressing Execute in the editor runs it with no input, ' +\n      'so there is no lead to enrol and nothing was sent. To test it from the ' +\n      'editor, pin data on this node with an email address on it.');\n  }\n  throw new Error(\n    'Drip campaign not started: a lead arrived but carried no email address. ' +\n    'Keys received: ' + leadKeys.join(', ') + '. Accepted field names are ' +\n    'email or lead_email.');\n}\n\nreturn [{\n  json: {\n    name: clean(lead.name) || clean(lead.lead_name) || 'there',\n    email: email,\n    phone: clean(lead.phone) || clean(lead.whatsapp),\n    vehicle_interest: clean(lead.vehicle_interest) || clean(lead.vehicleInterest) || clean(lead.message) || 'a vehicle',\n    // Enrolment time, stamped once, here. Every gate compares inbound\n    // communication_logs rows against this value to decide whether the customer\n    // has answered since the sequence started, so it has to be ONE value read from\n    // ONE place -- not $now evaluated separately in four nodes days apart, which\n    // would move the goalposts forward every time a gate ran.\n    enrolled_at: new Date().toISOString()\n  }\n}];"
+   },
+   "id": "29196054-dff5-437c-b8ab-326387744fcf",
+   "name": "Normalize Lead Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    400,
+    304
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'email', direction: 'outbound', message: 'Drip Day 1 - Welcome to NEXUS OS' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "cd027d84-e2ef-4abb-b592-e558e81ad572",
+   "name": "Log Welcome Email",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    1520,
+    656
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'email', direction: 'outbound', message: 'Drip Day 3 - Did you find your dream car?' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "72d16015-f0be-4cad-b1ca-8dee1e96e3aa",
+   "name": "Log Follow Up Email",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    2960,
+    656
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'email', direction: 'outbound', message: 'Drip Day 7 - Exclusive 5% offer' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "8a32482a-6ed0-448a-a712-1680f472443a",
+   "name": "Log Final Offer Email",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    5040,
+    656
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "inputSource": "passthrough"
+   },
+   "id": "4b706bbc-1f61-4e46-9999-a215967ad3d8",
+   "name": "Called by Master Router",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1.1,
+   "position": [
+    240,
+    512
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "drip-g1-c",
+       "leftValue": "={{ !!(() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    1680,
+    304
+   ],
+   "id": "drip-g1",
+   "name": "Has WhatsApp? (Day 1)"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://waha:3000/api/sendText",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Api-Key",
+       "value": "={{ $env.WAHA_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ chatId: String((() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() || '').replace(/[^0-9]/g,'') + '@c.us', text: 'Hi ' + ($('Normalize Lead Input').first().json.name || 'there') + ', thanks for contacting NEXUS OS! We have just emailed you details about the ' + $('Normalize Lead Input').first().json.vehicle_interest + '. Reply here any time and our team will help you directly.', session: 'default' }) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "id": "drip-wa1",
+   "name": "WhatsApp: Welcome",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1840,
+    80
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'whatsapp', direction: 'outbound', message: 'Drip Day 1 - WhatsApp welcome' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "drip-lg1",
+   "name": "Log WhatsApp Welcome",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2000,
+    80
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "drip-g2-c",
+       "leftValue": "={{ !!(() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    3760,
+    304
+   ],
+   "id": "drip-g2",
+   "name": "Has WhatsApp? (Day 5)"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://waha:3000/api/sendText",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Api-Key",
+       "value": "={{ $env.WAHA_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ chatId: String((() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() || '').replace(/[^0-9]/g,'') + '@c.us', text: 'Hi ' + ($('Normalize Lead Input').first().json.name || 'there') + ', our weekend specials are live at NEXUS OS. Want me to book you a test drive for the ' + $('Normalize Lead Input').first().json.vehicle_interest + '?', session: 'default' }) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "id": "drip-wa2",
+   "name": "WhatsApp: Check-in",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    3920,
+    80
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'whatsapp', direction: 'outbound', message: 'Drip Day 5 - WhatsApp check-in' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "drip-lg2",
+   "name": "Log WhatsApp Check-in",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    4080,
+    80
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "sendTo": "={{ $('Normalize Lead Input').first().json.email }}",
+    "subject": "=Thanks for your interest in the {{ $('Normalize Lead Input').first().json.vehicle_interest }}",
+    "message": "=<p>Hi {{ $('Normalize Lead Input').first().json.name }},</p><p>Thanks for getting in touch with NEXUS OS about the <strong>{{ $('Normalize Lead Input').first().json.vehicle_interest }}</strong>.</p><p>I've made a note of what you're looking for. If you'd like, I can put together a few options in your budget and arrange a time for you to come see them.</p><p>Just reply to this email and let me know what suits you.</p><p>Best regards,<br>NEXUS OS Sales Team</p>",
+    "options": {
+     "appendAttribution": false
+    },
+    "resource": "message",
+    "operation": "send"
+   },
+   "id": "drip-gm1",
+   "name": "Email: Welcome (Gmail)",
+   "type": "n8n-nodes-base.gmail",
+   "typeVersion": 2.1,
+   "position": [
+    1360,
+    304
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "webhookId": "1120e6c3-4f46-42bb-9fbb-0d464ae3488f",
+   "credentials": {
+    "gmailOAuth2": {
+     "id": "1Cgivoyjt7psAirH",
+     "name": "Gmail OAuth2 API"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "sendTo": "={{ $('Normalize Lead Input').first().json.email }}",
+    "subject": "=Still looking at the {{ $('Normalize Lead Input').first().json.vehicle_interest }}?",
+    "message": "=<p>Hi {{ $('Normalize Lead Input').first().json.name }},</p><p>Just checking in on the <strong>{{ $('Normalize Lead Input').first().json.vehicle_interest }}</strong> you were interested in.</p><p>We've had some new arrivals this week, so if your requirements have changed at all, let me know and I'll send over what fits.</p><p>Happy to answer any questions - finance, trade-in value, warranty, anything.</p><p>Best regards,<br>NEXUS OS Sales Team</p>",
+    "options": {
+     "appendAttribution": false
+    },
+    "resource": "message",
+    "operation": "send"
+   },
+   "id": "drip-gm2",
+   "name": "Email: Follow Up (Gmail)",
+   "type": "n8n-nodes-base.gmail",
+   "typeVersion": 2.1,
+   "position": [
+    2800,
+    304
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "webhookId": "b55ca2a6-c1a8-4cba-b536-6b1f91ddecb7",
+   "credentials": {
+    "gmailOAuth2": {
+     "id": "1Cgivoyjt7psAirH",
+     "name": "Gmail OAuth2 API"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "sendTo": "={{ $('Normalize Lead Input').first().json.email }}",
+    "subject": "=A 5% offer on your {{ $('Normalize Lead Input').first().json.vehicle_interest }} - valid 48 hours",
+    "message": "=<p>Hi {{ $('Normalize Lead Input').first().json.name }},</p><p>I wanted to come back to you one last time about the <strong>{{ $('Normalize Lead Input').first().json.vehicle_interest }}</strong>.</p><p>As a thank you for your interest, we can offer you an <strong>exclusive 5% discount</strong> on your first purchase with us. This one is valid for the next 48 hours.</p><p>If the timing isn't right, that's completely fine - just reply and tell me, and I'll stop following up.</p><p>Best regards,<br>NEXUS OS Sales Team</p>",
+    "options": {
+     "appendAttribution": false
+    },
+    "resource": "message",
+    "operation": "send"
+   },
+   "id": "drip-gm3",
+   "name": "Email: Final Offer (Gmail)",
+   "type": "n8n-nodes-base.gmail",
+   "typeVersion": 2.1,
+   "position": [
+    4880,
+    304
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "webhookId": "e3d18a10-4d81-4f06-ada8-ad7c1677ef48",
+   "credentials": {
+    "gmailOAuth2": {
+     "id": "1Cgivoyjt7psAirH",
+     "name": "Gmail OAuth2 API"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { let t = null, src = 'unknown'; try { const r = $('Resolve Tenant').first().json; t = r.tenant_id || null; src = r.tenant_source || 'unknown'; } catch (e) { t = null; } const base = { workflow: '7-Day Warm Lead Drip', status: $json.delivery.status, lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: (($json.exit_reason ? 'Stopped before ' + $json.exit_step + ' - ' : 'Completed - ') + $json.delivery.note + (t ? ' | tenant: ' + src : ' | TENANT UNRESOLVED')).substring(0, 900), logged_at: $now.toISO() }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "id": "audit-marketing_dr",
+   "name": "Audit Log",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    5440,
+    456
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "lead-trigger",
+    "options": {}
+   },
+   "name": "DripWebhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 1,
+   "position": [
+    272,
+    320
+   ],
+   "id": "a8215a60-42e6-4ecc-bba4-d95d1206c14c",
+   "webhookId": "86e37768-2628-480e-b5c8-fb6fe1db92c9"
+  },
+  {
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "apikey",
+       "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+      },
+      {
+       "name": "Authorization",
+       "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "id": "drip-verify-jwt-0001",
+   "name": "Verify JWT",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    288,
+    144
+   ],
+   "retryOnFail": false,
+   "alwaysOutputData": true,
+   "onError": "continueRegularOutput",
+   "notes": "Guard for the public webhook path only. Returns the Supabase user object on a valid token; 401 arrives as data because onError = continueRegularOutput."
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\n// Only claim the WhatsApp legs when this lead actually took them. Both\n// 'Has WhatsApp? (Day 1)' and 'Has WhatsApp? (Day 5)' branch on\n// !!$('Normalize Lead Input').first().json.phone, so a lead with no phone\n// legitimately never runs those nodes - claiming them unconditionally would\n// report a false drop for every email-only lead.\nconst lead = (() => { try { return $('Normalize Lead Input').first().json || {}; }\n                      catch (e) { return {}; } })();\n// The phone is no longer only what the caller sent. The dashboard's enrolment\n// payload carries lead_email / lead_name / vehicle_interest and no phone at all,\n// so the number is read from the leads table by the gate nodes. Resolve it here\n// exactly as the two 'Has WhatsApp?' gates and both WAHA sends do -- otherwise\n// this report calls every dashboard-enrolled lead email-only and never checks the\n// WhatsApp legs it actually ran.\nconst pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; }\n                      catch (e) { return null; } };\nconst hasWhatsApp = !!(pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'));\n\nconst CLAIMED = [\n  { node: 'Email: Welcome (Gmail)', what: 'Day 1 welcome email', critical: true },\n  { node: 'Log Welcome Email', what: 'Day 1 email communication_logs row', critical: false },\n  { node: 'Email: Follow Up (Gmail)', what: 'Day 3 follow-up email', critical: true },\n  { node: 'Log Follow Up Email', what: 'Day 3 email communication_logs row', critical: false },\n  { node: 'Email: Final Offer (Gmail)', what: 'Day 7 final-offer email', critical: true },\n  { node: 'Log Final Offer Email', what: 'Day 7 email communication_logs row', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\nif (hasWhatsApp) {\n  results.push(check({ node: 'WhatsApp: Welcome',       what: 'Day 1 WhatsApp welcome',                 critical: true }));\n  results.push(check({ node: 'Log WhatsApp Welcome',    what: 'Day 1 WhatsApp communication_logs row',  critical: false }));\n  results.push(check({ node: 'WhatsApp: Check-in',      what: 'Day 5 WhatsApp check-in',                critical: true }));\n  results.push(check({ node: 'Log WhatsApp Check-in',   what: 'Day 5 WhatsApp communication_logs row',  critical: false }));\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  // 'Log Final Offer Email' sends Prefer: return=minimal, so the item arriving\n  // here carries no lead fields whatsoever and the Audit Log node downstream was\n  // writing lead_email: null on every completed run -- which is why finished\n  // sequences could not be attached to anybody on the Campaigns roster. Name the\n  // lead explicitly rather than hoping it survived the spread.\n  lead_name: lead.name || null,\n  lead_email: lead.email || null,\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    5200,
+    456
+   ],
+   "name": "Delivery Report",
+   "id": "63f9209b-5be8-45fd-bb22-9c2b7999589a"
+  },
+  {
+   "id": "743fe92d-c951-44f0-a31a-bc10e8b7d89b",
+   "name": "Lead State (Day 1)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    880,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,name,email,phone,status"
+      },
+      {
+       "name": "email",
+       "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+      },
+      {
+       "name": "tenant_id",
+       "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Re-reads the lead immediately before the day-1 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "7ba948c1-9cfd-46c9-b9d0-c22c8f0072a1",
+   "name": "Replies Since Enrol (Day 1)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1040,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,created_at,channel,direction,message"
+      },
+      {
+       "name": "direction",
+       "value": "eq.inbound"
+      },
+      {
+       "name": "created_at",
+       "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+      },
+      {
+       "name": "or",
+       "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+      },
+      {
+       "name": "order",
+       "value": "created_at.desc"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "3baae380-06b2-45b7-9848-622456a9af5e",
+   "name": "Still Enrolled? (Day 1)",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    1200,
+    304
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "drip-gate-d1",
+       "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 1)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 1)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+  },
+  {
+   "id": "7d96ed80-36e6-4e66-8596-b42a17ef30a5",
+   "name": "Lead State (Day 3)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2320,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,name,email,phone,status"
+      },
+      {
+       "name": "email",
+       "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+      },
+      {
+       "name": "tenant_id",
+       "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Re-reads the lead immediately before the day-3 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "97c5878a-1d72-4c5c-b478-365ca32e3c3f",
+   "name": "Replies Since Enrol (Day 3)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2480,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,created_at,channel,direction,message"
+      },
+      {
+       "name": "direction",
+       "value": "eq.inbound"
+      },
+      {
+       "name": "created_at",
+       "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+      },
+      {
+       "name": "or",
+       "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+      },
+      {
+       "name": "order",
+       "value": "created_at.desc"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "83263832-9df1-44ae-89c4-1788b43df27b",
+   "name": "Still Enrolled? (Day 3)",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    2640,
+    304
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "drip-gate-d3",
+       "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 3)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 3)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+  },
+  {
+   "id": "63152408-2b81-4e0a-bd28-5603c50f4ff0",
+   "name": "Lead State (Day 5)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    3280,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,name,email,phone,status"
+      },
+      {
+       "name": "email",
+       "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+      },
+      {
+       "name": "tenant_id",
+       "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Re-reads the lead immediately before the day-5 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "73a54505-a375-4e9d-b186-20e270b9c1e4",
+   "name": "Replies Since Enrol (Day 5)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    3440,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,created_at,channel,direction,message"
+      },
+      {
+       "name": "direction",
+       "value": "eq.inbound"
+      },
+      {
+       "name": "created_at",
+       "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+      },
+      {
+       "name": "or",
+       "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+      },
+      {
+       "name": "order",
+       "value": "created_at.desc"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "7a7a7d9d-385d-4a3e-af38-a3186610acc8",
+   "name": "Still Enrolled? (Day 5)",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    3600,
+    304
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "drip-gate-d5",
+       "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 5)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 5)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+  },
+  {
+   "id": "4f3ea63e-233b-42f2-87d1-bacc090bc091",
+   "name": "Lead State (Day 7)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    4400,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,name,email,phone,status"
+      },
+      {
+       "name": "email",
+       "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+      },
+      {
+       "name": "tenant_id",
+       "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Re-reads the lead immediately before the day-7 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "d7cd6460-b0b1-490a-b4d0-e6aa75e6098e",
+   "name": "Replies Since Enrol (Day 7)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    4560,
+    304
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "id,created_at,channel,direction,message"
+      },
+      {
+       "name": "direction",
+       "value": "eq.inbound"
+      },
+      {
+       "name": "created_at",
+       "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+      },
+      {
+       "name": "or",
+       "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+      },
+      {
+       "name": "order",
+       "value": "created_at.desc"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+   "onError": "stopWorkflow",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "85a8dcf2-edef-4f81-9712-a427ec6efa4c",
+   "name": "Still Enrolled? (Day 7)",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    4720,
+    304
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "drip-gate-d7",
+       "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 7)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 7)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+  },
+  {
+   "id": "df134a96-6567-45d6-9ec5-c528c4ee2e67",
+   "name": "Audit: Enrolled",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    560,
+    304
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ workflow: '7-Day Warm Lead Drip', status: 'ENROLLED', lead_name: ($json.name || null), lead_email: ($json.email || null), summary: ('Enrolled - day 1/3/5/7 sequence queued. Every step re-reads the lead and stops if it has gone terminal or the customer has replied.' + ($json.tenant_id ? ' Tenant: ' + $json.tenant_source + '.' : ' TENANT UNRESOLVED - rows written without tenant_id.')), logged_at: $json.enrolled_at }, $json.tenant_id ? { tenant_id: $json.tenant_id } : {})) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Enrolment-time audit row. The dashboard's Campaigns screen builds its roster from the OLDEST audit_log row per lead_email, so without this row nobody shows as enrolled for seven days and then appears the moment the sequence has already ended. In series before 'Wait Day 1', not fanned out from it, so the row is written before the execution suspends.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500
+  },
+  {
+   "id": "c7d27fcf-4170-48c2-bca5-cb535e2312b5",
+   "name": "Stopped Report",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    5200,
+    880
+   ],
+   "parameters": {
+    "jsCode": "// Stopped Report - the sequence exited early, and that is the correct outcome.\n//\n// Reached only from the false output of a 'Still Enrolled? (Day N)' gate. The\n// gates are four copies of one boolean; the prose lives here, once, so there is\n// a single place to read what an exit means and a single place to change it.\n//\n// It answers three things in the shape 'Audit Log' already reads: which gate\n// stopped the sequence, why, and what had actually gone out by then. check()\n// and the status ladder are copied verbatim from 'Delivery Report' so that\n// SUCCESS / PARTIAL / FAILED mean exactly one thing across this workflow.\n//\n// A deliberate stop is never FAILED. FAILED is reserved for a step that was\n// attempted and did not land -- the Campaigns screen counts FAILED and REJECTED\n// rows as failures against the lead, and a customer who bought the car is not a\n// failure. Stopping always leaves something unsent, so an exit is PARTIAL.\n\nconst TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED'];\n\n// null  = that gate never executed in this run.\n// []    = it ran and the query matched nothing.\nconst rowsOf = (n) => { try { return $(n).all().map(i => i.json).filter(r => r && r.id); }\n                        catch (e) { return null; } };\n\nconst PHASES = [\n  { day: 1, step: 'the day-1 welcome',      leadNode: 'Lead State (Day 1)', replyNode: 'Replies Since Enrol (Day 1)' },\n  { day: 3, step: 'the day-3 follow-up',    leadNode: 'Lead State (Day 3)', replyNode: 'Replies Since Enrol (Day 3)' },\n  { day: 5, step: 'the day-5 check-in',     leadNode: 'Lead State (Day 5)', replyNode: 'Replies Since Enrol (Day 5)' },\n  { day: 7, step: 'the day-7 final offer',  leadNode: 'Lead State (Day 7)', replyNode: 'Replies Since Enrol (Day 7)' },\n];\n\n// The last gate that ran is the gate that stopped it.\nlet at = null;\nfor (const p of PHASES) {\n  const rows = rowsOf(p.leadNode);\n  if (rows === null) continue;\n  at = { day: p.day, step: p.step, leadRow: rows[0] || null, replies: rowsOf(p.replyNode) || [] };\n}\n\nconst reason = (() => {\n  if (!at) return 'the gate that stopped the sequence could not be identified from this run';\n  if (!at.leadRow) return 'the lead row no longer exists in the leads table';\n  const st = String(at.leadRow.status || '').trim().toUpperCase();\n  if (TERMINAL.includes(st)) return 'the lead status is ' + st + ', which is terminal';\n  if (at.replies.length) {\n    const r = at.replies[0];\n    return 'the customer replied on ' + (r.created_at || 'an unrecorded date')\n         + (r.channel ? ' by ' + r.channel : '')\n         + ', so a person is already in the conversation';\n  }\n  return 'the gate returned false without naming a cause, which should not happen and is worth reading the execution for';\n})();\n\n// Same phone resolution as the two 'Has WhatsApp?' gates and both WAHA sends:\n// the dashboard's enrolment payload carries no phone, so the number comes from\n// the leads table via the gate reads.\nconst pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; }\n                      catch (e) { return null; } };\nconst hasWhatsApp = !!(pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'));\n\nconst SENT = [\n  { day: 1, node: 'Email: Welcome (Gmail)',     what: 'Day 1 welcome email',                    critical: true  },\n  { day: 1, node: 'Log Welcome Email',          what: 'Day 1 email communication_logs row',     critical: false },\n  { day: 1, node: 'WhatsApp: Welcome',          what: 'Day 1 WhatsApp welcome',                 critical: true,  wa: true },\n  { day: 1, node: 'Log WhatsApp Welcome',       what: 'Day 1 WhatsApp communication_logs row',  critical: false, wa: true },\n  { day: 3, node: 'Email: Follow Up (Gmail)',   what: 'Day 3 follow-up email',                  critical: true  },\n  { day: 3, node: 'Log Follow Up Email',        what: 'Day 3 email communication_logs row',     critical: false },\n  { day: 5, node: 'WhatsApp: Check-in',         what: 'Day 5 WhatsApp check-in',                critical: true,  wa: true },\n  { day: 5, node: 'Log WhatsApp Check-in',      what: 'Day 5 WhatsApp communication_logs row',  critical: false, wa: true },\n  { day: 7, node: 'Email: Final Offer (Gmail)', what: 'Day 7 final-offer email',                critical: true  },\n  { day: 7, node: 'Log Final Offer Email',      what: 'Day 7 email communication_logs row',     critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst stopDay   = at ? at.day : 1;\nconst relevant  = SENT.filter(c => !c.wa || hasWhatsApp);\nconst results   = relevant.filter(c => c.day <  stopDay).map(check);\nconst notSent   = relevant.filter(c => c.day >= stopDay).map(c => c.what + ' \u2014 not sent: ' + reason);\n\nconst failed  = results.filter(r => !r.ok);\nconst fatal   = failed.filter(r => r.critical);\nconst dropped = failed.map(r => r.what + ' \u2014 ' + r.why).concat(notSent);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\n// Do NOT spread $input here. The item arriving from the gate is a\n// communication_logs row, and that row carries its own lead_email -- which can\n// be a WhatsApp chat id. Spreading it would file this audit row under a\n// different key from the enrolment row and split one person into two on the\n// Campaigns roster. Take the identity from the enrolment, explicitly.\nconst src = (() => { try { return $('Normalize Lead Input').first().json || {}; }\n                     catch (e) { return {}; } })();\n\nreturn [{ json: {\n  lead_name: src.name || null,\n  lead_email: src.email || null,\n  name: src.name || null,\n  email: src.email || null,\n  vehicle_interest: src.vehicle_interest || null,\n  enrolled_at: src.enrolled_at || null,\n  exit_reason: reason,\n  exit_step: at ? at.step : 'an unidentified step',\n  exit_day: stopDay,\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped,\n    note: 'stopped before ' + (at ? at.step : 'an unidentified step') + ' because ' + reason + '. '\n        + (results.length\n             ? results.filter(r => r.ok).length + ' of ' + results.length + ' steps already attempted were verified'\n             : 'nothing had been sent yet')\n        + '; ' + notSent.length + ' remaining step' + (notSent.length === 1 ? '' : 's') + ' will not be sent.',\n  },\n} }];\n"
+   },
+   "notes": "The single exit path. All four gates' false outputs land here; it feeds the existing Audit Log node."
+  },
+  {
+   "id": "432cfaf5-e25a-4bea-89cd-b048d4ee1977",
+   "name": "Comm Keys (Day 1)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    960,
+    160
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 1)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+    "options": {
+     "timeout": 15000,
+     "response": {
+      "response": {
+       "responseFormat": "text"
+      }
+     }
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "345ad3fa-9e0d-4ad6-94aa-f3c7736ff07b",
+   "name": "Comm Keys (Day 3)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2400,
+    160
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 3)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 3)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+    "options": {
+     "timeout": 15000,
+     "response": {
+      "response": {
+       "responseFormat": "text"
+      }
+     }
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "a2226a40-2167-447e-8b52-a29e0ebdb44c",
+   "name": "Comm Keys (Day 5)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    3360,
+    160
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 5)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 5)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+    "options": {
+     "timeout": 15000,
+     "response": {
+      "response": {
+       "responseFormat": "text"
+      }
+     }
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "c643ef14-48fb-4301-b1aa-6f2914b5530d",
+   "name": "Comm Keys (Day 7)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    4480,
+    160
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 7)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 7)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+    "options": {
+     "timeout": 15000,
+     "response": {
+      "response": {
+       "responseFormat": "text"
+      }
+     }
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 2000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "5c0b493b-6133-413c-99ac-5499a882317f",
+   "name": "Resolve Tenant",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    400,
+    160
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// NEXUS - Resolve Tenant (7-day drip)\n// ---------------------------------------------------------------------------\n// This workflow writes FIVE communication_logs rows per enrolled lead across\n// seven days. n8n writes them as service_role, which is BYPASSRLS and has no\n// auth.uid(), so without an explicit tenant_id the column default files each\n// one under whichever tenant holds tenants.is_unattributed_default. A second\n// dealership's cold lead would have its entire nurture thread appear in the\n// FIRST dealership's Conversations screen, and be invisible in its own.\n//\n// TENANT (18 Sep 2026) ------------------------------------------------------\n// REPLACES the 3 Sep resolver, which read the caller's tenant_id FIRST -- off\n// the Master Router payload OR straight off the public webhook body -- and only\n// then fell back to the configured map. On the public door that ordering was an\n// open grant: anyone holding a valid Supabase session could POST\n// /webhook/lead-trigger with `tenant_id: <someone else's dealership>` and have\n// seven days of email and WhatsApp logged into that dealership's Conversations\n// screen. The old comment named the hole (\"NOT COVERED HERE: the public\n// webhook's JWT is not mapped to a tenant\") and left it open. The caller's\n// tenant_id is never a source now. It is only ever a CLAIM, and a claim that\n// disagrees with the membership row is refused.\n//\n// Two doors, two rules:\n//   * public webhook -- `DripWebhook` -> `Verify JWT` -> `Tenant For JWT User`\n//     -> `Normalize Lead Input` -> here. The ONLY trusted answer is the\n//     tenant_members row for the Supabase user behind the verified JWT. No row,\n//     or more than one row, means refuse; there is no fallback on this door,\n//     because a fallback is exactly how an unverifiable caller acquires a\n//     dealership.\n//   * internal hop -- `Called by Master Router` -> `Normalize Lead Input` ->\n//     here. The caller is a sibling workflow that already resolved the\n//     dealership from the WAHA session the enquiry arrived on, so its UUID is\n//     accepted. `Verify JWT` never ran on that path, and that is how this node\n//     tells the two doors apart.\n//\n// Refusals carry the '[NEXUS-UNATTRIBUTED]' prefix at position 0, the contract\n// with the NEXUS Error Handler (iYJkh1kztWxZXDbT): the failed execution is\n// filed under the quarantine tenant instead of being appended to some real\n// dealership's audit trail. Keep the marker at the START of the message -- the\n// handler tests position 0, so a copy embedded in a request payload cannot\n// trigger it.\nconst BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n\nlet map = {};\ntry { map = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { map = {}; }\nif (!map || typeof map !== 'object' || !Object.keys(map).length) map = BUILTIN;\nconst keys = Object.keys(map);\n\n// What the caller ASSERTED, by whichever door it came in. Never authoritative:\n// on the public door it is only ever cross-checked against the membership row,\n// and on the internal door it comes from a workflow already inside the trust\n// boundary. `$()` THROWS for a node that did not run in this execution -- it\n// does not return undefined, so `?.` cannot stand in for the try/catch.\nlet claimed = '';\ntry {\n  const j = $('Called by Master Router').first().json || {};\n  claimed = String((j.lead && j.lead.tenant_id) || j.tenant_id || '');\n} catch (e) { /* not the sub-workflow door */ }\nif (!claimed) {\n  try {\n    const b = ($('DripWebhook').first().json || {}).body || {};\n    claimed = String((b.lead && b.lead.tenant_id) || b.tenant_id || '');\n  } catch (e) { /* not the webhook door */ }\n}\n\n// Which door? Same trick: `Verify JWT` only ever runs on the webhook branch.\nlet viaWebhook = true;\ntry { $('Verify JWT').all(); } catch (e) { viaWebhook = false; }\n\nlet tenant = null;\nlet source = 'unresolved';\n\nif (viaWebhook) {\n  const ids = Array.from(new Set(\n    $('Tenant For JWT User').all()\n      .map((i) => (i && i.json ? i.json.tenant_id : null))\n      .filter(Boolean)\n      .map(String)\n  ));\n  if (ids.length > 1) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Drip campaign aborted: the authenticated user is a member of ' + ids.length + ' dealerships. This endpoint will not choose one on their behalf.');\n  }\n  if (ids.length === 0 || !UUID.test(ids[0])) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Drip campaign aborted: the authenticated user has no tenant_members row. A dealership is never taken from the request body.');\n  }\n  if (claimed && claimed.toLowerCase() !== ids[0].toLowerCase()) {\n    throw new Error('[NEXUS-UNATTRIBUTED] Drip campaign aborted: caller asserted tenant_id ' + claimed + ' but is a member of ' + ids[0] + '. tenant_id is not a caller-selectable field.');\n  }\n  tenant = ids[0];\n  source = 'jwt_tenant_member';\n} else {\n  if (UUID.test(claimed)) {\n    tenant = claimed;\n    source = 'internal_caller';\n  } else if (keys.length === 1 && UUID.test(String(map[keys[0]] || ''))) {\n    tenant = String(map[keys[0]]);\n    source = 'sole_configured_tenant';\n  } else {\n    throw new Error('[NEXUS-UNATTRIBUTED] Drip campaign aborted: the internal caller supplied no resolvable tenant_id and ' + keys.length + ' dealerships are configured. Refusing rather than enrolling this lead under a guess.');\n  }\n}\n\n// Pass the enrolment payload through UNCHANGED apart from the two new keys:\n// 'Audit: Enrolled' immediately downstream reads $json.name, $json.email and\n// $json.enrolled_at off this item, and every later node reaches back to\n// 'Normalize Lead Input' by name, which this node does not disturb.\nreturn $input.all().map((item, i) => ({\n  json: Object.assign({}, item.json, { tenant_id: tenant, tenant_source: source }),\n  pairedItem: { item: i }\n}));\n"
+   }
+  },
+  {
+   "id": "drip-tenant-jwt-0001",
+   "name": "Tenant For JWT User",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    288,
+    -16
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "tenant_id"
+      },
+      {
+       "name": "auth_user_id",
+       "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "2"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1000,
+   "alwaysOutputData": true,
+   "notes": "Public webhook branch only. Looks the verified JWT user's dealership up in tenant_members; 'Resolve Tenant' reads this node by name and refuses on 0 or >1 rows."
+  }
+ ],
+ "connections": {
+  "Log Welcome Email": {
+   "main": [
+    [
+     {
+      "node": "Has WhatsApp? (Day 1)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log Follow Up Email": {
+   "main": [
+    [
+     {
+      "node": "Wait Day 5",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Called by Master Router": {
+   "main": [
+    [
+     {
+      "node": "Normalize Lead Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Has WhatsApp? (Day 1)": {
+   "main": [
+    [
+     {
+      "node": "WhatsApp: Welcome",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Wait Day 3",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WhatsApp: Welcome": {
+   "main": [
+    [
+     {
+      "node": "Log WhatsApp Welcome",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log WhatsApp Welcome": {
+   "main": [
+    [
+     {
+      "node": "Wait Day 3",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Has WhatsApp? (Day 5)": {
+   "main": [
+    [
+     {
+      "node": "WhatsApp: Check-in",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Wait Day 7",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WhatsApp: Check-in": {
+   "main": [
+    [
+     {
+      "node": "Log WhatsApp Check-in",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log WhatsApp Check-in": {
+   "main": [
+    [
+     {
+      "node": "Wait Day 7",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Email: Welcome (Gmail)": {
+   "main": [
+    [
+     {
+      "node": "Log Welcome Email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Email: Follow Up (Gmail)": {
+   "main": [
+    [
+     {
+      "node": "Log Follow Up Email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Email: Final Offer (Gmail)": {
+   "main": [
+    [
+     {
+      "node": "Log Final Offer Email",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log Final Offer Email": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "DripWebhook": {
+   "main": [
+    [
+     {
+      "node": "Verify JWT",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify JWT": {
+   "main": [
+    [
+     {
+      "node": "Tenant For JWT User",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report": {
+   "main": [
+    [
+     {
+      "node": "Audit Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Audit: Enrolled": {
+   "main": [
+    [
+     {
+      "node": "Wait Day 1",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Wait Day 1": {
+   "main": [
+    [
+     {
+      "node": "Lead State (Day 1)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Replies Since Enrol (Day 1)": {
+   "main": [
+    [
+     {
+      "node": "Still Enrolled? (Day 1)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Still Enrolled? (Day 1)": {
+   "main": [
+    [
+     {
+      "node": "Email: Welcome (Gmail)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stopped Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Wait Day 3": {
+   "main": [
+    [
+     {
+      "node": "Lead State (Day 3)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Replies Since Enrol (Day 3)": {
+   "main": [
+    [
+     {
+      "node": "Still Enrolled? (Day 3)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Still Enrolled? (Day 3)": {
+   "main": [
+    [
+     {
+      "node": "Email: Follow Up (Gmail)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stopped Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Wait Day 5": {
+   "main": [
+    [
+     {
+      "node": "Lead State (Day 5)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Replies Since Enrol (Day 5)": {
+   "main": [
+    [
+     {
+      "node": "Still Enrolled? (Day 5)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Still Enrolled? (Day 5)": {
+   "main": [
+    [
+     {
+      "node": "Has WhatsApp? (Day 5)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stopped Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Wait Day 7": {
+   "main": [
+    [
+     {
+      "node": "Lead State (Day 7)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Replies Since Enrol (Day 7)": {
+   "main": [
+    [
+     {
+      "node": "Still Enrolled? (Day 7)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Still Enrolled? (Day 7)": {
+   "main": [
+    [
+     {
+      "node": "Email: Final Offer (Gmail)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stopped Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Stopped Report": {
+   "main": [
+    [
+     {
+      "node": "Audit Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Lead State (Day 1)": {
+   "main": [
+    [
+     {
+      "node": "Comm Keys (Day 1)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Comm Keys (Day 1)": {
+   "main": [
+    [
+     {
+      "node": "Replies Since Enrol (Day 1)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Lead State (Day 3)": {
+   "main": [
+    [
+     {
+      "node": "Comm Keys (Day 3)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Comm Keys (Day 3)": {
+   "main": [
+    [
+     {
+      "node": "Replies Since Enrol (Day 3)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Lead State (Day 5)": {
+   "main": [
+    [
+     {
+      "node": "Comm Keys (Day 5)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Comm Keys (Day 5)": {
+   "main": [
+    [
+     {
+      "node": "Replies Since Enrol (Day 5)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Lead State (Day 7)": {
+   "main": [
+    [
+     {
+      "node": "Comm Keys (Day 7)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Comm Keys (Day 7)": {
+   "main": [
+    [
+     {
+      "node": "Replies Since Enrol (Day 7)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Normalize Lead Input": {
+   "main": [
+    [
+     {
+      "node": "Resolve Tenant",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resolve Tenant": {
+   "main": [
+    [
+     {
+      "node": "Audit: Enrolled",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tenant For JWT User": {
+   "main": [
+    [
+     {
+      "node": "Normalize Lead Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "availableInMCP": true,
+  "executionOrder": "v1",
+  "binaryMode": "separate",
+  "timezone": "Asia/Dubai",
+  "saveDataErrorExecution": "all",
+  "callerPolicy": "workflowsFromSameOwner",
+  "saveDataSuccessExecution": "all",
+  "errorWorkflow": "iYJkh1kztWxZXDbT"
+ },
+ "staticData": null,
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": {},
+ "versionId": "bdcca937-8d5e-468b-9481-0a927747d89c",
+ "activeVersionId": "bdcca937-8d5e-468b-9481-0a927747d89c",
+ "versionCounter": 46,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-07-23T19:16:53.085Z",
+   "createdAt": "2026-07-23T19:16:53.085Z",
+   "role": "workflow:owner",
+   "workflowId": "G7FhvMY2ucW5Fg7X",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-06T14:41:16.286Z",
+  "createdAt": "2026-09-06T14:41:16.286Z",
+  "versionId": "bdcca937-8d5e-468b-9481-0a927747d89c",
+  "workflowId": "G7FhvMY2ucW5Fg7X",
+  "nodes": [
+   {
+    "parameters": {
+     "unit": "days"
+    },
+    "name": "Wait Day 1",
+    "type": "n8n-nodes-base.wait",
+    "typeVersion": 1,
+    "position": [
+     720,
+     304
+    ],
+    "id": "ce50a8c1-2340-4f5d-bff8-1e30858c4a4e",
+    "webhookId": "567313a2-e23a-4ff5-9203-8ef4c2b078d5"
+   },
+   {
+    "parameters": {
+     "amount": 2,
+     "unit": "days"
+    },
+    "name": "Wait Day 3",
+    "type": "n8n-nodes-base.wait",
+    "typeVersion": 1,
+    "position": [
+     2160,
+     304
+    ],
+    "id": "31434088-8d13-435e-a8e9-5cc860e9c656",
+    "webhookId": "e8fba666-7c84-4103-9751-914ece18de0c"
+   },
+   {
+    "parameters": {
+     "amount": 2,
+     "unit": "days"
+    },
+    "name": "Wait Day 5",
+    "type": "n8n-nodes-base.wait",
+    "typeVersion": 1,
+    "position": [
+     3120,
+     304
+    ],
+    "id": "53a6defc-25c8-4314-a9b0-8152d638ebc1",
+    "webhookId": "2fa2a18f-403b-4ff1-ab6c-4a6640efa67f"
+   },
+   {
+    "parameters": {
+     "amount": 2,
+     "unit": "days"
+    },
+    "name": "Wait Day 7",
+    "type": "n8n-nodes-base.wait",
+    "typeVersion": 1,
+    "position": [
+     4240,
+     304
+    ],
+    "id": "00b98382-39f9-4ff0-acb4-e8165bedb324",
+    "webhookId": "636081a8-51cd-4a8b-99eb-e84342e94cf8"
+   },
+   {
+    "parameters": {
+     "jsCode": "// -- Entry-path resolution ------------------------------------------------\n// DripWebhook -> Verify JWT -> here        (public HTTP; auth enforced)\n// Called by Master Router -> here          (sub-workflow; already trusted)\n//\n// $('DripWebhook') THROWS when that node did not run in this execution -- it\n// does NOT return undefined, so `?.` and `||` cannot rescue it, and an\n// Expression field cannot hold try/catch. Removing this try/catch breaks the\n// Master Router sub-workflow path.\nlet webhookJson = null;\ntry {\n  webhookJson = $('DripWebhook').first().json;\n} catch (e) {\n  // sub-workflow path -- DripWebhook never executed.\n}\n\nlet item;\nif (webhookJson) {\n  // 'Verify JWT' runs with onError = continueRegularOutput, so a rejected\n  // token arrives as data. Supabase returns the user object on success.\n  // This endpoint is fire-and-forget (the caller only ever sees\n  // 'Workflow was started'), so a failed execution is the right signal.\n  const auth = $input.first().json || {};\n  if (!auth.id) {\n    // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n    // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n    // its caller belongs to no dealership, so that workflow omits tenant_id and\n    // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n    // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n    // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n    // audit trail. Keep the marker at the START of the message: the handler tests\n    // position 0, so a copy embedded in a request payload cannot trigger it.\n    //\n    // The two throws further down are deliberately NOT marked: a lead arriving\n    // with no email is the dealership's own automation misfiring, and that row\n    // belongs on the dealership's Automation screen.\n    throw new Error('[NEXUS-UNATTRIBUTED] Drip campaign aborted: unauthorized. A valid Supabase session token is required in the Authorization header.');\n  }\n  item = webhookJson;\n} else {\n  item = $input.first().json;\n}\n\n// -- Normalise the lead ---------------------------------------------------\n// Invoked two ways: webhook POST puts data under .body, the Master Router\n// passes it under .lead. The dashboard posts lead_email / lead_name; the\n// Master Router passes email / name. Both vocabularies are accepted.\nlet lead;\nif (item.lead) {\n  lead = item.lead;                 // Master Router sub-workflow call\n} else if (item.body) {\n  lead = item.body;                 // raw webhook POST\n} else {\n  lead = item;                      // already flat\n}\n\nconst clean = (v) => (v === undefined || v === null || v === false || v === '') ? null : String(v).trim();\n\n// `lead` can legitimately be a non-object here: a manual run from the n8n\n// editor hands this node an empty item, and Object.keys(null) throws a\n// TypeError that n8n surfaces as a bare \"Unknown error [line N]\" -- which is\n// how a guard doing its job came to look like a broken node.\nconst leadKeys = (lead && typeof lead === 'object') ? Object.keys(lead) : [];\n\nconst email = clean(lead && lead.email) || clean(lead && lead.lead_email);\nif (!email) {\n  // This is not a fault. It is the node refusing to start a seven-day email\n  // sequence aimed at nobody. Say which of the two situations it is, because\n  // one needs fixing and the other is just the editor's Execute button.\n  if (leadKeys.length === 0) {\n    throw new Error(\n      'Drip campaign not started: no lead was supplied. This workflow is ' +\n      'triggered by a webhook (POST /webhook/lead-trigger) or called by the ' +\n      'Master Router -- pressing Execute in the editor runs it with no input, ' +\n      'so there is no lead to enrol and nothing was sent. To test it from the ' +\n      'editor, pin data on this node with an email address on it.');\n  }\n  throw new Error(\n    'Drip campaign not started: a lead arrived but carried no email address. ' +\n    'Keys received: ' + leadKeys.join(', ') + '. Accepted field names are ' +\n    'email or lead_email.');\n}\n\nreturn [{\n  json: {\n    name: clean(lead.name) || clean(lead.lead_name) || 'there',\n    email: email,\n    phone: clean(lead.phone) || clean(lead.whatsapp),\n    vehicle_interest: clean(lead.vehicle_interest) || clean(lead.vehicleInterest) || clean(lead.message) || 'a vehicle',\n    // Enrolment time, stamped once, here. Every gate compares inbound\n    // communication_logs rows against this value to decide whether the customer\n    // has answered since the sequence started, so it has to be ONE value read from\n    // ONE place -- not $now evaluated separately in four nodes days apart, which\n    // would move the goalposts forward every time a gate ran.\n    enrolled_at: new Date().toISOString()\n  }\n}];"
+    },
+    "id": "29196054-dff5-437c-b8ab-326387744fcf",
+    "name": "Normalize Lead Input",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     400,
+     304
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'email', direction: 'outbound', message: 'Drip Day 1 - Welcome to NEXUS OS' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "cd027d84-e2ef-4abb-b592-e558e81ad572",
+    "name": "Log Welcome Email",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.1,
+    "position": [
+     1520,
+     656
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'email', direction: 'outbound', message: 'Drip Day 3 - Did you find your dream car?' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "72d16015-f0be-4cad-b1ca-8dee1e96e3aa",
+    "name": "Log Follow Up Email",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.1,
+    "position": [
+     2960,
+     656
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'email', direction: 'outbound', message: 'Drip Day 7 - Exclusive 5% offer' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "8a32482a-6ed0-448a-a712-1680f472443a",
+    "name": "Log Final Offer Email",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.1,
+    "position": [
+     5040,
+     656
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "inputSource": "passthrough"
+    },
+    "id": "4b706bbc-1f61-4e46-9999-a215967ad3d8",
+    "name": "Called by Master Router",
+    "type": "n8n-nodes-base.executeWorkflowTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     240,
+     512
+    ]
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "drip-g1-c",
+        "leftValue": "={{ !!(() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     1680,
+     304
+    ],
+    "id": "drip-g1",
+    "name": "Has WhatsApp? (Day 1)"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "http://waha:3000/api/sendText",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "X-Api-Key",
+        "value": "={{ $env.WAHA_API_KEY }}"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ chatId: String((() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() || '').replace(/[^0-9]/g,'') + '@c.us', text: 'Hi ' + ($('Normalize Lead Input').first().json.name || 'there') + ', thanks for contacting NEXUS OS! We have just emailed you details about the ' + $('Normalize Lead Input').first().json.vehicle_interest + '. Reply here any time and our team will help you directly.', session: 'default' }) }}",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "id": "drip-wa1",
+    "name": "WhatsApp: Welcome",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1840,
+     80
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'whatsapp', direction: 'outbound', message: 'Drip Day 1 - WhatsApp welcome' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "drip-lg1",
+    "name": "Log WhatsApp Welcome",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2000,
+     80
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "drip-g2-c",
+        "leftValue": "={{ !!(() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     3760,
+     304
+    ],
+    "id": "drip-g2",
+    "name": "Has WhatsApp? (Day 5)"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "http://waha:3000/api/sendText",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "X-Api-Key",
+        "value": "={{ $env.WAHA_API_KEY }}"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ chatId: String((() => { const pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; } catch (e) { return null; } }; return pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'); })() || '').replace(/[^0-9]/g,'') + '@c.us', text: 'Hi ' + ($('Normalize Lead Input').first().json.name || 'there') + ', our weekend specials are live at NEXUS OS. Want me to book you a test drive for the ' + $('Normalize Lead Input').first().json.vehicle_interest + '?', session: 'default' }) }}",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "id": "drip-wa2",
+    "name": "WhatsApp: Check-in",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     3920,
+     80
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Normalize Lead Input').first().json.email, channel: 'whatsapp', direction: 'outbound', message: 'Drip Day 5 - WhatsApp check-in' }, $('Resolve Tenant').first().json.tenant_id ? { tenant_id: $('Resolve Tenant').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "drip-lg2",
+    "name": "Log WhatsApp Check-in",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     4080,
+     80
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "sendTo": "={{ $('Normalize Lead Input').first().json.email }}",
+     "subject": "=Thanks for your interest in the {{ $('Normalize Lead Input').first().json.vehicle_interest }}",
+     "message": "=<p>Hi {{ $('Normalize Lead Input').first().json.name }},</p><p>Thanks for getting in touch with NEXUS OS about the <strong>{{ $('Normalize Lead Input').first().json.vehicle_interest }}</strong>.</p><p>I've made a note of what you're looking for. If you'd like, I can put together a few options in your budget and arrange a time for you to come see them.</p><p>Just reply to this email and let me know what suits you.</p><p>Best regards,<br>NEXUS OS Sales Team</p>",
+     "options": {
+      "appendAttribution": false
+     },
+     "resource": "message",
+     "operation": "send"
+    },
+    "id": "drip-gm1",
+    "name": "Email: Welcome (Gmail)",
+    "type": "n8n-nodes-base.gmail",
+    "typeVersion": 2.1,
+    "position": [
+     1360,
+     304
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "webhookId": "1120e6c3-4f46-42bb-9fbb-0d464ae3488f",
+    "credentials": {
+     "gmailOAuth2": {
+      "id": "1Cgivoyjt7psAirH",
+      "name": "Gmail OAuth2 API"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "sendTo": "={{ $('Normalize Lead Input').first().json.email }}",
+     "subject": "=Still looking at the {{ $('Normalize Lead Input').first().json.vehicle_interest }}?",
+     "message": "=<p>Hi {{ $('Normalize Lead Input').first().json.name }},</p><p>Just checking in on the <strong>{{ $('Normalize Lead Input').first().json.vehicle_interest }}</strong> you were interested in.</p><p>We've had some new arrivals this week, so if your requirements have changed at all, let me know and I'll send over what fits.</p><p>Happy to answer any questions - finance, trade-in value, warranty, anything.</p><p>Best regards,<br>NEXUS OS Sales Team</p>",
+     "options": {
+      "appendAttribution": false
+     },
+     "resource": "message",
+     "operation": "send"
+    },
+    "id": "drip-gm2",
+    "name": "Email: Follow Up (Gmail)",
+    "type": "n8n-nodes-base.gmail",
+    "typeVersion": 2.1,
+    "position": [
+     2800,
+     304
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "webhookId": "b55ca2a6-c1a8-4cba-b536-6b1f91ddecb7",
+    "credentials": {
+     "gmailOAuth2": {
+      "id": "1Cgivoyjt7psAirH",
+      "name": "Gmail OAuth2 API"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "sendTo": "={{ $('Normalize Lead Input').first().json.email }}",
+     "subject": "=A 5% offer on your {{ $('Normalize Lead Input').first().json.vehicle_interest }} - valid 48 hours",
+     "message": "=<p>Hi {{ $('Normalize Lead Input').first().json.name }},</p><p>I wanted to come back to you one last time about the <strong>{{ $('Normalize Lead Input').first().json.vehicle_interest }}</strong>.</p><p>As a thank you for your interest, we can offer you an <strong>exclusive 5% discount</strong> on your first purchase with us. This one is valid for the next 48 hours.</p><p>If the timing isn't right, that's completely fine - just reply and tell me, and I'll stop following up.</p><p>Best regards,<br>NEXUS OS Sales Team</p>",
+     "options": {
+      "appendAttribution": false
+     },
+     "resource": "message",
+     "operation": "send"
+    },
+    "id": "drip-gm3",
+    "name": "Email: Final Offer (Gmail)",
+    "type": "n8n-nodes-base.gmail",
+    "typeVersion": 2.1,
+    "position": [
+     4880,
+     304
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "webhookId": "e3d18a10-4d81-4f06-ada8-ad7c1677ef48",
+    "credentials": {
+     "gmailOAuth2": {
+      "id": "1Cgivoyjt7psAirH",
+      "name": "Gmail OAuth2 API"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { let t = null, src = 'unknown'; try { const r = $('Resolve Tenant').first().json; t = r.tenant_id || null; src = r.tenant_source || 'unknown'; } catch (e) { t = null; } const base = { workflow: '7-Day Warm Lead Drip', status: $json.delivery.status, lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: (($json.exit_reason ? 'Stopped before ' + $json.exit_step + ' - ' : 'Completed - ') + $json.delivery.note + (t ? ' | tenant: ' + src : ' | TENANT UNRESOLVED')).substring(0, 900), logged_at: $now.toISO() }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "id": "audit-marketing_dr",
+    "name": "Audit Log",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     5440,
+     456
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "httpMethod": "POST",
+     "path": "lead-trigger",
+     "options": {}
+    },
+    "name": "DripWebhook",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 1,
+    "position": [
+     272,
+     320
+    ],
+    "id": "a8215a60-42e6-4ecc-bba4-d95d1206c14c",
+    "webhookId": "86e37768-2628-480e-b5c8-fb6fe1db92c9"
+   },
+   {
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "apikey",
+        "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+       },
+       {
+        "name": "Authorization",
+        "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "id": "drip-verify-jwt-0001",
+    "name": "Verify JWT",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     288,
+     144
+    ],
+    "retryOnFail": false,
+    "alwaysOutputData": true,
+    "onError": "continueRegularOutput",
+    "notes": "Guard for the public webhook path only. Returns the Supabase user object on a valid token; 401 arrives as data because onError = continueRegularOutput."
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\n// Only claim the WhatsApp legs when this lead actually took them. Both\n// 'Has WhatsApp? (Day 1)' and 'Has WhatsApp? (Day 5)' branch on\n// !!$('Normalize Lead Input').first().json.phone, so a lead with no phone\n// legitimately never runs those nodes - claiming them unconditionally would\n// report a false drop for every email-only lead.\nconst lead = (() => { try { return $('Normalize Lead Input').first().json || {}; }\n                      catch (e) { return {}; } })();\n// The phone is no longer only what the caller sent. The dashboard's enrolment\n// payload carries lead_email / lead_name / vehicle_interest and no phone at all,\n// so the number is read from the leads table by the gate nodes. Resolve it here\n// exactly as the two 'Has WhatsApp?' gates and both WAHA sends do -- otherwise\n// this report calls every dashboard-enrolled lead email-only and never checks the\n// WhatsApp legs it actually ran.\nconst pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; }\n                      catch (e) { return null; } };\nconst hasWhatsApp = !!(pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'));\n\nconst CLAIMED = [\n  { node: 'Email: Welcome (Gmail)', what: 'Day 1 welcome email', critical: true },\n  { node: 'Log Welcome Email', what: 'Day 1 email communication_logs row', critical: false },\n  { node: 'Email: Follow Up (Gmail)', what: 'Day 3 follow-up email', critical: true },\n  { node: 'Log Follow Up Email', what: 'Day 3 email communication_logs row', critical: false },\n  { node: 'Email: Final Offer (Gmail)', what: 'Day 7 final-offer email', critical: true },\n  { node: 'Log Final Offer Email', what: 'Day 7 email communication_logs row', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\nif (hasWhatsApp) {\n  results.push(check({ node: 'WhatsApp: Welcome',       what: 'Day 1 WhatsApp welcome',                 critical: true }));\n  results.push(check({ node: 'Log WhatsApp Welcome',    what: 'Day 1 WhatsApp communication_logs row',  critical: false }));\n  results.push(check({ node: 'WhatsApp: Check-in',      what: 'Day 5 WhatsApp check-in',                critical: true }));\n  results.push(check({ node: 'Log WhatsApp Check-in',   what: 'Day 5 WhatsApp communication_logs row',  critical: false }));\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  // 'Log Final Offer Email' sends Prefer: return=minimal, so the item arriving\n  // here carries no lead fields whatsoever and the Audit Log node downstream was\n  // writing lead_email: null on every completed run -- which is why finished\n  // sequences could not be attached to anybody on the Campaigns roster. Name the\n  // lead explicitly rather than hoping it survived the spread.\n  lead_name: lead.name || null,\n  lead_email: lead.email || null,\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     5200,
+     456
+    ],
+    "name": "Delivery Report",
+    "id": "63f9209b-5be8-45fd-bb22-9c2b7999589a"
+   },
+   {
+    "id": "743fe92d-c951-44f0-a31a-bc10e8b7d89b",
+    "name": "Lead State (Day 1)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     880,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,name,email,phone,status"
+       },
+       {
+        "name": "email",
+        "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+       },
+       {
+        "name": "tenant_id",
+        "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Re-reads the lead immediately before the day-1 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "7ba948c1-9cfd-46c9-b9d0-c22c8f0072a1",
+    "name": "Replies Since Enrol (Day 1)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1040,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,created_at,channel,direction,message"
+       },
+       {
+        "name": "direction",
+        "value": "eq.inbound"
+       },
+       {
+        "name": "created_at",
+        "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+       },
+       {
+        "name": "or",
+        "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+       },
+       {
+        "name": "order",
+        "value": "created_at.desc"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "3baae380-06b2-45b7-9848-622456a9af5e",
+    "name": "Still Enrolled? (Day 1)",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     1200,
+     304
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "drip-gate-d1",
+        "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 1)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 1)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+   },
+   {
+    "id": "7d96ed80-36e6-4e66-8596-b42a17ef30a5",
+    "name": "Lead State (Day 3)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2320,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,name,email,phone,status"
+       },
+       {
+        "name": "email",
+        "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+       },
+       {
+        "name": "tenant_id",
+        "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Re-reads the lead immediately before the day-3 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "97c5878a-1d72-4c5c-b478-365ca32e3c3f",
+    "name": "Replies Since Enrol (Day 3)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2480,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,created_at,channel,direction,message"
+       },
+       {
+        "name": "direction",
+        "value": "eq.inbound"
+       },
+       {
+        "name": "created_at",
+        "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+       },
+       {
+        "name": "or",
+        "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+       },
+       {
+        "name": "order",
+        "value": "created_at.desc"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "83263832-9df1-44ae-89c4-1788b43df27b",
+    "name": "Still Enrolled? (Day 3)",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     2640,
+     304
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "drip-gate-d3",
+        "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 3)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 3)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+   },
+   {
+    "id": "63152408-2b81-4e0a-bd28-5603c50f4ff0",
+    "name": "Lead State (Day 5)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     3280,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,name,email,phone,status"
+       },
+       {
+        "name": "email",
+        "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+       },
+       {
+        "name": "tenant_id",
+        "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Re-reads the lead immediately before the day-5 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "73a54505-a375-4e9d-b186-20e270b9c1e4",
+    "name": "Replies Since Enrol (Day 5)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     3440,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,created_at,channel,direction,message"
+       },
+       {
+        "name": "direction",
+        "value": "eq.inbound"
+       },
+       {
+        "name": "created_at",
+        "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+       },
+       {
+        "name": "or",
+        "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+       },
+       {
+        "name": "order",
+        "value": "created_at.desc"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "7a7a7d9d-385d-4a3e-af38-a3186610acc8",
+    "name": "Still Enrolled? (Day 5)",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     3600,
+     304
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "drip-gate-d5",
+        "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 5)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 5)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+   },
+   {
+    "id": "4f3ea63e-233b-42f2-87d1-bacc090bc091",
+    "name": "Lead State (Day 7)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     4400,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,name,email,phone,status"
+       },
+       {
+        "name": "email",
+        "value": "={{ 'eq.' + $('Normalize Lead Input').first().json.email }}"
+       },
+       {
+        "name": "tenant_id",
+        "value": "=eq.{{ $('Resolve Tenant').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Re-reads the lead immediately before the day-7 send. Identical in every gate except the day number. alwaysOutputData is ON so that a deleted lead (zero rows) still reaches the IF and produces an audit row instead of dying silently.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "d7cd6460-b0b1-490a-b4d0-e6aa75e6098e",
+    "name": "Replies Since Enrol (Day 7)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     4560,
+     304
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/v_lead_messages",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "id,created_at,channel,direction,message"
+       },
+       {
+        "name": "direction",
+        "value": "eq.inbound"
+       },
+       {
+        "name": "created_at",
+        "value": "={{ 'gt.' + ($('Normalize Lead Input').first().json.enrolled_at || new Date(Date.now() - 8 * 86400000).toISOString()) }}"
+       },
+       {
+        "name": "or",
+        "value": "={{ (() => { const pick = (n, f) => { try { const v = $(n).first().json[f]; return (v === 0 || v) ? String(v).trim() : null; } catch (e) { return null; } }; const l = $('Normalize Lead Input').first().json; const p = pick('Lead State (Day 5)', 'phone') || pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone'); const id = pick('Lead State (Day 5)', 'id') || pick('Lead State (Day 1)', 'id'); const d = String(p || '').replace(/[^0-9]/g,''); const terms = []; if (id) terms.push('lead_id.eq.' + id); for (const k of [...new Set([l.email, d ? d + '@c.us' : null, d ? '+' + d + '@whatsapp.lead' : null].filter(Boolean))]) terms.push('lead_email.eq.' + k); return '(' + terms.join(',') + ')'; })() }}"
+       },
+       {
+        "name": "order",
+        "value": "created_at.desc"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Newest inbound message for this lead logged after enrolment, limit 1. The or=() identity filter is the same shape as 'Fetch Thread History' in whatsapp_bdc_ai_agent.json: communication_logs.lead_email holds a real email, a WhatsApp chat id, or a synthesised +digits@whatsapp.lead.",
+    "onError": "stopWorkflow",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "85a8dcf2-edef-4f81-9712-a427ec6efa4c",
+    "name": "Still Enrolled? (Day 7)",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     4720,
+     304
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "drip-gate-d7",
+        "leftValue": "={{ (() => { const TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED']; let rows = []; try { rows = $('Lead State (Day 7)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { rows = []; } if (!rows.length) return false; if (TERMINAL.includes(String(rows[0].status || '').trim().toUpperCase())) return false; let replies = []; try { replies = $('Replies Since Enrol (Day 7)').all().map(i => i.json).filter(r => r && r.id); } catch (e) { replies = []; } return replies.length === 0; })() }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "notes": "true = send. false = stop, and 'Stopped Report' works out why. One boolean, no prose: the reason is computed in one place, not four."
+   },
+   {
+    "id": "df134a96-6567-45d6-9ec5-c528c4ee2e67",
+    "name": "Audit: Enrolled",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     560,
+     304
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ workflow: '7-Day Warm Lead Drip', status: 'ENROLLED', lead_name: ($json.name || null), lead_email: ($json.email || null), summary: ('Enrolled - day 1/3/5/7 sequence queued. Every step re-reads the lead and stops if it has gone terminal or the customer has replied.' + ($json.tenant_id ? ' Tenant: ' + $json.tenant_source + '.' : ' TENANT UNRESOLVED - rows written without tenant_id.')), logged_at: $json.enrolled_at }, $json.tenant_id ? { tenant_id: $json.tenant_id } : {})) }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Enrolment-time audit row. The dashboard's Campaigns screen builds its roster from the OLDEST audit_log row per lead_email, so without this row nobody shows as enrolled for seven days and then appears the moment the sequence has already ended. In series before 'Wait Day 1', not fanned out from it, so the row is written before the execution suspends.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500
+   },
+   {
+    "id": "c7d27fcf-4170-48c2-bca5-cb535e2312b5",
+    "name": "Stopped Report",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     5200,
+     880
+    ],
+    "parameters": {
+     "jsCode": "// Stopped Report - the sequence exited early, and that is the correct outcome.\n//\n// Reached only from the false output of a 'Still Enrolled? (Day N)' gate. The\n// gates are four copies of one boolean; the prose lives here, once, so there is\n// a single place to read what an exit means and a single place to change it.\n//\n// It answers three things in the shape 'Audit Log' already reads: which gate\n// stopped the sequence, why, and what had actually gone out by then. check()\n// and the status ladder are copied verbatim from 'Delivery Report' so that\n// SUCCESS / PARTIAL / FAILED mean exactly one thing across this workflow.\n//\n// A deliberate stop is never FAILED. FAILED is reserved for a step that was\n// attempted and did not land -- the Campaigns screen counts FAILED and REJECTED\n// rows as failures against the lead, and a customer who bought the car is not a\n// failure. Stopping always leaves something unsent, so an exit is PARTIAL.\n\nconst TERMINAL = ['WON','LOST','CLOSED','CONVERTED','DELIVERED','DEAD','JUNK','SPAM','UNQUALIFIED','ARCHIVED','DISQUALIFIED'];\n\n// null  = that gate never executed in this run.\n// []    = it ran and the query matched nothing.\nconst rowsOf = (n) => { try { return $(n).all().map(i => i.json).filter(r => r && r.id); }\n                        catch (e) { return null; } };\n\nconst PHASES = [\n  { day: 1, step: 'the day-1 welcome',      leadNode: 'Lead State (Day 1)', replyNode: 'Replies Since Enrol (Day 1)' },\n  { day: 3, step: 'the day-3 follow-up',    leadNode: 'Lead State (Day 3)', replyNode: 'Replies Since Enrol (Day 3)' },\n  { day: 5, step: 'the day-5 check-in',     leadNode: 'Lead State (Day 5)', replyNode: 'Replies Since Enrol (Day 5)' },\n  { day: 7, step: 'the day-7 final offer',  leadNode: 'Lead State (Day 7)', replyNode: 'Replies Since Enrol (Day 7)' },\n];\n\n// The last gate that ran is the gate that stopped it.\nlet at = null;\nfor (const p of PHASES) {\n  const rows = rowsOf(p.leadNode);\n  if (rows === null) continue;\n  at = { day: p.day, step: p.step, leadRow: rows[0] || null, replies: rowsOf(p.replyNode) || [] };\n}\n\nconst reason = (() => {\n  if (!at) return 'the gate that stopped the sequence could not be identified from this run';\n  if (!at.leadRow) return 'the lead row no longer exists in the leads table';\n  const st = String(at.leadRow.status || '').trim().toUpperCase();\n  if (TERMINAL.includes(st)) return 'the lead status is ' + st + ', which is terminal';\n  if (at.replies.length) {\n    const r = at.replies[0];\n    return 'the customer replied on ' + (r.created_at || 'an unrecorded date')\n         + (r.channel ? ' by ' + r.channel : '')\n         + ', so a person is already in the conversation';\n  }\n  return 'the gate returned false without naming a cause, which should not happen and is worth reading the execution for';\n})();\n\n// Same phone resolution as the two 'Has WhatsApp?' gates and both WAHA sends:\n// the dashboard's enrolment payload carries no phone, so the number comes from\n// the leads table via the gate reads.\nconst pick = (n) => { try { const v = $(n).first().json.phone; return v ? String(v).trim() : null; }\n                      catch (e) { return null; } };\nconst hasWhatsApp = !!(pick('Lead State (Day 5)') || pick('Lead State (Day 1)') || pick('Normalize Lead Input'));\n\nconst SENT = [\n  { day: 1, node: 'Email: Welcome (Gmail)',     what: 'Day 1 welcome email',                    critical: true  },\n  { day: 1, node: 'Log Welcome Email',          what: 'Day 1 email communication_logs row',     critical: false },\n  { day: 1, node: 'WhatsApp: Welcome',          what: 'Day 1 WhatsApp welcome',                 critical: true,  wa: true },\n  { day: 1, node: 'Log WhatsApp Welcome',       what: 'Day 1 WhatsApp communication_logs row',  critical: false, wa: true },\n  { day: 3, node: 'Email: Follow Up (Gmail)',   what: 'Day 3 follow-up email',                  critical: true  },\n  { day: 3, node: 'Log Follow Up Email',        what: 'Day 3 email communication_logs row',     critical: false },\n  { day: 5, node: 'WhatsApp: Check-in',         what: 'Day 5 WhatsApp check-in',                critical: true,  wa: true },\n  { day: 5, node: 'Log WhatsApp Check-in',      what: 'Day 5 WhatsApp communication_logs row',  critical: false, wa: true },\n  { day: 7, node: 'Email: Final Offer (Gmail)', what: 'Day 7 final-offer email',                critical: true  },\n  { day: 7, node: 'Log Final Offer Email',      what: 'Day 7 email communication_logs row',     critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst stopDay   = at ? at.day : 1;\nconst relevant  = SENT.filter(c => !c.wa || hasWhatsApp);\nconst results   = relevant.filter(c => c.day <  stopDay).map(check);\nconst notSent   = relevant.filter(c => c.day >= stopDay).map(c => c.what + ' \u2014 not sent: ' + reason);\n\nconst failed  = results.filter(r => !r.ok);\nconst fatal   = failed.filter(r => r.critical);\nconst dropped = failed.map(r => r.what + ' \u2014 ' + r.why).concat(notSent);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\n// Do NOT spread $input here. The item arriving from the gate is a\n// communication_logs row, and that row carries its own lead_email -- which can\n// be a WhatsApp chat id. Spreading it would file this audit row under a\n// different key from the enrolment row and split one person into two on the\n// Campaigns roster. Take the identity from the enrolment, explicitly.\nconst src = (() => { try { return $('Normalize Lead Input').first().json || {}; }\n                     catch (e) { return {}; } })();\n\nreturn [{ json: {\n  lead_name: src.name || null,\n  lead_email: src.email || null,\n  name: src.name || null,\n  email: src.email || null,\n  vehicle_interest: src.vehicle_interest || null,\n  enrolled_at: src.enrolled_at || null,\n  exit_reason: reason,\n  exit_step: at ? at.step : 'an unidentified step',\n  exit_day: stopDay,\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped,\n    note: 'stopped before ' + (at ? at.step : 'an unidentified step') + ' because ' + reason + '. '\n        + (results.length\n             ? results.filter(r => r.ok).length + ' of ' + results.length + ' steps already attempted were verified'\n             : 'nothing had been sent yet')\n        + '; ' + notSent.length + ' remaining step' + (notSent.length === 1 ? '' : 's') + ' will not be sent.',\n  },\n} }];\n"
+    },
+    "notes": "The single exit path. All four gates' false outputs land here; it feeds the existing Audit Log node."
+   },
+   {
+    "id": "432cfaf5-e25a-4bea-89cd-b048d4ee1977",
+    "name": "Comm Keys (Day 1)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     960,
+     160
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 1)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 1)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+     "options": {
+      "timeout": 15000,
+      "response": {
+       "response": {
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "345ad3fa-9e0d-4ad6-94aa-f3c7736ff07b",
+    "name": "Comm Keys (Day 3)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2400,
+     160
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 3)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 3)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+     "options": {
+      "timeout": 15000,
+      "response": {
+       "response": {
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "a2226a40-2167-447e-8b52-a29e0ebdb44c",
+    "name": "Comm Keys (Day 5)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     3360,
+     160
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 5)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 5)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+     "options": {
+      "timeout": 15000,
+      "response": {
+       "response": {
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "c643ef14-48fb-4301-b1aa-6f2914b5530d",
+    "name": "Comm Keys (Day 7)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     4480,
+     160
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_comm_keys_for_lead",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const pick = (n, f) => { try { const v = ($(n).first().json || {})[f]; return v ? String(v).trim() : null; } catch (e) { return null; } }; const em = pick('Lead State (Day 7)', 'email') || pick('Normalize Lead Input', 'email') || ''; const ph = pick('Lead State (Day 7)', 'phone') || pick('Normalize Lead Input', 'phone') || ''; return JSON.stringify({ p_email: em, p_phone: ph }); })() }}",
+     "options": {
+      "timeout": 15000,
+      "response": {
+       "response": {
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Added 30 Aug 2026 (dripid regression fix). Resolves EVERY spelling of this lead's address that communication_logs.lead_email could hold, by calling the live Postgres function nexus_comm_keys_for_lead(p_email, p_phone) -- the same key set the 12-Hour Silence Detector and Fetch Thread History use. It is the only resolver that can see '<opaque>@lid' chat ids, because a LID carries no phone digits and can only be reached by joining whatsapp_contacts (chat_id -> phone / lead_email), which the function does server-side. TODAY 51 of 91 communication_logs rows are @lid and ZERO are @c.us, so without this node the gate downstream is nearly blind. responseFormat is 'text' ON PURPOSE: the RPC returns a JSON array and an HTTP node splits an array response into one item PER ELEMENT, which would run every node after it once per key. Text keeps it to one item; the consumer JSON.parse()s it. onError=continueRegularOutput: if the RPC is unreachable the gate falls back to the locally derived keys (email + digit forms) and behaves exactly as it did before this fix -- never worse. One node PER GATE, not one shared node: whatsapp_contacts gains a row the moment a customer first messages from a LID chat, so a key set snapshotted on day 1 would not contain the day-5 reply we exist to detect.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 2000,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "5c0b493b-6133-413c-99ac-5499a882317f",
+    "name": "Resolve Tenant",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     400,
+     160
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "language": "javaScript",
+     "jsCode": "// NEXUS - Resolve Tenant (7-day drip)\n// ---------------------------------------------------------------------------\n// This workflow writes FIVE communication_logs rows per enrolled lead across\n// seven days. n8n writes them as service_role, which is BYPASSRLS and has no\n// auth.uid(), so without an explicit tenant_id the column default files each\n// one under whichever tenant holds tenants.is_unattributed_default. A second\n// dealership's cold lead would have its entire nurture thread appear in the\n// FIRST dealership's Conversations screen, and be invisible in its own.\n//\n// THE SIGNAL: the caller. In production this workflow is reached from the\n// Master Router's 'Marketing Drip (COLD)' branch, which passes the lead object\n// the Router built - and that object now carries the tenant the Router itself\n// resolved from the WAHA session the enquiry arrived on. The raw webhook path\n// may also carry tenant_id on the body.\n//\n// UNRESOLVED: with exactly one dealership configured we name that one\n// explicitly (today's behaviour, stated rather than defaulted). With two or\n// more we emit null and every write below omits the column rather than assert\n// the wrong owner.\n//\n// NOT COVERED HERE: the public webhook's JWT is not mapped to a tenant in this\n// workflow. That path falls through to the sole-configured rule, which is safe\n// while there is one dealership and must be closed before there are two.\nconst BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n\nlet map = {};\ntry { map = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { map = {}; }\nif (!map || typeof map !== 'object' || !Object.keys(map).length) map = BUILTIN;\nconst keys = Object.keys(map);\n\nlet tenant = '';\nlet source = '';\n\n// Master Router sub-workflow path.\ntry {\n  const j = $('Called by Master Router').first().json || {};\n  tenant = String((j.lead && j.lead.tenant_id) || j.tenant_id || '');\n  if (UUID.test(tenant)) source = 'caller';\n} catch (e) { /* webhook path */ }\n\n// Raw webhook path.\nif (!UUID.test(tenant)) {\n  try {\n    const b = ($('DripWebhook').first().json || {}).body || {};\n    tenant = String(b.tenant_id || '');\n    if (UUID.test(tenant)) source = 'webhook_body';\n  } catch (e) { /* sub-workflow path */ }\n}\n\nif (!UUID.test(tenant) && keys.length === 1) {\n  tenant = String(map[keys[0]] || '');\n  source = 'sole_configured_tenant';\n}\nif (!UUID.test(tenant)) { tenant = null; source = 'unresolved'; }\n\n// Pass the enrolment payload through UNCHANGED apart from the two new keys:\n// 'Audit: Enrolled' immediately downstream reads $json.name, $json.email and\n// $json.enrolled_at off this item, and every later node reaches back to\n// 'Normalize Lead Input' by name, which this insertion does not disturb.\nreturn $input.all().map((item, i) => ({\n  json: Object.assign({}, item.json, { tenant_id: tenant, tenant_source: source }),\n  pairedItem: { item: i }\n}));\n"
+    }
+   }
+  ],
+  "connections": {
+   "Log Welcome Email": {
+    "main": [
+     [
+      {
+       "node": "Has WhatsApp? (Day 1)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log Follow Up Email": {
+    "main": [
+     [
+      {
+       "node": "Wait Day 5",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Called by Master Router": {
+    "main": [
+     [
+      {
+       "node": "Normalize Lead Input",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Has WhatsApp? (Day 1)": {
+    "main": [
+     [
+      {
+       "node": "WhatsApp: Welcome",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Wait Day 3",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "WhatsApp: Welcome": {
+    "main": [
+     [
+      {
+       "node": "Log WhatsApp Welcome",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log WhatsApp Welcome": {
+    "main": [
+     [
+      {
+       "node": "Wait Day 3",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Has WhatsApp? (Day 5)": {
+    "main": [
+     [
+      {
+       "node": "WhatsApp: Check-in",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Wait Day 7",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "WhatsApp: Check-in": {
+    "main": [
+     [
+      {
+       "node": "Log WhatsApp Check-in",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log WhatsApp Check-in": {
+    "main": [
+     [
+      {
+       "node": "Wait Day 7",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Email: Welcome (Gmail)": {
+    "main": [
+     [
+      {
+       "node": "Log Welcome Email",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Email: Follow Up (Gmail)": {
+    "main": [
+     [
+      {
+       "node": "Log Follow Up Email",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Email: Final Offer (Gmail)": {
+    "main": [
+     [
+      {
+       "node": "Log Final Offer Email",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log Final Offer Email": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "DripWebhook": {
+    "main": [
+     [
+      {
+       "node": "Verify JWT",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Verify JWT": {
+    "main": [
+     [
+      {
+       "node": "Normalize Lead Input",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report": {
+    "main": [
+     [
+      {
+       "node": "Audit Log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Audit: Enrolled": {
+    "main": [
+     [
+      {
+       "node": "Wait Day 1",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Wait Day 1": {
+    "main": [
+     [
+      {
+       "node": "Lead State (Day 1)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Replies Since Enrol (Day 1)": {
+    "main": [
+     [
+      {
+       "node": "Still Enrolled? (Day 1)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Still Enrolled? (Day 1)": {
+    "main": [
+     [
+      {
+       "node": "Email: Welcome (Gmail)",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Stopped Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Wait Day 3": {
+    "main": [
+     [
+      {
+       "node": "Lead State (Day 3)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Replies Since Enrol (Day 3)": {
+    "main": [
+     [
+      {
+       "node": "Still Enrolled? (Day 3)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Still Enrolled? (Day 3)": {
+    "main": [
+     [
+      {
+       "node": "Email: Follow Up (Gmail)",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Stopped Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Wait Day 5": {
+    "main": [
+     [
+      {
+       "node": "Lead State (Day 5)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Replies Since Enrol (Day 5)": {
+    "main": [
+     [
+      {
+       "node": "Still Enrolled? (Day 5)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Still Enrolled? (Day 5)": {
+    "main": [
+     [
+      {
+       "node": "Has WhatsApp? (Day 5)",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Stopped Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Wait Day 7": {
+    "main": [
+     [
+      {
+       "node": "Lead State (Day 7)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Replies Since Enrol (Day 7)": {
+    "main": [
+     [
+      {
+       "node": "Still Enrolled? (Day 7)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Still Enrolled? (Day 7)": {
+    "main": [
+     [
+      {
+       "node": "Email: Final Offer (Gmail)",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Stopped Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Stopped Report": {
+    "main": [
+     [
+      {
+       "node": "Audit Log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Lead State (Day 1)": {
+    "main": [
+     [
+      {
+       "node": "Comm Keys (Day 1)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Comm Keys (Day 1)": {
+    "main": [
+     [
+      {
+       "node": "Replies Since Enrol (Day 1)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Lead State (Day 3)": {
+    "main": [
+     [
+      {
+       "node": "Comm Keys (Day 3)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Comm Keys (Day 3)": {
+    "main": [
+     [
+      {
+       "node": "Replies Since Enrol (Day 3)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Lead State (Day 5)": {
+    "main": [
+     [
+      {
+       "node": "Comm Keys (Day 5)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Comm Keys (Day 5)": {
+    "main": [
+     [
+      {
+       "node": "Replies Since Enrol (Day 5)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Lead State (Day 7)": {
+    "main": [
+     [
+      {
+       "node": "Comm Keys (Day 7)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Comm Keys (Day 7)": {
+    "main": [
+     [
+      {
+       "node": "Replies Since Enrol (Day 7)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Normalize Lead Input": {
+    "main": [
+     [
+      {
+       "node": "Resolve Tenant",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Resolve Tenant": {
+    "main": [
+     [
+      {
+       "node": "Audit: Enrolled",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "Auth gate marks its refusal unattributed",
+  "description": "Prefix the unauthorized throw with [NEXUS-UNATTRIBUTED] so the shared NEXUS Error Handler omits tenant_id and the anonymous caller's audit row falls to the quarantine tenant instead of ALBA CARS. The two 'no lead supplied' throws below it are deliberately NOT marked -- those are genuine operator/router faults and belong on the dealership's Automation screen. Guard logic, normalisation and the Master Router sub-workflow path are unchanged.",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-06T14:41:26.048Z",
+    "id": 837,
+    "workflowId": "G7FhvMY2ucW5Fg7X",
+    "versionId": "bdcca937-8d5e-468b-9481-0a927747d89c",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}
