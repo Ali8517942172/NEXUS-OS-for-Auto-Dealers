@@ -83,3 +83,18 @@ breaks no caller that exists today.
 
 - KYC sends on WAHA `session:'default'` and escalates to Slack `C0BKTLL1X54`; Lead Escalation emails one fixed mailbox. Single-tenant sinks.
 - Lead Escalation had errors at 04:00 and 05:00 UTC on 20 Sep, **before** this wave. Cause not investigated yet.
+
+## CORRECTION, 20 Sep 08:15 UTC — the wave was saved as drafts, not live
+
+`mcp__n8n__update_workflow` writes a **draft** in n8n 2.x. The public API `GET /workflows/{id}`
+returns that draft, so every "verified live" check above (including the 18 Sep Master Router
+check) compared against the draft and passed. `versionId != activeVersionId` on all 7 —
+**production kept running the old resolvers until 08:1x UTC 20 Sep.** Found by the post-apply
+smoke: Lead Escalation execution 15838 (08:00) ran `Called by Master Router -> Fetch Escalated
+Lead` with no `Resolve Tenant` node in its path.
+
+Fixed: `publish_workflow` on all 7 with the reviewed versionIds; now `versionId == activeVersionId`
+on every one. Any future "is it live" check must compare those two ids, not read the node.
+
+Lead Escalation's failure itself (`No Lead To Escalate`, 15838 and pre-wave 15796/15785) is
+**pre-existing and not a tenant refusal**: the lookup returns no row for the address it is handed.
