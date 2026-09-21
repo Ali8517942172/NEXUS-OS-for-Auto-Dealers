@@ -464,6 +464,17 @@ SCREENS.dealrescue = async host => {
   panel(host, {
     title: 'The rescue desk',
     sub: 'What this engine would show for an admitted deal, and where this page stands today',
+    /* NX1006, 21 Sep 2026. DEAL_RECORD is the readiness panel's own first,
+       unmet prerequisite below -- a deal row that exists WHILE it is in flight,
+       which this product does not capture today (see the note under the table).
+       There is no dashboard action that creates that kind of row. What this
+       link does offer is the nearest real one: Deals, where a closed sale is
+       recorded (from a lead's drawer via "Mark deal won", or directly via
+       "Record a deal") -- the same purchase_history write that feeds
+       Attribution and this desk's own evidence base. Recording more closed
+       deals does not admit anything here by itself; it is offered so the
+       desk is not a dead end with nothing on the page to click. */
+    actions: linkBtn('deals', 'Record a deal'),
     load: async () => {
       const [d, c, r] = await Promise.all([settle(readDeals()), settle(readCandidates()), settle(readReadiness())]);
       if (d.err && c.err && r.err) throw d.err;
