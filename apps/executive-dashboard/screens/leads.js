@@ -103,7 +103,7 @@
    not measurable. NULL means no measured wait. It does not mean nobody measured,
    it is not a zero, and it must never render as a blank — a blank in a response
    column reads as "fast" to everyone who has ever looked at one. */
-import { HOOK, db, n8n } from '../lib/data.js';
+import { HOOK, db, dbWrite, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, dubaiStamp, esc, mins, n0, num, pill, tone } from '../lib/format.js';
@@ -304,6 +304,31 @@ const ACTIONS = {
       lead_name: l.name || '',
       vehicle_interest: l.vehicle_interest || '',
     }),
+  },
+  /* NX1005. A FAILED lead is not a dead end: nexus_my_lead_retry_scoring resets
+     scoring_state to PENDING with scoring_attempts back at 0, and the hourly
+     rescore workflow (dCRmzWHCz7bniIBr) picks it up from there. This is a
+     database write via rpc/, not an n8n webhook -- `rpc` in place of `hook` is
+     how the two action kinds below are told apart. */
+  retryScoring: {
+    key: 'retryScoring',
+    rpc: 'nexus_my_lead_retry_scoring',
+    label: 'Retry scoring',
+    title: 'Retry AI scoring for this lead',
+    confirm: 'Retry scoring',
+    done: 'Queued for rescoring',
+    blurb: 'Resets this lead to PENDING with a fresh attempt budget, so the next hourly rescore '
+         + '(dCRmzWHCz7bniIBr) picks it up. Nothing is scored by this click -- it only asks the pipeline to look again.',
+    blocker: l => up(l.scoring_state) === 'FAILED'
+      ? null
+      : `Only a FAILED lead can be retried this way. This lead's scoring_state is ${str(l.scoring_state) || 'PENDING'}.`,
+    payload: l => ({ p_lead_id: l.id }),
+    describeResult: res => {
+      const r = Array.isArray(res) ? res[0] : res;
+      return r && up(r.scoring_state) === 'PENDING'
+        ? 'It is PENDING again with scoring_attempts reset to 0.'
+        : 'The database accepted the request.';
+    },
   },
 };
 
@@ -925,7 +950,7 @@ SCREENS.leads = async host => {
      labelled as this session's doing — it is our own receipt, not a DB row. */
   const sent = new Map();
 
-  const f = { status: 'ALL', q: '', source: 'ALL', rep: 'ALL', sort: 'new', alert: null };
+  const f = { status: 'ALL', q: '', source: 'ALL', rep: 'ALL', scoring: 'ALL', sort: 'new', alert: null };
 
   function filtered() {
     const focus = f.alert ? checkByKey.get(f.alert) : null;
@@ -941,6 +966,7 @@ SCREENS.leads = async host => {
          is named after is worse than no filter. */
       if (f.rep === '__none' && owned(l)) return false;
       if (f.rep !== 'ALL' && f.rep !== '__none' && repOf(l) !== f.rep) return false;
+      if (f.scoring !== 'ALL' && (up(l.scoring_state) || 'PENDING') !== f.scoring) return false;
       if (f.q) {
         const hay = [l.name, l.email, l.phone, l.vehicle_interest].join(' ').toLowerCase();
         if (!hay.includes(f.q.toLowerCase())) return false;
@@ -1026,6 +1052,15 @@ SCREENS.leads = async host => {
            "source" would have moved the wrong word rather than removed it. -->
       <select id="fSource" aria-label="Filter by which part of NEXUS wrote the row" title="${esc(WRITER_COLUMN_NOTE)}" style="width:auto"><option value="ALL">Written by: any</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
       <select id="fRep" aria-label="Filter by assigned rep" style="width:auto"><option value="ALL">All reps</option><option value="__none">Unassigned</option>${reps.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
+      <!-- NX1005: PENDING/FAILED are the two scoring states worth filtering to --
+           PENDING is "still in the queue", FAILED is "stuck and needs a Retry
+           scoring click". SCORED is every other row and is not a separate option
+           here; "Scoring: any" already shows it. -->
+      <select id="fScoring" aria-label="Filter by scoring state" style="width:auto">
+        <option value="ALL">Scoring: any</option>
+        <option value="PENDING">Scoring: pending</option>
+        <option value="FAILED">Scoring: failed</option>
+      </select>
       <select id="fSort" aria-label="Sort leads" style="width:auto">${Object.entries(SORTS)
         .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
       <div class="t-muted num" id="resultCount"></div>
@@ -1040,8 +1075,11 @@ SCREENS.leads = async host => {
     <div id="leadTable"></div>`;
 
   function actionCell(r) {
-    const buttons = [ACTIONS.escalate, ACTIONS.drip].map(a => {
-      const blocked = !N8N_BASE
+    const buttons = [ACTIONS.escalate, ACTIONS.drip, ACTIONS.retryScoring].map(a => {
+      /* Only the two n8n-hook actions depend on N8N_BASE being configured; the
+         rpc actions (retryScoring) are a direct database write and are blocked,
+         if at all, only by their own a.blocker(). */
+      const blocked = (a.hook && !N8N_BASE)
         ? 'This deployment is not configured to reach the automation service, so nothing can be started from here. Only NEXUS can change that.'
         : a.blocker(r);
       return `<button class="btn sm" data-act="${a.key}" data-id="${esc(r.id)}"
@@ -1050,7 +1088,7 @@ SCREENS.leads = async host => {
     }).join('');
 
     const lines = [];
-    for (const a of [ACTIONS.escalate, ACTIONS.drip]) {
+    for (const a of [ACTIONS.escalate, ACTIONS.drip, ACTIONS.retryScoring]) {
       const at = sent.get(`${r.id}|${a.key}`);
       /* This session's own receipt, and it says so: a 2xx from the webhook is
          the only thing we know, and it is not an audit_log row. */
@@ -1112,6 +1150,35 @@ SCREENS.leads = async host => {
         return `<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end">
           <div class="bar" style="width:44px"><i style="width:${s}%;background:var(--${c})"></i></div>
           <span style="font-weight:500;min-width:22px;text-align:right">${s}</span></div>`;
+      }},
+    /* -- NX1005: what the scoring pipeline itself says about this row --------
+       `scoring_state` is PENDING / SCORED / FAILED, NOT NULL, defaulted
+       PENDING by the column -- a lead this screen has never seen a router
+       webhook update is honestly PENDING, not blank. `score_source` names
+       WHAT scored it (RULES, or one of the AI_SCORE_* words), which is a
+       different question from whether it succeeded. A FAILED row also carries
+       `scoring_attempts` and `scoring_last_error`, both shown here rather than
+       only in the drawer, because "why is this lead stuck" is exactly the
+       question this column exists to answer without a click. */
+    { label:'Scoring', render: r => {
+        const state = up(r.scoring_state) || 'PENDING';
+        const statePill = state === 'SCORED'
+          ? pill(state, 'ok', { verbatim: true })
+          : pill(state, undefined, { verbatim: true });
+        const source = str(r.score_source);
+        const rules = n0(r.rules_score);
+        const attempts = n0(r.scoring_attempts);
+        const err = str(r.scoring_last_error);
+        return `<div>${statePill}</div>`
+          + (source ? `<div class="cell-sub"><span class="chip mono">${esc(source)}</span></div>` : '')
+          + (rules != null ? `<div class="cell-sub">rules_score ${esc(String(rules))}</div>` : '')
+          + (state === 'FAILED'
+              ? `<div class="cell-sub t-hot">${esc(String(attempts ?? 0))} attempt${attempts === 1 ? '' : 's'}`
+                + (err
+                    ? ` -- ${esc(err.length > 90 ? err.slice(0, 90) + '…' : err)}`
+                    : ' -- no error text recorded')
+                + '</div>'
+              : (attempts ? `<div class="cell-sub">${esc(String(attempts))} attempt${attempts === 1 ? '' : 's'}</div>` : ''));
       }},
     /* ── Where it came from ──────────────────────────────────────────────
        This column was headed "Source" and rendered `leads.source`, which is the
@@ -1232,9 +1299,14 @@ SCREENS.leads = async host => {
       go.disabled = true; cancel.disabled = true; go.textContent = 'Sending…';
       m.msg('<span class="t-muted">Calling the workflow…</span>');
       try {
-        const res = await n8n(a.hook, a.payload(lead));
+        /* Two kinds of action share this one confirm step: an n8n webhook
+           (`a.hook`) or a direct database write via PostgREST's rpc/ endpoint
+           (`a.rpc`) -- NX1005's retryScoring is the first of the second kind. */
+        const res = a.rpc
+          ? await dbWrite('POST', `rpc/${a.rpc}`, a.payload(lead))
+          : await n8n(a.hook, a.payload(lead));
         sent.set(`${lead.id}|${a.key}`, Date.now());
-        m.msg(`<span class="t-ok">${esc(a.done)}. ${esc(replyNote(res))}</span>`);
+        m.msg(`<span class="t-ok">${esc(a.done)}. ${esc((a.describeResult || replyNote)(res))}</span>`);
         go.textContent = 'Done';
         cancel.disabled = false; cancel.textContent = 'Close';
         draw();
@@ -1294,8 +1366,8 @@ SCREENS.leads = async host => {
      a focus that lands inside a HOT-only or searched view would show a shorter
      list than the alert just promised, which reads as the alert lying. */
   function focusCheck(key) {
-    f.alert = key; f.status = 'ALL'; f.source = 'ALL'; f.rep = 'ALL'; f.q = '';
-    $('q').value = ''; $('fSource').value = 'ALL'; $('fRep').value = 'ALL';
+    f.alert = key; f.status = 'ALL'; f.source = 'ALL'; f.rep = 'ALL'; f.scoring = 'ALL'; f.q = '';
+    $('q').value = ''; $('fSource').value = 'ALL'; $('fRep').value = 'ALL'; $('fScoring').value = 'ALL';
     draw();
     $('leadTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -1346,6 +1418,7 @@ SCREENS.leads = async host => {
   }));
   $('fSource').addEventListener('change', e => { f.source = e.target.value; draw(); });
   $('fRep').addEventListener('change', e => { f.rep = e.target.value; draw(); });
+  $('fScoring').addEventListener('change', e => { f.scoring = e.target.value; draw(); });
   $('fSort').addEventListener('change', e => { f.sort = e.target.value; draw(); });
   draw();
 };

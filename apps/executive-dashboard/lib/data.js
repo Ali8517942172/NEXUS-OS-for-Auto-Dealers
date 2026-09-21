@@ -439,4 +439,13 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
+/* NX1005 originally added its own subscriptionAccessMode() here, reading
+   nexus_my_subscription() a second time in parallel with lib/subscription.js's
+   loadSubscription()/isReadOnly() (task A) -- two independent read-only
+   mechanisms answering the same question from the same RPC. Unified on the
+   one in lib/subscription.js: its setWriteGuard() registration already
+   blocks every dbWrite()/n8n() call app-wide when read_only, so a screen that
+   wants to know in advance (to grey a button, or skip a fetch) imports
+   loadSubscription()/isReadOnly() directly instead of a second db() call
+   living in this file. See screens/appointments.js and lib/lead-drawer.js. */
 export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, edgeFn, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner, setWriteGuard, canInviteTeam };

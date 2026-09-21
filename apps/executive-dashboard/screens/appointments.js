@@ -11,6 +11,18 @@
    until this file existed the only way to find out whether a customer was
    expected in the showroom this afternoon was to read SQL.
 
+   UPDATE, NX1005 (21 Sep 2026): "nothing called it" stopped being fully true.
+   Six tenant-scoped wrapper RPCs now sit in front of NX995's five verbs —
+   request, offer, confirm, attend, no-show, cancel — each re-deriving the
+   caller's own dealership from the JWT and checking that the appointment (or,
+   for a brand new one, the lead) actually belongs to it before doing anything.
+   This file calls them: "Book visit" in lib/lead-drawer.js chains request
+   then confirm for one lead, and the "Act on it" column in P2 below offers
+   whichever of the six verbs the row's own state allows. Nothing about the
+   six-state machine, the double-booking constraint or the write path itself
+   moved for this — these are doors into the same room NX995 built, not a new
+   room.
+
    The whole screen turns on one distinction the product keeps trying to
    collapse, and collapsing it is how a dashboard tells a dealership it has a
    diary full of customers when it has a diary full of hopes. There are SIX
@@ -71,8 +83,10 @@
    Nothing here filters by dealership. The database refuses another
    dealership's rows; this file does not hide them. */
 
-import { db, onIdentityChange } from '../lib/data.js';
+import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { loadSubscription, isReadOnly } from '../lib/subscription.js';
 import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
+import { openModal } from '../lib/modal.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
@@ -165,6 +179,232 @@ const wireGo = card => {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════
+   NX1005 — the six write verbs, as buttons on a row
+   ══════════════════════════════════════════════════════════════════════════
+   Same door as the Book visit button in lib/lead-drawer.js — the tenant-
+   scoped wrappers in supabase/migrations/20260921120000_nx1005_*.sql, not a
+   new one. Which buttons a row gets is read off its OWN `state`, never off a
+   copy of the database's transition table (this file keeps none): a state
+   this screen does not recognise gets no buttons at all rather than a guess
+   at which ones might apply to it.
+
+   A read-only subscription (lib/subscription.js's isReadOnly(), backed by
+   nexus_my_subscription() -- task A's single subscription-access mechanism,
+   the same one setWriteGuard() enforces app-wide) disables every one of
+   them, shown and disabled rather than hidden, the same rule as the rest of
+   this product. An unread or failed subscription read is never read-only
+   (see lib/subscription.js), so nothing here blocks on a read that has not
+   resolved yet. */
+const ACTIONS_BY_STATE = {
+  REQUESTED: [['offer', 'Offer times'], ['confirm', 'Confirm visit'], ['cancel', 'Cancel']],
+  OFFERED:   [['offer', 'Offer times again'], ['confirm', 'Confirm visit'], ['cancel', 'Cancel']],
+  CONFIRMED: [['attend', 'Attended'], ['no_show', 'No-show'], ['cancel', 'Cancel']],
+};
+const actionsCell = (r, mode) => {
+  const list = ACTIONS_BY_STATE[up(r.state)];
+  if (!list) {
+    return muted(STATE[up(r.state)]
+      ? 'No further action — this visit is already ' + esc(str(r.state)) + '.'
+      : 'This screen does not recognise this state, so it offers no action on it rather than guessing one.');
+  }
+  const ro = !!(mode && mode.readOnly);
+  const roTitle = ro
+    ? ' title="This dealership\u2019s subscription is in a read-only state, so nothing here can be written until it is resolved."'
+    : '';
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap">${list.map(([action, label]) =>
+    `<button class="btn sm" data-appt-id="${esc(r.appointment_id)}" data-appt-action="${action}"${ro ? ' disabled' : ''}${roTitle}>${esc(label)}</button>`
+  ).join('')}</div>`;
+};
+
+/* Loads the roster once per dialog, the same list and the same "no accounts"
+   / "could not be read" wording as bookVisitDialog and assignDialog in
+   lib/lead-drawer.js use for the same read. Not shared as code across the two
+   files because the two dialogs differ in everything around this one list. */
+async function staffSelectHtml(selectedId) {
+  try {
+    const users = await db('users?select=id,name,status&order=name') || [];
+    if (!users.length) return '<span class="t-muted">No staff accounts to offer.</span>';
+    return `<select id="apSales" style="width:100%"><option value="">Unassigned</option>${users.map(u =>
+      `<option value="${esc(u.id)}"${u.id === selectedId ? ' selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`
+    ).join('')}</select>`;
+  } catch (e) {
+    return `<span class="t-hot">The staff list could not be read (${esc(e.message || String(e))}).</span>`;
+  }
+}
+
+function offerDialog(row) {
+  const m = openModal(`Offer times \u2014 appointment ${row.appointment_id}`, `
+    <div class="cell-sub" style="margin-bottom:12px">Up to three times to propose. At least one is required. This
+      replaces any times previously offered on this visit \u2014 nexus_appointment_offer_slots' own rule, not this
+      dialog's.</div>
+    <label class="cell-sub" for="apSlot1" style="display:block">Slot 1</label>
+    <input id="apSlot1" type="datetime-local" style="width:100%">
+    <label class="cell-sub" for="apSlot2" style="display:block;margin-top:8px">Slot 2 (optional)</label>
+    <input id="apSlot2" type="datetime-local" style="width:100%">
+    <label class="cell-sub" for="apSlot3" style="display:block;margin-top:8px">Slot 3 (optional)</label>
+    <input id="apSlot3" type="datetime-local" style="width:100%">
+  `, `<button class="btn primary" id="apGo">Offer</button><button class="btn" id="apCancel">Cancel</button>`);
+  const $$ = id => m.wrap.querySelector(id);
+  $$('#apCancel').addEventListener('click', () => m.close());
+  $$('#apGo').addEventListener('click', async () => {
+    const vals = ['#apSlot1', '#apSlot2', '#apSlot3'].map(id => ($$(id).value || '').trim()).filter(Boolean);
+    if (!vals.length) { m.msg('<span class="t-hot">At least one slot is required.</span>'); return; }
+    const dts = [];
+    for (const v of vals) {
+      const dt = new Date(v);
+      if (Number.isNaN(dt.getTime())) {
+        m.msg('<span class="t-hot">One of those times could not be read. Please re-enter it.</span>');
+        return;
+      }
+      dts.push(dt.toISOString());
+    }
+    $$('#apGo').disabled = true;
+    m.msg('Offering\u2026');
+    try {
+      await dbWrite('POST', 'rpc/nexus_my_appointment_offer_slots', { p_appointment_id: row.appointment_id, p_slots: dts });
+      m.msg('<span class="t-ok">Offered. Reopen the Appointments screen to see it reflected in the diary.</span>');
+    } catch (e) {
+      m.msg(`<span class="t-hot">${esc(e.message || String(e))}</span>`);
+      $$('#apGo').disabled = false;
+    }
+  });
+}
+
+function confirmDialog(row) {
+  const m = openModal(`Confirm visit \u2014 appointment ${row.appointment_id}`, `
+    <div class="cell-sub" style="margin-bottom:12px">Books this visit for one specific time. The EXCLUDE USING gist
+      double-booking constraint still applies: a salesperson or resource already booked over this time is refused,
+      in nexus_appointment_confirm's own words, below.</div>
+    <label class="cell-sub" for="apWhen" style="display:block">When</label>
+    <input id="apWhen" type="datetime-local" style="width:100%">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+      <div style="flex:1;min-width:160px">
+        <label class="cell-sub" for="apDuration" style="display:block">Duration (minutes)</label>
+        <input id="apDuration" type="number" min="5" step="5" value="45" style="width:100%">
+      </div>
+      <div style="flex:1;min-width:220px">
+        <label class="cell-sub" for="apSalesWrap" style="display:block">Salesperson (optional)</label>
+        <div id="apSalesWrap" class="cell-sub">Loading staff\u2026</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+      <div style="flex:1;min-width:160px">
+        <label class="cell-sub" for="apLocation" style="display:block">Location (optional)</label>
+        <input id="apLocation" type="text" maxlength="120" style="width:100%">
+      </div>
+      <div style="flex:1;min-width:160px">
+        <label class="cell-sub" for="apResource" style="display:block">Resource (optional)</label>
+        <input id="apResource" type="text" maxlength="120" style="width:100%" placeholder="bay, desk, demo car">
+      </div>
+    </div>
+  `, `<button class="btn primary" id="apGo">Confirm</button><button class="btn" id="apCancel">Cancel</button>`);
+  const $$ = id => m.wrap.querySelector(id);
+  $$('#apCancel').addEventListener('click', () => m.close());
+  staffSelectHtml(row.assigned_to_id).then(html => { $$('#apSalesWrap').innerHTML = html; });
+  $$('#apGo').addEventListener('click', async () => {
+    const whenVal = ($$('#apWhen').value || '').trim();
+    if (!whenVal) { m.msg('<span class="t-hot">A time is required.</span>'); return; }
+    const dt = new Date(whenVal);
+    if (Number.isNaN(dt.getTime())) { m.msg('<span class="t-hot">That time could not be read. Please re-enter it.</span>'); return; }
+    const duration = Number(($$('#apDuration').value || '45').trim()) || 45;
+    const salesSel = m.wrap.querySelector('#apSales');
+    const salesId = salesSel ? (salesSel.value || null) : null;
+    const location = ($$('#apLocation').value || '').trim() || null;
+    const resource = ($$('#apResource').value || '').trim() || null;
+    $$('#apGo').disabled = true;
+    m.msg('Confirming\u2026');
+    try {
+      await dbWrite('POST', 'rpc/nexus_my_appointment_confirm', {
+        p_appointment_id: row.appointment_id, p_starts_at: dt.toISOString(),
+        p_duration_minutes: duration, p_assigned_to_id: salesId, p_location: location, p_resource: resource,
+      });
+      m.msg('<span class="t-ok">Confirmed. Reopen the Appointments screen to see it reflected in the diary.</span>');
+    } catch (e) {
+      m.msg(`<span class="t-hot">${esc(e.message || String(e))}</span>`);
+      $$('#apGo').disabled = false;
+    }
+  });
+}
+
+function outcomeDialog(kind, row) {
+  const label = kind === 'no_show' ? 'No-show' : 'Attended';
+  const rpc = kind === 'no_show' ? 'nexus_my_appointment_no_show' : 'nexus_my_appointment_attend';
+  const m = openModal(`${label} \u2014 appointment ${row.appointment_id}`, `
+    <div class="cell-sub" style="margin-bottom:12px">Recorded as a human's own account of what happened. NEXUS never
+      infers this from the clock \u2014 see "The clock is not a witness" at the top of this screen.</div>
+    <label class="cell-sub" for="apReason" style="display:block">Reason / note (optional)</label>
+    <input id="apReason" type="text" maxlength="400" style="width:100%">
+  `, `<button class="btn primary" id="apGo">${esc(label)}</button><button class="btn" id="apCancel">Cancel</button>`);
+  const $$ = id => m.wrap.querySelector(id);
+  $$('#apCancel').addEventListener('click', () => m.close());
+  $$('#apGo').addEventListener('click', async () => {
+    const reason = ($$('#apReason').value || '').trim() || null;
+    $$('#apGo').disabled = true;
+    m.msg('Recording\u2026');
+    try {
+      await dbWrite('POST', `rpc/${rpc}`, { p_appointment_id: row.appointment_id, p_reason: reason });
+      m.msg('<span class="t-ok">Recorded. Reopen the Appointments screen to see it reflected in the diary.</span>');
+    } catch (e) {
+      m.msg(`<span class="t-hot">${esc(e.message || String(e))}</span>`);
+      $$('#apGo').disabled = false;
+    }
+  });
+}
+
+function cancelDialog(row) {
+  const m = openModal(`Cancel visit \u2014 appointment ${row.appointment_id}`, `
+    <div class="cell-sub" style="margin-bottom:12px">nexus_appointment_cancel refuses a cancel with no reason given,
+      in its own words \u2014 this dialog does not duplicate that check client-side.</div>
+    <label class="cell-sub" for="apReason" style="display:block">Reason</label>
+    <input id="apReason" type="text" maxlength="400" style="width:100%" placeholder="e.g. customer asked to cancel">
+  `, `<button class="btn primary" id="apGo">Cancel visit</button><button class="btn" id="apBack">Back</button>`);
+  const $$ = id => m.wrap.querySelector(id);
+  $$('#apBack').addEventListener('click', () => m.close());
+  $$('#apGo').addEventListener('click', async () => {
+    const reason = ($$('#apReason').value || '').trim() || null;
+    $$('#apGo').disabled = true;
+    m.msg('Cancelling\u2026');
+    try {
+      await dbWrite('POST', 'rpc/nexus_my_appointment_cancel', { p_appointment_id: row.appointment_id, p_reason: reason });
+      m.msg('<span class="t-ok">Cancelled. Reopen the Appointments screen to see it reflected in the diary.</span>');
+    } catch (e) {
+      m.msg(`<span class="t-hot">${esc(e.message || String(e))}</span>`);
+      $$('#apGo').disabled = false;
+    }
+  });
+}
+
+function openApptAction(kind, row, mode) {
+  if (mode && mode.readOnly) {
+    const m = openModal('Read-only subscription',
+      '<div class="cell-sub">This dealership\u2019s subscription is in a read-only state, so nothing on this '
+      + 'appointment can be written until it is resolved.</div>',
+      '<button class="btn" id="apClose">Close</button>');
+    m.wrap.querySelector('#apClose').addEventListener('click', () => m.close());
+    return;
+  }
+  if (kind === 'offer') return offerDialog(row);
+  if (kind === 'confirm') return confirmDialog(row);
+  if (kind === 'attend' || kind === 'no_show') return outcomeDialog(kind, row);
+  if (kind === 'cancel') return cancelDialog(row);
+}
+
+/* Reads the rows and the subscription mode the render pass stashed on the
+   card (`card.__apptRows` / `card.__apptMode`) — the same pattern
+   lib/ui.js's own comment on panel() names for a caller that needs state
+   `render` computed, rather than re-deriving it from the DOM. */
+const wireApptActions = card => {
+  const rows = card.__apptRows || [];
+  card.querySelectorAll('[data-appt-action]').forEach(btn => {
+    if (btn.disabled) return;
+    btn.addEventListener('click', () => {
+      const row = rows.find(r => str(r.appointment_id) === btn.dataset.apptId);
+      if (row) openApptAction(btn.dataset.apptAction, row, card.__apptMode);
+    });
+  });
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
    The read
    ══════════════════════════════════════════════════════════════════════════ */
 const readAppointments = shared(() => db(`rpc/nexus_appointment_status?p_days=${WINDOW_DAYS}`));
@@ -202,6 +442,16 @@ SCREENS.appointments = async host => {
      unread card rather than inventing an empty one. An empty diary and an
      unread diary are opposite facts and this screen makes both. */
   const load = () => readAppointments();
+
+  /* NX1005: P2 alone also needs to know whether this dealership's subscription
+     is read-only, to decide whether the "Act on it" buttons are live. Bundled
+     into one load rather than a second panel-level read, so a failure of
+     EITHER half shows P2 as unread rather than half-drawn. loadSubscription()
+     never throws (see lib/subscription.js) — a failed or missing read resolves
+     to isReadOnly() === false — so this can only reject if readAppointments()
+     itself does. */
+  const loadDiary = () => Promise.all([readAppointments(), loadSubscription()])
+    .then(([rows]) => ({ rows, mode: { readOnly: isReadOnly() } }));
 
   /* The same read, and this one never throws. It is for the last panel, whose
      entire job is to state what this screen cannot tell you: handing it a
@@ -316,10 +566,13 @@ SCREENS.appointments = async host => {
   panel(host, {
     title: 'Every visit on record, and what is actually true of it',
     sub: 'In the order the accessor returns them — by the time they are for, or by the time they were asked for when '
-       + 'no time exists yet. Every line carries the database’s own account, in words, of what state it is in',
-    load,
-    render: rows => {
+       + 'no time exists yet. Every line carries the database’s own account, in words, of what state it is in, and '
+       + 'NX1005’s own write actions where the row’s state allows one',
+    load: loadDiary,
+    render: ({ rows, mode }, card) => {
       const all = Array.isArray(rows) ? rows : [];
+      card.__apptRows = all;
+      card.__apptMode = mode;
       if (!all.length) {
         return stateEmpty('No showroom visit is on record for this dealership',
           'The accessor returned nothing. That is not a failure and it is not an all-clear either. It means one of '
@@ -375,9 +628,10 @@ SCREENS.appointments = async host => {
         { label: 'What this means', render: r => wrap(str(r.evidence)
             ? esc(str(r.evidence))
             : warm('The database recorded no explanation for this visit’s state, so none is being invented here.')) },
+        { label: 'Act on it', render: r => actionsCell(r, mode) },
       ], all);
     },
-  }).then(wireGo);
+  }).then(card => { wireGo(card); wireApptActions(card); });
 
   /* ────────────────────────────────────────────────────────────────────────
      P3 · The rows the clock cannot answer
@@ -448,11 +702,13 @@ SCREENS.appointments = async host => {
       const awaiting = all ? all.filter(isAwaiting) : null;
 
       const rows = [
-        { limit: 'Nothing books itself. Every row here was written by hand.',
-          why: 'NX995 built the write path — request, offer, confirm, attend, cancel — and granted it to service_role '
-             + 'alone. No workflow in production calls it. So this diary only ever contains what somebody put in it '
-             + 'deliberately, and a customer who asked for a visit through any channel does NOT appear here until a '
-             + 'person or a workflow that does not yet exist writes the row.' },
+        { limit: 'Nothing books itself. Every row here was written by a person, through this screen or the lead drawer.',
+          why: 'NX995 built the write path — request, offer, confirm, attend, cancel — granted to service_role alone. '
+             + 'NX1005 (21 Sep 2026) put tenant-scoped wrappers in front of it so a signed-in dealer can call it '
+             + 'directly — "Book visit" on a lead, and the Act on it buttons above — but no workflow and no channel '
+             + 'writes to it automatically. So this diary only ever contains what somebody put in it deliberately, '
+             + 'and a customer who asked for a visit through any channel does NOT appear here until a person opens '
+             + 'this product and writes the row themselves.' },
         { limit: 'There is no calendar anywhere.',
           why: 'Nothing on this page is synchronised to Google, Outlook or any showroom diary. A confirmed slot lives '
              + 'in this database and nowhere else, so a salesperson who never opens this screen has no way of knowing '
