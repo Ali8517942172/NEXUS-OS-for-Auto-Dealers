@@ -110,8 +110,9 @@ const NAV = [
        An owner who has NOT finished is not expected to find it here. The banner
        at the top of Today's Money Leaks brings them to it, and it renders only
        while something is still outstanding. */
-    { id:'setup',    title:'Setup',    icon:'rocket_launch' },
-    { id:'settings', title:'Settings', icon:'settings' },
+    { id:'setup',        title:'Setup',        icon:'rocket_launch' },
+    { id:'subscription', title:'Subscription', icon:'workspace_premium' },
+    { id:'settings',     title:'Settings',     icon:'settings' },
   ]},
 ];
 const SCREENS = {};

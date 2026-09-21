@@ -33,6 +33,7 @@ import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';
 import { envErrors } from './lib/env.js';
 import { ME, SESSION, db, myRole, sessionEnded, setMe, setMeReadFailed, setMembership, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
+import { loadSubscription, paintSubscriptionBanner, refreshSubscription, startWriteLockObserver } from './lib/subscription.js';
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
@@ -67,6 +68,7 @@ import './screens/overview.js';
 import './screens/record-lead.js';
 import './screens/revenue.js';
 import './screens/settings.js';
+import './screens/subscription.js';
 import './screens/setup.js';
 import './screens/team.js';
 
@@ -221,6 +223,13 @@ async function boot() {
     setMembership(null);
   }
 
+  /* The subscription read and its banner. Not awaited: a slow or failed read
+     must not hold the whole app off screen, the same reasoning as the
+     membership read above. loadSubscription() paints nothing itself; the
+     banner and the write-lock sweep both run off its resolution. */
+  loadSubscription().then(paintSubscriptionBanner);
+  startWriteLockObserver();
+
   $('boot').classList.add('hide');
   $('app').classList.remove('hide');
   $('userInitials').textContent = initials(ME?.name || SESSION.user.email);
@@ -236,7 +245,7 @@ async function boot() {
   /* Refresh means "tell me the truth right now", so it re-reads the badges as
      well as the screen. Re-rendering the screen alone would leave the sidebar
      asserting a number the operator just asked to have re-checked. */
-  $('refreshBtn').addEventListener('click', () => { go(current); refreshBadges(); });
+  $('refreshBtn').addEventListener('click', () => { go(current); refreshBadges(); refreshSubscription(); });
   $('scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) go(h); });
