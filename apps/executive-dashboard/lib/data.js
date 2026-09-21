@@ -439,6 +439,10 @@ const HOOK = {
      block with a non-greedy match to the first closing brace, and a brace here
      truncates the map and makes it report this very hook as undefined. */
   whatsappSend: 'whatsapp-send',
+  /* NX1007 -- 'Send test message' on the Channels screen. Flips a
+     PENDING_VERIFY WhatsApp Cloud channel to ACTIVE only after a real Graph
+     API send succeeds; see supabase/migrations/20260921140000_nx1007_*.sql. */
+  channelTestSend: 'channel-test-send',
 };
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */

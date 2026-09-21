@@ -1,0 +1,507 @@
+{
+  "name": "NX996 \u00b7 Notification Outbox Sender (Gmail, vendor pipeline)",
+  "nodes": [
+    {
+      "id": "nx996-trigger",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1400,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "notes": "NX996 outbox sender. Drains public.nexus_notification_outbox (the NEXUS vendor sales-enquiry pipeline -- deliberately NOT tenant-scoped; see the migration's own verified guard against a tenant_id column ever being added to this table). Every 5 minutes is a compromise between the queue's own 60s-1h exponential backoff floor and not hammering Gmail; adjust freely, nothing here assumes this exact interval."
+    },
+    {
+      "id": "nx996-claim",
+      "name": "Claim Due Notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1160,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_notification_claim",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_worker: 'n8n-notification-outbox-sender', p_channel: 'EMAIL', p_limit: 10, p_lease_seconds: 300 }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "notes": "nexus_notification_claim is a lease, not a state change (NX996 doc comment): a retry after a dropped response either claims nothing new (nothing was due yet) or claims a fresh batch -- it can never re-claim the same row twice, so retryOnFail is safe here the way it is not on the mark_sent/mark_failed state-transition calls below. p_channel:'EMAIL' because this sender only speaks Gmail; WHATSAPP/SLACK rows (none exist today) are left PENDING for a future worker rather than silently drained here.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "nx996-normalize-claim",
+      "name": "Normalize Claimed Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -920,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// PostgREST via n8n's HTTP node has shown up in this repo both as one item per row and as\n// a single item whose .json IS the whole array (see ops/per-dealer-send/patch_channel.py's\n// Resolve Send Channel nodes for the same defensive unwrap). Handle both shapes.\nlet rows = $input.all().map(i => i.json).filter(Boolean);\nif (rows.length === 1 && Array.isArray(rows[0])) rows = rows[0];\n// Zero claimed = zero items out = this branch halts here, per the house fail-closed idiom\n// already documented on nexus_resolve_channel_tenant() -- nothing further needs to run.\nreturn rows.filter(Boolean).map(r => ({ json: r }));\n"
+      },
+      "notes": "One n8n item per claimed notification. 0 claimed -> 0 items -> execution stops here, which IS success (nothing was due), not a failure."
+    },
+    {
+      "id": "nx996-fetch-lead",
+      "name": "Fetch Sales Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -680,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/nexus_sales_lead",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=eq.{{ $json.sales_lead_id }}"
+            },
+            {
+              "name": "select",
+              "value": "full_name,phone_e164,email,dealership,stock_size,message,received_at,status"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "GET, not an RPC: nexus_sales_lead has no dedicated read accessor (NX996 built this sender for a server-side key, same boundary as nexus_notification_status -- see that function's own comment). The Supabase credential here runs as service_role, which bypasses RLS entirely, exactly like every other supabaseApi-credentialed node in this repo. onError:'continueRegularOutput' turns a fetch failure into data ({error: ...}) instead of aborting the whole batch -- Build Email Content classifies it next, mirroring Delivery Report's pattern in ops/site-enquiry/site-enquiry.workflow.json.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "nx996-build-email",
+      "name": "Build Email Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const notif = $('Normalize Claimed Rows').item.json;\nlet rows = $input.all().map(i => i.json).filter(Boolean);\nif (rows.length === 1 && Array.isArray(rows[0])) rows = rows[0];\nconst first = rows[0] || {};\n\nconst base = {\n  notification_id: notif.notification_id,\n  sales_lead_id: notif.sales_lead_id,\n  channel: notif.channel,\n  reason_code: notif.reason,\n  attempt_no: notif.attempt_no,\n};\n\nif (first && first.error !== undefined) {\n  const msg = (first.error && (first.error.message || first.error.description)) || first.error;\n  return [{ json: Object.assign({}, base, {\n    sendable: false, error_code: 'LEAD_FETCH_FAILED', reason: String(msg).slice(0, 300),\n  }) }];\n}\n\nconst lead = Array.isArray(rows) ? rows[0] : null;\nif (!lead) {\n  return [{ json: Object.assign({}, base, {\n    sendable: false, error_code: 'LEAD_NOT_FOUND',\n    reason: 'nexus_sales_lead ' + notif.sales_lead_id + ' returned no row (on delete restrict '\n      + 'should make this impossible while this outbox row exists).',\n  }) }];\n}\nif (!lead.email) {\n  return [{ json: Object.assign({}, base, {\n    sendable: false, error_code: 'LEAD_HAS_NO_EMAIL',\n    reason: 'channel EMAIL requires an email address and this lead has none on file '\n      + '(phone ' + (lead.phone_e164 || 'also missing') + ').',\n  }) }];\n}\n\nconst esc = s => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst subject = 'NEXUS sales enquiry -- ' + lead.full_name\n  + (lead.dealership ? ' (' + lead.dealership + ')' : '');\nconst html = '<p>A NEXUS sales enquiry has been queued for ' + esc(notif.attempt_no) + ' attempt(s).</p>'\n  + '<table cellpadding=6 style=\"border-collapse:collapse\">'\n  + '<tr><td><b>Name</b></td><td>' + esc(lead.full_name) + '</td></tr>'\n  + '<tr><td><b>Email</b></td><td>' + esc(lead.email) + '</td></tr>'\n  + '<tr><td><b>Phone</b></td><td>' + esc(lead.phone_e164 || 'not given') + '</td></tr>'\n  + '<tr><td><b>Dealership</b></td><td>' + esc(lead.dealership || 'not given') + '</td></tr>'\n  + '<tr><td><b>Stock size</b></td><td>' + esc(lead.stock_size || 'not given') + '</td></tr>'\n  + '<tr><td><b>Received</b></td><td>' + esc(lead.received_at) + '</td></tr>'\n  + '</table><p>' + esc(lead.message || '(no message)') + '</p>'\n  + '<p style=\"color:#888\">notification_id ' + esc(notif.notification_id) + '</p>';\n\nreturn [{ json: Object.assign({}, base, { sendable: true, subject, html }) }];\n"
+      },
+      "notes": "The only place that decides whether this notification can actually be emailed. A false here never throws -- it flows to Mark Failed below with a real error_code, so a bad row gets recorded as FAILED/RETRYING instead of quietly stalling for a full 300s lease."
+    },
+    {
+      "id": "nx996-sendable-if",
+      "name": "Sendable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -200,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "nx996-sendable-c1",
+              "leftValue": "={{ $json.sendable }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "notes": "TRUE -> send. FALSE -> Mark Failed (Lookup) directly; there is nothing to send."
+    },
+    {
+      "id": "nx996-gmail-send",
+      "name": "Send via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        40,
+        -140
+      ],
+      "parameters": {
+        "sendTo": "={{ $env.NEXUS_NOTIFY_TO || 'aliasgher892@gmail.com' }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "NEXUS Sales Enquiries"
+        },
+        "resource": "message",
+        "operation": "send"
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1Cgivoyjt7psAirH",
+          "name": "Gmail OAuth2 API"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Node type, typeVersion and the gmailOAuth2 credential id (1Cgivoyjt7psAirH) copied verbatim from ops/site-enquiry/site-enquiry.workflow.json's 'Email: Site Enquiry (Gmail)' node so this binds to the credential that already exists, rather than inventing a second Gmail connection for the same vendor pipeline. onError is 'continueRegularOutput' ONLY so a failed send reaches Delivery Report below instead of vanishing -- do not remove Delivery Report and leave this onError in place."
+    },
+    {
+      "id": "nx996-delivery-report",
+      "name": "Delivery Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        -140
+      ],
+      "parameters": {
+        "jsCode": "// Verifies the Gmail claim before anything writes it down -- same defect this guards\n// against as Delivery Report in ops/site-enquiry/site-enquiry.workflow.json.\nconst item = $input.first().json || {};\nconst err = item.error;\nlet sent = true, why = null, messageId = null;\nif (err !== undefined) {\n  sent = false;\n  why = String((err && (err.message || err.description)) || err).slice(0, 300);\n} else if (!item.id && !item.threadId && !item.messageId) {\n  sent = false;\n  why = 'gmail node returned no message id';\n} else {\n  messageId = item.id || item.messageId || item.threadId;\n}\nconst built = $('Build Email Content').item.json;\nreturn [{ json: Object.assign({}, built, { sent, why, messageId }) }];\n"
+      }
+    },
+    {
+      "id": "nx996-actually-sent-if",
+      "name": "Actually Sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        -140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "nx996-sent-c1",
+              "leftValue": "={{ $json.sent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "nx996-mark-sent",
+      "name": "Mark Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_notification_mark_sent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_notification_id: $json.notification_id, p_worker: 'n8n-notification-outbox-sender', p_detail: 'gmail message id ' + ($json.messageId || '(unknown)') }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "State transition, not idempotent (nexus_notification_mark_sent refuses SENT->SENT -- NX996's own transition table has no such row) -- deliberately no retryOnFail here, unlike Claim above. onError:'continueRegularOutput' so one item's mark failure cannot abort the rest of the batch; a swallowed failure here still surfaces because the row stays SENT-but-unwritten only in the sender's own eyes -- nexus_notification_status() will keep reporting the true DB state on the next read regardless.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "nx996-mark-failed-send",
+      "name": "Mark Failed (Send)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -20
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_notification_mark_failed",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_notification_id: $json.notification_id, p_error_code: 'GMAIL_SEND_FAILED', p_error_detail: $json.why, p_worker: 'n8n-notification-outbox-sender' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "nx996-mark-failed-lookup",
+      "name": "Mark Failed (Lookup)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_notification_mark_failed",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_notification_id: $json.notification_id, p_error_code: $json.error_code, p_error_detail: $json.reason, p_worker: 'n8n-notification-outbox-sender' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "Reached when Build Email Content decided this claimed row cannot be emailed at all (lead fetch failed, lead missing, or lead has no email). Records the real reason so a human reading nexus_notification_status()/last_error_detail is not left guessing.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Claim Due Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Due Notifications": {
+      "main": [
+        [
+          {
+            "node": "Normalize Claimed Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Claimed Rows": {
+      "main": [
+        [
+          {
+            "node": "Fetch Sales Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Sales Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Content": {
+      "main": [
+        [
+          {
+            "node": "Sendable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sendable?": {
+      "main": [
+        [
+          {
+            "node": "Send via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed (Lookup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Gmail": {
+      "main": [
+        [
+          {
+            "node": "Delivery Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery Report": {
+      "main": [
+        [
+          {
+            "node": "Actually Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actually Sent?": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed (Send)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

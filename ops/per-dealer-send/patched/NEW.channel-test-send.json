@@ -1,0 +1,641 @@
+{
+ "name": "Channel Test Send (WhatsApp Cloud)",
+ "nodes": [
+  {
+   "id": "2a06b3df",
+   "name": "Channel Test Send Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "channel-test-send",
+    "responseMode": "lastNode",
+    "options": {}
+   }
+  },
+  {
+   "id": "e8f8e40a",
+   "name": "Verify JWT",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    220,
+    0
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "apikey",
+       "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+      },
+      {
+       "name": "Authorization",
+       "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "a67f312f",
+   "name": "Auth OK?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ],
+   "parameters": {
+    "options": {},
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "version": 2,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "7438b1cb",
+       "leftValue": "={{ $json.id }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "6899d8b4",
+   "name": "Tenant For JWT User",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    660,
+    -120
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "tenant_id"
+      },
+      {
+       "name": "auth_user_id",
+       "value": "=eq.{{ $('Verify JWT').first().json.id }}"
+      },
+      {
+       "name": "limit",
+       "value": "2"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1000
+  },
+  {
+   "id": "da68e715",
+   "name": "Parse Input",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    880,
+    -120
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// Exactly one tenant. Two tenant_members rows for one auth_user_id means this\n// endpoint cannot pick one on the caller's behalf -- refuse rather than guess.\nconst rows = $('Tenant For JWT User').all().map(i => i.json).filter(Boolean);\nif (rows.length !== 1) {\n  throw new Error('NX1007_TENANT_UNRESOLVED: caller belongs to ' + rows.length + ' dealership(s). '\n    + 'A test send needs exactly one.');\n}\nconst tenant_id = rows[0].tenant_id;\nconst body = $('Channel Test Send Webhook').first().json.body || {};\nconst integration_id = String(body.integration_id || '').trim();\nconst recipient = String(body.recipient_phone || '').replace(/[^0-9]/g, '');\nconst UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!UUID.test(integration_id)) {\n  throw new Error('NX1007_BAD_INPUT: integration_id must be the uuid this channel was registered with.');\n}\nif (recipient.length < 8) {\n  throw new Error('NX1007_BAD_INPUT: recipient_phone is required -- who should the test message go to?');\n}\nreturn [{ json: { tenant_id, integration_id, recipient,\n  verified_by: $('Verify JWT').first().json.email || $('Verify JWT').first().json.id } }];"
+   }
+  },
+  {
+   "id": "01ce07ed",
+   "name": "Fetch Channel (Owned + Pending)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1100,
+    -120
+   ],
+   "parameters": {
+    "method": "GET",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/channel_registry",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "integration_id,external_identifier,status,display_number"
+      },
+      {
+       "name": "integration_id",
+       "value": "=eq.{{ $json.integration_id }}"
+      },
+      {
+       "name": "tenant_id",
+       "value": "=eq.{{ $json.tenant_id }}"
+      },
+      {
+       "name": "channel_type",
+       "value": "eq.whatsapp_cloud_phone_number_id"
+      },
+      {
+       "name": "status",
+       "value": "eq.pending"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   }
+  },
+  {
+   "id": "dc2f61a9",
+   "name": "Channel Found?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1320,
+    -120
+   ],
+   "parameters": {
+    "options": {},
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "version": 2,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "ef86fa0f",
+       "leftValue": "={{ $json.integration_id }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "94346007",
+   "name": "Reveal Cloud Token",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1540,
+    -220
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_channel_secret_reveal",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_phone_number_id: $json.external_identifier, p_kind: 'meta_system_user_token', p_reason: 'owner-initiated test send (Channels screen)' }) }}",
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1000
+  },
+  {
+   "id": "4f9612d9",
+   "name": "POST Graph Test Message",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1760,
+    -220
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://graph.facebook.com/v20.0/' + $('Channel Found?').first().json.external_identifier + '/messages' }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "={{ 'Bearer ' + $('Reveal Cloud Token').first().json.secret }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Parse Input').first().json.recipient, type: 'text', text: { body: 'This is a test message from NEXUS OS confirming your WhatsApp Cloud number is connected and sending. If you received this, the connection works.' } }) }}",
+    "options": {
+     "timeout": 15000,
+     "response": {
+      "response": {
+       "neverError": true,
+       "fullResponse": true
+      }
+     }
+    }
+   },
+   "onError": "continueErrorOutput"
+  },
+  {
+   "id": "6addbd0b",
+   "name": "Classify Graph Response",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1980,
+    -220
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// A 2xx with no messages[0].id is not an accept -- nexus_channel_mark_active is\n// never called on an unfalsifiable success. See ops/whatsapp-cloud-send/SEND-DESIGN.md #4.\nconst r = $input.first().json || {};\nconst status = r.statusCode ?? r.status ?? null;\nconst body = r.body ?? r;\nconst wamid = body && body.messages && body.messages[0] && body.messages[0].id;\nconst ok = Number(status) >= 200 && Number(status) < 300 && !!wamid;\nreturn [{ json: { ok, status, wamid: wamid || null, body } }];"
+   }
+  },
+  {
+   "id": "80cc5cbd",
+   "name": "Mark Channel Active",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2200,
+    -280
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_channel_mark_active",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_integration_id: $('Parse Input').first().json.integration_id, p_verified_by: $('Parse Input').first().json.verified_by }) }}",
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500
+  },
+  {
+   "id": "c2a92c44",
+   "name": "Respond Verified",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    2420,
+    -280
+   ],
+   "parameters": {
+    "mode": "raw",
+    "jsonOutput": "={{ JSON.stringify({ status: 'active', wamid: $('Classify Graph Response').first().json.wamid, message: 'Test message accepted by WhatsApp and the channel is now ACTIVE.' }) }}",
+    "options": {}
+   }
+  },
+  {
+   "id": "4b68fd98",
+   "name": "Respond Test Failed",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    2200,
+    -120
+   ],
+   "parameters": {
+    "mode": "raw",
+    "jsonOutput": "={{ JSON.stringify({ status: 'pending', error: 'WhatsApp did not accept the test message '+ '(status ' + $('Classify Graph Response').first().json.status + '). The channel stays PENDING_VERIFY -- nothing was activated.', detail: $('Classify Graph Response').first().json.body }) }}",
+    "options": {}
+   }
+  },
+  {
+   "id": "90eddf19",
+   "name": "Respond Channel Not Found",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    1540,
+    -20
+   ],
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "3df5ce30",
+       "name": "status",
+       "type": "string",
+       "value": "error"
+      },
+      {
+       "id": "4a9850d3",
+       "name": "error",
+       "type": "string",
+       "value": "No PENDING_VERIFY WhatsApp Cloud channel with that id belongs to your dealership. It may already be active, may belong to a different dealership, or the id is wrong."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "915a46d1",
+   "name": "Respond Unauthorized",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    440,
+    140
+   ],
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "6fc6699a",
+       "name": "status",
+       "type": "string",
+       "value": "error"
+      },
+      {
+       "id": "3f298ff8",
+       "name": "error",
+       "type": "string",
+       "value": "Unauthorized. A valid Supabase session token is required in the Authorization header."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "7bada95d",
+   "name": "Send Accepted?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    2100,
+    -220
+   ],
+   "parameters": {
+    "options": {},
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "version": 2,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "1718705b",
+       "leftValue": "={{ $json.ok }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Channel Test Send Webhook": {
+   "main": [
+    [
+     {
+      "node": "Verify JWT",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify JWT": {
+   "main": [
+    [
+     {
+      "node": "Auth OK?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Auth OK?": {
+   "main": [
+    [
+     {
+      "node": "Tenant For JWT User",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Unauthorized",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tenant For JWT User": {
+   "main": [
+    [
+     {
+      "node": "Parse Input",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse Input": {
+   "main": [
+    [
+     {
+      "node": "Fetch Channel (Owned + Pending)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch Channel (Owned + Pending)": {
+   "main": [
+    [
+     {
+      "node": "Channel Found?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Channel Found?": {
+   "main": [
+    [
+     {
+      "node": "Reveal Cloud Token",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Channel Not Found",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Reveal Cloud Token": {
+   "main": [
+    [
+     {
+      "node": "POST Graph Test Message",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "POST Graph Test Message": {
+   "main": [
+    [
+     {
+      "node": "Classify Graph Response",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Classify Graph Response",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Classify Graph Response": {
+   "main": [
+    [
+     {
+      "node": "Send Accepted?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Send Accepted?": {
+   "main": [
+    [
+     {
+      "node": "Mark Channel Active",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Test Failed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mark Channel Active": {
+   "main": [
+    [
+     {
+      "node": "Respond Verified",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "saveDataSuccessExecution": "all",
+  "saveDataErrorExecution": "all",
+  "executionTimeout": 300,
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": true
+ },
+ "active": false
+}
