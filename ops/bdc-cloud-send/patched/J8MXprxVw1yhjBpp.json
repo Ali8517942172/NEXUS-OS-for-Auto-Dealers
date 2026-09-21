@@ -1,0 +1,913 @@
+{
+ "updatedAt": "2026-09-14T20:04:38.520Z",
+ "createdAt": "2026-09-07T09:17:03.587Z",
+ "id": "J8MXprxVw1yhjBpp",
+ "name": "WhatsApp Cloud - Inbound Receiver (Meta)",
+ "description": "Meta WhatsApp Cloud API inbound webhook. Verifies X-Hub-Signature-256 over the RAW bytes, resolves the dealership from Meta's own metadata.phone_number_id via channel_registry, then records the channel event and opens the customer service window. Writes n",
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "parameters": {
+    "multipleMethods": true,
+    "path": "whatsapp-cloud-inbound",
+    "responseMode": "responseNode",
+    "options": {
+     "rawBody": true
+    }
+   },
+   "id": "fbec5751-b365-41fe-a7f6-e38d7796a097",
+   "name": "Meta Cloud Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    0,
+    192
+   ],
+   "webhookId": "6633672d-28a3-494b-acfb-def40caf2bee"
+  },
+  {
+   "parameters": {
+    "jsCode": "/* The exact body kept in the repo at ops/n8n-whatsapp-cloud/verify-or-refuse.node.js\n *\n * The whole security decision lives in this node and nothing before it writes.\n * Three rules it exists to keep:\n *\n *  1. Meta signs the EXACT BYTES it sent. Parsing the JSON and re-serialising it\n *     to hash gives different bytes for any non-ASCII name, so the verifier\n *     passes an English test suite and then refuses every genuine delivery from\n *     a customer called Mohammed in Arabic. Everything below hashes the raw body.\n *\n *  2. With no app secret configured this receiver REFUSES. It does not pass\n *     traffic through the way `WAHA Auth Gate` did when its env var was unset.\n *     A dormant gate is an open door.\n *\n *  3. The HMAC is implemented here in full, because measured on this box on\n *     7 September 2026 the Code sandbox has neither require('crypto') nor the\n *     WebCrypto global (\"crypto is not defined\").\n */\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];\n\nfunction sha256(bytes) {\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,\n             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const l = bytes.length;\n  /* (l + 8), not (l + 9). At l % 64 === 55 the 0x80 byte and the 8-byte length\n     fit the current block exactly, and (l + 9) rounds up to an extra all-zero\n     block. That is invisible on almost every input - it bites only at lengths\n     55, 119, 183, 247 ... - which is why it survived the published vectors and\n     was caught by a differential test against node:crypto. */\n  const buf = new Uint8Array((((l + 8) >> 6) + 1) << 6);\n  buf.set(bytes); buf[l] = 0x80;\n  const dv = new DataView(buf.buffer), bits = l * 8;\n  dv.setUint32(buf.length - 8, Math.floor(bits / 4294967296));\n  dv.setUint32(buf.length - 4, bits >>> 0);\n  const w = new Uint32Array(64);\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const x = w[i - 15], y = w[i - 2];\n      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);\n      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);\n      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;\n    }\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));\n      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;\n      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));\n      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;\n    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;\n  }\n  const out = new Uint8Array(32), odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\n\nfunction hmacHex(keyBytes, msgBytes) {\n  const k = keyBytes.length > 64 ? sha256(keyBytes) : keyBytes;\n  const ipad = new Uint8Array(64), opad = new Uint8Array(64);\n  for (let i = 0; i < 64; i++) {\n    const kb = i < k.length ? k[i] : 0;\n    ipad[i] = kb ^ 0x36; opad[i] = kb ^ 0x5c;\n  }\n  const inner = new Uint8Array(64 + msgBytes.length);\n  inner.set(ipad); inner.set(msgBytes, 64);\n  const outer = new Uint8Array(96);\n  outer.set(opad); outer.set(sha256(inner), 64);\n  return Array.from(sha256(outer)).map(b => b.toString(16).padStart(2, '0')).join('');\n}\n\nconst item = $input.first();\nconst j = item.json || {};\nconst headers = j.headers || {};\nconst query = j.query || {};\nconst VERIFY_TOKEN = String($env.META_WEBHOOK_VERIFY_TOKEN || '');\nconst APP_SECRET = String($env.META_APP_SECRET || '');\n\nconst refuse = (status, code, why, extra) => [{ json: Object.assign(\n  { verdict: 'REFUSE', respond_status: status, respond_text: code,\n    reason_code: code, why, wrote_nothing: true }, extra || {}) }];\n\n/* Length first, then every position - never a short-circuit on the first\n   differing character, which leaks the prefix by timing. */\nconst sameString = (a, b) => {\n  if (a.length !== b.length) return false;\n  let d = 0;\n  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return d === 0;\n};\n\n/* ---- Meta's GET subscription handshake ---- */\nif (query['hub.mode'] !== undefined || query['hub.challenge'] !== undefined) {\n  if (!VERIFY_TOKEN) {\n    return refuse(500, 'VERIFY_TOKEN_NOT_CONFIGURED',\n      'META_WEBHOOK_VERIFY_TOKEN is unset on this box. Confirming a subscription ' +\n      'we cannot authenticate would let anyone point Meta deliveries at us.');\n  }\n  if (String(query['hub.mode']) !== 'subscribe') {\n    return refuse(400, 'HUB_MODE_NOT_SUBSCRIBE', 'hub.mode was not subscribe.');\n  }\n  if (!sameString(String(query['hub.verify_token'] || ''), VERIFY_TOKEN)) {\n    return refuse(403, 'HUB_VERIFY_TOKEN_MISMATCH', 'The verify token did not match.');\n  }\n  return [{ json: {\n    verdict: 'CHALLENGE', respond_status: 200,\n    respond_text: String(query['hub.challenge'] || ''),\n    reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true } }];\n}\n\n/* ---- Everything below is a POST delivery ---- */\n/* 5XX, not 4XX. A 4XX tells Meta not to retry, and for a lead that means it is\n   gone. Our missing configuration is our failure, so we answer like one. */\nif (!APP_SECRET) {\n  /* Nothing here is secret: three published HMAC-SHA256 vectors, two of them at\n     the block-boundary lengths where the padding bug above hid. They answer,\n     before go-live rather than during it, whether this sandbox computes the\n     right digest at all. A negative control is included because a self-test\n     that cannot fail proves nothing. */\n  const V = [\n    ['key', Buffer.from('The quick brown fox jumps over the lazy dog', 'utf8'),\n     'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8'],\n    ['key', Buffer.alloc(55, 0x61),\n     '5c753ac4cf15a28e7b5a045ba8ce75e02545a313f326021d770912f768fb53ef'],\n    ['key', Buffer.alloc(119, 0x61),\n     '4ffbedd6a1157e63e62d3fa284549bcfe39fb98dbb77ac48a89120aed5747d6b'],\n  ];\n  let selftest;\n  try {\n    const failed = V.filter(v => hmacHex(Buffer.from(v[0], 'utf8'), v[1]) !== v[2]).length;\n    const negative = hmacHex(Buffer.from('wrong-key', 'utf8'), V[0][1]) !== V[0][2];\n    selftest = { vectors: V.length, failed, negative_control_rejects: negative,\n                 ok: failed === 0 && negative };\n  } catch (e) {\n    selftest = { ok: false, error: String((e && e.message) || e) };\n  }\n  return refuse(500, 'APP_SECRET_NOT_CONFIGURED',\n    'META_APP_SECRET is unset on this box, so no delivery can be verified. ' +\n    'Refusing every request until it is set - this gate is never dormant.',\n    { hmac_selftest: selftest });\n}\n\nlet raw = null, raw_source = null;\nconst bin = item.binary && (item.binary.data || item.binary.body);\nif (bin && bin.data) { raw = Buffer.from(bin.data, 'base64'); raw_source = 'binary'; }\nelse if (typeof j.body === 'string') { raw = Buffer.from(j.body, 'utf8'); raw_source = 'string'; }\nif (!raw) {\n  return refuse(500, 'RAW_BODY_NOT_AVAILABLE',\n    'The webhook node did not hand this node the raw body, so the bytes Meta ' +\n    'signed are already gone and no care downstream gets them back. Turn on ' +\n    'Raw Body on the webhook node.');\n}\n\nconst sigHeader = String(headers['x-hub-signature-256'] || '');\nif (!sigHeader.startsWith('sha256=')) {\n  return refuse(401, 'SIGNATURE_HEADER_MISSING',\n    'No X-Hub-Signature-256 on the request. Meta always sends one.');\n}\nif (!sameString(sigHeader, 'sha256=' + hmacHex(Buffer.from(APP_SECRET, 'utf8'), raw))) {\n  return refuse(401, 'SIGNATURE_MISMATCH',\n    'X-Hub-Signature-256 did not match an HMAC-SHA256 of the raw body under the ' +\n    'app secret. Nothing was written.');\n}\n\nlet payload;\ntry { payload = JSON.parse(raw.toString('utf8')); }\ncatch (e) { return refuse(400, 'BODY_NOT_JSON', 'Signature verified but the body is not JSON.'); }\n\nconst out = [];\nfor (const entry of (payload.entry || [])) {\n  for (const ch of (entry.changes || [])) {\n    const v = ch.value || {};\n    const pnid = String((v.metadata || {}).phone_number_id || '');\n    const contacts = v.contacts || [];\n    for (const m of (v.messages || [])) {\n      const wa = String(m.from || '');\n      const contact = contacts.find(c => String(c.wa_id || '') === wa) || {};\n      const ts = Number(m.timestamp || 0);\n      const id = String(m.id || '');\n      /* An undated or unidentified message cannot open a window: there would be\n         nothing to deduplicate a redelivery against, and a replay would extend\n         Meta's 24-hour window for us. Accept the delivery, measure nothing. */\n      const measurable = ts > 0 && id !== '';\n      out.push({ json: {\n        verdict: measurable ? 'ACCEPT' : 'ACCEPT_UNMEASURABLE',\n        respond_status: 200, respond_text: 'ok',\n        reason_code: measurable ? 'SIGNATURE_VERIFIED' : 'MESSAGE_NOT_MEASURABLE',\n        raw_source,\n        phone_number_id: pnid,\n        waba_id: String(entry.id || ''),\n        customer_wa_id: wa,\n        customer_name: String((contact.profile || {}).name || ''),\n        message_id: id,\n        message_kind: String(m.type || 'text'),\n        occurred_at: measurable ? new Date(ts * 1000).toISOString() : null,\n        text: m.text ? String(m.text.body || '') : '',\n        origin_verified: 'hmac_sha256_x_hub',\n      } });\n    }\n  }\n}\nif (!out.length) {\n  return [{ json: {\n    verdict: 'ACCEPT_NO_MESSAGE', respond_status: 200, respond_text: 'ok',\n    reason_code: 'NO_INBOUND_MESSAGE_IN_DELIVERY', wrote_nothing: true, raw_source,\n    note: 'Signature verified. This delivery carried no inbound message - a ' +\n          'status callback or a change we do not consume yet.' } }];\n}\nreturn out;"
+   },
+   "id": "56b80add-40fb-4b05-b4bf-bb666e9c7b72",
+   "name": "Verify Or Refuse",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    224,
+    192
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "accept-verdict",
+       "leftValue": "={{ $json.verdict }}",
+       "rightValue": "ACCEPT",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "e9a23b40-6b81-42f5-a43c-3833d9ac26a4",
+   "name": "Signature Verified And Measurable?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    448,
+    192
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_resolve_channel_tenant",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_channel_type: 'whatsapp_cloud_phone_number_id', p_external_identifier: $json.phone_number_id }) }}",
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "id": "c56b5fcf-7e7b-4e50-a7b3-6817ddefb818",
+   "name": "Resolve Tenant From Phone Number ID",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    672,
+    96
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1000,
+   "alwaysOutputData": true,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "has-tenant",
+       "leftValue": "={{ $json.tenant_id }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "c33081be-d334-47ba-a7ec-f21c6e94c09c",
+   "name": "Channel Registered To A Dealership?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    896,
+    96
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_channel_event",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_integration_id: $json.integration_id, p_direction: 'inbound', p_external_message_id: $('Verify Or Refuse').item.json.message_id, p_origin_verified: 'hmac_sha256_x_hub', p_received_at: $('Verify Or Refuse').item.json.occurred_at, p_customer_external_id: $('Verify Or Refuse').item.json.customer_wa_id, p_customer_phone: (String($('Verify Or Refuse').item.json.customer_wa_id || '').replace(/[^0-9]/g, '') || null), p_message_kind: $('Verify Or Refuse').item.json.message_kind, p_provider_account_id: $('Verify Or Refuse').item.json.waba_id, p_message_text: (String($('Verify Or Refuse').item.json.text || '').trim() || null), p_customer_display_name: (String($('Verify Or Refuse').item.json.customer_name || '').trim() || null) }) }}",
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "id": "54e8c0e8-96b2-4c52-a046-c7ba21fe988e",
+   "name": "Record Channel Event",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1120,
+    0
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/whatsapp_record_customer_message",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_tenant_id: $('Resolve Tenant From Phone Number ID').item.json.tenant_id, p_integration_id: $('Resolve Tenant From Phone Number ID').item.json.integration_id, p_customer_wa_id: $('Verify Or Refuse').item.json.customer_wa_id, p_occurred_at: $('Verify Or Refuse').item.json.occurred_at, p_external_message_id: $('Verify Or Refuse').item.json.message_id, p_source: 'whatsapp_cloud_webhook_hmac_verified' }) }}",
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "id": "50613138-dbbc-4b15-80b3-c3e2910bea4d",
+   "name": "Open Or Extend Customer Service Window",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1344,
+    0
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "ok",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "4c8e1b0a-dd8e-450d-9ae6-95eb67611c10",
+   "name": "Respond 200 Recorded",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    1568,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "ok",
+    "options": {
+     "responseCode": 200
+    }
+   },
+   "id": "d9e9245c-439a-46be-a816-70011b0a55e0",
+   "name": "Respond 200 Unknown Channel",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    1120,
+    192
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "/* Meta signed this delivery, so it is genuine - but no channel_registry row\n * claims the phone number it arrived on, and NEXUS will not guess a dealership.\n * Meta already has its 200 (this node runs after the respond node), so this\n * throw does not cost a retry storm; it costs a FAILED row in audit_log via the\n * error workflow, which is how anyone finds out. */\nconst pnid = $('Verify Or Refuse').first().json.phone_number_id;\nthrow new Error('WHATSAPP_CLOUD_CHANNEL_NOT_REGISTERED: a signature-verified Meta delivery arrived on phone_number_id ' + pnid + ', which is not in channel_registry under whatsapp_cloud_phone_number_id. The message was NOT recorded. Register the number with nexus_register_channel().');"
+   },
+   "id": "d44d0c66-9287-4561-bd8e-c27dfe4286a7",
+   "name": "Raise Unregistered Channel",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1344,
+    192
+   ]
+  },
+  {
+   "parameters": {
+    "respondWith": "text",
+    "responseBody": "={{ $json.respond_text }}",
+    "options": {
+     "responseCode": "={{ $json.respond_status }}"
+    }
+   },
+   "id": "b90f029f-72ec-4372-a227-0e71136035f9",
+   "name": "Respond Without Writing",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    672,
+    288
+   ]
+  },
+  {
+   "id": "faf7854a",
+   "name": "Hand Off To BDC Agent (Cloud)",
+   "type": "n8n-nodes-base.executeWorkflow",
+   "typeVersion": 1.3,
+   "position": [
+    1680,
+    320
+   ],
+   "parameters": {
+    "workflowId": {
+     "__rl": true,
+     "value": "LTBExI7QzFeANeFg",
+     "mode": "id",
+     "cachedResultName": "WhatsApp BDC \u2014 TENANT SCOPED CANDIDATE (do not activate)"
+    },
+    "workflowInputs": {
+     "mappingMode": "defineBelow",
+     "value": {
+      "tenant_id": "={{ $('Resolve Tenant From Phone Number ID').item.json.tenant_id }}",
+      "tenant_slug": "={{ $('Resolve Tenant From Phone Number ID').item.json.tenant_slug }}",
+      "integration_id": "={{ $('Resolve Tenant From Phone Number ID').item.json.integration_id }}",
+      "phone_number_id": "={{ $('Resolve Tenant From Phone Number ID').item.json.external_identifier }}",
+      "customer_wa_id": "={{ $('Verify Or Refuse').item.json.customer_wa_id }}",
+      "message_id": "={{ $('Verify Or Refuse').item.json.message_id }}",
+      "occurred_at": "={{ $('Verify Or Refuse').item.json.occurred_at }}",
+      "message_kind": "={{ $('Verify Or Refuse').item.json.message_kind }}",
+      "text": "={{ $('Verify Or Refuse').item.json.text }}",
+      "customer_display_name": "={{ $('Verify Or Refuse').item.json.customer_name }}",
+      "waba_id": "={{ $('Verify Or Refuse').item.json.waba_id }}"
+     }
+    },
+    "options": {
+     "waitForSubWorkflow": false
+    }
+   },
+   "onError": "continueRegularOutput",
+   "notes": "Fire-and-forget on purpose, same reasoning as the BDC candidate's own 'Score New Lead (Master Router)' node: this runs an LLM agent and a Graph API send; Meta already has its 200 from 'Respond 200 Recorded' (same source item, parallel branch), so the webhook must never hold that response open waiting on this. waitForSubWorkflow:false also means a slow or failing BDC run can never turn into a Meta webhook retry storm. LTBExI7QzFeANeFg must stay 'active:false' until the BDC-CUTOVER-RUNBOOK's Step 4+ is executed deliberately -- until then this node's target is an inactive workflow and Execute Workflow against an inactive sub-workflow still runs it (n8n does not require the target be active), so this node is live functionality, not inert wiring, the moment this patch is deployed. Land this node's deploy in the SAME change window as BDC-CUTOVER-RUNBOOK Step 4, not before."
+  }
+ ],
+ "connections": {
+  "Meta Cloud Webhook": {
+   "main": [
+    [
+     {
+      "node": "Verify Or Refuse",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Verify Or Refuse",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify Or Refuse": {
+   "main": [
+    [
+     {
+      "node": "Signature Verified And Measurable?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Signature Verified And Measurable?": {
+   "main": [
+    [
+     {
+      "node": "Resolve Tenant From Phone Number ID",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Without Writing",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resolve Tenant From Phone Number ID": {
+   "main": [
+    [
+     {
+      "node": "Channel Registered To A Dealership?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Channel Registered To A Dealership?": {
+   "main": [
+    [
+     {
+      "node": "Record Channel Event",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond 200 Unknown Channel",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Record Channel Event": {
+   "main": [
+    [
+     {
+      "node": "Open Or Extend Customer Service Window",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Open Or Extend Customer Service Window": {
+   "main": [
+    [
+     {
+      "node": "Respond 200 Recorded",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Hand Off To BDC Agent (Cloud)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Respond 200 Unknown Channel": {
+   "main": [
+    [
+     {
+      "node": "Raise Unregistered Channel",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "availableInMCP": true,
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "saveDataErrorExecution": "all",
+  "saveDataSuccessExecution": "all",
+  "executionTimeout": 120,
+  "callerPolicy": "none",
+  "binaryMode": "separate"
+ },
+ "staticData": null,
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": {},
+ "versionId": "cc8ead44-ee32-4ad1-8149-6a2561d74276",
+ "activeVersionId": "cc8ead44-ee32-4ad1-8149-6a2561d74276",
+ "versionCounter": 6,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-09-07T09:17:03.587Z",
+   "createdAt": "2026-09-07T09:17:03.587Z",
+   "role": "workflow:owner",
+   "workflowId": "J8MXprxVw1yhjBpp",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-14T20:23:16.184Z",
+  "createdAt": "2026-09-14T20:04:38.581Z",
+  "versionId": "cc8ead44-ee32-4ad1-8149-6a2561d74276",
+  "workflowId": "J8MXprxVw1yhjBpp",
+  "nodes": [
+   {
+    "parameters": {
+     "multipleMethods": true,
+     "path": "whatsapp-cloud-inbound",
+     "responseMode": "responseNode",
+     "options": {
+      "rawBody": true
+     }
+    },
+    "id": "fbec5751-b365-41fe-a7f6-e38d7796a097",
+    "name": "Meta Cloud Webhook",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 2.1,
+    "position": [
+     0,
+     192
+    ],
+    "webhookId": "6633672d-28a3-494b-acfb-def40caf2bee"
+   },
+   {
+    "parameters": {
+     "jsCode": "/* The exact body kept in the repo at ops/n8n-whatsapp-cloud/verify-or-refuse.node.js\n *\n * The whole security decision lives in this node and nothing before it writes.\n * Three rules it exists to keep:\n *\n *  1. Meta signs the EXACT BYTES it sent. Parsing the JSON and re-serialising it\n *     to hash gives different bytes for any non-ASCII name, so the verifier\n *     passes an English test suite and then refuses every genuine delivery from\n *     a customer called Mohammed in Arabic. Everything below hashes the raw body.\n *\n *  2. With no app secret configured this receiver REFUSES. It does not pass\n *     traffic through the way `WAHA Auth Gate` did when its env var was unset.\n *     A dormant gate is an open door.\n *\n *  3. The HMAC is implemented here in full, because measured on this box on\n *     7 September 2026 the Code sandbox has neither require('crypto') nor the\n *     WebCrypto global (\"crypto is not defined\").\n */\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];\n\nfunction sha256(bytes) {\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,\n             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const l = bytes.length;\n  /* (l + 8), not (l + 9). At l % 64 === 55 the 0x80 byte and the 8-byte length\n     fit the current block exactly, and (l + 9) rounds up to an extra all-zero\n     block. That is invisible on almost every input - it bites only at lengths\n     55, 119, 183, 247 ... - which is why it survived the published vectors and\n     was caught by a differential test against node:crypto. */\n  const buf = new Uint8Array((((l + 8) >> 6) + 1) << 6);\n  buf.set(bytes); buf[l] = 0x80;\n  const dv = new DataView(buf.buffer), bits = l * 8;\n  dv.setUint32(buf.length - 8, Math.floor(bits / 4294967296));\n  dv.setUint32(buf.length - 4, bits >>> 0);\n  const w = new Uint32Array(64);\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const x = w[i - 15], y = w[i - 2];\n      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);\n      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);\n      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;\n    }\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));\n      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;\n      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));\n      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;\n    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;\n  }\n  const out = new Uint8Array(32), odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\n\nfunction hmacHex(keyBytes, msgBytes) {\n  const k = keyBytes.length > 64 ? sha256(keyBytes) : keyBytes;\n  const ipad = new Uint8Array(64), opad = new Uint8Array(64);\n  for (let i = 0; i < 64; i++) {\n    const kb = i < k.length ? k[i] : 0;\n    ipad[i] = kb ^ 0x36; opad[i] = kb ^ 0x5c;\n  }\n  const inner = new Uint8Array(64 + msgBytes.length);\n  inner.set(ipad); inner.set(msgBytes, 64);\n  const outer = new Uint8Array(96);\n  outer.set(opad); outer.set(sha256(inner), 64);\n  return Array.from(sha256(outer)).map(b => b.toString(16).padStart(2, '0')).join('');\n}\n\nconst item = $input.first();\nconst j = item.json || {};\nconst headers = j.headers || {};\nconst query = j.query || {};\nconst VERIFY_TOKEN = String($env.META_WEBHOOK_VERIFY_TOKEN || '');\nconst APP_SECRET = String($env.META_APP_SECRET || '');\n\nconst refuse = (status, code, why, extra) => [{ json: Object.assign(\n  { verdict: 'REFUSE', respond_status: status, respond_text: code,\n    reason_code: code, why, wrote_nothing: true }, extra || {}) }];\n\n/* Length first, then every position - never a short-circuit on the first\n   differing character, which leaks the prefix by timing. */\nconst sameString = (a, b) => {\n  if (a.length !== b.length) return false;\n  let d = 0;\n  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return d === 0;\n};\n\n/* ---- Meta's GET subscription handshake ---- */\nif (query['hub.mode'] !== undefined || query['hub.challenge'] !== undefined) {\n  if (!VERIFY_TOKEN) {\n    return refuse(500, 'VERIFY_TOKEN_NOT_CONFIGURED',\n      'META_WEBHOOK_VERIFY_TOKEN is unset on this box. Confirming a subscription ' +\n      'we cannot authenticate would let anyone point Meta deliveries at us.');\n  }\n  if (String(query['hub.mode']) !== 'subscribe') {\n    return refuse(400, 'HUB_MODE_NOT_SUBSCRIBE', 'hub.mode was not subscribe.');\n  }\n  if (!sameString(String(query['hub.verify_token'] || ''), VERIFY_TOKEN)) {\n    return refuse(403, 'HUB_VERIFY_TOKEN_MISMATCH', 'The verify token did not match.');\n  }\n  return [{ json: {\n    verdict: 'CHALLENGE', respond_status: 200,\n    respond_text: String(query['hub.challenge'] || ''),\n    reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true } }];\n}\n\n/* ---- Everything below is a POST delivery ---- */\n/* 5XX, not 4XX. A 4XX tells Meta not to retry, and for a lead that means it is\n   gone. Our missing configuration is our failure, so we answer like one. */\nif (!APP_SECRET) {\n  /* Nothing here is secret: three published HMAC-SHA256 vectors, two of them at\n     the block-boundary lengths where the padding bug above hid. They answer,\n     before go-live rather than during it, whether this sandbox computes the\n     right digest at all. A negative control is included because a self-test\n     that cannot fail proves nothing. */\n  const V = [\n    ['key', Buffer.from('The quick brown fox jumps over the lazy dog', 'utf8'),\n     'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8'],\n    ['key', Buffer.alloc(55, 0x61),\n     '5c753ac4cf15a28e7b5a045ba8ce75e02545a313f326021d770912f768fb53ef'],\n    ['key', Buffer.alloc(119, 0x61),\n     '4ffbedd6a1157e63e62d3fa284549bcfe39fb98dbb77ac48a89120aed5747d6b'],\n  ];\n  let selftest;\n  try {\n    const failed = V.filter(v => hmacHex(Buffer.from(v[0], 'utf8'), v[1]) !== v[2]).length;\n    const negative = hmacHex(Buffer.from('wrong-key', 'utf8'), V[0][1]) !== V[0][2];\n    selftest = { vectors: V.length, failed, negative_control_rejects: negative,\n                 ok: failed === 0 && negative };\n  } catch (e) {\n    selftest = { ok: false, error: String((e && e.message) || e) };\n  }\n  return refuse(500, 'APP_SECRET_NOT_CONFIGURED',\n    'META_APP_SECRET is unset on this box, so no delivery can be verified. ' +\n    'Refusing every request until it is set - this gate is never dormant.',\n    { hmac_selftest: selftest });\n}\n\nlet raw = null, raw_source = null;\nconst bin = item.binary && (item.binary.data || item.binary.body);\nif (bin && bin.data) { raw = Buffer.from(bin.data, 'base64'); raw_source = 'binary'; }\nelse if (typeof j.body === 'string') { raw = Buffer.from(j.body, 'utf8'); raw_source = 'string'; }\nif (!raw) {\n  return refuse(500, 'RAW_BODY_NOT_AVAILABLE',\n    'The webhook node did not hand this node the raw body, so the bytes Meta ' +\n    'signed are already gone and no care downstream gets them back. Turn on ' +\n    'Raw Body on the webhook node.');\n}\n\nconst sigHeader = String(headers['x-hub-signature-256'] || '');\nif (!sigHeader.startsWith('sha256=')) {\n  return refuse(401, 'SIGNATURE_HEADER_MISSING',\n    'No X-Hub-Signature-256 on the request. Meta always sends one.');\n}\nif (!sameString(sigHeader, 'sha256=' + hmacHex(Buffer.from(APP_SECRET, 'utf8'), raw))) {\n  return refuse(401, 'SIGNATURE_MISMATCH',\n    'X-Hub-Signature-256 did not match an HMAC-SHA256 of the raw body under the ' +\n    'app secret. Nothing was written.');\n}\n\nlet payload;\ntry { payload = JSON.parse(raw.toString('utf8')); }\ncatch (e) { return refuse(400, 'BODY_NOT_JSON', 'Signature verified but the body is not JSON.'); }\n\nconst out = [];\nfor (const entry of (payload.entry || [])) {\n  for (const ch of (entry.changes || [])) {\n    const v = ch.value || {};\n    const pnid = String((v.metadata || {}).phone_number_id || '');\n    const contacts = v.contacts || [];\n    for (const m of (v.messages || [])) {\n      const wa = String(m.from || '');\n      const contact = contacts.find(c => String(c.wa_id || '') === wa) || {};\n      const ts = Number(m.timestamp || 0);\n      const id = String(m.id || '');\n      /* An undated or unidentified message cannot open a window: there would be\n         nothing to deduplicate a redelivery against, and a replay would extend\n         Meta's 24-hour window for us. Accept the delivery, measure nothing. */\n      const measurable = ts > 0 && id !== '';\n      out.push({ json: {\n        verdict: measurable ? 'ACCEPT' : 'ACCEPT_UNMEASURABLE',\n        respond_status: 200, respond_text: 'ok',\n        reason_code: measurable ? 'SIGNATURE_VERIFIED' : 'MESSAGE_NOT_MEASURABLE',\n        raw_source,\n        phone_number_id: pnid,\n        waba_id: String(entry.id || ''),\n        customer_wa_id: wa,\n        customer_name: String((contact.profile || {}).name || ''),\n        message_id: id,\n        message_kind: String(m.type || 'text'),\n        occurred_at: measurable ? new Date(ts * 1000).toISOString() : null,\n        text: m.text ? String(m.text.body || '') : '',\n        origin_verified: 'hmac_sha256_x_hub',\n      } });\n    }\n  }\n}\nif (!out.length) {\n  return [{ json: {\n    verdict: 'ACCEPT_NO_MESSAGE', respond_status: 200, respond_text: 'ok',\n    reason_code: 'NO_INBOUND_MESSAGE_IN_DELIVERY', wrote_nothing: true, raw_source,\n    note: 'Signature verified. This delivery carried no inbound message - a ' +\n          'status callback or a change we do not consume yet.' } }];\n}\nreturn out;"
+    },
+    "id": "56b80add-40fb-4b05-b4bf-bb666e9c7b72",
+    "name": "Verify Or Refuse",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     224,
+     192
+    ]
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "strict",
+       "version": 2
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "accept-verdict",
+        "leftValue": "={{ $json.verdict }}",
+        "rightValue": "ACCEPT",
+        "operator": {
+         "type": "string",
+         "operation": "equals"
+        }
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "e9a23b40-6b81-42f5-a43c-3833d9ac26a4",
+    "name": "Signature Verified And Measurable?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     448,
+     192
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_resolve_channel_tenant",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ p_channel_type: 'whatsapp_cloud_phone_number_id', p_external_identifier: $json.phone_number_id }) }}",
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "id": "c56b5fcf-7e7b-4e50-a7b3-6817ddefb818",
+    "name": "Resolve Tenant From Phone Number ID",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     672,
+     96
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1000,
+    "alwaysOutputData": true,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "has-tenant",
+        "leftValue": "={{ $json.tenant_id }}",
+        "rightValue": "",
+        "operator": {
+         "type": "string",
+         "operation": "notEmpty",
+         "singleValue": true
+        }
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "c33081be-d334-47ba-a7ec-f21c6e94c09c",
+    "name": "Channel Registered To A Dealership?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     896,
+     96
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_channel_event",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ p_integration_id: $json.integration_id, p_direction: 'inbound', p_external_message_id: $('Verify Or Refuse').item.json.message_id, p_origin_verified: 'hmac_sha256_x_hub', p_received_at: $('Verify Or Refuse').item.json.occurred_at, p_customer_external_id: $('Verify Or Refuse').item.json.customer_wa_id, p_customer_phone: (String($('Verify Or Refuse').item.json.customer_wa_id || '').replace(/[^0-9]/g, '') || null), p_message_kind: $('Verify Or Refuse').item.json.message_kind, p_provider_account_id: $('Verify Or Refuse').item.json.waba_id, p_message_text: (String($('Verify Or Refuse').item.json.text || '').trim() || null), p_customer_display_name: (String($('Verify Or Refuse').item.json.customer_name || '').trim() || null) }) }}",
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "id": "54e8c0e8-96b2-4c52-a046-c7ba21fe988e",
+    "name": "Record Channel Event",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1120,
+     0
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/whatsapp_record_customer_message",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ p_tenant_id: $('Resolve Tenant From Phone Number ID').item.json.tenant_id, p_integration_id: $('Resolve Tenant From Phone Number ID').item.json.integration_id, p_customer_wa_id: $('Verify Or Refuse').item.json.customer_wa_id, p_occurred_at: $('Verify Or Refuse').item.json.occurred_at, p_external_message_id: $('Verify Or Refuse').item.json.message_id, p_source: 'whatsapp_cloud_webhook_hmac_verified' }) }}",
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "id": "50613138-dbbc-4b15-80b3-c3e2910bea4d",
+    "name": "Open Or Extend Customer Service Window",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1344,
+     0
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "respondWith": "text",
+     "responseBody": "ok",
+     "options": {
+      "responseCode": 200
+     }
+    },
+    "id": "4c8e1b0a-dd8e-450d-9ae6-95eb67611c10",
+    "name": "Respond 200 Recorded",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.5,
+    "position": [
+     1568,
+     0
+    ]
+   },
+   {
+    "parameters": {
+     "respondWith": "text",
+     "responseBody": "ok",
+     "options": {
+      "responseCode": 200
+     }
+    },
+    "id": "d9e9245c-439a-46be-a816-70011b0a55e0",
+    "name": "Respond 200 Unknown Channel",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.5,
+    "position": [
+     1120,
+     192
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "/* Meta signed this delivery, so it is genuine - but no channel_registry row\n * claims the phone number it arrived on, and NEXUS will not guess a dealership.\n * Meta already has its 200 (this node runs after the respond node), so this\n * throw does not cost a retry storm; it costs a FAILED row in audit_log via the\n * error workflow, which is how anyone finds out. */\nconst pnid = $('Verify Or Refuse').first().json.phone_number_id;\nthrow new Error('WHATSAPP_CLOUD_CHANNEL_NOT_REGISTERED: a signature-verified Meta delivery arrived on phone_number_id ' + pnid + ', which is not in channel_registry under whatsapp_cloud_phone_number_id. The message was NOT recorded. Register the number with nexus_register_channel().');"
+    },
+    "id": "d44d0c66-9287-4561-bd8e-c27dfe4286a7",
+    "name": "Raise Unregistered Channel",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1344,
+     192
+    ]
+   },
+   {
+    "parameters": {
+     "respondWith": "text",
+     "responseBody": "={{ $json.respond_text }}",
+     "options": {
+      "responseCode": "={{ $json.respond_status }}"
+     }
+    },
+    "id": "b90f029f-72ec-4372-a227-0e71136035f9",
+    "name": "Respond Without Writing",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.5,
+    "position": [
+     672,
+     288
+    ]
+   }
+  ],
+  "connections": {
+   "Meta Cloud Webhook": {
+    "main": [
+     [
+      {
+       "node": "Verify Or Refuse",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Verify Or Refuse",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Verify Or Refuse": {
+    "main": [
+     [
+      {
+       "node": "Signature Verified And Measurable?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Signature Verified And Measurable?": {
+    "main": [
+     [
+      {
+       "node": "Resolve Tenant From Phone Number ID",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond Without Writing",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Resolve Tenant From Phone Number ID": {
+    "main": [
+     [
+      {
+       "node": "Channel Registered To A Dealership?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Channel Registered To A Dealership?": {
+    "main": [
+     [
+      {
+       "node": "Record Channel Event",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond 200 Unknown Channel",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Record Channel Event": {
+    "main": [
+     [
+      {
+       "node": "Open Or Extend Customer Service Window",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Open Or Extend Customer Service Window": {
+    "main": [
+     [
+      {
+       "node": "Respond 200 Recorded",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Respond 200 Unknown Channel": {
+    "main": [
+     [
+      {
+       "node": "Raise Unregistered Channel",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala ",
+  "name": "The recorder carries the words",
+  "description": "",
+  "autosaved": true,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-14T20:23:16.179Z",
+    "id": 867,
+    "workflowId": "J8MXprxVw1yhjBpp",
+    "versionId": "cc8ead44-ee32-4ad1-8149-6a2561d74276",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}
