@@ -378,7 +378,7 @@ const verify = node({
         "const GOOGLE_SECRET_KIND = 'google_lead_form_key';\n" +
         "const SUPABASE_URL = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_URL) || '')\n" +
         "  .replace(/\\/+$/, '');\n" +
-        "const SERVICE_KEY = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_SERVICE_ROLE_KEY) || '');\n" +
+        "const SERVICE_KEY = String((typeof $env !== 'undefined' && $env && ($env.SUPABASE_SERVICE_ROLE_KEY || $env.SUPABASE_KEY)) || '');\n" +
         "const http = (typeof $helpers !== 'undefined' && $helpers && $helpers.httpRequest)\n" +
         "  ? $helpers.httpRequest.bind($helpers) : null;\n" +
         "\n" +

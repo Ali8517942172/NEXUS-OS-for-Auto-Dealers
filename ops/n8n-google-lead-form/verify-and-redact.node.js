@@ -129,7 +129,7 @@ const refuse = (status, code, why, extra) => [{ json: Object.assign(
 const GOOGLE_SECRET_KIND = 'google_lead_form_key';
 const SUPABASE_URL = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_URL) || '')
   .replace(/\/+$/, '');
-const SERVICE_KEY = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_SERVICE_ROLE_KEY) || '');
+const SERVICE_KEY = String((typeof $env !== 'undefined' && $env && ($env.SUPABASE_SERVICE_ROLE_KEY || $env.SUPABASE_KEY)) || '');
 const http = (typeof $helpers !== 'undefined' && $helpers && $helpers.httpRequest)
   ? $helpers.httpRequest.bind($helpers) : null;
 
