@@ -3,6 +3,9 @@
   "outputDirectory": "apps/executive-dashboard/dist",
   "rewrites": [
     { "source": "/contract-auditor", "destination": "/contract-auditor.html" },
+    { "source": "/developers", "destination": "/developers/index.html" },
+    { "source": "/developers/", "destination": "/developers/index.html" },
+    { "source": "/developers/index.html", "destination": "/developers/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
