@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// The payload must come from the trigger, not from $input: 'Auth OK?' sits\n// in between, so $input here is the Supabase user object, not the request.\n// $('Webhook - Ask AI') THROWS if that node did not run in this execution --\n// it does NOT return undefined -- so the lookup is wrapped in try/catch.\nlet raw;\ntry {\n  raw = $('Webhook - Ask AI').first().json;\n} catch (e) {\n  raw = $input.first().json;   // direct / sub-workflow call\n}\n\nconst body = raw.body || raw;\nconst question = String(body.question || body.query || body.q || '').trim();\n\nif (!question) {\n  throw new Error('No question provided. POST a JSON body like { \"question\": \"What is our warranty policy?\" }');\n}\n\n// Retrieval now lives in Postgres: public.search_rag_documents(q, match_limit).\n// It ranks with ts_rank_cd and falls back to per-term trigram matching for\n// typos. This node no longer builds a tsquery or strips stopwords -- doing\n// that here is exactly what made short questions return nothing.\nreturn [{ json: { question } }];"
+        "jsCode": "// The payload must come from the trigger, not from $input: 'Auth OK?' and now\n// 'Tenant For JWT User' sit in between, so $input here is the tenant lookup's\n// response, not the request.\n// $('Webhook - Ask AI') THROWS if that node did not run in this execution --\n// it does NOT return undefined -- so the lookup is wrapped in try/catch.\nlet raw;\ntry {\n  raw = $('Webhook - Ask AI').first().json;\n} catch (e) {\n  raw = $input.first().json;   // direct / sub-workflow / manual call\n}\n\nconst body = raw.body || raw;\nconst question = String(body.question || body.query || body.q || '').trim();\n\nif (!question) {\n  throw new Error('No question provided. POST a JSON body like { \"question\": \"What is our warranty policy?\" }');\n}\n\n// ---- TENANT (2 Sep 2026) --------------------------------------------------\n// public.search_rag_documents is SECURITY INVOKER on purpose, but n8n calls it\n// as service_role, which is BYPASSRLS -- so for this workflow the p_tenant\n// ARGUMENT is the entire boundary. The 2-arg overload we used before derives\n// the tenant from nexus_scoped_tenant_id(), which is null for service_role;\n// with a second dealership active that function returns nothing at all and\n// Ask-AI answers 'no documents' to everyone. Naming the tenant fixes both the\n// leak and the outage.\n//\n// The signal is the Supabase user behind the VERIFIED JWT, mapped through\n// tenant_members by the node before this one. That is a real identity: the\n// person asking works for that dealership. It is not the request body, which\n// the caller controls.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\nlet tenant = '';\nlet tenantSource = '';\ntry {\n  const row = $('Tenant For JWT User').all().map(i => i.json).find(x => x && x.tenant_id);\n  if (row) { tenant = String(row.tenant_id); tenantSource = 'jwt_tenant_member'; }\n} catch (e) { /* manual run: that node did not execute */ }\n// Sole configured dealership: name it rather than send null and rely on the\n// function's own one-tenant fallback. Two or more and an unknown asker gets\n// null, which makes the function return nothing -- fail closed, by design.\nif (!NEXUS_UUID.test(tenant) && nexusKeys.length === 1) {\n  tenant = String(nexusMap[nexusKeys[0]] || '');\n  tenantSource = 'sole_configured_tenant';\n}\nif (!NEXUS_UUID.test(tenant)) { tenant = null; tenantSource = 'unresolved'; }\n\n// Retrieval now lives in Postgres: public.search_rag_documents(q, match_limit,\n// p_tenant). It ranks with ts_rank_cd and falls back to per-term trigram\n// matching for typos. This node no longer builds a tsquery or strips stopwords\n// -- doing that here is exactly what made short questions return nothing.\nreturn [{ json: { question, tenant_id: tenant, tenant_source: tenantSource } }];"
       },
       "id": "f9131ea6-fe99-46ec-b0b2-2118c2a071c4",
       "name": "Extract Question",
@@ -39,7 +39,7 @@
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ q: $json.question, match_limit: 6, p_tenant: $json.tenant_id }) }}",
+        "jsonBody": "={{ JSON.stringify({ q: $json.question, match_limit: 6, p_tenant: $json.tenant_id || null }) }}",
         "options": {
           "timeout": 8000
         }
@@ -98,7 +98,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'nvidia/nemotron-3-ultra-550b-a55b:free', models: ['nvidia/nemotron-3-ultra-550b-a55b:free','google/gemma-4-31b-it:free','nvidia/nemotron-3-super-120b-a12b:free'], route: 'fallback', temperature: 0, max_tokens: 900, messages: [ { role: 'system', content: 'You are the NEXUS OS AI Assistant for an automotive dealership in the UAE.\\n\\nRULES, IN PRIORITY ORDER:\\n1. ANSWER ONLY FROM THE CONTEXT. The context is split into numbered blocks labelled [S1], [S2], [S3] and so on. Nothing outside those blocks is company policy, no matter how confident you feel about dealerships, warranties, finance or UAE law.\\n2. CITE EVERY SOURCED SENTENCE. A sentence that states a fact taken from the context must end with that block marker, written exactly as [S1]. Use several if several apply, e.g. [S1][S3]. Never write a marker number that does not exist in the context.\\n3. NEVER STATE A NUMBER THAT IS NOT IN THE CONTEXT. Not a price, a percentage, a number of days or months, a mileage, a deadline or a limit. If the reader needs a figure the context does not give, say the context does not state it.\\n4. IF THE CONTEXT DOES NOT ANSWER THE QUESTION, reply with exactly NOT_IN_CONTEXT on the first line, then one sentence naming what is missing. Answering from memory is worse than not answering: a sales rep will repeat your words to a customer as company policy.\\n5. Be concise and professional. Reply in the language the question was asked in.\\n\\nAnything you write without a [S#] marker is shown to the user as UNCITED and explicitly flagged as not backed by any document, so mark everything you genuinely took from the context.' }, { role: 'user', content: 'Context from the knowledge base (' + $json.doc_count + ' section(s) retrieved, ' + $json.docs_in_prompt + ' sent to you below).\\n\\n' + $json.context + '\\n---\\nQuestion: ' + $json.question + '\\n\\nRemember: cite each sourced sentence with its [S#] marker, never state a number that is not above, and reply NOT_IN_CONTEXT if the blocks above do not answer this.' } ] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'nvidia/nemotron-3.5-lightning:free', models: ['nvidia/nemotron-3.5-lightning:free','nvidia/nemotron-3-super-120b-a12b:free','z-ai/glm-5.2:free'], route: 'fallback', temperature: 0, max_tokens: 900, messages: [ { role: 'system', content: 'You are the NEXUS OS AI Assistant for an automotive dealership in the UAE.\\n\\nRULES, IN PRIORITY ORDER:\\n1. ANSWER ONLY FROM THE CONTEXT. The context is split into numbered blocks labelled [S1], [S2], [S3] and so on. Nothing outside those blocks is company policy, no matter how confident you feel about dealerships, warranties, finance or UAE law.\\n2. CITE EVERY SOURCED SENTENCE. A sentence that states a fact taken from the context must end with that block marker, written exactly as [S1]. Use several if several apply, e.g. [S1][S3]. Never write a marker number that does not exist in the context.\\n3. NEVER STATE A NUMBER THAT IS NOT IN THE CONTEXT. Not a price, a percentage, a number of days or months, a mileage, a deadline or a limit. If the reader needs a figure the context does not give, say the context does not state it.\\n4. IF THE CONTEXT DOES NOT ANSWER THE QUESTION, reply with exactly NOT_IN_CONTEXT on the first line, then one sentence naming what is missing. Answering from memory is worse than not answering: a sales rep will repeat your words to a customer as company policy.\\n5. Be concise and professional. Reply in the language the question was asked in.\\n\\nAnything you write without a [S#] marker is shown to the user as UNCITED and explicitly flagged as not backed by any document, so mark everything you genuinely took from the context.' }, { role: 'user', content: 'Context from the knowledge base (' + $json.doc_count + ' section(s) retrieved, ' + $json.docs_in_prompt + ' sent to you below).\\n\\n' + $json.context + '\\n---\\nQuestion: ' + $json.question + '\\n\\nRemember: cite each sourced sentence with its [S#] marker, never state a number that is not above, and reply NOT_IN_CONTEXT if the blocks above do not answer this.' } ] }) }}",
         "options": {
           "timeout": 25000
         }
@@ -219,7 +219,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: 'Ask-AI RAG Query', status: ($json.delivery ? $json.delivery.status : ($json.answer ? 'SUCCESS' : 'REJECTED')), summary: ($json.delivery ? ('Q: ' + String($json.question).substring(0, 200) + ' | retrieved: ' + $json.documents_consulted + ' | cited: ' + $json.documents_cited + ' | grounding: ' + ($json.grounding ? $json.grounding.state : 'unknown') + ' | ' + $json.delivery.note + ($json.delivery.dropped.length ? ' [' + $json.delivery.dropped.join('; ') + ']' : '')) : ($json.answer ? ('Q: ' + String($json.question).substring(0, 200) + ' | retrieved: ' + $json.documents_consulted) : 'Unauthorized request rejected')), logged_at: $now.toISO() }) }}",
+        "jsonBody": "={{ (() => { let t = null, src = 'unknown'; try { const e = $('Extract Question').first().json; t = e.tenant_id || null; src = e.tenant_source || 'unknown'; } catch (err) { t = null; src = 'unauthenticated'; } const base = { workflow: 'Ask-AI RAG Query', status: ($json.delivery ? $json.delivery.status : ($json.answer ? 'SUCCESS' : 'REJECTED')), summary: (($json.delivery ? ('Q: ' + String($json.question).substring(0, 200) + ' | retrieved: ' + $json.documents_consulted + ' | cited: ' + $json.documents_cited + ' | grounding: ' + ($json.grounding ? $json.grounding.state : 'unknown') + ' | ' + $json.delivery.note + ($json.delivery.dropped.length ? ' [' + $json.delivery.dropped.join('; ') + ']' : '')) : ($json.answer ? ('Q: ' + String($json.question).substring(0, 200) + ' | retrieved: ' + $json.documents_consulted) : 'Unauthorized request rejected')) + (t ? ' | tenant: ' + src : ' | TENANT UNRESOLVED (' + src + ')')).substring(0, 900), logged_at: $now.toISO() }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
         "options": {
           "timeout": 15000
         }
@@ -402,63 +402,50 @@
       }
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_current_tenant_id",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "apikey",
-              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
-            },
-            {
-              "name": "Authorization",
-              "value": "={{ $('Webhook - Ask AI').first().json.headers.authorization || '' }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "Accept",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({}) }}",
-        "options": {
-          "timeout": 8000
-        }
-      },
-      "id": "nx991-resolve-caller-dealership",
-      "name": "Resolve Caller Dealership",
+      "id": "1c7d0c03-6fda-4c61-9323-68d719ced908",
+      "name": "Tenant For JWT User",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        388,
-        160
+        384,
+        176
       ],
-      "alwaysOutputData": true,
+      "parameters": {
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "tenant_id"
+            },
+            {
+              "name": "auth_user_id",
+              "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
       "onError": "continueRegularOutput",
       "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 1000
-    },
-    {
-      "parameters": {
-        "jsCode": "/* NX991 CUTOVER (17 Sep 2026).\n *\n * This workflow used to call search_rag_documents(q, match_limit). NX991 made\n * that 2-argument form RAISE for a backend caller once a SECOND dealership\n * exists, because the honest alternative -- returning zero rows -- is\n * indistinguishable from \"the company has no document about that\", and that is\n * a wrong answer rather than a missing one.\n *\n * The fix is the 3-argument tenant-taking form:\n *     public.search_rag_documents(q text, match_limit integer, p_tenant uuid)\n *\n * The dealership is the SIGNED-IN USER'S OWN, taken from\n * nexus_current_tenant_id() called with their JWT -- never from anything in\n * the request body. A user who belongs to no dealership gets a loud refusal\n * here rather than a confident empty answer downstream.\n */\nconst raw = $input.first().json;\nconst tenant =\n  (raw && typeof raw === 'object'\n    ? (raw.tenant_id || raw.nexus_current_tenant_id || raw.data || null)\n    : (typeof raw === 'string' ? raw : null));\n\nif (!tenant || typeof tenant !== 'string') {\n  throw new Error(\n    'NX991_TENANT_UNRESOLVED: the caller\\'s dealership could not be established from their JWT via ' +\n    'nexus_current_tenant_id(), so search_rag_documents has no tenant to scope to. Refusing rather than ' +\n    'searching unscoped: at one dealership an unscoped search happens to be right, and at two it silently ' +\n    'answers from the wrong company\\'s documents or returns nothing at all. Check that the bearer token ' +\n    'belongs to a user with a row in tenant_members for an active tenant.'\n  );\n}\n\nreturn [{ json: { question: $('Extract Question').first().json.question, tenant_id: tenant } }];\n"
-      },
-      "id": "nx991-require-a-dealership",
-      "name": "Require A Dealership",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        498,
-        160
-      ]
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -517,7 +504,7 @@
       "main": [
         [
           {
-            "node": "Resolve Caller Dealership",
+            "node": "Supabase Knowledge Search",
             "type": "main",
             "index": 0
           }
@@ -572,7 +559,7 @@
       "main": [
         [
           {
-            "node": "Extract Question",
+            "node": "Tenant For JWT User",
             "type": "main",
             "index": 0
           }
@@ -648,22 +635,11 @@
         ]
       ]
     },
-    "Resolve Caller Dealership": {
+    "Tenant For JWT User": {
       "main": [
         [
           {
-            "node": "Require A Dealership",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Require A Dealership": {
-      "main": [
-        [
-          {
-            "node": "Supabase Knowledge Search",
+            "node": "Extract Question",
             "type": "main",
             "index": 0
           }
@@ -685,7 +661,7 @@
   "_exported_from": {
     "id": "qHAtd3RckAKRBUkE",
     "active": true,
-    "updatedAt": "2026-08-30T17:56:11.810Z",
+    "updatedAt": "2026-09-02T10:32:39.451Z",
     "published": true
   }
 }

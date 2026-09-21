@@ -1,5 +1,11 @@
 # 07 — Arm `WAHA_WEBHOOK_SECRET` on `whatsapp-inbound` — **NOT DEPLOYED, LAST, TRAFFIC-AFFECTING**
 
+> **SUPERSEDED IN PART, 18 Sep 2026 — see `ops/launch/WAHA-GATE-MEASURED-2026-09-18.md`.**
+> The gate is **not** DORMANT and has not been for at least part of 18 Sep: measured
+> `_gate.mode == "ENFORCE"`, `header_present == true`, `ok == true` from the box.
+> The rollout steps below remain correct as a procedure; the "this is the box today"
+> state claim does not.
+
 **This is the change that can silently destroy real customer messages. It is last
 on purpose, and every step below has a stated precondition.**
 

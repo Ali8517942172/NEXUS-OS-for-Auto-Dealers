@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "// Slack slash commands arrive as form-encoded fields under .body\nconst raw = $input.first().json;\nconst b = raw.body || raw;\n\nlet command = String(b.text || raw.text || '').trim();\n\n// A bare `/nexus` used to throw. The user had already been acknowledged by then,\n// so they simply never heard back. Answer with usage instead.\nif (!command) {\n  command = 'The user sent no command text. Reply with a short usage hint: ' +\n            '`/nexus find lead <name>` or `/nexus update lead <name> status <status>`.';\n}\n\nreturn [{ json: {\n  command,\n  user: b.user_name || b.user_id || 'unknown',\n  channel: b.channel_name || b.channel_id || null,\n  // Slack's 3-second slash-command deadline cannot be met by an AI agent with\n  // tool calls, so the webhook acks immediately and the answer is delivered\n  // here afterwards. Valid for 30 minutes / 5 posts.\n  response_url: b.response_url || null\n} }];\n"
+        "jsCode": "// Slack slash commands arrive as form-encoded fields under .body\nconst raw = $input.first().json;\nconst b = raw.body || raw;\n\nlet command = String(b.text || raw.text || '').trim();\n\n// A bare `/nexus` used to throw. The user had already been acknowledged by then,\n// so they simply never heard back. Answer with usage instead.\nif (!command) {\n  command = 'The user sent no command text. Reply with a short usage hint: ' +\n            '`/nexus find lead <name>` or `/nexus update lead <name> status <status>`.';\n}\n\n// ---- TENANT (2 Sep 2026) --------------------------------------------------\n// The CRM agent reads and WRITES the leads table as service_role, which is\n// BYPASSRLS. Unscoped, 'Search Leads' would return any dealership's customers\n// to whoever typed the command, and 'Update Lead Status' -- which matches on\n// email alone -- would update the same-email lead in EVERY dealership once\n// leads.email is unique per tenant rather than globally.\n//\n// The signal is the authenticated caller: this webhook is JWT-guarded, and\n// 'Tenant For JWT User' looks that Supabase user up in tenant_members. If that\n// does not answer and exactly one dealership is configured, we name that one\n// explicitly -- today's behaviour stated rather than defaulted. With two or\n// more configured the tenant is null, both tools fall back to a sentinel uuid\n// that matches zero rows (so a command reads and writes NOTHING rather than\n// the wrong dealership's rows), and the audit row says TENANT UNRESOLVED.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\nlet tenant = '';\nlet tenantSource = '';\ntry {\n  const row = $('Tenant For JWT User').all().map(i => i.json).find(x => x && x.tenant_id);\n  if (row) { tenant = String(row.tenant_id); tenantSource = 'jwt_tenant_member'; }\n} catch (e) { /* node did not run */ }\nif (!NEXUS_UUID.test(tenant) && nexusKeys.length === 1) {\n  tenant = String(nexusMap[nexusKeys[0]] || '');\n  tenantSource = 'sole_configured_tenant';\n}\nif (!NEXUS_UUID.test(tenant)) { tenant = null; tenantSource = 'unresolved'; }\n\nreturn [{ json: {\n  command,\n  user: b.user_name || b.user_id || 'unknown',\n  channel: b.channel_name || b.channel_id || null,\n  tenant_id: tenant,\n  tenant_source: tenantSource,\n  // Slack's 3-second slash-command deadline cannot be met by an AI agent with\n  // tool calls, so the webhook acks immediately and the answer is delivered\n  // here afterwards. Valid for 30 minutes / 5 posts.\n  response_url: b.response_url || null\n} }];\n"
       },
       "id": "2",
       "name": "Extract Command",
@@ -81,6 +81,11 @@
               "keyName": "email",
               "condition": "eq",
               "keyValue": "={{ $fromAI('email', 'The exact email address of the lead whose status should be updated', 'string') }}"
+            },
+            {
+              "keyName": "tenant_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Extract Command').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
             }
           ]
         },
@@ -91,7 +96,8 @@
               "fieldValue": "={{ (() => { const ALLOWED = ['HOT','WARM','COLD','CONTACTED','QUALIFIED','WON','LOST']; const raw = $fromAI('status', 'New status for the lead. Must be exactly one of: HOT, WARM, COLD, CONTACTED, QUALIFIED, WON, LOST.', 'string'); const v = String(raw == null ? '' : raw).trim().toUpperCase(); if (ALLOWED.indexOf(v) === -1) { throw new Error('Rejected lead status \\'' + String(raw).slice(0, 40) + '\\': must be exactly one of HOT, WARM, COLD, CONTACTED, QUALIFIED, WON, LOST.'); } return v; })() }}"
             }
           ]
-        }
+        },
+        "matchType": "allFilters"
       },
       "id": "8b96935a-144b-45aa-890d-a4c91816b47b",
       "name": "Update Lead Status",
@@ -123,10 +129,16 @@
             {
               "keyName": "email",
               "condition": "ilike",
-              "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('conditions1_Field_Value', `Partial or full lead EMAIL to search for, wrapped in % wildcards, e.g. %@gmail.com%. Pass %% to ignore this filter.`, 'string') }}"
+              "keyValue": "={{ /*n8n-auto-generated-fromAI-override*/ (() => { const e = $fromAI('conditions1_Field_Value', `Partial or full lead EMAIL to search for, wrapped in % wildcards, e.g. %@gmail.com%. Pass %% to ignore this filter.`, 'string'); return String(e == null || e === '' ? '%%' : e); })() }}"
+            },
+            {
+              "keyName": "tenant_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Extract Command').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}"
             }
           ]
-        }
+        },
+        "matchType": "allFilters"
       },
       "id": "25aaa5fe-3b20-4e96-bd0d-ee1fcc4cc829",
       "name": "Search Leads",
@@ -165,7 +177,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3-ultra-550b-a55b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: 'llama-3.3-70b-versatile' },\n  { orModel: 'minimax/minimax-m2.7:free',                  groqModel: 'llama-3.3-70b-versatile' }\n];\n// 28 Aug 2026: the counter used to be read off the incoming item as\n// prev.__attempt. That works on the first pass (from 'Extract Command') but NOT\n// on the retry pass: 'AI CRM Agent' runs with onError = continueErrorOutput, and\n// n8n's error output emits a fresh { error: ... } item -- it does not carry the\n// input json forward. So __attempt was never seen again, every retry computed\n// attempt = 0, and Model Ladder <-> AI CRM Agent looped until the 300s\n// executionTimeout, firing a full agent invocation (up to 8 tool iterations)\n// each time round. On a 1-vCPU box that is the load pattern that has taken it\n// down before. $runIndex is n8n's own per-execution run counter for this node\n// and cannot be lost on the error branch, so the ladder now really terminates\n// after 4 tiers.\n//\n// Same reason the prompt is rebuilt from 'Extract Command' rather than spread\n// from the incoming item: on the retry pass the incoming item is the error\n// object, so ...prev dropped `command` and 'AI CRM Agent' (whose text field is\n// an expression on $json.command) was re-run with an empty prompt.\n// 'Extract Command' is on the single inbound path and has always run by the\n// time this node executes.\nconst base = $('Extract Command').first().json;\nconst attempt = $runIndex;\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed. Tried: ' + TIERS.map(t=>t.orModel).join(', '));\n}\nreturn [{ json: { ...base, __attempt: attempt, orModel: TIERS[attempt].orModel, groqModel: TIERS[attempt].groqModel } }];"
+        "jsCode": "// ---------------------------------------------------------------------------\n// Slack Command Center - AI Agent (VmnIXo7tM30zqawp) -- node \"Model Ladder\"\n// Feeds: OpenRouter Chat Model ({{ $json.orModel }}) + Groq Fallback\n// ({{ $json.groqModel }}) on the \"AI CRM Agent\" agent.\n// ---------------------------------------------------------------------------\n// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The pre-16-Aug ladder had a PAID gemini tier\n// plus two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free\n// is 404 free-tier-discontinued), which is why all 4 tiers failed on live\n// traffic.\n//\n// 28 Aug 2026 (KEPT, DO NOT REVERT): the attempt counter is $runIndex, not\n// prev.__attempt. The counter used to be read off the incoming item. That works\n// on the first pass (from 'Extract Command') but NOT on the retry pass:\n// 'AI CRM Agent' runs with onError = continueErrorOutput, and n8n's error\n// output emits a fresh { error: ... } item -- it does not carry the input json\n// forward. So __attempt was never seen again, every retry computed attempt = 0,\n// and Model Ladder <-> AI CRM Agent looped until the 300s executionTimeout,\n// firing a full agent invocation (up to 8 tool iterations) each time round.\n// On a 1-vCPU box that is the load pattern that has taken it down before.\n// $runIndex is n8n's own per-node run counter, maintained by the engine rather\n// than carried on the item, so it cannot be lost on the error branch and the\n// ladder really terminates. __attempt is still EMITTED for downstream readers;\n// only its source changed.\n//\n// 28 Aug 2026 (KEPT): the prompt is rebuilt from 'Extract Command' rather than\n// spread from the incoming item, for the same reason -- on the retry pass the\n// incoming item is the error object, so ...prev dropped `command` and\n// 'AI CRM Agent' (whose text field is an expression on $json.command) was\n// re-run with an empty prompt. 'Extract Command' is on the single inbound path\n// and has always run by the time this node executes; the lookup is still\n// wrapped in try/catch because $() throws on a node that did not run, and a\n// ladder must never be the thing that kills the execution.\n//\n// 31 Aug 2026 -- MODEL IDS BROUGHT IN LINE WITH BDC / MASTER ROUTER.\n// This workflow carried the same two dead ids Lead Escalation did. It has\n// effectively zero executions (it sits behind an Auth Gate that Slack's own\n// signed request cannot satisfy), so the dead models were never exercised\n// here -- which is precisely why they survived two rounds of fixes. Fixed now\n// so that the day the Auth Gate is sorted out, this agent does not fail on its\n// first real command:\n//\n//   (a) REMOVED the old tier 0, 'nvidia/nemotron-3-ultra-550b-a55b:free'.\n//       Dead -- fails with \"Cannot read properties of undefined (reading\n//       'message')\" after burning ~45s (exec 6251 BDC, exec 6253 Router).\n//       Keeping it would mean every Slack command waits three quarters of a\n//       minute for a corpse before the real model even starts. Ladder goes\n//       from 4 tiers to 3.\n//\n//   (b) groqModel changed from 'llama-3.3-70b-versatile' to\n//       'openai/gpt-oss-120b' on EVERY tier. Groq shut llama-3.3-70b-versatile\n//       down for free and developer tiers on 16 Aug 2026; their deprecations\n//       page names openai/gpt-oss-120b as the replacement, their models page\n//       marks the old id Enterprise/Contact-Sales, and it has no row at all in\n//       the free-tier rate-limit table. The replacement is production-tier,\n//       free-tier callable and supports OpenAI-style tool calling, which this\n//       agent requires. Free-tier ceiling: 30 RPM / 1K RPD / 8K TPM / 200K TPD\n//       -- tokens-per-minute binds first.\n//\n// The three tiers below are now IDENTICAL to WhatsApp BDC (BiyHk9ZXxJUVGbf6),\n// Master Router (JnlZFAVmFAuNXVya) and Lead Escalation (KI6P1Qcf3MIZakNa).\n// That is deliberate: four ladders that disagree about which models exist is\n// how a dead id survives in production for two weeks. See MODELS.md.\n// ---------------------------------------------------------------------------\n\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',                groqModel: GROQ_FALLBACK }\n];\n\n// Engine-owned counter. Cannot be dropped by the continueErrorOutput branch.\nconst attempt = Number($runIndex) || 0;\n\n// Rebuild the prompt context every pass -- the incoming item is the error\n// object on tiers 1..n.\nlet base = {};\ntry { base = $('Extract Command').first().json || {}; } catch (e) { base = {}; }\n\nlet prev = {};\ntry { prev = $input.first().json || {}; } catch (e) { prev = {}; }\n\nconst isErrorItem = prev.error !== undefined;\n\nif (attempt >= TIERS.length) {\n  throw new Error(\n    'Slack Command Center model ladder exhausted: all ' + TIERS.length +\n    ' tiers failed for command \"' + String(base.command || 'unknown').slice(0, 120) +\n    '\". Tried (openrouter / groq): ' +\n    TIERS.map(function (t, i) { return '[' + i + '] ' + t.orModel + ' / ' + t.groqModel; }).join(', ') +\n    '.'\n  );\n}\n\nconst out = Object.assign({}, base, {\n  __attempt: attempt,\n  __maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n});\n\nif (!base.command) {\n  // Not fatal -- an exception here would kill the execution on a retry, and the\n  // agent's own error path reports a missing prompt more usefully than a Code\n  // node stack trace does.\n  out.__contextMissing = true;\n}\n\nif (isErrorItem) {\n  out.__lastError = String(\n    (prev.error && (prev.error.message || prev.error.description)) || prev.error\n  ).slice(0, 300);\n}\n\nreturn [{ json: out }];\n"
       },
       "id": "ladder-VmnIXo",
       "name": "Model Ladder",
@@ -197,7 +209,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: 'Slack Command Center', status: $json.delivery.status, lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: ('Slash command reply to Slack: ' + $json.delivery.note + ($json.delivery.dropped.length ? ': ' + $json.delivery.dropped.join(' | ') : '')).substring(0, 500), logged_at: $now.toUTC().toISO() }) }}",
+        "jsonBody": "={{ (() => { let t = null; try { t = $('Extract Command').first().json.tenant_id || null; } catch (e) { t = null; } return JSON.stringify({ workflow: 'Slack Command Center', status: $json.delivery.status, lead_name: ($json.lead_name || $json.name || null), lead_email: ($json.lead_email || $json.email || null), summary: ('Slash command reply to Slack: ' + $json.delivery.note + ($json.delivery.dropped.length ? ': ' + $json.delivery.dropped.join(' | ') : '') + (t ? '' : ' | TENANT UNRESOLVED')).substring(0, 500), logged_at: $now.toUTC().toISO(), tenant_id: t }); })() }}",
         "options": {
           "timeout": 15000
         }
@@ -333,7 +345,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// This node sits on the ONLY inbound path of this workflow: the public webhook\n// POST /webhook/slack-command, which until this patch was the last\n// unauthenticated public webhook in the system. Every other webhook here\n// (Lead Escalation, KYC, ERP Sync, Ask-AI, WhatsApp Send, the drip, the Master\n// Router) already checks the caller's Supabase session token; this one did not.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\n//\n// !!! READ THIS BEFORE WIRING THIS URL INTO SLACK !!!\n// A Supabase user JWT is the WRONG guard for a Slack slash command. Slack's\n// servers cannot carry one, so a real /nexus command from Slack will always be\n// rejected while this gate is in place. That is deliberate, and today it costs\n// nothing: this workflow has been edited ~70 times and executed ZERO times, so\n// there is no working Slack integration to break -- there is only an open door.\n// This is a lock on that door, not a Slack integration.\n//\n// The correct guard for a genuinely Slack-called webhook is Slack request\n// signing: HMAC-SHA256 of 'v0:' + X-Slack-Request-Timestamp + ':' + the RAW\n// request body, keyed with the app's signing secret, compared in constant time\n// against the X-Slack-Signature header, plus a +/-5 minute timestamp window to\n// stop replays. Installing that needs three things this offline patch cannot\n// supply and must not guess: rawBody enabled on 'SlackWebhook', a matching\n// rewrite of 'Extract Command' (which today reads the parsed form object at\n// .body), and the signing secret stored in n8n. Do that swap before you claim\n// this workflow answers slash commands.\n//\n// One more thing this gate does NOT do: 'SlackWebhook' responds onReceived, so\n// the 200 and the 'NEXUS is on it' ack are already sent before this node runs.\n// An unauthorized caller therefore gets 200 + a friendly string, not a 401.\n// What the gate actually buys is that the CRM agent, the Supabase writes and\n// the Slack post never happen for an unauthenticated caller. That is the real\n// win; do not describe it as returning 401.\nconst auth = $input.first().json || {};\nif (!auth.id) {\n  throw new Error('Slack Command Center rejected: unauthorized. A valid Supabase session token is required in the Authorization header. (Slack itself cannot send one -- see the comment in this node.)');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted.\nreturn $('SlackWebhook').all();\n"
+        "jsCode": "// This node sits on the ONLY inbound path of this workflow: the public webhook\n// POST /webhook/slack-command, which until this patch was the last\n// unauthenticated public webhook in the system. Every other webhook here\n// (Lead Escalation, KYC, ERP Sync, Ask-AI, WhatsApp Send, the drip, the Master\n// Router) already checks the caller's Supabase session token; this one did not.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\n//\n// 2 Sep 2026: 'Tenant For JWT User' was inserted between 'Verify JWT' and this\n// node to look the caller's dealership up in tenant_members. That HTTP node\n// REPLACES the item, so the identity check now reaches back to 'Verify JWT' by\n// name. The guard itself is unchanged: no .id on the verified user, no entry.\n//\n// !!! READ THIS BEFORE WIRING THIS URL INTO SLACK !!!\n// A Supabase user JWT is the WRONG guard for a Slack slash command. Slack's\n// servers cannot carry one, so a real /nexus command from Slack will always be\n// rejected while this gate is in place. That is deliberate, and today it costs\n// nothing: this workflow has been edited ~70 times and executed ZERO times, so\n// there is no working Slack integration to break -- there is only an open door.\n// This is a lock on that door, not a Slack integration.\n//\n// The correct guard for a genuinely Slack-called webhook is Slack request\n// signing: HMAC-SHA256 of 'v0:' + X-Slack-Request-Timestamp + ':' + the RAW\n// request body, keyed with the app's signing secret, compared in constant time\n// against the X-Slack-Signature header, plus a +/-5 minute timestamp window to\n// stop replays. Installing that needs three things this offline patch cannot\n// supply and must not guess: rawBody enabled on 'SlackWebhook', a matching\n// rewrite of 'Extract Command' (which today reads the parsed form object at\n// .body), and the signing secret stored in n8n. Do that swap before you claim\n// this workflow answers slash commands.\n//\n// NOTE FOR WHOEVER DOES THAT SWAP: Slack request signing authenticates SLACK,\n// not a dealership. The tenant resolution below hangs off the Supabase user in\n// the JWT, so replacing this gate with signature verification REMOVES the only\n// tenant signal this workflow has. Map the Slack team_id (or the workspace) to\n// a tenant at the same time, or the CRM agent goes back to being tenant-blind.\n//\n// One more thing this gate does NOT do: 'SlackWebhook' responds onReceived, so\n// the 200 and the 'NEXUS is on it' ack are already sent before this node runs.\n// An unauthorized caller therefore gets 200 + a friendly string, not a 401.\n// What the gate actually buys is that the CRM agent, the Supabase writes and\n// the Slack post never happen for an unauthenticated caller. That is the real\n// win; do not describe it as returning 401.\nlet auth = {};\ntry { auth = $('Verify JWT').first().json || {}; } catch (e) { auth = {}; }\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] Slack Command Center rejected: unauthorized. A valid Supabase session token is required in the Authorization header. (Slack itself cannot send one -- see the comment in this node.)');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted.\nreturn $('SlackWebhook').all();\n"
       },
       "id": "sc-auth-gate-0001",
       "name": "Auth Gate",
@@ -344,6 +356,49 @@
         640
       ],
       "notes": "Fails closed: no Supabase user id -> throw, so nothing downstream runs. Re-emits the original SlackWebhook items so 'Extract Command' sees the exact shape it saw before."
+    },
+    {
+      "id": "b4bca4d2-4643-42b4-a6ff-5f7b56da35b0",
+      "name": "Tenant For JWT User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        620
+      ],
+      "parameters": {
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "tenant_id"
+            },
+            {
+              "name": "auth_user_id",
+              "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Copied verbatim from 'Tenant For JWT User' in NEXUS Master Lead Router. Resolves the caller's dealership from the verified Supabase user id via tenant_members. Fails soft: no row means no tenant, and the single-dealership fallback in 'Extract Command' decides what happens next. It REPLACES the item, which is why 'Auth Gate' now reaches back to 'Verify JWT' by name for the identity check.",
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -486,22 +541,33 @@
         ]
       ]
     },
-    "Verify JWT": {
+    "Auth Gate": {
       "main": [
         [
           {
-            "node": "Auth Gate",
+            "node": "Extract Command",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Auth Gate": {
+    "Verify JWT": {
       "main": [
         [
           {
-            "node": "Extract Command",
+            "node": "Tenant For JWT User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tenant For JWT User": {
+      "main": [
+        [
+          {
+            "node": "Auth Gate",
             "type": "main",
             "index": 0
           }
@@ -525,7 +591,7 @@
   "_exported_from": {
     "id": "VmnIXo7tM30zqawp",
     "active": true,
-    "updatedAt": "2026-08-30T17:57:55.000Z",
+    "updatedAt": "2026-09-06T14:40:43.753Z",
     "published": true
   }
 }

@@ -1,0 +1,749 @@
+{
+  "name": "Meta Lead Ads - Inbound Receiver",
+  "nodes": [
+    {
+      "id": "ace1c2b4-d128-41c9-932d-706e520ccc5d",
+      "name": "Meta Leadgen Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        384
+      ],
+      "parameters": {
+        "multipleMethods": true,
+        "httpMethod": [
+          "GET",
+          "POST"
+        ],
+        "path": "meta-lead-ads",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "webhookId": "01068589-5387-4df7-b5b5-77040e4209ea"
+    },
+    {
+      "id": "a1655eca-d297-4ef4-bb60-ab4b7ac59856",
+      "name": "Verify Or Refuse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        384
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* Kept in the repo at ops/n8n-meta-lead-ads/verify-and-extract.node.js\n *\n * WHAT MAKES THIS DIFFERENT FROM THE WHATSAPP CLOUD RECEIVER\n *\n * The Cloud receiver gets the customer's message in the webhook. This one does\n * not get the customer AT ALL. Meta's leadgen webhook carries six identifiers -\n * leadgen_id, page_id, form_id, ad_id, adgroup_id, created_time - and no name,\n * no phone, no email. The fields arrive only from a second call,\n * GET /v25.0/<leadgen_id>, which needs leads_retrieval and expires.\n *\n * That two-hop shape is why lead_event has phases at all, and it is why this\n * node's job ends at RECEIVED. Nothing here invents a customer.\n *\n * AND THE TENANT COMES FROM page_id, WHICH IS ONLY TRUSTWORTHY AFTER THE HMAC\n *\n * There is no public key in a Meta delivery and there cannot be: the callback\n * URL is registered once with Meta and is identical for every dealership. The\n * only per-dealership fact is page_id - and page_id is public, so on its own it\n * is a string an attacker chose. What makes it safe to route on is that it\n * arrived inside a body whose signature verified, AND that it was registered in\n * lead_ingest_provider_identity. Both, in that order, or neither. */\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];\n\nfunction sha256(bytes) {\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,\n             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const l = bytes.length;\n  /* (l + 8), not (l + 9): at l % 64 === 55 the 0x80 and the length fit the\n     current block exactly. The published RFC 4231 vectors all pass with the\n     wrong constant; a differential test against node:crypto is what caught it. */\n  const buf = new Uint8Array((((l + 8) >> 6) + 1) << 6);\n  buf.set(bytes); buf[l] = 0x80;\n  const dv = new DataView(buf.buffer), bits = l * 8;\n  dv.setUint32(buf.length - 8, Math.floor(bits / 4294967296));\n  dv.setUint32(buf.length - 4, bits >>> 0);\n  const w = new Uint32Array(64);\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const x = w[i - 15], y = w[i - 2];\n      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);\n      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);\n      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;\n    }\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));\n      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;\n      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));\n      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;\n    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;\n  }\n  const out = new Uint8Array(32), odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\n\nfunction hmacHex(keyBytes, msgBytes) {\n  const k = keyBytes.length > 64 ? sha256(keyBytes) : keyBytes;\n  const ipad = new Uint8Array(64), opad = new Uint8Array(64);\n  for (let i = 0; i < 64; i++) {\n    const kb = i < k.length ? k[i] : 0;\n    ipad[i] = kb ^ 0x36; opad[i] = kb ^ 0x5c;\n  }\n  const inner = new Uint8Array(64 + msgBytes.length);\n  inner.set(ipad); inner.set(msgBytes, 64);\n  const outer = new Uint8Array(96);\n  outer.set(opad); outer.set(sha256(inner), 64);\n  return Array.from(sha256(outer)).map(b => b.toString(16).padStart(2, '0')).join('');\n}\n\nconst item = $input.first();\nconst j = item.json || {};\nconst headers = j.headers || {};\nconst query = j.query || {};\nconst VERIFY_TOKEN = String($env.META_WEBHOOK_VERIFY_TOKEN || '');\nconst APP_SECRET = String($env.META_APP_SECRET || '');\n\nconst refuse = (status, code, why, extra) => [{ json: Object.assign(\n  { verdict: 'REFUSE', respond_status: status, respond_text: code,\n    reason_code: code, why, wrote_nothing: true }, extra || {}) }];\n\nconst sameString = (a, b) => {\n  if (a.length !== b.length) return false;\n  let d = 0;\n  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return d === 0;\n};\n\n/* ---- Meta's GET subscription handshake ---- */\nif (query['hub.mode'] !== undefined || query['hub.challenge'] !== undefined) {\n  if (!VERIFY_TOKEN) {\n    return refuse(500, 'VERIFY_TOKEN_NOT_CONFIGURED',\n      'META_WEBHOOK_VERIFY_TOKEN is unset on this box. Confirming a subscription ' +\n      'we cannot authenticate would let anyone point Meta deliveries at us.');\n  }\n  if (String(query['hub.mode']) !== 'subscribe') {\n    return refuse(400, 'HUB_MODE_NOT_SUBSCRIBE', 'hub.mode was not subscribe.');\n  }\n  if (!sameString(String(query['hub.verify_token'] || ''), VERIFY_TOKEN)) {\n    return refuse(403, 'HUB_VERIFY_TOKEN_MISMATCH', 'The verify token did not match.');\n  }\n  return [{ json: {\n    verdict: 'CHALLENGE', respond_status: 200,\n    respond_text: String(query['hub.challenge'] || ''),\n    reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true } }];\n}\n\n/* ---- Everything below is a POST delivery ---- */\nif (!APP_SECRET) {\n  const V = [\n    ['key', Buffer.from('The quick brown fox jumps over the lazy dog', 'utf8'),\n     'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8'],\n    ['key', Buffer.alloc(55, 0x61),\n     '5c753ac4cf15a28e7b5a045ba8ce75e02545a313f326021d770912f768fb53ef'],\n    ['key', Buffer.alloc(119, 0x61),\n     '4ffbedd6a1157e63e62d3fa284549bcfe39fb98dbb77ac48a89120aed5747d6b'],\n  ];\n  let selftest;\n  try {\n    const failed = V.filter(v => hmacHex(Buffer.from(v[0], 'utf8'), v[1]) !== v[2]).length;\n    const negative = hmacHex(Buffer.from('wrong-key', 'utf8'), V[0][1]) !== V[0][2];\n    selftest = { vectors: V.length, failed, negative_control_rejects: negative,\n                 ok: failed === 0 && negative };\n  } catch (e) { selftest = { ok: false, error: String((e && e.message) || e) }; }\n  return refuse(500, 'APP_SECRET_NOT_CONFIGURED',\n    'META_APP_SECRET is unset on this box, so no delivery can be verified. ' +\n    'Refusing every request until it is set - this gate is never dormant.',\n    { hmac_selftest: selftest });\n}\n\nlet raw = null, raw_source = null;\nconst bin = item.binary && (item.binary.data || item.binary.body);\nif (bin && bin.data) { raw = Buffer.from(bin.data, 'base64'); raw_source = 'binary'; }\nelse if (typeof j.body === 'string') { raw = Buffer.from(j.body, 'utf8'); raw_source = 'string'; }\nif (!raw) {\n  return refuse(500, 'RAW_BODY_NOT_AVAILABLE',\n    'The webhook node did not hand this node the raw body, so the bytes Meta ' +\n    'signed are already gone. Turn on Raw Body on the webhook node.');\n}\n\nconst sigHeader = String(headers['x-hub-signature-256'] || '');\nif (!sigHeader.startsWith('sha256=')) {\n  return refuse(401, 'SIGNATURE_HEADER_MISSING',\n    'No X-Hub-Signature-256 on the request. Meta always sends one.');\n}\nif (!sameString(sigHeader, 'sha256=' + hmacHex(Buffer.from(APP_SECRET, 'utf8'), raw))) {\n  return refuse(401, 'SIGNATURE_MISMATCH',\n    'X-Hub-Signature-256 did not match an HMAC-SHA256 of the raw body under the ' +\n    'app secret. Nothing was written.');\n}\n\nlet payload;\ntry { payload = JSON.parse(raw.toString('utf8')); }\ncatch (e) { return refuse(400, 'BODY_NOT_JSON', 'Signature verified but the body is not JSON.'); }\n\n/* Meta sends object: \"page\" for leadgen. A whatsapp_business_account delivery\n   arriving here means the two webhooks are crossed in the Meta app config - say\n   that, rather than silently finding no leads in it. */\nconst obj = String(payload.object || '');\nif (obj && obj !== 'page') {\n  return refuse(400, 'WRONG_WEBHOOK_OBJECT',\n    'Signature verified, but object is \"' + obj + '\" and this endpoint consumes ' +\n    'page leadgen. Check which callback URL each field is subscribed to in the ' +\n    'Meta app: a whatsapp_business_account delivery belongs at ' +\n    '/webhook/whatsapp-cloud-inbound.');\n}\n\nconst out = [];\nlet sawNonLeadgen = 0;\nfor (const entry of (payload.entry || [])) {\n  for (const ch of (entry.changes || [])) {\n    if (String(ch.field || '') !== 'leadgen') { sawNonLeadgen++; continue; }\n    const v = ch.value || {};\n    const leadgenId = String(v.leadgen_id || '');\n    const pageId = String(v.page_id || entry.id || '');\n    const created = Number(v.created_time || 0);\n    /* A leadgen_id is the ONLY thing that can fetch the customer and the only\n       stable identity for deduplicating Meta's redeliveries. Without it there is\n       nothing to hydrate and nothing to key on. Without a page_id there is no\n       dealership. Neither is inventable. */\n    const usable = leadgenId !== '' && pageId !== '';\n    out.push({ json: {\n      verdict: usable ? 'ACCEPT' : 'ACCEPT_UNUSABLE',\n      respond_status: 200, respond_text: 'ok',\n      reason_code: usable ? 'SIGNATURE_VERIFIED'\n                          : (leadgenId === '' ? 'NO_LEADGEN_ID' : 'NO_PAGE_ID'),\n      raw_source,\n      page_id: pageId,\n      leadgen_id: leadgenId,\n      form_id: String(v.form_id || ''),\n      ad_id: String(v.ad_id || ''),\n      adgroup_id: String(v.adgroup_id || ''),\n      created_time: created > 0 ? new Date(created * 1000).toISOString() : null,\n      origin_verified: 'hmac_sha256_x_hub',\n      /* payload_raw for the RECEIVED row. Six identifiers and nothing else,\n         because that is genuinely all Meta sent - this is not a redaction, it\n         is the shape of the delivery. */\n      payload_raw: {\n        provider: 'meta',\n        object: obj || 'page',\n        field: 'leadgen',\n        leadgen_id: leadgenId,\n        page_id: pageId,\n        form_id: String(v.form_id || ''),\n        ad_id: String(v.ad_id || ''),\n        adgroup_id: String(v.adgroup_id || ''),\n        created_time: created || null,\n      },\n    } });\n  }\n}\n\nif (!out.length) {\n  return [{ json: {\n    verdict: 'ACCEPT_NO_LEAD', respond_status: 200, respond_text: 'ok',\n    reason_code: sawNonLeadgen ? 'NO_LEADGEN_CHANGE_IN_DELIVERY' : 'EMPTY_DELIVERY',\n    wrote_nothing: true, raw_source, other_fields_seen: sawNonLeadgen,\n    note: 'Signature verified. This delivery carried no leadgen change - Meta ' +\n          'sends other Page fields on the same subscription and they are not ' +\n          'leads.' } }];\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "f01701f9-7779-429d-bcc5-028cb586f0d3",
+      "name": "Signature Verified And Usable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        384
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "v",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "ACCEPT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8f876ebd-54b1-4527-b460-cc5198395128",
+      "name": "Resolve Dealership From Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        288
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_lead_endpoint_for_provider_identity",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_provider: 'meta', p_identity_kind: 'facebook_page_id', p_identity_value: $json.page_id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "bde1ef30-e455-4325-9dea-e5a6b26e81c5",
+      "name": "Page Registered To A Dealership?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        288
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "p",
+              "leftValue": "={{ $json.public_key }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "76521266-d31a-4120-89ee-669d1f81154a",
+      "name": "Record Lead Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        192
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_record_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_public_key: $json.public_key, p_external_event_id: $('Verify Or Refuse').item.json.leadgen_id, p_origin_verified: 'hmac_sha256_x_hub', p_payload_raw: $('Verify Or Refuse').item.json.payload_raw, p_occurred_at: $('Verify Or Refuse').item.json.created_time }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "ac6eb8a9-e774-4e64-9498-4dbbea907bc9",
+      "name": "Still Awaiting Customer Data?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        192
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "ph",
+              "leftValue": "={{ $json.phase }}",
+              "rightValue": "RECEIVED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "3c1771ee-0839-4fcf-b748-3887c3fba0cb",
+      "name": "Fetch Lead From Graph",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        96
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v25.0/{{ $('Verify Or Refuse').item.json.leadgen_id }}",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,is_organic,platform,field_data"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.META_PAGE_ACCESS_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "ef881c87-9b76-4227-8609-4d73a9ba8f5e",
+      "name": "Normalize And Redact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        96
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* The exact body of the \"Normalize And Redact\" Code node in the n8n workflow\n * \"Meta Lead Ads - Inbound Receiver\".\n *\n * Input: the Graph API response for GET /v<v>/<leadgen_id>, which is the ONLY\n * place the customer's details exist — the webhook carried none.\n *\n * Output: `hydrated_payload` (what Meta said, cleaned) and `normalized` (the\n * five fields the promoter needs). Both go into a row a dealership can read, so\n * neither may carry a credential.\n *\n * THREE THINGS THIS NODE IS RESPONSIBLE FOR, AND WHY EACH IS HERE AND NOT LATER\n *\n * 1. AN ALLOWLIST FIRST, AND A FILTER ONLY WHERE AN ALLOWLIST CANNOT REACH.\n *    `lead_event_payload_carries_no_shared_secret` refuses a row whose\n *    payload_raw OR hydrated_payload contains a key named access_token,\n *    app_secret, client_secret, api_key, authorization or google_key. That\n *    constraint is the backstop, not the plan: relying on it means the first\n *    leaked token fails the whole delivery and the lead is lost.\n *\n *    So `hydrated_payload` is assembled field by field from a NAMED LIST. It is\n *    not Meta's response with the bad parts taken out; it is our own object with\n *    only the parts we asked for put in. Nothing Meta adds to that endpoint next\n *    year can arrive here by default — including a credential. This was written\n *    the other way round first, as a scrub over the whole response, and the test\n *    that proved the scrub worked also proved the scrub was never reached.\n *\n *    ONE branch is copied wholesale and therefore cannot be allowlisted:\n *    `field_data`, the customer's own answers, which we must not edit. That is\n *    the door `scrub()` guards. It drops keys with credential names and values\n *    shaped like a Meta token (EAA… past 100 characters). It does NOT do general\n *    \"looks secret-ish\" filtering on free text — a customer's message is not\n *    ours to mangle, and a redacted enquiry is a lost enquiry.\n *\n * 2. ATTRIBUTION AS AN ADDITIVE FACT, NEVER AS THE IDENTITY.\n *    Meta delivers Instagram lead ads on the connected Facebook Page's leadgen\n *    subscription, and the webhook has no platform field — so at RECEIVED time\n *    nobody can know which it was. The Graph response often carries `platform`.\n *    It is recorded in hydrated_payload as `ad_platform`, and it MUST NOT be\n *    turned into source_key: lead_event_identity_key is\n *    UNIQUE (tenant_id, source_key, external_event_id), so changing source_key\n *    would make Meta's redelivery of the same leadgen_id look new and hand the\n *    dealership two leads for one customer. Attribution rides alongside the\n *    identity; it is never part of it.\n *\n *    When `platform` is absent, ad_platform is null and ad_platform_confidence\n *    is 'UNKNOWN'. It is not guessed from the ad name.\n *\n * 3. A NORMALIZED SHAPE THE PROMOTER WILL ACCEPT, OR AN HONEST REFUSAL.\n *    nexus_lead_normalized_defect() requires a full name and at least one of\n *    email or phone. If Meta's form did not ask for enough to reach the person,\n *    that is a real fact about the form and it is reported as such rather than\n *    padded with a placeholder.\n */\nconst src = $input.first().json || {};\n/* Two different upstreams, on purpose. The identifiers Meta signed come from the\n   gate; the event_id exists only because Record Lead Event created the row. An\n   earlier draft read event_id off the gate, where it does not exist, and would\n   have hydrated `undefined` on the first real lead. */\nconst ctx = $('Verify Or Refuse').item.json;\nconst recorded = $('Record Lead Event').item.json;\nconst eventId = recorded && recorded.event_id;\n\n/* Meta user access tokens start EAA and run well past 100 characters. Short\n   strings are never matched, so an ordinary answer cannot be eaten by this. */\nconst TOKEN_SHAPED = /^EAA[A-Za-z0-9_-]{100,}$/;\nconst SECRET_KEYS = new Set([\n  'access_token', 'app_secret', 'client_secret', 'api_key', 'apikey',\n  'authorization', 'google_key', 'appsecret_proof', 'refresh_token',\n  'client_id_secret', 'secret',\n]);\n\n/* The exact-match rule. See the long note further down: what trips\n   lead_event_payload_carries_no_shared_secret is a string -- key or value, at\n   any depth -- that is exactly one of the six words. Substrings never trip it.\n\n   It is applied to VALUES only, and that is not an oversight. Every one of the\n   six words is already in SECRET_KEYS above, so a KEY equal to one of them is\n   dropped as a credential before any repair could run: a rename branch for keys\n   would be unreachable code pretending to be a defence. And in both providers\n   the question LABEL travels as a value -- Meta's field_data[].name, Google's\n   user_column_data[].column_name -- so the value path is the one that fires. */\nconst BARE_CONSTRAINT_WORD =\n  /^(google_key|app_secret|client_secret|access_token|api_key|authorization)$/i;\nconst CONSTRAINT_NOTE =\n  ' (stored with this note because the bare word is refused by a database constraint; ' +\n  'the customer wrote it exactly as it appears before this bracket)';\n\nlet strippedKeys = 0, strippedValues = 0, annotatedValues = 0;\nfunction scrub(v, depth) {\n  if (depth > 12) return null;\n  if (Array.isArray(v)) return v.map(x => scrub(x, depth + 1));\n  if (v && typeof v === 'object') {\n    const out = {};\n    for (const [k, val] of Object.entries(v)) {\n      if (SECRET_KEYS.has(String(k).toLowerCase())) { strippedKeys++; continue; }\n      out[k] = scrub(val, depth + 1);\n    }\n    return out;\n  }\n  if (typeof v === 'string' && TOKEN_SHAPED.test(v)) { strippedValues++; return '[redacted]'; }\n  /* A question LABEL or a customer's ANSWER that is exactly one of the six\n     words. Nothing is deleted and nothing is rewritten: the word still starts\n     the string, and the note says why the rest is there. `normalized` -- what a\n     salesperson actually reads -- is a different column the constraint does not\n     cover and is left alone entirely. */\n  if (typeof v === 'string' && BARE_CONSTRAINT_WORD.test(v)) {\n    annotatedValues++;\n    return v + CONSTRAINT_NOTE;\n  }\n  return v;\n}\n\n/* ---- field_data → a flat map ---------------------------------------------- */\nconst fields = {};\nfor (const f of (src.field_data || [])) {\n  const name = String((f && f.name) || '').trim().toLowerCase();\n  if (!name) continue;\n  const vals = Array.isArray(f.values) ? f.values.map(x => String(x == null ? '' : x).trim()) : [];\n  fields[name] = vals.filter(Boolean).join(' ').trim();\n}\n\nconst pick = (...names) => { for (const n of names) if (fields[n]) return fields[n]; return ''; };\n\nlet full_name = pick('full_name', 'name');\nif (!full_name) {\n  full_name = [pick('first_name'), pick('last_name')].filter(Boolean).join(' ').trim();\n}\nconst email = pick('email').toLowerCase();\n\n/* E.164 or nothing. Pasting a country code onto a number that was never local\n   is how you message a stranger, so an unrecognised shape is reported as\n   unparseable rather than repaired. Meta normally returns a leading +. */\nfunction toE164(rawPhone) {\n  const s = String(rawPhone || '').replace(/[^\\d+]/g, '');\n  if (/^\\+[1-9]\\d{7,14}$/.test(s)) return s;\n  const d = s.replace(/\\D/g, '');\n  if (/^00[1-9]\\d{7,14}$/.test(d)) return '+' + d.slice(2);\n  if (/^971\\d{9}$/.test(d)) return '+' + d;      // UAE, already prefixed\n  if (/^0?5\\d{8}$/.test(d)) return '+971' + d.replace(/^0/, '');  // UAE mobile as 05x\n  if (/^91[6-9]\\d{9}$/.test(d)) return '+' + d;  // India, already prefixed\n  return null;\n}\nconst phoneRaw = pick('phone_number', 'phone', 'mobile_number', 'mobile');\nconst phone_e164 = toE164(phoneRaw);\n\nconst vehicle = pick('vehicle_of_interest', 'vehicle', 'car_model', 'which_model_are_you_interested_in',\n                     'model', 'what_are_you_looking_for');\n/* Anything the form asked that is not one of the identity fields is kept as the\n   customer's own words, so a dealership sees the answers it paid to collect. */\nconst KNOWN = new Set(['full_name', 'name', 'first_name', 'last_name', 'email',\n                       'phone_number', 'phone', 'mobile_number', 'mobile']);\nconst extras = Object.entries(fields)\n  .filter(([k, v]) => !KNOWN.has(k) && v)\n  .map(([k, v]) => k.replace(/_/g, ' ') + ': ' + v);\n\nconst normalized = { full_name };\nif (phone_e164) normalized.phone_e164 = phone_e164;\nif (email) normalized.email = email;\nif (vehicle) normalized.vehicle_of_interest = vehicle;\nif (extras.length) normalized.message = extras.join(' | ');\n\n/* ---- what the promoter will refuse, decided here rather than by a 500 ------ */\nlet defect = null;\nif (!full_name) defect = 'NORMALIZED_FULL_NAME_REQUIRED';\nelse if (!phone_e164 && !email) defect = 'NORMALIZED_NEEDS_EMAIL_OR_PHONE';\n\nconst platform = String(src.platform || '').toLowerCase();\nconst ad_platform = (platform === 'instagram' || platform === 'facebook') ? platform : null;\n\n/* ---- field_data, and a constraint that can destroy a real lead ------------\n   `lead_event_payload_carries_no_shared_secret` is a TEXT match over the whole\n   serialised JSON:\n\n       hydrated_payload::text !~* '\"(google_key|app_secret|client_secret|\n                                    access_token|api_key|authorization)\"'\n\n   It does not distinguish a key from a value, and a failed insert here is a\n   customer who filled in the form and was thrown away. Same shape as answering\n   Google a 4XX.\n\n   MEASURED against Postgres rather than reasoned about, because the regex needs\n   a literal quote on both sides and JSON escaping decides whether there is one.\n   Re-measured on 7 September 2026, and the second measurement CORRECTED THE\n   FIRST:\n\n     {\"name\":\"api_key\"}                        -> REFUSES   (a question label)\n     {\"column_id\":\"API_KEY\"}                   -> REFUSES   (case-insensitive)\n     {\"name\":\"my_api_key\"}                     -> accepted  (a substring never trips it)\n     {\"values\":[\"authorization\"]}              -> REFUSES   (an ANSWER, on its own)\n     {\"values\":[\"my api_key is broken\"]}       -> accepted\n     an answer containing \"api_key\" IN QUOTES  -> accepted   (jsonb escapes them)\n     {\"values\":[\"api_key \"]}                   -> accepted  (a trailing space clears it)\n     {\"a\":{\"b\":{\"c\":{\"d\":\"access_token\"}}}}    -> REFUSES   (depth is irrelevant)\n\n   The fourth line is a defect this file shipped with. The first pass read only\n   question LABELS, and read them with a SUBSTRING regex -- so a real customer\n   whose whole answer was \"authorization\" would have failed the insert and been\n   thrown away, while a harmless label like \"my_api_key\", which never trips the\n   constraint at all, was renamed for nothing. Wrong in both directions, out of\n   one wrong rule: I had measured an embedded word and generalised it to every\n   word.\n\n   What actually trips it is a string -- key or value, any depth -- that is\n   EXACTLY one of the six words. So the rule is exact-match and it now lives\n   inside scrub(), which already walks this branch. It runs on VALUES only: see\n   the note beside BARE_CONSTRAINT_WORD for why a key needs no repair. The\n   string keeps the customer's word and gains a stated note, because one\n   trailing character is all the constraint needs and deleting a customer's\n   answer to satisfy a regex is not a repair. `normalized` -- the text a\n   salesperson reads -- is a different column the constraint does not cover and\n   is left exactly as the customer wrote it. */\nconst scrubbedFieldData = scrub(src.field_data || [], 0) || [];\nconst renamedQuestions = 0;  /* see above: the key path is unreachable */\n\nconst hydrated_payload = {\n  provider: 'meta',\n  graph_lead_id: String(src.id || ''),\n  created_time: src.created_time || null,\n  form_id: String(src.form_id || ctx.form_id || ''),\n  ad_id: String(src.ad_id || ctx.ad_id || ''),\n  ad_name: src.ad_name || null,\n  adset_id: src.adset_id || null,\n  adset_name: src.adset_name || null,\n  campaign_id: src.campaign_id || null,\n  campaign_name: src.campaign_name || null,\n  is_organic: typeof src.is_organic === 'boolean' ? src.is_organic : null,\n  /* Attribution, additive. See the header: this never becomes source_key. */\n  ad_platform,\n  ad_platform_confidence: ad_platform ? 'PROVIDER_REPORTED' : 'UNKNOWN',\n  ad_platform_evidence: ad_platform\n    ? 'Meta returned platform=\"' + platform + '\" on the lead node.'\n    : 'Meta returned no platform on the lead node. The webhook cannot say either: '\n      + 'Instagram lead ads arrive on the Facebook Page leadgen subscription. '\n      + 'Not guessed from the ad or campaign name.',\n  /* The one branch not allowlisted: the customer's own answers, copied\n     wholesale because we must not edit them. scrub() guards exactly this. */\n  field_data: scrubbedFieldData,\n  phone_unparseable: phone_e164 ? null : (phoneRaw || null),\n  constraint_safety: { renamed_questions: renamedQuestions,\n                       annotated_answers: annotatedValues },\n};\n\nreturn [{ json: {\n  event_id: eventId,\n  leadgen_id: ctx.leadgen_id,\n  hydrated_payload,\n  /* Untouched on purpose: this is what a salesperson reads. */\n  normalized,\n  normalized_defect: defect,\n  can_promote: defect === null,\n  ad_platform,\n  /* Counted over field_data only. Zero is the normal, healthy answer:\n     the rest of hydrated_payload is an allowlist and never needed one. */\n  renamed_questions: renamedQuestions,\n  /* An answer that was exactly a credential word. Zero is the normal answer;\n     a non-zero count is a lead that WOULD have been destroyed before today. */\n  annotated_answers: annotatedValues,\n  field_data_stripped_keys: strippedKeys,\n  field_data_stripped_token_shaped_values: strippedValues,\n} }];\n"
+      }
+    },
+    {
+      "id": "a81b2cc5-8807-46fe-90db-ac9f954de450",
+      "name": "Enough To Reach The Customer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2016,
+        96
+      ],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cp",
+              "leftValue": "={{ $json.can_promote }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "4d80496c-9b41-4db7-be9e-4f70313f62bf",
+      "name": "Hydrate Lead Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_hydrate_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_event_id: $json.event_id, p_hydrated_payload: $json.hydrated_payload, p_normalized: $json.normalized }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "53528c72-a11e-4f04-be05-7abc032eef61",
+      "name": "Promote To Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2464,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_promote_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_event_id: $('Normalize And Redact').item.json.event_id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "ef7e8a2a-e71d-4e18-b35a-1ad35731cb38",
+      "name": "Respond 200 Promoted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2688,
+        0
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "54f539d5-c54f-49c0-9697-bcbba006a4d9",
+      "name": "Reject: Form Collected Too Little",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        192
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_reject_lead_event",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_event_id: $json.event_id, p_phase: 'REJECTED', p_reason: 'META_FORM_' + $json.normalized_defect + ': the lead form did not collect enough to contact this person. Fix the form - nothing here can invent a name or a number.' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "20bd5329-a031-4050-b76d-1f26addcbaac",
+      "name": "Respond 200 Recorded Not Promoted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2464,
+        192
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "8f9115e5-c9e2-455a-b88e-48c41f96fc1c",
+      "name": "Respond 200 Already Handled",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1568,
+        288
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "8af1192a-304e-4036-83c1-43506dd5e11e",
+      "name": "Respond 200 Unregistered Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1120,
+        384
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "0708f738-5b85-46ce-b5f7-6068813871d4",
+      "name": "Raise Unregistered Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        384
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "/* Meta signed this delivery, so the lead is genuine - but no dealership has\n * registered the Page it came from, and NEXUS will not guess one. Meta already\n * has its 200 (this node runs after the respond node), so the throw costs no\n * retry storm; it costs a FAILED row in audit_log via the error workflow, which\n * is how anyone finds out a real lead was dropped. */\nconst p = $('Verify Or Refuse').first().json.page_id;\nthrow new Error('META_LEADGEN_PAGE_NOT_REGISTERED: a signature-verified Meta lead arrived from Facebook Page ' + p + ', which no dealership has registered in lead_ingest_provider_identity. The lead was NOT recorded and Meta will not redeliver it - it is lost. Register the Page against that dealership meta_lead_ads_facebook endpoint.');"
+      }
+    },
+    {
+      "id": "0bec70dc-19c5-4957-bae7-2fa0848b34e4",
+      "name": "Respond Without Writing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        672,
+        480
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.respond_text }}",
+        "options": {
+          "responseCode": "={{ $json.respond_status }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Meta Leadgen Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify Or Refuse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verify Or Refuse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Or Refuse": {
+      "main": [
+        [
+          {
+            "node": "Signature Verified And Usable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature Verified And Usable?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Dealership From Page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Without Writing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Dealership From Page": {
+      "main": [
+        [
+          {
+            "node": "Page Registered To A Dealership?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Page Registered To A Dealership?": {
+      "main": [
+        [
+          {
+            "node": "Record Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Unregistered Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Lead Event": {
+      "main": [
+        [
+          {
+            "node": "Still Awaiting Customer Data?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Awaiting Customer Data?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lead From Graph",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Already Handled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lead From Graph": {
+      "main": [
+        [
+          {
+            "node": "Normalize And Redact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize And Redact": {
+      "main": [
+        [
+          {
+            "node": "Enough To Reach The Customer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enough To Reach The Customer?": {
+      "main": [
+        [
+          {
+            "node": "Hydrate Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject: Form Collected Too Little",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hydrate Lead Event": {
+      "main": [
+        [
+          {
+            "node": "Promote To Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Promote To Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Promoted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reject: Form Collected Too Little": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Recorded Not Promoted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200 Unregistered Page": {
+      "main": [
+        [
+          {
+            "node": "Raise Unregistered Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 120,
+    "callerPolicy": "none"
+  },
+  "_exported_from": {
+    "id": "JDqy54w2HUH7pHgW",
+    "active": true,
+    "updatedAt": "2026-09-07T12:24:21.532Z",
+    "published": true
+  }
+}

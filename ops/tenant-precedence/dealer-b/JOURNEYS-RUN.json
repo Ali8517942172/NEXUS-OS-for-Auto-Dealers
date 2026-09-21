@@ -1,0 +1,142 @@
+{
+ "meta": {
+  "note": "Legacy manifest: this run happened on 2026-09-20 (~11:14-11:28 UTC push, drained by ~11:29 UTC) before journeys.py saved a case->execution-id map on --allow-side-effects. Unlike live_adversarial.py, this script's markers are fully deterministic (f\"{run_id}-{customer_id}\"), so reconstruction is a plain substring search against the recorded window below, not a claim-based heuristic -- see reconstruct_legacy_case() in journeys.py.",
+  "reconstructed": true,
+  "run_id": "4fa7d95b",
+  "window": [
+   "2026-09-20T11:13:00.000Z",
+   "2026-09-20T11:28:30.000Z"
+  ],
+  "tenant_ids": {
+   "a": "fff6a2b5-cfd5-4460-8383-875bc5826de0",
+   "b": "9060a854-ec38-4f0d-a39c-54372f1998b1",
+   "c": "d6c3bc16-83e0-4568-9547-07bd4468415c"
+  },
+  "original_report": "JOURNEYS-RESULTS.md (pre-exec_judge version; its own re-verification table already corrected the initial premature-verify run by hand, this manifest lets --reverify reproduce that from execution data mechanically)"
+ },
+ "cases": {
+  "a-c1": {
+   "marker": "4fa7d95b-a-c1",
+   "execution_ids": [
+    "15905"
+   ],
+   "reconstructed": true
+  },
+  "a-c2": {
+   "marker": "4fa7d95b-a-c2",
+   "execution_ids": [
+    "15906"
+   ],
+   "reconstructed": true
+  },
+  "a-c3": {
+   "marker": "4fa7d95b-a-c3",
+   "execution_ids": [
+    "15907"
+   ],
+   "reconstructed": true
+  },
+  "a-c4": {
+   "marker": "4fa7d95b-a-c4",
+   "execution_ids": [
+    "15908",
+    "15909"
+   ],
+   "reconstructed": true
+  },
+  "b-c1": {
+   "marker": "4fa7d95b-b-c1",
+   "execution_ids": [
+    "15910"
+   ],
+   "reconstructed": true
+  },
+  "b-c2": {
+   "marker": "4fa7d95b-b-c2",
+   "execution_ids": [
+    "15911"
+   ],
+   "reconstructed": true
+  },
+  "b-c3": {
+   "marker": "4fa7d95b-b-c3",
+   "execution_ids": [
+    "15912"
+   ],
+   "reconstructed": true
+  },
+  "b-c4": {
+   "marker": "4fa7d95b-b-c4",
+   "execution_ids": [
+    "15913",
+    "15914"
+   ],
+   "reconstructed": true
+  },
+  "c-c1": {
+   "marker": "4fa7d95b-c-c1",
+   "execution_ids": [
+    "15915"
+   ],
+   "reconstructed": true
+  },
+  "c-c2": {
+   "marker": "4fa7d95b-c-c2",
+   "execution_ids": [
+    "15916"
+   ],
+   "reconstructed": true
+  },
+  "c-c3": {
+   "marker": "4fa7d95b-c-c3",
+   "execution_ids": [
+    "15917"
+   ],
+   "reconstructed": true
+  },
+  "c-c4": {
+   "marker": "4fa7d95b-c-c4",
+   "execution_ids": [
+    "15918",
+    "15919"
+   ],
+   "reconstructed": true
+  }
+ },
+ "run2_dealer_c_2026-09-20T15-03": {
+  "run_id": "07c60f5a",
+  "note": "journeys.py --live --allow-side-effects --dealers c, ~15:03-15:05 UTC. 5 pushes (c-c4 double), >=19s apart. c-c1 produced no execution at all (see JOURNEYS-RESULTS.md). Markers are deterministic (f'{run_id}-{customer_id}').",
+  "tenant_id": "d6c3bc16-83e0-4568-9547-07bd4468415c",
+  "cases": {
+   "c-c1": {
+    "marker": "07c60f5a-c-c1",
+    "execution_ids": []
+   },
+   "c-c2": {
+    "marker": "07c60f5a-c-c2",
+    "execution_ids": [
+     "16069"
+    ],
+    "status": "error"
+   },
+   "c-c3": {
+    "marker": "07c60f5a-c-c3",
+    "execution_ids": [
+     "16072"
+    ],
+    "status": "error"
+   },
+   "c-c4": {
+    "marker": "07c60f5a-c-c4",
+    "execution_ids": [
+     "16074",
+     "16077"
+    ],
+    "status": [
+     "success (Groq Fallback)",
+     "error"
+    ]
+   }
+  }
+ }
+}

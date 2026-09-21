@@ -1,0 +1,2525 @@
+{
+ "updatedAt": "2026-09-06T14:39:39.338Z",
+ "createdAt": "2026-07-23T19:16:39.439Z",
+ "id": "qTnh3nwWheFJbFkU",
+ "name": "KYC/AML Document Auditor + Re-upload Loop (Phase 5)",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "parameters": {
+    "inputSource": "passthrough"
+   },
+   "id": "kyc-exec-trigger-0001",
+   "name": "Called by Another Workflow",
+   "type": "n8n-nodes-base.executeWorkflowTrigger",
+   "typeVersion": 1.1,
+   "position": [
+    -208,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Extract document content AND the customer contact details we need to\n// close the Phase-5 loop (WhatsApp re-upload request).\nconst item = $input.first().json;\nconst body = item.body || item;\n\nlet documentContent = '';\nlet imageBase64 = null;\nif (body.document_base64) { imageBase64 = body.document_base64; documentContent = 'Image document provided as base64'; }\nelse if (body.document_text) { documentContent = body.document_text; }\nelse if (body.text) { documentContent = body.text; }\nelse { documentContent = JSON.stringify(body); }\n\n// Normalise the WhatsApp chat id the same way the BDC agent does.\nlet chatId = String(body.chat_id || body.phone || body.whatsapp || '').trim();\nif (chatId && !chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n\n// ---- TENANT (18 Sep 2026) -------------------------------------------------\n// REPLACES the 2 Sep resolver, which read `body.tenant_id` FIRST and only fell\n// back to 'Tenant For JWT User'. On the public `audit-kyc` webhook that order\n// let an authenticated user of dealership A post `tenant_id: <B>` and have the\n// Emirates ID they just uploaded -- plus every audit_log line and the\n// kyc_documents row -- filed under B. n8n writes as service_role, which is\n// BYPASSRLS with no auth.uid(), so nothing downstream would have caught it.\n// The caller's tenant_id is now never a source. It is only ever a CLAIM, and a\n// claim that disagrees with the membership row is refused outright.\n//\n// Two doors, two rules:\n//   * public webhook -- `ReceiveDocument` -> `Verify JWT` ->\n//     `Tenant For JWT User` -> `Auth Gate` -> here. The ONLY trusted answer is\n//     the tenant_members row for the Supabase user behind the verified JWT.\n//     No row, or more than one, means refuse. There is no fallback on this\n//     door: a fallback is exactly how an unverifiable caller acquires a\n//     dealership, and this door carries identity documents.\n//   * internal hop  -- `Called by Another Workflow` -> here. The caller is a\n//     sibling workflow (the WhatsApp BDC agent) that already resolved the\n//     dealership from the WAHA session the document arrived on; `Auth Gate`\n//     never ran, and that is how this node tells the doors apart.\n//\n// Refusals carry the '[NEXUS-UNATTRIBUTED]' prefix at position 0, the contract\n// with the NEXUS Error Handler (iYJkh1kztWxZXDbT): the failed execution is\n// filed under the quarantine tenant instead of being appended to some real\n// dealership's compliance trail.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\n// What the caller ASSERTED. Never authoritative; only ever cross-checked.\nconst claimed = String(body.tenant_id || item.tenant_id || '');\n\n// Which door? `$()` throws for a node that did not run in this execution.\nlet viaWebhook = true;\ntry { $('Auth Gate').all(); } catch (e) { viaWebhook = false; }\n\nlet tenant = null;\nlet tenantSource = 'unresolved';\n\nif (viaWebhook) {\n  const ids = Array.from(new Set(\n    $('Tenant For JWT User').all()\n      .map((i) => (i && i.json ? i.json.tenant_id : null))\n      .filter(Boolean)\n      .map(String)\n  ));\n  if (ids.length > 1) {\n    throw new Error('[NEXUS-UNATTRIBUTED] KYC upload rejected: the authenticated user is a member of ' + ids.length + ' dealerships. This endpoint will not choose one on their behalf.');\n  }\n  if (ids.length === 0 || !NEXUS_UUID.test(ids[0])) {\n    throw new Error('[NEXUS-UNATTRIBUTED] KYC upload rejected: the authenticated user has no tenant_members row. A dealership is never taken from the request body.');\n  }\n  if (claimed && claimed.toLowerCase() !== ids[0].toLowerCase()) {\n    throw new Error('[NEXUS-UNATTRIBUTED] KYC upload rejected: caller asserted tenant_id ' + claimed + ' but is a member of ' + ids[0] + '. tenant_id is not a caller-selectable field.');\n  }\n  tenant = ids[0];\n  tenantSource = 'jwt_tenant_member';\n} else {\n  if (NEXUS_UUID.test(claimed)) {\n    tenant = claimed;\n    tenantSource = 'internal_caller';\n  } else if (nexusKeys.length === 1 && NEXUS_UUID.test(String(nexusMap[nexusKeys[0]] || ''))) {\n    tenant = String(nexusMap[nexusKeys[0]]);\n    tenantSource = 'sole_configured_tenant';\n  } else {\n    throw new Error('[NEXUS-UNATTRIBUTED] KYC upload rejected: the internal caller supplied no resolvable tenant_id and ' + nexusKeys.length + ' dealerships are configured. Refusing rather than filing an identity document under a guess.');\n  }\n}\n\nreturn [{ json: {\n  documentContent: documentContent,\n  imageBase64: imageBase64,\n  hasImage: !!imageBase64,\n  lead_email: body.lead_email || body.email || null,\n  lead_name: body.lead_name || body.name || null,\n  chat_id: chatId || null,\n  tenant_id: tenant,\n  tenant_source: tenantSource\n} }];"
+   },
+   "id": "prep-doc-node",
+   "name": "Prepare Document",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://openrouter.ai/api/v1/chat/completions",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "openRouterApi",
+    "sendHeaders": false,
+    "headerParameters": {
+     "parameters": []
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', models: ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'minimax/minimax-m3:free', 'google/gemma-4-26b-a4b-it:free'], max_tokens: 1500, messages: [ { role: 'system', content: 'You are a professional KYC/AML Document Auditor for car buyers. STEP 1, and you must do this first: decide whether the image is a government-issued identity document -- a passport, national ID card, residence or Emirates ID, or a driving licence. If it is ANYTHING else -- a greeting card, a photograph, a screenshot, a poster, religious or decorative imagery, a vehicle, a receipt, a meme -- then set isIdentityDocument to false, set every other field to null, and STOP. Do not describe the picture in documentType. Do not guess a name. Do not assign a confidence score to something that is not a document. STEP 2, only if it IS an identity document: extract Full Name, Date of Birth, Expiry Date, Document Type and Validity, and check for tampering or inconsistencies. Respond STRICTLY in JSON format: { \"isIdentityDocument\": true/false, \"fullName\": \"...\", \"dateOfBirth\": \"...\", \"expiryDate\": \"...\", \"documentType\": \"...\", \"isValid\": true/false, \"tamperingDetected\": true/false, \"confidenceScore\": 0-100, \"remarks\": \"...\" }' }, { role: 'user', content: $json.hasImage ? [ { type: 'text', text: 'Is this a government-issued identity document? If so, audit it. If not, set isIdentityDocument false and stop.' }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + $json.imageBase64 } } ] : ('Analyze this KYC document text:\\n\\n' + $json.documentContent) } ] }) }}",
+    "options": {
+     "timeout": 60000
+    }
+   },
+   "id": "e96f1d24-3435-46c4-bfa2-3531b26c2712",
+   "name": "OpenRouter Vision (KYC Analysis)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    224,
+    0
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 3000,
+   "credentials": {
+    "openRouterApi": {
+     "id": "UUtKrBzkQOztAOzZ",
+     "name": "OpenRouter account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true
+  },
+  {
+   "parameters": {
+    "jsCode": "const response = $input.first().json;\n\n// A failure to OBTAIN an audit is not the same fact as \"this is not an identity\n// document\". They used to collapse into the same output, and the row written\n// downstream then asserted, about a real customer's passport, that it was not a\n// document at all. Carry the distinction so nothing downstream states a verdict\n// the model never gave.\nconst unavailable = (why) => {\n  const r = {\n    isIdentityDocument: false,\n    auditUnavailable: true,\n    fullName: null,\n    dateOfBirth: null,\n    expiryDate: null,\n    documentType: null,\n    isValid: false,\n    tamperingDetected: false,\n    confidenceScore: 0,\n    remarks: null\n  };\n  return [{ json: {\n    auditResult: JSON.stringify(r),\n    parsed: r,\n    auditUnavailable: true,\n    auditFailureReason: String(why).slice(0, 300)\n  } }];\n};\n\n// The vision node now runs with onError:'continueRegularOutput', so a 429 from a\n// rate-limited endpoint or a 404 from a data-policy guardrail arrives here as an\n// item rather than failing the execution. That is deliberate: a failed execution\n// is what used to write the raw base64 of a passport into the execution store.\nif (response.error) {\n  return unavailable('vision call failed: ' + JSON.stringify(response.error).slice(0, 200));\n}\nif (!response.choices || !response.choices[0] || !response.choices[0].message) {\n  return unavailable('unexpected response shape from the vision endpoint');\n}\n\nconst content = response.choices[0].message.content || '';\n\nlet auditResult;\ntry {\n  const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  auditResult = JSON.parse(cleaned);\n} catch (e) {\n  return unavailable('the vision endpoint did not return valid JSON');\n}\n\n// Defaults to FALSE on purpose. If the model omits the field, the safe failure is\n// silence: the row lands on the compliance screen for a human and nobody is told\n// anything. The harm being fixed is this system SPEAKING wrongly, so when in\n// doubt it must not speak.\nauditResult.isIdentityDocument = auditResult.isIdentityDocument === true;\nauditResult.isValid = auditResult.isValid === true;\nauditResult.tamperingDetected = auditResult.tamperingDetected === true;\nauditResult.confidenceScore = Number(auditResult.confidenceScore) || 0;\nauditResult.auditUnavailable = false;\n\n// PRIVACY. 'remarks' is the one field the model writes freely, and it is the one\n// field that can echo back whatever it read off the document -- full name, date\n// of birth, ID number. It is clamped here and, from this point on, it reaches\n// only kyc_documents. It no longer reaches the customer's WhatsApp message and it\n// no longer reaches communication_logs, which the BDC agent reads back into a\n// third-party model on every later turn of the conversation.\nauditResult.remarks = (auditResult.remarks == null)\n  ? null\n  : String(auditResult.remarks).slice(0, 300);\n\nreturn [{ json: {\n  auditResult: JSON.stringify(auditResult),\n  parsed: auditResult,\n  auditUnavailable: false,\n  auditFailureReason: null\n} }];"
+   },
+   "id": "6eb678c1-155e-49cd-a24a-fb48721c4355",
+   "name": "Parse JSON Output",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    448,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "688892c4-07bd-4643-bb8b-36385949c0d7",
+       "leftValue": "={{ $json.parsed.isValid === true && $json.parsed.tamperingDetected === false }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    1168,
+    0
+   ],
+   "id": "aa9b2221-e90f-4680-affe-ef96f582486f",
+   "name": "Validation Check"
+  },
+  {
+   "parameters": {
+    "jsCode": "const p = $('Prepare Document').first().json;\nreturn [{ json: {\n  status: 'APPROVED',\n  message: 'KYC document is valid and verified.',\n  details: $json.auditResult,\n  parsed: $json.parsed,\n  lead_email: p.lead_email,\n  lead_name: p.lead_name,\n  chat_id: p.chat_id\n} }];"
+   },
+   "id": "18f45a0b-1798-4c31-96ec-ecad1a63e6e8",
+   "name": "Approved",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1392,
+    -160
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const p = $('Prepare Document').first().json;\nreturn [{ json: {\n  status: 'REJECTED',\n  message: 'KYC document failed validation or tampering was detected.',\n  details: $json.auditResult,\n  parsed: $json.parsed,\n  lead_email: p.lead_email,\n  lead_name: p.lead_name,\n  chat_id: p.chat_id\n} }];"
+   },
+   "id": "01c905ab-ee57-41a6-8968-3e4b7b3b3a0f",
+   "name": "Rejected",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1392,
+    176
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Phase 5: decide whether to ask the customer to re-upload, or give up and\n// escalate to a human. Attempts are counted from communication_logs so the loop\n// survives restarts and cannot run forever.\n//\n// PRIVACY. This node used to build the customer-facing message out of\n// parsed.remarks -- free text written by the vision model. If the model echoed\n// what it read off the document, the customer's own name, date of birth or ID\n// number was messaged back over WhatsApp AND written into communication_logs.\n// That table is not the right home for it: whatsapp_bdc_ai_agent's 'Fetch Thread\n// History' selects `message` from it and feeds the rows to the BDC agent, so\n// anything landing there is re-sent to a third-party model on every subsequent\n// turn, and nexus_retention_purge never cleans that table.\n//\n// The reason shown to the customer now comes from a closed vocabulary below,\n// chosen only from booleans and a number. No model-authored string is\n// interpolated into anything the customer sees or anything that is logged.\nconst MAX_ATTEMPTS = 3;\nconst rej = $('Rejected').first().json;\n\nconst rows = $input.all().map(i => i.json).filter(r => r && typeof r.message === 'string');\nconst attempts = rows.filter(r => r.message.startsWith('[KYC-REJECT]')).length;\nconst nextAttempt = attempts + 1;\n\nconst parsed = rej.parsed || {};\n\n// Closed vocabulary. Nothing here originates from the model's own words.\nconst REASONS = {\n  TAMPERED:   'the document looks edited or the details do not line up',\n  EXPIRED:    'the document appears to have expired',\n  UNREADABLE: 'we could not read it clearly enough to verify it',\n  INVALID:    'we could not verify it as a valid document'\n};\n\nlet expired = false;\nif (parsed.expiryDate) {\n  const t = Date.parse(parsed.expiryDate);\n  if (!isNaN(t) && t < Date.now()) expired = true;\n}\n\nlet reasonCode = 'INVALID';\nif (parsed.tamperingDetected === true) reasonCode = 'TAMPERED';\nelse if (expired) reasonCode = 'EXPIRED';\nelse if (parsed.confidenceScore < 60) reasonCode = 'UNREADABLE';\n\nconst reason = REASONS[reasonCode];\n\nconst text = 'Hi ' + (rej.lead_name || 'there') + ', thanks for sending your document. '\n  + 'Unfortunately we could not accept it: ' + reason + '. '\n  + 'Could you please re-send a clear, well-lit photo showing the whole document with all four corners visible? '\n  + '(Attempt ' + nextAttempt + ' of ' + MAX_ATTEMPTS + ')';\n\n// 'parsed' is still passed through untouched. Record KYC (Rejected) reads\n// documentType / fullName / confidenceScore off it and writes them to\n// kyc_documents -- the RLS-protected table that nexus_retention_purge actually\n// purges. The structured fields stay; only the free text stops travelling.\nreturn [{ json: {\n  attempts: attempts,\n  nextAttempt: nextAttempt,\n  maxAttempts: MAX_ATTEMPTS,\n  withinLimit: nextAttempt <= MAX_ATTEMPTS,\n  reasonCode: reasonCode,\n  reason: reason,\n  text: text,\n  lead_email: rej.lead_email,\n  lead_name: rej.lead_name,\n  chat_id: rej.chat_id,\n  parsed: parsed\n} }];"
+   },
+   "id": "kyc-decide-0001",
+   "name": "Decide: Re-ask or Escalate",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1808,
+    176
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "kyc-retry-cond",
+       "leftValue": "={{ $json.withinLimit === true && !!$json.chat_id }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    2016,
+    176
+   ],
+   "id": "kyc-retry-if-0001",
+   "name": "Within Retry Limit?"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://waha:3000/api/sendText",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Api-Key",
+       "value": "={{ $env.WAHA_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ chatId: $json.chat_id, text: $json.text, session: 'default' }) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "id": "kyc-wa-reask-0001",
+   "name": "WhatsApp: Request Re-upload",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2224,
+    64
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email || $('Decide: Re-ask or Escalate').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: '[KYC-REJECT] Re-upload requested (attempt ' + $('Decide: Re-ask or Escalate').first().json.nextAttempt + ' of ' + $('Decide: Re-ask or Escalate').first().json.maxAttempts + ', reason code ' + $('Decide: Re-ask or Escalate').first().json.reasonCode + ') [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']' }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "kyc-log-reask-0001",
+   "name": "Log KYC Re-ask",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2432,
+    64
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "select": "channel",
+    "channelId": {
+     "__rl": true,
+     "value": "C0BKTLL1X54",
+     "mode": "id"
+    },
+    "text": "=:no_entry: *KYC blocked - human needed*\n\n*Customer:* {{ $json.lead_name || 'Unknown' }}\n*Email:* {{ $json.lead_email || 'n/a' }}\n*WhatsApp:* {{ $json.chat_id || 'not provided' }}\n*Why this reached you:* {{ $json.escalationReason }}\n*Failed attempts:* {{ $json.countOk ? ($json.attempts + ' of ' + $json.maxAttempts) : 'not known \u2014 the count read failed, so this escalated rather than looping' }}\n\n*Latest rejection reason:*\n{{ $json.reason }}\n\nThe automated re-upload loop has stopped. Please contact this customer directly.",
+    "otherOptions": {}
+   },
+   "type": "n8n-nodes-base.slack",
+   "typeVersion": 2.5,
+   "position": [
+    2224,
+    304
+   ],
+   "id": "kyc-slack-esc-0001",
+   "name": "Slack: KYC Escalation",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "webhookId": "effdb2b6-adf9-4e24-a256-ee276a8d664c",
+   "credentials": {
+    "slackApi": {
+     "id": "oOf93CGdFiAxHkHF",
+     "name": "Slack account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ workflow: 'KYC Auditor - Phase 5', status: ($json.delivery.status === 'SUCCESS' ? 'ESCALATED' : 'ESCALATED_' + $json.delivery.status), lead_name: $('Decide: Re-ask or Escalate').first().json.lead_name, lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email, summary: 'KYC escalation: ' + $('Decide: Re-ask or Escalate').first().json.escalationReason + '. Document was rejected because ' + $('Decide: Re-ask or Escalate').first().json.reason + ' | attempts counted from ' + $('Decide: Re-ask or Escalate').first().json.countSource + ' | ' + $json.delivery.note, logged_at: $now.toISO() }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "kyc-log-esc-0001",
+   "name": "Log KYC Escalation",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2432,
+    304
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://waha:3000/api/sendText",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Api-Key",
+       "value": "={{ $env.WAHA_API_KEY }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ chatId: $json.chat_id, text: 'Hi ' + ($json.lead_name || 'there') + ', good news - your document has been verified successfully. We are moving your application to the next step.', session: 'default' }) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "id": "kyc-wa-ok-0001",
+   "name": "WhatsApp: KYC Approved",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1600,
+    -160
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Approved').first().json.lead_email || $('Approved').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: '[KYC-APPROVED] Document verified for ' + ($('Approved').first().json.lead_name || 'customer') }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+    "options": {}
+   },
+   "id": "kyc-log-ok-0001",
+   "name": "Log KYC Approved",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1808,
+    -160
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ storage_path: $('Merge Archive Result').first().json.storage_path, retain_until: $('Merge Archive Result').first().json.retain_until, lead_email: $('Approved').first().json.lead_email, lead_name: $('Approved').first().json.lead_name, chat_id: $('Approved').first().json.chat_id, document_type: $('Approved').first().json.parsed.documentType, full_name: $('Approved').first().json.parsed.fullName, date_of_birth: $('Approved').first().json.parsed.dateOfBirth, expiry_date: $('Approved').first().json.parsed.expiryDate, is_valid: true, tampering: false, confidence_score: $('Approved').first().json.parsed.confidenceScore, remarks: ($('Approved').first().json.parsed.remarks || '') + ' [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']', attempt_number: 1, verdict: 'APPROVED', reviewed_at: $now.toISO() }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "id": "kyc-rec-ok",
+   "name": "Record KYC (Approved)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2064,
+    -160
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ storage_path: $('Merge Archive Result').first().json.storage_path, retain_until: $('Merge Archive Result').first().json.retain_until, lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email, lead_name: $('Decide: Re-ask or Escalate').first().json.lead_name, chat_id: $('Decide: Re-ask or Escalate').first().json.chat_id, document_type: $('Decide: Re-ask or Escalate').first().json.parsed.documentType, full_name: $('Decide: Re-ask or Escalate').first().json.parsed.fullName, is_valid: false, tampering: ($('Decide: Re-ask or Escalate').first().json.parsed.tamperingDetected === true), confidence_score: $('Decide: Re-ask or Escalate').first().json.parsed.confidenceScore, remarks: $('Decide: Re-ask or Escalate').first().json.reason + ' [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']', attempt_number: $('Decide: Re-ask or Escalate').first().json.nextAttempt, max_attempts: 3, verdict: ($('Decide: Re-ask or Escalate').first().json.withinLimit ? 'REJECTED' : 'ESCALATED') }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "id": "kyc-rec-rej",
+   "name": "Record KYC (Rejected)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2064,
+    432
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "audit-kyc",
+    "responseMode": "lastNode",
+    "options": {}
+   },
+   "id": "2d1b8c04-f584-486a-8b1e-62e9c20a4b67",
+   "name": "ReceiveDocument",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 1.1,
+   "position": [
+    -208,
+    0
+   ],
+   "webhookId": "d63a961e-d909-4e15-bdce-d62971f2fbdc"
+  },
+  {
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "apikey",
+       "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+      },
+      {
+       "name": "Authorization",
+       "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "id": "kyc-verify-jwt-0001",
+   "name": "Verify JWT",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -160,
+    480
+   ],
+   "retryOnFail": false,
+   "alwaysOutputData": true,
+   "onError": "continueRegularOutput",
+   "notes": "Public webhook branch only. 401 arrives as data (onError = continueRegularOutput) so Auth Gate can decide."
+  },
+  {
+   "parameters": {
+    "jsCode": "// This node sits ONLY on the public webhook branch.\n// 'Called by Another Workflow' connects straight to the next node and never\n// reaches here, so the trusted sub-workflow path is untouched by this guard.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\n//\n// 2 Sep 2026: 'Tenant For JWT User' was inserted between Verify JWT and this\n// node, and an HTTP node REPLACES the item, so the identity check reaches back\n// to Verify JWT by name. The guard is otherwise unchanged.\nlet auth = {};\ntry { auth = $('Verify JWT').first().json || {}; } catch (e) { auth = {}; }\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] KYC upload rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted. Nothing else had to change.\nreturn $('ReceiveDocument').all();"
+   },
+   "id": "kyc-auth-gate-0001",
+   "name": "Auth Gate",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    480
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// Archive the KYC document to Supabase Storage.\n// Sits between the vision parse and the verdict branch on purpose: AML\n// retention covers rejected and escalated documents too, not just approved.\nconst RETENTION_YEARS = 7;\nconst MAX_BYTES = 10 * 1024 * 1024;   // bucket file_size_limit\n\nconst p = $('Prepare Document').first().json;\nconst b64 = p.imageBase64;\n\nconst now = new Date();\nconst yyyy = String(now.getUTCFullYear());\nconst mm = String(now.getUTCMonth() + 1).padStart(2, '0');\n\nconst retain = new Date(now.getTime());\nretain.setUTCFullYear(retain.getUTCFullYear() + RETENTION_YEARS);\nconst retain_until = retain.toISOString().slice(0, 10);   // column is DATE\n\nconst base = {\n  auditResult: $json.auditResult,\n  parsed: $json.parsed,\n  retain_until: retain_until,\n  storage_path: null,\n  archive_skipped: true,\n  archive_error: null,\n};\n\nif (!b64 || String(b64).length < 100) {\n  base.archive_error = 'no image supplied \u2014 nothing to archive';\n  return [{ json: base }];\n}\n\nconst buf = Buffer.from(String(b64), 'base64');\nif (buf.length > MAX_BYTES) {\n  base.archive_error = 'image ' + buf.length + ' bytes exceeds the 10 MB bucket limit';\n  return [{ json: base }];\n}\n\n// Sniff the real type -- the bucket only accepts jpeg/png/webp/pdf.\nlet ext = 'jpg', mime = 'image/jpeg';\nif (buf[0] === 0x89 && buf[1] === 0x50) { ext = 'png'; mime = 'image/png'; }\nelse if (buf.slice(0, 4).toString('ascii') === '%PDF') { ext = 'pdf'; mime = 'application/pdf'; }\nelse if (buf.slice(0, 4).toString('ascii') === 'RIFF' &&\n         buf.slice(8, 12).toString('ascii') === 'WEBP') { ext = 'webp'; mime = 'image/webp'; }\n\nconst uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)\n  ? crypto.randomUUID()\n  : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12));\n\n// PRIVACY. The key used to carry an identity segment derived from the customer's\n// email or phone number, e.g. kyc/ahmed_at_gmail.com/2026/08/<uuid>.jpg. Anyone\n// able to list the bucket then read the customer list straight out of the key\n// names without opening a file, and every log line, backup index or error\n// message quoting a path leaked the same thing. The key is now non-identifying.\n// kyc_documents.storage_path is the only link between a customer and their\n// document, and that table is RLS-protected and is purged on schedule.\n// nexus_retention_purge drives off those rows, not off the path structure, so\n// deletion and gap-detection are unaffected.\nconst storage_path = 'kyc/' + yyyy + '/' + mm + '/' + uuid + '.' + ext;\n\nreturn [{\n  json: Object.assign({}, base, {\n    storage_path: storage_path,\n    archive_skipped: false,\n    archive_error: null,\n    mime_type: mime,\n    size_bytes: buf.length,\n  }),\n  binary: { data: await this.helpers.prepareBinaryData(buf, uuid + '.' + ext, mime) },\n}];"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    608,
+    0
+   ],
+   "name": "Prepare Archive",
+   "id": "566a6a70-9e5d-4cee-8a50-24aa8479426d"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/storage/v1/object/kyc-documents/' + $json.storage_path }}",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "x-upsert",
+       "value": "false"
+      },
+      {
+       "name": "Content-Type",
+       "value": "={{ $json.mime_type }}"
+      },
+      {
+       "name": "Cache-Control",
+       "value": "private, max-age=0, no-store"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "binaryData",
+    "inputDataFieldName": "data",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    800,
+    0
+   ],
+   "name": "Archive to Storage",
+   "id": "19c89e57-5e3b-4c5a-9335-168410c7a703",
+   "alwaysOutputData": true,
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Restore the audit payload for the verdict branch, and record whether the\n// document actually reached Storage. The upload node runs with\n// onError:continueRegularOutput so a failed archive never blocks the customer\n// reply \u2014 but it must not silently claim a path that holds no object either.\n// A NULL storage_path on a kyc_documents row is a visible compliance gap.\nconst a = $('Prepare Archive').first().json;\nconst r = $input.first().json || {};\n\nconst ok = !!(r.Key || r.Id);\nlet archive_error = a.archive_error || null;\nif (!ok && !a.archive_skipped) {\n  archive_error = 'storage upload failed: ' + JSON.stringify(r).substring(0, 300);\n}\n\nreturn [{ json: {\n  auditResult: a.auditResult,\n  parsed: a.parsed,\n  storage_path: ok ? a.storage_path : null,\n  retain_until: a.retain_until,\n  archive_error: archive_error,\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    992,
+    0
+   ],
+   "name": "Merge Archive Result",
+   "id": "26f8ab65-7a7e-431d-be1c-98c80b5f77f6"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "2dada750-780b-46c6-bf3f-214c75dbd28d",
+       "leftValue": "={{ $json.parsed.isIdentityDocument }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "25491c26-0a46-4446-b9d9-ca365d764959",
+   "name": "Is An Identity Document?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1152,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const pj = $('Parse JSON Output').first().json; const un = pj.auditUnavailable === true; const pd = $('Prepare Document').first().json; const tail = ' [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']'; return JSON.stringify(Object.assign({ storage_path: $json.storage_path, retain_until: $json.retain_until, lead_email: pd.lead_email, lead_name: pd.lead_name, chat_id: pd.chat_id, verdict: un ? 'ESCALATED' : 'REJECTED', document_type: un ? null : 'NOT_A_DOCUMENT', is_valid: false, tampering: false, attempt_number: 1, max_attempts: 3, remarks: (un ? 'No audit was performed: the document checker was unavailable, so nothing was assessed and nothing was sent to the sender. A human needs to review this document. (' + String(pj.auditFailureReason || 'reason not recorded').slice(0,200) + ')' : 'The image was not a government-issued identity document, so no audit was performed and nothing was sent to the sender.') + tail, void_reason: un ? null : 'Not a KYC submission: the vision auditor classified the image as not an identity document.', voided_at: un ? null : $now.toUTC().toISO() }, pd.tenant_id ? { tenant_id: pd.tenant_id } : {})); })() }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "id": "d3913365-1ab0-4ee4-b1de-2b2612308d02",
+   "name": "Record Non-Document",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1488,
+    32
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500,
+   "alwaysOutputData": true,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "notes": "verdict must be one of PENDING/APPROVED/REJECTED/ESCALATED -- kyc_documents_verdict_check. It used to write 'NOT_A_DOCUMENT' there, which 400'd, and because this node both swallows its errors and is terminal, the row silently never existed while the image sat in Storage. The classification now lives in document_type, which is free text."
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'WhatsApp: Request Re-upload', what: 'WhatsApp re-upload request to the customer', critical: true },\n  { node: 'Count Previous KYC Rejections', what: 'previous-attempt count read from communication_logs', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2336,
+    64
+   ],
+   "name": "Delivery Report (KYC Re-ask)",
+   "id": "c719385c-2432-485e-860d-e5737fab7d7a"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'Slack: KYC Escalation', what: 'Slack post asking a human to take over the KYC', critical: true },\n  { node: 'Count Previous KYC Rejections', what: 'previous-attempt count read from communication_logs', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    2336,
+    304
+   ],
+   "name": "Delivery Report (KYC Escalation)",
+   "id": "eff0a5a1-9597-4496-aa75-e6e2845f26f5"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'WhatsApp: KYC Approved', what: 'WhatsApp approval message to the customer', critical: true },\n  { node: 'Log KYC Approved', what: 'outbound communication_logs row for the approval message', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1936,
+    -160
+   ],
+   "name": "Delivery Report (KYC Approved)",
+   "id": "4a5ead1e-88f7-4560-affe-83228bd86e88"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\n// This node runs in parallel with 'Within Retry Limit?', so neither\n// 'WhatsApp: Request Re-upload' nor 'Slack: KYC Escalation' can be claimed here:\n// one of them never runs, and the order of the other is not knowable. Their\n// delivery is reported by the Delivery Report on their own branch.\nconst CLAIMED = [\n  { node: 'Count Previous KYC Rejections', what: 'previous-attempt count read from communication_logs', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1936,
+    304
+   ],
+   "name": "Delivery Report (KYC Rejected)",
+   "id": "9801177f-967a-417e-aaa3-251faf871ce3"
+  },
+  {
+   "parameters": {
+    "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\n// Nothing was sent to the sender on this branch, so the only claim this row\n// makes is that the image was retained.\nconst CLAIMED = [\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+   },
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1264,
+    112
+   ],
+   "name": "Delivery Report (Non-Document)",
+   "id": "cd8aca3d-5919-41e5-8e51-a0003ef43267"
+  },
+  {
+   "id": "kyc-count-prev-0002",
+   "name": "Count Previous KYC Rejections",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1600,
+    176
+   ],
+   "parameters": {
+    "method": "GET",
+    "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?tenant_id=eq.{{ $('Prepare Document').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "attempt_number,verdict,created_at,lead_email,chat_id"
+      },
+      {
+       "name": "or",
+       "value": "={{ (() => {\n  /* Same or=() identity pattern as `Fetch Thread History` in the WhatsApp BDC\n     agent. The customer is keyed three ways and only one of them is an email. */\n  const r = $json;\n  const keys = [];\n  const push = (v) => {\n    const s = String(v === null || v === undefined ? '' : v).trim();\n    if (!s) return;\n    /* A comma, a bracket, a quote or a space would break out of the or=() list.\n       No real chat id or address contains one; anything that does is dropped\n       rather than sent, because a malformed filter is a 400, and a 400 here now\n       fails CLOSED (see `Decide: Re-ask or Escalate`). */\n    if (/[,()\"\\s]/.test(s)) return;\n    if (keys.indexOf(s) === -1) keys.push(s);\n  };\n  push(r.lead_email);\n  push(r.chat_id);\n  const cid = String(r.chat_id || '');\n  if (cid.slice(-5) === '@c.us') {\n    /* '<digits>@c.us' IS a phone number, so the synthetic address the Master\n       Router mints for phone-only leads is a fourth name for the same person.\n       '@lid' carries no phone digits at all and is deliberately not converted. */\n    const d = cid.replace(/[^0-9]/g, '');\n    if (d) push('+' + d + '@whatsapp.lead');\n  }\n  if (!keys.length) return '(lead_email.eq.__nexus_no_identity__)';\n  const clauses = [];\n  for (const k of keys) { clauses.push('lead_email.eq.' + k); clauses.push('chat_id.eq.' + k); }\n  return '(' + clauses.join(',') + ')';\n})() }}"
+      },
+      {
+       "name": "verdict",
+       "value": "in.(REJECTED,ESCALATED)"
+      },
+      {
+       "name": "created_at",
+       "value": "=gte.{{ $now.minus({ days: 90 }).toISO() }}"
+      },
+      {
+       "name": "order",
+       "value": "attempt_number.desc.nullslast"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "Replaced 30 Aug 2026. Was a Supabase getAll on communication_logs with no limit, no returnAll and no orderBy, filtered on lead_email alone. Now a PostgREST read of kyc_documents -- the table that already stores attempt_number on every rejection -- keyed on the full or=() identity set (email OR chat id OR the synthetic +<digits>@whatsapp.lead), ordered by attempt_number desc and limited to ONE row, so it returns a maximum rather than a count and cannot be truncated by unrelated BDC or drip traffic. Written as an HTTP node, not a Supabase node, because the Supabase node's filters are ANDed keyName/condition pairs and cannot express or=().",
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "8af555a2-3007-41c4-b00b-6781d6e9c025",
+   "name": "Tenant For JWT User",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -160,
+    620
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "tenant_id"
+      },
+      {
+       "name": "auth_user_id",
+       "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "2"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1000,
+   "alwaysOutputData": true
+  }
+ ],
+ "connections": {
+  "Called by Another Workflow": {
+   "main": [
+    [
+     {
+      "node": "Prepare Document",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Prepare Document": {
+   "main": [
+    [
+     {
+      "node": "OpenRouter Vision (KYC Analysis)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenRouter Vision (KYC Analysis)": {
+   "main": [
+    [
+     {
+      "node": "Parse JSON Output",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse JSON Output": {
+   "main": [
+    [
+     {
+      "node": "Prepare Archive",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Validation Check": {
+   "main": [
+    [
+     {
+      "node": "Approved",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Rejected",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Approved": {
+   "main": [
+    [
+     {
+      "node": "WhatsApp: KYC Approved",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WhatsApp: KYC Approved": {
+   "main": [
+    [
+     {
+      "node": "Log KYC Approved",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Decide: Re-ask or Escalate": {
+   "main": [
+    [
+     {
+      "node": "Within Retry Limit?",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Delivery Report (KYC Rejected)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Within Retry Limit?": {
+   "main": [
+    [
+     {
+      "node": "WhatsApp: Request Re-upload",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Slack: KYC Escalation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "WhatsApp: Request Re-upload": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report (KYC Re-ask)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Slack: KYC Escalation": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report (KYC Escalation)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log KYC Approved": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report (KYC Approved)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "ReceiveDocument": {
+   "main": [
+    [
+     {
+      "node": "Verify JWT",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Auth Gate": {
+   "main": [
+    [
+     {
+      "node": "Prepare Document",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Prepare Archive": {
+   "main": [
+    [
+     {
+      "node": "Archive to Storage",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Archive to Storage": {
+   "main": [
+    [
+     {
+      "node": "Merge Archive Result",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Merge Archive Result": {
+   "main": [
+    [
+     {
+      "node": "Is An Identity Document?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Is An Identity Document?": {
+   "main": [
+    [
+     {
+      "node": "Validation Check",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Delivery Report (Non-Document)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report (KYC Re-ask)": {
+   "main": [
+    [
+     {
+      "node": "Log KYC Re-ask",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report (KYC Escalation)": {
+   "main": [
+    [
+     {
+      "node": "Log KYC Escalation",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report (KYC Approved)": {
+   "main": [
+    [
+     {
+      "node": "Record KYC (Approved)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report (KYC Rejected)": {
+   "main": [
+    [
+     {
+      "node": "Record KYC (Rejected)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report (Non-Document)": {
+   "main": [
+    [
+     {
+      "node": "Record Non-Document",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Rejected": {
+   "main": [
+    [
+     {
+      "node": "Count Previous KYC Rejections",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Count Previous KYC Rejections": {
+   "main": [
+    [
+     {
+      "node": "Decide: Re-ask or Escalate",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify JWT": {
+   "main": [
+    [
+     {
+      "node": "Tenant For JWT User",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tenant For JWT User": {
+   "main": [
+    [
+     {
+      "node": "Auth Gate",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "availableInMCP": true,
+  "binaryMode": "separate",
+  "timezone": "Asia/Dubai",
+  "saveDataErrorExecution": "none",
+  "saveDataSuccessExecution": "none",
+  "callerPolicy": "workflowsFromSameOwner",
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "saveExecutionProgress": false,
+  "executionTimeout": 300
+ },
+ "staticData": null,
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": {},
+ "versionId": "0a6b0e44-208f-40d7-ade2-043a9c9b3e1f",
+ "activeVersionId": "0a6b0e44-208f-40d7-ade2-043a9c9b3e1f",
+ "versionCounter": 50,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-07-23T19:16:39.439Z",
+   "createdAt": "2026-07-23T19:16:39.439Z",
+   "role": "workflow:owner",
+   "workflowId": "qTnh3nwWheFJbFkU",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-06T14:39:39.354Z",
+  "createdAt": "2026-09-06T14:39:39.354Z",
+  "versionId": "0a6b0e44-208f-40d7-ade2-043a9c9b3e1f",
+  "workflowId": "qTnh3nwWheFJbFkU",
+  "nodes": [
+   {
+    "parameters": {
+     "inputSource": "passthrough"
+    },
+    "id": "kyc-exec-trigger-0001",
+    "name": "Called by Another Workflow",
+    "type": "n8n-nodes-base.executeWorkflowTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     -208,
+     208
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "// Extract document content AND the customer contact details we need to\n// close the Phase-5 loop (WhatsApp re-upload request).\nconst item = $input.first().json;\nconst body = item.body || item;\n\nlet documentContent = '';\nlet imageBase64 = null;\nif (body.document_base64) { imageBase64 = body.document_base64; documentContent = 'Image document provided as base64'; }\nelse if (body.document_text) { documentContent = body.document_text; }\nelse if (body.text) { documentContent = body.text; }\nelse { documentContent = JSON.stringify(body); }\n\n// Normalise the WhatsApp chat id the same way the BDC agent does.\nlet chatId = String(body.chat_id || body.phone || body.whatsapp || '').trim();\nif (chatId && !chatId.includes('@')) chatId = chatId.replace(/[^0-9]/g, '') + '@c.us';\n\n// ---- TENANT (2 Sep 2026) --------------------------------------------------\n// kyc_documents holds what a vision model read off a government identity\n// document. n8n writes it as service_role, which is BYPASSRLS with no\n// auth.uid(), so without an explicit tenant_id the row is filed by the column\n// default under whichever tenant holds is_unattributed_default -- meaning a\n// second dealership's customer's Emirates ID would appear on the FIRST\n// dealership's compliance screen. Two real signals, neither of them a default:\n//   1. the caller. The WhatsApp BDC agent resolved the dealership from the WAHA\n//      session the document arrived on and passes it here on the payload.\n//   2. the Supabase user behind the verified JWT on the direct upload webhook,\n//      resolved by 'Tenant For JWT User'.\n// Sole configured dealership -> name it explicitly (today's behaviour, stated).\n// Two or more and neither signal answers -> null, and every write below omits\n// the column rather than asserting the wrong owner.\nconst NEXUS_BUILTIN = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' };  // ALBA CARS\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nlet nexusMap = {};\ntry { nexusMap = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { nexusMap = {}; }\nif (!nexusMap || typeof nexusMap !== 'object' || !Object.keys(nexusMap).length) nexusMap = NEXUS_BUILTIN;\nconst nexusKeys = Object.keys(nexusMap);\n\nlet tenant = String(body.tenant_id || item.tenant_id || '');\nlet tenantSource = NEXUS_UUID.test(tenant) ? 'caller' : '';\nif (!NEXUS_UUID.test(tenant)) {\n  try {\n    const row = $('Tenant For JWT User').all().map(i => i.json).find(x => x && x.tenant_id);\n    if (row) { tenant = String(row.tenant_id); tenantSource = 'jwt_tenant_member'; }\n  } catch (e) { /* sub-workflow path: that node did not run */ }\n}\nif (!NEXUS_UUID.test(tenant) && nexusKeys.length === 1) {\n  tenant = String(nexusMap[nexusKeys[0]] || '');\n  tenantSource = 'sole_configured_tenant';\n}\nif (!NEXUS_UUID.test(tenant)) { tenant = null; tenantSource = 'unresolved'; }\n\nreturn [{ json: {\n  documentContent: documentContent,\n  imageBase64: imageBase64,\n  hasImage: !!imageBase64,\n  lead_email: body.lead_email || body.email || null,\n  lead_name: body.lead_name || body.name || null,\n  chat_id: chatId || null,\n  tenant_id: tenant,\n  tenant_source: tenantSource\n} }];"
+    },
+    "id": "prep-doc-node",
+    "name": "Prepare Document",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     0,
+     0
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://openrouter.ai/api/v1/chat/completions",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "openRouterApi",
+     "sendHeaders": false,
+     "headerParameters": {
+      "parameters": []
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', models: ['nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', 'minimax/minimax-m3:free', 'google/gemma-4-26b-a4b-it:free'], max_tokens: 1500, messages: [ { role: 'system', content: 'You are a professional KYC/AML Document Auditor for car buyers. STEP 1, and you must do this first: decide whether the image is a government-issued identity document -- a passport, national ID card, residence or Emirates ID, or a driving licence. If it is ANYTHING else -- a greeting card, a photograph, a screenshot, a poster, religious or decorative imagery, a vehicle, a receipt, a meme -- then set isIdentityDocument to false, set every other field to null, and STOP. Do not describe the picture in documentType. Do not guess a name. Do not assign a confidence score to something that is not a document. STEP 2, only if it IS an identity document: extract Full Name, Date of Birth, Expiry Date, Document Type and Validity, and check for tampering or inconsistencies. Respond STRICTLY in JSON format: { \"isIdentityDocument\": true/false, \"fullName\": \"...\", \"dateOfBirth\": \"...\", \"expiryDate\": \"...\", \"documentType\": \"...\", \"isValid\": true/false, \"tamperingDetected\": true/false, \"confidenceScore\": 0-100, \"remarks\": \"...\" }' }, { role: 'user', content: $json.hasImage ? [ { type: 'text', text: 'Is this a government-issued identity document? If so, audit it. If not, set isIdentityDocument false and stop.' }, { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + $json.imageBase64 } } ] : ('Analyze this KYC document text:\\n\\n' + $json.documentContent) } ] }) }}",
+     "options": {
+      "timeout": 60000
+     }
+    },
+    "id": "e96f1d24-3435-46c4-bfa2-3531b26c2712",
+    "name": "OpenRouter Vision (KYC Analysis)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.1,
+    "position": [
+     224,
+     0
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 3000,
+    "credentials": {
+     "openRouterApi": {
+      "id": "UUtKrBzkQOztAOzZ",
+      "name": "OpenRouter account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true
+   },
+   {
+    "parameters": {
+     "jsCode": "const response = $input.first().json;\n\n// A failure to OBTAIN an audit is not the same fact as \"this is not an identity\n// document\". They used to collapse into the same output, and the row written\n// downstream then asserted, about a real customer's passport, that it was not a\n// document at all. Carry the distinction so nothing downstream states a verdict\n// the model never gave.\nconst unavailable = (why) => {\n  const r = {\n    isIdentityDocument: false,\n    auditUnavailable: true,\n    fullName: null,\n    dateOfBirth: null,\n    expiryDate: null,\n    documentType: null,\n    isValid: false,\n    tamperingDetected: false,\n    confidenceScore: 0,\n    remarks: null\n  };\n  return [{ json: {\n    auditResult: JSON.stringify(r),\n    parsed: r,\n    auditUnavailable: true,\n    auditFailureReason: String(why).slice(0, 300)\n  } }];\n};\n\n// The vision node now runs with onError:'continueRegularOutput', so a 429 from a\n// rate-limited endpoint or a 404 from a data-policy guardrail arrives here as an\n// item rather than failing the execution. That is deliberate: a failed execution\n// is what used to write the raw base64 of a passport into the execution store.\nif (response.error) {\n  return unavailable('vision call failed: ' + JSON.stringify(response.error).slice(0, 200));\n}\nif (!response.choices || !response.choices[0] || !response.choices[0].message) {\n  return unavailable('unexpected response shape from the vision endpoint');\n}\n\nconst content = response.choices[0].message.content || '';\n\nlet auditResult;\ntry {\n  const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  auditResult = JSON.parse(cleaned);\n} catch (e) {\n  return unavailable('the vision endpoint did not return valid JSON');\n}\n\n// Defaults to FALSE on purpose. If the model omits the field, the safe failure is\n// silence: the row lands on the compliance screen for a human and nobody is told\n// anything. The harm being fixed is this system SPEAKING wrongly, so when in\n// doubt it must not speak.\nauditResult.isIdentityDocument = auditResult.isIdentityDocument === true;\nauditResult.isValid = auditResult.isValid === true;\nauditResult.tamperingDetected = auditResult.tamperingDetected === true;\nauditResult.confidenceScore = Number(auditResult.confidenceScore) || 0;\nauditResult.auditUnavailable = false;\n\n// PRIVACY. 'remarks' is the one field the model writes freely, and it is the one\n// field that can echo back whatever it read off the document -- full name, date\n// of birth, ID number. It is clamped here and, from this point on, it reaches\n// only kyc_documents. It no longer reaches the customer's WhatsApp message and it\n// no longer reaches communication_logs, which the BDC agent reads back into a\n// third-party model on every later turn of the conversation.\nauditResult.remarks = (auditResult.remarks == null)\n  ? null\n  : String(auditResult.remarks).slice(0, 300);\n\nreturn [{ json: {\n  auditResult: JSON.stringify(auditResult),\n  parsed: auditResult,\n  auditUnavailable: false,\n  auditFailureReason: null\n} }];"
+    },
+    "id": "6eb678c1-155e-49cd-a24a-fb48721c4355",
+    "name": "Parse JSON Output",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     448,
+     0
+    ]
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "688892c4-07bd-4643-bb8b-36385949c0d7",
+        "leftValue": "={{ $json.parsed.isValid === true && $json.parsed.tamperingDetected === false }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     1168,
+     0
+    ],
+    "id": "aa9b2221-e90f-4680-affe-ef96f582486f",
+    "name": "Validation Check"
+   },
+   {
+    "parameters": {
+     "jsCode": "const p = $('Prepare Document').first().json;\nreturn [{ json: {\n  status: 'APPROVED',\n  message: 'KYC document is valid and verified.',\n  details: $json.auditResult,\n  parsed: $json.parsed,\n  lead_email: p.lead_email,\n  lead_name: p.lead_name,\n  chat_id: p.chat_id\n} }];"
+    },
+    "id": "18f45a0b-1798-4c31-96ec-ecad1a63e6e8",
+    "name": "Approved",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1392,
+     -160
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "const p = $('Prepare Document').first().json;\nreturn [{ json: {\n  status: 'REJECTED',\n  message: 'KYC document failed validation or tampering was detected.',\n  details: $json.auditResult,\n  parsed: $json.parsed,\n  lead_email: p.lead_email,\n  lead_name: p.lead_name,\n  chat_id: p.chat_id\n} }];"
+    },
+    "id": "01c905ab-ee57-41a6-8968-3e4b7b3b3a0f",
+    "name": "Rejected",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1392,
+     176
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "// Phase 5: decide whether to ask the customer to re-upload, or give up and\n// escalate to a human. Attempts are counted from communication_logs so the loop\n// survives restarts and cannot run forever.\n//\n// PRIVACY. This node used to build the customer-facing message out of\n// parsed.remarks -- free text written by the vision model. If the model echoed\n// what it read off the document, the customer's own name, date of birth or ID\n// number was messaged back over WhatsApp AND written into communication_logs.\n// That table is not the right home for it: whatsapp_bdc_ai_agent's 'Fetch Thread\n// History' selects `message` from it and feeds the rows to the BDC agent, so\n// anything landing there is re-sent to a third-party model on every subsequent\n// turn, and nexus_retention_purge never cleans that table.\n//\n// The reason shown to the customer now comes from a closed vocabulary below,\n// chosen only from booleans and a number. No model-authored string is\n// interpolated into anything the customer sees or anything that is logged.\nconst MAX_ATTEMPTS = 3;\nconst rej = $('Rejected').first().json;\n\nconst rows = $input.all().map(i => i.json).filter(r => r && typeof r.message === 'string');\nconst attempts = rows.filter(r => r.message.startsWith('[KYC-REJECT]')).length;\nconst nextAttempt = attempts + 1;\n\nconst parsed = rej.parsed || {};\n\n// Closed vocabulary. Nothing here originates from the model's own words.\nconst REASONS = {\n  TAMPERED:   'the document looks edited or the details do not line up',\n  EXPIRED:    'the document appears to have expired',\n  UNREADABLE: 'we could not read it clearly enough to verify it',\n  INVALID:    'we could not verify it as a valid document'\n};\n\nlet expired = false;\nif (parsed.expiryDate) {\n  const t = Date.parse(parsed.expiryDate);\n  if (!isNaN(t) && t < Date.now()) expired = true;\n}\n\nlet reasonCode = 'INVALID';\nif (parsed.tamperingDetected === true) reasonCode = 'TAMPERED';\nelse if (expired) reasonCode = 'EXPIRED';\nelse if (parsed.confidenceScore < 60) reasonCode = 'UNREADABLE';\n\nconst reason = REASONS[reasonCode];\n\nconst text = 'Hi ' + (rej.lead_name || 'there') + ', thanks for sending your document. '\n  + 'Unfortunately we could not accept it: ' + reason + '. '\n  + 'Could you please re-send a clear, well-lit photo showing the whole document with all four corners visible? '\n  + '(Attempt ' + nextAttempt + ' of ' + MAX_ATTEMPTS + ')';\n\n// 'parsed' is still passed through untouched. Record KYC (Rejected) reads\n// documentType / fullName / confidenceScore off it and writes them to\n// kyc_documents -- the RLS-protected table that nexus_retention_purge actually\n// purges. The structured fields stay; only the free text stops travelling.\nreturn [{ json: {\n  attempts: attempts,\n  nextAttempt: nextAttempt,\n  maxAttempts: MAX_ATTEMPTS,\n  withinLimit: nextAttempt <= MAX_ATTEMPTS,\n  reasonCode: reasonCode,\n  reason: reason,\n  text: text,\n  lead_email: rej.lead_email,\n  lead_name: rej.lead_name,\n  chat_id: rej.chat_id,\n  parsed: parsed\n} }];"
+    },
+    "id": "kyc-decide-0001",
+    "name": "Decide: Re-ask or Escalate",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1808,
+     176
+    ]
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "conditions": [
+       {
+        "id": "kyc-retry-cond",
+        "leftValue": "={{ $json.withinLimit === true && !!$json.chat_id }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.3,
+    "position": [
+     2016,
+     176
+    ],
+    "id": "kyc-retry-if-0001",
+    "name": "Within Retry Limit?"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "http://waha:3000/api/sendText",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "X-Api-Key",
+        "value": "={{ $env.WAHA_API_KEY }}"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ chatId: $json.chat_id, text: $json.text, session: 'default' }) }}",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "id": "kyc-wa-reask-0001",
+    "name": "WhatsApp: Request Re-upload",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2224,
+     64
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email || $('Decide: Re-ask or Escalate').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: '[KYC-REJECT] Re-upload requested (attempt ' + $('Decide: Re-ask or Escalate').first().json.nextAttempt + ' of ' + $('Decide: Re-ask or Escalate').first().json.maxAttempts + ', reason code ' + $('Decide: Re-ask or Escalate').first().json.reasonCode + ') [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']' }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "kyc-log-reask-0001",
+    "name": "Log KYC Re-ask",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2432,
+     64
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "select": "channel",
+     "channelId": {
+      "__rl": true,
+      "value": "C0BKTLL1X54",
+      "mode": "id"
+     },
+     "text": "=:no_entry: *KYC blocked - human needed*\n\n*Customer:* {{ $json.lead_name || 'Unknown' }}\n*Email:* {{ $json.lead_email || 'n/a' }}\n*WhatsApp:* {{ $json.chat_id || 'not provided' }}\n*Why this reached you:* {{ $json.escalationReason }}\n*Failed attempts:* {{ $json.countOk ? ($json.attempts + ' of ' + $json.maxAttempts) : 'not known \u2014 the count read failed, so this escalated rather than looping' }}\n\n*Latest rejection reason:*\n{{ $json.reason }}\n\nThe automated re-upload loop has stopped. Please contact this customer directly.",
+     "otherOptions": {}
+    },
+    "type": "n8n-nodes-base.slack",
+    "typeVersion": 2.5,
+    "position": [
+     2224,
+     304
+    ],
+    "id": "kyc-slack-esc-0001",
+    "name": "Slack: KYC Escalation",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "webhookId": "effdb2b6-adf9-4e24-a256-ee276a8d664c",
+    "credentials": {
+     "slackApi": {
+      "id": "oOf93CGdFiAxHkHF",
+      "name": "Slack account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ workflow: 'KYC Auditor - Phase 5', status: ($json.delivery.status === 'SUCCESS' ? 'ESCALATED' : 'ESCALATED_' + $json.delivery.status), lead_name: $('Decide: Re-ask or Escalate').first().json.lead_name, lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email, summary: 'KYC escalation: ' + $('Decide: Re-ask or Escalate').first().json.escalationReason + '. Document was rejected because ' + $('Decide: Re-ask or Escalate').first().json.reason + ' | attempts counted from ' + $('Decide: Re-ask or Escalate').first().json.countSource + ' | ' + $json.delivery.note, logged_at: $now.toISO() }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "kyc-log-esc-0001",
+    "name": "Log KYC Escalation",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2432,
+     304
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "http://waha:3000/api/sendText",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "X-Api-Key",
+        "value": "={{ $env.WAHA_API_KEY }}"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ chatId: $json.chat_id, text: 'Hi ' + ($json.lead_name || 'there') + ', good news - your document has been verified successfully. We are moving your application to the next step.', session: 'default' }) }}",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "id": "kyc-wa-ok-0001",
+    "name": "WhatsApp: KYC Approved",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1600,
+     -160
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Approved').first().json.lead_email || $('Approved').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: '[KYC-APPROVED] Document verified for ' + ($('Approved').first().json.lead_name || 'customer') }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+     "options": {}
+    },
+    "id": "kyc-log-ok-0001",
+    "name": "Log KYC Approved",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1808,
+     -160
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ storage_path: $('Merge Archive Result').first().json.storage_path, retain_until: $('Merge Archive Result').first().json.retain_until, lead_email: $('Approved').first().json.lead_email, lead_name: $('Approved').first().json.lead_name, chat_id: $('Approved').first().json.chat_id, document_type: $('Approved').first().json.parsed.documentType, full_name: $('Approved').first().json.parsed.fullName, date_of_birth: $('Approved').first().json.parsed.dateOfBirth, expiry_date: $('Approved').first().json.parsed.expiryDate, is_valid: true, tampering: false, confidence_score: $('Approved').first().json.parsed.confidenceScore, remarks: ($('Approved').first().json.parsed.remarks || '') + ' [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']', attempt_number: 1, verdict: 'APPROVED', reviewed_at: $now.toISO() }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "id": "kyc-rec-ok",
+    "name": "Record KYC (Approved)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2064,
+     -160
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ storage_path: $('Merge Archive Result').first().json.storage_path, retain_until: $('Merge Archive Result').first().json.retain_until, lead_email: $('Decide: Re-ask or Escalate').first().json.lead_email, lead_name: $('Decide: Re-ask or Escalate').first().json.lead_name, chat_id: $('Decide: Re-ask or Escalate').first().json.chat_id, document_type: $('Decide: Re-ask or Escalate').first().json.parsed.documentType, full_name: $('Decide: Re-ask or Escalate').first().json.parsed.fullName, is_valid: false, tampering: ($('Decide: Re-ask or Escalate').first().json.parsed.tamperingDetected === true), confidence_score: $('Decide: Re-ask or Escalate').first().json.parsed.confidenceScore, remarks: $('Decide: Re-ask or Escalate').first().json.reason + ' [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']', attempt_number: $('Decide: Re-ask or Escalate').first().json.nextAttempt, max_attempts: 3, verdict: ($('Decide: Re-ask or Escalate').first().json.withinLimit ? 'REJECTED' : 'ESCALATED') }, $('Prepare Document').first().json.tenant_id ? { tenant_id: $('Prepare Document').first().json.tenant_id } : {})) }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "id": "kyc-rec-rej",
+    "name": "Record KYC (Rejected)",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2064,
+     432
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "httpMethod": "POST",
+     "path": "audit-kyc",
+     "responseMode": "lastNode",
+     "options": {}
+    },
+    "id": "2d1b8c04-f584-486a-8b1e-62e9c20a4b67",
+    "name": "ReceiveDocument",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 1.1,
+    "position": [
+     -208,
+     0
+    ],
+    "webhookId": "d63a961e-d909-4e15-bdce-d62971f2fbdc"
+   },
+   {
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "apikey",
+        "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+       },
+       {
+        "name": "Authorization",
+        "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "id": "kyc-verify-jwt-0001",
+    "name": "Verify JWT",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -160,
+     480
+    ],
+    "retryOnFail": false,
+    "alwaysOutputData": true,
+    "onError": "continueRegularOutput",
+    "notes": "Public webhook branch only. 401 arrives as data (onError = continueRegularOutput) so Auth Gate can decide."
+   },
+   {
+    "parameters": {
+     "jsCode": "// This node sits ONLY on the public webhook branch.\n// 'Called by Another Workflow' connects straight to the next node and never\n// reaches here, so the trusted sub-workflow path is untouched by this guard.\n//\n// 'Verify JWT' runs with onError = continueRegularOutput, so a rejected token\n// arrives as data rather than as a failed HTTP node. Supabase GET\n// /auth/v1/user returns the user object on success; no .id means rejected.\n//\n// 2 Sep 2026: 'Tenant For JWT User' was inserted between Verify JWT and this\n// node, and an HTTP node REPLACES the item, so the identity check reaches back\n// to Verify JWT by name. The guard is otherwise unchanged.\nlet auth = {};\ntry { auth = $('Verify JWT').first().json || {}; } catch (e) { auth = {}; }\nif (!auth.id) {\n  // The '[NEXUS-UNATTRIBUTED]' prefix below is a contract with the NEXUS Error\n  // Handler (iYJkh1kztWxZXDbT). An execution that failed BEFORE it authenticated\n  // its caller belongs to no dealership, so that workflow omits tenant_id and\n  // audit_log's own DEFAULT nexus_default_tenant_id() retains the row under the\n  // quarantine tenant -- visible to nexus_quarantine_census(), unreadable by any\n  // dealership -- instead of appending an anonymous stranger's row to ALBA CARS'\n  // audit trail. Keep the marker at the START of the message: the handler tests\n  // position 0, so a copy embedded in a request payload cannot trigger it.\n  throw new Error('[NEXUS-UNATTRIBUTED] KYC upload rejected: unauthorized. A valid Supabase session token is required in the Authorization header.');\n}\n\n// Re-emit the ORIGINAL request untouched so the downstream node sees exactly\n// the shape it saw before this guard was inserted. Nothing else had to change.\nreturn $('ReceiveDocument').all();"
+    },
+    "id": "kyc-auth-gate-0001",
+    "name": "Auth Gate",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     0,
+     480
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "// Archive the KYC document to Supabase Storage.\n// Sits between the vision parse and the verdict branch on purpose: AML\n// retention covers rejected and escalated documents too, not just approved.\nconst RETENTION_YEARS = 7;\nconst MAX_BYTES = 10 * 1024 * 1024;   // bucket file_size_limit\n\nconst p = $('Prepare Document').first().json;\nconst b64 = p.imageBase64;\n\nconst now = new Date();\nconst yyyy = String(now.getUTCFullYear());\nconst mm = String(now.getUTCMonth() + 1).padStart(2, '0');\n\nconst retain = new Date(now.getTime());\nretain.setUTCFullYear(retain.getUTCFullYear() + RETENTION_YEARS);\nconst retain_until = retain.toISOString().slice(0, 10);   // column is DATE\n\nconst base = {\n  auditResult: $json.auditResult,\n  parsed: $json.parsed,\n  retain_until: retain_until,\n  storage_path: null,\n  archive_skipped: true,\n  archive_error: null,\n};\n\nif (!b64 || String(b64).length < 100) {\n  base.archive_error = 'no image supplied \u2014 nothing to archive';\n  return [{ json: base }];\n}\n\nconst buf = Buffer.from(String(b64), 'base64');\nif (buf.length > MAX_BYTES) {\n  base.archive_error = 'image ' + buf.length + ' bytes exceeds the 10 MB bucket limit';\n  return [{ json: base }];\n}\n\n// Sniff the real type -- the bucket only accepts jpeg/png/webp/pdf.\nlet ext = 'jpg', mime = 'image/jpeg';\nif (buf[0] === 0x89 && buf[1] === 0x50) { ext = 'png'; mime = 'image/png'; }\nelse if (buf.slice(0, 4).toString('ascii') === '%PDF') { ext = 'pdf'; mime = 'application/pdf'; }\nelse if (buf.slice(0, 4).toString('ascii') === 'RIFF' &&\n         buf.slice(8, 12).toString('ascii') === 'WEBP') { ext = 'webp'; mime = 'image/webp'; }\n\nconst uuid = (typeof crypto !== 'undefined' && crypto.randomUUID)\n  ? crypto.randomUUID()\n  : (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12));\n\n// PRIVACY. The key used to carry an identity segment derived from the customer's\n// email or phone number, e.g. kyc/ahmed_at_gmail.com/2026/08/<uuid>.jpg. Anyone\n// able to list the bucket then read the customer list straight out of the key\n// names without opening a file, and every log line, backup index or error\n// message quoting a path leaked the same thing. The key is now non-identifying.\n// kyc_documents.storage_path is the only link between a customer and their\n// document, and that table is RLS-protected and is purged on schedule.\n// nexus_retention_purge drives off those rows, not off the path structure, so\n// deletion and gap-detection are unaffected.\nconst storage_path = 'kyc/' + yyyy + '/' + mm + '/' + uuid + '.' + ext;\n\nreturn [{\n  json: Object.assign({}, base, {\n    storage_path: storage_path,\n    archive_skipped: false,\n    archive_error: null,\n    mime_type: mime,\n    size_bytes: buf.length,\n  }),\n  binary: { data: await this.helpers.prepareBinaryData(buf, uuid + '.' + ext, mime) },\n}];"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     608,
+     0
+    ],
+    "name": "Prepare Archive",
+    "id": "566a6a70-9e5d-4cee-8a50-24aa8479426d"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "={{ 'https://dsvuoovivysszdoiorch.supabase.co/storage/v1/object/kyc-documents/' + $json.storage_path }}",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "x-upsert",
+        "value": "false"
+       },
+       {
+        "name": "Content-Type",
+        "value": "={{ $json.mime_type }}"
+       },
+       {
+        "name": "Cache-Control",
+        "value": "private, max-age=0, no-store"
+       }
+      ]
+     },
+     "sendBody": true,
+     "contentType": "binaryData",
+     "inputDataFieldName": "data",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     800,
+     0
+    ],
+    "name": "Archive to Storage",
+    "id": "19c89e57-5e3b-4c5a-9335-168410c7a703",
+    "alwaysOutputData": true,
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 2000,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "jsCode": "// Restore the audit payload for the verdict branch, and record whether the\n// document actually reached Storage. The upload node runs with\n// onError:continueRegularOutput so a failed archive never blocks the customer\n// reply \u2014 but it must not silently claim a path that holds no object either.\n// A NULL storage_path on a kyc_documents row is a visible compliance gap.\nconst a = $('Prepare Archive').first().json;\nconst r = $input.first().json || {};\n\nconst ok = !!(r.Key || r.Id);\nlet archive_error = a.archive_error || null;\nif (!ok && !a.archive_skipped) {\n  archive_error = 'storage upload failed: ' + JSON.stringify(r).substring(0, 300);\n}\n\nreturn [{ json: {\n  auditResult: a.auditResult,\n  parsed: a.parsed,\n  storage_path: ok ? a.storage_path : null,\n  retain_until: a.retain_until,\n  archive_error: archive_error,\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     992,
+     0
+    ],
+    "name": "Merge Archive Result",
+    "id": "26f8ab65-7a7e-431d-be1c-98c80b5f77f6"
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "2dada750-780b-46c6-bf3f-214c75dbd28d",
+        "leftValue": "={{ $json.parsed.isIdentityDocument }}",
+        "rightValue": true,
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ]
+     },
+     "options": {}
+    },
+    "id": "25491c26-0a46-4446-b9d9-ca365d764959",
+    "name": "Is An Identity Document?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     1152,
+     0
+    ]
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const pj = $('Parse JSON Output').first().json; const un = pj.auditUnavailable === true; const pd = $('Prepare Document').first().json; const tail = ' [delivery: ' + $json.delivery.status + ' - ' + $json.delivery.note + ']'; return JSON.stringify(Object.assign({ storage_path: $json.storage_path, retain_until: $json.retain_until, lead_email: pd.lead_email, lead_name: pd.lead_name, chat_id: pd.chat_id, verdict: un ? 'ESCALATED' : 'REJECTED', document_type: un ? null : 'NOT_A_DOCUMENT', is_valid: false, tampering: false, attempt_number: 1, max_attempts: 3, remarks: (un ? 'No audit was performed: the document checker was unavailable, so nothing was assessed and nothing was sent to the sender. A human needs to review this document. (' + String(pj.auditFailureReason || 'reason not recorded').slice(0,200) + ')' : 'The image was not a government-issued identity document, so no audit was performed and nothing was sent to the sender.') + tail, void_reason: un ? null : 'Not a KYC submission: the vision auditor classified the image as not an identity document.', voided_at: un ? null : $now.toUTC().toISO() }, pd.tenant_id ? { tenant_id: pd.tenant_id } : {})); })() }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "id": "d3913365-1ab0-4ee4-b1de-2b2612308d02",
+    "name": "Record Non-Document",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1488,
+     32
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500,
+    "alwaysOutputData": true,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "notes": "verdict must be one of PENDING/APPROVED/REJECTED/ESCALATED -- kyc_documents_verdict_check. It used to write 'NOT_A_DOCUMENT' there, which 400'd, and because this node both swallows its errors and is terminal, the row silently never existed while the image sat in Storage. The classification now lives in document_type, which is free text."
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'WhatsApp: Request Re-upload', what: 'WhatsApp re-upload request to the customer', critical: true },\n  { node: 'Count Previous KYC Rejections', what: 'previous-attempt count read from communication_logs', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     2336,
+     64
+    ],
+    "name": "Delivery Report (KYC Re-ask)",
+    "id": "c719385c-2432-485e-860d-e5737fab7d7a"
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'Slack: KYC Escalation', what: 'Slack post asking a human to take over the KYC', critical: true },\n  { node: 'Count Previous KYC Rejections', what: 'previous-attempt count read from communication_logs', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     2336,
+     304
+    ],
+    "name": "Delivery Report (KYC Escalation)",
+    "id": "eff0a5a1-9597-4496-aa75-e6e2845f26f5"
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\nconst CLAIMED = [\n  { node: 'WhatsApp: KYC Approved', what: 'WhatsApp approval message to the customer', critical: true },\n  { node: 'Log KYC Approved', what: 'outbound communication_logs row for the approval message', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1936,
+     -160
+    ],
+    "name": "Delivery Report (KYC Approved)",
+    "id": "4a5ead1e-88f7-4560-affe-83228bd86e88"
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\n// This node runs in parallel with 'Within Retry Limit?', so neither\n// 'WhatsApp: Request Re-upload' nor 'Slack: KYC Escalation' can be claimed here:\n// one of them never runs, and the order of the other is not knowable. Their\n// delivery is reported by the Delivery Report on their own branch.\nconst CLAIMED = [\n  { node: 'Count Previous KYC Rejections', what: 'previous-attempt count read from communication_logs', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1936,
+     304
+    ],
+    "name": "Delivery Report (KYC Rejected)",
+    "id": "9801177f-967a-417e-aaa3-251faf871ce3"
+   },
+   {
+    "parameters": {
+     "jsCode": "// Delivery Report - verify every claim the next node is about to make.\n// The upstream sends run with onError:'continueRegularOutput'. A failure there\n// is not an exception: n8n emits an item shaped { error: ... } on the main\n// output and the run stays green. Nothing downstream ever looked at it, so the\n// row written next asserted a send that may never have landed.\n// The swallow is deliberate and stays. Only the unconditional claim goes.\n// Nothing was sent to the sender on this branch, so the only claim this row\n// makes is that the image was retained.\nconst CLAIMED = [\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\n\n// 'Archive to Storage' swallows too, but a raw error item cannot tell the two\n// cases apart, so judge it from 'Merge Archive Result' / 'Prepare Archive',\n// which already do: a failed upload against a document we HAD is a compliance\n// hole (the row below asserts a verdict on a document nobody retained), while\n// a text-only submission had nothing to upload in the first place.\nfunction grab(name) { try { return $(name).first().json || {}; } catch (e) { return null; } }\nconst merged = grab('Merge Archive Result');\nconst prep   = grab('Prepare Archive');\nconst ARCH   = { node: 'Archive to Storage', what: 'KYC document retained in Storage (7-year AML retention)' };\n\nif (merged === null) {\n  results.push({ ...ARCH, critical: true, ok: false, why: 'node did not run on this branch' });\n} else if (merged.storage_path) {\n  results.push({ ...ARCH, critical: true, ok: true });\n} else if (prep && prep.archive_skipped === true) {\n  results.push({ ...ARCH, critical: false, ok: false,\n    why: 'nothing to archive: ' + String(merged.archive_error || 'no image supplied').slice(0, 200) });\n} else {\n  results.push({ ...ARCH, critical: true, ok: false,\n    why: String(merged.archive_error || 'storage upload failed').slice(0, 300) });\n}\n\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \\u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} }];\n"
+    },
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1264,
+     112
+    ],
+    "name": "Delivery Report (Non-Document)",
+    "id": "cd8aca3d-5919-41e5-8e51-a0003ef43267"
+   },
+   {
+    "id": "kyc-count-prev-0002",
+    "name": "Count Previous KYC Rejections",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1600,
+     176
+    ],
+    "parameters": {
+     "method": "GET",
+     "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/kyc_documents?tenant_id=eq.{{ $('Prepare Document').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "attempt_number,verdict,created_at,lead_email,chat_id"
+       },
+       {
+        "name": "or",
+        "value": "={{ (() => {\n  /* Same or=() identity pattern as `Fetch Thread History` in the WhatsApp BDC\n     agent. The customer is keyed three ways and only one of them is an email. */\n  const r = $json;\n  const keys = [];\n  const push = (v) => {\n    const s = String(v === null || v === undefined ? '' : v).trim();\n    if (!s) return;\n    /* A comma, a bracket, a quote or a space would break out of the or=() list.\n       No real chat id or address contains one; anything that does is dropped\n       rather than sent, because a malformed filter is a 400, and a 400 here now\n       fails CLOSED (see `Decide: Re-ask or Escalate`). */\n    if (/[,()\"\\s]/.test(s)) return;\n    if (keys.indexOf(s) === -1) keys.push(s);\n  };\n  push(r.lead_email);\n  push(r.chat_id);\n  const cid = String(r.chat_id || '');\n  if (cid.slice(-5) === '@c.us') {\n    /* '<digits>@c.us' IS a phone number, so the synthetic address the Master\n       Router mints for phone-only leads is a fourth name for the same person.\n       '@lid' carries no phone digits at all and is deliberately not converted. */\n    const d = cid.replace(/[^0-9]/g, '');\n    if (d) push('+' + d + '@whatsapp.lead');\n  }\n  if (!keys.length) return '(lead_email.eq.__nexus_no_identity__)';\n  const clauses = [];\n  for (const k of keys) { clauses.push('lead_email.eq.' + k); clauses.push('chat_id.eq.' + k); }\n  return '(' + clauses.join(',') + ')';\n})() }}"
+       },
+       {
+        "name": "verdict",
+        "value": "in.(REJECTED,ESCALATED)"
+       },
+       {
+        "name": "created_at",
+        "value": "=gte.{{ $now.minus({ days: 90 }).toISO() }}"
+       },
+       {
+        "name": "order",
+        "value": "attempt_number.desc.nullslast"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "Replaced 30 Aug 2026. Was a Supabase getAll on communication_logs with no limit, no returnAll and no orderBy, filtered on lead_email alone. Now a PostgREST read of kyc_documents -- the table that already stores attempt_number on every rejection -- keyed on the full or=() identity set (email OR chat id OR the synthetic +<digits>@whatsapp.lead), ordered by attempt_number desc and limited to ONE row, so it returns a maximum rather than a count and cannot be truncated by unrelated BDC or drip traffic. Written as an HTTP node, not a Supabase node, because the Supabase node's filters are ANDed keyName/condition pairs and cannot express or=().",
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "8af555a2-3007-41c4-b00b-6781d6e9c025",
+    "name": "Tenant For JWT User",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     -160,
+     620
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "tenant_id"
+       },
+       {
+        "name": "auth_user_id",
+        "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1000,
+    "alwaysOutputData": true
+   }
+  ],
+  "connections": {
+   "Called by Another Workflow": {
+    "main": [
+     [
+      {
+       "node": "Prepare Document",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Prepare Document": {
+    "main": [
+     [
+      {
+       "node": "OpenRouter Vision (KYC Analysis)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "OpenRouter Vision (KYC Analysis)": {
+    "main": [
+     [
+      {
+       "node": "Parse JSON Output",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Parse JSON Output": {
+    "main": [
+     [
+      {
+       "node": "Prepare Archive",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Validation Check": {
+    "main": [
+     [
+      {
+       "node": "Approved",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Rejected",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Approved": {
+    "main": [
+     [
+      {
+       "node": "WhatsApp: KYC Approved",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "WhatsApp: KYC Approved": {
+    "main": [
+     [
+      {
+       "node": "Log KYC Approved",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Decide: Re-ask or Escalate": {
+    "main": [
+     [
+      {
+       "node": "Within Retry Limit?",
+       "type": "main",
+       "index": 0
+      },
+      {
+       "node": "Delivery Report (KYC Rejected)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Within Retry Limit?": {
+    "main": [
+     [
+      {
+       "node": "WhatsApp: Request Re-upload",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Slack: KYC Escalation",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "WhatsApp: Request Re-upload": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report (KYC Re-ask)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Slack: KYC Escalation": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report (KYC Escalation)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log KYC Approved": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report (KYC Approved)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "ReceiveDocument": {
+    "main": [
+     [
+      {
+       "node": "Verify JWT",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Auth Gate": {
+    "main": [
+     [
+      {
+       "node": "Prepare Document",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Prepare Archive": {
+    "main": [
+     [
+      {
+       "node": "Archive to Storage",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Archive to Storage": {
+    "main": [
+     [
+      {
+       "node": "Merge Archive Result",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Merge Archive Result": {
+    "main": [
+     [
+      {
+       "node": "Is An Identity Document?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Is An Identity Document?": {
+    "main": [
+     [
+      {
+       "node": "Validation Check",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Delivery Report (Non-Document)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report (KYC Re-ask)": {
+    "main": [
+     [
+      {
+       "node": "Log KYC Re-ask",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report (KYC Escalation)": {
+    "main": [
+     [
+      {
+       "node": "Log KYC Escalation",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report (KYC Approved)": {
+    "main": [
+     [
+      {
+       "node": "Record KYC (Approved)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report (KYC Rejected)": {
+    "main": [
+     [
+      {
+       "node": "Record KYC (Rejected)",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report (Non-Document)": {
+    "main": [
+     [
+      {
+       "node": "Record Non-Document",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Rejected": {
+    "main": [
+     [
+      {
+       "node": "Count Previous KYC Rejections",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Count Previous KYC Rejections": {
+    "main": [
+     [
+      {
+       "node": "Decide: Re-ask or Escalate",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Verify JWT": {
+    "main": [
+     [
+      {
+       "node": "Tenant For JWT User",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Tenant For JWT User": {
+    "main": [
+     [
+      {
+       "node": "Auth Gate",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "Auth Gate marks its refusal unattributed",
+  "description": "Prefix the unauthorized throw with [NEXUS-UNATTRIBUTED] so the shared NEXUS Error Handler omits tenant_id and the anonymous caller's audit row falls to the quarantine tenant instead of ALBA CARS. Guard logic, connections and the trusted sub-workflow path are unchanged.",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-06T14:39:42.774Z",
+    "id": 829,
+    "workflowId": "qTnh3nwWheFJbFkU",
+    "versionId": "0a6b0e44-208f-40d7-ade2-043a9c9b3e1f",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}

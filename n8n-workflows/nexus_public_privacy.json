@@ -60,12 +60,13 @@
     "executionOrder": "v1",
     "executionTimeout": 60,
     "saveDataSuccessExecution": "none",
-    "errorWorkflow": "iYJkh1kztWxZXDbT"
+    "errorWorkflow": "iYJkh1kztWxZXDbT",
+    "availableInMCP": true
   },
   "_exported_from": {
     "id": "vKTmNepP4fGaTAe8",
     "active": true,
-    "updatedAt": "2026-08-26T02:58:20.162Z",
+    "updatedAt": "2026-09-21T02:05:03.366Z",
     "published": true
   }
 }

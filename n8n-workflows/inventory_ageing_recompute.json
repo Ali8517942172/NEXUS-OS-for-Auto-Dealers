@@ -67,7 +67,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        448,
+        896,
         0
       ],
       "parameters": {
@@ -90,7 +90,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ workflow: 'Inventory Ageing Recompute', status: 'SUCCESS', summary: 'Recomputed days in stock, holding cost, net margin and aging alert for ' + ($json.data !== undefined ? $json.data : $json) + ' units.', logged_at: $now.toISO() }) }}",
+        "jsonBody": "={{ (() => { const t = $json.tenant_id || null; const u = $json.units; const known = (u !== null && u !== undefined); const base = { workflow: 'Inventory Ageing Recompute', status: 'SUCCESS', summary: 'Recomputed days in stock, holding cost, net margin and aging alert for ' + (known ? u : 'an unknown number of') + ' units.' + (t ? '' : ' | TENANT UNRESOLVED'), logged_at: $now.toISO() }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
         "options": {}
       },
       "credentials": {
@@ -103,6 +103,60 @@
       "maxTries": 3,
       "waitBetweenTries": 1500,
       "onError": "continueRegularOutput"
+    },
+    {
+      "id": "46927a55-d697-441d-b76c-b90d3a1f480a",
+      "name": "Units Per Tenant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/inventory",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "tenant_id"
+            },
+            {
+              "name": "acquired_at",
+              "value": "not.is.null"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "notes": "Reads back WHICH dealership each recomputed row belongs to, so the audit trail can be split per tenant. Same predicate as the function's own subquery (acquired_at is not null), so the counts describe exactly the rows the sweep touched. Fails soft: on error 'Group By Tenant' emits a single TENANT UNRESOLVED row rather than losing the audit trail for the night.",
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "dd617bfe-7271-4a1d-891d-93841aa51ca9",
+      "name": "Group By Tenant",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The recompute is a PLATFORM-WIDE sweep by design: recompute_inventory_derived()\n// takes no tenant argument and refreshes every dealership's inventory in one\n// statement. That is the right shape for the WRITE -- it only recomputes derived\n// columns on rows that already carry their own owner, so it cannot move a row\n// between dealerships and it does not need a tenant to be safe.\n//\n// The AUDIT ROW is the part that has a tenant. A single row saying 'recomputed\n// N units' where N spans every dealership would show ALBA CARS a number that\n// includes somebody else's cars. So this cron ITERATES TENANTS rather than\n// resolving one: one audit row per dealership, each quoting only its own count.\nconst rows = $input.all().map(i => i.json || {});\nconst counts = {};\nfor (const r of rows) {\n  const t = r.tenant_id;\n  if (!t) continue;\n  counts[t] = (counts[t] || 0) + 1;\n}\nconst keys = Object.keys(counts);\n\nif (!keys.length) {\n  // Either the read-back failed (it fails soft) or nothing is ageing-eligible.\n  // Emit ONE row that claims no owner rather than guessing one, and say so.\n  return [{ json: { tenant_id: null, units: null } }];\n}\n\nreturn keys.map(t => ({ json: { tenant_id: t, units: counts[t] } }));\n"
+      },
+      "notes": "Added 2 Sep 2026. Turns the platform-wide sweep into one audit row per dealership."
     }
   ],
   "connections": {
@@ -118,6 +172,28 @@
       ]
     },
     "Recompute Inventory Ageing": {
+      "main": [
+        [
+          {
+            "node": "Units Per Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Units Per Tenant": {
+      "main": [
+        [
+          {
+            "node": "Group By Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group By Tenant": {
       "main": [
         [
           {
@@ -139,7 +215,7 @@
   "_exported_from": {
     "id": "ZUc42jcwwHoBeEr8",
     "active": true,
-    "updatedAt": "2026-08-24T16:57:40.440Z",
+    "updatedAt": "2026-09-02T11:00:56.342Z",
     "published": true
   }
 }

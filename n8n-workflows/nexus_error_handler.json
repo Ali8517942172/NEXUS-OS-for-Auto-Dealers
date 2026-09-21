@@ -15,6 +15,8 @@
     {
       "parameters": {
         "mode": "manual",
+        "includeOtherFields": false,
+        "options": {},
         "assignments": {
           "assignments": [
             {
@@ -27,7 +29,7 @@
               "id": "facb0d06-edb5-4f87-9314-17108f0de0c9",
               "name": "status",
               "type": "string",
-              "value": "={{ /unauthor|forbidden|a valid supabase session token|rejected/i.test(String((($json.execution && $json.execution.error && $json.execution.error.message) || ($json.error && $json.error.message) || ''))) ? 'REJECTED' : 'FAILED' }}"
+              "value": "FAILED"
             },
             {
               "id": "537d3dd0-d427-4021-987a-5d833788d7a3",
@@ -36,15 +38,19 @@
               "value": "={{ [ (($json.execution && $json.execution.error && $json.execution.error.message) || ($json.error && $json.error.message) || 'Execution failed with no error message'), ($json.execution && $json.execution.lastNodeExecuted ? 'Failed at node: ' + $json.execution.lastNodeExecuted : null), ($json.execution && $json.execution.id ? 'Execution ' + $json.execution.id : null), ($json.execution && $json.execution.url ? $json.execution.url : null) ].filter(Boolean).join(' · ').slice(0, 1000) }}"
             },
             {
+              "id": "b7e1c40a-1111-4000-9000-unattributed01",
+              "name": "unattributed",
+              "type": "boolean",
+              "value": "={{ (() => { const M = '[NEXUS-UNATTRIBUTED]'; const e = ($json.execution && $json.execution.error) || $json.error || {}; return String(e.description || '').indexOf(M) === 0 || String(e.message || '').indexOf(M) === 0; })() }}"
+            },
+            {
               "id": "dd6e066e-831d-4142-852f-58fd16eda3ea",
               "name": "logged_at",
               "type": "string",
               "value": "={{ $now.toUTC().toISO() }}"
             }
           ]
-        },
-        "includeOtherFields": false,
-        "options": {}
+        }
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
@@ -56,17 +62,38 @@
       "id": "a69cb272-2946-4fb0-bfb7-7228bb944aa8"
     },
     {
-      "id": "8b86a612-43af-48e1-aa7c-2ab36f640860",
+      "id": "6320f2f2-39be-4a57-a243-1532aae28876",
       "name": "Log Failure to audit_log",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         448,
         0
       ],
       "parameters": {
-        "tableId": "audit_log",
-        "dataToSend": "autoMapInputData"
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); let t = null; if (k.length === 1 && U.test(String(m[k[0]] || ''))) t = String(m[k[0]]); const unattributed = $json.unattributed === true || $json.unattributed === 'true'; if (unattributed) t = null; const note = unattributed ? ' | TENANT UNRESOLVED (unauthenticated): the caller was never authenticated, so this failure belongs to no dealership' : ' | TENANT UNRESOLVED: an error trigger reports which workflow failed, not whose customer it was'; const base = { workflow: $json.workflow, status: $json.status, summary: (String($json.summary || '') + (t ? '' : note)).slice(0, 1000), logged_at: $json.logged_at }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+        "options": {
+          "timeout": 15000
+        }
       },
       "credentials": {
         "supabaseApi": {
@@ -74,9 +101,7 @@
           "name": "Supabase account"
         }
       },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 3000
+      "notes": "tenant_id is sent EXPLICITLY, including as null. It is not omitted: audit_log.tenant_id defaults to nexus_default_tenant_id(), so an absent key would stamp the unattributed-default dealership and put one dealership's failures on another's Automation screen. With one dealership configured the fallback names it, so today's behaviour is unchanged. Was an autoMapInputData Supabase node until 2 Sep 2026; swapped for HTTP so null and absent are distinguishable."
     }
   ],
   "connections": {
@@ -115,7 +140,7 @@
   "_exported_from": {
     "id": "iYJkh1kztWxZXDbT",
     "active": true,
-    "updatedAt": "2026-08-24T16:57:48.406Z",
+    "updatedAt": "2026-09-06T14:38:56.950Z",
     "published": true
   }
 }

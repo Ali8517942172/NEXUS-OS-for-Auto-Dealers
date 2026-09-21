@@ -1,0 +1,150 @@
+{
+  "name": "NEXUS Site Enquiry to Gmail Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "site-enquiry",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "ignoreBots": true
+        }
+      },
+      "id": "550efcf1-a851-46b7-80f1-af572ccbba30",
+      "name": "Site Enquiry Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "6bb53e1a-6c5f-4d72-b98c-7111fabe0f0e",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "L4pRhS1d4Xhfyh5c",
+          "name": "Resend API (Header)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json || {};\nconst b = raw.body && typeof raw.body === 'object' ? raw.body : raw;\nconst clean = (v, max) => typeof v === 'string' ? v.replace(/[\\u0000-\\u001F\\u007F]/g, ' ').trim().slice(0, max) : '';\nconst full_name = clean(b.full_name, 120);\nconst phone = clean(b.phone, 40);\nconst email = clean(b.email, 160).toLowerCase();\nconst dealership = clean(b.dealership, 160);\nconst stock_size = clean(b.stock_size, 40);\nconst message = clean(b.message, 1500);\nconst submission_id = clean(b.submission_id, 80);\nif (!full_name) { throw new Error('SITE_ENQUIRY_REJECTED: no name was supplied, so there is nobody to notify about.'); }\nif (!phone && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) { throw new Error('SITE_ENQUIRY_REJECTED: neither a phone number nor a valid email was supplied, so this enquiry cannot be answered.'); }\nconst subject = 'NEXUS enquiry - ' + full_name + (dealership ? ' | ' + dealership : '');\nconst lines = ['New NEXUS enquiry', '', 'Name:       ' + full_name, 'Dealership: ' + (dealership || '(not given)'), 'WhatsApp:   ' + (phone || '(not given)'), 'Email:      ' + (email || '(not given)'), 'Stock:      ' + (stock_size || '(not given)'), '', message || '(no message)', '', '--', 'submission ' + (submission_id || '(none sent)') + ' at ' + new Date().toISOString(), 'This is a NEXUS prospect, not a dealership customer. Nothing was written to any dealership record.'];\nreturn [{ json: { subject, text: lines.join('\\n'), reply_to: email || undefined, submission_id: submission_id || null } }];\n"
+      },
+      "id": "8ca00de5-b449-460b-b97f-b7cf6446067f",
+      "name": "Compose Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "aliasgher892@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false,
+          "replyTo": "={{ $json.reply_to }}"
+        }
+      },
+      "id": "113d1200-30a2-4de3-bdca-78622433e818",
+      "name": "Notify Ali (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        0
+      ],
+      "webhookId": "4f7c356c-71fd-4d72-ae19-27c4ff16d5c4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1Cgivoyjt7psAirH",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, notified: true, submission_id: $('Compose Notification').item.json.submission_id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "c8a81b6a-cff4-4cc0-ac80-ce6cf99b4810",
+      "name": "Respond Delivered",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Site enquiry to Gmail\n\nThe NEXUS marketing site posts here. The mail is sent from the Gmail\ncredential that already serves the drip and escalation workflows, so this\npath needs no Resend account and no third-party sending domain.\n\nTHE DOOR IS GUARDED BY n8n ITSELF. authentication headerAuth means a request\nwithout the matching header is refused before any execution starts - unlike\nthe eleven older business webhooks, every one of which accepts the request\nfirst and refuses downstream.\n\nTHE EMAIL BODY IS BUILT HERE, NEVER PASSED THROUGH. Compose Notification reads\nseven allowlisted fields, strips control characters, caps every length and\nrefuses an enquiry with no name or no way to reply. Somebody holding the\nheader still cannot make this mail arbitrary text.\n\nNOTHING IS WRITTEN TO ANY DEALERSHIP RECORD, DELIBERATELY. A person filling in\nthe NEXUS site is a prospect for the vendor, not a car buyer belonging to a\ndealership. Filing them into leads or audit_log would put the vendor pipeline\ninside a customer's data - the exact boundary this product exists to hold.\n",
+        "height": 200,
+        "width": 960,
+        "color": 4
+      },
+      "id": "f60d99f5-e93e-4fc1-923d-e3f7e6d4f83f",
+      "name": "Sticky Note 669c0484",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -192
+      ]
+    }
+  ],
+  "connections": {
+    "Site Enquiry Webhook": {
+      "main": [
+        [
+          {
+            "node": "Compose Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Notification": {
+      "main": [
+        [
+          {
+            "node": "Notify Ali (Gmail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Ali (Gmail)": {
+      "main": [
+        [
+          {
+            "node": "Respond Delivered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "_exported_from": {
+    "id": "Oz2W6EWG6n6XW0HQ",
+    "active": false,
+    "updatedAt": "2026-09-08T05:38:51.791Z",
+    "published": false
+  }
+}

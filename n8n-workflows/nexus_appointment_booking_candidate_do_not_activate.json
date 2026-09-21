@@ -1,0 +1,1266 @@
+{
+  "name": "NEXUS Appointment Booking — CANDIDATE (do not activate)",
+  "nodes": [
+    {
+      "id": "e29730a6-52e4-4d67-95e0-94fd4a876368",
+      "name": "Booking Webhook (Meta Cloud)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "multipleMethods": true,
+        "path": "nexus-appointment-booking",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "webhookId": "7b60db1e-3037-46b1-b595-c41eb47e810d"
+    },
+    {
+      "id": "e45dcc25-67c2-4af7-a383-6a732c896ebd",
+      "name": "Verify Or Refuse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        400
+      ],
+      "parameters": {
+        "jsCode": "/* Same security decision as the live receiver 'WhatsApp Cloud - Inbound\n * Receiver (Meta)', node 'Verify Or Refuse'. Kept byte-identical in its HMAC\n * core on purpose: a second, weaker verifier on a second endpoint is how a\n * signed-origin guarantee quietly stops being one.\n *\n *  1. Meta signs the EXACT BYTES it sent. Re-serialising the JSON to hash gives\n *     different bytes for any non-ASCII name.\n *  2. With no app secret configured this endpoint REFUSES. A dormant gate is an\n *     open door.\n *  3. The HMAC is implemented in full because this Code sandbox has neither\n *     require('crypto') nor the WebCrypto global.\n *\n * This node writes NOTHING and it does not record the channel event -- the live\n * receiver owns that. This endpoint only reads the signed metadata.\n */\nconst K = [\n  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];\n\nfunction sha256(bytes) {\n  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,\n             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n  const l = bytes.length;\n  const buf = new Uint8Array((((l + 8) >> 6) + 1) << 6);\n  buf.set(bytes); buf[l] = 0x80;\n  const dv = new DataView(buf.buffer), bits = l * 8;\n  dv.setUint32(buf.length - 8, Math.floor(bits / 4294967296));\n  dv.setUint32(buf.length - 4, bits >>> 0);\n  const w = new Uint32Array(64);\n  for (let off = 0; off < buf.length; off += 64) {\n    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);\n    for (let i = 16; i < 64; i++) {\n      const x = w[i - 15], y = w[i - 2];\n      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);\n      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);\n      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;\n    }\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));\n      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;\n      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));\n      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;\n    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;\n  }\n  const out = new Uint8Array(32), odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i]);\n  return out;\n}\n\nfunction hmacHex(keyBytes, msgBytes) {\n  const k = keyBytes.length > 64 ? sha256(keyBytes) : keyBytes;\n  const ipad = new Uint8Array(64), opad = new Uint8Array(64);\n  for (let i = 0; i < 64; i++) {\n    const kb = i < k.length ? k[i] : 0;\n    ipad[i] = kb ^ 0x36; opad[i] = kb ^ 0x5c;\n  }\n  const inner = new Uint8Array(64 + msgBytes.length);\n  inner.set(ipad); inner.set(msgBytes, 64);\n  const outer = new Uint8Array(96);\n  outer.set(opad); outer.set(sha256(inner), 64);\n  return Array.from(sha256(outer)).map(b => b.toString(16).padStart(2, '0')).join('');\n}\n\nconst item = $input.first();\nconst j = item.json || {};\nconst headers = j.headers || {};\nconst query = j.query || {};\nconst VERIFY_TOKEN = String($env.META_WEBHOOK_VERIFY_TOKEN || '');\nconst APP_SECRET = String($env.META_APP_SECRET || '');\n\nconst refuse = (status, code, why) => [{ json: {\n  verdict: 'REFUSE', respond_status: status, respond_text: code,\n  reason_code: code, why, wrote_nothing: true } }];\n\nconst sameString = (a, b) => {\n  if (a.length !== b.length) return false;\n  let d = 0;\n  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return d === 0;\n};\n\nif (query['hub.mode'] !== undefined || query['hub.challenge'] !== undefined) {\n  if (!VERIFY_TOKEN) {\n    return refuse(500, 'VERIFY_TOKEN_NOT_CONFIGURED',\n      'META_WEBHOOK_VERIFY_TOKEN is unset on this box.');\n  }\n  if (String(query['hub.mode']) !== 'subscribe') {\n    return refuse(400, 'HUB_MODE_NOT_SUBSCRIBE', 'hub.mode was not subscribe.');\n  }\n  if (!sameString(String(query['hub.verify_token'] || ''), VERIFY_TOKEN)) {\n    return refuse(403, 'HUB_VERIFY_TOKEN_MISMATCH', 'The verify token did not match.');\n  }\n  return [{ json: {\n    verdict: 'CHALLENGE', respond_status: 200,\n    respond_text: String(query['hub.challenge'] || ''),\n    reason_code: 'SUBSCRIPTION_CONFIRMED', wrote_nothing: true } }];\n}\n\nif (!APP_SECRET) {\n  return refuse(500, 'APP_SECRET_NOT_CONFIGURED',\n    'META_APP_SECRET is unset on this box, so no delivery can be verified. ' +\n    'Refusing every request until it is set - this gate is never dormant.');\n}\n\nlet raw = null, raw_source = null;\nconst bin = item.binary && (item.binary.data || item.binary.body);\nif (bin && bin.data) { raw = Buffer.from(bin.data, 'base64'); raw_source = 'binary'; }\nelse if (typeof j.body === 'string') { raw = Buffer.from(j.body, 'utf8'); raw_source = 'string'; }\nif (!raw) {\n  return refuse(500, 'RAW_BODY_NOT_AVAILABLE',\n    'The webhook node did not hand this node the raw body. Turn on Raw Body.');\n}\n\nconst sigHeader = String(headers['x-hub-signature-256'] || '');\nif (!sigHeader.startsWith('sha256=')) {\n  return refuse(401, 'SIGNATURE_HEADER_MISSING', 'No X-Hub-Signature-256 on the request.');\n}\nif (!sameString(sigHeader, 'sha256=' + hmacHex(Buffer.from(APP_SECRET, 'utf8'), raw))) {\n  return refuse(401, 'SIGNATURE_MISMATCH',\n    'X-Hub-Signature-256 did not match an HMAC-SHA256 of the raw body. Nothing was written.');\n}\n\nlet payload;\ntry { payload = JSON.parse(raw.toString('utf8')); }\ncatch (e) { return refuse(400, 'BODY_NOT_JSON', 'Signature verified but the body is not JSON.'); }\n\nconst out = [];\nfor (const entry of (payload.entry || [])) {\n  for (const ch of (entry.changes || [])) {\n    const v = ch.value || {};\n    const pnid = String((v.metadata || {}).phone_number_id || '');\n    const contacts = v.contacts || [];\n    for (const m of (v.messages || [])) {\n      const wa = String(m.from || '');\n      const contact = contacts.find(c => String(c.wa_id || '') === wa) || {};\n      const ts = Number(m.timestamp || 0);\n      const id = String(m.id || '');\n      const measurable = ts > 0 && id !== '' && pnid !== '';\n      out.push({ json: {\n        verdict: measurable ? 'ACCEPT' : 'ACCEPT_UNMEASURABLE',\n        respond_status: 200, respond_text: 'ok',\n        reason_code: measurable ? 'SIGNATURE_VERIFIED' : 'MESSAGE_NOT_MEASURABLE',\n        raw_source,\n        phone_number_id: pnid,\n        waba_id: String(entry.id || ''),\n        customer_wa_id: wa,\n        customer_phone_digits: wa.replace(/[^0-9]/g, ''),\n        customer_name: String((contact.profile || {}).name || ''),\n        message_id: id,\n        message_kind: String(m.type || 'text'),\n        occurred_at: measurable ? new Date(ts * 1000).toISOString() : null,\n        text: m.text ? String(m.text.body || '') : '',\n        origin_verified: 'hmac_sha256_x_hub'\n      } });\n    }\n  }\n}\nif (!out.length) {\n  return [{ json: {\n    verdict: 'ACCEPT_NO_MESSAGE', respond_status: 200, respond_text: 'ok',\n    reason_code: 'NO_INBOUND_MESSAGE_IN_DELIVERY', wrote_nothing: true, raw_source } }];\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "4cfca1bd-45ac-44c1-995d-9dce1be250ac",
+      "name": "Signature Verified And Measurable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "accept-verdict",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "ACCEPT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "725176ef-f826-426d-bed8-345e329dbb95",
+      "name": "Resolve Tenant From Phone Number ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_resolve_channel_tenant",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_channel_type: 'whatsapp_cloud_phone_number_id', p_external_identifier: $json.phone_number_id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e079fc22-14c3-438e-b5ce-2afb90c87517",
+      "name": "Channel Registered To A Dealership?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-tenant",
+              "leftValue": "={{ $json.tenant_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "1f95c327-f54c-4e17-a839-8444b13d3a90",
+      "name": "Find Customer In This Dealership",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/customer?select=id,display_name,phone_digits&limit=1&tenant_id=eq.{{ $json.tenant_id }}&phone_digits=eq.{{ $(\"Verify Or Refuse\").item.json.customer_phone_digits }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c09c30d8-3e9b-4c7b-a83b-a2228662a9da",
+      "name": "Customer Known To This Dealership?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-customer",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "18dae832-b633-4d20-a4fe-419a2d78ceb6",
+      "name": "Classify The Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_classify_message_intent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.pgrst.object+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_text: $(\"Verify Or Refuse\").item.json.text }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "8ae8395c-f783-48bb-a478-f7998c70ffa3",
+      "name": "Find An Open Offer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/appointment?select=appointment_id,state,offered_slots,offered_at&state=eq.OFFERED&order=offered_at.desc&limit=1&tenant_id=eq.{{ $(\"Resolve Tenant From Phone Number ID\").item.json.tenant_id }}&customer_id=eq.{{ $(\"Find Customer In This Dealership\").item.json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "6740608e-b058-4980-9c31-049e17c15ce9",
+      "name": "Decide The Booking Step",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        200
+      ],
+      "parameters": {
+        "jsCode": "/* What this node may and may not decide.\n *\n * MAY: whether this message is a fresh request to visit, or the customer\n * picking one of the times NEXUS already offered them.\n * MAY NOT: which time they meant. If the reply does not name an offered slot\n * by its number, the slot list is sent again. Guessing \"they probably meant\n * the first one\" is how a customer is told they are booked for a time they\n * never agreed to.\n *\n * TEST_DRIVE is the intent nexus_classify_message_intent (NX973) produces for\n * a customer asking to come in: it covers \"test drive\", \"can i see\", \"visit\",\n * \"showroom\", \"appointment\", \"book a slot\", \"kab aa sakta\". There is NO\n * APPOINTMENT intent in the classifier. TEST_DRIVE is the nearest honest one\n * and it is the one this workflow keys on.\n */\nconst cls  = $('Classify The Message').item.json || {};\nconst msg  = $('Verify Or Refuse').item.json || {};\nconst tid  = ($('Resolve Tenant From Phone Number ID').item.json || {}).tenant_id || null;\nconst cid  = ($('Find Customer In This Dealership').item.json || {}).id || null;\n\nconst row = $json && $json.appointment_id ? $json : null;\nconst slots = row && Array.isArray(row.offered_slots) ? row.offered_slots : [];\nconst text = String(msg.text == null ? '' : msg.text).trim();\nconst intent = String(cls.intent || 'UNKNOWN');\n\nlet step = 'NOT_A_BOOKING_MESSAGE';\nlet chosen_slot = null;\nlet chosen_index = null;\nlet why = 'Intent ' + intent + ' is not a request to visit the showroom.';\n\nif (row && slots.length) {\n  const m = text.match(/^\\s*(?:option\\s*)?([1-9])\\b/i);\n  const idx = m ? Number(m[1]) - 1 : -1;\n  if (idx >= 0 && idx < slots.length) {\n    step = 'CONFIRM';\n    chosen_slot = slots[idx];\n    chosen_index = idx;\n    why = 'The customer replied with the number of a slot NEXUS actually offered.';\n  } else if (intent === 'TEST_DRIVE') {\n    step = 'REOFFER_UNREADABLE';\n    why = 'An offer is open and the customer is still talking about visiting, but this message does not name one of the offered times. NEXUS will not pick one for them.';\n  } else {\n    why = 'An offer is open but this message neither picks a slot nor is about visiting.';\n  }\n} else if (intent === 'TEST_DRIVE') {\n  step = 'REQUEST';\n  why = 'Classified TEST_DRIVE by nexus_classify_message_intent, which is the classifier value for a customer asking to come in.';\n}\n\nreturn [{ json: {\n  step, why, chosen_slot, chosen_index,\n  intent,\n  reason_codes: cls.reason_codes || [],\n  tenant_id: tid,\n  customer_id: cid,\n  customer_wa_id: msg.customer_wa_id || null,\n  customer_name: msg.customer_name || null,\n  message_id: msg.message_id || null,\n  message_text: text,\n  open_appointment_id: row ? row.appointment_id : null,\n  open_offered_slots: slots\n} }];"
+      }
+    },
+    {
+      "id": "051e7c2c-5785-4d64-9ea5-a003e3a05f78",
+      "name": "Route The Booking Step",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1980,
+        400
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "REQUEST",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "is-request",
+                    "leftValue": "={{ $json.step }}",
+                    "rightValue": "REQUEST",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "CONFIRM",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "is-confirm",
+                    "leftValue": "={{ $json.step }}",
+                    "rightValue": "CONFIRM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "REOFFER_UNREADABLE",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "is-reoffer",
+                    "leftValue": "={{ $json.step }}",
+                    "rightValue": "REOFFER_UNREADABLE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Not A Booking Message"
+        }
+      }
+    },
+    {
+      "id": "6a41c68a-f5eb-40ac-b653-a4c75d16a968",
+      "name": "Request The Visit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_appointment_request",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.pgrst.object+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_tenant_id: $json.tenant_id, p_customer_id: $json.customer_id, p_channel: 'WHATSAPP', p_notes: String($json.message_text || '').slice(0, 300), p_actor: 'n8n:nexus-appointment-booking-candidate' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "1e7f2c5b-56dc-429c-a3f3-8b74b0d37e4a",
+      "name": "Propose Slots In Dubai Time",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "/* THESE TIMES ARE ARBITRARY AND NX995 SAYS SO.\n *\n * NX995 has no capacity model: it does not know showroom opening hours, who is\n * on shift, or that Friday afternoon is prayer time. It will accept 03:00 on a\n * Saturday if somebody types it. This node therefore does not pretend to pick\n * a good time -- it picks three fixed daytime slots on the next two days and\n * the STATUS file says out loud that they are not checked against any diary.\n *\n * Asia/Dubai is UTC+04:00 all year and has no daylight saving, so the offset\n * is a constant rather than a lookup.\n */\nconst DUBAI_OFFSET_MS = 4 * 60 * 60 * 1000;\nconst now = Date.now();\n\nfunction dubaiSlot(dayOffset, hour) {\n  const shifted = new Date(now + DUBAI_OFFSET_MS);\n  shifted.setUTCHours(0, 0, 0, 0);\n  const ms = shifted.getTime() + (dayOffset * 86400000) + (hour * 3600000) - DUBAI_OFFSET_MS;\n  return new Date(ms);\n}\n\nconst MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\nconst DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];\nfunction dubaiLabel(d) {\n  const w = new Date(d.getTime() + DUBAI_OFFSET_MS);\n  const hh = String(w.getUTCHours()).padStart(2, '0');\n  const mm = String(w.getUTCMinutes()).padStart(2, '0');\n  return DAYS[w.getUTCDay()] + ' ' + w.getUTCDate() + ' ' + MONTHS[w.getUTCMonth()] + ', ' + hh + ':' + mm;\n}\n\nconst candidates = [dubaiSlot(1, 11), dubaiSlot(1, 16), dubaiSlot(2, 11)]\n  .filter(d => d.getTime() > now + 60000);\n\nif (!candidates.length) {\n  throw new Error('APPOINTMENT_NO_FUTURE_SLOT_COULD_BE_BUILT: every proposed slot computed to a time in the past, and nexus_appointment_offer_slots refuses a past slot. Nothing was offered.');\n}\n\nconst upstream = $('Decide The Booking Step').item.json;\nconst appt = $json;\n\nreturn [{ json: {\n  appointment_id: appt.appointment_id,\n  tenant_id: upstream.tenant_id,\n  customer_wa_id: upstream.customer_wa_id,\n  slots_iso: candidates.map(d => d.toISOString()),\n  slots_labels: candidates.map(dubaiLabel),\n  offer_text: 'Thanks for getting in touch. I can put you down for a showroom visit. Which of these suits you?\\n'\n    + candidates.map((d, i) => (i + 1) + ') ' + dubaiLabel(d)).join('\\n')\n    + '\\n\\nAll times are Dubai time. Reply with just the number. Nothing is held until you pick one.'\n} }];"
+      }
+    },
+    {
+      "id": "156c31f3-9806-4d37-9c52-902d7b49fd84",
+      "name": "Offer The Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_appointment_offer_slots",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.pgrst.object+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_appointment_id: $json.appointment_id, p_slots: $json.slots_iso, p_actor: 'n8n:nexus-appointment-booking-candidate' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "ec70382c-b644-4658-85a5-2205fc897755",
+      "name": "Send The Offered Times",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NEXUS_WA_SEND_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Nexus-Send-Auth",
+              "value": "={{ $env.NEXUS_WA_SEND_WEBHOOK_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $('Propose Slots In Dubai Time').item.json.tenant_id, customer_external_id: $('Propose Slots In Dubai Time').item.json.customer_wa_id, intent: 'APPOINTMENT_OFFER', send_form: 'FREEFORM_TEXT', message_body: $('Propose Slots In Dubai Time').item.json.offer_text, requested_by: 'n8n:nexus-appointment-booking-candidate', request_ref: 'appt-offer:' + $json.appointment_id }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a8b96100-f57a-462c-b799-a71da73a5aea",
+      "name": "Respond 200 Offered",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        3080,
+        0
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "cc5700ef-02d2-4b97-93a6-a5c0fef214a2",
+      "name": "Explain The Refusal Honestly",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        760
+      ],
+      "parameters": {
+        "jsCode": "/* Reached only when NX995 REFUSED a write: a double booking, a past slot, an\n * illegal transition, a customer or vehicle belonging to another dealership.\n * The database's own sentence is carried through to the operator log, and the\n * customer gets a short true one. The word \"booked\" appears nowhere below.\n */\nfunction dig(o, depth) {\n  if (o == null || depth > 6) return null;\n  if (typeof o === 'string') return o;\n  if (typeof o !== 'object') return null;\n  const keys = ['message', 'msg', 'error_description', 'details', 'detail', 'hint', 'description'];\n  for (const k of keys) {\n    if (typeof o[k] === 'string' && o[k].trim()) return o[k];\n  }\n  for (const k of ['error', 'response', 'body', 'cause', 'json', 'data', 'context']) {\n    const v = dig(o[k], depth + 1);\n    if (v) return v;\n  }\n  return null;\n}\n\nconst raw = $json || {};\nconst dbMessage = dig(raw, 0) || 'The database refused the write and gave no message that this node could read.';\n\nlet customerText;\nif (/DOUBLE_BOOKING_REFUSED/.test(dbMessage)) {\n  customerText = 'Sorry, that time has just been taken. Could you pick one of the other times, or tell me another day that works?';\n} else if (/in the past|already gone/i.test(dbMessage)) {\n  customerText = 'Sorry, that time has already passed so I could not hold it. Tell me another day that works and we will sort it out.';\n} else if (/TRANSITION_REFUSED/.test(dbMessage)) {\n  customerText = 'Sorry, something is not right with this booking on our side. Someone from the showroom will message you to sort it out.';\n} else {\n  customerText = 'Sorry, I could not hold that appointment. Someone from the showroom will message you to sort it out.';\n}\n\nconst up = $('Decide The Booking Step').item.json || {};\n\nreturn [{ json: {\n  refused: true,\n  db_message: dbMessage,\n  refusal_text: customerText,\n  tenant_id: up.tenant_id || null,\n  customer_wa_id: up.customer_wa_id || null,\n  appointment_id: up.open_appointment_id || null,\n  message_id: up.message_id || null,\n  step: up.step || null\n} }];"
+      }
+    },
+    {
+      "id": "c9bee322-c387-4596-ae64-4e186aba2637",
+      "name": "Confirm The Chosen Slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_appointment_confirm",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.pgrst.object+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_appointment_id: $json.open_appointment_id, p_starts_at: $json.chosen_slot, p_duration_minutes: 45, p_actor: 'n8n:nexus-appointment-booking-candidate' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "4834a27f-568b-4c5b-9a4b-716b740d59ff",
+      "name": "Compose The Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        260
+      ],
+      "parameters": {
+        "jsCode": "/* Only reached when nexus_appointment_confirm RETURNED. If it had raised --\n * past time, illegal transition, double booking -- this node never runs and the\n * refusal path composes an honest message instead. The word \"booked\" is used\n * here and only here.\n *\n * What it still does NOT mean, per NX995's own comment: this visit is in no\n * calendar and no salesperson has been assigned, so nothing stops the same\n * slot being given to someone else by a human.\n */\nconst DUBAI_OFFSET_MS = 4 * 60 * 60 * 1000;\nconst MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\nconst DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];\nfunction dubaiLabel(iso) {\n  const w = new Date(new Date(iso).getTime() + DUBAI_OFFSET_MS);\n  const hh = String(w.getUTCHours()).padStart(2, '0');\n  const mm = String(w.getUTCMinutes()).padStart(2, '0');\n  return DAYS[w.getUTCDay()] + ' ' + w.getUTCDate() + ' ' + MONTHS[w.getUTCMonth()] + ', ' + hh + ':' + mm;\n}\n\nconst appt = $json;\nconst up = $('Decide The Booking Step').item.json;\n\nif (String(appt.state) !== 'CONFIRMED') {\n  throw new Error('APPOINTMENT_CONFIRM_DID_NOT_CONFIRM: nexus_appointment_confirm returned state ' + appt.state + ' instead of CONFIRMED. No confirmation message was composed, because telling a customer they are booked on anything other than a CONFIRMED row is the one thing this workflow must never do.');\n}\n\nreturn [{ json: {\n  appointment_id: appt.appointment_id,\n  tenant_id: up.tenant_id,\n  customer_wa_id: up.customer_wa_id,\n  starts_at: appt.starts_at,\n  confirmation_text: 'You are booked in for ' + dubaiLabel(appt.starts_at) + ' (Dubai time). '\n    + 'We will see you at the showroom. If anything changes, just reply here.'\n} }];"
+      }
+    },
+    {
+      "id": "1d43065e-072c-4a50-89af-eb48e8a6a4f6",
+      "name": "Send The Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NEXUS_WA_SEND_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Nexus-Send-Auth",
+              "value": "={{ $env.NEXUS_WA_SEND_WEBHOOK_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $json.tenant_id, customer_external_id: $json.customer_wa_id, intent: 'APPOINTMENT_CONFIRMATION', send_form: 'FREEFORM_TEXT', message_body: $json.confirmation_text, requested_by: 'n8n:nexus-appointment-booking-candidate', request_ref: 'appt-confirm:' + $json.appointment_id }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "48ad217f-7eaa-4b63-882a-ded04f8be743",
+      "name": "Respond 200 Confirmed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2860,
+        260
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "1bc17887-8a18-4cc9-94b7-f7da4120c960",
+      "name": "Compose The Times Again",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        520
+      ],
+      "parameters": {
+        "jsCode": "/* The customer is still talking about coming in but did not name one of the\n * times we offered. The offer is re-sent verbatim rather than interpreted.\n */\nconst DUBAI_OFFSET_MS = 4 * 60 * 60 * 1000;\nconst MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\nconst DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];\nfunction dubaiLabel(iso) {\n  const w = new Date(new Date(iso).getTime() + DUBAI_OFFSET_MS);\n  const hh = String(w.getUTCHours()).padStart(2, '0');\n  const mm = String(w.getUTCMinutes()).padStart(2, '0');\n  return DAYS[w.getUTCDay()] + ' ' + w.getUTCDate() + ' ' + MONTHS[w.getUTCMonth()] + ', ' + hh + ':' + mm;\n}\nconst up = $json;\nconst slots = (up.open_offered_slots || []).filter(s => new Date(s).getTime() > Date.now());\n\nconst body = slots.length\n  ? 'Sorry, I did not catch which time you meant. Please reply with just the number:\\n'\n      + slots.map((s, i) => (i + 1) + ') ' + dubaiLabel(s)).join('\\n')\n      + '\\n\\nAll times are Dubai time. Nothing is held until you pick one.'\n  : 'Sorry, the times I offered you have now passed and I do not have new ones to give you. '\n      + 'Someone from the showroom will come back to you with fresh times.';\n\nreturn [{ json: {\n  tenant_id: up.tenant_id,\n  customer_wa_id: up.customer_wa_id,\n  appointment_id: up.open_appointment_id,\n  reoffer_text: body,\n  slots_still_valid: slots.length\n} }];"
+      }
+    },
+    {
+      "id": "05d994d0-c2fc-4830-99ea-5f2b882cd3aa",
+      "name": "Send The Times Again",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NEXUS_WA_SEND_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Nexus-Send-Auth",
+              "value": "={{ $env.NEXUS_WA_SEND_WEBHOOK_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $json.tenant_id, customer_external_id: $json.customer_wa_id, intent: 'APPOINTMENT_OFFER', send_form: 'FREEFORM_TEXT', message_body: $json.reoffer_text, requested_by: 'n8n:nexus-appointment-booking-candidate', request_ref: 'appt-reoffer:' + $json.appointment_id + ':' + $('Decide The Booking Step').item.json.message_id }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "b8bd0adb-817d-4b79-84cd-1ffc30f49a04",
+      "name": "Respond 200 Times Resent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2640,
+        520
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "aa0752b4-f749-4eb5-8da2-2249e259fbdd",
+      "name": "Respond 200 Not A Booking Message",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2200,
+        760
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "8a2f2618-04b0-4118-a1fd-61616c3f3ced",
+      "name": "Respond 200 Customer Not Recorded",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1320,
+        620
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "44b9dde3-6327-432d-8f1a-621649e9b8f2",
+      "name": "Raise Customer Not Recorded",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        620
+      ],
+      "parameters": {
+        "jsCode": "const wa = $('Verify Or Refuse').first().json.customer_wa_id;\nconst tenant = $('Resolve Tenant From Phone Number ID').first().json.tenant_id;\nthrow new Error('APPOINTMENT_CUSTOMER_NOT_RECORDED: wa_id ' + wa + ' has no row in public.customer for dealership ' + tenant + '. NX995 attaches an appointment to a customer who already exists and refuses to create one, so NOTHING was booked. The customer row is created by the live inbound receiver recording this conversation; if it is missing, that receiver did not run for this message.');"
+      }
+    },
+    {
+      "id": "b39978f7-d401-4379-9f4d-823a9a8eb6b5",
+      "name": "Respond 200 Unknown Channel",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        880,
+        620
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "d0069f78-5af3-4683-8cc6-a6f2e788f46e",
+      "name": "Raise Unregistered Channel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        620
+      ],
+      "parameters": {
+        "jsCode": "const pnid = $('Verify Or Refuse').first().json.phone_number_id;\nthrow new Error('WHATSAPP_CLOUD_CHANNEL_NOT_REGISTERED: a signature-verified Meta delivery arrived on phone_number_id ' + pnid + ', which is not in channel_registry under whatsapp_cloud_phone_number_id. NOTHING was booked and nothing was written. Register the number with nexus_register_channel().');"
+      }
+    },
+    {
+      "id": "c7c1ae56-b849-4c65-aed6-cfce02820d5e",
+      "name": "Respond Without Writing",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        440,
+        620
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.respond_text }}",
+        "options": {
+          "responseCode": "={{ $json.respond_status }}"
+        }
+      }
+    },
+    {
+      "id": "515e8295-dce2-4af6-b950-e9aab94d07be",
+      "name": "Send The Honest Refusal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        760
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NEXUS_WA_SEND_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Nexus-Send-Auth",
+              "value": "={{ $env.NEXUS_WA_SEND_WEBHOOK_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $json.tenant_id, customer_external_id: $json.customer_wa_id, intent: 'APPOINTMENT_REFUSED', send_form: 'FREEFORM_TEXT', message_body: $json.refusal_text, requested_by: 'n8n:nexus-appointment-booking-candidate', request_ref: 'appt-refused:' + $json.message_id }) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "79e9710d-bfdd-4fdd-8657-8682db6a2226",
+      "name": "Respond 200 Refused",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2860,
+        760
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "05e95f52-e60f-4b28-9953-c78d9a835734",
+      "name": "Raise Booking Refused",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        760
+      ],
+      "parameters": {
+        "jsCode": "/* Meta already has its 200 (the respond node ran first), so this throw costs no\n * retry storm. It costs a FAILED row via the workflow's Error Workflow, which is\n * how anyone finds out that NX995 refused a booking.\n */\nconst j = $('Explain The Refusal Honestly').first().json;\nthrow new Error('APPOINTMENT_WRITE_REFUSED at step ' + j.step + ' for wa_id ' + j.customer_wa_id + ': ' + j.db_message + ' -- NOTHING was booked and the customer was told so, not told it was booked.');"
+      }
+    },
+    {
+      "id": "f84ac1e6-c03a-4f01-b151-5433e367fea1",
+      "name": "Sticky Note e34329cf",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "parameters": {
+        "content": "## NEXUS Appointment Booking - CANDIDATE\\n\\nNot active. Nothing here has booked anything.\\n\\n**Trigger**: its own Meta Cloud webhook, verifying X-Hub-Signature-256 over the raw bytes exactly as the live receiver does. The dealership comes from `metadata.phone_number_id` via `channel_registry` - never from anything the customer types.\\n\\n**Intent keyed on**: `TEST_DRIVE` from `nexus_classify_message_intent` (NX973). There is no APPOINTMENT intent in the classifier; TEST_DRIVE is the value it emits for \"visit\", \"showroom\", \"appointment\", \"book a slot\", \"can i see\", \"kab aa sakta\".\\n\\n**Calls**: `nexus_appointment_request` -> `nexus_appointment_offer_slots` -> (on the customer picking a number) `nexus_appointment_confirm`. It never calls `_mark_attended`: attendance is something a person sees and NX995 refuses to infer it.\\n\\n**Before activating** see `ops/appointments/BOOKING-FLOW-STATUS.md`.",
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Booking Webhook (Meta Cloud)": {
+      "main": [
+        [
+          {
+            "node": "Verify Or Refuse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Or Refuse": {
+      "main": [
+        [
+          {
+            "node": "Signature Verified And Measurable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature Verified And Measurable?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Tenant From Phone Number ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Without Writing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Tenant From Phone Number ID": {
+      "main": [
+        [
+          {
+            "node": "Channel Registered To A Dealership?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Channel Registered To A Dealership?": {
+      "main": [
+        [
+          {
+            "node": "Find Customer In This Dealership",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Unknown Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Customer In This Dealership": {
+      "main": [
+        [
+          {
+            "node": "Customer Known To This Dealership?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Customer Known To This Dealership?": {
+      "main": [
+        [
+          {
+            "node": "Classify The Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Customer Not Recorded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify The Message": {
+      "main": [
+        [
+          {
+            "node": "Find An Open Offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find An Open Offer": {
+      "main": [
+        [
+          {
+            "node": "Decide The Booking Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide The Booking Step": {
+      "main": [
+        [
+          {
+            "node": "Route The Booking Step",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route The Booking Step": {
+      "main": [
+        [
+          {
+            "node": "Request The Visit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Confirm The Chosen Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Compose The Times Again",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200 Not A Booking Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request The Visit": {
+      "main": [
+        [
+          {
+            "node": "Propose Slots In Dubai Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain The Refusal Honestly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Propose Slots In Dubai Time": {
+      "main": [
+        [
+          {
+            "node": "Offer The Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Offer The Slots": {
+      "main": [
+        [
+          {
+            "node": "Send The Offered Times",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain The Refusal Honestly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send The Offered Times": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Offered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explain The Refusal Honestly": {
+      "main": [
+        [
+          {
+            "node": "Send The Honest Refusal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm The Chosen Slot": {
+      "main": [
+        [
+          {
+            "node": "Compose The Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain The Refusal Honestly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose The Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Send The Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send The Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose The Times Again": {
+      "main": [
+        [
+          {
+            "node": "Send The Times Again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send The Times Again": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Times Resent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200 Customer Not Recorded": {
+      "main": [
+        [
+          {
+            "node": "Raise Customer Not Recorded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200 Unknown Channel": {
+      "main": [
+        [
+          {
+            "node": "Raise Unregistered Channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send The Honest Refusal": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Refused",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond 200 Refused": {
+      "main": [
+        [
+          {
+            "node": "Raise Booking Refused",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "_exported_from": {
+    "id": "IsdF6LbuBnq0z3K7",
+    "active": false,
+    "updatedAt": "2026-09-17T20:16:37.269Z",
+    "published": false
+  }
+}
