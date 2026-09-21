@@ -91,6 +91,7 @@ footer{color:var(--muted);font-size:13px;margin-top:80px}
   <p>Send the key as a bearer token on every request:</p>
 <pre><code>Authorization: Bearer nxk_live_XXXXXXXXXXXXXXXXXXXXXXXX</code></pre>
   <p>Use one key per integration (your DMS sync, your call system, your Zapier account) so you can revoke one without breaking the others.</p>
+  <p>Each key carries scopes chosen when it is created: <code>leads:read</code>, <code>leads:write</code>, <code>inventory:read</code>, <code>inventory:write</code>, <code>calls:write</code>, <code>appointments:read</code>. A request outside its key's scopes gets <code>403 insufficient_scope</code>.</p>
 </section>
 
 <section id="base">
@@ -101,173 +102,165 @@ footer{color:var(--muted);font-size:13px;margin-top:80px}
 
 <section id="endpoints">
   <h2>Endpoints</h2>
-  <p>List endpoints accept <code>limit</code> (default 50, max 200) and return <code>next_cursor</code>; pass it back as <code>cursor</code> to get the next page. <code>next_cursor</code> is <code>null</code> on the last page.</p>
+  <p>List endpoints return <code>{ "data": [...], "next_cursor": ... }</code>, oldest change first; pass <code>next_cursor</code> back as <code>cursor</code> to get the next page. It is <code>null</code> on the last page and is opaque. Unknown query parameters are refused with <code>422 unknown_parameter</code>. Single records come back as <code>{ "data": {...} }</code>. Lead ids are integers.</p>
 
   <div class="ep" id="me"><span class="m">GET</span><h3>/me</h3></div>
-  <p>Who the key belongs to. Use it to test a key.</p>
+  <p>The dealership and key behind this request. No scope required; use it to test a key.</p>
 <pre><code>curl https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/me \
   -H "Authorization: Bearer $NEXUS_API_KEY"</code></pre>
   <p class="label">Response 200</p>
 <pre><code>{
-  "tenant_id": "6f1c2a0e-4b7d-4d0a-9a55-1d2b3c4d5e6f",
-  "tenant_name": "Example Motors",
-  "key_id": "c0ffee00-1111-2222-3333-444455556666",
-  "key_name": "DMS sync"
+  "tenant": { "id": "5b0c6a0e-4f1c-4a55-9c1e-0d3f7a2b9e10", "name": "Example Motors", "slug": "example-motors" },
+  "key": {
+    "id": "0f8e7d6c-5b4a-4938-8271-6a5b4c3d2e1f",
+    "name": "DMS sync",
+    "prefix": "nxk_live_3f9a",
+    "scopes": ["leads:read", "leads:write", "inventory:write"],
+    "created_at": "2026-09-21T08:00:00Z"
+  }
 }</code></pre>
 
   <div class="ep" id="leads-list"><span class="m">GET</span><h3>/leads</h3></div>
-  <p>Leads, newest first. Filters: <code>status</code>, <code>updated_since</code> (ISO timestamp), <code>limit</code>, <code>cursor</code>.</p>
-<pre><code>curl "https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads?status=new&amp;limit=20" \
+  <p>Scope <code>leads:read</code>. Query: <code>updated_since</code> (ISO timestamp), <code>limit</code> (1–200, default 50), <code>cursor</code>.</p>
+<pre><code>curl "https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads?updated_since=2026-09-20T00:00:00Z&amp;limit=20" \
   -H "Authorization: Bearer $NEXUS_API_KEY"</code></pre>
   <p class="label">Response 200</p>
 <pre><code>{
   "data": [
     {
-      "id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b",
+      "id": 1042,
       "name": "Omar Haddad",
       "email": "omar@example.com",
       "phone": "+971501234567",
-      "source": "website",
+      "source": "api",
       "vehicle_interest": "Toyota Land Cruiser 2024",
       "budget_aed": 320000,
-      "status": "new",
+      "status": "HOT",
       "ai_score": 86,
+      "scoring_state": "SCORED",
+      "assigned_to_id": "3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a",
       "assigned_to": "Sara K.",
-      "created_at": "2026-09-21T08:14:02Z"
+      "external_id": "CRM-88412",
+      "created_at": "2026-09-21T08:14:02Z",
+      "updated_at": "2026-09-21T08:14:05Z"
     }
   ],
-  "next_cursor": "eyJpZCI6IjNiMGU4ZjVhIn0"
+  "next_cursor": "1758441600000000.1042"
 }</code></pre>
 
   <div class="ep" id="leads-create"><span class="m">POST</span><h3>/leads</h3></div>
-  <p>Create a lead. NEXUS scores it and routes it exactly as it would a lead from your website. <code>name</code> and one of <code>phone</code> or <code>email</code> are required. Send <code>external_id</code> (your system's id) to make retries safe: a second request with the same <code>external_id</code> returns the existing lead instead of creating a duplicate.</p>
+  <p>Scope <code>leads:write</code>. The lead enters NEXUS with source <code>api</code> and is scored and routed like any other lead. <code>name</code> and one of <code>phone</code> (E.164; UAE national numbers accepted) or <code>email</code> are required. Optional: <code>vehicle_interest</code>, <code>budget_aed</code>, <code>notes</code> (≤2000), <code>source_detail</code> (free text naming your system or form), <code>occurred_at</code>, <code>external_id</code>. Send your system's id as <code>external_id</code> or the <code>Idempotency-Key</code> header (not two different values): repeating the request returns the same lead with <code>200</code>. A lead with the same email at your dealership is returned with <code>duplicate_of: "email"</code> and nothing new is created.</p>
 <pre><code>curl -X POST https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads \
   -H "Authorization: Bearer $NEXUS_API_KEY" \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: CRM-88412" \
   -d '{
     "name": "Omar Haddad",
     "phone": "+971501234567",
     "email": "omar@example.com",
-    "source": "crm",
     "vehicle_interest": "Toyota Land Cruiser 2024",
     "budget_aed": 320000,
-    "message": "Is the white one still available? Can I test drive Saturday?",
-    "external_id": "CRM-88412"
+    "notes": "Is the white one still available? Can I test drive Saturday?",
+    "source_detail": "CRM web form"
   }'</code></pre>
-  <p class="label">Response 201</p>
+  <p class="label">Response 201 (200 when it already existed)</p>
 <pre><code>{
-  "id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b",
-  "status": "new",
-  "scoring_state": "pending",
-  "created_at": "2026-09-21T08:14:02Z"
+  "data": { "id": 1042, "name": "Omar Haddad", "status": "new", "scoring_state": "PENDING", "external_id": "CRM-88412", "...": "..." },
+  "created": true,
+  "duplicate_of": null
 }</code></pre>
 
   <div class="ep" id="lead-get"><span class="m">GET</span><h3>/leads/{id}</h3></div>
-<pre><code>curl https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads/3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b \
+  <p>Scope <code>leads:read</code>. Returns <code>{ "data": Lead }</code> with the same fields as the list.</p>
+<pre><code>curl https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads/1042 \
   -H "Authorization: Bearer $NEXUS_API_KEY"</code></pre>
-  <p class="label">Response 200</p>
-<pre><code>{
-  "id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b",
-  "name": "Omar Haddad",
-  "email": "omar@example.com",
-  "phone": "+971501234567",
-  "source": "crm",
-  "vehicle_interest": "Toyota Land Cruiser 2024",
-  "budget_aed": 320000,
-  "status": "contacted",
-  "ai_score": 86,
-  "scoring_state": "scored",
-  "scored_at": "2026-09-21T08:14:05Z",
-  "assigned_to": "Sara K.",
-  "response_time_minutes": 2,
-  "created_at": "2026-09-21T08:14:02Z"
-}</code></pre>
 
   <div class="ep" id="lead-patch"><span class="m">PATCH</span><h3>/leads/{id}</h3></div>
-  <p>Update a lead — typically to write your CRM's status back. Send only the fields you change. Writable: <code>status</code>, <code>assigned_to</code>, <code>vehicle_interest</code>, <code>budget_aed</code>, <code>email</code>, <code>phone</code>, <code>name</code>.</p>
-<pre><code>curl -X PATCH https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads/3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b \
+  <p>Scope <code>leads:write</code>. Write your CRM's status back. Send only the fields you change; writable fields are <code>status</code> (one word, e.g. <code>HOT</code>, <code>WARM</code>, <code>COLD</code>, <code>WON</code>, <code>LOST</code>), <code>assigned_to_id</code> (a salesperson's uuid or <code>null</code>), <code>vehicle_interest</code>, <code>budget_aed</code>, and <code>notes</code> (appended to the lead history). Anything else is refused with <code>422 field_not_updatable</code>.</p>
+<pre><code>curl -X PATCH https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/leads/1042 \
   -H "Authorization: Bearer $NEXUS_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{ "status": "won" }'</code></pre>
+  -d '{ "status": "WON" }'</code></pre>
   <p class="label">Response 200</p>
-<pre><code>{ "id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b", "status": "won", "updated_at": "2026-09-22T11:02:40Z" }</code></pre>
+<pre><code>{ "data": { "id": 1042, "status": "WON", "updated_at": "2026-09-22T11:02:40Z", "...": "..." } }</code></pre>
 
   <div class="ep" id="inv-list"><span class="m">GET</span><h3>/inventory</h3></div>
-  <p>Stock on hand. Filters: <code>status</code> (<code>available</code>, <code>reserved</code>, <code>sold</code>), <code>limit</code>, <code>cursor</code>.</p>
-<pre><code>curl "https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/inventory?status=available" \
+  <p>Scope <code>inventory:read</code>. Query: <code>status</code> (as your stock list writes it, e.g. <code>Available</code>), <code>limit</code> (1–500, default 100), <code>cursor</code>. Cost and margin are never returned.</p>
+<pre><code>curl "https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/inventory?status=Available" \
   -H "Authorization: Bearer $NEXUS_API_KEY"</code></pre>
   <p class="label">Response 200</p>
 <pre><code>{
   "data": [
     {
-      "id": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d",
+      "stock_number": "LC-2024-117",
       "vin": "JTMHV05J804123456",
       "model": "Toyota Land Cruiser 2024 GXR",
-      "status": "available",
+      "status": "Available",
       "price_aed": 309000,
       "days_in_stock": 41,
-      "acquired_at": "2026-08-11"
+      "acquired_at": "2026-08-11",
+      "aging_alert": null
     }
   ],
   "next_cursor": null
 }</code></pre>
 
   <div class="ep" id="inv-create"><span class="m">POST</span><h3>/inventory</h3></div>
-  <p>Create or update stock, one vehicle or a batch of up to 500. Vehicles are matched on <code>vin</code>: an existing VIN is updated, a new one is created. Send your whole feed on a schedule and NEXUS keeps up.</p>
+  <p>Scope <code>inventory:write</code>. Send one vehicle object, or a JSON <b>array</b> of 1–500. Each needs <code>stock_number</code> or <code>vin</code>; <code>model</code> is required when the vehicle is new. Optional: <code>status</code>, <code>price_aed</code>, <code>cost_aed</code> (write-only), <code>acquired_at</code>. Each row succeeds or fails on its own.</p>
 <pre><code>curl -X POST https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/inventory \
   -H "Authorization: Bearer $NEXUS_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "vehicles": [
-      { "vin": "JTMHV05J804123456", "model": "Toyota Land Cruiser 2024 GXR", "status": "available", "price_aed": 309000, "cost_aed": 281000, "acquired_at": "2026-08-11" },
-      { "vin": "WDD2130421A987654", "model": "Mercedes E 300 2023", "status": "sold", "price_aed": 214000 }
-    ]
-  }'</code></pre>
+  -d '[
+    { "stock_number": "LC-2024-117", "vin": "JTMHV05J804123456", "model": "Toyota Land Cruiser 2024 GXR", "status": "Available", "price_aed": 309000, "cost_aed": 281000, "acquired_at": "2026-08-11" },
+    { "stock_number": "E300-2023-044", "model": "Mercedes E 300 2023", "status": "Sold", "price_aed": 214000 }
+  ]'</code></pre>
   <p class="label">Response 200</p>
 <pre><code>{
   "created": 1,
   "updated": 1,
   "failed": 0,
   "results": [
-    { "vin": "JTMHV05J804123456", "id": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d", "action": "updated" },
-    { "vin": "WDD2130421A987654", "id": "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9", "action": "created" }
+    { "index": 0, "stock_number": "LC-2024-117", "action": "updated" },
+    { "index": 1, "stock_number": "E300-2023-044", "action": "created" }
   ]
 }</code></pre>
 
   <div class="ep" id="calls"><span class="m">POST</span><h3>/calls</h3></div>
-  <p>Record a phone call from your call system. NEXUS matches the caller to an existing lead by phone number, or creates a new lead for an unknown caller, and counts the call toward response time.</p>
+  <p>Scope <code>calls:write</code>. Record a phone call from your call system. NEXUS matches the customer to an existing lead by phone number; only a caller it has never seen becomes a new lead (source <code>api_call</code>). Required: <code>external_call_id</code> (your call id; makes retries safe), <code>direction</code> (<code>inbound</code> or <code>outbound</code>), and the customer's number — <code>from_number</code> for inbound, <code>to_number</code> for outbound. Optional: the other number, <code>duration_sec</code> (0–86400), <code>started_at</code>, <code>recording_url</code> (https), <code>caller_name</code> (used only if the caller becomes a new lead).</p>
 <pre><code>curl -X POST https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/calls \
   -H "Authorization: Bearer $NEXUS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
+    "external_call_id": "3cx-554120",
     "direction": "inbound",
-    "from": "+971501234567",
-    "to": "+97142223333",
+    "from_number": "+971501234567",
+    "to_number": "+97142223333",
     "started_at": "2026-09-21T09:30:00Z",
-    "duration_seconds": 184,
-    "outcome": "answered",
-    "agent": "Sara K.",
-    "recording_url": "https://calls.example.com/rec/abc123.mp3",
-    "external_id": "3cx-554120"
+    "duration_sec": 184,
+    "caller_name": "Omar Haddad",
+    "recording_url": "https://calls.example.com/rec/abc123.mp3"
   }'</code></pre>
-  <p class="label">Response 201</p>
-<pre><code>{ "id": "d4c3b2a1-0f9e-4d8c-b7a6-958473625140", "lead_id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b", "lead_created": false }</code></pre>
-  <p><code>direction</code>: <code>inbound</code> or <code>outbound</code>. <code>outcome</code>: <code>answered</code>, <code>missed</code>, <code>voicemail</code>, <code>busy</code>. <code>external_id</code> makes retries safe.</p>
+  <p class="label">Response 201 (200 when that external_call_id was already logged)</p>
+<pre><code>{ "data": { "call_id": "7a1c2e9d-0b3f-4c8e-9a6d-5e4f3b2a1c0d", "lead_id": 1042, "lead_created": false, "was_duplicate": false } }</code></pre>
 
   <div class="ep" id="appts"><span class="m">GET</span><h3>/appointments</h3></div>
-  <p>Test drives and showroom visits. Filters: <code>from</code>, <code>to</code> (ISO timestamps), <code>status</code>, <code>limit</code>, <code>cursor</code>.</p>
-<pre><code>curl "https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/appointments?from=2026-09-21T00:00:00Z" \
+  <p>Scope <code>appointments:read</code>. Test drives and showroom visits. Query: <code>updated_since</code>, <code>state</code> (<code>REQUESTED</code>, <code>OFFERED</code>, <code>CONFIRMED</code>, <code>ATTENDED</code>, <code>NO_SHOW</code>, <code>CANCELLED</code>), <code>limit</code>, <code>cursor</code>.</p>
+<pre><code>curl "https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1/appointments?state=CONFIRMED" \
   -H "Authorization: Bearer $NEXUS_API_KEY"</code></pre>
   <p class="label">Response 200</p>
 <pre><code>{
   "data": [
     {
       "id": "77aa55cc-1234-4abc-9def-00112233aabb",
-      "lead_id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b",
-      "type": "test_drive",
-      "status": "confirmed",
+      "lead_id": 1042,
+      "state": "CONFIRMED",
+      "channel": "whatsapp",
       "starts_at": "2026-09-27T10:00:00Z",
-      "vehicle": "Toyota Land Cruiser 2024 GXR"
+      "ends_at": "2026-09-27T10:45:00Z",
+      "duration_minutes": 45,
+      "location": "Showroom",
+      "created_at": "2026-09-21T08:20:00Z",
+      "updated_at": "2026-09-21T08:25:00Z"
     }
   ],
   "next_cursor": null
@@ -303,16 +296,16 @@ X-Nexus-Signature: t=1790500000,v1=5f2b...e91a
   "created_at": "2026-09-21T08:14:03Z",
   "tenant_id": "6f1c2a0e-4b7d-4d0a-9a55-1d2b3c4d5e6f",
   "data": {
-    "lead": {
-      "id": "3b0e8f5a-9c1d-4e2f-8a7b-6c5d4e3f2a1b",
-      "name": "Omar Haddad",
-      "phone": "+971501234567",
-      "email": "omar@example.com",
-      "source": "website",
-      "vehicle_interest": "Toyota Land Cruiser 2024",
-      "status": "new",
-      "created_at": "2026-09-21T08:14:02Z"
-    }
+    "id": 1042,
+    "name": "Omar Haddad",
+    "phone": "+971501234567",
+    "email": "omar@example.com",
+    "source": "website_form",
+    "vehicle_interest": "Toyota Land Cruiser 2024",
+    "status": "new",
+    "scoring_state": "PENDING",
+    "created_at": "2026-09-21T08:14:02Z",
+    "updated_at": "2026-09-21T08:14:02Z"
   }
 }</code></pre>
   <p><code>id</code> is the same on every retry of one delivery, so store it and ignore repeats. Deliveries can arrive out of order; use <code>created_at</code> or re-read the lead with <code>GET /leads/{id}</code> when order matters.</p>
@@ -392,8 +385,13 @@ http_response_code(200);</code></pre>
 
 <section id="retries">
   <h2>Retries &amp; backoff</h2>
-  <p>A delivery counts as failed when your endpoint returns anything other than 2xx (including a redirect), takes longer than 10 seconds, or cannot be reached. Failed deliveries are retried with exponential backoff — the gap grows from about a minute to several hours — over roughly a day. After the last attempt the delivery is marked <b>dead</b> and shown on the Webhooks screen, where you can see each attempt's status code.</p>
-  <p>An endpoint that keeps failing is <b>disabled automatically</b> so it stops piling up retries. Fix the endpoint, then re-enable it from the same screen and press <b>Send test</b> to check it.</p>
+  <p>A delivery counts as failed when your endpoint returns anything other than 2xx (including a redirect, which is never followed), takes longer than 10 seconds, or cannot be reached. The queue is drained once a minute. After a failed attempt the next one is scheduled after:</p>
+  <table>
+    <thead><tr><th>After failed attempt</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr></thead>
+    <tbody><tr><td>Next attempt in</td><td>1 min</td><td>5 min</td><td>30 min</td><td>2 h</td><td>6 h</td><td>12 h</td><td>24 h</td><td>— marked <b>dead</b></td></tr></tbody>
+  </table>
+  <p>So a delivery is attempted at most 8 times over roughly 45 hours. Delivery statuses are <code>pending</code>, <code>delivered</code>, <code>failed</code> (will be retried) and <code>dead</code>; the Webhooks screen shows each delivery's status, attempts and last HTTP code.</p>
+  <p>After <b>20 consecutive failed deliveries</b> the webhook's status becomes <code>disabled</code> and its outstanding deliveries are marked <code>dead</code>. Fix your endpoint, delete the disabled webhook, add it again, and press <b>Send test</b>.</p>
   <p>Because a retry repeats the same <code>id</code>, make your handler idempotent: if you have already processed that <code>id</code>, return 200 and do nothing.</p>
 </section>
 
@@ -405,17 +403,18 @@ http_response_code(200);</code></pre>
 <section id="errors">
   <h2>Errors</h2>
   <p>Every error has the same shape:</p>
-<pre><code>{ "error": { "code": "validation_failed", "message": "phone or email is required" } }</code></pre>
+<pre><code>{ "error": { "code": "invalid_phone", "message": "phone must be an E.164 number such as +971501234567." } }</code></pre>
   <table>
     <thead><tr><th>Status</th><th><code>code</code></th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td>400</td><td><code>validation_failed</code></td><td>The body or a parameter is missing or invalid; <code>message</code> says which.</td></tr>
       <tr><td>401</td><td><code>unauthorized</code></td><td>No key, a malformed key, or a revoked key.</td></tr>
-      <tr><td>403</td><td><code>forbidden</code></td><td>The key is valid but may not do this.</td></tr>
-      <tr><td>404</td><td><code>not_found</code></td><td>No such record for this dealership.</td></tr>
-      <tr><td>409</td><td><code>conflict</code></td><td>The request conflicts with the record's current state.</td></tr>
+      <tr><td>403</td><td><code>insufficient_scope</code>, <code>dealership_inactive</code></td><td>The key is valid but lacks the scope, or the dealership is not active.</td></tr>
+      <tr><td>404</td><td><code>not_found</code></td><td>No such route, or no such record at this dealership.</td></tr>
+      <tr><td>405</td><td><code>method_not_allowed</code></td><td>The path exists but not with this method.</td></tr>
+      <tr><td>413 / 415</td><td><code>payload_too_large</code> / <code>unsupported_media_type</code></td><td>Body over 1 MB, or not <code>application/json</code>.</td></tr>
+      <tr><td>422</td><td>names the field, e.g. <code>name_required</code>, <code>contact_required</code>, <code>invalid_phone</code>, <code>invalid_json</code>, <code>unknown_parameter</code></td><td>The body or a parameter is invalid; <code>message</code> says how.</td></tr>
       <tr><td>429</td><td><code>rate_limited</code></td><td>Over 120 requests a minute for this key. See <code>Retry-After</code>.</td></tr>
-      <tr><td>500</td><td><code>internal_error</code></td><td>Our fault. Retry with backoff; it is safe for requests that carry an <code>external_id</code>.</td></tr>
+      <tr><td>500 / 503</td><td><code>internal_error</code> / <code>retry</code></td><td>Our side. Retry with backoff; safe for requests that carry an <code>external_id</code> / <code>Idempotency-Key</code> or <code>external_call_id</code>.</td></tr>
     </tbody>
   </table>
 </section>
@@ -428,7 +427,7 @@ http_response_code(200);</code></pre>
   <ol>
     <li>In your call system, add a "call ended" webhook (Aircall: <i>call.ended</i>; Twilio: the <i>StatusCallback</i> of the call; 3CX: a CRM integration template or call-report webhook).</li>
     <li>Point it at a small relay (or a Zapier/Make step) that maps the fields and calls <code>POST /calls</code> with your key. Keep the NEXUS key in the relay, not in the call system.</li>
-    <li>Map: caller number → <code>from</code>, your DID → <code>to</code>, start time → <code>started_at</code>, duration → <code>duration_seconds</code>, answered/missed → <code>outcome</code>, the call id → <code>external_id</code>.</li>
+    <li>Map: the call id → <code>external_call_id</code>, <code>inbound</code>/<code>outbound</code> → <code>direction</code>, caller number → <code>from_number</code>, your DID → <code>to_number</code>, start time → <code>started_at</code>, duration in seconds → <code>duration_sec</code>, recording link → <code>recording_url</code>.</li>
   </ol>
 <pre><code>// Aircall "call.ended" → NEXUS (Node relay)
 const c = req.body.data;
@@ -436,19 +435,20 @@ await fetch(`${NEXUS}/calls`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${process.env.NEXUS_API_KEY}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
+    external_call_id: `aircall-${c.id}`,
     direction: c.direction,                    // "inbound" | "outbound"
-    from: c.raw_digits, to: c.number?.digits,
+    from_number: c.direction === 'inbound' ? c.raw_digits : c.number?.digits,
+    to_number:   c.direction === 'inbound' ? c.number?.digits : c.raw_digits,
     started_at: new Date(c.started_at * 1000).toISOString(),
-    duration_seconds: c.duration,
-    outcome: c.answered_at ? 'answered' : 'missed',
-    agent: c.user?.name, recording_url: c.recording, external_id: `aircall-${c.id}`,
+    duration_sec: c.duration,
+    recording_url: c.recording || undefined,
   }),
 });</code></pre>
 
   <h3>DMS inventory sync — POST /inventory batch</h3>
-  <p>Keep your DMS as the system of record for stock. Export the current stock list on a schedule (every 15–60 minutes) and send it in batches of up to 500. VIN is the key: new VINs are created, known VINs are updated, sold cars are sent with <code>"status": "sold"</code>.</p>
+  <p>Keep your DMS as the system of record for stock. Export the current stock list on a schedule (every 15–60 minutes) and send it in batches of up to 500. Each vehicle is keyed on <code>stock_number</code> or <code>vin</code>: unknown vehicles are created (send <code>model</code>), known ones are updated, sold cars are sent with your sold status, e.g. <code>"status": "Sold"</code>.</p>
 <pre><code># nightly or every 30 min from cron
-jq -c '{vehicles: [.[] | {vin, model, status, price_aed, cost_aed, acquired_at}]}' dms_export.json |
+jq -c '[.[] | {stock_number, vin, model, status, price_aed, cost_aed, acquired_at}]' dms_export.json |
 curl -X POST "$NEXUS/inventory" \
   -H "Authorization: Bearer $NEXUS_API_KEY" -H "Content-Type: application/json" --data-binary @-</code></pre>
   <p>Check <code>failed</code> in the response and log the <code>results</code> entries that are not <code>created</code>/<code>updated</code>.</p>
@@ -460,7 +460,7 @@ curl -X POST "$NEXUS/inventory" \
     <li><b>Leads that start in the CRM:</b> send them with <code>POST /leads</code> and your CRM id as <code>external_id</code>, so a retry never makes a duplicate.</li>
   </ol>
 <pre><code>// on lead.created
-const { lead } = event.data;
+const lead = event.data;                     // the lead object itself
 const crmId = await crm.createLead({ name: lead.name, phone: lead.phone, email: lead.email,
                                       note: lead.vehicle_interest, nexus_id: lead.id });
 
@@ -468,12 +468,12 @@ const crmId = await crm.createLead({ name: lead.name, phone: lead.phone, email: 
 await fetch(`${NEXUS}/leads/${nexusId}`, {
   method: 'PATCH',
   headers: { Authorization: `Bearer ${process.env.NEXUS_API_KEY}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ status: 'won' }),
+  body: JSON.stringify({ status: 'WON' }),
 });</code></pre>
 
   <h3>Zapier and Make — no code</h3>
   <p><b>Zapier:</b> to react to NEXUS, create a Zap with trigger <b>Webhooks by Zapier → Catch Raw Hook</b>, copy its URL into <b>Integrations → Webhooks</b> in NEXUS, and press <b>Send test</b>. (Use <i>Catch Raw Hook</i> if you want to verify the signature in a Code step; <i>Catch Hook</i> is fine if you do not.) To send data to NEXUS, add the action <b>Webhooks by Zapier → Custom Request</b>: method <code>POST</code>, URL <code>…/v1/leads</code>, header <code>Authorization: Bearer nxk_live_…</code>, data as JSON.</p>
-  <p><b>Make:</b> to react to NEXUS, start a scenario with <b>Webhooks → Custom webhook</b> and paste its address into NEXUS. To send data, use the <b>HTTP → Make a request</b> module: method <code>POST</code>/<code>PATCH</code>, body type <i>Raw</i>, content type <i>JSON (application/json)</i>, and an <code>Authorization</code> header with your key. Turn on <i>Parse response</i> to use the returned <code>id</code> in later modules.</p>
+  <p><b>Make:</b> to react to NEXUS, start a scenario with <b>Webhooks → Custom webhook</b> and paste its address into NEXUS. To send data, use the <b>HTTP → Make a request</b> module: method <code>POST</code>/<code>PATCH</code>, body type <i>Raw</i>, content type <i>JSON (application/json)</i>, and an <code>Authorization</code> header with your key. Turn on <i>Parse response</i> to use the returned <code>data.id</code> in later modules.</p>
 </section>
 
 <footer>NEXUS OS · API v1 · Questions: contact your NEXUS account manager.</footer>

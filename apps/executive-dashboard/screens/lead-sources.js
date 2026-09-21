@@ -499,10 +499,18 @@ const LS_ERRORS = {
   NX_LS_PAGE_ID_REQUIRED: 'A Facebook Page ID is required.',
   NX_LS_DOMAIN_INVALID: 'One of those domains is not valid. Use plain domains like example.ae or www.example.ae — no https:// and no paths.',
   NX_LS_UNKNOWN_SOURCE: 'NEXUS does not recognise that lead source. Refresh the page and try again.',
+  NX_LS_PAGE_ON_OTHER_META_SOURCE: 'This Facebook Page is already connected on the other Meta card. Instagram lead ads arrive through your Facebook Page connection, so connect the Page once.',
+  NX_LS_TOKEN_REQUIRED: 'Paste the full Page or System User access token (with leads_retrieval) so NEXUS can fetch each lead.',
+  NX_LS_NOT_CONNECTED: 'This lead source is not connected yet. Connect it first.',
+  NX_LS_NO_CREDENTIAL: 'No key or token is installed for this lead source. Connect it again to install one.',
+  NX_LS_NO_TENANT: 'Your account is not a member of an active dealership, so nothing can be connected.',
+  NX_LS_KEY_COLLISION: 'NEXUS could not create a unique key for this source. Try again.',
+  NX_LS_NO_SECRET_TO_ROTATE: 'Only the Google Ads lead form has a NEXUS key to rotate.',
 };
+const IG_NOTE = 'Instagram lead ads arrive through your Facebook Page connection.';
 const lsErrorText = e => {
   const blob = [e && e.message, e && e.technical, e && e.detail, e && e.code].map(str).join(' ');
-  const code = Object.keys(LS_ERRORS).find(c => blob.includes(c));
+  const code = Object.keys(LS_ERRORS).sort((x, y) => y.length - x.length).find(c => blob.includes(c));
   return code ? LS_ERRORS[code] : (str(e && e.message) || 'Something went wrong. Nothing was changed.');
 };
 const lsFail = (m, e) => m.msg(`<span class="t-hot">${esc(lsErrorText(e))}</span>`);
@@ -538,7 +546,7 @@ const wireCopy = root => root.querySelectorAll('[data-copy]').forEach(b => b.add
   const old = b.textContent; b.textContent = 'Copied'; setTimeout(() => { b.textContent = old; }, 1500);
 }));
 const embedSnippet = key => `<script src="${EMBED_SCRIPT_URL}" data-nexus-key="${key}" async></script>\n<div id="nexus-lead-form"></div>`;
-const plainFormSnippet = url => `<form method="POST" action="${url}">\n  <input name="name" placeholder="Name" required>\n  <input name="phone" placeholder="Phone" required>\n  <input name="email" type="email" placeholder="Email">\n  <textarea name="message" placeholder="Which car are you interested in?"></textarea>\n  <button type="submit">Send</button>\n</form>`;
+const plainFormSnippet = url => `<form method="POST" action="${url}">\n  <input type="hidden" name="submission_id">\n  <input name="name" placeholder="Name" required>\n  <input name="phone" placeholder="Phone" required>\n  <input name="email" type="email" placeholder="Email">\n  <textarea name="message" placeholder="Which car are you interested in?"></textarea>\n  <button type="submit">Send</button>\n</form>\n<script>document.currentScript.previousElementSibling.submission_id.value = crypto.randomUUID();</script>`;
 const GOOGLE_STEPS = `<ol style="margin:8px 0 0 18px;padding:0">
     <li>In Google Ads open <b>Assets → Lead form</b> and edit your lead form.</li>
     <li>Go to <b>Lead delivery → Webhook integration</b>.</li>
@@ -578,10 +586,11 @@ function mountSourceConnections(host) {
   const details = r => {
     const s = up(r.status), k = str(r.connect_kind);
     const connected = s && s !== 'NOT_CONNECTED' && s !== 'DISABLED';
+    const igNote = str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="cell-sub" style="margin-bottom:6px">${esc(IG_NOTE)}</div>` : '';
     if (k === 'manual') return muted(`Record phone and walk-in enquiries from ${SCREENS.recordlead
       ? '<a href="#recordlead" data-go="recordlead">Record a Lead</a>' : 'Record a Lead'}.`);
     if (k === 'email') return muted('Forwarding instructions for marketplace emails come from NEXUS support after you connect.');
-    if (!connected) return '';
+    if (!connected) return igNote;
     if (k === 'webhook_key') return (str(r.ingest_url) ? copyField('Webhook URL', str(r.ingest_url)) : '')
       + muted(r.has_secret ? 'A key is installed. It cannot be shown again — use “Rotate key” to issue a new one.' : 'No key is installed.')
       + `<details style="margin-top:6px"><summary class="cell-sub">Setup steps in Google Ads</summary>${GOOGLE_STEPS}</details>`;
@@ -590,7 +599,7 @@ function mountSourceConnections(host) {
           ? muted(`Allowed domains: ${esc(r.origin_allowlist.join(', '))}`) : '')
       + (str(r.ingest_url) ? `<details style="margin-top:6px"><summary class="cell-sub">Alternative: plain HTML form</summary>
           ${copyField('Form posting to NEXUS', plainFormSnippet(str(r.ingest_url)), 'Copy form')}</details>` : '');
-    if (k === 'meta_page') return muted(`Page ID ${esc(str(r.identity_value) || 'not recorded')} · `
+    if (k === 'meta_page') return igNote + muted(`Page ID ${esc(str(r.identity_value) || 'not recorded')} · `
       + (r.has_secret ? 'Page access token installed (never displayed).' : 'No Page access token installed.'));
     return '';
   };
@@ -643,11 +652,11 @@ function mountSourceConnections(host) {
     if (k === 'embed') body = `<div class="field"><label for="lsDomains">Allowed website domain(s)</label>
         <input id="lsDomains" placeholder="example.ae, www.example.ae" value="${esc(Array.isArray(r.origin_allowlist) ? r.origin_allowlist.join(', ') : '')}" />
         <div class="cell-sub">Only forms on these domains can send leads with your key. Separate several with commas.</div></div>`;
-    else if (k === 'meta_page') body = META_HELP + `<div class="field"><label for="lsPage">Facebook Page ID</label>
+    else if (k === 'meta_page') body = (str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="banner warm" style="margin-bottom:12px">${esc(IG_NOTE)} If your Page is already connected on the Facebook card, you do not need to connect it here.</div>` : '') + META_HELP + `<div class="field"><label for="lsPage">Facebook Page ID</label>
         <input id="lsPage" inputmode="numeric" placeholder="123456789012345" value="${esc(str(r.identity_value))}" /></div>
         <div class="field"><label for="lsToken">Page access token</label>
         <input id="lsToken" type="password" autocomplete="off" placeholder="Paste the system user token" />
-        <div class="cell-sub">Stored securely. It is never displayed again.</div></div>`;
+        <div class="cell-sub">Stored securely. It is never displayed again.${r.has_secret ? ' Leave empty to keep the token already installed.' : ''}</div></div>`;
     else if (k === 'email') body = muted('Connecting turns this source on. NEXUS support will send you the forwarding address and instructions.');
     else if (k === 'webhook_key') body = muted('NEXUS will create a Webhook URL and a Key for Google Ads. The key is shown once, right after you connect.');
     const m = openModal(`Connect ${name}`, body,
@@ -663,7 +672,9 @@ function mountSourceConnections(host) {
         secret = m.wrap.querySelector('#lsToken').value.trim();
         if (!identity) return m.msg(`<span class="t-hot">${esc(LS_ERRORS.NX_LS_PAGE_ID_REQUIRED)}</span>`);
         if (!/^\d+$/.test(identity)) return m.msg('<span class="t-hot">A Page ID is numbers only.</span>');
-        if (!secret || secret.length < 20) return m.msg('<span class="t-hot">Paste the full Page access token — that is too short to be one.</span>');
+        if (!secret && !r.has_secret) return m.msg(`<span class="t-hot">${esc(LS_ERRORS.NX_LS_TOKEN_REQUIRED)}</span>`);
+        if (secret && secret.length < 20) return m.msg('<span class="t-hot">Paste the full Page access token — that is too short to be one.</span>');
+        if (!secret) secret = null;
       }
       const btn = m.wrap.querySelector('#lsSave');
       btn.disabled = true; btn.textContent = 'Connecting…';

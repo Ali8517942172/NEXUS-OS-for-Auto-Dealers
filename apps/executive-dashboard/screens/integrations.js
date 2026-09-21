@@ -52,11 +52,12 @@ const ol = items => `<ol style="margin:8px 0 0 18px;padding:0;font-size:14px;lin
 const CURL_LEAD = `curl -X POST "${API_BASE}/leads" \\
   -H "Authorization: Bearer ${KEY_PH}" \\
   -H "Content-Type: application/json" \\
-  -d '{"name":"Ahmed Ali","phone":"+971501234567","email":"ahmed@example.com","source":"website","vehicle_interest":"Toyota Land Cruiser 2025"}'`;
+  -H "Idempotency-Key: crm-lead-10045" \\
+  -d '{"name":"Ahmed Ali","phone":"+971501234567","email":"ahmed@example.com","vehicle_interest":"Toyota Land Cruiser 2025","budget_aed":250000,"source_detail":"Your CRM web form","notes":"Wants a test drive on Saturday"}'`;
 const CURL_CALL = `curl -X POST "${API_BASE}/calls" \\
   -H "Authorization: Bearer ${KEY_PH}" \\
   -H "Content-Type: application/json" \\
-  -d '{"from":"+971501234567","to":"+97143334444","direction":"inbound","duration_seconds":184,"status":"answered","started_at":"2026-09-21T10:15:00+04:00","agent":"Sara","recording_url":"https://pbx.example.com/rec/123.mp3"}'`;
+  -d '{"external_call_id":"pbx-20260921-000123","direction":"inbound","from_number":"+971501234567","to_number":"+97143334444","duration_sec":184,"started_at":"2026-09-21T10:15:00+04:00","caller_name":"Ahmed Ali","recording_url":"https://pbx.example.com/rec/123.mp3"}'`;
 const CURL_LIST = `curl "${API_BASE}/leads?limit=5" \\
   -H "Authorization: Bearer ${KEY_PH}"`;
 
@@ -207,7 +208,7 @@ SCREENS.integrations = async host => {
   /* 3 · Webhooks */
   const hooks = el('div', 'card');
   host.appendChild(hooks);
-  const hookTone = s => ({ active: 'ok', paused: 'warm', disabled: 'cold', failing: 'hot' }[str(s).toLowerCase()] || 'cold');
+  const hookTone = s => ({ active: 'ok', disabled: 'cold' }[str(s).toLowerCase()] || 'cold');  // NX1013: active | disabled
   const paintHooks = (rows, err) => {
     const hd = `<div class="card-head"><div><div class="card-title">Outgoing webhooks</div>
         <div class="card-sub">NEXUS POSTs a signed JSON event to your URL when something happens. ${canWrite ? '' : 'Owner/admin only — read-only for your role.'}</div></div>
@@ -303,7 +304,7 @@ SCREENS.integrations = async host => {
         const rows = Array.isArray(r) ? r : [];
         box.innerHTML = rows.length ? `<div style="overflow-x:auto">${table([
           { label: 'Event', strong: true, render: d => `<span class="mono">${esc(str(d.event))}</span>` },
-          { label: 'Status', render: d => pill(str(d.status).toUpperCase() || 'UNKNOWN', ({ delivered: 'ok', pending: 'warm', retrying: 'warm', failed: 'hot' })[str(d.status).toLowerCase()] || 'cold') },
+          { label: 'Status', render: d => pill(str(d.status).toUpperCase() || 'UNKNOWN', ({ delivered: 'ok', pending: 'warm', failed: 'hot', dead: 'cold' })[str(d.status).toLowerCase()] || 'cold') },
           { label: 'Attempts', render: d => cnt(d.attempts) },
           { label: 'HTTP', render: d => (d.last_status_code != null ? `<span class="mono">${esc(str(d.last_status_code))}</span>` : muted('—')) },
           { label: 'Created', render: d => when(d.created_at) },

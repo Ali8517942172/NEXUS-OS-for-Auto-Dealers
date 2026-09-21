@@ -34,12 +34,18 @@
 --      service_role-only reveal keyed on the public key the receiver already
 --      resolves from ?k=:
 --        nexus_lead_ingest_secret_reveal_for_public_key(p_public_key, p_kind, p_reason)
---      nexus_lead_ingest_secret_reveal() cannot serve Google: it is keyed on a
---      provider identity and Google delivers none we could register. THE GOOGLE
---      RECEIVER MUST BE CHANGED to call it when secret_ref starts 'vault:';
---      until then a vault-backed endpoint answers 500 ENDPOINT_SECRET_NOT_CONFIGURED
---      (fail closed; Google retries 5XX). Connecting google for ALBA re-points
---      its existing, currently DISABLED endpoint from GOOGLE_LEAD_KEY_ALBA to vault.
+--      INTEGRATION (feat/connect-everything): the receiver as merged calls
+--      nexus_lead_ingest_secret_reveal('google','google_webhook_id',<public_key>,
+--      'google_lead_form_key', ...), so connect ALSO upserts an active
+--      lead_ingest_provider_identity row (google / google_webhook_id /
+--      public_key / google_ads_lead_form) and disconnect disables it. The
+--      identity_value_shape CHECK is widened for google_webhook_id (it was
+--      digits-only). The _for_public_key reveal is kept as a service-role
+--      fallback but nothing calls it today. The held file
+--      ops/n8n-google-lead-form/held/20260921120000_google_lead_form_key_secret_kind.sql
+--      is superseded by the secret-kind insert below and must NOT be applied.
+--      Connecting google for ALBA re-points its existing, currently DISABLED
+--      endpoint from GOOGLE_LEAD_KEY_ALBA to vault.
 --   3. public_key has CHECK '^[A-Za-z0-9_-]{24,128}$'. '<slug>-<short>-<8 hex>'
 --      is padded with extra random hex when the slug is short, so it always
 --      passes; the slug is folded to [a-z0-9-].
@@ -78,6 +84,21 @@ values ('google_lead_form_key',
   || 'nexus_lead_ingest_secret_reveal_for_public_key(). Endpoints using it '
   || 'carry secret_ref = ''vault:google_lead_form_key''.')
 on conflict (kind) do nothing;
+
+-- The Google receiver (ops/n8n-google-lead-form/verify-and-redact.node.js)
+-- reveals its key with nexus_lead_ingest_secret_reveal('google',
+-- 'google_webhook_id', <public_key>, 'google_lead_form_key', ...), which joins
+-- through lead_ingest_provider_identity. provider/kind/source CHECKs on prod
+-- already allow google/google_webhook_id/google_ads_lead_form, but
+-- lead_ingest_provider_identity_value_shape required digits only
+-- ('^[0-9]{5,32}$'), which a public key never is. Widen it for
+-- google_webhook_id only, to the lead_ingest_endpoint.public_key shape.
+alter table public.lead_ingest_provider_identity
+  drop constraint if exists lead_ingest_provider_identity_value_shape;
+alter table public.lead_ingest_provider_identity
+  add constraint lead_ingest_provider_identity_value_shape check (
+    (identity_kind =  'google_webhook_id' and identity_value ~ '^[A-Za-z0-9_-]{24,128}$')
+ or (identity_kind <> 'google_webhook_id' and identity_value ~ '^[0-9]{5,32}$'));
 
 -- ─────────────────────────────────────────────────────────────────────────
 -- Helpers
@@ -450,6 +471,18 @@ begin
        where e.endpoint_id = v_ep.endpoint_id
       returning * into v_ep;
     end if;
+
+    -- The receiver resolves the vault key through this identity row
+    -- (google / google_webhook_id / <public_key>). Disconnect disables it.
+    insert into public.lead_ingest_provider_identity
+      (endpoint_id, source_key, provider, identity_kind, identity_value, label, status, tenant_id)
+    values
+      (v_ep.endpoint_id, v_src, 'google', 'google_webhook_id', v_ep.public_key,
+       v_t.name || ' - ' || v_display || ' - key ' || v_ep.public_key, 'active', v_tenant)
+    on conflict on constraint lead_ingest_provider_identity_surface_key
+    do update set endpoint_id = excluded.endpoint_id,
+                  label       = excluded.label,
+                  status      = 'active';
   end if;
 
   if v_src in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram') then

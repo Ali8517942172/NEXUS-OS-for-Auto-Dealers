@@ -1,3 +1,4 @@
+-- SUPERSEDED by supabase/migrations/20260921200000_nx1011 (same kind, on conflict do nothing). Do not apply.
 -- HELD. Not in supabase/migrations on purpose (CI pushes that folder to
 -- production). Apply once, by the orchestrator or folded into the migration
 -- that adds nexus_lead_source_connect.

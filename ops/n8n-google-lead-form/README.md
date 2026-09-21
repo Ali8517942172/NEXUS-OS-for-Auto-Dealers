@@ -233,3 +233,15 @@ values ('<ALBA tenant id>', 'google_ads_lead_form', 'shared_secret_in_body',
    and the **Key** to the same value as `GOOGLE_LEAD_KEY_ALBA`.
 5. Press **Send test data**. Expect `200`, a `lead_event` in `QUARANTINED` with
    the test reason, and **no** new row in `leads`.
+
+## Vault key (feat/connect-everything)
+
+The receiver reads each endpoint's key with
+`nexus_lead_ingest_secret_reveal('google','google_webhook_id',<public_key>,'google_lead_form_key',…)`.
+Migration NX1011 (`20260921200000_nx1011_…`) provides everything that call needs:
+the `google_lead_form_key` secret kind (`on conflict do nothing`), a widened
+`lead_ingest_provider_identity_value_shape` CHECK, and an active
+`google / google_webhook_id / <public_key>` identity row written by
+`nexus_lead_source_connect('google_ads_lead_form')` (disabled on disconnect).
+`held/20260921120000_google_lead_form_key_secret_kind.sql` is superseded by
+NX1011 and is **not** to be applied; it stays held for history only.

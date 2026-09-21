@@ -1,11 +1,11 @@
 // NEXUS OS — supabase/functions/webhook-dispatcher/index.ts
 //
 // Outbound webhook dispatcher. Invoked once a minute by pg_cron + pg_net
-// (migration 20260921211000_nx1014_webhook_dispatch_schedule.sql) with the
-// service-role key read from Vault. Deployed with verify_jwt = true, and on
-// top of that refuses any caller whose bearer is not the service role: a
-// signed-in dealer's JWT passes the gateway but must not be able to drain
-// every dealership's queue.
+// (migration 20260921211000_nx1014_webhook_dispatch_schedule.sql) with header
+// X-Nexus-Dispatch-Token, a random value the migration minted into Vault.
+// Deployed with verify_jwt = false; every request without a token the
+// database confirms (nexus_webhook_dispatch_token_ok) gets 403, so neither
+// the public nor a signed-in dealer can drain every dealership's queue.
 //
 // Per run: nexus_webhook_claim_deliveries(50) → POST each (5 at a time, 10s
 // timeout, no redirects, https only, SSRF guard) → nexus_webhook_mark_delivery
@@ -36,21 +36,18 @@ function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-function bearerIsServiceRole(req: Request): boolean {
-  const auth = req.headers.get('Authorization') ?? '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) return false;
-  if (SERVICE_ROLE_KEY && token === SERVICE_ROLE_KEY) return true;
-  // Gateway already verified the signature (verify_jwt = true); read the role claim.
-  const parts = token.split('.');
-  if (parts.length !== 3) return false;
-  try {
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const claims = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)));
-    return claims?.role === 'service_role';
-  } catch {
+// The pg_cron tick (NX1014) sends X-Nexus-Dispatch-Token, a random value the
+// migration minted into Vault. We never compare it here: the database does,
+// through a service_role-only RPC called with our auto-injected key.
+async function dispatchTokenOk(db: ReturnType<typeof createClient>, req: Request): Promise<boolean> {
+  const token = (req.headers.get('X-Nexus-Dispatch-Token') ?? '').trim();
+  if (!/^[0-9a-f]{64}$/.test(token)) return false;
+  const { data, error } = await db.rpc('nexus_webhook_dispatch_token_ok', { p_token: token });
+  if (error) {
+    console.error('webhook-dispatcher: token check failed', error.code ?? '');
     return false;
   }
+  return data === true;
 }
 
 // DNS-level SSRF check: refuse a public-looking hostname that resolves to a
@@ -112,9 +109,9 @@ async function deliver(row: Row): Promise<Result> {
 Deno.serve(async req => {
   if (req.method !== 'POST') return json(405, { error: { code: 'method_not_allowed', message: 'POST only' } });
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return json(500, { error: { code: 'misconfigured', message: 'runtime env missing' } });
-  if (!bearerIsServiceRole(req)) return json(403, { error: { code: 'forbidden', message: 'service role only' } });
 
   const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  if (!(await dispatchTokenOk(db, req))) return json(403, { error: { code: 'forbidden', message: 'dispatch token required' } });
   const { data, error } = await db.rpc('nexus_webhook_claim_deliveries', { p_limit: CLAIM_LIMIT });
   if (error) {
     console.error('webhook-dispatcher: claim failed', error.code ?? '');
