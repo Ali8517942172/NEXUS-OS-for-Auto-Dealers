@@ -80,34 +80,6 @@ const ROLES = ['owner', 'admin', 'manager', 'sales', 'technician', 'member'];
 const STATUS_TONE = { active: 'ok', suspended: 'hot', archived: 'unknown' };
 const count = v => { const x = n0(v); return x == null ? '—' : String(x); };
 
-/* -- NX1008: the same IBAN rule public.nexus_validate_iban() enforces,
-   mirrored here so a founder sees a mistyped IBAN before the round trip,
-   not after. This is a courtesy, not the boundary: nexus_founder_set_
-   payment_details() runs the real check server-side regardless of what
-   this function decides, on exactly the same ISO 13616 mod-97 arithmetic. */
-function validateIbanClient(raw) {
-  const clean = String(raw == null ? '' : raw).replace(/\s+/g, '').toUpperCase();
-  if (!clean) return { ok: false, reason: 'An IBAN is required.' };
-  if (clean.length < 15 || clean.length > 34) {
-    return { ok: false, reason: `An IBAN is 15 to 34 characters; this one is ${clean.length}.` };
-  }
-  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(clean)) {
-    return { ok: false, reason: 'That does not have the shape of an IBAN: two letters, two check digits, then the account.' };
-  }
-  if (clean.slice(0, 2) === 'AE' && clean.length !== 23) {
-    return { ok: false, reason: `A UAE IBAN is exactly 23 characters; this one is ${clean.length}.` };
-  }
-  const rearranged = clean.slice(4) + clean.slice(0, 4);
-  let digits = '';
-  for (const ch of rearranged) digits += /[0-9]/.test(ch) ? ch : String(ch.charCodeAt(0) - 55);
-  let rem = 0;
-  for (const ch of digits) rem = (rem * 10 + Number(ch)) % 97;
-  if (rem !== 1) {
-    return { ok: false, reason: 'That IBAN fails its own checksum -- it is not valid as typed. Check it against the bank statement, character by character.' };
-  }
-  return { ok: true, clean };
-}
-
 /* -- The read, memoised per render, reset on identity change ---------------
    One list backs the KPI strip, the invite dropdown, the tenants table and
    the test-tenant callout -- the same `shared()` shape screens/channels.js
@@ -456,19 +428,18 @@ SCREENS.founder = async host => {
   });
 
   /* ------------------------------------------------------------------------
-     P7 · Payment details -- where a dealer sends its AED 399/month
+     P7 . Pay now link -- what a dealer's Subscription screen shows and opens
 
-     NX1008. Calls nexus_founder_set_payment_details(), which validates the
-     IBAN server-side (nexus_validate_iban(): ISO 13616 mod-97, exactly 23
-     characters for a UAE IBAN) before writing platform_payment_details --
-     RLS on, no policies, never read directly by this or any other frontend
-     file. There is no founder-facing READ of the stored row: this card
-     shows nothing on load, and shows the just-saved values -- IBAN masked
-     to its last 4 characters -- only after a successful save, from that
-     save's own response. A founder who wants to confirm what is on file
-     without changing it re-saves the same values; the point of masking here
-     is that the full IBAN is never redrawn onto the screen a second time
-     after the moment it was typed in.
+     NX1010 (owner decision, 21 Sep 2026): a dealer must never see a bank
+     name, an account holder name or an IBAN. NEXUS is paid through a
+     Ziina hosted payment link instead -- the founder pastes that link
+     here, and nexus_founder_set_payment_link() rejects anything that is
+     not an https:// URL on ziina.com, pay.ziina.com, or a *.ziina.com
+     subdomain, because this link is shown, unauthenticated in effect, to
+     every dealership on the platform. There is no founder-facing READ of
+     the stored row on load, same as NX1008's payment form: this card
+     shows nothing until a successful save, then shows exactly what was
+     just saved, from that save's own response.
      ------------------------------------------------------------------------ */
   const payment = el('div', 'card');
   payment.style.marginTop = '16px';
@@ -476,58 +447,53 @@ SCREENS.founder = async host => {
   {
     let busy = false, msg = '', msgTone = 'ok', saved = null;
     const draw = () => {
-      payment.innerHTML = `<div class="card-title">Payment details</div>
-        <div class="card-sub" style="margin-bottom:14px">Where a dealer's AED 399/month bank transfer goes. Stored in platform_payment_details (RLS on, no policies) and read back by dealers only through nexus_payment_instructions() -- never written into this app's code, so it never ships inside the public bundle.</div>
+      payment.innerHTML = `<div class="card-title">Pay now link</div>
+        <div class="card-sub" style="margin-bottom:14px">What every dealer's Subscription screen shows and opens: "NEXUS by {display name} -- AED 399/month -- Pay now". No card processor integration, no API keys -- the link IS the integration. Stored in platform_payment_details (RLS on, no policies) and read back by dealers only through nexus_payment_instructions().</div>
         ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
-        ${saved ? `<div class="cell-sub" style="margin-bottom:14px">On file now: ${esc(saved.bankName)}, account holder ${esc(saved.holder)}, IBAN ending <span class="mono">${esc(saved.ibanLast4)}</span>, SWIFT <span class="mono">${esc(saved.swift)}</span>.</div>` : ''}
+        ${saved ? `<div class="cell-sub" style="margin-bottom:14px">On file now: "${esc(saved.displayName)}", link ending <span class="mono">…${esc(saved.linkTail)}</span>.</div>` : ''}
         <div class="grid g2" style="gap:12px">
-          <div class="field"><label for="pdHolder">Account holder name</label><input id="pdHolder" placeholder="Account holder, exactly as the bank has it" /></div>
-          <div class="field"><label for="pdBank">Bank name</label><input id="pdBank" placeholder="Bank name" /></div>
-          <div class="field"><label for="pdIban">IBAN</label><input id="pdIban" placeholder="AE.. (spaces are fine, stripped automatically)" class="mono" /></div>
-          <div class="field"><label for="pdSwift">SWIFT / BIC</label><input id="pdSwift" placeholder="8 or 11 characters" class="mono" /></div>
-          <div class="field"><label for="pdCurrency">Currency</label><input id="pdCurrency" value="AED" /></div>
-          <div class="field"><label for="pdRef">Reference format</label><input id="pdRef" value="NEXUS-{tenant_slug}-{YYYYMM}" class="mono" /></div>
+          <div class="field"><label for="plUrl">Payment link (Ziina)</label><input id="plUrl" placeholder="https://pay.ziina.com/..." class="mono" /></div>
+          <div class="field"><label for="plName">Display name</label><input id="plName" value="Adqonic" /></div>
         </div>
-        <div class="field" style="margin-top:12px"><label for="pdNotes">Notes (optional, founder-only -- never shown to a dealer)</label><input id="pdNotes" placeholder="Internal note" /></div>
-        <div class="cell-sub" style="margin-top:10px">{tenant_slug} and {YYYYMM} in the reference format are filled in per dealership by nexus_payment_instructions() -- e.g. NEXUS-alba-cars-202610.</div>
-        <button class="btn primary" id="pdGo" style="margin-top:14px"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save payment details'}</button>`;
-      $('pdGo')?.addEventListener('click', submit);
+        <div class="cell-sub" style="margin-top:10px">Must be an https:// link on ziina.com, pay.ziina.com, or a *.ziina.com subdomain -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn primary" id="plGo"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save'}</button>
+          <button class="btn ghost" id="plTest" type="button">Test link</button>
+        </div>`;
+      $('plGo')?.addEventListener('click', submit);
+      $('plTest')?.addEventListener('click', () => {
+        const url = str($('plUrl')?.value);
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      });
+    };
+    const sameHost = url => {
+      const m = /^https:\/\/([a-zA-Z0-9.-]+)(?::[0-9]{1,5})?(?:\/[^\s]*)?$/.exec(url);
+      if (!m) return false;
+      const host = m[1].toLowerCase();
+      return host === 'ziina.com' || host === 'pay.ziina.com' || host.slice(-10) === '.ziina.com';
     };
     const submit = async () => {
       if (busy) return;
-      const holder = str($('pdHolder')?.value);
-      const bank = str($('pdBank')?.value);
-      const ibanRaw = str($('pdIban')?.value);
-      const swift = str($('pdSwift')?.value).toUpperCase();
-      const currency = str($('pdCurrency')?.value).toUpperCase() || 'AED';
-      const refFmt = str($('pdRef')?.value) || 'NEXUS-{tenant_slug}-{YYYYMM}';
-      const notes = str($('pdNotes')?.value) || null;
-      if (!holder) { msg = 'An account holder name is required.'; msgTone = 'hot'; draw(); return; }
-      if (!bank) { msg = 'A bank name is required.'; msgTone = 'hot'; draw(); return; }
-      if (!swift) { msg = 'A SWIFT/BIC code is required.'; msgTone = 'hot'; draw(); return; }
-      if (refFmt.indexOf('{tenant_slug}') < 0) {
-        msg = 'The reference format must contain {tenant_slug}, so every dealership gets a reference that identifies it.';
+      const url = str($('plUrl')?.value);
+      const name = str($('plName')?.value) || 'Adqonic';
+      if (!url) { msg = 'A payment link is required.'; msgTone = 'hot'; draw(); return; }
+      if (!/^https:\/\//.test(url) || !sameHost(url)) {
+        msg = 'The payment link must be an https:// URL on ziina.com, pay.ziina.com, or a *.ziina.com subdomain.';
         msgTone = 'hot'; draw(); return;
       }
-      const ibanCheck = validateIbanClient(ibanRaw);
-      if (!ibanCheck.ok) { msg = ibanCheck.reason; msgTone = 'hot'; draw(); return; }
+      if (name.length > 60) { msg = 'The display name must be 60 characters or fewer.'; msgTone = 'hot'; draw(); return; }
       busy = true; msg = ''; draw();
       try {
-        const row = await dbWrite('POST', 'rpc/nexus_founder_set_payment_details', {
-          p_account_holder: holder, p_bank_name: bank, p_iban: ibanRaw, p_swift_bic: swift,
-          p_currency: currency, p_reference_format: refFmt, p_notes: notes,
+        const row = await dbWrite('POST', 'rpc/nexus_founder_set_payment_link', {
+          p_payment_link_url: url, p_display_name: name,
         });
-        const ibanBack = str(row && row.iban);
+        const linkBack = str(row && row.payment_link_url);
         saved = {
-          bankName: str(row && row.bank_name),
-          holder: str(row && row.account_holder),
-          swift: str(row && row.swift_bic),
-          ibanLast4: ibanBack ? ('…' + ibanBack.slice(-4)) : '—',
+          displayName: str(row && row.display_name) || 'Adqonic',
+          linkTail: linkBack ? linkBack.slice(-16) : '—',
         };
-        msg = 'Payment details saved. Every dealer now sees this through their own Subscription screen.';
+        msg = 'Payment link saved. Every dealer now sees this through their own Subscription screen.';
         msgTone = 'ok';
-        const ibanField = $('pdIban');
-        if (ibanField) ibanField.value = '';
       } catch (e) {
         msg = errorText(e); msgTone = 'hot';
       } finally {
