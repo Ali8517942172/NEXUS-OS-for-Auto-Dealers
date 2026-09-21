@@ -18,6 +18,14 @@
 > Use THIS document only for a hand-run managed pilot that Ali has agreed
 > separately. Never quote both to the same dealer.
 
+> **SUPERSEDED — 21 September 2026.** The banded managed-pilot pricing below (AED 5,000
+> setup, AED 2,500–3,500/month, three-month minimum) is retained only as the historical
+> cost/margin rationale that produced it. It must not be quoted to any dealer. **The live
+> price, for every dealership including a hand-run pilot, is AED 399 per month, flat, with
+> the first month free, no setup fee, no minimum term and no lifetime lock** — the same
+> price the public website states. If a pilot needs extra hand-holding in month one, that is
+> Ali's time, not a separate line item charged to the dealer.
+
 **Version 2.1 · 3 September 2026 · Ali Asgher**
 **Every figure re-verified against the live database on 3 September 2026**, scoped to the one
 real dealership on the system. Where a count has moved since the 2 September version it has
@@ -176,7 +184,17 @@ checked this morning.
 
 ## Price
 
-### **Setup: AED 5,000, one time. Monthly: AED 2,500 to AED 3,500. Three-month minimum.**
+### Current price: AED 399/month, flat, first month free. No setup fee, no minimum term.
+
+**The banded pricing that follows this heading (AED 5,000 setup, AED 2,500–3,500/month) is
+superseded as of 21 September 2026** and is kept below only so the cost-and-margin reasoning
+that produced it is not lost. Do not quote it. Every dealership — pilot or not — pays AED 399
+per calendar month, billed from the day the first real customer message is answered, with
+the first month free and cancellation effective at the end of any paid month.
+
+<details><summary>Superseded: the original banded managed-pilot pricing (historical only)</summary>
+
+### **~~Setup: AED 5,000, one time. Monthly: AED 2,500 to AED 3,500. Three-month minimum.~~ (superseded)**
 
 Invoiced monthly in advance. Setup invoiced on signature. The three months run from the day
 the first real customer message is answered, not from the day you sign.
@@ -305,6 +323,8 @@ those days contain. At AED 150 an hour that work is worth AED 3,600–6,000, so 
 is close to cost, not a margin line.
 
 ---
+
+</details>
 
 ## Term and what happens at the end
 
