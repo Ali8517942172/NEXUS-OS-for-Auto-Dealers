@@ -69,6 +69,9 @@ const NAV = [
        then lost before anybody saw it. */
     { id:'leadsources',   title:'Lead Sources',    icon:'alt_route' },
     { id:'channels',      title:'Channels',        icon:'hub' },
+    /* Integrations: the dealer's own DMS/CRM/phone system connects here through
+       REST API keys and signed outgoing webhooks. NEXUS sits on top; nothing is replaced. */
+    { id:'integrations',  title:'Integrations',    icon:'integration_instructions' },
     { id:'conversations', title:'Conversations',   icon:'forum' },
     /* Appointments sits under Conversations because that is where a visit is
        arranged and this is the only screen that says what became of it. It
