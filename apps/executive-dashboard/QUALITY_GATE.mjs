@@ -252,7 +252,7 @@ if (ARGV.includes('--no-db')) {
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
   "takenAt": "2026-09-21T05:55:35Z",
-  "source": "catalogue read 21 Sep 2026 after nx1009, dsvuoovivysszdoiorch (information_schema + pg_proc, public + nexus_intake) -- MANUALLY EDITED to match supabase/migrations/20260921180000_nx1010_the_dealer_sees_a_button_not_a_bank_account.sql ahead of that migration being applied; re-run --refresh-schema once it lands so this snapshot is catalogue-derived again, not hand-typed.",
+  "source": "catalogue read 21 Sep 2026 after nx1009, dsvuoovivysszdoiorch (information_schema + pg_proc, public + nexus_intake) -- MANUALLY EDITED to match supabase/migrations/20260921180000_nx1010_the_dealer_sees_a_button_not_a_bank_account.sql ahead of that migration being applied; rpcs MANUALLY EDITED 21 Sep 2026 to add the twelve lead-source / API-key / webhook functions of feat/connect-everything (nexus_lead_source_connections, _connect, _rotate_secret, _disconnect, nexus_api_keys_list, nexus_api_key_create, _revoke, nexus_webhooks_list, nexus_webhook_create, _delete, _send_test, nexus_webhook_deliveries), each read from pg_proc on dsvuoovivysszdoiorch by SELECT (prosecdef true, no tenant argument, EXECUTE held by authenticated and service_role only, anon none; the three list functions and nexus_webhook_deliveries STABLE, the rest VOLATILE); re-run --refresh-schema so this snapshot is catalogue-derived again, not hand-typed.",
   "relations": {
     "appointment": "appointment_id,tenant_id,customer_id,lead_id,inventory_id,assigned_to_id,state,channel,starts_at,duration_minutes,ends_at,location,resource,offered_slots,confirmed_slot_was_offered,requested_at,offered_at,confirmed_at,closed_at,outcome_reason,booked_by,notes,created_at,updated_at",
     "appointment_event": "event_id,appointment_id,tenant_id,event_type,from_state,to_state,occurred_at,actor,slots,starts_at,reason",
@@ -644,6 +644,30 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_api_key_create": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_api_key_revoke": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_api_keys_list": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
         "service_role"
       ]
     },
@@ -1144,7 +1168,39 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_lead_source_connect": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_source_connections": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_source_disconnect": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_lead_source_readiness": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_lead_source_rotate_secret": {
       "secdef": true,
       "tenantArg": false,
       "grants": [
@@ -1716,6 +1772,46 @@ const SNAPSHOT = {
       "secdef": false,
       "tenantArg": true,
       "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_webhook_create": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_webhook_delete": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_webhook_deliveries": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_webhook_send_test": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_webhooks_list": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
         "service_role"
       ]
     },

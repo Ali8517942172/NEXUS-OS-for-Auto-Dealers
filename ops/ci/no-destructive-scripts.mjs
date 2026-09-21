@@ -103,7 +103,11 @@ const EXEMPT_LINES = new Map([
   // nexus_meta_onboarding_status -- 26 lines added above this statement.
   // Read again, same `fixtureResidue` template, same four fixture-scoped
   // deletes, still only printed for an operator, never executed here.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4946])],
+  // Moved 4946 -> 5042 on 21 Sep 2026: twelve lead-source / API-key / webhook
+  // functions (feat/connect-everything, live on dsvuoovivysszdoiorch) joined
+  // the snapshot's RPC map -- 96 lines added above this statement. Same
+  // `fixtureResidue` template, re-read, unchanged.
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5042])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.
