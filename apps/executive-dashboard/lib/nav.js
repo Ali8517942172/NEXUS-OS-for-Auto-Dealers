@@ -6,8 +6,33 @@ import { esc } from './format.js';
 import { stateError, stateLoading } from './states.js';
 import { closeDrawer } from './ui.js';
 import { extraTenants, hasNoTenant, loadTenant, tenantLabel, tenantState } from './tenant.js';
+import { isPlatformAdmin } from './platform.js';
 
 const NAV = [
+  /* ── Founder Console ───────────────────────────────────────────────────
+     Added 21 Sep 2026 (nx1004), and it is not like the other thirteen groups
+     below: every other id in this file names a dealership's own screen, and
+     this one names NEXUS's. It exists so the person who runs NEXUS itself can
+     onboard a dealership and grant its first login without opening SQL Editor
+     -- see nexus_founder_onboard_dealer() and the founder-invite Edge
+     Function, neither of which this file calls directly.
+
+     The FOUNDERONLY flag below is the whole mechanism, and it is read in
+     three places -- buildNav() (skips the button and the group), flatNav()
+     (skips the id, so go() treats a stale #founder hash as unrecognised
+     exactly like a typo), and go() itself (an explicit belt-and-braces
+     redirect, named rather than left to fall out of the other two). None of
+     that is what makes the founder console safe: every nexus_founder_* RPC
+     and the Edge Function re-run nexus_is_platform_admin() themselves,
+     server-side, on every call, and would refuse a non-founder exactly as
+     hard whether or not this nav item ever rendered. What this buys is
+     honest: a dealership owner does not see a button for a console that would
+     refuse them, and a stranger who guesses the hash lands back on the
+     screen everyone lands on, not on a screen that then argues with the
+     database in front of them. */
+  { group: 'Founder', items: [
+    { id:'founder', title:'Founder Console', icon:'shield_person', founderOnly: true },
+  ]},
   { group: 'Work', items: [
     /* ── Today's Money Leaks ─────────────────────────────────────────────────
        First, and the app's default landing screen, because it is the only one
@@ -115,7 +140,14 @@ const NAV = [
   ]},
 ];
 const SCREENS = {};
-const flatNav = () => NAV.flatMap(g => g.items);
+/* Filtered, not just the raw table, because this is read in two different
+   spirits by its two kinds of caller. lib/nav.js's own go() and buildNav()
+   read it to decide what a signed-in NON-founder may even navigate to --
+   answered here, once, rather than at each call site. Nothing outside this
+   file currently imports flatNav(), and if that changes the same rule should
+   travel with it: a screen that is not offered in the nav is not one this
+   list should hand back either. */
+const flatNav = () => NAV.flatMap(g => g.items).filter(i => !i.founderOnly || isPlatformAdmin());
 
 /* The screen the app opens on. Kept in step with app.js, which passes the same
    id to go() when there is no hash to honour. */
@@ -193,9 +225,16 @@ function buildNav() {
   paintTenantPill();
   loadTenant().then(paintTenantPill);
   NAV.forEach(group => {
+    /* A founderOnly item is dropped here rather than merely hidden with CSS.
+       CLAUDE.md's rule for a masked secret in Settings applies just as much to
+       a masked NAV BUTTON: a rendered-but-invisible "Founder Console" is still
+       in the DOM for anyone with devtools open, which is not the courtesy this
+       is meant to be. See the long comment above the Founder group in NAV. */
+    const items = group.items.filter(item => !item.founderOnly || isPlatformAdmin());
+    if (!items.length) return;
     const wrap = el('div', 'nav-group');
     if (group.group) wrap.appendChild(el('div', 'nav-group-label', esc(group.group)));
-    group.items.forEach(item => {
+    items.forEach(item => {
       const b = el('button', 'nav-item', `<span class="material-symbols-outlined">${item.icon}</span><span>${esc(item.title)}</span><span class="nav-badge hide" id="badge-${item.id}"></span>`);
       b.dataset.screen = item.id;
       b.addEventListener('click', () => go(item.id));
@@ -285,6 +324,14 @@ function go(id) {
      the right answer for it. An id the navigation DOES offer, whose module is
      absent, gets said out loud above. */
   if (!SCREENS[id] && !flatNav().some(i => i.id === id)) id = 'moneyleaks';
+  /* Named explicitly rather than left to fall out of the check above, because
+     the check above would NOT catch this on its own: SCREENS.founder is a real
+     registered module (screens/founder.js), so `!SCREENS[id]` is false for a
+     non-founder just as it is for a founder, and the fallback above never
+     fires. A typed #founder hash, or a bookmark saved while briefly signed in
+     as the founder, must land the same place a made-up id does -- not on a
+     screen that renders and then has every one of its own reads refused. */
+  if (id === 'founder' && !isPlatformAdmin()) id = 'moneyleaks';
   current = id;
   location.hash = id;
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.screen === id));

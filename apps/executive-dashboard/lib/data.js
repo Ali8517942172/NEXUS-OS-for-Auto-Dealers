@@ -189,6 +189,15 @@ function canManageAccess(tenantId)  { return held(OWNER_ADMIN, tenantId); }
    here for the same reason as the rest: the database gets to say no, not this
    file. */
 function canGrantOwner(tenantId)    { return held(['owner'], tenantId); }
+/* Inviting a teammate into THIS dealership, from Settings' Team card (added
+   nx1004, 21 Sep 2026). Same OWNER-only vocabulary as canGrantOwner above and
+   the same reason: the founder-invite Edge Function's owner branch reads
+   tenant_members.role = 'owner' for the exact tenant_id in the request and
+   nothing looser -- an admin who saw this button and had it refused would be
+   this file misreporting what it knows. Unknown authority still answers
+   true, for the same reason as the rest of this family: the Edge Function,
+   not this boolean, is what actually decides. */
+function canInviteTeam(tenantId)    { return held(['owner'], tenantId); }
 
 /* Once, per expiry. A screen fires four or five reads in parallel and the badge
    poller adds its own, so an expired token produces six simultaneous 401s —
@@ -324,6 +333,38 @@ async function n8n(path, payload) {
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
+/* Supabase Edge Functions -- same calling shape as n8n() above (POST, the
+   caller's own bearer token, JSON in and out) but a different base and a
+   different key. n8n() reaches this project's n8n workhorses over N8N_BASE;
+   this reaches this project's OWN /functions/v1/<path>, carrying the anon
+   `apikey` header every other call in this file already sends plus the
+   signed-in user's own JWT -- never a service-role key, which does not exist
+   anywhere in this bundle and never will (see
+   supabase/functions/founder-invite/README.md for where that key actually
+   lives). headers() already builds exactly that pair, so this is the same
+   request() / failure() machinery as db()/dbWrite(), pointed at a different
+   URL. A caller who is nobody in particular -- not the founder, not an owner
+   of the tenant they named -- is refused inside the function itself, the same
+   as an RPC refusing a role it does not recognise; this file does not
+   pre-judge that, it only carries the identity that lets the function judge
+   it. */
+async function edgeFn(path, payload) {
+  const label = `POST /functions/v1/${path}`;
+  const res = await request(`${SUPABASE_URL}/functions/v1/${path}`, {
+    method: 'POST',
+    headers: await headers(),
+    body: JSON.stringify(payload || {}),
+  }, label);
+  if (!res.ok) throw await failure(res, label);
+  try {
+    return await res.json();
+  } catch (e) {
+    const err = requestFailure('generic', { status: res.status, technical: `${label} — response body did not parse: ${String(e && e.message || e)}`, cause: e });
+    logError(label, err, e);
+    throw err;
+  }
+}
+
 /* Short-lived signed URL for a private Storage object.
 
    The kyc-documents bucket is private and must stay private — a KYC document is
@@ -380,4 +421,4 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner };
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, edgeFn, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner, canInviteTeam };

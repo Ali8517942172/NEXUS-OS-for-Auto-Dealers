@@ -53,6 +53,20 @@
        to the numbers below. It is never automatic and it says what it costs
        before it is pressed. "Side-effect-free" is a claim about what this
        screen does by itself, and it must not be written any wider than that.
+     · A second control writes, added nx1004 on 21 Sep 2026: the Team card's
+       invite button, for an account this dealership's own tenant_members
+       marks OWNER (canInviteTeam — fail-open on an unread membership, the
+       same as every other canX() in lib/data.js, because the refusal that
+       matters is the Edge Function's, not this card's guess). It posts to
+       the founder-invite Edge Function over lib/data.js's edgeFn(), carrying
+       only the signed-in user's own JWT — never a service-role key, which
+       exists nowhere in this bundle. The Edge Function re-derives the
+       caller's authority itself (nexus_is_platform_admin(), then this
+       dealership's own tenant_members row) before doing anything, so an
+       admin who is not an owner would be refused there even if this card's
+       own gate were deleted entirely. See screens/founder.js and
+       supabase/functions/founder-invite/README.md for the shared contract —
+       this card is the OWNER half of it; the founder half lives there.
      · Two honesty rules added 24 Aug and enforced below. A workflow whose
        health is NOT_INSTRUMENTED has not been proven working — it has merely
        never reported — so it is never coloured green, and the word used for it
@@ -63,7 +77,7 @@
        `inventory` and `finance_quotes` is service-role only, and n8n exposes no
        credential API to a browser, so the repairs this screen can *diagnose*
        are deliberately rendered as disabled controls naming what is missing. */
-import { HOOK, ME, SESSION, db, meReadFailed } from '../lib/data.js';
+import { HOOK, ME, SESSION, canInviteTeam, db, edgeFn, meReadFailed } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE, SUPABASE_URL, envErrors } from '../lib/env.js';
 import { ago, clock, dubaiTime, esc, n0, num, pct, pill, tone } from '../lib/format.js';
@@ -72,6 +86,7 @@ import { renderIntegrations } from '../lib/integrations.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { applyDensity } from '../lib/prefs.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
+import { tenantState } from '../lib/tenant.js';
 import { closeDrawer, openDrawer, table, wireRows } from '../lib/ui.js';
 
 /* Bounded read of the knowledge base. Where the cap is hit the panel says so —
@@ -1962,6 +1977,74 @@ SCREENS.settings = async host => {
     });
     $('setDensityHint').textContent = DENSITIES.find(d => d.id === b.dataset.d).hint;
   }));
+
+  /* -- Team --------------------------------------------------------------
+     Added 21 Sep 2026 (nx1004). See the header rule above for the honesty
+     account of why this screen writes here at all. This card offers ONE
+     dealership -- the one tenantState() resolves for this account, the same
+     tenant every other screen scopes itself to -- and never a picker,
+     because that IS the whole difference between this control and
+     screens/founder.js's own invite panel: a founder names which
+     dealership; an owner has exactly one to name, and the Edge Function
+     would refuse any id that were not it. */
+  const teamTenant = tenantState().active;
+  const teamTenantId = teamTenant?.id || null;
+  const teamTenantName = teamTenant?.name || teamTenant?.slug || null;
+  if (teamTenantId && canInviteTeam(teamTenantId)) {
+    const team = el('div', 'card'); team.style.marginTop = '16px'; host.appendChild(team);
+    let tBusy = false, tMsg = '', tTone = 'ok';
+    /* The same shape screens/founder.js's refusalText() reads, narrowed to
+       the one body shape this card can ever receive -- founder-invite's own
+       {"outcome":"error","message":"…","detail":"NX_INVITE_…"} -- because
+       this card never calls an nexus_founder_* RPC and has no NX001 body to
+       read. */
+    const teamErrText = e => {
+      const raw = String(e && e.technical || '');
+      const i = raw.indexOf('{');
+      if (i >= 0) {
+        try {
+          const j = JSON.parse(raw.slice(i));
+          if (j && j.outcome === 'error' && typeof j.message === 'string') return j.message;
+        } catch { /* not the Edge Function's own JSON -- fall through */ }
+      }
+      return String(e && e.message || 'The invite did not go through.');
+    };
+    const tDraw = () => {
+      team.innerHTML = `<div class="card-title">Team</div>
+        <div class="card-sub" style="margin-bottom:14px">Invite a teammate into ${esc(teamTenantName || 'this dealership')}. NEXUS sends a real Supabase Auth invite email through the founder-invite Edge Function -- the one place in this deployment that holds a service-role key, and it never reaches this browser.</div>
+        ${tMsg ? `<div class="banner ${tTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${tTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(tMsg)}</div></div>` : ''}
+        <div class="grid g2" style="gap:12px">
+          <div class="field"><label for="teamEmail">Email</label><input id="teamEmail" type="email" placeholder="colleague@dealer.com" /></div>
+          <div class="field"><label for="teamRole">Role</label><select id="teamRole">
+            ${['admin', 'manager', 'sales', 'technician', 'member'].map(r => `<option value="${esc(r)}"${r === 'sales' ? ' selected' : ''}>${esc(r)}</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="cell-sub" style="margin-top:8px">The owner role is not offered here -- granting it is a roster action (nexus_team_set_role, on the Team screen), and team_05's own rule restricts setting or removing owner to an existing owner acting on that roster, not to an invite.</div>
+        <button class="btn primary" id="teamGo" style="margin-top:14px"${tBusy ? ' disabled' : ''}>${tBusy ? 'Sending…' : 'Send invite'}</button>`;
+      $('teamGo')?.addEventListener('click', teamSend);
+    };
+    const teamSend = async () => {
+      if (tBusy) return;
+      const email = ($('teamEmail')?.value || '').trim().toLowerCase();
+      const role = $('teamRole')?.value || 'sales';
+      if (!email || email.indexOf('@') < 1) { tMsg = 'That is not an email address.'; tTone = 'hot'; tDraw(); return; }
+      tBusy = true; tMsg = ''; tDraw();
+      try {
+        const back = await edgeFn('founder-invite', { tenant_id: teamTenantId, email, role });
+        tMsg = back.outcome === 'invited'
+          ? `An invite email was sent to ${back.email} as ${back.role}.`
+          : back.outcome === 'already_member'
+            ? `${back.email} already has access -- nothing was changed.`
+            : `${back.email} already had a NEXUS login; they now have access as ${back.role}.`;
+        tTone = 'ok';
+      } catch (e) {
+        tMsg = teamErrText(e); tTone = 'hot';
+      } finally {
+        tBusy = false; tDraw();
+      }
+    };
+    tDraw();
+  }
 
   /* The screen is not finished until its own reads are: returning earlier would
      let nav.js call it done while three panels still say "loading". */
