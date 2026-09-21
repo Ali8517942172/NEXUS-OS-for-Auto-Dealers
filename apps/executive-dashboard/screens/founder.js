@@ -455,7 +455,7 @@ SCREENS.founder = async host => {
           <div class="field"><label for="plUrl">Payment link (Ziina)</label><input id="plUrl" placeholder="https://pay.ziina.com/..." class="mono" /></div>
           <div class="field"><label for="plName">Display name</label><input id="plName" value="Adqonic" /></div>
         </div>
-        <div class="cell-sub" style="margin-top:10px">Must be an https:// link on ziina.com, pay.ziina.com, or a *.ziina.com subdomain -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</div>
+        <div class="cell-sub" style="margin-top:10px">Must be an https:// link on ziina.com, ziina.me, or a subdomain of either -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</div>
         <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn primary" id="plGo"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save'}</button>
           <button class="btn ghost" id="plTest" type="button">Test link</button>
@@ -470,7 +470,7 @@ SCREENS.founder = async host => {
       const m = /^https:\/\/([a-zA-Z0-9.-]+)(?::[0-9]{1,5})?(?:\/[^\s]*)?$/.exec(url);
       if (!m) return false;
       const host = m[1].toLowerCase();
-      return host === 'ziina.com' || host === 'pay.ziina.com' || host.slice(-10) === '.ziina.com';
+      return host === 'ziina.com' || host === 'pay.ziina.com' || host.slice(-10) === '.ziina.com' || host === 'ziina.me' || host.slice(-9) === '.ziina.me';
     };
     const submit = async () => {
       if (busy) return;
@@ -478,7 +478,7 @@ SCREENS.founder = async host => {
       const name = str($('plName')?.value) || 'Adqonic';
       if (!url) { msg = 'A payment link is required.'; msgTone = 'hot'; draw(); return; }
       if (!/^https:\/\//.test(url) || !sameHost(url)) {
-        msg = 'The payment link must be an https:// URL on ziina.com, pay.ziina.com, or a *.ziina.com subdomain.';
+        msg = 'The payment link must be an https:// URL on ziina.com, ziina.me, or a subdomain of either.';
         msgTone = 'hot'; draw(); return;
       }
       if (name.length > 60) { msg = 'The display name must be 60 characters or fewer.'; msgTone = 'hot'; draw(); return; }

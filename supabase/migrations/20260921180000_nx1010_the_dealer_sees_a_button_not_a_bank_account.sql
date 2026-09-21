@@ -197,9 +197,11 @@ begin
     v_host = 'ziina.com'
     or v_host = 'pay.ziina.com'
     or right(v_host, 10) = '.ziina.com'
+    or v_host = 'ziina.me'
+    or right(v_host, 9) = '.ziina.me'
   ) then
     raise exception using errcode = 'NX001',
-      message = 'The payment link must be a ziina.com, pay.ziina.com, or *.ziina.com URL. This link is shown to every dealer, so it can only ever point at Ziina''s own hosted payment pages.',
+      message = 'The payment link must be a ziina.com / *.ziina.com or ziina.me / *.ziina.me URL. This link is shown to every dealer, so it can only ever point at Ziina''s own hosted payment pages.',
       detail  = 'NX_PAYMENT_LINK_HOST';
   end if;
 
@@ -250,6 +252,11 @@ drop function if exists public.nexus_founder_set_payment_details(text, text, tex
 -- the founder sets it, so "no link yet" is data the frontend renders as
 -- "being set up", never an error and never a guess drawn from an empty
 -- response.
+-- The return table changes shape (bank columns removed), which CREATE OR
+-- REPLACE cannot do -- Postgres refuses to change a function's return type
+-- in place. Drop the NX1008 version first.
+drop function if exists public.nexus_payment_instructions();
+
 create or replace function public.nexus_payment_instructions()
 returns table (
   display_name     text,
