@@ -153,8 +153,7 @@ SCREENS.subscription = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(host, {
     title: 'How to pay',
-    sub: 'NEXUS holds no card processor and takes no payment through this screen -- Pay now opens the founder\'s '
-       + 'hosted Ziina payment link in a new tab',
+    sub: 'Secure card payment by Ziina. Pay now opens the checkout in a new tab.',
     load: () => readPay(),
     render: rows => {
       const row = Array.isArray(rows) ? rows[0] : null;
