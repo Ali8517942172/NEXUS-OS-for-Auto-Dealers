@@ -64,11 +64,13 @@
    Nothing here filters by dealership. The database refuses another
    dealership's rows; this file does not hide them. */
 
-import { db, onIdentityChange } from '../lib/data.js';
+import { db, dbWrite, n8n, HOOK, onIdentityChange, canManageAccess } from '../lib/data.js';
 import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
+import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
+import { openModal, modalError } from '../lib/modal.js';
+import { $, el } from '../lib/dom.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
@@ -259,6 +261,164 @@ SCREENS.channels = async host => {
       return `<div class="grid g4">${receivingTile}${connectedTile}${registeredTile}${notBuiltTile}</div>` + odd + rule;
     },
   }).then(wireGo);
+
+  /* ────────────────────────────────────────────────────────────────────────
+     P1.5 · Connect / verify this dealership's own WhatsApp Cloud number
+     ─────────────────────────────────────────────────────────────────────
+     NX1007 (21 Sep 2026). Everything above this panel READS the channel
+     register. This is the one place on the whole screen that WRITES to it —
+     the owner-facing path onto `channel_registry` that did not exist before:
+     the only prior way to add a row was a manual SQL INSERT run by an
+     operator.
+
+     Two separate actions, two separate authorities, and this panel keeps them
+     apart rather than collapsing "connect" and "go live" into one click:
+
+       CONNECT   `nexus_channel_register_cloud_number` (owner/admin only).
+                 Stores the access token in Vault — never in a column this
+                 browser could read back — and leaves the channel
+                 PENDING_VERIFY. Claiming a number is not the same fact as the
+                 number working, and this screen does not conflate them.
+
+       VERIFY    "Send test message" calls the `channel-test-send` n8n
+                 webhook, which sends one real WhatsApp message through the
+                 Graph API and only THEN calls `nexus_channel_mark_active` —
+                 server-side, after a real provider accept, never on this
+                 browser's say-so. A channel nobody has tested stays
+                 PENDING_VERIFY indefinitely, which is the correct state for
+                 an unverified claim. */
+  {
+    const card = el('div', 'card');
+    host.appendChild(card);
+    let rows = null;
+    let loadErr = null;
+
+    const canConnect = canManageAccess();
+
+    const rowActions = r => {
+      const s = up(r.status);
+      if (s === 'ACTIVE') return muted('Verified and sending from this number.');
+      if (s !== 'PENDING') return muted(`Status is ${esc(str(r.status) || 'unknown')}.`);
+      return `<button class="btn sm" data-test="${esc(r.integration_id)}">Send test message</button>`;
+    };
+
+    const paint = () => {
+      if (loadErr) {
+        card.innerHTML = `<div class="card-head"><div><div class="card-title">Connect a WhatsApp Cloud number</div></div></div>`
+          + `<div class="pbody">${stateError('this dealership’s WhatsApp Cloud channels', loadErr, null,
+              'Connecting a new number is disabled until this can be read.')}</div>`;
+        return;
+      }
+      const list = Array.isArray(rows) ? rows : [];
+      const body = list.length
+        ? table([
+            { label: 'Number', strong: true, render: r => wrap(bold(esc(str(r.display_number) || 'No display name given'))
+                + muted(`phone_number_id ${esc(str(r.external_identifier))}`)) },
+            { label: 'WABA id', render: r => wrap(str(r.waba_id) ? esc(str(r.waba_id)) : muted('Not recorded')) },
+            { label: 'Status', render: r => pill(up(r.status) === 'ACTIVE' ? 'ACTIVE' : up(r.status) === 'PENDING' ? 'PENDING_VERIFY' : (str(r.status) || 'UNKNOWN'),
+                up(r.status) === 'ACTIVE' ? 'ok' : up(r.status) === 'PENDING' ? 'warm' : 'cold') },
+            { label: '', align: 'r', render: rowActions },
+          ], list)
+        : stateEmpty('No WhatsApp Cloud number is connected for this dealership yet',
+            'Use “Connect WhatsApp Cloud number” below to register one. It starts PENDING_VERIFY — nothing sends '
+            + 'from it until a test message actually goes through Meta’s API.', 'link_off');
+
+      card.innerHTML = `<div class="card-head">
+          <div><div class="card-title">Connect a WhatsApp Cloud number</div>
+            <div class="card-sub">Owner/admin only. The access token is stored in Vault and this screen never reads
+            it back — only a fingerprint the database already printed to the audit log.</div></div>
+          <div style="flex:1"></div>
+          <button class="btn primary sm" id="cwConnect"${canConnect ? '' : ' disabled title="Connecting a WhatsApp Cloud number is an owner/admin decision at this dealership."'}>Connect WhatsApp Cloud number</button>
+        </div><div class="pbody">${body}</div>`;
+
+      card.querySelector('#cwConnect')?.addEventListener('click', openConnectModal);
+      card.querySelectorAll('[data-test]').forEach(b => b.addEventListener('click', () => openTestModal(b.dataset.test)));
+    };
+
+    const reload = async () => {
+      card.innerHTML = `<div class="card-head"><div><div class="card-title">Connect a WhatsApp Cloud number</div></div></div>`
+        + `<div class="pbody">${stateLoading(2)}</div>`;
+      try { rows = await db('rpc/nexus_channel_registry_for_owner'); loadErr = null; }
+      catch (e) { rows = null; loadErr = e; }
+      paint();
+    };
+
+    const openConnectModal = () => {
+      const m = openModal('Connect WhatsApp Cloud number', `
+        <div class="cell-sub" style="margin-bottom:12px">These come from your own Meta Business Manager — WhatsApp
+          Business API settings for the app you registered. NEXUS never holds a WhatsApp asset of its own; every
+          dealership brings its own number.</div>
+        <div class="field"><label for="cwDisplay">Display number (optional)</label>
+          <input id="cwDisplay" placeholder="+971 4 xxx xxxx" /></div>
+        <div class="field"><label for="cwPnid">Phone number ID</label>
+          <input id="cwPnid" placeholder="1306545252542419" />
+          <div class="cell-sub">The numeric id from WhatsApp Business API settings — not the phone number itself.</div></div>
+        <div class="field"><label for="cwWaba">WABA id (optional)</label>
+          <input id="cwWaba" placeholder="Numeric WhatsApp Business Account id" /></div>
+        <div class="field"><label for="cwToken">System user access token</label>
+          <textarea id="cwToken" rows="3" placeholder="Scope: whatsapp_business_messaging"></textarea>
+          <div class="cell-sub">Stored in Vault. This screen will never display it again — only a short fingerprint
+            so you can confirm which token is installed.</div></div>`,
+        `<button class="btn primary" id="cwSave">Connect</button><button class="btn" id="cwCancel">Cancel</button>`);
+      m.wrap.querySelector('#cwCancel').addEventListener('click', m.close);
+      m.wrap.querySelector('#cwSave').addEventListener('click', async () => {
+        const display = $('cwDisplay').value.trim();
+        const pnid = $('cwPnid').value.trim();
+        const waba = $('cwWaba').value.trim();
+        const token = $('cwToken').value.trim();
+        if (!pnid) return m.msg('<span class="t-hot">Phone number ID is required.</span>');
+        if (!token || token.length < 8) return m.msg('<span class="t-hot">A real access token is required — that is too short to be one.</span>');
+        const btn = m.wrap.querySelector('#cwSave');
+        btn.disabled = true; btn.textContent = 'Connecting…';
+        try {
+          const res = await dbWrite('POST', 'rpc/nexus_channel_register_cloud_number', {
+            p_display_number: display || null, p_phone_number_id: pnid,
+            p_waba_id: waba || null, p_access_token: token,
+          });
+          const row = Array.isArray(res) ? res[0] : res;
+          m.msg(`<span class="t-ok">Connected — status PENDING_VERIFY. Token fingerprint ${esc(str(row && row.fingerprint))}. `
+            + 'Click “Send test message” below once this closes to go live.</span>');
+          setTimeout(() => { m.close(); reload(); }, 1400);
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'Connect';
+          modalError(m, e);
+        }
+      });
+    };
+
+    const openTestModal = integrationId => {
+      const m = openModal('Send a test message', `
+        <div class="cell-sub" style="margin-bottom:12px">One real WhatsApp message is sent through Meta’s API to the
+          number below. If it is accepted, this channel is marked ACTIVE immediately — that happens on the server,
+          only after a real send succeeds, never on this form alone.</div>
+        <div class="field"><label for="cwRecipient">Send the test to (WhatsApp number)</label>
+          <input id="cwRecipient" placeholder="9715xxxxxxxx" /></div>`,
+        `<button class="btn primary" id="cwSend">Send test message</button><button class="btn" id="cwTestCancel">Cancel</button>`);
+      m.wrap.querySelector('#cwTestCancel').addEventListener('click', m.close);
+      m.wrap.querySelector('#cwSend').addEventListener('click', async () => {
+        const recipient = $('cwRecipient').value.replace(/[^0-9]/g, '');
+        if (recipient.length < 8) return m.msg('<span class="t-hot">A WhatsApp number to send the test to is required.</span>');
+        const btn = m.wrap.querySelector('#cwSend');
+        btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+          const res = await n8n(HOOK.channelTestSend, { integration_id: integrationId, recipient_phone: recipient });
+          if (res && res.status === 'active') {
+            m.msg(`<span class="t-ok">${esc(str(res.message) || 'Accepted — the channel is now ACTIVE.')}</span>`);
+            setTimeout(() => { m.close(); reload(); }, 1400);
+          } else {
+            m.msg(`<span class="t-hot">${esc(str(res && res.error) || 'WhatsApp did not accept the test message. The channel stays PENDING_VERIFY.')}</span>`);
+            btn.disabled = false; btn.textContent = 'Send test message';
+          }
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'Send test message';
+          modalError(m, e);
+        }
+      });
+    };
+
+    reload();
+  }
+
 
   /* ────────────────────────────────────────────────────────────────────────
      P2 · The register itself

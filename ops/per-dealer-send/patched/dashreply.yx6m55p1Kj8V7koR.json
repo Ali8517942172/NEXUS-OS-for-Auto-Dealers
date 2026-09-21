@@ -1,0 +1,1407 @@
+{
+ "updatedAt": "2026-09-02T10:37:43.166Z",
+ "createdAt": "2026-08-24T11:06:16.781Z",
+ "id": "yx6m55p1Kj8V7koR",
+ "name": "WhatsApp Send (Dashboard Reply)",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "9989942e-6c51-4e4f-9960-a748a01c128f",
+   "name": "Dashboard Send Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 1.1,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "3a4e8843-4a96-40dc-832e-582132fc73db",
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "whatsapp-send",
+    "responseMode": "lastNode",
+    "options": {}
+   }
+  },
+  {
+   "id": "f74aa24c-ad62-44bd-a8c4-4c833e4e1638",
+   "name": "Verify JWT",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    200,
+    0
+   ],
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true,
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "apikey",
+       "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+      },
+      {
+       "name": "Authorization",
+       "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   }
+  },
+  {
+   "id": "ba7f9029-4257-488c-8843-c0fceae53f2b",
+   "name": "Auth OK?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    400,
+    0
+   ],
+   "parameters": {
+    "options": {},
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "version": 2,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "8b8accc9-f30b-4164-a357-927102b923c5",
+       "leftValue": "={{ $json.id }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "ed9bd121-8ffc-40a9-ab29-7f329c7429b0",
+   "name": "Prepare Send",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    620,
+    -100
+   ],
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "72e8d830-d0f8-4c57-a964-ed71fc82b90d",
+       "name": "chat_id",
+       "type": "string",
+       "value": "={{ String($('Dashboard Send Webhook').first().json.body?.chat_id || '').trim() }}"
+      },
+      {
+       "id": "f0888e50-fc64-40ce-a519-bb5731d0c6b8",
+       "name": "text",
+       "type": "string",
+       "value": "={{ String($('Dashboard Send Webhook').first().json.body?.text || '').trim() }}"
+      },
+      {
+       "id": "f5b29013-915c-4c61-ae57-f104b28a8829",
+       "name": "sent_by",
+       "type": "string",
+       "value": "={{ $('Verify JWT').first().json.email || 'dashboard' }}"
+      },
+      {
+       "id": "b1a3c7d2-0000-4000-8000-tenantassign01",
+       "name": "tenant_id",
+       "type": "string",
+       "value": "={{ (() => { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); let t = ''; try { const r = $('Tenant For JWT User').all().map(i => i.json).find(x => x && x.tenant_id); if (r) t = String(r.tenant_id); } catch (e) { t = ''; } if (!U.test(t) && k.length === 1) t = String(m[k[0]] || ''); return U.test(t) ? t : ''; })() }}"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "d4497970-54c9-47a1-9c08-87688d2ea380",
+   "name": "Has chat_id and text?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    820,
+    -100
+   ],
+   "parameters": {
+    "options": {},
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "version": 2,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "2a1f0da9-cc16-4812-b69b-395039577013",
+       "leftValue": "={{ $json.chat_id }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      },
+      {
+       "id": "395a13f5-bbbc-4516-8afa-7c68020f4818",
+       "leftValue": "={{ $json.text }}",
+       "rightValue": "",
+       "operator": {
+        "type": "string",
+        "operation": "notEmpty",
+        "singleValue": true
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "9609da8e-0301-4343-81b2-dde11b878721",
+   "name": "Send via WAHA",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1040,
+    -180
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 3000,
+   "parameters": {
+    "method": "POST",
+    "url": "http://waha:3000/api/sendText",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Api-Key",
+       "value": "={{ $env[$('Resolve Send Channel (DashReply)').first().json.waha_api_key_env] }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ chatId: $json.chat_id, text: $json.text, session: $('Resolve Send Channel (DashReply)').first().json.send_identifier }) }}",
+    "options": {
+     "timeout": 30000
+    }
+   },
+   "onError": "continueErrorOutput"
+  },
+  {
+   "id": "d339ce41-cd33-4a6b-8500-4a210c2cfaf3",
+   "name": "Log Outbound",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1240,
+    -180
+   ],
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true,
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Prepare Send').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: $('Prepare Send').first().json.text, sent_by: String($('Prepare Send').first().json.sent_by || 'dashboard').trim().toLowerCase() }, $('Prepare Send').first().json.tenant_id ? { tenant_id: $('Prepare Send').first().json.tenant_id } : {})) }}",
+    "options": {
+     "timeout": 10000
+    }
+   }
+  },
+  {
+   "id": "2354877e-1997-497b-83e9-a7669c412295",
+   "name": "Respond Sent",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    1440,
+    -180
+   ],
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "a29072ce-7457-466c-b257-01b3f9350f98",
+       "name": "status",
+       "type": "string",
+       "value": "={{ $json.delivery && $json.delivery.status === 'SUCCESS' ? 'sent' : 'sent_but_not_logged' }}"
+      },
+      {
+       "id": "f86b559e-4b1a-417c-a0e5-86bbed7fb8e1",
+       "name": "chat_id",
+       "type": "string",
+       "value": "={{ $('Prepare Send').first().json.chat_id }}"
+      },
+      {
+       "id": "22eb5652-d7f2-408f-a526-1f9bb2fcce40",
+       "name": "sent_at",
+       "type": "string",
+       "value": "={{ $now.toUTC().toISO() }}"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "2d8b0329-9bf0-4cb3-8391-531af9277ef8",
+   "name": "Respond Bad Request",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    1040,
+    20
+   ],
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "f7f28e93-d730-4c12-80f4-0dbbc9abb8ff",
+       "name": "status",
+       "type": "string",
+       "value": "error"
+      },
+      {
+       "id": "eee6edd6-595f-4a24-9b45-6b495de4b64f",
+       "name": "error",
+       "type": "string",
+       "value": "chat_id and text are both required."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "0d7d3bad-e6f2-4ec7-806d-b8fb02f9f4c0",
+   "name": "Respond Unauthorized",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    620,
+    160
+   ],
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "d0f06f21-1248-4fdf-b06f-f24dd6d7adfe",
+       "name": "status",
+       "type": "string",
+       "value": "error"
+      },
+      {
+       "id": "23d889e3-d21a-45e2-87b5-e69d64c69eab",
+       "name": "error",
+       "type": "string",
+       "value": "Unauthorized. A valid Supabase session token is required in the Authorization header."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "9f1b7c22-5d41-4c0a-9a77-3c6e10b4d8e1",
+   "name": "Respond Send Failed",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    1260,
+    10
+   ],
+   "parameters": {
+    "mode": "raw",
+    "jsonOutput": "={{ JSON.stringify({ status: \"error\", error: \"WhatsApp did not accept the message: \" + ($json.error?.message || $json.error || \"WAHA did not respond\") + \". Nothing was sent and nothing was logged \u2014 the message is still unsent.\", chat_id: $('Prepare Send').first().json.chat_id }) }}",
+    "options": {}
+   }
+  },
+  {
+   "parameters": {
+    "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Send via WAHA', what: 'WhatsApp message to the customer', critical: true },\n  { node: 'Log Outbound',  what: 'communication_logs row the dashboard thread reads', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
+   },
+   "id": "dlvrpt-wasend-7c14-b8e2-6d90aa31f4c7",
+   "name": "Delivery Report",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1340,
+    -180
+   ]
+  },
+  {
+   "id": "8b87d5ae-6c83-434a-8cee-3b64e2610143",
+   "name": "Tenant For JWT User",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    500,
+    -100
+   ],
+   "parameters": {
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "tenant_id"
+      },
+      {
+       "name": "auth_user_id",
+       "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+      },
+      {
+       "name": "limit",
+       "value": "1"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1000,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "e16efc05",
+   "name": "Fetch Send Channel (DashReply)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    340,
+    -300
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1000,
+   "parameters": {
+    "method": "GET",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/channel_registry",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "select",
+       "value": "channel_type,external_identifier,credential_ref"
+      },
+      {
+       "name": "tenant_id",
+       "value": "=eq.{{ $json.tenant_id }}"
+      },
+      {
+       "name": "channel_type",
+       "value": "in.(whatsapp_cloud_phone_number_id,whatsapp_waha_session)"
+      },
+      {
+       "name": "status",
+       "value": "eq.active"
+      },
+      {
+       "name": "order",
+       "value": "channel_type.asc"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 10000
+    }
+   }
+  },
+  {
+   "id": "4c1f34c0",
+   "name": "Resolve Send Channel (DashReply)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    540,
+    -300
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// NX1007 -- per-dealer send channel resolution. FAIL CLOSED.\n// Prefers WhatsApp Cloud (phone_number_id) over legacy WAHA session, per\n// the channel_registry binding decision. No default, no shared session.\n// An unresolved channel THROWS -- this workflow's errorWorkflow\n// (iYJkh1kztWxZXDbT, NEXUS Error Handler) records it to audit_log. No send\n// happens and the refusal is durable, not silent.\nlet rows = $input.all().map(i => i.json).filter(Boolean);\n// PostgREST GET returns a JSON array; n8n normally splits it into one item\n// per row, but defend the single-item-holding-an-array shape too.\nif (rows.length === 1 && Array.isArray(rows[0])) rows = rows[0];\nconst cloud = rows.find(r => r.channel_type === 'whatsapp_cloud_phone_number_id');\nconst waha  = rows.find(r => r.channel_type === 'whatsapp_waha_session');\nconst picked = cloud || waha;\nconst tenantForLog = ($json.tenant_id || 'UNKNOWN');\nif (!picked || !picked.external_identifier) {\n  throw new Error('NX1007_NO_ACTIVE_CHANNEL: tenant ' + tenantForLog + ' has no active ' +\n    'WhatsApp channel (Cloud or WAHA) in channel_registry. Refusing to send from a shared ' +\n    'or default number. Register a channel via nexus_channel_secret_put / channel_registry ' +\n    'before this dealership can receive outbound WhatsApp.');\n}\nlet wahaKeyEnv = null;\nif (picked.channel_type === 'whatsapp_waha_session') {\n  const ref = String(picked.credential_ref || '');\n  const m = ref.match(/^env:([A-Za-z0-9_]+)/);\n  wahaKeyEnv = m ? m[1] : null;\n  if (!wahaKeyEnv || !$env[wahaKeyEnv]) {\n    throw new Error('NX1007_NO_ACTIVE_CHANNEL: tenant ' + tenantForLog + ' has a WAHA channel ' +\n      'registered (' + picked.external_identifier + ') but its credential_ref (' + ref + ') does ' +\n      'not resolve to a configured secret. Refusing to send.');\n  }\n}\nconst base = $('Has chat_id and text?').first().json;\nreturn [{ json: Object.assign({}, base, {\n  send_provider: picked.channel_type,\n  send_identifier: picked.external_identifier,\n  waha_api_key_env: wahaKeyEnv\n}) }];"
+   }
+  },
+  {
+   "id": "a2c40c3c",
+   "name": "Send Channel Is Cloud? (DashReply)",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    740,
+    -300
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "87e12000",
+       "leftValue": "={{ $json.send_provider }}",
+       "rightValue": "whatsapp_cloud_phone_number_id",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       }
+      }
+     ]
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "00e9ee31",
+   "name": "Reveal Cloud Token (DashReply)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    940,
+    -400
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1000,
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_channel_secret_reveal",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ p_phone_number_id: $json.send_identifier, p_kind: 'meta_system_user_token', p_reason: 'outbound WhatsApp send (NX1007 per-dealer channel)' }) }}",
+    "options": {
+     "timeout": 10000
+    }
+   }
+  },
+  {
+   "id": "cd93d4b0",
+   "name": "POST Graph Messages (DashReply)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1160,
+    -400
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "={{ 'https://graph.facebook.com/v20.0/' + $('Resolve Send Channel (DashReply)').first().json.send_identifier + '/messages' }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Authorization",
+       "value": "={{ 'Bearer ' + $('Reveal Cloud Token (DashReply)').first().json.secret }}"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: String($json.chat_id || '').replace(/@c\\.us$/,'').replace(/[^0-9]/g,''), type: 'text', text: { body: $json.text } }) }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "onError": "continueErrorOutput",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 3000
+  }
+ ],
+ "connections": {
+  "Dashboard Send Webhook": {
+   "main": [
+    [
+     {
+      "node": "Verify JWT",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Verify JWT": {
+   "main": [
+    [
+     {
+      "node": "Auth OK?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Auth OK?": {
+   "main": [
+    [
+     {
+      "node": "Tenant For JWT User",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Unauthorized",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Prepare Send": {
+   "main": [
+    [
+     {
+      "node": "Has chat_id and text?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Has chat_id and text?": {
+   "main": [
+    [
+     {
+      "node": "Fetch Send Channel (DashReply)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Bad Request",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Send via WAHA": {
+   "main": [
+    [
+     {
+      "node": "Log Outbound",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Send Failed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log Outbound": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report": {
+   "main": [
+    [
+     {
+      "node": "Respond Sent",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Tenant For JWT User": {
+   "main": [
+    [
+     {
+      "node": "Prepare Send",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch Send Channel (DashReply)": {
+   "main": [
+    [
+     {
+      "node": "Resolve Send Channel (DashReply)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Resolve Send Channel (DashReply)": {
+   "main": [
+    [
+     {
+      "node": "Send Channel Is Cloud? (DashReply)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Send Channel Is Cloud? (DashReply)": {
+   "main": [
+    [
+     {
+      "node": "Reveal Cloud Token (DashReply)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Send via WAHA",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Reveal Cloud Token (DashReply)": {
+   "main": [
+    [
+     {
+      "node": "POST Graph Messages (DashReply)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "POST Graph Messages (DashReply)": {
+   "main": [
+    [
+     {
+      "node": "Log Outbound",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Send Failed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "saveDataSuccessExecution": "all",
+  "saveDataErrorExecution": "all",
+  "executionTimeout": 300,
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "binaryMode": "separate",
+  "timeSavedMode": "fixed",
+  "callerPolicy": "workflowsFromSameOwner",
+  "availableInMCP": true
+ },
+ "staticData": null,
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": null,
+ "versionId": "06e0490c-d210-4f45-b7a8-684594949235",
+ "activeVersionId": "06e0490c-d210-4f45-b7a8-684594949235",
+ "versionCounter": 8,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-08-24T11:06:16.781Z",
+   "createdAt": "2026-08-24T11:06:16.781Z",
+   "role": "workflow:owner",
+   "workflowId": "yx6m55p1Kj8V7koR",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-02T10:37:43.168Z",
+  "createdAt": "2026-09-02T10:37:43.168Z",
+  "versionId": "06e0490c-d210-4f45-b7a8-684594949235",
+  "workflowId": "yx6m55p1Kj8V7koR",
+  "nodes": [
+   {
+    "id": "9989942e-6c51-4e4f-9960-a748a01c128f",
+    "name": "Dashboard Send Webhook",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 1.1,
+    "position": [
+     0,
+     0
+    ],
+    "webhookId": "3a4e8843-4a96-40dc-832e-582132fc73db",
+    "parameters": {
+     "httpMethod": "POST",
+     "path": "whatsapp-send",
+     "responseMode": "lastNode",
+     "options": {}
+    }
+   },
+   {
+    "id": "f74aa24c-ad62-44bd-a8c4-4c833e4e1638",
+    "name": "Verify JWT",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     200,
+     0
+    ],
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true,
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/auth/v1/user",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "apikey",
+        "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzdnVvb3Zpdnlzc3pkb2lvcmNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NTg0MzUsImV4cCI6MjA5OTMzNDQzNX0.YPYzknrhqyzT5W9YeiJLGQcV3JF9BGlL1g0BbTr9l9E"
+       },
+       {
+        "name": "Authorization",
+        "value": "={{ $json.headers && $json.headers.authorization ? $json.headers.authorization : '' }}"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    }
+   },
+   {
+    "id": "ba7f9029-4257-488c-8843-c0fceae53f2b",
+    "name": "Auth OK?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     400,
+     0
+    ],
+    "parameters": {
+     "options": {},
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "version": 2,
+       "typeValidation": "loose"
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "8b8accc9-f30b-4164-a357-927102b923c5",
+        "leftValue": "={{ $json.id }}",
+        "rightValue": "",
+        "operator": {
+         "type": "string",
+         "operation": "notEmpty",
+         "singleValue": true
+        }
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "ed9bd121-8ffc-40a9-ab29-7f329c7429b0",
+    "name": "Prepare Send",
+    "type": "n8n-nodes-base.set",
+    "typeVersion": 3.4,
+    "position": [
+     620,
+     -100
+    ],
+    "parameters": {
+     "mode": "manual",
+     "includeOtherFields": false,
+     "options": {},
+     "assignments": {
+      "assignments": [
+       {
+        "id": "72e8d830-d0f8-4c57-a964-ed71fc82b90d",
+        "name": "chat_id",
+        "type": "string",
+        "value": "={{ String($('Dashboard Send Webhook').first().json.body?.chat_id || '').trim() }}"
+       },
+       {
+        "id": "f0888e50-fc64-40ce-a519-bb5731d0c6b8",
+        "name": "text",
+        "type": "string",
+        "value": "={{ String($('Dashboard Send Webhook').first().json.body?.text || '').trim() }}"
+       },
+       {
+        "id": "f5b29013-915c-4c61-ae57-f104b28a8829",
+        "name": "sent_by",
+        "type": "string",
+        "value": "={{ $('Verify JWT').first().json.email || 'dashboard' }}"
+       },
+       {
+        "id": "b1a3c7d2-0000-4000-8000-tenantassign01",
+        "name": "tenant_id",
+        "type": "string",
+        "value": "={{ (() => { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); let t = ''; try { const r = $('Tenant For JWT User').all().map(i => i.json).find(x => x && x.tenant_id); if (r) t = String(r.tenant_id); } catch (e) { t = ''; } if (!U.test(t) && k.length === 1) t = String(m[k[0]] || ''); return U.test(t) ? t : ''; })() }}"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "d4497970-54c9-47a1-9c08-87688d2ea380",
+    "name": "Has chat_id and text?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     820,
+     -100
+    ],
+    "parameters": {
+     "options": {},
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "version": 2,
+       "typeValidation": "loose"
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "2a1f0da9-cc16-4812-b69b-395039577013",
+        "leftValue": "={{ $json.chat_id }}",
+        "rightValue": "",
+        "operator": {
+         "type": "string",
+         "operation": "notEmpty",
+         "singleValue": true
+        }
+       },
+       {
+        "id": "395a13f5-bbbc-4516-8afa-7c68020f4818",
+        "leftValue": "={{ $json.text }}",
+        "rightValue": "",
+        "operator": {
+         "type": "string",
+         "operation": "notEmpty",
+         "singleValue": true
+        }
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "9609da8e-0301-4343-81b2-dde11b878721",
+    "name": "Send via WAHA",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1040,
+     -180
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 3000,
+    "parameters": {
+     "method": "POST",
+     "url": "http://waha:3000/api/sendText",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "X-Api-Key",
+        "value": "={{ $env.WAHA_API_KEY }}"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ chatId: $json.chat_id, text: $json.text, session: 'default' }) }}",
+     "options": {
+      "timeout": 30000
+     }
+    },
+    "onError": "continueErrorOutput"
+   },
+   {
+    "id": "d339ce41-cd33-4a6b-8500-4a210c2cfaf3",
+    "name": "Log Outbound",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1240,
+     -180
+    ],
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true,
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/communication_logs",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify(Object.assign({ lead_email: $('Prepare Send').first().json.chat_id, channel: 'whatsapp', direction: 'outbound', message: $('Prepare Send').first().json.text, sent_by: String($('Prepare Send').first().json.sent_by || 'dashboard').trim().toLowerCase() }, $('Prepare Send').first().json.tenant_id ? { tenant_id: $('Prepare Send').first().json.tenant_id } : {})) }}",
+     "options": {
+      "timeout": 10000
+     }
+    }
+   },
+   {
+    "id": "2354877e-1997-497b-83e9-a7669c412295",
+    "name": "Respond Sent",
+    "type": "n8n-nodes-base.set",
+    "typeVersion": 3.4,
+    "position": [
+     1440,
+     -180
+    ],
+    "parameters": {
+     "mode": "manual",
+     "includeOtherFields": false,
+     "options": {},
+     "assignments": {
+      "assignments": [
+       {
+        "id": "a29072ce-7457-466c-b257-01b3f9350f98",
+        "name": "status",
+        "type": "string",
+        "value": "={{ $json.delivery && $json.delivery.status === 'SUCCESS' ? 'sent' : 'sent_but_not_logged' }}"
+       },
+       {
+        "id": "f86b559e-4b1a-417c-a0e5-86bbed7fb8e1",
+        "name": "chat_id",
+        "type": "string",
+        "value": "={{ $('Prepare Send').first().json.chat_id }}"
+       },
+       {
+        "id": "22eb5652-d7f2-408f-a526-1f9bb2fcce40",
+        "name": "sent_at",
+        "type": "string",
+        "value": "={{ $now.toUTC().toISO() }}"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "2d8b0329-9bf0-4cb3-8391-531af9277ef8",
+    "name": "Respond Bad Request",
+    "type": "n8n-nodes-base.set",
+    "typeVersion": 3.4,
+    "position": [
+     1040,
+     20
+    ],
+    "parameters": {
+     "mode": "manual",
+     "includeOtherFields": false,
+     "options": {},
+     "assignments": {
+      "assignments": [
+       {
+        "id": "f7f28e93-d730-4c12-80f4-0dbbc9abb8ff",
+        "name": "status",
+        "type": "string",
+        "value": "error"
+       },
+       {
+        "id": "eee6edd6-595f-4a24-9b45-6b495de4b64f",
+        "name": "error",
+        "type": "string",
+        "value": "chat_id and text are both required."
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "0d7d3bad-e6f2-4ec7-806d-b8fb02f9f4c0",
+    "name": "Respond Unauthorized",
+    "type": "n8n-nodes-base.set",
+    "typeVersion": 3.4,
+    "position": [
+     620,
+     160
+    ],
+    "parameters": {
+     "mode": "manual",
+     "includeOtherFields": false,
+     "options": {},
+     "assignments": {
+      "assignments": [
+       {
+        "id": "d0f06f21-1248-4fdf-b06f-f24dd6d7adfe",
+        "name": "status",
+        "type": "string",
+        "value": "error"
+       },
+       {
+        "id": "23d889e3-d21a-45e2-87b5-e69d64c69eab",
+        "name": "error",
+        "type": "string",
+        "value": "Unauthorized. A valid Supabase session token is required in the Authorization header."
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "9f1b7c22-5d41-4c0a-9a77-3c6e10b4d8e1",
+    "name": "Respond Send Failed",
+    "type": "n8n-nodes-base.set",
+    "typeVersion": 3.4,
+    "position": [
+     1260,
+     10
+    ],
+    "parameters": {
+     "mode": "raw",
+     "jsonOutput": "={{ JSON.stringify({ status: \"error\", error: \"WhatsApp did not accept the message: \" + ($json.error?.message || $json.error || \"WAHA did not respond\") + \". Nothing was sent and nothing was logged \u2014 the message is still unsent.\", chat_id: $('Prepare Send').first().json.chat_id }) }}",
+     "options": {}
+    }
+   },
+   {
+    "parameters": {
+     "jsCode": "// Every node whose success this run is about to claim.\nconst CLAIMED = [\n  { node: 'Send via WAHA', what: 'WhatsApp message to the customer', critical: true },\n  { node: 'Log Outbound',  what: 'communication_logs row the dashboard thread reads', critical: false },\n];\n\nfunction check(c) {\n  let items;\n  try { items = $(c.node).all(); }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!items.length) return { ...c, ok: false, why: 'node produced no items' };\n  const j = items[0].json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results  = CLAIMED.map(check);\nconst dropped  = results.filter(r => !r.ok);\nconst fatal    = dropped.filter(r => r.critical);\n\nconst status = fatal.length  ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nreturn [{ json: {\n  ...( $input.first().json || {} ),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' \u2014 ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n}, pairedItem: { item: 0 } }];"
+    },
+    "id": "dlvrpt-wasend-7c14-b8e2-6d90aa31f4c7",
+    "name": "Delivery Report",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1340,
+     -180
+    ]
+   },
+   {
+    "id": "8b87d5ae-6c83-434a-8cee-3b64e2610143",
+    "name": "Tenant For JWT User",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     500,
+     -100
+    ],
+    "parameters": {
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/tenant_members",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "select",
+        "value": "tenant_id"
+       },
+       {
+        "name": "auth_user_id",
+        "value": "=eq.{{ $json.id || '00000000-0000-0000-0000-000000000000' }}"
+       },
+       {
+        "name": "limit",
+        "value": "1"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 10000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1000,
+    "alwaysOutputData": true
+   }
+  ],
+  "connections": {
+   "Dashboard Send Webhook": {
+    "main": [
+     [
+      {
+       "node": "Verify JWT",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Verify JWT": {
+    "main": [
+     [
+      {
+       "node": "Auth OK?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Auth OK?": {
+    "main": [
+     [
+      {
+       "node": "Tenant For JWT User",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond Unauthorized",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Prepare Send": {
+    "main": [
+     [
+      {
+       "node": "Has chat_id and text?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Has chat_id and text?": {
+    "main": [
+     [
+      {
+       "node": "Send via WAHA",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond Bad Request",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Send via WAHA": {
+    "main": [
+     [
+      {
+       "node": "Log Outbound",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond Send Failed",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log Outbound": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report": {
+    "main": [
+     [
+      {
+       "node": "Respond Sent",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Tenant For JWT User": {
+    "main": [
+     [
+      {
+       "node": "Prepare Send",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "Tenant-aware: the dashboard reply is logged under the sender's dealership",
+  "description": "The rep who sends the reply is a Supabase user; tenant_members says which dealership they belong to. That tenant is now stamped on the communication_logs row instead of the row being filed by the service_role column default.",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-02T10:37:46.136Z",
+    "id": 768,
+    "workflowId": "yx6m55p1Kj8V7koR",
+    "versionId": "06e0490c-d210-4f45-b7a8-684594949235",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}
