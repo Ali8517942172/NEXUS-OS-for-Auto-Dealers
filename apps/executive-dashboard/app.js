@@ -33,7 +33,9 @@ import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';
 import { envErrors } from './lib/env.js';
 import { ME, SESSION, db, myRole, sessionEnded, setMe, setMeReadFailed, setMembership, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
+import { loadSubscription, paintSubscriptionBanner, refreshSubscription, startWriteLockObserver } from './lib/subscription.js';
 import { buildNav, current, go } from './lib/nav.js';
+import { loadPlatformAdmin } from './lib/platform.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
 import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
@@ -52,6 +54,10 @@ import './screens/conversations.js';
 import './screens/customers.js';
 import './screens/deals.js';
 import './screens/finance.js';
+/* Founder Console. Registers screens.founder, and is what makes lib/nav.js's
+   NAV entry for it something other than a dead link -- see the long comment
+   above that entry for why the button itself is still gated separately. */
+import './screens/founder.js';
 import './screens/inventory.js';
 /* Lead Sources is a plain static import, not part of the import.meta.glob
    block below: that block exists for the five Revenue Recovery engine
@@ -67,6 +73,7 @@ import './screens/overview.js';
 import './screens/record-lead.js';
 import './screens/revenue.js';
 import './screens/settings.js';
+import './screens/subscription.js';
 import './screens/setup.js';
 import './screens/team.js';
 
@@ -221,6 +228,23 @@ async function boot() {
     setMembership(null);
   }
 
+  /* The subscription read and its banner. Not awaited: a slow or failed read
+     must not hold the whole app off screen, the same reasoning as the
+     membership read above. loadSubscription() paints nothing itself; the
+     banner and the write-lock sweep both run off its resolution. */
+  loadSubscription().then(paintSubscriptionBanner);
+  startWriteLockObserver();
+
+  /* Whether THIS account is the NEXUS founder, not a dealership question at
+     all -- read from public.nexus_is_platform_admin(), never guessed from
+     role or email. Awaited here, before buildNav(), for the same reason the
+     membership read above is: buildNav() decides the Founder Console button's
+     presence synchronously, and a founder who has to refresh once to see
+     their own console is a worse morning than one extra await at boot.
+     loadPlatformAdmin() never throws -- an unreadable answer resolves to
+     "no", which is the fail-closed default lib/platform.js documents. */
+  await loadPlatformAdmin();
+
   $('boot').classList.add('hide');
   $('app').classList.remove('hide');
   $('userInitials').textContent = initials(ME?.name || SESSION.user.email);
@@ -236,7 +260,7 @@ async function boot() {
   /* Refresh means "tell me the truth right now", so it re-reads the badges as
      well as the screen. Re-rendering the screen alone would leave the sidebar
      asserting a number the operator just asked to have re-checked. */
-  $('refreshBtn').addEventListener('click', () => { go(current); refreshBadges(); });
+  $('refreshBtn').addEventListener('click', () => { go(current); refreshBadges(); refreshSubscription(); });
   $('scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
   window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if (h && h !== current) go(h); });

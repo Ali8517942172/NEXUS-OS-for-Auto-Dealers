@@ -1,0 +1,898 @@
+{
+ "updatedAt": "2026-09-06T14:16:36.523Z",
+ "createdAt": "2026-08-14T06:21:54.646Z",
+ "id": "57QpbNQGwlFKb0q3",
+ "name": "NEXUS Infra Health Probe",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "probe-hook",
+   "name": "Probe Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "nexus-infra-probe",
+   "parameters": {
+    "path": "infra-probe",
+    "responseMode": "responseNode",
+    "options": {}
+   },
+   "disabled": true
+  },
+  {
+   "id": "probe-waha",
+   "name": "WAHA Sessions",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    600,
+    -60
+   ],
+   "onError": "continueRegularOutput",
+   "parameters": {
+    "method": "GET",
+    "url": "http://waha:3000/api/sessions/default",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Api-Key",
+       "value": "={{ $env.WAHA_API_KEY }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 15000,
+     "response": {
+      "response": {
+       "neverError": true,
+       "fullResponse": true
+      }
+     }
+    }
+   },
+   "retryOnFail": false,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "probe-fmt",
+   "name": "Format Probe",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    800,
+    -60
+   ],
+   "parameters": {
+    "jsCode": "// Format Probe\n// -----------------------------------------------------------------------------\n// Two bugs fixed here.\n//\n// 1. NO VERDICT. 'WAHA Sessions' runs with neverError: true AND\n//    onError: continueRegularOutput. neverError only swallows non-2xx HTTP\n//    STATUSES; a dead container is a transport error (ECONNREFUSED), which\n//    onError then turns into a data item carrying `error`. Either way the old\n//    code emitted status: null and 'Respond' still answered HTTP 200 -- a dead\n//    WhatsApp channel was indistinguishable from a healthy one. This node now\n//    computes `ok` and the caller is routed to a 200 or a 503.\n//\n// 2. LEAKING THE MAP. The old output included connected_number and every WAHA\n//    webhook URL, on an unauthenticated endpoint. Those are now emitted only\n//    when NEXUS_PROBE_VERBOSE=true.\n//\n// NOTE FOR WHOEVER EDITS THIS NEXT: the upstream response `s` contains\n// config.webhooks[].customHeaders, which -- once the WhatsApp webhook secret is\n// installed -- CONTAINS THAT SECRET. Never pass `s` or `s.config` through to the\n// output. Build the response field by field, as below.\nconst r = $input.first().json || {};\n\nconst transportError = r.error !== undefined && r.error !== null;\nconst code = Number(r.statusCode == null ? 0 : r.statusCode);\nconst httpOk = code >= 200 && code < 300;\n\nconst s = (!transportError && r.body !== undefined && r.body !== null) ? r.body\n        : (!transportError ? r : {});\n\nconst sessionStatus = (s && s.status) || null;\nconst cfg   = (s && s.config) || {};\nconst hooks = (cfg.webhooks || []);\nconst connectedNumber = (s && s.me && s.me.id) || null;\n\nconst reasons = [];\nif (transportError) {\n  reasons.push('waha unreachable: ' + String((r.error && (r.error.message || r.error.description)) || r.error).slice(0, 160));\n} else {\n  if (!httpOk) reasons.push('waha http ' + (code || 'none'));\n  if (sessionStatus !== 'WORKING') reasons.push('session status ' + (sessionStatus || 'unknown'));\n  if (!connectedNumber) reasons.push('no connected number');\n  if (hooks.length === 0) reasons.push('no webhooks configured');\n}\n\nconst ok = reasons.length === 0;\n\nconst out = {\n  probe: 'waha (GCP container)',\n  ok: ok,\n  verdict: ok ? 'PASS' : 'FAIL',\n  reasons: reasons,\n  session_status: sessionStatus,\n  number_connected: !!connectedNumber,\n  webhook_count: hooks.length,\n  checked_at: new Date().toISOString()\n};\n\n// Detail is opt-in and stays off by default. Turn it on only while debugging,\n// and only while NEXUS_PROBE_KEY is also set.\nif (String($env.NEXUS_PROBE_VERBOSE || '').trim().toLowerCase() === 'true') {\n  out.detail = {\n    session: (s && s.name) || null,\n    http_status: transportError ? null : code,\n    connected_number: connectedNumber,\n    webhooks: hooks.map(h => ({ url: h.url, events: h.events }))\n  };\n}\n\nreturn [{ json: out }];\n"
+   }
+  },
+  {
+   "id": "probe-resp",
+   "name": "Respond",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1200,
+    -160
+   ],
+   "parameters": {
+    "respondWith": "allIncomingItems",
+    "options": {}
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "cccccccc-3333-4333-8333-333333333333",
+   "name": "Run Manually",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    380
+   ],
+   "parameters": {}
+  },
+  {
+   "id": "probe-auth-gate-0001",
+   "name": "Probe Auth Gate",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    200,
+    0
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// Probe Auth Gate\n// -----------------------------------------------------------------------------\n// GET/POST /webhook/infra-probe used to be open to the internet and answered\n// with the connected WhatsApp number and the full WAHA webhook URL list -- i.e.\n// it handed an attacker the address of /webhook/whatsapp-inbound. Two changes\n// close that: this gate, and 'Format Probe' no longer emitting those fields\n// unless NEXUS_PROBE_VERBOSE=true.\n//\n// Unlike the WhatsApp webhook, this one uses responseMode: responseNode, so a\n// rejected caller can be given a real 401 -- but only by ROUTING to a Respond\n// node. Returning [] here would leave the request hanging until n8n's webhook\n// timeout, so this node always emits exactly one item and lets\n// 'Probe Authorized?' decide.\n//\n// DORMANT when NEXUS_PROBE_KEY is unset: authorized = true, behaviour unchanged.\n// That is the rollback (comment the var out of /opt/nexus/.env, restart n8n).\nconst EXPECTED = String($env.NEXUS_PROBE_KEY || '');\nconst HEADER   = 'x-nexus-probe-key';\n\nconst item = $input.first() || { json: {} };\nconst headers = (item.json && item.json.headers) || {};\nconst query   = (item.json && item.json.query) || {};\n\nlet got = '';\nfor (const k of Object.keys(headers)) {\n  if (String(k).toLowerCase() === HEADER) { got = String(headers[k] == null ? '' : headers[k]); break; }\n}\n// Accept ?key= as well, so the probe stays checkable from a phone browser or a\n// plain `curl`. A query string is weaker than a header (it lands in access logs\n// and browser history) -- use the header where you can.\nif (!got && query && query.key) got = String(query.key);\n\nfunction sameSecret(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\n\nconst authorized = !EXPECTED || (got !== '' && sameSecret(got, EXPECTED));\n\nreturn [{ json: { authorized: authorized, gate_dormant: !EXPECTED }, pairedItem: { item: 0 } }];\n"
+   },
+   "notes": "Shared-secret check for /webhook/infra-probe. Header X-Nexus-Probe-Key, or ?key= as a fallback. Dormant while $env.NEXUS_PROBE_KEY is unset. Always emits one item so the responseNode webhook can never hang; 'Probe Authorized?' does the routing.",
+   "onError": "stopWorkflow",
+   "retryOnFail": false,
+   "alwaysOutputData": false
+  },
+  {
+   "id": "probe-if-authz-0002",
+   "name": "Probe Authorized?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    400,
+    0
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "probe-authz-c1",
+       "leftValue": "={{ $json.authorized }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ]
+    },
+    "looseTypeValidation": true,
+    "options": {}
+   },
+   "notes": "TRUE -> run the probe. FALSE -> 'Respond Unauthorized' (HTTP 401). typeVersion 2.2 matches the IF nodes used elsewhere in this system."
+  },
+  {
+   "id": "probe-resp-401-0003",
+   "name": "Respond Unauthorized",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    600,
+    180
+   ],
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ JSON.stringify({ error: 'unauthorized' }) }}",
+    "options": {
+     "responseCode": 401
+    }
+   },
+   "notes": "HTTP 401 with a body that says nothing about WAHA. Deliberately identical for a missing key and a wrong key.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": false,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "probe-if-verdict-0004",
+   "name": "Probe Passed?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1000,
+    -60
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "probe-verdict-c1",
+       "leftValue": "={{ $json.ok }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ]
+    },
+    "looseTypeValidation": true,
+    "options": {}
+   },
+   "notes": "TRUE -> 'Respond' (200 PASS). FALSE -> 'Respond Degraded' (503 FAIL). Two fixed-code Respond nodes rather than one node with an expression in options.responseCode, because a fixed integer is certain to work and an expression there is not."
+  },
+  {
+   "id": "probe-resp-503-0005",
+   "name": "Respond Degraded",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    1200,
+    20
+   ],
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ JSON.stringify($json) }}",
+    "options": {
+     "responseCode": 503
+    }
+   },
+   "notes": "HTTP 503 carrying the verdict and the reasons array. This is the whole point of the change: an uptime checker pointed at this URL now actually goes red when WhatsApp is down.",
+   "onError": "continueRegularOutput",
+   "retryOnFail": false,
+   "alwaysOutputData": true
+  },
+  {
+   "id": "probe-sched-0006",
+   "name": "Every 15 Minutes",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    560
+   ],
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 15
+      }
+     ]
+    }
+   },
+   "notes": "Gives the probe a caller. 96 runs/day, each one small HTTP call inside the Docker network -- negligible on an e2-micro. saveDataSuccessExecution is 'none' for this workflow, so these runs do not accumulate in the database."
+  },
+  {
+   "id": "probe-alarm-0007",
+   "name": "Probe Alarm",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1200,
+    220
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// Probe Alarm\n// -----------------------------------------------------------------------------\n// The probe had no caller: nothing ran it on a schedule, so 'WAHA is down' was\n// only ever discovered by a human opening a browser. 'Every 15 Minutes' now runs\n// the same chain, and this node turns a FAIL into a thrown error, which n8n\n// routes to the workflow's configured error workflow (iYJkh1kztWxZXDbT).\n//\n// It deliberately does NOT throw on every failing run. WAHA can be down for\n// hours; 4 alerts an hour would train everyone to ignore them. Static workflow\n// data (persisted between PRODUCTION executions) counts consecutive failures and\n// throws on the 1st, then every 8th (~ every 2 hours) until it recovers.\n//\n// This node sits to the RIGHT and BELOW both Respond nodes on purpose: under\n// executionOrder v1 branch order follows node position, so the HTTP response is\n// already sent before this throws. A webhook probe still gets its 200/503.\nconst st = $getWorkflowStaticData('global');\nconst j = $input.first().json || {};\n\nif (j.ok === true) {\n  const was = Number(st.wahaConsecutiveFailures || 0);\n  st.wahaConsecutiveFailures = 0;\n  return [{ json: { alarm: 'clear', recovered: was > 0, previous_consecutive_failures: was } }];\n}\n\nconst n = Number(st.wahaConsecutiveFailures || 0) + 1;\nst.wahaConsecutiveFailures = n;\n\nif (n === 1 || n % 8 === 0) {\n  throw new Error(\n    'WAHA HEALTH PROBE FAIL (' + n + ' consecutive check' + (n === 1 ? '' : 's') + '): ' +\n    (j.reasons || []).join('; ') +\n    ' -- the dealership WhatsApp channel may be down.'\n  );\n}\n\nreturn [{ json: { alarm: 'suppressed', consecutive_failures: n, reasons: j.reasons || [] } }];\n"
+   },
+   "notes": "Throws on a FAIL verdict so the configured error workflow (iYJkh1kztWxZXDbT) raises it. De-duplicated via $getWorkflowStaticData: alerts on the 1st consecutive failure and then every 8th (~2 hours). Positioned below and right of both Respond nodes so under executionOrder v1 the HTTP response is sent first.",
+   "onError": "stopWorkflow",
+   "retryOnFail": false,
+   "alwaysOutputData": false
+  }
+ ],
+ "connections": {
+  "WAHA Sessions": {
+   "main": [
+    [
+     {
+      "node": "Format Probe",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Run Manually": {
+   "main": [
+    [
+     {
+      "node": "WAHA Sessions",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Probe Webhook": {
+   "main": [
+    [
+     {
+      "node": "Probe Auth Gate",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Probe Auth Gate": {
+   "main": [
+    [
+     {
+      "node": "Probe Authorized?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Probe Authorized?": {
+   "main": [
+    [
+     {
+      "node": "WAHA Sessions",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Unauthorized",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Format Probe": {
+   "main": [
+    [
+     {
+      "node": "Probe Passed?",
+      "type": "main",
+      "index": 0
+     },
+     {
+      "node": "Probe Alarm",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Probe Passed?": {
+   "main": [
+    [
+     {
+      "node": "Respond",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond Degraded",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Every 15 Minutes": {
+   "main": [
+    [
+     {
+      "node": "WAHA Sessions",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "Asia/Dubai",
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "saveDataErrorExecution": "all",
+  "saveDataSuccessExecution": "none",
+  "availableInMCP": true,
+  "executionTimeout": 300
+ },
+ "staticData": {
+  "node:Every 15 Minutes": {
+   "recurrenceRules": [
+    null
+   ],
+   "recurrenceRuleSignatures": [
+    null
+   ]
+  },
+  "global": {
+   "wahaConsecutiveFailures": 0
+  }
+ },
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": null,
+ "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+ "activeVersionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+ "versionCounter": 19,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-08-14T06:21:54.646Z",
+   "createdAt": "2026-08-14T06:21:54.646Z",
+   "role": "workflow:owner",
+   "workflowId": "57QpbNQGwlFKb0q3",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-06T14:14:16.735Z",
+  "createdAt": "2026-09-06T14:14:16.735Z",
+  "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+  "workflowId": "57QpbNQGwlFKb0q3",
+  "nodes": [
+   {
+    "id": "probe-hook",
+    "name": "Probe Webhook",
+    "type": "n8n-nodes-base.webhook",
+    "typeVersion": 2,
+    "position": [
+     0,
+     0
+    ],
+    "webhookId": "nexus-infra-probe",
+    "parameters": {
+     "path": "infra-probe",
+     "responseMode": "responseNode",
+     "options": {}
+    },
+    "disabled": true
+   },
+   {
+    "id": "probe-waha",
+    "name": "WAHA Sessions",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     600,
+     -60
+    ],
+    "onError": "continueRegularOutput",
+    "parameters": {
+     "method": "GET",
+     "url": "http://waha:3000/api/sessions/default",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "X-Api-Key",
+        "value": "={{ $env.WAHA_API_KEY }}"
+       }
+      ]
+     },
+     "options": {
+      "timeout": 15000,
+      "response": {
+       "response": {
+        "neverError": true,
+        "fullResponse": true
+       }
+      }
+     }
+    },
+    "retryOnFail": false,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "probe-fmt",
+    "name": "Format Probe",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     800,
+     -60
+    ],
+    "parameters": {
+     "jsCode": "// Format Probe\n// -----------------------------------------------------------------------------\n// Two bugs fixed here.\n//\n// 1. NO VERDICT. 'WAHA Sessions' runs with neverError: true AND\n//    onError: continueRegularOutput. neverError only swallows non-2xx HTTP\n//    STATUSES; a dead container is a transport error (ECONNREFUSED), which\n//    onError then turns into a data item carrying `error`. Either way the old\n//    code emitted status: null and 'Respond' still answered HTTP 200 -- a dead\n//    WhatsApp channel was indistinguishable from a healthy one. This node now\n//    computes `ok` and the caller is routed to a 200 or a 503.\n//\n// 2. LEAKING THE MAP. The old output included connected_number and every WAHA\n//    webhook URL, on an unauthenticated endpoint. Those are now emitted only\n//    when NEXUS_PROBE_VERBOSE=true.\n//\n// NOTE FOR WHOEVER EDITS THIS NEXT: the upstream response `s` contains\n// config.webhooks[].customHeaders, which -- once the WhatsApp webhook secret is\n// installed -- CONTAINS THAT SECRET. Never pass `s` or `s.config` through to the\n// output. Build the response field by field, as below.\nconst r = $input.first().json || {};\n\nconst transportError = r.error !== undefined && r.error !== null;\nconst code = Number(r.statusCode == null ? 0 : r.statusCode);\nconst httpOk = code >= 200 && code < 300;\n\nconst s = (!transportError && r.body !== undefined && r.body !== null) ? r.body\n        : (!transportError ? r : {});\n\nconst sessionStatus = (s && s.status) || null;\nconst cfg   = (s && s.config) || {};\nconst hooks = (cfg.webhooks || []);\nconst connectedNumber = (s && s.me && s.me.id) || null;\n\nconst reasons = [];\nif (transportError) {\n  reasons.push('waha unreachable: ' + String((r.error && (r.error.message || r.error.description)) || r.error).slice(0, 160));\n} else {\n  if (!httpOk) reasons.push('waha http ' + (code || 'none'));\n  if (sessionStatus !== 'WORKING') reasons.push('session status ' + (sessionStatus || 'unknown'));\n  if (!connectedNumber) reasons.push('no connected number');\n  if (hooks.length === 0) reasons.push('no webhooks configured');\n}\n\nconst ok = reasons.length === 0;\n\nconst out = {\n  probe: 'waha (GCP container)',\n  ok: ok,\n  verdict: ok ? 'PASS' : 'FAIL',\n  reasons: reasons,\n  session_status: sessionStatus,\n  number_connected: !!connectedNumber,\n  webhook_count: hooks.length,\n  checked_at: new Date().toISOString()\n};\n\n// Detail is opt-in and stays off by default. Turn it on only while debugging,\n// and only while NEXUS_PROBE_KEY is also set.\nif (String($env.NEXUS_PROBE_VERBOSE || '').trim().toLowerCase() === 'true') {\n  out.detail = {\n    session: (s && s.name) || null,\n    http_status: transportError ? null : code,\n    connected_number: connectedNumber,\n    webhooks: hooks.map(h => ({ url: h.url, events: h.events }))\n  };\n}\n\nreturn [{ json: out }];\n"
+    }
+   },
+   {
+    "id": "probe-resp",
+    "name": "Respond",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.1,
+    "position": [
+     1200,
+     -160
+    ],
+    "parameters": {
+     "respondWith": "allIncomingItems",
+     "options": {}
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "cccccccc-3333-4333-8333-333333333333",
+    "name": "Run Manually",
+    "type": "n8n-nodes-base.manualTrigger",
+    "typeVersion": 1,
+    "position": [
+     0,
+     380
+    ],
+    "parameters": {}
+   },
+   {
+    "id": "probe-auth-gate-0001",
+    "name": "Probe Auth Gate",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     200,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "language": "javaScript",
+     "jsCode": "// Probe Auth Gate\n// -----------------------------------------------------------------------------\n// GET/POST /webhook/infra-probe used to be open to the internet and answered\n// with the connected WhatsApp number and the full WAHA webhook URL list -- i.e.\n// it handed an attacker the address of /webhook/whatsapp-inbound. Two changes\n// close that: this gate, and 'Format Probe' no longer emitting those fields\n// unless NEXUS_PROBE_VERBOSE=true.\n//\n// Unlike the WhatsApp webhook, this one uses responseMode: responseNode, so a\n// rejected caller can be given a real 401 -- but only by ROUTING to a Respond\n// node. Returning [] here would leave the request hanging until n8n's webhook\n// timeout, so this node always emits exactly one item and lets\n// 'Probe Authorized?' decide.\n//\n// DORMANT when NEXUS_PROBE_KEY is unset: authorized = true, behaviour unchanged.\n// That is the rollback (comment the var out of /opt/nexus/.env, restart n8n).\nconst EXPECTED = String($env.NEXUS_PROBE_KEY || '');\nconst HEADER   = 'x-nexus-probe-key';\n\nconst item = $input.first() || { json: {} };\nconst headers = (item.json && item.json.headers) || {};\nconst query   = (item.json && item.json.query) || {};\n\nlet got = '';\nfor (const k of Object.keys(headers)) {\n  if (String(k).toLowerCase() === HEADER) { got = String(headers[k] == null ? '' : headers[k]); break; }\n}\n// Accept ?key= as well, so the probe stays checkable from a phone browser or a\n// plain `curl`. A query string is weaker than a header (it lands in access logs\n// and browser history) -- use the header where you can.\nif (!got && query && query.key) got = String(query.key);\n\nfunction sameSecret(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\n\nconst authorized = !EXPECTED || (got !== '' && sameSecret(got, EXPECTED));\n\nreturn [{ json: { authorized: authorized, gate_dormant: !EXPECTED }, pairedItem: { item: 0 } }];\n"
+    },
+    "notes": "Shared-secret check for /webhook/infra-probe. Header X-Nexus-Probe-Key, or ?key= as a fallback. Dormant while $env.NEXUS_PROBE_KEY is unset. Always emits one item so the responseNode webhook can never hang; 'Probe Authorized?' does the routing.",
+    "onError": "stopWorkflow",
+    "retryOnFail": false,
+    "alwaysOutputData": false
+   },
+   {
+    "id": "probe-if-authz-0002",
+    "name": "Probe Authorized?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     400,
+     0
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "probe-authz-c1",
+        "leftValue": "={{ $json.authorized }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ]
+     },
+     "looseTypeValidation": true,
+     "options": {}
+    },
+    "notes": "TRUE -> run the probe. FALSE -> 'Respond Unauthorized' (HTTP 401). typeVersion 2.2 matches the IF nodes used elsewhere in this system."
+   },
+   {
+    "id": "probe-resp-401-0003",
+    "name": "Respond Unauthorized",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.1,
+    "position": [
+     600,
+     180
+    ],
+    "parameters": {
+     "respondWith": "json",
+     "responseBody": "={{ JSON.stringify({ error: 'unauthorized' }) }}",
+     "options": {
+      "responseCode": 401
+     }
+    },
+    "notes": "HTTP 401 with a body that says nothing about WAHA. Deliberately identical for a missing key and a wrong key.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": false,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "probe-if-verdict-0004",
+    "name": "Probe Passed?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2.2,
+    "position": [
+     1000,
+     -60
+    ],
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 2
+      },
+      "combinator": "and",
+      "conditions": [
+       {
+        "id": "probe-verdict-c1",
+        "leftValue": "={{ $json.ok }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ]
+     },
+     "looseTypeValidation": true,
+     "options": {}
+    },
+    "notes": "TRUE -> 'Respond' (200 PASS). FALSE -> 'Respond Degraded' (503 FAIL). Two fixed-code Respond nodes rather than one node with an expression in options.responseCode, because a fixed integer is certain to work and an expression there is not."
+   },
+   {
+    "id": "probe-resp-503-0005",
+    "name": "Respond Degraded",
+    "type": "n8n-nodes-base.respondToWebhook",
+    "typeVersion": 1.1,
+    "position": [
+     1200,
+     20
+    ],
+    "parameters": {
+     "respondWith": "json",
+     "responseBody": "={{ JSON.stringify($json) }}",
+     "options": {
+      "responseCode": 503
+     }
+    },
+    "notes": "HTTP 503 carrying the verdict and the reasons array. This is the whole point of the change: an uptime checker pointed at this URL now actually goes red when WhatsApp is down.",
+    "onError": "continueRegularOutput",
+    "retryOnFail": false,
+    "alwaysOutputData": true
+   },
+   {
+    "id": "probe-sched-0006",
+    "name": "Every 15 Minutes",
+    "type": "n8n-nodes-base.scheduleTrigger",
+    "typeVersion": 1.2,
+    "position": [
+     0,
+     560
+    ],
+    "parameters": {
+     "rule": {
+      "interval": [
+       {
+        "field": "minutes",
+        "minutesInterval": 15
+       }
+      ]
+     }
+    },
+    "notes": "Gives the probe a caller. 96 runs/day, each one small HTTP call inside the Docker network -- negligible on an e2-micro. saveDataSuccessExecution is 'none' for this workflow, so these runs do not accumulate in the database."
+   },
+   {
+    "id": "probe-alarm-0007",
+    "name": "Probe Alarm",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1200,
+     220
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "language": "javaScript",
+     "jsCode": "// Probe Alarm\n// -----------------------------------------------------------------------------\n// The probe had no caller: nothing ran it on a schedule, so 'WAHA is down' was\n// only ever discovered by a human opening a browser. 'Every 15 Minutes' now runs\n// the same chain, and this node turns a FAIL into a thrown error, which n8n\n// routes to the workflow's configured error workflow (iYJkh1kztWxZXDbT).\n//\n// It deliberately does NOT throw on every failing run. WAHA can be down for\n// hours; 4 alerts an hour would train everyone to ignore them. Static workflow\n// data (persisted between PRODUCTION executions) counts consecutive failures and\n// throws on the 1st, then every 8th (~ every 2 hours) until it recovers.\n//\n// This node sits to the RIGHT and BELOW both Respond nodes on purpose: under\n// executionOrder v1 branch order follows node position, so the HTTP response is\n// already sent before this throws. A webhook probe still gets its 200/503.\nconst st = $getWorkflowStaticData('global');\nconst j = $input.first().json || {};\n\nif (j.ok === true) {\n  const was = Number(st.wahaConsecutiveFailures || 0);\n  st.wahaConsecutiveFailures = 0;\n  return [{ json: { alarm: 'clear', recovered: was > 0, previous_consecutive_failures: was } }];\n}\n\nconst n = Number(st.wahaConsecutiveFailures || 0) + 1;\nst.wahaConsecutiveFailures = n;\n\nif (n === 1 || n % 8 === 0) {\n  throw new Error(\n    'WAHA HEALTH PROBE FAIL (' + n + ' consecutive check' + (n === 1 ? '' : 's') + '): ' +\n    (j.reasons || []).join('; ') +\n    ' -- the dealership WhatsApp channel may be down.'\n  );\n}\n\nreturn [{ json: { alarm: 'suppressed', consecutive_failures: n, reasons: j.reasons || [] } }];\n"
+    },
+    "notes": "Throws on a FAIL verdict so the configured error workflow (iYJkh1kztWxZXDbT) raises it. De-duplicated via $getWorkflowStaticData: alerts on the 1st consecutive failure and then every 8th (~2 hours). Positioned below and right of both Respond nodes so under executionOrder v1 the HTTP response is sent first.",
+    "onError": "stopWorkflow",
+    "retryOnFail": false,
+    "alwaysOutputData": false
+   }
+  ],
+  "connections": {
+   "WAHA Sessions": {
+    "main": [
+     [
+      {
+       "node": "Format Probe",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Run Manually": {
+    "main": [
+     [
+      {
+       "node": "WAHA Sessions",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Probe Webhook": {
+    "main": [
+     [
+      {
+       "node": "Probe Auth Gate",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Probe Auth Gate": {
+    "main": [
+     [
+      {
+       "node": "Probe Authorized?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Probe Authorized?": {
+    "main": [
+     [
+      {
+       "node": "WAHA Sessions",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond Unauthorized",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Format Probe": {
+    "main": [
+     [
+      {
+       "node": "Probe Passed?",
+       "type": "main",
+       "index": 0
+      },
+      {
+       "node": "Probe Alarm",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Probe Passed?": {
+    "main": [
+     [
+      {
+       "node": "Respond",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Respond Degraded",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Every 15 Minutes": {
+    "main": [
+     [
+      {
+       "node": "WAHA Sessions",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "Disable public probe webhook until NEXUS_PROBE_KEY is set",
+  "description": "The schedule trigger (Every 15 Minutes) is the monitoring value and stays. The GET /webhook/infra-probe trigger is disabled because Probe Auth Gate is dormant while NEXUS_PROBE_KEY is unset, so publishing it opened an unauthenticated internet-reachable endpoint (measured HTTP 200 PASS from outside the VM) that also lets an anonymous caller spend CPU on a CPU-starved box. Owner re-enables: set NEXUS_PROBE_KEY in /opt/nexus/.env, restart n8n, re-enable this node, republish.",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-06T14:14:19.715Z",
+    "id": 813,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:14:50.178Z",
+    "id": 814,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "deactivated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:14:50.219Z",
+    "id": 815,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:16:39.536Z",
+    "id": 820,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "deactivated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:16:39.570Z",
+    "id": 821,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:14:53.005Z",
+    "id": 816,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "deactivated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:14:53.030Z",
+    "id": 817,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:16:36.612Z",
+    "id": 818,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "deactivated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   },
+   {
+    "createdAt": "2026-09-06T14:16:36.662Z",
+    "id": 819,
+    "workflowId": "57QpbNQGwlFKb0q3",
+    "versionId": "065bab55-29f3-426d-8bb8-95cd88b7f8d1",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}

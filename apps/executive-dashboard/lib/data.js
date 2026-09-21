@@ -189,6 +189,15 @@ function canManageAccess(tenantId)  { return held(OWNER_ADMIN, tenantId); }
    here for the same reason as the rest: the database gets to say no, not this
    file. */
 function canGrantOwner(tenantId)    { return held(['owner'], tenantId); }
+/* Inviting a teammate into THIS dealership, from Settings' Team card (added
+   nx1004, 21 Sep 2026). Same OWNER-only vocabulary as canGrantOwner above and
+   the same reason: the founder-invite Edge Function's owner branch reads
+   tenant_members.role = 'owner' for the exact tenant_id in the request and
+   nothing looser -- an admin who saw this button and had it refused would be
+   this file misreporting what it knows. Unknown authority still answers
+   true, for the same reason as the rest of this family: the Edge Function,
+   not this boolean, is what actually decides. */
+function canInviteTeam(tenantId)    { return held(['owner'], tenantId); }
 
 /* Once, per expiry. A screen fires four or five reads in parallel and the badge
    poller adds its own, so an expired token produces six simultaneous 401s —
@@ -269,8 +278,25 @@ async function db(path) {
     throw err;
   }
 }
+/* ── The soft paywall's hard backstop ──────────────────────────────────────
+   screens/subscription.js is where a read-only dealership SEES why. This is
+   where it is actually stopped: every write and every n8n call passes through
+   here, so a screen that forgot to disable a button (or a write reachable by
+   some path this file's authors did not think of — a drawer form, Enter on a
+   field) is refused at the one place every write and workflow call already
+   passes through, rather than depending on every screen remembering to ask.
+
+   Registered rather than imported: lib/subscription.js sits ABOVE this file
+   (it calls db(), the way lib/tenant.js does), so this file cannot import it
+   without a cycle. Same pattern as setSessionEndedHandler below. Fails open —
+   the default guard blocks nothing — so a subscription read that has not
+   happened yet, or failed, never stops a write it cannot justify stopping. */
+let writeGuard = () => null;
+function setWriteGuard(fn) { writeGuard = fn; }
+
 async function dbWrite(method, path, body) {
   const label = `${method} /rest/v1/${path}`;
+  { const blocked = writeGuard(); if (blocked) throw blocked; }
   const res = await request(`${SUPABASE_URL}/rest/v1/${path}`, {
     method, headers: { ...(await headers()), Prefer: 'return=representation' }, body: JSON.stringify(body),
   }, label);
@@ -287,6 +313,7 @@ async function dbWrite(method, path, body) {
 /* n8n webhooks. Kept separate from db() because a missing VITE_N8N_BASE_URL is
    a recoverable condition — those screens degrade, the rest of the app works. */
 async function n8n(path, payload) {
+  { const blocked = writeGuard(); if (blocked) throw blocked; }
   if (!N8N_BASE) throw new Error('VITE_N8N_BASE_URL is not set, so workflow calls are disabled.');
   /* The GCP URL ships inside a public JS bundle, so anyone who opens devtools can
      read it and call these — and ask-ai spends OpenRouter tokens on every call.
@@ -322,6 +349,38 @@ async function n8n(path, payload) {
     throw err;
   }
   try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+/* Supabase Edge Functions -- same calling shape as n8n() above (POST, the
+   caller's own bearer token, JSON in and out) but a different base and a
+   different key. n8n() reaches this project's n8n workhorses over N8N_BASE;
+   this reaches this project's OWN /functions/v1/<path>, carrying the anon
+   `apikey` header every other call in this file already sends plus the
+   signed-in user's own JWT -- never a service-role key, which does not exist
+   anywhere in this bundle and never will (see
+   supabase/functions/founder-invite/README.md for where that key actually
+   lives). headers() already builds exactly that pair, so this is the same
+   request() / failure() machinery as db()/dbWrite(), pointed at a different
+   URL. A caller who is nobody in particular -- not the founder, not an owner
+   of the tenant they named -- is refused inside the function itself, the same
+   as an RPC refusing a role it does not recognise; this file does not
+   pre-judge that, it only carries the identity that lets the function judge
+   it. */
+async function edgeFn(path, payload) {
+  const label = `POST /functions/v1/${path}`;
+  const res = await request(`${SUPABASE_URL}/functions/v1/${path}`, {
+    method: 'POST',
+    headers: await headers(),
+    body: JSON.stringify(payload || {}),
+  }, label);
+  if (!res.ok) throw await failure(res, label);
+  try {
+    return await res.json();
+  } catch (e) {
+    const err = requestFailure('generic', { status: res.status, technical: `${label} — response body did not parse: ${String(e && e.message || e)}`, cause: e });
+    logError(label, err, e);
+    throw err;
+  }
 }
 
 /* Short-lived signed URL for a private Storage object.
@@ -369,6 +428,10 @@ const HOOK = {
   kyc:        'audit-kyc',
   erpSync:    'erp-sync',
   escalation: 'lead-escalation',
+  /* NX1006, 21 Sep 2026: manual off-cycle trigger for Competitors' 'Re-run
+     scrape' button. Authenticated + rate-limited (one per tenant per hour) in
+     the workflow itself; see ops/fill-screens/patched/. */
+  rescrapeCompetitors: 'competitors/rescrape',
   /* Operator replies from the conversations screen. Guarded by the same JWT as
      the rest, and NOT fire-and-forget: it answers with a status of sent or
      error, so the UI can tell the operator whether the message actually left.
@@ -376,8 +439,21 @@ const HOOK = {
      block with a non-greedy match to the first closing brace, and a brace here
      truncates the map and makes it report this very hook as undefined. */
   whatsappSend: 'whatsapp-send',
+  /* NX1007 -- 'Send test message' on the Channels screen. Flips a
+     PENDING_VERIFY WhatsApp Cloud channel to ACTIVE only after a real Graph
+     API send succeeds; see supabase/migrations/20260921140000_nx1007_*.sql. */
+  channelTestSend: 'channel-test-send',
 };
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner };
+/* NX1005 originally added its own subscriptionAccessMode() here, reading
+   nexus_my_subscription() a second time in parallel with lib/subscription.js's
+   loadSubscription()/isReadOnly() (task A) -- two independent read-only
+   mechanisms answering the same question from the same RPC. Unified on the
+   one in lib/subscription.js: its setWriteGuard() registration already
+   blocks every dbWrite()/n8n() call app-wide when read_only, so a screen that
+   wants to know in advance (to grey a button, or skip a fetch) imports
+   loadSubscription()/isReadOnly() directly instead of a second db() call
+   living in this file. See screens/appointments.js and lib/lead-drawer.js. */
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, edgeFn, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner, setWriteGuard, canInviteTeam };

@@ -251,8 +251,8 @@ if (ARGV.includes('--no-db')) {
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-18T16:14:31Z",
-  "source": "--catalogue catalogue3.json — production dsvuoovivysszdoiorch, 18 Sep 2026, 130 relations (was 126). Retaken because NX996 (notification outbox), NX997 (cross-tenant composite keys) and NX998 (channel identity schema, which adds a tenant_id column to the provider-identity table) were applied to production after the previous snapshot. Method is FACT-193 exactly: CATALOGUE_SQL from --print-sql unmodified, run as ONE statement through a temporary table and a temporary SECURITY DEFINER function, both granted only to service_role and both dropped immediately with absence verified (leftover=0). The operator machine read its own service key out of .env and pulled the 604,747-byte result straight to disk; no credential passed through an agent transcript.",
+  "takenAt": "2026-09-21T04:13:21Z",
+  "source": "--catalogue catalogue_live.json",
   "relations": {
     "appointment": "appointment_id,tenant_id,customer_id,lead_id,inventory_id,assigned_to_id,state,channel,starts_at,duration_minutes,ends_at,location,resource,offered_slots,confirmed_slot_was_offered,requested_at,offered_at,confirmed_at,closed_at,outcome_reason,booked_by,notes,created_at,updated_at",
     "appointment_event": "event_id,appointment_id,tenant_id,event_type,from_state,to_state,occurred_at,actor,slots,starts_at,reason",
@@ -265,7 +265,7 @@ const SNAPSHOT = {
     "channel_message_events": "event_id,tenant_id,integration_id,provider,channel_type,direction,external_message_id,customer_external_id,customer_phone,conversation_id,message_kind,media_ref,media_mime,media_sha256,provider_account_id,provider_delivery_ref,origin_verified,received_at,recorded_at,message_text,customer_display_name",
     "channel_provider_capability": "provider,send_form,support_state,basis,evidence,verified_at,set_by,created_at",
     "channel_provider_rank": "provider,rank,is_official_platform,rationale,set_by,created_at",
-    "channel_registry": "integration_id,tenant_id,channel_type,external_identifier,credential_ref,status,created_at,updated_at",
+    "channel_registry": "integration_id,tenant_id,channel_type,external_identifier,credential_ref,status,created_at,updated_at,display_number,waba_id",
     "channel_secret": "integration_id,kind,vault_secret_id,fingerprint,installed_at,rotated_at,installed_by",
     "channel_secret_kind": "kind,description",
     "channel_send_directive": "directive_id,tenant_id,requested_by,request_ref,customer_external_id,intent,requested_send_form,directive,outcome,reason_code,reason,what_would_change_it,integration_id,provider,channel_type,external_identifier,credential_ref,carrier_rule,candidates_considered,resolved_send_form,message_body,template_ref,template_variables,template_category_required,template_verification,media_ref,media_mime,policy_decision,policy_reason_code,policy_applied_rule_id,policy_rule_verification_status,policy_window_state,policy_evaluated_at,capability_state,capability_basis,whatsapp_capability_state,routed_at,routed_by,send_result,provider_message_id,provider_error_code,provider_error_detail,result_recorded_at,tenant_slug,policy_reason,policy_what_would_change_it,policy_window_expires_at,capability_evidence,whatsapp_capability_note,template_verification_detail",
@@ -304,14 +304,14 @@ const SNAPSHOT = {
     "lead_recovery_settings": "tenant_id,sla_first_response_minutes,silence_hours,stale_silence_hours,engagement_window_days,detector_max_age_hours,set_by,set_at,note,reproposal_cooldown_days",
     "lead_recovery_states": "state,sort,meaning,engine_can_produce,blocked_by,requires",
     "lead_source_catalogue": "source_key,display_name,channel_family,integration_status,delivery_shape,required_provenance,dedup_field,evidence_note,manual_entry_surface",
-    "leads": "id,name,email,phone,source,vehicle_interest,budget_aed,status,ai_score,assigned_to,response_time_minutes,created_at,assigned_to_id,escalated_at,bitrix_lead_id,crm_synced_at,tenant_id,score_source,rules_score,ai_score_raw,ai_intent_raw,ai_parse_failed",
+    "leads": "id,name,email,phone,source,vehicle_interest,budget_aed,status,ai_score,assigned_to,response_time_minutes,created_at,assigned_to_id,escalated_at,bitrix_lead_id,crm_synced_at,tenant_id,score_source,rules_score,ai_score_raw,ai_intent_raw,ai_parse_failed,scoring_state,scoring_attempts,scoring_last_error,scored_at",
     "message_intent": "intent,promote_eligible,meaning",
     "nexus_notification_outbox": "notification_id,sales_lead_id,channel,state,reason,attempt_count,max_attempts,next_attempt_at,claimed_at,claimed_by,last_error_code,last_error_detail,sent_at,acknowledged_at,acknowledged_by,created_at,updated_at",
     "nexus_sales_lead": "id,submission_id,full_name,phone_e164,email,dealership,stock_size,message,attribution,ip_country,received_at,status,contacted_at,notes",
-    "nexus_tmp_sql": "id,body",
     "notification_attempt": "attempt_id,notification_id,attempt_no,event,from_state,to_state,worker,error_code,error_detail,occurred_at",
     "notification_state": "state,meaning,is_live,is_terminal,needs_attention,sort_order",
     "notification_transition": "from_state,to_state,verb",
+    "platform_admin": "auth_user_id,granted_at,note",
     "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
     "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
     "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
@@ -330,8 +330,8 @@ const SNAPSHOT = {
     "tenant_configuration_default": "setting_key,applies_to,value_kind,default_state,default_value,who_decides,provenance_required,rationale,engine_rule_when_absent,created_at",
     "tenant_member_invite": "id,tenant_id,email,role,staff_user_id,created_by,created_at,revoked_at,revoked_by,claimed_at,claimed_auth_user_id",
     "tenant_members": "tenant_id,auth_user_id,role,staff_user_id,created_at",
-    "tenant_subscription": "tenant_id,state,price_aed,currency,trial_started_at,trial_ends_at,started_at,cancelled_at,cancel_reason,notes,created_at,updated_at",
-    "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine",
+    "tenant_subscription": "tenant_id,state,price_aed,currency,trial_started_at,trial_ends_at,started_at,cancelled_at,cancel_reason,notes,created_at,updated_at,current_period_end,last_payment_reference",
+    "tenants": "id,slug,name,status,is_unattributed_default,created_at,is_quarantine,owner_phone",
     "users": "id,name,email,role,status,slack_user_id,created_at,tenant_id",
     "v_action_center_health": "tenant_id,actions_total,awaiting_decision,escalated_no_approver,approved_not_executed,executed,execution_failed,rejected,deferred,cancelled,outcomes_attributed,outcomes_not_attributable,executed_awaiting_outcome,undecided_exposure_aed,undecided_with_no_figure,last_proposed_at,last_decided_at,last_executed_at,last_activity_at,newest_undecided_days,oldest_undecided_days,events_total,events_without_audit,audit_rows,audit_rows_30d,last_audit_at,health",
     "v_attribution_edges": "tenant_id,edge,from_kind,from_ref,to_kind,to_ref,basis,confidence,note",
@@ -718,6 +718,29 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_channel_mark_active": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_channel_register_cloud_number": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_channel_registry_for_owner": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_channel_secret_put": {
       "secdef": true,
       "tenantArg": false,
@@ -800,6 +823,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_customer_360_directory_for_tenant": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_default_tenant_id": {
       "secdef": true,
       "tenantArg": false,
@@ -818,6 +848,53 @@ const SNAPSHOT = {
     "nexus_destructive_guard_coverage": {
       "secdef": true,
       "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_erp_bitrix24_hot_leads_backlog": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_founder_list_tenants": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_founder_mark_paid": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_founder_onboard_dealer": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_founder_quarantine_census": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_founder_set_tenant_status": {
+      "secdef": true,
+      "tenantArg": true,
       "grants": [
         "authenticated",
         "service_role"
@@ -874,6 +951,14 @@ const SNAPSHOT = {
     },
     "nexus_is_message": {
       "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_is_platform_admin": {
+      "secdef": true,
       "tenantArg": false,
       "grants": [
         "authenticated",
@@ -1102,7 +1187,94 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_my_actor": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_appointment_attend": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_appointment_cancel": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_appointment_confirm": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_appointment_no_show": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_appointment_offer_slots": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_appointment_request": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_customer_for_lead": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_my_lead_retry_scoring": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_solo_tenant": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_my_staff_user_ids": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_my_subscription": {
       "secdef": true,
       "tenantArg": false,
       "grants": [
@@ -1197,6 +1369,13 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_pending_scoring_leads_for_tenant": {
+      "secdef": true,
+      "tenantArg": true,
+      "grants": [
+        "service_role"
+      ]
+    },
     "nexus_promote_lead_event": {
       "secdef": false,
       "tenantArg": false,
@@ -1256,6 +1435,13 @@ const SNAPSHOT = {
     "nexus_record_lead_event": {
       "secdef": false,
       "tenantArg": false,
+      "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_record_lead_scoring_result": {
+      "secdef": true,
+      "tenantArg": true,
       "grants": [
         "service_role"
       ]
@@ -1490,13 +1676,6 @@ const SNAPSHOT = {
       "tenantArg": false,
       "grants": [
         "authenticated",
-        "service_role"
-      ]
-    },
-    "nexus_tmp_run_catalogue": {
-      "secdef": true,
-      "tenantArg": false,
-      "grants": [
         "service_role"
       ]
     },
@@ -1912,9 +2091,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260918161500",
-    "count": 342,
-    "newest": "20260918161500,20260918140000,20260918120000,20260917101500,20260917080000"
+    "head": "20260921040841",
+    "count": 350,
+    "newest": "20260921040841,20260921040803,20260921040723,20260921040701,20260920201711"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */
@@ -1977,6 +2156,22 @@ const screenSrc = [...SRC].filter(([p]) => p.startsWith('screens/'));
 const navRaw = await readFile(join(libDir, 'nav.js'), 'utf8');
 const navBlock = navRaw.slice(navRaw.indexOf('const NAV = ['), navRaw.indexOf('const SCREENS'));
 const NAV_IDS = [...navBlock.matchAll(/\bid\s*:\s*'([a-z0-9_]+)'/g)].map(m => m[1]);
+
+/* NX1004 (21 Sep 2026) added the Founder Console item with founderOnly: true,
+   and lib/nav.js's own buildNav()/flatNav() drop a founderOnly item from the
+   rendered nav bar (and from hash routing) whenever isPlatformAdmin() is
+   false -- which is every account except the platform founder's own. The R1
+   render check below signs in as a stub dealership user (STUB_URL's fixed
+   'u1'/'ali@example.com', never seeded into platform_admin), so the DOM can
+   never show more than NAV_IDS.length minus the founderOnly items, no matter
+   how correctly the app is behaving. Comparing the rendered count against the
+   full NAV_IDS.length (as this check did before NX1004) made a correctly
+   hidden Founder Console item look like a missing screen. Parsed from the
+   same NAV block by the same regex shape so a second founderOnly item added
+   later is picked up without a second edit here. */
+const NAV_FOUNDER_ONLY_IDS = new Set(
+  [...navBlock.matchAll(/\{\s*id\s*:\s*'([a-z0-9_]+)'[^}]*founderOnly\s*:\s*true/g)].map(m => m[1]));
+const NAV_IDS_VISIBLE_NON_FOUNDER = NAV_IDS.filter(id => !NAV_FOUNDER_ONLY_IDS.has(id));
 
 /* THE SCREENS THAT PUT MONEY OR A RATE IN FRONT OF A READER, and therefore the
    ones R4 and R5 sweep. Not a copy of NAV_IDS: Settings and Team have no
@@ -3513,8 +3708,8 @@ if (render.failed) {
 
   verdict('R1', LANE.RENDER, 'P0', 'The app boots and registers every screen',
     [!r.loggedIn && `the app did not reach a signed-in state (boot said: ${r.bootText || 'nothing'})`,
-     r.nav !== NAV_IDS.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length}`].filter(Boolean),
-    [`loggedIn=true, navItems=${r.nav} matching lib/nav.js`, `${r.errs.length} page errors across the whole run`]);
+     r.nav !== NAV_IDS_VISIBLE_NON_FOUNDER.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length} (${NAV_IDS_VISIBLE_NON_FOUNDER.length} visible to the non-founder stub account this render signs in as, ${NAV_FOUNDER_ONLY_IDS.size} founderOnly)`].filter(Boolean),
+    [`loggedIn=true, navItems=${r.nav} matching the ${NAV_IDS_VISIBLE_NON_FOUNDER.length} lib/nav.js offers a non-founder account`, `${r.errs.length} page errors across the whole run`]);
 
   const broken = NAV_IDS.filter(id => { const s = r.screens[id]; return s.len < 200 || s.errored || s.newErrors > 0 || s.stuckLoading; });
   verdict('R2', LANE.RENDER, 'P0', 'Every screen renders real content with no page errors',

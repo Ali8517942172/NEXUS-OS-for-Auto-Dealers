@@ -59,6 +59,11 @@ const ERROR_CASES = {
     line:   "We couldn't reach the server.",
     next:   'Check the connection, then try again.',
   },
+  readOnly: {
+    phrase: 'this dealership is read-only until payment is recorded',
+    line:   'This dealership is read-only.',
+    next:   'Open the Subscription screen to see why, or ask NEXUS to record a payment.',
+  },
   generic: {
     phrase: 'the request failed',
     line:   "We couldn't load this information.",

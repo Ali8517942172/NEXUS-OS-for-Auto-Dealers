@@ -5,7 +5,11 @@
 
 **Two changes from version 1.0, and they are not cosmetic.** The "17.8 seconds" line is
 gone — you no longer quote a response time at all, and the replacement wording is below.
-And the price you close on is now a setup fee plus a monthly band, not a flat monthly fee.
+
+> **SUPERSEDED — 21 September 2026.** This document briefly closed on a setup fee plus a
+> monthly band (AED 5,000 + AED 2,500–3,500). That pricing is withdrawn. The close script
+> below now quotes the live, single price: **AED 399/month, flat, first month free, no
+> setup fee, no minimum term, no lifetime lock** — the same price on the public website.
 
 Read this whole document before your first demo, including the DO NOT SHOW list. The list
 has a reason beside every entry, because a salesperson who does not know *why* a screen is
@@ -190,13 +194,10 @@ Shut the laptop.
 > in this system is built and unproven, and I have written down which is which — I will send
 > you that document, not a brochure.
 >
-> It is a managed pilot, not a software subscription. AED 5,000 to set it up, then AED 2,500
-> to AED 3,500 a month, three months minimum. Where you land in that band is a rule, not a
-> negotiation: you start at 2,500 and you add 250 for each of four things — stock over 50
-> cars, more than 400 customer messages a month, more than five people needing a login, and
-> whether you want me running the WhatsApp number for you. On what you have told me that is
-> AED X a month. One dealership, one number, on my infrastructure with me watching it every
-> day. If it is not working by day 30, you tell me and we stop."
+> It is AED 399 a month, flat, with the first month free — no setup fee, no minimum
+> term, no lifetime lock, the same price on the website. One dealership, one number, on my
+> infrastructure with me watching it closely in month one. If it is not working, you cancel
+> at the end of any month and stop paying — nothing further is owed."
 
 **Work out the band figure before the meeting and say the number, not the rule and then a
 pause.** The rule is there so you can defend the number when they push, not so you can

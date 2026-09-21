@@ -1,0 +1,328 @@
+{
+ "updatedAt": "2026-09-06T14:38:56.950Z",
+ "createdAt": "2026-08-14T04:20:28.411Z",
+ "id": "iYJkh1kztWxZXDbT",
+ "name": "NEXUS Error Handler",
+ "description": "Catches failures from every other workflow and writes them to audit_log as FAILED, so the Automation screen shows them.",
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "id": "a03a9ff8-7e44-4f52-8a88-200a53bec546",
+   "name": "Any Workflow Failed",
+   "type": "n8n-nodes-base.errorTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {}
+  },
+  {
+   "parameters": {
+    "mode": "manual",
+    "includeOtherFields": false,
+    "options": {},
+    "assignments": {
+     "assignments": [
+      {
+       "id": "f632bfc4-86cc-4d13-aa8f-16c5b97211f5",
+       "name": "workflow",
+       "type": "string",
+       "value": "={{ ($json.workflow && $json.workflow.name) || 'Unknown workflow' }}"
+      },
+      {
+       "id": "facb0d06-edb5-4f87-9314-17108f0de0c9",
+       "name": "status",
+       "type": "string",
+       "value": "FAILED"
+      },
+      {
+       "id": "537d3dd0-d427-4021-987a-5d833788d7a3",
+       "name": "summary",
+       "type": "string",
+       "value": "={{ [ (($json.execution && $json.execution.error && $json.execution.error.message) || ($json.error && $json.error.message) || 'Execution failed with no error message'), ($json.execution && $json.execution.lastNodeExecuted ? 'Failed at node: ' + $json.execution.lastNodeExecuted : null), ($json.execution && $json.execution.id ? 'Execution ' + $json.execution.id : null), ($json.execution && $json.execution.url ? $json.execution.url : null) ].filter(Boolean).join(' \u00b7 ').slice(0, 1000) }}"
+      },
+      {
+       "id": "b7e1c40a-1111-4000-9000-unattributed01",
+       "name": "unattributed",
+       "type": "boolean",
+       "value": "={{ (() => { const M = '[NEXUS-UNATTRIBUTED]'; const e = ($json.execution && $json.execution.error) || $json.error || {}; return String(e.description || '').indexOf(M) === 0 || String(e.message || '').indexOf(M) === 0; })() }}"
+      },
+      {
+       "id": "dd6e066e-831d-4142-852f-58fd16eda3ea",
+       "name": "logged_at",
+       "type": "string",
+       "value": "={{ $now.toUTC().toISO() }}"
+      }
+     ]
+    }
+   },
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    224,
+    0
+   ],
+   "name": "Build Failure Row",
+   "id": "a69cb272-2946-4fb0-bfb7-7228bb944aa8"
+  },
+  {
+   "id": "6320f2f2-39be-4a57-a243-1532aae28876",
+   "name": "Log Failure to audit_log",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    448,
+    0
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); let t = null; if (k.length === 1 && U.test(String(m[k[0]] || ''))) t = String(m[k[0]]); const unattributed = $json.unattributed === true || $json.unattributed === 'true'; if (unattributed) t = null; const note = unattributed ? ' | TENANT UNRESOLVED (unauthenticated): the caller was never authenticated, so this failure belongs to no dealership' : ' | TENANT UNRESOLVED: an error trigger reports which workflow failed, not whose customer it was'; const base = { workflow: $json.workflow, status: $json.status, summary: (String($json.summary || '') + (t ? '' : note)).slice(0, 1000), logged_at: $json.logged_at }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "notes": "tenant_id is sent EXPLICITLY, including as null. It is not omitted: audit_log.tenant_id defaults to nexus_default_tenant_id(), so an absent key would stamp the unattributed-default dealership and put one dealership's failures on another's Automation screen. With one dealership configured the fallback names it, so today's behaviour is unchanged. Was an autoMapInputData Supabase node until 2 Sep 2026; swapped for HTTP so null and absent are distinguishable."
+  }
+ ],
+ "connections": {
+  "Any Workflow Failed": {
+   "main": [
+    [
+     {
+      "node": "Build Failure Row",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build Failure Row": {
+   "main": [
+    [
+     {
+      "node": "Log Failure to audit_log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "availableInMCP": true,
+  "timezone": "Asia/Dubai",
+  "saveDataSuccessExecution": "all",
+  "saveDataErrorExecution": "all",
+  "saveExecutionProgress": false,
+  "executionTimeout": 300
+ },
+ "staticData": null,
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp"
+ },
+ "nodeGroups": [],
+ "pinData": null,
+ "versionId": "3749646a-a723-4f80-bb16-7045456d3f27",
+ "activeVersionId": "3749646a-a723-4f80-bb16-7045456d3f27",
+ "versionCounter": 6,
+ "triggerCount": 0,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-08-14T04:20:28.411Z",
+   "createdAt": "2026-08-14T04:20:28.411Z",
+   "role": "workflow:owner",
+   "workflowId": "iYJkh1kztWxZXDbT",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-06T14:38:56.952Z",
+  "createdAt": "2026-09-06T14:38:56.952Z",
+  "versionId": "3749646a-a723-4f80-bb16-7045456d3f27",
+  "workflowId": "iYJkh1kztWxZXDbT",
+  "nodes": [
+   {
+    "id": "a03a9ff8-7e44-4f52-8a88-200a53bec546",
+    "name": "Any Workflow Failed",
+    "type": "n8n-nodes-base.errorTrigger",
+    "typeVersion": 1,
+    "position": [
+     0,
+     0
+    ],
+    "parameters": {}
+   },
+   {
+    "parameters": {
+     "mode": "manual",
+     "includeOtherFields": false,
+     "options": {},
+     "assignments": {
+      "assignments": [
+       {
+        "id": "f632bfc4-86cc-4d13-aa8f-16c5b97211f5",
+        "name": "workflow",
+        "type": "string",
+        "value": "={{ ($json.workflow && $json.workflow.name) || 'Unknown workflow' }}"
+       },
+       {
+        "id": "facb0d06-edb5-4f87-9314-17108f0de0c9",
+        "name": "status",
+        "type": "string",
+        "value": "FAILED"
+       },
+       {
+        "id": "537d3dd0-d427-4021-987a-5d833788d7a3",
+        "name": "summary",
+        "type": "string",
+        "value": "={{ [ (($json.execution && $json.execution.error && $json.execution.error.message) || ($json.error && $json.error.message) || 'Execution failed with no error message'), ($json.execution && $json.execution.lastNodeExecuted ? 'Failed at node: ' + $json.execution.lastNodeExecuted : null), ($json.execution && $json.execution.id ? 'Execution ' + $json.execution.id : null), ($json.execution && $json.execution.url ? $json.execution.url : null) ].filter(Boolean).join(' \u00b7 ').slice(0, 1000) }}"
+       },
+       {
+        "id": "b7e1c40a-1111-4000-9000-unattributed01",
+        "name": "unattributed",
+        "type": "boolean",
+        "value": "={{ (() => { const M = '[NEXUS-UNATTRIBUTED]'; const e = ($json.execution && $json.execution.error) || $json.error || {}; return String(e.description || '').indexOf(M) === 0 || String(e.message || '').indexOf(M) === 0; })() }}"
+       },
+       {
+        "id": "dd6e066e-831d-4142-852f-58fd16eda3ea",
+        "name": "logged_at",
+        "type": "string",
+        "value": "={{ $now.toUTC().toISO() }}"
+       }
+      ]
+     }
+    },
+    "type": "n8n-nodes-base.set",
+    "typeVersion": 3.4,
+    "position": [
+     224,
+     0
+    ],
+    "name": "Build Failure Row",
+    "id": "a69cb272-2946-4fb0-bfb7-7228bb944aa8"
+   },
+   {
+    "id": "6320f2f2-39be-4a57-a243-1532aae28876",
+    "name": "Log Failure to audit_log",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     448,
+     0
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); let t = null; if (k.length === 1 && U.test(String(m[k[0]] || ''))) t = String(m[k[0]]); const unattributed = $json.unattributed === true || $json.unattributed === 'true'; if (unattributed) t = null; const note = unattributed ? ' | TENANT UNRESOLVED (unauthenticated): the caller was never authenticated, so this failure belongs to no dealership' : ' | TENANT UNRESOLVED: an error trigger reports which workflow failed, not whose customer it was'; const base = { workflow: $json.workflow, status: $json.status, summary: (String($json.summary || '') + (t ? '' : note)).slice(0, 1000), logged_at: $json.logged_at }; return JSON.stringify(t ? Object.assign(base, { tenant_id: t }) : base); })() }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "notes": "tenant_id is sent EXPLICITLY, including as null. It is not omitted: audit_log.tenant_id defaults to nexus_default_tenant_id(), so an absent key would stamp the unattributed-default dealership and put one dealership's failures on another's Automation screen. With one dealership configured the fallback names it, so today's behaviour is unchanged. Was an autoMapInputData Supabase node until 2 Sep 2026; swapped for HTTP so null and absent are distinguishable."
+   }
+  ],
+  "connections": {
+   "Any Workflow Failed": {
+    "main": [
+     [
+      {
+       "node": "Build Failure Row",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Build Failure Row": {
+    "main": [
+     [
+      {
+       "node": "Log Failure to audit_log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "Read the unattributed marker from error.description too",
+  "description": "Measured on execution 10487: n8n's Code node splits a thrown 'A: B' into error.description='A' and error.message='B [line N]', so a marker at the head of the throw lands in description and never reaches the summary. Build Failure Row now derives a boolean 'unattributed' from BOTH error.description and error.message at position 0, and the audit writer keys on that instead of parsing the summary. The summary itself is unchanged for genuine failures.",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-06T14:38:59.496Z",
+    "id": 827,
+    "workflowId": "iYJkh1kztWxZXDbT",
+    "versionId": "3749646a-a723-4f80-bb16-7045456d3f27",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}
