@@ -251,8 +251,8 @@ if (ARGV.includes('--no-db')) {
    ══════════════════════════════════════════════════════════════════════════ */
 /* ==NEXUS-SCHEMA-SNAPSHOT-BEGIN== */
 const SNAPSHOT = {
-  "takenAt": "2026-09-21T04:13:21Z",
-  "source": "--catalogue catalogue_live.json",
+  "takenAt": "2026-09-21T05:55:35Z",
+  "source": "catalogue read 21 Sep 2026 after nx1009, dsvuoovivysszdoiorch (information_schema + pg_proc, public + nexus_intake)",
   "relations": {
     "appointment": "appointment_id,tenant_id,customer_id,lead_id,inventory_id,assigned_to_id,state,channel,starts_at,duration_minutes,ends_at,location,resource,offered_slots,confirmed_slot_was_offered,requested_at,offered_at,confirmed_at,closed_at,outcome_reason,booked_by,notes,created_at,updated_at",
     "appointment_event": "event_id,appointment_id,tenant_id,event_type,from_state,to_state,occurred_at,actor,slots,starts_at,reason",
@@ -312,6 +312,7 @@ const SNAPSHOT = {
     "notification_state": "state,meaning,is_live,is_terminal,needs_attention,sort_order",
     "notification_transition": "from_state,to_state,verb",
     "platform_admin": "auth_user_id,granted_at,note",
+    "platform_payment_details": "id,account_holder,bank_name,iban,swift_bic,currency,reference_format,notes,updated_at,updated_by",
     "policy_jurisdiction": "code,owner_kind,owner_name,what_it_covers,added_at",
     "policy_platform_attestation": "attestation_id,rule_id,attested_by,attested_by_contact,attested_at,source_kind,source_name,source_ref,source_observed_on,account_ref,confidence,notes",
     "policy_rule": "id,tenant_id,jurisdiction,rule_type,rule_name,value_numeric,value_text,unit,value_kind,source_url,source_name,source_document,effective_from,effective_to,verification_date,verified_by,verified_by_auth_user_id,confidence,status,verification_status,notes,version,supersedes_id,added_by,added_by_auth_user_id,added_at,updated_at,jurisdiction_owner_kind,platform_attestation_id",
@@ -892,6 +893,14 @@ const SNAPSHOT = {
         "service_role"
       ]
     },
+    "nexus_founder_set_payment_details": {
+      "secdef": true,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
     "nexus_founder_set_tenant_status": {
       "secdef": true,
       "tenantArg": true,
@@ -1169,6 +1178,7 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
+        "authenticated",
         "service_role"
       ]
     },
@@ -1363,6 +1373,14 @@ const SNAPSHOT = {
     },
     "nexus_outcome_class": {
       "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
+        "service_role"
+      ]
+    },
+    "nexus_payment_instructions": {
+      "secdef": true,
       "tenantArg": false,
       "grants": [
         "authenticated",
@@ -1683,6 +1701,14 @@ const SNAPSHOT = {
       "secdef": true,
       "tenantArg": false,
       "grants": [
+        "service_role"
+      ]
+    },
+    "nexus_validate_iban": {
+      "secdef": false,
+      "tenantArg": false,
+      "grants": [
+        "authenticated",
         "service_role"
       ]
     },
@@ -2091,9 +2117,9 @@ const SNAPSHOT = {
     "policies": 69
   },
   "migration": {
-    "head": "20260921040841",
-    "count": 350,
-    "newest": "20260921040841,20260921040803,20260921040723,20260921040701,20260920201711"
+    "head": "20260921054925",
+    "count": 352,
+    "newest": "20260921054925,20260921054858,20260921040841,20260921040803,20260921040723"
   }
 };
 /* ==NEXUS-SCHEMA-SNAPSHOT-END== */

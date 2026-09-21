@@ -37,7 +37,23 @@
    at all. A `false` here is not this screen refusing to show a button — the
    function itself refuses the write regardless of what this file renders, so
    the check here is purely about not showing a form that would only ever
-   answer refused. */
+   answer refused.
+
+   ═══════════════════════════════════════════════════════════════════════════
+   NX1008 — WHERE "HOW TO PAY" NOW COMES FROM
+   ═══════════════════════════════════════════════════════════════════════════
+   This screen used to hard-code NEXUS's own bank details as a JS object
+   right here in this file, with a comment telling Ali to type the real
+   account in and redeploy. That would have shipped a real bank account
+   inside this app's public JS bundle -- readable by anyone, signed in or
+   not -- and turned every correction to it into a code change. NX1008 moved
+   the account to public.platform_payment_details (RLS on, no policies --
+   reachable only through a SECURITY DEFINER RPC) and gave Ali a form for it
+   on the Founder Console instead of a file to edit.
+   public.nexus_payment_instructions() is that RPC's dealer-facing half: it
+   returns nothing at all until Ali has filled the details in, and this
+   screen shows a plain "being set up" message for exactly that shape --
+   never a placeholder someone could mistake for a real account. */
 import { db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { esc, n0 } from '../lib/format.js';
 import { SCREENS } from '../lib/nav.js';
@@ -52,23 +68,6 @@ const muted = h => `<div class="cell-sub">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 
-/* ── BANK TRANSFER DETAILS — OWNER: FILL THESE IN ──────────────────────────
-   Placeholder values on purpose. NEXUS holds no payment instrument and this
-   build has nowhere else these could live (there is no bank_details table,
-   and inventing one for four lines of static text nobody but Ali edits would
-   be a database change looking for a reason to exist). Edit the four strings
-   below directly in this file and redeploy; nothing else in this screen
-   needs to change when you do. */
-const BANK_DETAILS = {
-  bankName:      '[ALI — FILL IN: bank name]',
-  accountName:   '[ALI — FILL IN: account holder name]',
-  accountNumber: '[ALI — FILL IN: account / IBAN number]',
-  swift:         '[ALI — FILL IN: SWIFT / BIC code]',
-  note:          'Use your dealership name as the transfer reference so the payment can be matched to your account.',
-};
-const bankFilledIn = () => !Object.values(BANK_DETAILS)
-  .some(v => str(v).startsWith('[ALI'));
-
 /* ── The memo, reset per identity, same pattern as screens/channels.js ───── */
 const MEMOS = new Set();
 const shared = make => {
@@ -82,6 +81,15 @@ onIdentityChange(resetReads);
 
 const readSub    = shared(() => db('rpc/nexus_my_subscription'));
 const readEvents = shared(() => db('subscription_event?select=event_id,event_type,from_state,to_state,price_aed,occurred_at,actor,reason&order=occurred_at.desc&limit=50'));
+/* readPay never rejects: nexus_payment_instructions() failing (network blip,
+   a stale offline schema snapshot that predates NX1008, or any other RPC
+   error) is not a reason to show this dealer a red error card for a panel
+   that is informational, not actionable. It is treated exactly like the
+   RPC's own "nothing filled in yet" zero-row response -- both render as the
+   same "Payment details are being set up" empty state below. A genuine
+   defect in the RPC still shows up wherever P1's own readSub() call reads
+   the same connection and fails loudly. */
+const readPay    = shared(() => db('rpc/nexus_payment_instructions').catch(() => []));
 
 const ACCESS_TONE = { full: 't-ok', grace: 't-warm', read_only: 't-hot' };
 const ACCESS_LABEL = { full: 'Full access', grace: 'Grace period', read_only: 'Read-only' };
@@ -137,29 +145,32 @@ SCREENS.subscription = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(host, {
     title: 'How to pay',
-    sub: 'Bank transfer or cash. NEXUS holds no card processor and takes no payment through this screen -- this is '
+    sub: 'Bank transfer only. NEXUS holds no card processor and takes no payment through this screen -- this is '
        + 'where to send it, not a checkout',
-    load: () => Promise.resolve(null),
-    render: () => {
-      const notFilled = !bankFilledIn()
-        ? `<div class="banner warm" style="margin-bottom:14px">
-             <span class="material-symbols-outlined" style="font-size:20px">edit_note</span>
-             <div>${bold('These are placeholder details.')}
-               ${muted('The dealer-facing bank details below have not been filled in yet. Edit BANK_DETAILS at the '
-                 + 'top of apps/executive-dashboard/screens/subscription.js with the real account and redeploy -- '
-                 + 'nothing else on this screen needs to change.')}</div></div>`
-        : '';
-      return notFilled + table([
+    load: () => readPay(),
+    render: rows => {
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (!row) {
+        return stateEmpty('Payment details are being set up — contact NEXUS',
+          'NEXUS has not finished recording its bank account for this platform yet. There is nothing to fix on '
+          + 'your side -- this is set from the Founder Console, and this message is replaced the moment it is.',
+          'hourglass_empty');
+      }
+      return table([
         { label: 'Field', strong: true, render: r => bold(esc(r.label)) },
         { label: 'Value', render: r => wrap(`<span class="mono">${esc(r.value)}</span>`) },
       ], [
-        { label: 'Bank name', value: BANK_DETAILS.bankName },
-        { label: 'Account name', value: BANK_DETAILS.accountName },
-        { label: 'Account / IBAN', value: BANK_DETAILS.accountNumber },
-        { label: 'SWIFT / BIC', value: BANK_DETAILS.swift },
-        { label: 'Reference', value: BANK_DETAILS.note },
-      ]) + muted('Once a transfer arrives, tell Ali. He records it against your account -- the payment history '
-        + 'below updates the moment he does, and your access is restored the same moment.');
+        { label: 'Amount', value: 'AED 399 / month' },
+        { label: 'Account holder', value: str(row.account_holder) },
+        { label: 'Bank name', value: str(row.bank_name) },
+        { label: 'IBAN', value: str(row.iban) },
+        { label: 'SWIFT / BIC', value: str(row.swift_bic) },
+        { label: 'Currency', value: str(row.currency) || 'AED' },
+        { label: 'Reference', value: str(row.reference) },
+      ]) + muted(`Use <span class="mono">${esc(str(row.reference))}</span> as your transfer reference so the `
+        + 'payment can be matched to your dealership. After transfer, send the receipt to '
+        + '<span class="mono">aliasgher892@gmail.com</span> -- access is extended when the founder records the '
+        + 'payment.');
     },
   });
 
