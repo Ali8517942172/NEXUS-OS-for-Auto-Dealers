@@ -116,15 +116,68 @@ const refuse = (status, code, why, extra) => [{ json: Object.assign(
     reason_code: code, why, wrote_nothing: true,
     google_will: status >= 500 ? 'RETRY' : 'DISCARD_PERMANENTLY' }, extra || {}) }];
 
-const secretRef = String(ep.secret_ref || '');
-if (!secretRef) {
-  return refuse(500, 'ENDPOINT_HAS_NO_SECRET_REF',
-    'This endpoint resolved but names no secret, so no delivery to it can be ' +
-    'authenticated. Ours to fix: Google is told to retry.');
+/* ---- Which secret: the dealership's own, from the vault ------------------
+   A dealer that connects itself cannot set an environment variable on our box,
+   so the per-endpoint secret lives in the vault (NX980), kind
+   'google_lead_form_key', keyed on the provider identity
+   ('google','google_webhook_id', <public_key from the URL>). The vault answers
+   with the endpoint and tenant that own the secret; both must be the endpoint
+   this delivery already resolved to, or nothing is compared.
+   $env[secret_ref] is the LEGACY per-endpoint path (ALBA's first endpoint) and
+   is only read when the vault holds nothing for this endpoint. It is still
+   per-endpoint -- the name comes from our own row -- never one box-wide key. */
+const GOOGLE_SECRET_KIND = 'google_lead_form_key';
+const SUPABASE_URL = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_URL) || '')
+  .replace(/\/+$/, '');
+const SERVICE_KEY = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_SERVICE_ROLE_KEY) || '');
+const http = (typeof $helpers !== 'undefined' && $helpers && $helpers.httpRequest)
+  ? $helpers.httpRequest.bind($helpers) : null;
+
+let expected = '';
+let secret_source = null;
+const publicKey = String(d.public_key || '');
+if (http && SUPABASE_URL && SERVICE_KEY && publicKey) {
+  let got = null;
+  try {
+    const res = await http({
+      method: 'POST',
+      url: SUPABASE_URL + '/rest/v1/rpc/nexus_lead_ingest_secret_reveal',
+      headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY,
+                 'Content-Type': 'application/json' },
+      body: { p_provider: 'google', p_identity_kind: 'google_webhook_id',
+              p_identity_value: publicKey, p_kind: GOOGLE_SECRET_KIND,
+              p_reason: 'google lead form verify' },
+      json: true, timeout: 8000,
+    });
+    got = Array.isArray(res) ? (res[0] || null) : (res || null);
+  } catch (e) { got = null; /* e.message not read: it can echo the request */ }
+  if (got && got.secret) {
+    /* Named fields only; `got` is never spread or returned. */
+    if (String(got.endpoint_id || '') !== String(ep.endpoint_id || '') ||
+        String(got.tenant_id || '') !== String(ep.tenant_id || '') || !ep.tenant_id) {
+      return refuse(500, 'ENDPOINT_SECRET_TENANT_MISMATCH',
+        'The vault secret for this URL key belongs to a different endpoint or ' +
+        'dealership than the one the key resolved to. Nothing was compared or ' +
+        'written. Fix the lead_ingest_provider_identity row for this key.');
+    }
+    expected = String(got.secret);
+    secret_source = 'vault_per_endpoint';
+  }
 }
-/* $env is read by a name that came from our own database, never from the
-   request. A caller cannot choose which environment variable is read. */
-const expected = String($env[secretRef] || '');
+
+const secretRef = String(ep.secret_ref || '');
+if (!expected && !secretRef) {
+  return refuse(500, 'ENDPOINT_HAS_NO_SECRET_REF',
+    'This endpoint resolved but has no ' + GOOGLE_SECRET_KIND + ' in the vault ' +
+    'and names no legacy secret, so no delivery to it can be authenticated. ' +
+    'Ours to fix: Google is told to retry.');
+}
+if (!expected) {
+  /* $env is read by a name that came from our own database, never from the
+     request. A caller cannot choose which environment variable is read. */
+  expected = String($env[secretRef] || '');
+  if (expected) secret_source = 'env_per_endpoint_legacy';
+}
 if (!expected) {
   return refuse(500, 'ENDPOINT_SECRET_NOT_CONFIGURED',
     'The secret named ' + secretRef + ' is not set on this box, so nothing can ' +
@@ -274,6 +327,7 @@ return [{ json: {
   lead_id: d.lead_id,
   is_test: d.is_test === true,
   origin_verified: 'shared_secret_in_body',
+  secret_source,
   payload_raw,
   /* Untouched on purpose: this is what a salesperson reads, and the constraint
      does not cover this column. */
