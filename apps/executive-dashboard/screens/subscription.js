@@ -45,6 +45,7 @@ import { stateEmpty } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
 import { openModal } from '../lib/modal.js';
 import { refreshSubscription } from '../lib/subscription.js';
+import { loadPlatformAdmin } from '../lib/platform.js';
 
 const str = v => String(v == null ? '' : v).trim();
 const muted = h => `<div class="cell-sub">${h}</div>`;
@@ -80,7 +81,6 @@ const resetReads = () => { MEMOS.forEach(reset => reset()); };
 onIdentityChange(resetReads);
 
 const readSub    = shared(() => db('rpc/nexus_my_subscription'));
-const readAdmin  = shared(() => db('rpc/nexus_is_platform_admin').then(r => (Array.isArray(r) ? !!r[0] : !!r)).catch(() => false));
 const readEvents = shared(() => db('subscription_event?select=event_id,event_type,from_state,to_state,price_aed,occurred_at,actor,reason&order=occurred_at.desc&limit=50'));
 
 const ACCESS_TONE = { full: 't-ok', grace: 't-warm', read_only: 't-hot' };
@@ -176,7 +176,7 @@ SCREENS.subscription = async host => {
     sub: 'Visible only to a NEXUS platform admin. Marks THIS dealership paid by hand -- nexus_founder_mark_paid() '
        + 'refuses this even if you can somehow see the button, so this is convenience, not the security boundary',
     load: async () => {
-      const [isAdmin, subRows] = await Promise.all([readAdmin(), readSub()]);
+      const [isAdmin, subRows] = await Promise.all([loadPlatformAdmin(), readSub()]);
       return { isAdmin, tenantId: Array.isArray(subRows) && subRows[0] ? subRows[0].tenant_id : null };
     },
     render: ({ isAdmin, tenantId }) => {

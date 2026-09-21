@@ -35,6 +35,7 @@ import { envErrors } from './lib/env.js';
 import { ME, SESSION, db, myRole, sessionEnded, setMe, setMeReadFailed, setMembership, setSession, setSessionEndedHandler, supabase } from './lib/data.js';
 import { loadSubscription, paintSubscriptionBanner, refreshSubscription, startWriteLockObserver } from './lib/subscription.js';
 import { buildNav, current, go } from './lib/nav.js';
+import { loadPlatformAdmin } from './lib/platform.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
 import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
@@ -53,6 +54,10 @@ import './screens/conversations.js';
 import './screens/customers.js';
 import './screens/deals.js';
 import './screens/finance.js';
+/* Founder Console. Registers screens.founder, and is what makes lib/nav.js's
+   NAV entry for it something other than a dead link -- see the long comment
+   above that entry for why the button itself is still gated separately. */
+import './screens/founder.js';
 import './screens/inventory.js';
 /* Lead Sources is a plain static import, not part of the import.meta.glob
    block below: that block exists for the five Revenue Recovery engine
@@ -229,6 +234,16 @@ async function boot() {
      banner and the write-lock sweep both run off its resolution. */
   loadSubscription().then(paintSubscriptionBanner);
   startWriteLockObserver();
+
+  /* Whether THIS account is the NEXUS founder, not a dealership question at
+     all -- read from public.nexus_is_platform_admin(), never guessed from
+     role or email. Awaited here, before buildNav(), for the same reason the
+     membership read above is: buildNav() decides the Founder Console button's
+     presence synchronously, and a founder who has to refresh once to see
+     their own console is a worse morning than one extra await at boot.
+     loadPlatformAdmin() never throws -- an unreadable answer resolves to
+     "no", which is the fail-closed default lib/platform.js documents. */
+  await loadPlatformAdmin();
 
   $('boot').classList.add('hide');
   $('app').classList.remove('hide');
