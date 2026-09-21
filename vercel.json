@@ -2,7 +2,32 @@
   "buildCommand": "cd apps/executive-dashboard && npm install && npm run build",
   "outputDirectory": "apps/executive-dashboard/dist",
   "rewrites": [
-    { "source": "/contract-auditor", "destination": "/contract-auditor.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/embed/:path*",
+      "destination": "/embed/:path*"
+    },
+    {
+      "source": "/contract-auditor",
+      "destination": "/contract-auditor.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/embed/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
   ]
 }
