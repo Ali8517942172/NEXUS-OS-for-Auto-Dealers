@@ -269,8 +269,25 @@ async function db(path) {
     throw err;
   }
 }
+/* ── The soft paywall's hard backstop ──────────────────────────────────────
+   screens/subscription.js is where a read-only dealership SEES why. This is
+   where it is actually stopped: every write and every n8n call passes through
+   here, so a screen that forgot to disable a button (or a write reachable by
+   some path this file's authors did not think of — a drawer form, Enter on a
+   field) is refused at the one place every write and workflow call already
+   passes through, rather than depending on every screen remembering to ask.
+
+   Registered rather than imported: lib/subscription.js sits ABOVE this file
+   (it calls db(), the way lib/tenant.js does), so this file cannot import it
+   without a cycle. Same pattern as setSessionEndedHandler below. Fails open —
+   the default guard blocks nothing — so a subscription read that has not
+   happened yet, or failed, never stops a write it cannot justify stopping. */
+let writeGuard = () => null;
+function setWriteGuard(fn) { writeGuard = fn; }
+
 async function dbWrite(method, path, body) {
   const label = `${method} /rest/v1/${path}`;
+  { const blocked = writeGuard(); if (blocked) throw blocked; }
   const res = await request(`${SUPABASE_URL}/rest/v1/${path}`, {
     method, headers: { ...(await headers()), Prefer: 'return=representation' }, body: JSON.stringify(body),
   }, label);
@@ -287,6 +304,7 @@ async function dbWrite(method, path, body) {
 /* n8n webhooks. Kept separate from db() because a missing VITE_N8N_BASE_URL is
    a recoverable condition — those screens degrade, the rest of the app works. */
 async function n8n(path, payload) {
+  { const blocked = writeGuard(); if (blocked) throw blocked; }
   if (!N8N_BASE) throw new Error('VITE_N8N_BASE_URL is not set, so workflow calls are disabled.');
   /* The GCP URL ships inside a public JS bundle, so anyone who opens devtools can
      read it and call these — and ask-ai spends OpenRouter tokens on every call.
@@ -380,4 +398,4 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner };
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner, setWriteGuard };
