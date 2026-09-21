@@ -95,7 +95,15 @@ const EXEMPT_LINES = new Map([
   // KNOWN GAP, and it cuts the other way too: a pin is a line number, so if a
   // genuinely destructive statement ever lands on line 4725 of this file it
   // would be waived silently. The pin catches movement, not substitution.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4920])],
+  // Moved 4920 -> 4946 on 21 Sep 2026: the embedded schema snapshot was
+  // refreshed from production (dsvuoovivysszdoiorch) after NX1003-NX1009 --
+  // platform_payment_details joined the relation map and
+  // nexus_founder_set_payment_details / nexus_payment_instructions /
+  // nexus_validate_iban joined the RPC map, plus a grant added to
+  // nexus_meta_onboarding_status -- 26 lines added above this statement.
+  // Read again, same `fixtureResidue` template, same four fixture-scoped
+  // deletes, still only printed for an operator, never executed here.
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4946])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.

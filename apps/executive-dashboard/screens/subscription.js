@@ -81,7 +81,15 @@ onIdentityChange(resetReads);
 
 const readSub    = shared(() => db('rpc/nexus_my_subscription'));
 const readEvents = shared(() => db('subscription_event?select=event_id,event_type,from_state,to_state,price_aed,occurred_at,actor,reason&order=occurred_at.desc&limit=50'));
-const readPay    = shared(() => db('rpc/nexus_payment_instructions'));
+/* readPay never rejects: nexus_payment_instructions() failing (network blip,
+   a stale offline schema snapshot that predates NX1008, or any other RPC
+   error) is not a reason to show this dealer a red error card for a panel
+   that is informational, not actionable. It is treated exactly like the
+   RPC's own "nothing filled in yet" zero-row response -- both render as the
+   same "Payment details are being set up" empty state below. A genuine
+   defect in the RPC still shows up wherever P1's own readSub() call reads
+   the same connection and fails loudly. */
+const readPay    = shared(() => db('rpc/nexus_payment_instructions').catch(() => []));
 
 const ACCESS_TONE = { full: 't-ok', grace: 't-warm', read_only: 't-hot' };
 const ACCESS_LABEL = { full: 'Full access', grace: 'Grace period', read_only: 'Read-only' };
