@@ -12,11 +12,13 @@
 
        TRIAL (30 days) -> GRACE (7 days) -> READ_ONLY, until paid.
 
-   Nothing here processes a card. There is no card processor. Every AED 399
-   this dealership will ever pay NEXUS arrives by bank transfer or cash, and
-   the only record of it having happened is Ali typing a reference into the
-   founder panel at the bottom of this screen (visible only to Ali) and
-   subscription_event holding what he typed, forever, unchangeable.
+   Nothing here processes a card directly. There is no card processor
+   integration in this app -- Pay now opens Ali's own hosted Ziina payment
+   link in a new tab, and Ziina handles the card. Either way, the only
+   record of a payment having happened on NEXUS's side is Ali typing a
+   reference into the founder panel at the bottom of this screen (visible
+   only to Ali) and subscription_event holding what he typed, forever,
+   unchangeable.
 
    ═══════════════════════════════════════════════════════════════════════════
    WHERE THE ANSWER COMES FROM
@@ -40,7 +42,7 @@
    answer refused.
 
    ═══════════════════════════════════════════════════════════════════════════
-   NX1008 — WHERE "HOW TO PAY" NOW COMES FROM
+   NX1008/NX1010 — WHERE "HOW TO PAY" NOW COMES FROM
    ═══════════════════════════════════════════════════════════════════════════
    This screen used to hard-code NEXUS's own bank details as a JS object
    right here in this file, with a comment telling Ali to type the real
@@ -50,10 +52,16 @@
    the account to public.platform_payment_details (RLS on, no policies --
    reachable only through a SECURITY DEFINER RPC) and gave Ali a form for it
    on the Founder Console instead of a file to edit.
-   public.nexus_payment_instructions() is that RPC's dealer-facing half: it
-   returns nothing at all until Ali has filled the details in, and this
-   screen shows a plain "being set up" message for exactly that shape --
-   never a placeholder someone could mistake for a real account. */
+
+   NX1010 changed WHAT is shown, not the mechanism: the owner decided a
+   dealer must never see a bank name, an account holder name or an IBAN at
+   all. public.nexus_payment_instructions() now returns only display_name,
+   a fixed amount_aed of 399, currency, payment_link_url (a Ziina hosted
+   payment link Ali pastes into the Founder Console) and this dealership's
+   own reference -- never a bank field, because the RPC's return table has
+   no column for one. A dealer always gets a row back once it has an active
+   membership; payment_link_url is null until Ali sets it, and this screen
+   renders that as "online payment is being set up", never as an error. */
 import { db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { esc, n0 } from '../lib/format.js';
 import { SCREENS } from '../lib/nav.js';
@@ -102,8 +110,8 @@ SCREENS.subscription = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(host, {
     title: 'Your subscription',
-    sub: 'NEXUS Dealer, AED 399/month, first month free. There is no card on file -- every payment is a bank '
-       + 'transfer or cash that Ali records by hand once it arrives',
+    sub: 'NEXUS Dealer, AED 399/month, first month free. There is no card on file in this app -- pay online via '
+       + 'the Pay now link below, or by bank transfer or cash, and Ali records it by hand once it arrives',
     load: () => readSub(),
     render: rows => {
       const r = Array.isArray(rows) ? rows[0] : null;
@@ -145,33 +153,53 @@ SCREENS.subscription = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(host, {
     title: 'How to pay',
-    sub: 'Bank transfer only. NEXUS holds no card processor and takes no payment through this screen -- this is '
-       + 'where to send it, not a checkout',
+    sub: 'NEXUS holds no card processor and takes no payment through this screen -- Pay now opens the founder\'s '
+       + 'hosted Ziina payment link in a new tab',
     load: () => readPay(),
     render: rows => {
       const row = Array.isArray(rows) ? rows[0] : null;
       if (!row) {
-        return stateEmpty('Payment details are being set up — contact NEXUS',
-          'NEXUS has not finished recording its bank account for this platform yet. There is nothing to fix on '
-          + 'your side -- this is set from the Founder Console, and this message is replaced the moment it is.',
-          'hourglass_empty');
+        return stateEmpty('Nothing to show',
+          'nexus_payment_instructions() returned nothing for your account. If you can read this screen at all you '
+          + 'have a membership somewhere, so this should not happen -- tell NEXUS support.', 'receipt_long');
       }
-      return table([
-        { label: 'Field', strong: true, render: r => bold(esc(r.label)) },
-        { label: 'Value', render: r => wrap(`<span class="mono">${esc(r.value)}</span>`) },
-      ], [
-        { label: 'Amount', value: 'AED 399 / month' },
-        { label: 'Account holder', value: str(row.account_holder) },
-        { label: 'Bank name', value: str(row.bank_name) },
-        { label: 'IBAN', value: str(row.iban) },
-        { label: 'SWIFT / BIC', value: str(row.swift_bic) },
-        { label: 'Currency', value: str(row.currency) || 'AED' },
-        { label: 'Reference', value: str(row.reference) },
-      ]) + muted(`Use <span class="mono">${esc(str(row.reference))}</span> as your transfer reference so the `
-        + 'payment can be matched to your dealership. After transfer, send the receipt to '
-        + '<span class="mono">aliasgher892@gmail.com</span> -- access is extended when the founder records the '
-        + 'payment.');
+      const displayName = str(row.display_name) || 'Adqonic';
+      const amount = row.amount_aed != null ? n0(row.amount_aed) : '399';
+      const currency = str(row.currency) || 'AED';
+      const link = str(row.payment_link_url);
+      const reference = str(row.reference);
+      const heading = `<div style="font-weight:600;font-size:1.05em">NEXUS by ${esc(displayName)}</div>`
+        + muted(`${esc(currency)} ${esc(amount)} / month`);
+      const payButton = link
+        ? `<div style="margin-top:14px"><a class="btn primary" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Pay now</a></div>`
+        : muted('Online payment is being set up -- contact <span class="mono">aliasgher892@gmail.com</span>.');
+      const refBlock = reference
+        ? `<div style="margin-top:14px">${muted('Add this reference in the payment note:')}
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+              <span class="mono" id="payRefText">${esc(reference)}</span>
+              <button class="btn sm ghost" id="payRefCopyBtn" type="button">Copy</button>
+            </div>
+          </div>`
+        : '';
+      return heading + payButton + refBlock
+        + muted('Your access is extended once your payment is confirmed (usually within one business day).');
     },
+  }).then(card => {
+    const copyBtn = card.querySelector('#payRefCopyBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const text = card.querySelector('#payRefText')?.textContent || '';
+        const clip = navigator.clipboard;
+        if (!clip || typeof clip.writeText !== 'function') {
+          copyBtn.disabled = true;
+          copyBtn.title = 'This browser exposes no clipboard API to the page.';
+          return;
+        }
+        clip.writeText(text).then(
+          () => { copyBtn.textContent = 'Copied'; },
+          () => { copyBtn.textContent = 'Copy blocked'; copyBtn.title = 'The browser refused clipboard access for this page.'; });
+      });
+    }
   });
 
   /* ────────────────────────────────────────────────────────────────────────
