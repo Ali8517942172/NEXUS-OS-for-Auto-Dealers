@@ -2157,6 +2157,22 @@ const navRaw = await readFile(join(libDir, 'nav.js'), 'utf8');
 const navBlock = navRaw.slice(navRaw.indexOf('const NAV = ['), navRaw.indexOf('const SCREENS'));
 const NAV_IDS = [...navBlock.matchAll(/\bid\s*:\s*'([a-z0-9_]+)'/g)].map(m => m[1]);
 
+/* NX1004 (21 Sep 2026) added the Founder Console item with founderOnly: true,
+   and lib/nav.js's own buildNav()/flatNav() drop a founderOnly item from the
+   rendered nav bar (and from hash routing) whenever isPlatformAdmin() is
+   false -- which is every account except the platform founder's own. The R1
+   render check below signs in as a stub dealership user (STUB_URL's fixed
+   'u1'/'ali@example.com', never seeded into platform_admin), so the DOM can
+   never show more than NAV_IDS.length minus the founderOnly items, no matter
+   how correctly the app is behaving. Comparing the rendered count against the
+   full NAV_IDS.length (as this check did before NX1004) made a correctly
+   hidden Founder Console item look like a missing screen. Parsed from the
+   same NAV block by the same regex shape so a second founderOnly item added
+   later is picked up without a second edit here. */
+const NAV_FOUNDER_ONLY_IDS = new Set(
+  [...navBlock.matchAll(/\{\s*id\s*:\s*'([a-z0-9_]+)'[^}]*founderOnly\s*:\s*true/g)].map(m => m[1]));
+const NAV_IDS_VISIBLE_NON_FOUNDER = NAV_IDS.filter(id => !NAV_FOUNDER_ONLY_IDS.has(id));
+
 /* THE SCREENS THAT PUT MONEY OR A RATE IN FRONT OF A READER, and therefore the
    ones R4 and R5 sweep. Not a copy of NAV_IDS: Settings and Team have no
    economic claim to fabricate, and sweeping them would only add noise. It was
@@ -3692,8 +3708,8 @@ if (render.failed) {
 
   verdict('R1', LANE.RENDER, 'P0', 'The app boots and registers every screen',
     [!r.loggedIn && `the app did not reach a signed-in state (boot said: ${r.bootText || 'nothing'})`,
-     r.nav !== NAV_IDS.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length}`].filter(Boolean),
-    [`loggedIn=true, navItems=${r.nav} matching lib/nav.js`, `${r.errs.length} page errors across the whole run`]);
+     r.nav !== NAV_IDS_VISIBLE_NON_FOUNDER.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length} (${NAV_IDS_VISIBLE_NON_FOUNDER.length} visible to the non-founder stub account this render signs in as, ${NAV_FOUNDER_ONLY_IDS.size} founderOnly)`].filter(Boolean),
+    [`loggedIn=true, navItems=${r.nav} matching the ${NAV_IDS_VISIBLE_NON_FOUNDER.length} lib/nav.js offers a non-founder account`, `${r.errs.length} page errors across the whole run`]);
 
   const broken = NAV_IDS.filter(id => { const s = r.screens[id]; return s.len < 200 || s.errored || s.newErrors > 0 || s.stuckLoading; });
   verdict('R2', LANE.RENDER, 'P0', 'Every screen renders real content with no page errors',

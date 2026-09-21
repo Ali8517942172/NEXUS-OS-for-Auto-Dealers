@@ -61,6 +61,18 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'co
 const EXEMPT_LINES = new Map([
   // Template literal that PRINTS operator cleanup instructions after a gate run.
   // It is an error message, not SQL this process executes. Dashboard-owned file.
+  // Moved 4904 -> 4920 on 21 Sep 2026: R1's founder-console nav-count false
+  // positive (NX1004's founderOnly item correctly hidden from the non-founder
+  // stub render, counted as a missing screen) was fixed a few hundred lines
+  // above this one, adding 16 lines. Read again, same `fixtureResidue`
+  // template, same four fixture-scoped deletes, still only printed.
+  // Moved 4725 -> 4904 on 21 Sep 2026: the snapshot was retaken again from a
+  // live, read-only catalogue of production (130 relations, unchanged count,
+  // but column and function-body text shifted -- new columns on channel_registry,
+  // tenant_subscription and tenants, and platform_admin joined the relation map)
+  // as part of the NX1007 SQLSTATE fix release, pushing everything below it down
+  // 179 lines. Read again, same `fixtureResidue` template, same four
+  // fixture-scoped deletes, still only printed for an operator, never executed here.
   // Moved 4529 -> 4644 later on 17 Sep 2026: the snapshot was retaken a third
   // time (119 relations -> 126) after NX990, NX991 and NX995 were applied to
   // production. Read again: same `fixtureResidue` template, same four
@@ -83,7 +95,7 @@ const EXEMPT_LINES = new Map([
   // KNOWN GAP, and it cuts the other way too: a pin is a line number, so if a
   // genuinely destructive statement ever lands on line 4725 of this file it
   // would be waived silently. The pin catches movement, not substitution.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4725])],
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([4920])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.
