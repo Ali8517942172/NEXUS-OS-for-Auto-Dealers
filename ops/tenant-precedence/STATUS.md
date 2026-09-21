@@ -370,3 +370,14 @@ workflow's own ladder too, or is manually seeded.
   work. **Needs a human to toggle "Available in MCP" on this workflow's
   card/settings in the n8n UI** before its settings can be fixed or it can
   be activated.
+
+## 21 Sep 2026 — execution visibility closed out
+
+- **BDC candidate `LTBExI7QzFeANeFg`**: owner toggled "Available in MCP"; settings now `saveDataErrorExecution=all`, `saveDataSuccessExecution=all` (matches live BDC). Saved as a draft on purpose — **not published**, because publishing would activate a candidate marked "do not activate". The settings take effect the day it is published.
+- **The "accepted but no execution" call (c-c1, 20 Sep 15:03 UTC) — settled.** Nothing was lost at a hop. n8n logs: `Enqueued execution 16068 (job 4792)` at 15:03:33.922Z, worker started at 15:03:33.930Z, then `Worker errored while running execution 16068` at 15:13:35.984Z. The row exists with status **canceled**, which the harness never queried. `executionTimeout=300`; n8n hard-kills at 2x (600 s), matching the 10-minute gap — a node blocked with no timeout of its own (most likely an LLM or HTTP call). Caddy runs under systemd with **no access log** configured, so the proxy hop cannot be shown directly; n8n enqueuing the job proves Caddy forwarded it. Stack is queue mode: n8n main + n8n-worker + n8n-db + redis.
+- **Retention raised** in `/opt/nexus/docker-compose.yml` (lines 45-46; `.env` has no EXECUTIONS_ keys, `docker-compose.single.yml` is unused): `EXECUTIONS_DATA_MAX_AGE` 168 → **720 h (30 days)**, `EXECUTIONS_DATA_PRUNE_MAX_COUNT` 5000 → 50000, prune stays on. Backup `docker-compose.yml.bak.20260921T021204Z`. Before: 12 GB free of 29 GB, n8n DB 195 MB / 2087 executions. Only `n8n` recreated; `/healthz` 502 once during start, then 200. Worker untouched (main prunes).
+
+### Still open
+- The node that hung 16068 for 10 minutes has no timeout. Every LLM/HTTP node in the Master Router needs an explicit timeout so a hung provider falls through to the rules tier instead of burning the run.
+- Caddy has no access log. Add a `log` block so the proxy hop is provable next time.
+- The harness's execution finder ignores `canceled` status — add it.
