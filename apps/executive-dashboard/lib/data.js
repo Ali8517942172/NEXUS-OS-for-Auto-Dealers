@@ -239,7 +239,20 @@ function codeFrom(body) {
 
 async function request(url, init, label) {
   try {
-    return await fetch(url, init);
+    /* Every read and write in this app funnels through here, and a browser's
+       HTTP cache does not know PostgREST's status codes from any other
+       site's: 300 (PGRST201, an ambiguous embed) sits in the default
+       heuristically-cacheable set, so once a browser had cached that
+       response it kept serving the SAME 300 after the schema was fixed
+       server-side -- the Leads screen stayed broken until that one tab's
+       cache was forced to reload. `cache: 'no-store'` means every call made
+       here always hits the network and never reads or writes the HTTP
+       cache, so a fixed backend is reflected on the very next request
+       instead of on the next hard reload. Forced here, at the one function
+       every db()/dbWrite()/n8n()/edgeFn() call already funnels through,
+       rather than trusted to each call site -- the same reason the auth
+       header and the error shape live here and not at the ~4 call sites. */
+    return await fetch(url, { ...init, cache: 'no-store' });
   } catch (e) {
     /* fetch only rejects when no response was produced: DNS, TLS, a refused
        connection, a dropped one, a CORS preflight that never landed. */
