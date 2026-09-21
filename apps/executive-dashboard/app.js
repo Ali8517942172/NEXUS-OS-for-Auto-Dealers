@@ -58,6 +58,7 @@ import './screens/finance.js';
    NAV entry for it something other than a dead link -- see the long comment
    above that entry for why the button itself is still gated separately. */
 import './screens/founder.js';
+import './screens/integrations.js';
 import './screens/inventory.js';
 /* Lead Sources is a plain static import, not part of the import.meta.glob
    block below: that block exists for the five Revenue Recovery engine

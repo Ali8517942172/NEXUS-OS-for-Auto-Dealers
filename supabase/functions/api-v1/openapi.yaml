@@ -1,0 +1,1658 @@
+# NEXUS public API -- OpenAPI 3.1. Served by supabase/functions/api-v1 (migration NX1013).
+openapi: 3.1.0
+info:
+  title: NEXUS Public API
+  version: 1.0.0
+  summary: Connect your DMS, CRM, ERP and call system to NEXUS.
+  description: 'NEXUS sits **on top of** the software your dealership already runs. This API
+
+    is how that software talks to NEXUS: push leads, stock and phone calls in;
+
+    read leads and appointments back out; get told when something changes
+
+    through outbound webhooks.
+
+
+    **Authentication.** Create a key in NEXUS under *Settings → API* (owner or
+
+    admin). Send it on every request as `Authorization: Bearer nxk_live_…`. The
+
+    key is shown once; NEXUS stores only its SHA-256. Every key belongs to one
+
+    dealership and can only ever see that dealership''s data.
+
+
+    **Scopes.** `leads:read`, `leads:write`, `inventory:read`, `inventory:write`,
+
+    `calls:write`, `appointments:read`. A request outside the key''s scopes gets `403`.
+
+
+    **Rate limit.** 120 requests per minute per key (fixed one-minute window).
+
+    Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and
+
+    `X-RateLimit-Reset` (unix seconds); a `429` also carries `Retry-After`.
+
+
+    **Idempotency.** `POST /v1/leads` is idempotent on `Idempotency-Key` (or
+
+    the body''s `external_id`); `POST /v1/calls` on `external_call_id`;
+
+    `POST /v1/inventory` upserts on `stock_number`, falling back to `vin`.
+
+    Retrying any of them is always safe.
+
+
+    **Pagination.** List endpoints return `{data, next_cursor}`. Pass
+
+    `next_cursor` back as `cursor` until it is `null`. Leads and appointments
+
+    are ordered by `updated_at` ascending, so an incremental sync is: remember
+
+    the largest `updated_at` you have seen, and next time call with
+
+    `updated_since` set to it.
+
+
+    **Errors.** Always `{"error": {"code": "...", "message": "..."}}`.
+
+    `401` bad/revoked key · `403` missing scope or inactive dealership · `404`
+
+    not found · `405` wrong method · `413` body over 1 MB · `415` not JSON ·
+
+    `422` validation (the `code` names the field) · `429` rate limited · `5xx` retry.
+
+
+    **Server-to-server only.** No CORS headers are sent; never put a key in a browser.
+
+
+    **Webhooks.** Configure endpoints under *Settings → API → Webhooks*. See the
+
+    `webhooks` section of this document for payloads and signature verification.
+
+    '
+  contact:
+    name: NEXUS by Adqonic
+servers:
+- url: https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1
+  description: Production
+security:
+- apiKey: []
+tags:
+- name: Account
+- name: Leads
+- name: Inventory
+- name: Calls
+- name: Appointments
+paths:
+  /v1/me:
+    get:
+      tags:
+      - Account
+      operationId: getMe
+      summary: The dealership and key behind this request
+      description: No scope required. Use it to test a key.
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              example: 120
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              example: 117
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: Unix seconds
+              example: 1758448860
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              example:
+                tenant:
+                  id: 5b0c6a0e-4f1c-4a55-9c1e-0d3f7a2b9e10
+                  name: Alba Cars
+                  slug: alba-cars
+                key:
+                  id: 0f8e7d6c-5b4a-4938-8271-6a5b4c3d2e1f
+                  name: CDK DMS sync
+                  prefix: nxk_live_3f9a
+                  scopes:
+                  - leads:read
+                  - leads:write
+                  - inventory:write
+                  created_at: '2026-09-21T08:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /v1/leads:
+    get:
+      tags:
+      - Leads
+      operationId: listLeads
+      summary: List leads, oldest change first
+      description: Scope `leads:read`.
+      parameters:
+      - name: updated_since
+        in: query
+        description: Only leads whose API-visible fields changed at or after this instant.
+        schema:
+          type: string
+          format: date-time
+        example: '2026-09-20T00:00:00Z'
+      - $ref: '#/components/parameters/Cursor'
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        '200':
+          description: A page of leads
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              example: 120
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              example: 117
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: Unix seconds
+              example: 1758448860
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - data
+                - next_cursor
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Lead'
+                  next_cursor:
+                    type:
+                    - string
+                    - 'null'
+              example:
+                data:
+                - id: 1042
+                  name: Aisha Al Mansoori
+                  email: aisha@example.com
+                  phone: '+971501234567'
+                  source: api
+                  vehicle_interest: Nissan Patrol 2025
+                  budget_aed: 280000
+                  status: HOT
+                  ai_score: 86
+                  scoring_state: SCORED
+                  assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                  assigned_to: Omar Haddad
+                  external_id: CDK-LEAD-884213
+                  created_at: '2026-09-21T09:40:00Z'
+                  updated_at: '2026-09-21T09:41:12Z'
+                next_cursor: '1758441600000000.1042'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Invalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      tags:
+      - Leads
+      operationId: createLead
+      summary: Push a lead from your DMS or CRM
+      description: 'Scope `leads:write`. The lead enters NEXUS with source `api` and is scored,
+
+        routed and followed up like any other lead. Idempotent on `Idempotency-Key`
+
+        (or `external_id`): repeating a request returns the same lead with `200`.
+
+        If the dealership already has a lead with the same email, that lead is
+
+        returned with `duplicate_of: "email"` and nothing new is created.
+
+        '
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        description: 'Your system''s id for this lead. 1-200 of `A-Z a-z 0-9 . _ : @ / -`.'
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9._:@/-]{1,200}$
+        example: CDK-LEAD-884213
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadCreate'
+            example:
+              external_id: CDK-LEAD-884213
+              name: Aisha Al Mansoori
+              phone: '+971501234567'
+              email: aisha@example.com
+              vehicle_interest: Nissan Patrol 2025
+              budget_aed: 280000
+              notes: Asked for a trade-in valuation on her 2019 Land Cruiser.
+              source_detail: CDK Drive web form
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadWriteResult'
+              example:
+                data:
+                  id: 1042
+                  name: Aisha Al Mansoori
+                  email: aisha@example.com
+                  phone: '+971501234567'
+                  source: api
+                  vehicle_interest: Nissan Patrol 2025
+                  budget_aed: 280000
+                  status: HOT
+                  ai_score: 86
+                  scoring_state: SCORED
+                  assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                  assigned_to: Omar Haddad
+                  external_id: CDK-LEAD-884213
+                  created_at: '2026-09-21T09:40:00Z'
+                  updated_at: '2026-09-21T09:41:12Z'
+                created: true
+                duplicate_of: null
+        '200':
+          description: Already existed (same external id, or same email)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadWriteResult'
+              example:
+                data:
+                  id: 1042
+                  name: Aisha Al Mansoori
+                  email: aisha@example.com
+                  phone: '+971501234567'
+                  source: api
+                  vehicle_interest: Nissan Patrol 2025
+                  budget_aed: 280000
+                  status: HOT
+                  ai_score: 86
+                  scoring_state: SCORED
+                  assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                  assigned_to: Omar Haddad
+                  external_id: CDK-LEAD-884213
+                  created_at: '2026-09-21T09:40:00Z'
+                  updated_at: '2026-09-21T09:41:12Z'
+                created: false
+                duplicate_of: external_id
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Invalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /v1/leads/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+      example: 1042
+    get:
+      tags:
+      - Leads
+      operationId: getLead
+      summary: One lead
+      description: Scope `leads:read`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Lead'
+              example:
+                data:
+                  id: 1042
+                  name: Aisha Al Mansoori
+                  email: aisha@example.com
+                  phone: '+971501234567'
+                  source: api
+                  vehicle_interest: Nissan Patrol 2025
+                  budget_aed: 280000
+                  status: HOT
+                  ai_score: 86
+                  scoring_state: SCORED
+                  assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                  assigned_to: Omar Haddad
+                  external_id: CDK-LEAD-884213
+                  created_at: '2026-09-21T09:40:00Z'
+                  updated_at: '2026-09-21T09:41:12Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Leads
+      operationId: updateLead
+      summary: Update status, owner or details from your CRM
+      description: 'Scope `leads:write`. Only the fields below can be changed; any other field
+
+        is refused with `422 field_not_updatable`. `notes` is appended to the
+
+        lead''s history (it does not overwrite anything). `assigned_to_id` must be
+
+        a NEXUS user id at this dealership, or `null` to unassign.
+
+        '
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadPatch'
+            example:
+              status: WON
+              notes: Delivered on 21 Sep, invoice INV-5521.
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Lead'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Invalid'
+  /v1/inventory:
+    get:
+      tags:
+      - Inventory
+      operationId: listInventory
+      summary: List stock, by stock number
+      description: Scope `inventory:read`. Cost and margin figures are never returned.
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type: string
+          maxLength: 40
+        example: Available
+      - $ref: '#/components/parameters/Cursor'
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+      responses:
+        '200':
+          description: A page of vehicles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vehicle'
+                  next_cursor:
+                    type:
+                    - string
+                    - 'null'
+              example:
+                data:
+                - stock_number: STK-2291
+                  vin: JN1TANY62U0001234
+                  model: Nissan Patrol LE 2025
+                  status: Available
+                  price_aed: 289000
+                  days_in_stock: 12
+                  acquired_at: '2026-09-09'
+                  aging_alert: null
+                next_cursor: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Inventory
+      operationId: upsertInventory
+      summary: Sync stock from your DMS (upsert, up to 500 per request)
+      description: 'Scope `inventory:write`. Send one vehicle or an array of up to 500. Each is
+
+        matched on `stock_number`, else on `vin`; unmatched vehicles are created
+
+        (`model` required). Fields you omit are left unchanged. Rows are processed
+
+        independently: one bad row does not reject the batch — check `results`.
+
+        '
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - $ref: '#/components/schemas/VehicleUpsert'
+              - type: array
+                minItems: 1
+                maxItems: 500
+                items:
+                  $ref: '#/components/schemas/VehicleUpsert'
+            example:
+            - stock_number: STK-2291
+              vin: JN1TANY62U0001234
+              model: Nissan Patrol LE 2025
+              price_aed: 289000
+              cost_aed: 251000
+              acquired_at: '2026-09-09'
+            - stock_number: STK-2292
+              status: Sold
+      responses:
+        '200':
+          description: Per-row outcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryUpsertResult'
+              example:
+                created: 1
+                updated: 0
+                failed: 1
+                results:
+                - index: 0
+                  stock_number: STK-2291
+                  action: created
+                - index: 1
+                  stock_number: STK-2292
+                  action: error
+                  error:
+                    code: NX_API_MODEL_REQUIRED
+                    message: model is required for a new vehicle.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Invalid'
+  /v1/calls:
+    post:
+      tags:
+      - Calls
+      operationId: logCall
+      summary: Report a phone call from your call system
+      description: 'Scope `calls:write`. The customer''s number (`from_number` for inbound,
+
+        `to_number` for outbound) is matched to an existing lead at this
+
+        dealership by E.164 phone. A caller NEXUS has never seen becomes a new lead
+
+        with source `api_call`. Idempotent on `external_call_id`.
+
+        UAE national numbers (`05XXXXXXXX`, `04XXXXXXX`) are accepted and normalised to `+971…`.
+
+        '
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallCreate'
+            example:
+              external_call_id: 3CX-20260921-000871
+              direction: inbound
+              from_number: '+971501234567'
+              to_number: '+97143001234'
+              duration_sec: 214
+              started_at: '2026-09-21T09:42:10+04:00'
+              recording_url: https://recordings.example-pbx.ae/3CX-20260921-000871.mp3
+              caller_name: Aisha Al Mansoori
+      responses:
+        '201':
+          description: Logged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CallResult'
+              example:
+                data:
+                  call_id: 7a1c2e9d-0b3f-4c8e-9a6d-5e4f3b2a1c0d
+                  lead_id: 1042
+                  lead_created: false
+                  was_duplicate: false
+        '200':
+          description: Already logged (same external_call_id)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/CallResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Invalid'
+  /v1/appointments:
+    get:
+      tags:
+      - Appointments
+      operationId: listAppointments
+      summary: Showroom appointments, oldest change first
+      description: Scope `appointments:read`.
+      parameters:
+      - name: updated_since
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: state
+        in: query
+        schema:
+          type: string
+          enum:
+          - REQUESTED
+          - OFFERED
+          - CONFIRMED
+          - ATTENDED
+          - NO_SHOW
+          - CANCELLED
+      - $ref: '#/components/parameters/Cursor'
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        '200':
+          description: A page of appointments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Appointment'
+                  next_cursor:
+                    type:
+                    - string
+                    - 'null'
+              example:
+                data:
+                - id: 6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c
+                  lead_id: 1042
+                  customer_id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                  inventory_id: STK-2291
+                  state: CONFIRMED
+                  channel: WHATSAPP
+                  starts_at: '2026-09-23T14:00:00+04:00'
+                  ends_at: '2026-09-23T14:45:00+04:00'
+                  duration_minutes: 45
+                  location: Al Quoz showroom
+                  assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                  notes: Test drive, Patrol LE
+                  outcome_reason: null
+                  requested_at: '2026-09-21T09:45:00Z'
+                  confirmed_at: '2026-09-21T10:02:00Z'
+                  closed_at: null
+                  created_at: '2026-09-21T09:45:00Z'
+                  updated_at: '2026-09-21T10:02:00Z'
+                next_cursor: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Invalid'
+webhooks:
+  lead.created:
+    post:
+      summary: A lead was created, changed, or scored
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      description: 'Retries: a non-2xx response or timeout is retried after 1m, 5m, 30m, 2h,
+
+        6h, 12h and 24h; after the 8th failed attempt the delivery is dropped. An
+
+        endpoint that fails 20 deliveries in a row is disabled — fix it and press
+
+        *Send test* to re-enable it.
+
+        '
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/WebhookEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Lead'
+            example:
+              id: 2b9f0c4e-8d1a-4e7b-9c3f-6a5d4e3c2b1a
+              type: lead.created
+              created_at: '2026-09-21T10:00:00Z'
+              tenant_id: 5b0c6a0e-4f1c-4a55-9c1e-0d3f7a2b9e10
+              data:
+                id: 1042
+                name: Aisha Al Mansoori
+                email: aisha@example.com
+                phone: '+971501234567'
+                source: api
+                vehicle_interest: Nissan Patrol 2025
+                budget_aed: 280000
+                status: HOT
+                ai_score: 86
+                scoring_state: SCORED
+                assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                assigned_to: Omar Haddad
+                external_id: CDK-LEAD-884213
+                created_at: '2026-09-21T09:40:00Z'
+                updated_at: '2026-09-21T09:41:12Z'
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+  lead.updated:
+    post:
+      summary: A lead was created, changed, or scored
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      description: 'Retries: a non-2xx response or timeout is retried after 1m, 5m, 30m, 2h,
+
+        6h, 12h and 24h; after the 8th failed attempt the delivery is dropped. An
+
+        endpoint that fails 20 deliveries in a row is disabled — fix it and press
+
+        *Send test* to re-enable it.
+
+        '
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/WebhookEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Lead'
+            example:
+              id: 2b9f0c4e-8d1a-4e7b-9c3f-6a5d4e3c2b1a
+              type: lead.created
+              created_at: '2026-09-21T10:00:00Z'
+              tenant_id: 5b0c6a0e-4f1c-4a55-9c1e-0d3f7a2b9e10
+              data:
+                id: 1042
+                name: Aisha Al Mansoori
+                email: aisha@example.com
+                phone: '+971501234567'
+                source: api
+                vehicle_interest: Nissan Patrol 2025
+                budget_aed: 280000
+                status: HOT
+                ai_score: 86
+                scoring_state: SCORED
+                assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                assigned_to: Omar Haddad
+                external_id: CDK-LEAD-884213
+                created_at: '2026-09-21T09:40:00Z'
+                updated_at: '2026-09-21T09:41:12Z'
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+  lead.scored:
+    post:
+      summary: A lead was created, changed, or scored
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      description: 'Retries: a non-2xx response or timeout is retried after 1m, 5m, 30m, 2h,
+
+        6h, 12h and 24h; after the 8th failed attempt the delivery is dropped. An
+
+        endpoint that fails 20 deliveries in a row is disabled — fix it and press
+
+        *Send test* to re-enable it.
+
+        '
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/WebhookEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Lead'
+            example:
+              id: 2b9f0c4e-8d1a-4e7b-9c3f-6a5d4e3c2b1a
+              type: lead.created
+              created_at: '2026-09-21T10:00:00Z'
+              tenant_id: 5b0c6a0e-4f1c-4a55-9c1e-0d3f7a2b9e10
+              data:
+                id: 1042
+                name: Aisha Al Mansoori
+                email: aisha@example.com
+                phone: '+971501234567'
+                source: api
+                vehicle_interest: Nissan Patrol 2025
+                budget_aed: 280000
+                status: HOT
+                ai_score: 86
+                scoring_state: SCORED
+                assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+                assigned_to: Omar Haddad
+                external_id: CDK-LEAD-884213
+                created_at: '2026-09-21T09:40:00Z'
+                updated_at: '2026-09-21T09:41:12Z'
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+  appointment.created:
+    post:
+      summary: An appointment was created or changed
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/WebhookEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Appointment'
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+  appointment.updated:
+    post:
+      summary: An appointment was created or changed
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/WebhookEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Appointment'
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+  message.received:
+    post:
+      summary: A customer message arrived (WhatsApp, email...)
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/WebhookEnvelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      channel:
+                        type:
+                        - string
+                        - 'null'
+                        examples:
+                        - whatsapp
+                      lead_id:
+                        type:
+                        - integer
+                        - 'null'
+                      lead_email:
+                        type:
+                        - string
+                        - 'null'
+                      message:
+                        type:
+                        - string
+                        - 'null'
+                      created_at:
+                        type: string
+                        format: date-time
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+  ping:
+    post:
+      summary: Test delivery sent from Settings → API → Webhooks → Send test
+      parameters:
+      - name: X-Nexus-Event
+        in: header
+        schema:
+          type: string
+        example: lead.created
+      - name: X-Nexus-Delivery
+        in: header
+        description: The delivery id (also `id` in the body). Deduplicate on it — a delivery may arrive more than
+          once.
+        schema:
+          type: string
+          format: uuid
+      - name: X-Nexus-Signature
+        in: header
+        description: '`t=<unix seconds>,v1=<hex HMAC-SHA256(signing_secret, "<t>.<raw request body>")>`.
+
+          Recompute over the raw bytes, compare in constant time, and reject a `t`
+
+          more than 5 minutes old. The signing secret (`whsec_…`) is shown once
+
+          when you create the webhook.
+
+          '
+        schema:
+          type: string
+        example: t=1758448800,v1=5f2b6c0e9d1a4b7c8e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEnvelope'
+            example:
+              id: 2b9f0c4e-8d1a-4e7b-9c3f-6a5d4e3c2b1a
+              type: ping
+              created_at: '2026-09-21T10:00:00Z'
+              tenant_id: 5b0c6a0e-4f1c-4a55-9c1e-0d3f7a2b9e10
+              data:
+                webhook_id: 9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+                message: Test delivery from NEXUS.
+      responses:
+        2XX:
+          description: Acknowledge within 10 seconds
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: nxk_live_ + 40 hex
+      description: A NEXUS API key from Settings → API.
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` from the previous page. Opaque.
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: Missing, malformed or revoked key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: unauthorized
+              message: This API key is not valid, has been revoked, or its dealership is inactive.
+    Forbidden:
+      description: Key lacks the scope, or the dealership is inactive
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: insufficient_scope
+              message: This API key lacks the leads:write scope.
+    NotFound:
+      description: Not found at this dealership
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: not_found
+              message: No such lead.
+    Invalid:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: invalid_phone
+              message: phone must be an E.164 number such as +971501234567.
+    RateLimited:
+      description: Over 120 requests in the current minute
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          example: 23
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: rate_limited
+              message: More than 120 requests in a minute. Retry after the Retry-After header.
+  examples:
+    Lead:
+      value:
+        id: 1042
+        name: Aisha Al Mansoori
+        email: aisha@example.com
+        phone: '+971501234567'
+        source: api
+        vehicle_interest: Nissan Patrol 2025
+        budget_aed: 280000
+        status: HOT
+        ai_score: 86
+        scoring_state: SCORED
+        assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+        assigned_to: Omar Haddad
+        external_id: CDK-LEAD-884213
+        created_at: '2026-09-21T09:40:00Z'
+        updated_at: '2026-09-21T09:41:12Z'
+    Appointment:
+      value:
+        id: 6e5d4c3b-2a19-4f8e-9d7c-6b5a4f3e2d1c
+        lead_id: 1042
+        customer_id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        inventory_id: STK-2291
+        state: CONFIRMED
+        channel: WHATSAPP
+        starts_at: '2026-09-23T14:00:00+04:00'
+        ends_at: '2026-09-23T14:45:00+04:00'
+        duration_minutes: 45
+        location: Al Quoz showroom
+        assigned_to_id: 3d2c1b0a-9f8e-4d7c-8b6a-5f4e3d2c1b0a
+        notes: Test drive, Patrol LE
+        outcome_reason: null
+        requested_at: '2026-09-21T09:45:00Z'
+        confirmed_at: '2026-09-21T10:02:00Z'
+        closed_at: null
+        created_at: '2026-09-21T09:45:00Z'
+        updated_at: '2026-09-21T10:02:00Z'
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+    Me:
+      type: object
+      properties:
+        tenant:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+        key:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            prefix:
+              type: string
+            scopes:
+              type: array
+              items:
+                $ref: '#/components/schemas/Scope'
+            created_at:
+              type: string
+              format: date-time
+    Scope:
+      type: string
+      enum:
+      - leads:read
+      - leads:write
+      - inventory:read
+      - inventory:write
+      - calls:write
+      - appointments:read
+    Lead:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type:
+          - string
+          - 'null'
+        phone:
+          type:
+          - string
+          - 'null'
+          description: E.164 where known
+        source:
+          type:
+          - string
+          - 'null'
+          description: Where NEXUS first saw the lead, e.g. api, api_call, walk_in, meta_lead_ads_facebook
+        vehicle_interest:
+          type:
+          - string
+          - 'null'
+        budget_aed:
+          type:
+          - integer
+          - 'null'
+        status:
+          type:
+          - string
+          - 'null'
+          examples:
+          - new
+          - HOT
+          - WARM
+          - COLD
+          - WON
+          - LOST
+        ai_score:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          maximum: 100
+        scoring_state:
+          type: string
+          enum:
+          - PENDING
+          - SCORED
+          - FAILED
+        assigned_to_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        assigned_to:
+          type:
+          - string
+          - 'null'
+          description: Salesperson name
+        external_id:
+          type:
+          - string
+          - 'null'
+          description: Your id
+          if the lead was created through this API: null
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    LeadCreate:
+      type: object
+      required:
+      - name
+      description: Needs `email` or `phone`.
+      properties:
+        external_id:
+          type: string
+          pattern: ^[A-Za-z0-9._:@/-]{1,200}$
+        name:
+          type: string
+          maxLength: 200
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          description: E.164 (UAE national numbers accepted)
+        vehicle_interest:
+          type: string
+          maxLength: 200
+        budget_aed:
+          type: number
+          minimum: 0
+          maximum: 100000000
+        notes:
+          type: string
+          maxLength: 2000
+        source_detail:
+          type: string
+          maxLength: 120
+          description: Free text naming the originating system or form
+        occurred_at:
+          type: string
+          format: date-time
+      anyOf:
+      - required:
+        - email
+      - required:
+        - phone
+    LeadWriteResult:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Lead'
+        created:
+          type: boolean
+        duplicate_of:
+          type:
+          - string
+          - 'null'
+          enum:
+          - external_id
+          - email
+          - null
+    LeadPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        status:
+          type: string
+          pattern: ^[A-Za-z][A-Za-z_ -]{0,31}$
+        assigned_to_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        vehicle_interest:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        budget_aed:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 100000000
+        notes:
+          type: string
+          maxLength: 2000
+          description: Appended to the lead history
+    Vehicle:
+      type: object
+      properties:
+        stock_number:
+          type: string
+        vin:
+          type:
+          - string
+          - 'null'
+        model:
+          type: string
+        status:
+          type:
+          - string
+          - 'null'
+        price_aed:
+          type:
+          - integer
+          - 'null'
+        days_in_stock:
+          type:
+          - integer
+          - 'null'
+        acquired_at:
+          type:
+          - string
+          - 'null'
+          format: date
+        aging_alert:
+          type:
+          - string
+          - 'null'
+    VehicleUpsert:
+      type: object
+      description: Needs `stock_number` or `vin`; `model` is required when the vehicle is new.
+      properties:
+        stock_number:
+          type: string
+          pattern: ^[A-Za-z0-9._/-]{1,64}$
+        vin:
+          type: string
+          pattern: ^[A-HJ-NPR-Z0-9]{11,17}$
+        model:
+          type: string
+          maxLength: 120
+        status:
+          type: string
+          maxLength: 40
+          examples:
+          - Available
+          - Reserved
+          - Sold
+        price_aed:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        cost_aed:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          description: Write-only. Never returned by the API.
+        acquired_at:
+          type: string
+          format: date
+      anyOf:
+      - required:
+        - stock_number
+      - required:
+        - vin
+    InventoryUpsertResult:
+      type: object
+      properties:
+        created:
+          type: integer
+        updated:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              stock_number:
+                type:
+                - string
+                - 'null'
+              action:
+                type: string
+                enum:
+                - created
+                - updated
+                - error
+              error:
+                $ref: '#/components/schemas/Error/properties/error'
+    CallCreate:
+      type: object
+      required:
+      - external_call_id
+      - direction
+      properties:
+        external_call_id:
+          type: string
+          pattern: ^[A-Za-z0-9._:@/-]{1,200}$
+        direction:
+          type: string
+          enum:
+          - inbound
+          - outbound
+        from_number:
+          type: string
+          description: Required for inbound (the customer)
+        to_number:
+          type: string
+          description: Required for outbound (the customer)
+        duration_sec:
+          type: integer
+          minimum: 0
+          maximum: 86400
+        started_at:
+          type: string
+          format: date-time
+        recording_url:
+          type: string
+          format: uri
+          pattern: ^https://
+        caller_name:
+          type: string
+          maxLength: 200
+          description: Used only if the caller becomes a new lead
+    CallResult:
+      type: object
+      properties:
+        call_id:
+          type: string
+          format: uuid
+        lead_id:
+          type: integer
+        lead_created:
+          type: boolean
+        was_duplicate:
+          type: boolean
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lead_id:
+          type:
+          - integer
+          - 'null'
+        customer_id:
+          type: string
+          format: uuid
+        inventory_id:
+          type:
+          - string
+          - 'null'
+          description: Stock number
+        state:
+          type: string
+          enum:
+          - REQUESTED
+          - OFFERED
+          - CONFIRMED
+          - ATTENDED
+          - NO_SHOW
+          - CANCELLED
+        channel:
+          type: string
+          enum:
+          - WHATSAPP
+          - WEB_FORM
+          - PHONE
+          - WALK_IN
+          - EMAIL
+          - META_LEAD_AD
+          - GOOGLE_LEAD_FORM
+          - OTHER
+        starts_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        duration_minutes:
+          type: integer
+        location:
+          type:
+          - string
+          - 'null'
+        assigned_to_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        notes:
+          type:
+          - string
+          - 'null'
+        outcome_reason:
+          type:
+          - string
+          - 'null'
+        requested_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        closed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    WebhookEnvelope:
+      type: object
+      required:
+      - id
+      - type
+      - created_at
+      - tenant_id
+      - data
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Delivery id — deduplicate on it
+        type:
+          type: string
+          enum:
+          - lead.created
+          - lead.updated
+          - lead.scored
+          - appointment.created
+          - appointment.updated
+          - message.received
+          - ping
+        created_at:
+          type: string
+          format: date-time
+        tenant_id:
+          type: string
+          format: uuid
+        data:
+          type: object

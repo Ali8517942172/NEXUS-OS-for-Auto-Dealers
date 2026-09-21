@@ -365,15 +365,68 @@ const verify = node({
         "    reason_code: code, why, wrote_nothing: true,\n" +
         "    google_will: status >= 500 ? 'RETRY' : 'DISCARD_PERMANENTLY' }, extra || {}) }];\n" +
         "\n" +
-        "const secretRef = String(ep.secret_ref || '');\n" +
-        "if (!secretRef) {\n" +
-        "  return refuse(500, 'ENDPOINT_HAS_NO_SECRET_REF',\n" +
-        "    'This endpoint resolved but names no secret, so no delivery to it can be ' +\n" +
-        "    'authenticated. Ours to fix: Google is told to retry.');\n" +
+        "/* ---- Which secret: the dealership's own, from the vault ------------------\n" +
+        "   A dealer that connects itself cannot set an environment variable on our box,\n" +
+        "   so the per-endpoint secret lives in the vault (NX980), kind\n" +
+        "   'google_lead_form_key', keyed on the provider identity\n" +
+        "   ('google','google_webhook_id', <public_key from the URL>). The vault answers\n" +
+        "   with the endpoint and tenant that own the secret; both must be the endpoint\n" +
+        "   this delivery already resolved to, or nothing is compared.\n" +
+        "   $env[secret_ref] is the LEGACY per-endpoint path (ALBA's first endpoint) and\n" +
+        "   is only read when the vault holds nothing for this endpoint. It is still\n" +
+        "   per-endpoint -- the name comes from our own row -- never one box-wide key. */\n" +
+        "const GOOGLE_SECRET_KIND = 'google_lead_form_key';\n" +
+        "const SUPABASE_URL = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_URL) || '')\n" +
+        "  .replace(/\\/+$/, '');\n" +
+        "const SERVICE_KEY = String((typeof $env !== 'undefined' && $env && $env.SUPABASE_SERVICE_ROLE_KEY) || '');\n" +
+        "const http = (typeof $helpers !== 'undefined' && $helpers && $helpers.httpRequest)\n" +
+        "  ? $helpers.httpRequest.bind($helpers) : null;\n" +
+        "\n" +
+        "let expected = '';\n" +
+        "let secret_source = null;\n" +
+        "const publicKey = String(d.public_key || '');\n" +
+        "if (http && SUPABASE_URL && SERVICE_KEY && publicKey) {\n" +
+        "  let got = null;\n" +
+        "  try {\n" +
+        "    const res = await http({\n" +
+        "      method: 'POST',\n" +
+        "      url: SUPABASE_URL + '/rest/v1/rpc/nexus_lead_ingest_secret_reveal',\n" +
+        "      headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY,\n" +
+        "                 'Content-Type': 'application/json' },\n" +
+        "      body: { p_provider: 'google', p_identity_kind: 'google_webhook_id',\n" +
+        "              p_identity_value: publicKey, p_kind: GOOGLE_SECRET_KIND,\n" +
+        "              p_reason: 'google lead form verify' },\n" +
+        "      json: true, timeout: 8000,\n" +
+        "    });\n" +
+        "    got = Array.isArray(res) ? (res[0] || null) : (res || null);\n" +
+        "  } catch (e) { got = null; /* e.message not read: it can echo the request */ }\n" +
+        "  if (got && got.secret) {\n" +
+        "    /* Named fields only; `got` is never spread or returned. */\n" +
+        "    if (String(got.endpoint_id || '') !== String(ep.endpoint_id || '') ||\n" +
+        "        String(got.tenant_id || '') !== String(ep.tenant_id || '') || !ep.tenant_id) {\n" +
+        "      return refuse(500, 'ENDPOINT_SECRET_TENANT_MISMATCH',\n" +
+        "        'The vault secret for this URL key belongs to a different endpoint or ' +\n" +
+        "        'dealership than the one the key resolved to. Nothing was compared or ' +\n" +
+        "        'written. Fix the lead_ingest_provider_identity row for this key.');\n" +
+        "    }\n" +
+        "    expected = String(got.secret);\n" +
+        "    secret_source = 'vault_per_endpoint';\n" +
+        "  }\n" +
         "}\n" +
-        "/* $env is read by a name that came from our own database, never from the\n" +
-        "   request. A caller cannot choose which environment variable is read. */\n" +
-        "const expected = String($env[secretRef] || '');\n" +
+        "\n" +
+        "const secretRef = String(ep.secret_ref || '');\n" +
+        "if (!expected && !secretRef) {\n" +
+        "  return refuse(500, 'ENDPOINT_HAS_NO_SECRET_REF',\n" +
+        "    'This endpoint resolved but has no ' + GOOGLE_SECRET_KIND + ' in the vault ' +\n" +
+        "    'and names no legacy secret, so no delivery to it can be authenticated. ' +\n" +
+        "    'Ours to fix: Google is told to retry.');\n" +
+        "}\n" +
+        "if (!expected) {\n" +
+        "  /* $env is read by a name that came from our own database, never from the\n" +
+        "     request. A caller cannot choose which environment variable is read. */\n" +
+        "  expected = String($env[secretRef] || '');\n" +
+        "  if (expected) secret_source = 'env_per_endpoint_legacy';\n" +
+        "}\n" +
         "if (!expected) {\n" +
         "  return refuse(500, 'ENDPOINT_SECRET_NOT_CONFIGURED',\n" +
         "    'The secret named ' + secretRef + ' is not set on this box, so nothing can ' +\n" +
@@ -523,6 +576,7 @@ const verify = node({
         "  lead_id: d.lead_id,\n" +
         "  is_test: d.is_test === true,\n" +
         "  origin_verified: 'shared_secret_in_body',\n" +
+        "  secret_source,\n" +
         "  payload_raw,\n" +
         "  /* Untouched on purpose: this is what a salesperson reads, and the constraint\n" +
         "     does not cover this column. */\n" +

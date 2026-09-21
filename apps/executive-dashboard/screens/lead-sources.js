@@ -116,10 +116,12 @@
    by dealership — the database refuses another dealership's rows, this file
    does not hide them. */
 
-import { db, onIdentityChange } from '../lib/data.js';
+import { db, dbWrite, onIdentityChange, canManageAccess } from '../lib/data.js';
+import { openModal } from '../lib/modal.js';
+import { el } from '../lib/dom.js';
 import { ago, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
+import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
 import {
   CONNECTION_IS_ABOUT_THIS_DEALERSHIP, CONNECTION_STATE_MISSING, CONNECTION_STATE_NOT_KNOWN,
@@ -480,10 +482,257 @@ function readinessRows(rows) {
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   Connect your lead sources — owner/admin self-service
+   ══════════════════════════════════════════════════════════════════════════
+   One card per source from rpc/nexus_lead_source_connections. Every write goes
+   through a SECURITY DEFINER RPC that re-checks the role server-side
+   (NX_LS_OWNER_ONLY); the disabled buttons here are courtesy, not the gate.
+   A secret is shown exactly once — from the connect/rotate response — and is
+   never re-read: the list only says whether one exists (has_secret). */
+const EMBED_SCRIPT_URL = 'https://nexus-os-dashboard-six.vercel.app/embed/nexus-lead-form.js';
+const META_WEBHOOK_URL = 'https://35.224.126.225.nip.io/webhook/meta-lead-ads';
+const META_TEST_TOOL = 'https://developers.facebook.com/tools/lead-ads-testing';
+const LS_ERRORS = {
+  NX_LS_OWNER_ONLY: 'Only an owner or admin of this dealership can connect or change lead sources.',
+  NX_LS_PAGE_TAKEN: 'That Facebook Page is already connected to another dealership in NEXUS. If it is yours, contact support.',
+  NX_LS_PAGE_ID_REQUIRED: 'A Facebook Page ID is required.',
+  NX_LS_DOMAIN_INVALID: 'One of those domains is not valid. Use plain domains like example.ae or www.example.ae — no https:// and no paths.',
+  NX_LS_UNKNOWN_SOURCE: 'NEXUS does not recognise that lead source. Refresh the page and try again.',
+  NX_LS_PAGE_ON_OTHER_META_SOURCE: 'This Facebook Page is already connected on the other Meta card. Instagram lead ads arrive through your Facebook Page connection, so connect the Page once.',
+  NX_LS_TOKEN_REQUIRED: 'Paste the full Page or System User access token (with leads_retrieval) so NEXUS can fetch each lead.',
+  NX_LS_NOT_CONNECTED: 'This lead source is not connected yet. Connect it first.',
+  NX_LS_NO_CREDENTIAL: 'No key or token is installed for this lead source. Connect it again to install one.',
+  NX_LS_NO_TENANT: 'Your account is not a member of an active dealership, so nothing can be connected.',
+  NX_LS_KEY_COLLISION: 'NEXUS could not create a unique key for this source. Try again.',
+  NX_LS_NO_SECRET_TO_ROTATE: 'Only the Google Ads lead form has a NEXUS key to rotate.',
+};
+const IG_NOTE = 'Instagram lead ads arrive through your Facebook Page connection.';
+const lsErrorText = e => {
+  const blob = [e && e.message, e && e.technical, e && e.detail, e && e.code].map(str).join(' ');
+  const code = Object.keys(LS_ERRORS).sort((x, y) => y.length - x.length).find(c => blob.includes(c));
+  return code ? LS_ERRORS[code] : (str(e && e.message) || 'Something went wrong. Nothing was changed.');
+};
+const lsFail = (m, e) => m.msg(`<span class="t-hot">${esc(lsErrorText(e))}</span>`);
+const LS_STATUS = {
+  NOT_CONNECTED: ['Not connected', 'unknown'],
+  DISABLED: ['Disabled', 'cold'],
+  WAITING_FOR_FIRST_LEAD: ['Waiting for first lead', 'warm'],
+  RECEIVING: ['Receiving', 'ok'],
+};
+const lsStatus = r => {
+  const s = up(r.status);
+  const [label, t] = LS_STATUS[s] || [str(r.status) || 'Unknown', 'unknown'];
+  let extra = '';
+  if (s === 'RECEIVING') {
+    const n = Number(r.events_total) || 0;
+    extra = ` — ${num(n)} ${plural(n, 'lead', 'leads')}${r.last_event_at ? `, last at ${dubaiStamp(r.last_event_at)}` : ''}`;
+  }
+  return pill(label + extra, t, { verbatim: true });
+};
+const copyBtn = (value, label = 'Copy') =>
+  `<button class="btn sm" type="button" data-copy="${esc(value)}">${esc(label)}</button>`;
+const copyField = (label, value, copyLabel) => `<div class="field"><label>${esc(label)}</label>
+    <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+      <code style="flex:1 1 220px;min-width:0;word-break:break-all;white-space:pre-wrap;padding:8px;border:1px solid var(--line, #ddd);border-radius:6px;font-size:12px">${esc(value)}</code>
+      ${copyBtn(value, copyLabel)}</div></div>`;
+const wireCopy = root => root.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+  const v = b.dataset.copy;
+  try { await navigator.clipboard.writeText(v); }
+  catch (_) {
+    const t = document.createElement('textarea'); t.value = v; document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); } catch (__) { /* ignore */ } t.remove();
+  }
+  const old = b.textContent; b.textContent = 'Copied'; setTimeout(() => { b.textContent = old; }, 1500);
+}));
+const embedSnippet = key => `<script src="${EMBED_SCRIPT_URL}" data-nexus-key="${key}" async></script>\n<div id="nexus-lead-form"></div>`;
+const plainFormSnippet = url => `<form method="POST" action="${url}">\n  <input type="hidden" name="submission_id">\n  <input name="name" placeholder="Name" required>\n  <input name="phone" placeholder="Phone" required>\n  <input name="email" type="email" placeholder="Email">\n  <textarea name="message" placeholder="Which car are you interested in?"></textarea>\n  <button type="submit">Send</button>\n</form>\n<script>document.currentScript.previousElementSibling.submission_id.value = crypto.randomUUID();</script>`;
+const GOOGLE_STEPS = `<ol style="margin:8px 0 0 18px;padding:0">
+    <li>In Google Ads open <b>Assets → Lead form</b> and edit your lead form.</li>
+    <li>Go to <b>Lead delivery → Webhook integration</b>.</li>
+    <li>Paste the <b>Webhook URL</b> and the <b>Key</b> shown here.</li>
+    <li>Click <b>Send test data</b> — this card switches to “Receiving” when it lands.</li></ol>`;
+const META_HELP = `<div class="cell-sub" style="margin-bottom:12px;white-space:normal">
+    Get the token in <b>Meta Business Settings → System users → Generate token</b> with the permissions
+    <code>pages_manage_metadata</code>, <code>leads_retrieval</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>.
+    The Page must also be subscribed to the NEXUS app (webhook <code>${esc(META_WEBHOOK_URL)}</code>, field <code>leadgen</code>).
+    Test with Meta’s Lead Ads Testing Tool:
+    <a href="${esc(META_TEST_TOOL)}" target="_blank" rel="noopener noreferrer">${esc(META_TEST_TOOL)}</a></div>`;
+
+function mountSourceConnections(host) {
+  const card = el('div', 'card');
+  host.appendChild(card);
+  const canConnect = canManageAccess();
+  const NO_ROLE = ' disabled title="Connecting lead sources is an owner/admin decision at this dealership."';
+  const gate = canConnect ? '' : NO_ROLE;
+  let rows = null, loadErr = null;
+  const head = `<div class="card-head"><div><div class="card-title">Connect your lead sources</div>
+      <div class="card-sub">Owner/admin only. Connect each place your enquiries come from — leads then arrive in
+      NEXUS on their own. Keys and tokens are shown once, or never.</div></div></div>`;
+
+  const actions = r => {
+    const s = up(r.status), k = str(r.connect_kind), key = esc(r.source_key);
+    const connected = s && s !== 'NOT_CONNECTED';
+    if (k === 'manual') return '';
+    const b = [];
+    if (!connected || s === 'DISABLED') b.push(`<button class="btn primary sm" data-ls-connect="${key}"${gate}>Connect</button>`);
+    if (connected && k === 'webhook_key') b.push(`<button class="btn sm" data-ls-rotate="${key}"${gate}>Rotate key</button>`);
+    if (connected && k === 'meta_page') b.push(`<button class="btn sm" data-ls-connect="${key}"${gate}>Replace token</button>`);
+    if (connected && k === 'embed') b.push(`<button class="btn sm" data-ls-connect="${key}"${gate}>Edit domains</button>`);
+    if (connected && s !== 'DISABLED') b.push(`<button class="btn sm" data-ls-disconnect="${key}"${gate}>Disconnect</button>`);
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">${b.join('')}</div>`;
+  };
+
+  const details = r => {
+    const s = up(r.status), k = str(r.connect_kind);
+    const connected = s && s !== 'NOT_CONNECTED' && s !== 'DISABLED';
+    const igNote = str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="cell-sub" style="margin-bottom:6px">${esc(IG_NOTE)}</div>` : '';
+    if (k === 'manual') return muted(`Record phone and walk-in enquiries from ${SCREENS.recordlead
+      ? '<a href="#recordlead" data-go="recordlead">Record a Lead</a>' : 'Record a Lead'}.`);
+    if (k === 'email') return muted('Forwarding instructions for marketplace emails come from NEXUS support after you connect.');
+    if (!connected) return igNote;
+    if (k === 'webhook_key') return (str(r.ingest_url) ? copyField('Webhook URL', str(r.ingest_url)) : '')
+      + muted(r.has_secret ? 'A key is installed. It cannot be shown again — use “Rotate key” to issue a new one.' : 'No key is installed.')
+      + `<details style="margin-top:6px"><summary class="cell-sub">Setup steps in Google Ads</summary>${GOOGLE_STEPS}</details>`;
+    if (k === 'embed') return (str(r.public_key) ? copyField('Embed on your website', embedSnippet(str(r.public_key)), 'Copy snippet') : '')
+      + (Array.isArray(r.origin_allowlist) && r.origin_allowlist.length
+          ? muted(`Allowed domains: ${esc(r.origin_allowlist.join(', '))}`) : '')
+      + (str(r.ingest_url) ? `<details style="margin-top:6px"><summary class="cell-sub">Alternative: plain HTML form</summary>
+          ${copyField('Form posting to NEXUS', plainFormSnippet(str(r.ingest_url)), 'Copy form')}</details>` : '');
+    if (k === 'meta_page') return igNote + muted(`Page ID ${esc(str(r.identity_value) || 'not recorded')} · `
+      + (r.has_secret ? 'Page access token installed (never displayed).' : 'No Page access token installed.'));
+    return '';
+  };
+
+  const paint = () => {
+    if (loadErr) {
+      card.innerHTML = head + `<div class="pbody">${stateError('this dealership’s lead source connections', loadErr, null,
+        'Connecting a lead source is disabled until this can be read.')}</div>`;
+      return;
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    const body = list.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:12px">${list.map(r => `
+          <div class="card" style="margin:0;padding:14px;min-width:0">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+              ${bold(esc(str(r.label) || str(r.source_key)))}${lsStatus(r)}</div>
+            <div style="margin-top:8px">${details(r)}</div>${actions(r)}</div>`).join('')}</div>`
+      : stateEmpty('No lead sources are available to connect yet', 'Contact NEXUS support.', 'link_off');
+    card.innerHTML = head + `<div class="pbody">${body}</div>`;
+    wireCopy(card);
+    card.querySelectorAll('[data-go]').forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); go(a.dataset.go); }));
+    const find = k => list.find(r => str(r.source_key) === k);
+    card.querySelectorAll('[data-ls-connect]').forEach(b => b.addEventListener('click', () => openConnect(find(b.dataset.lsConnect))));
+    card.querySelectorAll('[data-ls-rotate]').forEach(b => b.addEventListener('click', () => rotate(find(b.dataset.lsRotate))));
+    card.querySelectorAll('[data-ls-disconnect]').forEach(b => b.addEventListener('click', () => disconnect(find(b.dataset.lsDisconnect))));
+  };
+
+  const reload = async () => {
+    card.innerHTML = head + `<div class="pbody">${stateLoading(3)}</div>`;
+    try { rows = await db('rpc/nexus_lead_source_connections'); loadErr = null; }
+    catch (e) { rows = null; loadErr = e; }
+    paint();
+  };
+
+  const showSecret = (title, r, res, intro) => {
+    const secret = str(res && res.secret_once);
+    const url = str(res && res.ingest_url) || str(r.ingest_url);
+    const m = openModal(title, `${intro || ''}
+      ${url ? copyField('Webhook URL', url) : ''}
+      ${secret ? copyField('Key', secret) + `<div class="t-hot" style="font-weight:600;margin:4px 0 8px">Copy the key now — it won’t be shown again.</div>` : ''}
+      ${GOOGLE_STEPS}`, `<button class="btn primary" id="lsDone">Done</button>`);
+    wireCopy(m.wrap);
+    m.wrap.querySelector('#lsDone').addEventListener('click', m.close);
+  };
+
+  const openConnect = r => {
+    if (!r) return;
+    const k = str(r.connect_kind), name = str(r.label) || str(r.source_key);
+    let body = '';
+    if (k === 'embed') body = `<div class="field"><label for="lsDomains">Allowed website domain(s)</label>
+        <input id="lsDomains" placeholder="example.ae, www.example.ae" value="${esc(Array.isArray(r.origin_allowlist) ? r.origin_allowlist.join(', ') : '')}" />
+        <div class="cell-sub">Only forms on these domains can send leads with your key. Separate several with commas.</div></div>`;
+    else if (k === 'meta_page') body = (str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="banner warm" style="margin-bottom:12px">${esc(IG_NOTE)} If your Page is already connected on the Facebook card, you do not need to connect it here.</div>` : '') + META_HELP + `<div class="field"><label for="lsPage">Facebook Page ID</label>
+        <input id="lsPage" inputmode="numeric" placeholder="123456789012345" value="${esc(str(r.identity_value))}" /></div>
+        <div class="field"><label for="lsToken">Page access token</label>
+        <input id="lsToken" type="password" autocomplete="off" placeholder="Paste the system user token" />
+        <div class="cell-sub">Stored securely. It is never displayed again.${r.has_secret ? ' Leave empty to keep the token already installed.' : ''}</div></div>`;
+    else if (k === 'email') body = muted('Connecting turns this source on. NEXUS support will send you the forwarding address and instructions.');
+    else if (k === 'webhook_key') body = muted('NEXUS will create a Webhook URL and a Key for Google Ads. The key is shown once, right after you connect.');
+    const m = openModal(`Connect ${name}`, body,
+      `<button class="btn primary" id="lsSave">Connect</button><button class="btn" id="lsCancel">Cancel</button>`);
+    m.wrap.querySelector('#lsCancel').addEventListener('click', m.close);
+    m.wrap.querySelector('#lsSave').addEventListener('click', async () => {
+      let identity = null, secret = null;
+      if (k === 'embed') {
+        identity = m.wrap.querySelector('#lsDomains').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean).join(',');
+        if (!identity) return m.msg('<span class="t-hot">Enter at least one domain.</span>');
+      } else if (k === 'meta_page') {
+        identity = m.wrap.querySelector('#lsPage').value.replace(/\s/g, '');
+        secret = m.wrap.querySelector('#lsToken').value.trim();
+        if (!identity) return m.msg(`<span class="t-hot">${esc(LS_ERRORS.NX_LS_PAGE_ID_REQUIRED)}</span>`);
+        if (!/^\d+$/.test(identity)) return m.msg('<span class="t-hot">A Page ID is numbers only.</span>');
+        if (!secret && !r.has_secret) return m.msg(`<span class="t-hot">${esc(LS_ERRORS.NX_LS_TOKEN_REQUIRED)}</span>`);
+        if (secret && secret.length < 20) return m.msg('<span class="t-hot">Paste the full Page access token — that is too short to be one.</span>');
+        if (!secret) secret = null;
+      }
+      const btn = m.wrap.querySelector('#lsSave');
+      btn.disabled = true; btn.textContent = 'Connecting…';
+      try {
+        const res = await dbWrite('POST', 'rpc/nexus_lead_source_connect', {
+          p_source_key: str(r.source_key), p_identity_value: identity, p_secret: secret, p_label: null,
+        });
+        const row = Array.isArray(res) ? res[0] : res;
+        m.close();
+        if (k === 'webhook_key') showSecret(`${name} connected`, r, row,
+          muted('Connected. Paste these into Google Ads now.'));
+        else if (k === 'embed' && row && str(row.public_key)) {
+          const m2 = openModal(`${name} connected`, copyField('Paste this into your website', embedSnippet(str(row.public_key)), 'Copy snippet')
+            + (str(row.ingest_url) ? `<details><summary class="cell-sub">Alternative: plain HTML form</summary>${copyField('Form posting to NEXUS', plainFormSnippet(str(row.ingest_url)), 'Copy form')}</details>` : ''),
+            '<button class="btn primary" id="lsDone">Done</button>');
+          wireCopy(m2.wrap); m2.wrap.querySelector('#lsDone').addEventListener('click', m2.close);
+        }
+        reload();
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Connect';
+        lsFail(m, e);
+      }
+    });
+  };
+
+  const confirmAct = (title, text, label, run) => {
+    const m = openModal(title, muted(esc(text)),
+      `<button class="btn primary" id="lsYes">${esc(label)}</button><button class="btn" id="lsNo">Cancel</button>`);
+    m.wrap.querySelector('#lsNo').addEventListener('click', m.close);
+    m.wrap.querySelector('#lsYes').addEventListener('click', async () => {
+      const b = m.wrap.querySelector('#lsYes'); b.disabled = true;
+      try { await run(m); } catch (e) { b.disabled = false; lsFail(m, e); }
+    });
+  };
+
+  const rotate = r => r && confirmAct('Rotate key', 'The current key stops working immediately. You must paste the new key into Google Ads, or leads will be refused.', 'Rotate key', async m => {
+    const res = await dbWrite('POST', 'rpc/nexus_lead_source_rotate_secret', { p_source_key: str(r.source_key) });
+    const secret = typeof res === 'string' ? res : (Array.isArray(res) ? res[0] : res);
+    m.close();
+    showSecret('New key issued', r, { secret_once: typeof secret === 'string' ? secret : str(secret && (secret.secret_once || secret.nexus_lead_source_rotate_secret)) },
+      muted('The old key no longer works. Replace it in Google Ads.'));
+    reload();
+  });
+
+  const disconnect = r => r && confirmAct(`Disconnect ${str(r.label) || str(r.source_key)}`, 'NEXUS will stop accepting leads from this source until you connect it again.', 'Disconnect', async m => {
+    await dbWrite('POST', 'rpc/nexus_lead_source_disconnect', { p_source_key: str(r.source_key) });
+    m.close();
+    reload();
+  });
+
+  reload();
+}
+
 SCREENS.leadsources = async host => {
   /* Every visit re-reads. See the note on `shared` above for what this repairs
      and why a stale source register is worse than a slow one. */
   resetReads();
+  mountSourceConnections(host);
 
   const loadBoth = async () => {
     const [o, d] = await Promise.all([settle(readOrigin()), settle(readReadiness())]);

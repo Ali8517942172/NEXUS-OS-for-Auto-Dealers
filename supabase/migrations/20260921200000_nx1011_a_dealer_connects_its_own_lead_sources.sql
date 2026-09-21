@@ -1,0 +1,725 @@
+-- NEXUS OS -- NX1011: a dealer connects its own lead sources
+--
+-- WHY THIS MIGRATION EXISTS
+-- Every lead_ingest_endpoint row in production was typed by an operator in
+-- the SQL editor (6 rows, all ALBA CARS, 21 Sep 2026). A second dealership
+-- cannot receive a single Google, website, Meta or marketplace-email lead
+-- until someone at NEXUS writes SQL for it. This migration is the owner-facing
+-- path: three authenticated RPCs the Lead Sources screen calls, gated on the
+-- same owner/admin role column (tenant_members.role) NX1007 reads.
+--
+-- CONTRACT (other code is written against exactly this)
+--   nexus_lead_source_connections()
+--     -> (source_key, label, connect_kind, status, public_key, ingest_url,
+--         identity_value, has_secret, origin_allowlist, events_total, last_event_at)
+--   nexus_lead_source_connect(p_source_key, p_identity_value, p_secret, p_label)
+--     -> (source_key, status, public_key, ingest_url, secret_once)
+--   nexus_lead_source_rotate_secret(p_source_key) -> text   (google only)
+--   nexus_lead_source_disconnect(p_source_key)    -> void
+--   status: NOT_CONNECTED | DISABLED | WAITING_FOR_FIRST_LEAD | RECEIVING
+--   errors: errcode P0001, detail NX_LS_* (see each raise below).
+--
+-- DEVIATIONS FROM THE BRIEF, MEASURED AGAINST PRODUCTION (SELECT only)
+--   1. Secret kinds are an FK (lead_ingest_secret.kind -> lead_ingest_secret_kind).
+--      The Meta token kind that exists, and that ops/n8n-meta-lead-ads/
+--      fetch-lead-from-graph.node.js reveals, is 'meta_page_access_token' --
+--      not 'page_access_token'. That name is used.
+--   2. The Google receiver as deployed (ops/n8n-google-lead-form/
+--      verify-and-redact.node.js) reads the secret from an n8n ENV VAR named by
+--      lead_ingest_endpoint.secret_ref ($env[secret_ref]). A self-served key
+--      cannot live in an env var, so this migration adds secret kind
+--      'google_lead_form_key', stores the generated key in Vault under it, sets
+--      secret_ref = 'vault:google_lead_form_key' (the secret_ref_required CHECK
+--      needs a non-empty value for shared_secret_in_body), and adds a
+--      service_role-only reveal keyed on the public key the receiver already
+--      resolves from ?k=:
+--        nexus_lead_ingest_secret_reveal_for_public_key(p_public_key, p_kind, p_reason)
+--      INTEGRATION (feat/connect-everything): the receiver as merged calls
+--      nexus_lead_ingest_secret_reveal('google','google_webhook_id',<public_key>,
+--      'google_lead_form_key', ...), so connect ALSO upserts an active
+--      lead_ingest_provider_identity row (google / google_webhook_id /
+--      public_key / google_ads_lead_form) and disconnect disables it. The
+--      identity_value_shape CHECK is widened for google_webhook_id (it was
+--      digits-only). The _for_public_key reveal is kept as a service-role
+--      fallback but nothing calls it today. The held file
+--      ops/n8n-google-lead-form/held/20260921120000_google_lead_form_key_secret_kind.sql
+--      is superseded by the secret-kind insert below and must NOT be applied.
+--      Connecting google for ALBA re-points its existing, currently DISABLED
+--      endpoint from GOOGLE_LEAD_KEY_ALBA to vault.
+--   3. public_key has CHECK '^[A-Za-z0-9_-]{24,128}$'. '<slug>-<short>-<8 hex>'
+--      is padded with extra random hex when the slug is short, so it always
+--      passes; the slug is folded to [a-z0-9-].
+--   4. lead_ingest_provider_identity's EXCLUDE constraint forbids the same page
+--      id on two tenants regardless of status, so NX_LS_PAGE_TAKEN fires for a
+--      page held by another tenant in ANY status, not only active.
+--   5. The Meta receiver resolves the dealership with the 3-argument
+--      nexus_lead_endpoint_for_provider_identity and Accept: object+json, so
+--      one page id active on BOTH meta_lead_ads_facebook and _instagram of a
+--      tenant returns two rows and breaks resolution. Instagram leads arrive on
+--      the Facebook Page's own subscription anyway. Connect therefore refuses
+--      that pairing with NX_LS_PAGE_ON_OTHER_META_SOURCE.
+--   6. Meta p_secret is required unless this endpoint already holds a
+--      meta_page_access_token (so a re-enable after disconnect needs no re-paste).
+--   7. One active page per Meta endpoint: connecting a new page id disables the
+--      endpoint's other facebook_page_id rows.
+--   8. label in connections() is the endpoint label when one exists, else the
+--      catalogue display_name. identity_value is the page id for Meta, the
+--      comma-joined bare domains for website_form, null otherwise. has_secret
+--      means a Vault row of the source's kind exists (google_lead_form_key /
+--      meta_page_access_token); the legacy env-var ALBA google key reads false.
+--
+-- Provenance columns copy the ALBA production rows per source (declared =
+-- required = catalogue.required_provenance, counts_as_real from
+-- lead_provenance_kind); website_form uses origin_and_form_key, whose CHECK
+-- requires a non-empty origin_allowlist. Rate limits copy ALBA: meta 600,
+-- manual 120, others 60.
+
+begin;
+
+insert into public.lead_ingest_secret_kind (kind, description)
+values ('google_lead_form_key',
+  'The google_key a Google Ads lead form sends in its body, generated by '
+  || 'nexus_lead_source_connect() for this dealership and shown to the owner '
+  || 'once. Revealed to the Google receiver by public key via '
+  || 'nexus_lead_ingest_secret_reveal_for_public_key(). Endpoints using it '
+  || 'carry secret_ref = ''vault:google_lead_form_key''.')
+on conflict (kind) do nothing;
+
+-- The Google receiver (ops/n8n-google-lead-form/verify-and-redact.node.js)
+-- reveals its key with nexus_lead_ingest_secret_reveal('google',
+-- 'google_webhook_id', <public_key>, 'google_lead_form_key', ...), which joins
+-- through lead_ingest_provider_identity. provider/kind/source CHECKs on prod
+-- already allow google/google_webhook_id/google_ads_lead_form, but
+-- lead_ingest_provider_identity_value_shape required digits only
+-- ('^[0-9]{5,32}$'), which a public key never is. Widen it for
+-- google_webhook_id only, to the lead_ingest_endpoint.public_key shape.
+alter table public.lead_ingest_provider_identity
+  drop constraint if exists lead_ingest_provider_identity_value_shape;
+alter table public.lead_ingest_provider_identity
+  add constraint lead_ingest_provider_identity_value_shape check (
+    (identity_kind =  'google_webhook_id' and identity_value ~ '^[A-Za-z0-9_-]{24,128}$')
+ or (identity_kind <> 'google_webhook_id' and identity_value ~ '^[0-9]{5,32}$'));
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Helpers
+-- ─────────────────────────────────────────────────────────────────────────
+create or replace function public.nexus_lead_source_ingest_url(p_source_key text, p_public_key text)
+returns text
+language sql
+immutable
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+  select case
+    when p_public_key is null then null
+    when p_source_key = 'google_ads_lead_form'
+      then 'https://35.224.126.225.nip.io/webhook/google-ads-lead?k=' || p_public_key
+    when p_source_key = 'website_form'
+      then 'https://dsvuoovivysszdoiorch.supabase.co/functions/v1/lead-intake-website?k=' || p_public_key
+    when p_source_key in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram')
+      then 'https://35.224.126.225.nip.io/webhook/meta-lead-ads'
+    else null
+  end;
+$fn$;
+
+-- The caller's dealership, if and only if they are its owner or admin.
+create or replace function public.nexus_lead_source_owner_tenant()
+returns uuid
+language plpgsql
+stable
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+declare
+  v_tenant uuid := public.nexus_current_tenant_id();
+begin
+  if v_tenant is null then
+    raise exception using errcode = 'P0001',
+      message = 'You are not a member of an active dealership.',
+      detail  = 'NX_LS_NO_TENANT';
+  end if;
+  if not exists (
+    select 1 from public.tenant_members m
+     where m.tenant_id = v_tenant
+       and m.auth_user_id = auth.uid()
+       and m.role in ('owner', 'admin')
+  ) then
+    raise exception using errcode = 'P0001',
+      message = 'Only the dealership owner or an admin can connect or disconnect lead sources.',
+      detail  = 'NX_LS_OWNER_ONLY';
+  end if;
+  return v_tenant;
+end;
+$fn$;
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 1. Read
+-- ─────────────────────────────────────────────────────────────────────────
+create or replace function public.nexus_lead_source_connections()
+returns table (
+  source_key       text,
+  label            text,
+  connect_kind     text,
+  status           text,
+  public_key       text,
+  ingest_url       text,
+  identity_value   text,
+  has_secret       boolean,
+  origin_allowlist text[],
+  events_total     bigint,
+  last_event_at    timestamptz
+)
+language sql
+stable
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+  with me as (
+    select public.nexus_current_tenant_id() as tid
+  ),
+  src (source_key, connect_kind, ord, secret_kind) as (
+    values ('google_ads_lead_form',           'webhook_key', 1, 'google_lead_form_key'),
+           ('website_form',                   'embed',       2, null),
+           ('meta_lead_ads_facebook',         'meta_page',   3, 'meta_page_access_token'),
+           ('meta_lead_ads_instagram',        'meta_page',   4, 'meta_page_access_token'),
+           ('marketplace_email_notification', 'email',       5, null),
+           ('phone_call',                     'manual',      6, null),
+           ('walk_in',                        'manual',      7, null)
+  ),
+  ep as (
+    select distinct on (e.source_key) e.*
+      from public.lead_ingest_endpoint e
+      join me on e.tenant_id = me.tid
+     where e.environment = 'production'
+     order by e.source_key, (e.status = 'active') desc, e.created_at desc
+  )
+  select s.source_key,
+         coalesce(ep.label, c.display_name),
+         s.connect_kind,
+         case
+           when ep.endpoint_id is null then 'NOT_CONNECTED'
+           when ep.status <> 'active' then 'DISABLED'
+           when coalesce(ev.n, 0) = 0 then 'WAITING_FOR_FIRST_LEAD'
+           else 'RECEIVING'
+         end,
+         ep.public_key,
+         public.nexus_lead_source_ingest_url(s.source_key, ep.public_key),
+         case
+           when s.connect_kind = 'meta_page' then (
+             select i.identity_value
+               from public.lead_ingest_provider_identity i
+              where i.endpoint_id = ep.endpoint_id
+                and i.identity_kind = 'facebook_page_id'
+              order by (i.status = 'active') desc, i.updated_at desc
+              limit 1)
+           when s.source_key = 'website_form' then (
+             select string_agg(o.d, ',' order by o.d)
+               from (select distinct regexp_replace(a.v, '^https://(www\.)?', '') as d
+                       from unnest(ep.origin_allowlist) as a(v)) o)
+           else null
+         end,
+         case
+           when ep.endpoint_id is null or s.secret_kind is null then false
+           else exists (select 1 from public.lead_ingest_secret ls
+                         where ls.endpoint_id = ep.endpoint_id
+                           and ls.kind = s.secret_kind)
+         end,
+         coalesce(ep.origin_allowlist, '{}'::text[]),
+         coalesce(ev.n, 0)::bigint,
+         ev.last_at
+    from src s
+    cross join me
+    join public.lead_source_catalogue c on c.source_key = s.source_key
+    left join ep on ep.source_key = s.source_key
+    left join lateral (
+      select count(*) as n, max(le.received_at) as last_at
+        from public.lead_event le
+       where le.tenant_id = me.tid
+         and le.source_key = s.source_key
+         and le.environment = 'production'
+    ) ev on true
+   where me.tid is not null
+   order by s.ord;
+$fn$;
+
+comment on function public.nexus_lead_source_connections() is
+  'NX1011. One row per self-connectable lead source for the caller''s '
+  'dealership (nexus_current_tenant_id()), any member may read. Never returns '
+  'a secret: has_secret says only whether one is stored.';
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 2. Connect
+-- ─────────────────────────────────────────────────────────────────────────
+create or replace function public.nexus_lead_source_connect(
+  p_source_key     text,
+  p_identity_value text default null,
+  p_secret         text default null,
+  p_label          text default null
+) returns table (
+  source_key  text,
+  status      text,
+  public_key  text,
+  ingest_url  text,
+  secret_once text
+)
+language plpgsql
+volatile
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+#variable_conflict use_column
+declare
+  v_tenant   uuid := public.nexus_lead_source_owner_tenant();
+  v_src      text := lower(btrim(coalesce(p_source_key, '')));
+  v_label_in text := nullif(btrim(coalesce(p_label, '')), '');
+  v_actor    text := coalesce(nullif(btrim(coalesce(auth.jwt() ->> 'email', '')), ''), auth.uid()::text);
+  v_t        public.tenants;
+  v_req      text;
+  v_real     boolean;
+  v_display  text;
+  v_short    text;
+  v_rl       integer;
+  v_ep       public.lead_ingest_endpoint;
+  v_slug     text;
+  v_pk       text;
+  v_pad      integer;
+  v_try      integer := 0;
+  v_origins  text[] := '{}'::text[];
+  v_dom      text;
+  v_page     text;
+  v_token    text := nullif(btrim(coalesce(p_secret, '')), '');
+  v_other    uuid;
+  v_sibling  text;
+  v_secret_ref text;
+  v_ingest   text;
+  v_once     text;
+  v_n        bigint;
+  v_new      boolean := false;
+begin
+  case v_src
+    when 'google_ads_lead_form'           then v_short := 'google'; v_rl := 60;
+    when 'website_form'                   then v_short := 'web';    v_rl := 60;
+    when 'meta_lead_ads_facebook'         then v_short := 'fb';     v_rl := 600;
+    when 'meta_lead_ads_instagram'        then v_short := 'ig';     v_rl := 600;
+    when 'marketplace_email_notification' then v_short := 'email';  v_rl := 60;
+    when 'phone_call'                     then v_short := 'phone';  v_rl := 120;
+    when 'walk_in'                        then v_short := 'walkin'; v_rl := 120;
+    else
+      raise exception using errcode = 'P0001',
+        message = format('%s is not a lead source a dealership can connect from the dashboard.', coalesce(p_source_key, '(null)')),
+        detail  = 'NX_LS_UNKNOWN_SOURCE';
+  end case;
+
+  select c.required_provenance, c.display_name, k.counts_as_real
+    into v_req, v_display, v_real
+    from public.lead_source_catalogue c
+    join public.lead_provenance_kind k on k.kind = c.required_provenance
+   where c.source_key = v_src;
+  if v_req is null then
+    raise exception using errcode = 'P0001',
+      message = format('Lead source %s is not in the catalogue.', v_src),
+      detail  = 'NX_LS_UNKNOWN_SOURCE';
+  end if;
+
+  select * into v_t from public.tenants t where t.id = v_tenant;
+
+  -- ── Validate everything before writing anything ─────────────────────────
+  if v_src = 'website_form' then
+    for v_dom in
+      select btrim(x) from regexp_split_to_table(lower(coalesce(p_identity_value, '')), '[,[:space:]]+') as x
+    loop
+      continue when v_dom = '';
+      v_dom := regexp_replace(v_dom, '^https?://', '');
+      v_dom := regexp_replace(v_dom, '/+$', '');
+      v_dom := regexp_replace(v_dom, '^www\.', '');
+      if length(v_dom) > 253
+         or v_dom !~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$' then
+        raise exception using errcode = 'P0001',
+          message = format('%s is not a website domain. Enter it like albacars.ae, comma-separated for more than one.', v_dom),
+          detail  = 'NX_LS_DOMAIN_INVALID';
+      end if;
+      if not (('https://' || v_dom) = any (v_origins)) then
+        v_origins := v_origins || ('https://' || v_dom) || ('https://www.' || v_dom);
+      end if;
+    end loop;
+    if cardinality(v_origins) = 0 then
+      raise exception using errcode = 'P0001',
+        message = 'Enter the domain your website form lives on, e.g. albacars.ae.',
+        detail  = 'NX_LS_DOMAIN_INVALID';
+    end if;
+    if cardinality(v_origins) > 20 then
+      raise exception using errcode = 'P0001',
+        message = 'At most 10 domains per website form.',
+        detail  = 'NX_LS_DOMAIN_INVALID';
+    end if;
+  end if;
+
+  if v_src in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram') then
+    v_page := btrim(coalesce(p_identity_value, ''));
+    if v_page !~ '^[0-9]{5,32}$' then
+      raise exception using errcode = 'P0001',
+        message = 'Enter your Facebook Page ID (digits only, from Page settings > About or Meta Business Suite).',
+        detail  = 'NX_LS_PAGE_ID_REQUIRED';
+    end if;
+    if v_token is not null and length(v_token) < 20 then
+      raise exception using errcode = 'P0001',
+        message = 'That is too short to be a Meta Page or System User access token.',
+        detail  = 'NX_LS_TOKEN_REQUIRED';
+    end if;
+
+    select i.tenant_id into v_other
+      from public.lead_ingest_provider_identity i
+     where i.provider = 'meta' and i.identity_kind = 'facebook_page_id'
+       and i.identity_value = v_page and i.tenant_id <> v_tenant
+     limit 1;
+    if v_other is not null then
+      raise exception using errcode = 'P0001',
+        message = 'This Facebook Page is already connected to a different dealership. Contact support if it is yours.',
+        detail  = 'NX_LS_PAGE_TAKEN';
+    end if;
+
+    select i.source_key into v_sibling
+      from public.lead_ingest_provider_identity i
+      join public.lead_ingest_endpoint e on e.endpoint_id = i.endpoint_id
+     where i.provider = 'meta' and i.identity_kind = 'facebook_page_id'
+       and i.identity_value = v_page and i.tenant_id = v_tenant
+       and i.source_key <> v_src and i.status = 'active' and e.status = 'active'
+     limit 1;
+    if v_sibling is not null then
+      raise exception using errcode = 'P0001',
+        message = format('This Page is already connected as %s. Facebook and Instagram lead ads from one Page '
+          || 'arrive on the same Page subscription, so connect the Page once.', v_sibling),
+        detail  = 'NX_LS_PAGE_ON_OTHER_META_SOURCE';
+    end if;
+  end if;
+
+  -- ── Endpoint: reuse (re-enable) or create ──────────────────────────────
+  select * into v_ep
+    from public.lead_ingest_endpoint e
+   where e.tenant_id = v_tenant and e.source_key = v_src and e.environment = 'production'
+   order by (e.status = 'active') desc, e.created_at desc
+   limit 1
+   for update;
+
+  v_secret_ref := case
+    when v_src = 'google_ads_lead_form' then 'vault:google_lead_form_key'
+    when v_src in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram') then 'env:META_APP_SECRET'
+    else null end;
+
+  if v_src in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram') and v_token is null
+     and (v_ep.endpoint_id is null or not exists (
+           select 1 from public.lead_ingest_secret ls
+            where ls.endpoint_id = v_ep.endpoint_id and ls.kind = 'meta_page_access_token')) then
+    raise exception using errcode = 'P0001',
+      message = 'Paste the Page or System User access token (with leads_retrieval) so NEXUS can fetch each lead.',
+      detail  = 'NX_LS_TOKEN_REQUIRED';
+  end if;
+
+  if v_ep.endpoint_id is null then
+    v_new  := true;
+    v_slug := btrim(regexp_replace(lower(coalesce(v_t.slug, '')), '[^a-z0-9-]+', '-', 'g'), '-');
+    v_slug := left(coalesce(nullif(v_slug, ''), 'dealer'), 40);
+    loop
+      v_try := v_try + 1;
+      v_pad := greatest(8, 24 - length(v_slug || '-' || v_short || '-'));
+      v_pk  := v_slug || '-' || v_short || '-'
+               || left(encode(extensions.gen_random_bytes(32), 'hex'), v_pad);
+      exit when not exists (select 1 from public.lead_ingest_endpoint e where e.public_key = v_pk);
+      if v_try >= 5 then
+        raise exception using errcode = 'P0001',
+          message = 'Could not mint a unique endpoint key. Try again.',
+          detail  = 'NX_LS_KEY_COLLISION';
+      end if;
+    end loop;
+
+    v_ingest := case
+      when v_src in ('phone_call', 'walk_in') then 'dashboard://lead-drawer'
+      else public.nexus_lead_source_ingest_url(v_src, v_pk) end;
+
+    insert into public.lead_ingest_endpoint
+      (tenant_id, source_key, required_provenance_for_source, declared_provenance,
+       provenance_counts_as_real, environment, public_key, secret_ref,
+       origin_allowlist, ingest_address, status, rate_limit_per_minute, label)
+    values
+      (v_tenant, v_src, v_req, v_req, v_real, 'production', v_pk, v_secret_ref,
+       v_origins, v_ingest, 'active', v_rl,
+       coalesce(v_label_in, v_t.name || ' - ' || v_display))
+    returning * into v_ep;
+  else
+    update public.lead_ingest_endpoint e
+       set status = 'active',
+           label = coalesce(v_label_in, e.label),
+           origin_allowlist = case when v_src = 'website_form' then v_origins else e.origin_allowlist end,
+           secret_ref = case
+             when v_src in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram')
+               then coalesce(e.secret_ref, v_secret_ref)
+             else e.secret_ref end
+     where e.endpoint_id = v_ep.endpoint_id
+    returning * into v_ep;
+  end if;
+
+  -- ── Per-source credentials and identities ──────────────────────────────
+  if v_src = 'google_ads_lead_form' then
+    if not exists (select 1 from public.lead_ingest_secret ls
+                    where ls.endpoint_id = v_ep.endpoint_id and ls.kind = 'google_lead_form_key') then
+      v_once := encode(extensions.gen_random_bytes(32), 'hex');
+      perform public.nexus_lead_ingest_secret_put(v_ep.endpoint_id, 'google_lead_form_key', v_once, v_actor);
+    end if;
+    if v_ep.secret_ref is distinct from 'vault:google_lead_form_key' then
+      update public.lead_ingest_endpoint e
+         set secret_ref = 'vault:google_lead_form_key'
+       where e.endpoint_id = v_ep.endpoint_id
+      returning * into v_ep;
+    end if;
+
+    -- The receiver resolves the vault key through this identity row
+    -- (google / google_webhook_id / <public_key>). Disconnect disables it.
+    insert into public.lead_ingest_provider_identity
+      (endpoint_id, source_key, provider, identity_kind, identity_value, label, status, tenant_id)
+    values
+      (v_ep.endpoint_id, v_src, 'google', 'google_webhook_id', v_ep.public_key,
+       v_t.name || ' - ' || v_display || ' - key ' || v_ep.public_key, 'active', v_tenant)
+    on conflict on constraint lead_ingest_provider_identity_surface_key
+    do update set endpoint_id = excluded.endpoint_id,
+                  label       = excluded.label,
+                  status      = 'active';
+  end if;
+
+  if v_src in ('meta_lead_ads_facebook', 'meta_lead_ads_instagram') then
+    update public.lead_ingest_provider_identity i
+       set status = 'disabled'
+     where i.endpoint_id = v_ep.endpoint_id
+       and i.identity_kind = 'facebook_page_id'
+       and i.identity_value <> v_page
+       and i.status = 'active';
+
+    insert into public.lead_ingest_provider_identity
+      (endpoint_id, source_key, provider, identity_kind, identity_value, label, status, tenant_id)
+    values
+      (v_ep.endpoint_id, v_src, 'meta', 'facebook_page_id', v_page,
+       v_t.name || ' - ' || v_display || ' - Page ' || v_page, 'active', v_tenant)
+    on conflict on constraint lead_ingest_provider_identity_surface_key
+    do update set endpoint_id = excluded.endpoint_id,
+                  label       = excluded.label,
+                  status      = 'active';
+
+    if v_token is not null then
+      perform public.nexus_lead_ingest_secret_put(v_ep.endpoint_id, 'meta_page_access_token', v_token, v_actor);
+    end if;
+  end if;
+
+  insert into public.audit_log (workflow, status, summary, logged_at, tenant_id)
+  values ('Lead Sources', 'SUCCESS',
+          format('Owner/admin %s lead source %s (public key %s)%s%s%s',
+                 case when v_new then 'connected' else 're-enabled' end,
+                 v_src, v_ep.public_key,
+                 case when v_page is not null then ', Facebook Page ' || v_page else '' end,
+                 case when v_src = 'website_form' then ', origins ' || array_to_string(v_origins, ' ') else '' end,
+                 case when v_once is not null then ', new Google lead form key generated (shown once)'
+                      when v_token is not null then ', Meta access token stored'
+                      else '' end),
+          now(), v_tenant);
+
+  select count(*) into v_n
+    from public.lead_event le
+   where le.tenant_id = v_tenant and le.source_key = v_src and le.environment = 'production';
+
+  source_key  := v_src;
+  status      := case when v_n = 0 then 'WAITING_FOR_FIRST_LEAD' else 'RECEIVING' end;
+  public_key  := v_ep.public_key;
+  ingest_url  := public.nexus_lead_source_ingest_url(v_src, v_ep.public_key);
+  secret_once := v_once;
+  return next;
+end;
+$fn$;
+
+comment on function public.nexus_lead_source_connect(text, text, text, text) is
+  'NX1011. Owner/admin only. Creates or re-enables this dealership''s production '
+  'endpoint for one lead source. google_ads_lead_form: generates a Vault-stored '
+  'google_lead_form_key returned once in secret_once. website_form: '
+  'p_identity_value = comma-separated domains -> https:// and https://www. '
+  'origins. meta_*: p_identity_value = Facebook Page ID, p_secret = access '
+  'token (Vault kind meta_page_access_token). Writes audit_log ''Lead Sources''.';
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 3. Rotate (google only)
+-- ─────────────────────────────────────────────────────────────────────────
+create or replace function public.nexus_lead_source_rotate_secret(p_source_key text)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+declare
+  v_tenant uuid := public.nexus_lead_source_owner_tenant();
+  v_src    text := lower(btrim(coalesce(p_source_key, '')));
+  v_actor  text := coalesce(nullif(btrim(coalesce(auth.jwt() ->> 'email', '')), ''), auth.uid()::text);
+  v_ep     uuid;
+  v_key    text;
+begin
+  if v_src <> 'google_ads_lead_form' then
+    raise exception using errcode = 'P0001',
+      message = 'Only the Google Ads lead form has a NEXUS-generated key to rotate.',
+      detail  = 'NX_LS_NO_SECRET_TO_ROTATE';
+  end if;
+
+  select e.endpoint_id into v_ep
+    from public.lead_ingest_endpoint e
+   where e.tenant_id = v_tenant and e.source_key = v_src and e.environment = 'production'
+   order by (e.status = 'active') desc, e.created_at desc
+   limit 1
+   for update;
+  if v_ep is null then
+    raise exception using errcode = 'P0001',
+      message = 'Connect the Google Ads lead form first.',
+      detail  = 'NX_LS_NOT_CONNECTED';
+  end if;
+
+  v_key := encode(extensions.gen_random_bytes(32), 'hex');
+  perform public.nexus_lead_ingest_secret_put(v_ep, 'google_lead_form_key', v_key, v_actor);
+
+  update public.lead_ingest_endpoint e
+     set secret_ref = 'vault:google_lead_form_key'
+   where e.endpoint_id = v_ep
+     and e.secret_ref is distinct from 'vault:google_lead_form_key';
+
+  insert into public.audit_log (workflow, status, summary, logged_at, tenant_id)
+  values ('Lead Sources', 'SUCCESS',
+          'Owner/admin rotated the Google Ads lead form key. The old key stops working now; '
+          || 'paste the new one into Google Ads.',
+          now(), v_tenant);
+
+  return v_key;
+end;
+$fn$;
+
+comment on function public.nexus_lead_source_rotate_secret(text) is
+  'NX1011. Owner/admin only. Replaces this dealership''s google_lead_form_key '
+  'and returns the new key once. Refuses any other source.';
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 4. Disconnect
+-- ─────────────────────────────────────────────────────────────────────────
+create or replace function public.nexus_lead_source_disconnect(p_source_key text)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+declare
+  v_tenant uuid := public.nexus_lead_source_owner_tenant();
+  v_src    text := lower(btrim(coalesce(p_source_key, '')));
+  v_eps    uuid[];
+begin
+  if v_src not in ('google_ads_lead_form', 'website_form', 'meta_lead_ads_facebook',
+                   'meta_lead_ads_instagram', 'marketplace_email_notification',
+                   'phone_call', 'walk_in') then
+    raise exception using errcode = 'P0001',
+      message = format('%s is not a lead source a dealership can manage from the dashboard.', coalesce(p_source_key, '(null)')),
+      detail  = 'NX_LS_UNKNOWN_SOURCE';
+  end if;
+
+  with d as (
+    update public.lead_ingest_endpoint e
+       set status = 'disabled'
+     where e.tenant_id = v_tenant and e.source_key = v_src
+       and e.environment = 'production' and e.status = 'active'
+    returning e.endpoint_id
+  )
+  select array_agg(d.endpoint_id) into v_eps from d;
+
+  update public.lead_ingest_provider_identity i
+     set status = 'disabled'
+   where i.tenant_id = v_tenant
+     and i.endpoint_id in (select e.endpoint_id from public.lead_ingest_endpoint e
+                            where e.tenant_id = v_tenant and e.source_key = v_src
+                              and e.environment = 'production')
+     and i.status = 'active';
+
+  if v_eps is not null then
+    insert into public.audit_log (workflow, status, summary, logged_at, tenant_id)
+    values ('Lead Sources', 'SUCCESS',
+            format('Owner/admin disconnected lead source %s. New deliveries to it are refused; '
+                   || 'leads already received are kept.', v_src),
+            now(), v_tenant);
+  end if;
+end;
+$fn$;
+
+comment on function public.nexus_lead_source_disconnect(text) is
+  'NX1011. Owner/admin only. Disables this dealership''s production endpoint '
+  'for the source and its provider identities. Stored secrets are kept so a '
+  're-connect does not need them re-entered; lead history is untouched.';
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 5. Google receiver's credential read, by the public key it resolves from ?k=
+--    service_role only: the n8n receiver, never a browser.
+-- ─────────────────────────────────────────────────────────────────────────
+create or replace function public.nexus_lead_ingest_secret_reveal_for_public_key(
+  p_public_key text,
+  p_kind       text,
+  p_reason     text
+) returns table (tenant_id uuid, endpoint_id uuid, source_key text, secret text)
+language plpgsql
+volatile
+security definer
+set search_path to 'public', 'pg_catalog'
+as $fn$
+#variable_conflict use_column
+declare
+  r record;
+begin
+  select e.tenant_id, e.endpoint_id, e.source_key, s.vault_secret_id
+    into r
+    from public.lead_ingest_endpoint e
+    join public.tenants t on t.id = e.tenant_id and t.status = 'active'
+    join public.lead_ingest_secret s on s.endpoint_id = e.endpoint_id and s.kind = p_kind
+   where e.public_key = btrim(coalesce(p_public_key, ''))
+     and e.status = 'active';
+
+  if not found then
+    raise exception using errcode = 'P0001',
+      message = format('NX1011 NO_CREDENTIAL: no active endpoint with that public key holds a %L.', p_kind),
+      detail  = 'NX_LS_NO_CREDENTIAL';
+  end if;
+
+  insert into public.audit_log (workflow, status, summary, logged_at, tenant_id)
+  values ('Lead Ingest Credential Vault', 'SUCCESS',
+    format('Revealed %s for endpoint %s — %s', p_kind, r.endpoint_id, coalesce(p_reason, 'no reason given')),
+    now(), r.tenant_id);
+
+  tenant_id   := r.tenant_id;
+  endpoint_id := r.endpoint_id;
+  source_key  := r.source_key;
+  select vs.decrypted_secret into secret from vault.decrypted_secrets vs where vs.id = r.vault_secret_id;
+  return next;
+end;
+$fn$;
+
+comment on function public.nexus_lead_ingest_secret_reveal_for_public_key(text, text, text) is
+  'NX1011. service_role only. Returns the Vault secret of p_kind for the active '
+  'endpoint answering to p_public_key (the Google receiver''s ?k=). Every reveal '
+  'is audited. Used when lead_ingest_endpoint.secret_ref = ''vault:<kind>''.';
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- 6. Grants. Literal revokes naming public, anon and authenticated first.
+-- ─────────────────────────────────────────────────────────────────────────
+revoke all on function public.nexus_lead_source_ingest_url(text, text) from public, anon, authenticated;
+revoke all on function public.nexus_lead_source_owner_tenant() from public, anon, authenticated;
+revoke all on function public.nexus_lead_source_connections() from public, anon, authenticated;
+revoke all on function public.nexus_lead_source_connect(text, text, text, text) from public, anon, authenticated;
+revoke all on function public.nexus_lead_source_rotate_secret(text) from public, anon, authenticated;
+revoke all on function public.nexus_lead_source_disconnect(text) from public, anon, authenticated;
+revoke all on function public.nexus_lead_ingest_secret_reveal_for_public_key(text, text, text) from public, anon, authenticated;
+
+grant execute on function public.nexus_lead_source_ingest_url(text, text) to authenticated, service_role;
+grant execute on function public.nexus_lead_source_owner_tenant() to authenticated, service_role;
+grant execute on function public.nexus_lead_source_connections() to authenticated, service_role;
+grant execute on function public.nexus_lead_source_connect(text, text, text, text) to authenticated, service_role;
+grant execute on function public.nexus_lead_source_rotate_secret(text) to authenticated, service_role;
+grant execute on function public.nexus_lead_source_disconnect(text) to authenticated, service_role;
+grant execute on function public.nexus_lead_ingest_secret_reveal_for_public_key(text, text, text) to service_role;
+
+commit;

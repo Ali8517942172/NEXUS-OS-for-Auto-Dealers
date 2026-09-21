@@ -21,15 +21,21 @@
  *    Meta. `Authorization: Bearer` keeps it out of all three. The URL built
  *    below carries only the lead id and the field list, and that is on purpose.
  *
- * 2. THE TOKEN IS PER DEALERSHIP, RESOLVED FROM page_id.
- *    One n8n box serves many dealerships. Each owns its own Facebook Page, its
- *    own Meta app and its own token, so a single $env.META_PAGE_ACCESS_TOKEN is
- *    a one-dealership design wearing a multi-tenant shirt. The token is fetched
- *    per lead from the vault (NX980) keyed on the page_id that arrived inside
- *    the body whose HMAC verified. The env var below is the MIGRATION PATH and
- *    nothing else: set NEXUS_REQUIRE_PER_DEALER_SECRETS=true and it stops
- *    existing. A fallback nobody ever turns off is how this stays single-tenant
- *    forever while looking otherwise.
+ * 2. THE TOKEN IS PER PAGE, RESOLVED FROM page_id, AND THERE IS NO OTHER.
+ *    One n8n box serves many dealerships. Each connects its own Facebook Page
+ *    and its Page access token is stored in the vault (NX980) against that
+ *    Page's lead-ingest endpoint, kind 'meta_page_access_token'. The token is
+ *    fetched per lead, keyed on the page_id that arrived inside the body whose
+ *    HMAC verified (the HMAC is the one app-level secret, META_APP_SECRET:
+ *    there is one NEXUS Meta app). There is NO box-wide token and no fallback
+ *    to one: no box-level Page token env var is read. A fallback nobody turns
+ *    off is how a system stays single-tenant forever while looking otherwise.
+ *
+ * 2b. THE TOKEN'S DEALERSHIP MUST BE THE ROW'S DEALERSHIP.
+ *    Record Lead Event wrote the RECEIVED row under a tenant. The vault answers
+ *    with the tenant that owns the Page token. If they differ, or either is
+ *    missing, nothing is fetched: a Page of tenant X only ever produces leads
+ *    for X, and a lead of X is never read with Y's credential.
  *
  * 3. GRAPH'S error.message NEVER LEAVES THIS NODE.
  *    Meta's OAuthException messages routinely echo the request back, and this
@@ -66,9 +72,10 @@ const eventId = recorded.event_id ? String(recorded.event_id) : '';
 
 const SUPABASE_URL = String($env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SERVICE_KEY  = String($env.SUPABASE_SERVICE_ROLE_KEY || '');
-const STRICT       = String($env.NEXUS_REQUIRE_PER_DEALER_SECRETS || '')
-                       .trim().toLowerCase() === 'true';
-const LEGACY_TOKEN = String($env.META_PAGE_ACCESS_TOKEN || '');
+/* The vault kind registered in public.lead_ingest_secret_kind (FK). The
+   dealer connect flow must store the Page token under exactly this kind. */
+const PAGE_TOKEN_KIND = 'meta_page_access_token';
+const recordedTenant = recorded.tenant_id ? String(recorded.tenant_id) : '';
 
 /* Pinned, and validated rather than interpolated: a stray value here becomes a
    path segment on graph.facebook.com. v25.0 is what GO-LIVE.md measured. */
@@ -162,8 +169,8 @@ if (pageId) {
     p_provider: 'meta',
     p_identity_kind: 'facebook_page_id',
     p_identity_value: pageId,
-    p_kind: 'meta_page_access_token',
-    p_reason: 'lead hydration: GET /' + GRAPH_VERSION + '/<leadgen_id>',
+    p_kind: PAGE_TOKEN_KIND,
+    p_reason: 'leadgen hydrate',
   });
   /* Named fields only. `got` is never spread, never logged and never returned:
      one of its columns is the token. */
@@ -176,24 +183,31 @@ if (pageId) {
   }
 }
 
-if (!token && !STRICT && LEGACY_TOKEN) {
-  token = LEGACY_TOKEN;
-  token_source = 'env_global_fallback';
-}
-
 if (!token) {
   return stop('NO_PAGE_TOKEN_FOR_THIS_PAGE',
     (pageId
-      ? ('No meta_page_access_token is installed for Facebook Page ' + pageId)
+      ? ('No active ' + PAGE_TOKEN_KIND + ' is installed for Facebook Page ' + pageId +
+         ' (Page not registered, endpoint or dealership not active, token not ' +
+         'installed, or the vault was unreachable)')
       : 'This delivery named no page_id, so no dealership could be identified') +
-    (STRICT
-      ? '. NEXUS_REQUIRE_PER_DEALER_SECRETS is true, so there is no box-wide ' +
-        'fallback and there should not be. Install it with ' +
-        'nexus_lead_ingest_secret_put(<endpoint_id>, \'meta_page_access_token\', ...).'
-      : ', and META_PAGE_ACCESS_TOKEN is unset on this box. Install the ' +
-        'dealership\'s own token in the vault rather than setting the env var.'),
+    '. There is no box-wide fallback and there must not be. The dealership ' +
+    'reconnects its Page, which stores the token with nexus_lead_ingest_secret_put.',
     true,
-    { strict_per_dealer: STRICT, vault_reachable: !!(http && SUPABASE_URL && SERVICE_KEY) });
+    { vault_reachable: !!(http && SUPABASE_URL && SERVICE_KEY) });
+}
+
+/* ---- Rule 2b: the token's dealership is the row's dealership ------------- */
+if (!recordedTenant || !resolved_tenant_id ||
+    String(resolved_tenant_id) !== recordedTenant) {
+  const tokenTenant = resolved_tenant_id;
+  token = '';
+  return stop('PAGE_TOKEN_TENANT_MISMATCH',
+    'The Page token the vault returned belongs to a different dealership than ' +
+    'the one Record Lead Event wrote this row for (or one side named no ' +
+    'dealership). Fetching would read one dealership\'s lead with another ' +
+    'dealership\'s credential, or file it under the wrong one. Refusing. Fix ' +
+    'the lead_ingest_provider_identity rows for this Page.', true,
+    { recorded_tenant_id: recordedTenant || null, token_tenant_id: tokenTenant || null });
 }
 
 /* ---- The one call that turns an id into a person -------------------------- */
@@ -353,9 +367,7 @@ return [{ json: Object.assign(lead, {
   leadgen_id: leadgenId,
   graph_status: status,
   graph_version: GRAPH_VERSION,
-  /* `env_global_fallback` means this lead was fetched with the migration token
-     and NOT with a token held for a named dealership. It is not evidence of
-     tenant isolation and must never be counted as such. */
+  /* Always 'vault_per_dealer': there is no other source. */
   token_source,
   tenant_id: resolved_tenant_id,
   endpoint_id: resolved_endpoint_id,

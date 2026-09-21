@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NEXUS Lead Form Test</title>
+<style>body{margin:0;padding:24px 16px;font-family:system-ui,sans-serif;background:#f6f6f6;color:#1a1a1a}main{max-width:520px;margin:0 auto;background:#fff;padding:20px;border-radius:12px}code{font-size:12px;word-break:break-all}</style>
+</head>
+<body>
+<main>
+  <h1>Lead form test</h1>
+  <p>Open as <code>/embed/test.html?k=YOUR_PUBLIC_KEY</code>. This page's origin must be in the endpoint's origin_allowlist, otherwise the intake answers 403.</p>
+  <div id="nexus-lead-form"></div>
+</main>
+<script>
+  (function () {
+    var k = new URLSearchParams(location.search).get('k') || '';
+    var s = document.createElement('script');
+    s.src = './nexus-lead-form.js';
+    s.setAttribute('data-nexus-key', k);
+    document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>
