@@ -73,7 +73,7 @@
       and hiding them would be a different lie; they are labelled and they are
       not coloured by direction. */
 import { SILENCE_MARKER, isInternalRow, isMessageRow } from './comm-events.js';
-import { canReassignLead, db, dbWrite } from './data.js';
+import { canReassignLead, db, dbWrite, subscriptionAccessMode } from './data.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
 /* audit_log.status is not ours to read literally: lib/health.js mirrors
@@ -85,6 +85,7 @@ import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
    reading workflow outcomes must take its tone from OUTCOME_WORDS. */
 import { outcomeOf, outcomeWords } from './health.js';
 import { describeKey, expandIdentity, KEY_SHAPE, keyShape, personQuery } from './identity.js';
+import { openModal } from './modal.js';
 import { go } from './nav.js';
 import { stateEmpty, stateLoading } from './states.js';
 import { closeDrawer, openDrawer } from './ui.js';
@@ -148,6 +149,25 @@ async function leadDrawer(lead) {
           <dt>Source</dt><dd>${esc(lead.source || '—')}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
           <dt>Budget</dt><dd>${n0(lead.budget_aed) == null ? '<span class="t-muted">Not captured by the router</span>' : aed(lead.budget_aed)}</dd>
+          <dt>Scoring</dt><dd id="dScoringInfo">${(() => {
+            /* NX1005. `scoring_state` is PENDING / SCORED / FAILED, NOT NULL,
+               defaulted PENDING by the column, so a lead nothing has scored yet
+               is honestly PENDING rather than blank. `score_source` names WHAT
+               scored it (RULES, or one of the AI_SCORE_* words) -- a different
+               question from whether it succeeded. FAILED also carries
+               scoring_attempts and scoring_last_error, shown here so "why is
+               this stuck" does not require reading a table. */
+            const state = String(lead.scoring_state || 'PENDING').toUpperCase();
+            const err = String(lead.scoring_last_error || '').trim();
+            const attempts = n0(lead.scoring_attempts);
+            return `${pill(state, state === 'SCORED' ? 'ok' : undefined, { verbatim: true })}`
+              + (lead.score_source ? ` <span class="chip mono">${esc(lead.score_source)}</span>` : '')
+              + (n0(lead.rules_score) != null ? `<span class="cell-sub"> rules_score ${esc(String(n0(lead.rules_score)))}</span>` : '')
+              + (state === 'FAILED'
+                  ? `<div class="cell-sub t-hot">${esc(String(attempts ?? 0))} attempt${attempts === 1 ? '' : 's'}`
+                    + (err ? ` -- ${esc(err)}` : ' -- no error text recorded') + '</div>'
+                  : '');
+          })()}</dd>
           <dt>Assigned to</dt><dd>${(() => {
             /* `users?.name` only resolves when the caller selected the
                `users(id,name)` embed. Overview and Conversations do not, so a
@@ -198,6 +218,19 @@ async function leadDrawer(lead) {
     <div class="drawer-foot">
       <button class="btn" id="dWhats"><span class="material-symbols-outlined">chat</span>Open conversation</button>
       <button class="btn" id="dAssign"${canReassignLead(lead.tenant_id) ? '' : ' disabled title="Moving a lead to a different owner is an owner, admin or manager decision at this dealership. It moves commission and it moves who is answerable for the 5-minute rule."'}>Assign to…</button>
+      <!-- NX1005: only meaningful on a FAILED lead -- shown and disabled rather
+           than hidden otherwise, matching every other authority check in this
+           file, so a rep can see the action exists and why it is unavailable. -->
+      <button class="btn" id="dRetryScore"${String(lead.scoring_state || '').toUpperCase() === 'FAILED' ? '' : ' disabled title="Only a FAILED lead can be retried. Resets scoring_state to PENDING so the hourly rescore workflow picks it up."'}>Retry scoring</button>
+      <span class="cell-sub" id="dRetryScoreMsg"></span>
+      <!-- NX1005: books directly from the lead through nexus_my_appointment_request
+           then nexus_my_appointment_confirm, chained in bookVisitDialog() below.
+           Shown enabled regardless of scoring_state or lead status -- a visit can
+           be booked for a lead in any state. A read-only subscription (if
+           nexus_my_subscription() exists) is checked on click, not here, because
+           that check needs a round trip this synchronous render cannot make. -->
+      <button class="btn" id="dBookVisit">Book visit</button>
+      <span class="cell-sub" id="dBookVisitMsg"></span>
     </div>`);
 
   $('dClose').addEventListener('click', closeDrawer);
@@ -208,6 +241,55 @@ async function leadDrawer(lead) {
      this line; the point of the line is that the dialog is not offered and
      then defeated. */
   if (canReassignLead(lead.tenant_id)) $('dAssign').addEventListener('click', () => assignDialog(lead));
+
+  /* NX1005: a direct database write via rpc/nexus_my_lead_retry_scoring, not
+     an n8n webhook -- the same tenant-scoped, FAILED-only refusal the SQL
+     function itself enforces, so this button can never do more than the
+     database would allow the same signed-in user to do from any other
+     client. On success the Scoring row and the button are updated in place
+     rather than requiring the drawer to be closed and reopened. */
+  $('dRetryScore').addEventListener('click', async () => {
+    const btn = $('dRetryScore');
+    const msg = $('dRetryScoreMsg');
+    btn.disabled = true;
+    msg.innerHTML = '<span class="t-muted">Retrying…</span>';
+    try {
+      const res = await dbWrite('POST', 'rpc/nexus_my_lead_retry_scoring', { p_lead_id: lead.id });
+      const row = Array.isArray(res) ? res[0] : res;
+      if (row) {
+        lead.scoring_state = row.scoring_state;
+        lead.scoring_attempts = row.scoring_attempts;
+        lead.scoring_last_error = row.scoring_last_error;
+      }
+      const info = $('dScoringInfo');
+      if (info) info.innerHTML = `${pill(String(lead.scoring_state || 'PENDING').toUpperCase(), undefined, { verbatim: true })}`;
+      msg.innerHTML = '<span class="t-ok">Queued for rescoring — the next hourly run will pick it up.</span>';
+      btn.title = 'This lead is no longer FAILED, so there is nothing left to retry.';
+    } catch (e) {
+      msg.innerHTML = `<span class="t-hot">${esc(e.message || String(e))}</span>`;
+      btn.disabled = false;
+    }
+  });
+
+  /* NX1005: the read-only check is async (it may itself be a network call, via
+     subscriptionAccessMode()'s memoised db('rpc/nexus_my_subscription')), so it
+     runs on click rather than at render time -- there is no synchronous way to
+     know it before the drawer paints. mode.known is false when
+     nexus_my_subscription() does not exist yet (task A's responsibility), in
+     which case mode.readOnly is always false and this never blocks anything. */
+  $('dBookVisit').addEventListener('click', async () => {
+    const msg = $('dBookVisitMsg');
+    msg.innerHTML = '<span class="t-muted">Checking…</span>';
+    let mode;
+    try { mode = await subscriptionAccessMode(); }
+    catch (e) { mode = { known: false, readOnly: false }; }
+    if (mode.readOnly) {
+      msg.innerHTML = '<span class="t-hot">This dealership\u2019s subscription is in a read-only state, so a visit cannot be booked until it is resolved.</span>';
+      return;
+    }
+    msg.innerHTML = '';
+    bookVisitDialog(lead);
+  });
 
   /* Captured NOW, before any await. See note 2 in the file header: these used to
      be looked up by global id after the reads returned, so a second click within
@@ -437,6 +519,125 @@ async function leadDrawer(lead) {
        <div>${esc(ident.ambiguity.map(a => a.message).join(' '))}</div></div>`);
     }
   }
+}
+
+/* NX1005 -- "Book visit" from the lead drawer ──────────────────────────────
+   Two calls, chained: nexus_my_appointment_request() creates the visit
+   REQUESTED against this lead (resolving-or-creating the `customer` row NX995
+   requires, which this dashboard has no independent concept of -- see the
+   migration's PART 2 note on nexus_my_customer_for_lead), then
+   nexus_my_appointment_confirm() gives it the time, duration and salesperson
+   entered here. Both are tenant-scoped wrappers over NX995's own service-role
+   verbs -- see supabase/migrations/20260921120000_nx1005_*.sql -- so this
+   dialog can do nothing a signed-in user of this dealership could not already
+   do through any other client, including the EXCLUDE USING gist double-
+   booking refusal, which arrives here as NX995's own sentence and is shown
+   as-is rather than paraphrased.
+
+   THE TIME IS ENTERED IN THE BROWSER'S OWN CLOCK. `datetime-local` carries no
+   timezone of its own; `new Date(value)` reads it in whatever timezone the
+   browser is set to. For a rep sitting in the showroom that is Asia/Dubai,
+   the only zone this product ever renders a date in (lib/format.js's
+   dubaiStamp). A browser set to a different zone would book the visit at the
+   wrong wall-clock hour with no warning from this dialog -- a real gap, named
+   here rather than silently accepted.
+
+   If the request succeeds and the confirm fails -- most likely the double-
+   booking refusal, or an assigned_to_id from another dealership's roster --
+   the visit is NOT lost: it exists REQUESTED under the appointment id NX995
+   handed back, and the message names it so a rep does not re-click and create
+   a second visit for the same customer. */
+function bookVisitDialog(lead) {
+  const m = openModal(`Book a visit -- ${lead.name || 'this lead'}`, `
+    <div class="cell-sub" style="margin-bottom:12px">
+      Requests a visit for this lead and confirms it for the time below in one step. The appointment belongs to this
+      lead's own dealership, never any other one, and is recorded under your own account as the actor.
+    </div>
+    <label class="cell-sub" for="bvWhen" style="display:block">When (this device's own clock)</label>
+    <input id="bvWhen" type="datetime-local" style="width:100%">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+      <div style="flex:1;min-width:160px">
+        <label class="cell-sub" for="bvDuration" style="display:block">Duration (minutes)</label>
+        <input id="bvDuration" type="number" min="5" step="5" value="45" style="width:100%">
+      </div>
+      <div style="flex:1;min-width:220px">
+        <label class="cell-sub" for="bvSalesWrap" style="display:block">Salesperson (optional)</label>
+        <div id="bvSalesWrap" class="cell-sub">Loading staff…</div>
+      </div>
+    </div>
+    <label class="cell-sub" for="bvNotes" style="display:block;margin-top:12px">Notes (optional)</label>
+    <input id="bvNotes" type="text" maxlength="400" style="width:100%" placeholder="What the customer wants to see or do">
+  `, `<button class="btn primary" id="bvGo">Book it</button>
+      <button class="btn" id="bvCancel">Cancel</button>`);
+
+  const $$ = id => m.wrap.querySelector(id);
+  $$('#bvCancel').addEventListener('click', () => m.close());
+
+  db('users?select=id,name,status&order=name').then(users => {
+    const list = users || [];
+    $$('#bvSalesWrap').innerHTML = list.length
+      ? `<select id="bvSales" style="width:100%"><option value="">Unassigned</option>${list.map(u =>
+          `<option value="${esc(u.id)}"${u.id === lead.assigned_to_id ? ' selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`).join('')}</select>`
+      : '<span class="t-muted">No staff accounts to offer -- the visit can still be booked with no salesperson attached.</span>';
+  }).catch(e => {
+    $$('#bvSalesWrap').innerHTML =
+      `<span class="t-hot">The staff list could not be read (${esc(e.message || String(e))}). The visit can still be booked with no salesperson attached.</span>`;
+  });
+
+  $$('#bvGo').addEventListener('click', async () => {
+    const goBtn = $$('#bvGo');
+    const whenVal = ($$('#bvWhen').value || '').trim();
+    if (!whenVal) {
+      m.msg('<span class="t-hot">A date and time are required -- a visit with no time is a REQUEST, not a booking. Use the Appointments screen for a request with no time yet.</span>');
+      return;
+    }
+    const dt = new Date(whenVal);
+    if (Number.isNaN(dt.getTime())) {
+      m.msg('<span class="t-hot">That is not a time this dialog can read. Please re-enter it.</span>');
+      return;
+    }
+    const duration = Number(($$('#bvDuration').value || '45').trim()) || 45;
+    const salesSel = m.wrap.querySelector('#bvSales');
+    const salesId = salesSel ? (salesSel.value || null) : null;
+    const notes = ($$('#bvNotes').value || '').trim() || null;
+
+    goBtn.disabled = true;
+    m.msg('Requesting…');
+    let appt;
+    try {
+      const rows = await dbWrite('POST', 'rpc/nexus_my_appointment_request', {
+        p_lead_id: lead.id, p_channel: 'PHONE', p_notes: notes,
+      });
+      appt = Array.isArray(rows) ? rows[0] : rows;
+    } catch (e) {
+      m.msg(`<span class="t-hot">${esc(e.message || String(e))}</span>`);
+      goBtn.disabled = false;
+      return;
+    }
+
+    m.msg(`Requested as appointment ${esc(String(appt && appt.appointment_id))}. Confirming the time…`);
+    try {
+      const rows2 = await dbWrite('POST', 'rpc/nexus_my_appointment_confirm', {
+        p_appointment_id: appt.appointment_id,
+        p_starts_at: dt.toISOString(),
+        p_duration_minutes: duration,
+        p_assigned_to_id: salesId,
+        p_location: null,
+        p_resource: null,
+      });
+      const conf = Array.isArray(rows2) ? rows2[0] : rows2;
+      m.msg(`<span class="t-ok">Booked. Appointment ${esc(String(conf && conf.appointment_id))} is CONFIRMED for `
+        + `${esc(conf && conf.starts_at ? new Date(conf.starts_at).toLocaleString() : whenVal)}. `
+        + `Open the Appointments screen to see it in the diary.</span>`);
+    } catch (e) {
+      m.msg(`<span class="t-hot">The visit was requested (appointment ${esc(String(appt && appt.appointment_id))}) but could not be `
+        + `confirmed for that time: ${esc(e.message || String(e))} It still exists as REQUESTED -- open the `
+        + `Appointments screen to confirm it for a different time rather than booking this lead again.</span>`);
+      goBtn.disabled = false;
+    }
+  });
+
+  return m;
 }
 
 async function assignDialog(lead) {

@@ -380,4 +380,53 @@ const HOOK = {
 
 /* ── Screen registry ─────────────────────────────────────────────────────── */
 
-export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner };
+/* -- NX1005: a read-only access mode, if one exists ------------------------
+   `public.nexus_my_subscription()` is a different piece of work landing on a
+   different branch (task A) and does not exist in every deployment of this
+   database. This helper is written so callers work identically whether it is
+   there or not: call it, and if PostgREST answers "no such function"
+   (the shape a missing RPC takes over this same db() path, PGRST202) treat
+   that as "no gate to respect", not as a read-only dealership. Any OTHER
+   failure is reported as unknown rather than guessed either way, because
+   defaulting to "not read-only" on a genuine outage would let a suspended
+   dealership's staff keep booking visits through a screen that simply could
+   not ask.
+
+   The function's actual shape is not fixed anywhere in this codebase yet, so
+   the row it returns (if it exists) is read defensively: a handful of
+   plausible field names, not one assumed name. Whoever lands
+   nexus_my_subscription() should feel free to replace this with a real
+   contract once its shape is settled -- this is a courtesy for the browser,
+   never the security boundary; that belongs in the database, inside the
+   functions that actually write. */
+let SUB_MODE = null;
+function subscriptionAccessMode() {
+  if (!SUB_MODE) {
+    SUB_MODE = db('rpc/nexus_my_subscription').then(rows => {
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (!row || typeof row !== 'object') return { known: false, readOnly: false };
+      const flagKeys = ['read_only', 'is_read_only', 'readOnly'];
+      const flag = flagKeys.map(k => row[k]).find(v => v !== undefined);
+      const modeText = String(row.access_mode ?? row.mode ?? row.status ?? '').toLowerCase();
+      const readOnlyModes = ['read_only', 'readonly', 'suspended', 'expired', 'past_due', 'cancelled', 'canceled'];
+      const readOnly = flag === true || readOnlyModes.includes(modeText);
+      return { known: true, readOnly, row };
+    }).catch(e => {
+      /* A missing function and a real failure must not look the same: the
+         former means this deployment has no such gate yet, the latter means
+         the question genuinely could not be asked. Both currently answer
+         "not known to be read-only" -- a caller that cares about the
+         difference reads `.missing` / `.err`. */
+      const text = String((e && (e.technical || e.message)) || '');
+      const missing = /PGRST202|Could not find the function|does not exist/i.test(text);
+      return { known: false, readOnly: false, missing, err: e };
+    });
+  }
+  return SUB_MODE;
+}
+/* Same rule as MEMBERSHIP and every other module-level cache in this file:
+   a signed-in identity change must not let the next signer see the previous
+   one's read. */
+onIdentityChange(() => { SUB_MODE = null; });
+
+export { supabase, SESSION, ME, setMeReadFailed, meReadFailed, authToken, headers, isAuthFailure, sessionEnded, db, dbWrite, n8n, signedUrl, HOOK, setSessionEndedHandler, setSession, setMe, onIdentityChange, setMembership, membershipKnown, myRole, myStaffId, canSetCost, canDeleteUnit, canAddUnit, canEditUnit, canReassignLead, canManageAccess, canGrantOwner, subscriptionAccessMode };
