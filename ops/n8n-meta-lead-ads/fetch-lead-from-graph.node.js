@@ -71,7 +71,7 @@ const leadgenId = String(ctx.leadgen_id || '');
 const eventId = recorded.event_id ? String(recorded.event_id) : '';
 
 const SUPABASE_URL = String($env.SUPABASE_URL || '').replace(/\/+$/, '');
-const SERVICE_KEY  = String($env.SUPABASE_SERVICE_ROLE_KEY || '');
+const SERVICE_KEY  = String($env.SUPABASE_SERVICE_ROLE_KEY || $env.SUPABASE_KEY || '');
 /* The vault kind registered in public.lead_ingest_secret_kind (FK). The
    dealer connect flow must store the Page token under exactly this kind. */
 const PAGE_TOKEN_KIND = 'meta_page_access_token';
