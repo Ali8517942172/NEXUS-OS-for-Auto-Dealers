@@ -404,21 +404,21 @@ SCREENS.attribution = async host => {
              recording where enquiries come from, so there is nothing to attribute spend against. This is the reason
              the campaign question above cannot be answered, stated as a number.</div></div></div>`
         : '';
-      return lead + table(rows, [
+      return lead + table([
         { label: 'Platform', render: r => String(r.ad_platform || '').toUpperCase() === 'UNKNOWN'
             ? pill('Unknown', 'unknown', { verbatim: false })
             : pill(String(r.ad_platform), 'ok', { verbatim: true }) },
-        { label: 'Enquiries', align: 'right', render: r => n0(r.leads) },
-        { label: 'Became a lead', align: 'right', render: r => n0(r.promoted_leads) },
+        { label: 'Enquiries', align: 'r', render: r => n0(r.leads) },
+        { label: 'Became a lead', align: 'r', render: r => n0(r.promoted_leads) },
         /* BOTH shares, always, side by side. Printing one would let a reader
            quote 100% of the known slice as though it were 100% of the funnel,
            which is the exact flattery the function was written to prevent. */
-        { label: 'Share of those with a known platform', align: 'right',
+        { label: 'Share of those with a known platform', align: 'r',
           render: r => r.share_of_known == null ? muted('n/a') : `${esc(str(r.share_of_known))}%` },
-        { label: 'Share of ALL enquiries', align: 'right',
+        { label: 'Share of ALL enquiries', align: 'r',
           render: r => r.share_of_all == null ? muted('n/a') : `${esc(str(r.share_of_all))}%` },
         { label: 'What the engine says', render: r => muted(esc(str(r.note))) },
-      ]) + (unknown
+      ], rows) + (unknown
         ? muted('UNKNOWN is a real row, not a rounding remainder. It counts enquiries NEXUS holds and cannot '
               + 'attribute, which is a number worth watching go down rather than one worth hiding.')
         : '');
