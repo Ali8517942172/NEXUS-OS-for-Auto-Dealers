@@ -99,12 +99,12 @@ begin
   -- other write in this product reads, not a second permission system.
   select count(*) into v_n from public.nexus_tenant_ids_for_roles(array['owner','admin']);
   if v_n = 0 then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = 'NX1007 REFUSED: you are not an owner or admin of any dealership. '
         || 'Connecting a WhatsApp Cloud number is an owner/admin decision.';
   end if;
   if v_n > 1 then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = 'NX1007 REFUSED: you are an owner/admin of more than one dealership. '
         || 'This form cannot choose one on your behalf.';
   end if;
@@ -112,12 +112,12 @@ begin
 
   -- WHAT. Fail closed on shape before touching Vault at all.
   if v_pnid !~ '^[0-9]{5,20}$' then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = 'NX1007 REFUSED: phone_number_id must be the numeric Meta id from your '
         || 'WhatsApp Business API settings, not the phone number itself.';
   end if;
   if v_waba is not null and v_waba !~ '^[0-9]{1,32}$' then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = 'NX1007 REFUSED: WABA id must be numeric.';
   end if;
 
@@ -133,7 +133,7 @@ begin
      and external_identifier = v_pnid;
 
   if v_existing_tenant is not null and v_existing_tenant <> v_tenant then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = 'NX1007 REFUSED: this phone_number_id is already registered to a '
         || 'different dealership. If you believe this is an error, contact support — '
         || 'this form will not reassign it.';
@@ -206,11 +206,11 @@ declare
 begin
   select * into v_row from public.channel_registry cr where cr.integration_id = p_integration_id;
   if not found then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = format('NX1007 NO_SUCH_CHANNEL: integration_id %s has no channel_registry row.', p_integration_id);
   end if;
   if v_row.status <> 'pending' then
-    raise exception using errcode = 'NX1007',
+    raise exception using errcode = 'P0001',
       message = format('NX1007 REFUSED: channel %s is %s, not pending. This RPC only promotes a pending '
         || 'channel that has just passed a real test send — it does not reactivate a suspended or revoked one.',
         p_integration_id, v_row.status);
