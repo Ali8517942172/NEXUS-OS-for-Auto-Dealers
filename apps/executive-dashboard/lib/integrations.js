@@ -53,7 +53,7 @@ async function renderIntegrations(node, opts = {}) {
     { name: 'NEXUS data', probe: async () => { await db('leads?select=id&limit=1'); return 'Connected'; } },
     { name: 'Automation', probe: async () => {
         if (!N8N_BASE) throw new Error('This deployment is not configured to reach it');
-        const r = await fetch(`${N8N_BASE}/healthz`).catch(() => null);
+        const r = await fetch(`${N8N_BASE}/healthz`, { cache: 'no-store' }).catch(() => null);
         if (!r) throw new Error('Unreachable from the browser');
         /* This line used to return the string "HTTP <status>" on the non-ok
            branch, and a probe that RETURNS is a probe that succeeded: the loop below
