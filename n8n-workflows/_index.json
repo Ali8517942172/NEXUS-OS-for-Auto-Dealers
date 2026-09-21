@@ -1,5 +1,5 @@
 {
-  "exported_at": "2026-09-20T09:21:48.998165+00:00",
+  "exported_at": "2026-09-21T02:23:09.675179+00:00",
   "source": "https://35.224.126.225.nip.io/api/v1",
   "note": "Live export via the n8n public API. Credential references only, no secret material. Regenerate with scripts/export_workflows.py.",
   "workflows": [
@@ -32,7 +32,7 @@
       "id": "AZkGM5M4c1uzSH7S",
       "name": "Customer 360 - Data Aggregation (Bitrix24)",
       "active": true,
-      "nodes": 11,
+      "nodes": 13,
       "published": true
     },
     {
@@ -84,6 +84,14 @@
       "published": true
     },
     {
+      "file": "new_rescore_pending_leads_hourly.json",
+      "id": "dCRmzWHCz7bniIBr",
+      "name": "NEW: Rescore Pending Leads (Hourly)",
+      "active": true,
+      "nodes": 18,
+      "published": true
+    },
+    {
       "file": "nexus_appointment_booking_candidate_do_not_activate.json",
       "id": "IsdF6LbuBnq0z3K7",
       "name": "NEXUS Appointment Booking \u2014 CANDIDATE (do not activate)",
@@ -112,7 +120,7 @@
       "id": "JnlZFAVmFAuNXVya",
       "name": "NEXUS Master Lead Router - AI Agent",
       "active": true,
-      "nodes": 26,
+      "nodes": 28,
       "published": true
     },
     {
@@ -216,7 +224,7 @@
       "id": "bxNBzBrcOtcFpMPn",
       "name": "wf_108 ERP Sync - Bitrix24 CRM",
       "active": true,
-      "nodes": 22,
+      "nodes": 23,
       "published": true
     }
   ]

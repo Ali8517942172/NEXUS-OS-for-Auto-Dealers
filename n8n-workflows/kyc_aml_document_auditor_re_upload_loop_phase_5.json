@@ -1230,7 +1230,7 @@
     "availableInMCP": true,
     "binaryMode": "separate",
     "timezone": "Asia/Dubai",
-    "saveDataErrorExecution": "none",
+    "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "none",
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "iYJkh1kztWxZXDbT",
@@ -1240,7 +1240,7 @@
   "_exported_from": {
     "id": "qTnh3nwWheFJbFkU",
     "active": true,
-    "updatedAt": "2026-09-20T07:13:39.540Z",
+    "updatedAt": "2026-09-20T20:30:55.242Z",
     "published": true
   }
 }

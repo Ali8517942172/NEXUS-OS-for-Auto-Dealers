@@ -236,7 +236,8 @@
             "lead_email": "={{ $('Resolve Lead Identity').first().json.lead_email || '' }}",
             "lead_name": "={{ $('Resolve Lead Identity').first().json.lead_name || '' }}",
             "query": "",
-            "input": ""
+            "input": "",
+            "tenant_id": "={{ $('Resolve Tenant').first().json.tenant_id }}"
           },
           "matchingColumns": [],
           "attemptToConvertTypes": false,
@@ -305,6 +306,16 @@
             {
               "id": "input",
               "displayName": "input",
+              "type": "string",
+              "required": false,
+              "display": true,
+              "removed": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
               "type": "string",
               "required": false,
               "display": true,
@@ -2007,7 +2018,7 @@
   "_exported_from": {
     "id": "BiyHk9ZXxJUVGbf6",
     "active": true,
-    "updatedAt": "2026-09-07T15:35:18.000Z",
+    "updatedAt": "2026-09-20T09:37:32.828Z",
     "published": true
   }
 }

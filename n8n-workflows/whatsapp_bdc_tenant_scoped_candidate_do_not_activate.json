@@ -2456,18 +2456,19 @@
     }
   },
   "settings": {
-    "saveDataErrorExecution": "none",
-    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
     "saveExecutionProgress": false,
     "executionOrder": "v1",
     "timezone": "Asia/Dubai",
     "errorWorkflow": "iYJkh1kztWxZXDbT",
-    "executionTimeout": 300
+    "executionTimeout": 300,
+    "availableInMCP": true
   },
   "_exported_from": {
     "id": "LTBExI7QzFeANeFg",
     "active": false,
-    "updatedAt": "2026-09-18T15:57:16.531Z",
+    "updatedAt": "2026-09-21T02:14:47.357Z",
     "published": false
   }
 }

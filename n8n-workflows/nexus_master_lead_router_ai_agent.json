@@ -32,7 +32,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// The agent usually returns JSON, but often wrapped in ```json fences or with\n// a sentence around it. The old version silently fell back to COLD/0 on any\n// parse failure, which made every single lead look cold.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\nfunction extractJson(s) {\n  if (!s) return null;\n  // 1. straight parse\n  try { return JSON.parse(s); } catch (e) {}\n  // 2. strip markdown code fences\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  // 3. grab the outermost {...} block\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nlet parsed = extractJson(text);\nlet parseFailed = false;\n\nif (!parsed || typeof parsed !== 'object') {\n  parseFailed = true;\n  // Last resort: pull an intent word and a number out of the prose so a\n  // genuinely hot lead is not silently downgraded to COLD.\n  const intentMatch = text.match(/\\b(HOT|WARM|COLD)\\b/i);\n  const scoreMatch = text.match(/\\b(\\d{1,3})\\b/);\n  parsed = {\n    intent: intentMatch ? intentMatch[1].toUpperCase() : 'WARM',\n    score: scoreMatch ? Math.min(100, parseInt(scoreMatch[1], 10)) : 50,\n    reason: 'Agent did not return valid JSON. Raw output: ' + text.substring(0, 300)\n  };\n  // Deliberately no budget here: the prose fallback cannot tell a budget from\n  // a price, a year or a phone number, and a wrong budget is worse than none.\n}\n\n// 30 Aug 2026: budget_aed added. A live HOT lead said 'budget around AED 600,000',\n// the agent's own reason quoted it back, and the column was still written NULL --\n// nothing upstream extracts a budget from message text. This object is built\n// field by field, not spread, so a key the agent returns is dropped unless it is\n// named here. Anything not a positive finite number becomes null.\nconst rawBudget = Number(parsed.budget_aed);\nconst budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n\nconst intent = String(parsed.intent || '').toUpperCase();\nconst ai_decision = {\n  intent: ['HOT', 'WARM', 'COLD'].includes(intent) ? intent : 'WARM',\n  score: Number.isFinite(Number(parsed.score)) ? Number(parsed.score) : 50,\n  reason: parsed.reason || null,\n  budget_aed: budget_aed,\n  parse_failed: parseFailed\n};\n\nreturn [{ json: { lead, ai_decision } }];"
+        "jsCode": "// SCORING AUTHORITY — read this before changing a number.\n//\n// 14 Sep 2026 (ADR-003). Zero paying dealers, so the model ladder is entirely\n// free-tier and none of those models support structured output. A free model\n// that collapses into babble produced ai_score 0 on 13 Sep, and an empty `{}`\n// response produced a confident-looking WARM/50. Neither was a verdict.\n//\n// So: DETERMINISTIC RULES DECIDE. The model still runs, its answer is still\n// recorded, and it is labelled as a non-authoritative signal. When two paying\n// dealers justify a paid model with real structured output, flip the one\n// constant below to 'AI' and the labels flip with it. No schema change.\nconst AUTHORITY = 'RULES';   // 'RULES' today | 'AI' once a paid structured model is in\n\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst rawOut = $input.first().json;\n\n// Rules-engine short-circuit: when every AI tier is exhausted, the\n// \"Rule-Based Lead Scorer\" node hands us an already-finished decision\n// instead of raw agent text. Detect it by score_source and pass it straight\n// through -- do NOT try to regex/JSON-parse it as if it were LLM output.\nif (rawOut.ai_decision && rawOut.ai_decision.score_source === 'RULES') {\n  return [{ json: { lead: rawOut.lead || lead, ai_decision: rawOut.ai_decision } }];\n}\n\nconst text = String(rawOut.output ?? rawOut.text ?? '').trim();\n\n// ---------------------------------------------------------------- the model\nfunction extractJson(s) {\n  if (!s) return null;\n  try { return JSON.parse(s); } catch (e) {}\n  const fenced = s.replace(/```(?:json)?/gi, '').trim();\n  try { return JSON.parse(fenced); } catch (e) {}\n  const first = fenced.indexOf('{');\n  const last = fenced.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(fenced.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n\nconst parsed = extractJson(text);\n\n// A parse that \"succeeds\" on `{}` is not a verdict. Both fields must actually\n// be present and valid, or this is a fallback. That closes the hole where an\n// empty model response was indistinguishable from a genuine WARM/50.\nconst aiIntentRaw = parsed && typeof parsed === 'object'\n  ? String(parsed.intent || '').toUpperCase() : '';\nconst aiScoreNum = parsed && typeof parsed === 'object' ? Number(parsed.score) : NaN;\nconst aiStructured =\n  ['HOT', 'WARM', 'COLD'].includes(aiIntentRaw) && Number.isFinite(aiScoreNum);\n\nconst ai = {\n  intent: aiStructured ? aiIntentRaw : null,\n  score:  aiStructured ? Math.max(0, Math.min(100, Math.round(aiScoreNum))) : null,\n  reason: (parsed && parsed.reason) ? String(parsed.reason) : null,\n  structured: aiStructured\n};\n\n// Budget: only ever trusted from structured JSON. The prose fallback cannot\n// tell a budget from a price, a year or a phone number, and a wrong budget is\n// worse than none.\nconst rawBudget = aiStructured ? Number(parsed.budget_aed) : NaN;\nconst aiBudget = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n\n// ---------------------------------------------------------------- the rules\n// Explainable, deterministic, and every point is attributable to a named\n// signal. Nothing here can hallucinate and nothing here can time out.\nconst msg = String(lead.vehicle_interest || '').toLowerCase();\nconst budget = Number(lead.budget_aed) > 0 ? Number(lead.budget_aed) : (aiBudget || 0);\n\nconst BUY   = /\\b(price|pricing|quote|cost|how much|buy|buying|purchase|test drive|testdrive|book|booking|reserve|available|availability|finance|financing|emi|installment|instalment|down payment|cash|trade[- ]?in|exchange)\\b/;\nconst URGENT= /\\b(today|tonight|now|asap|urgent|urgently|immediately|tomorrow|this week|right away)\\b/;\nconst GREET = /^(hi|hello|hey|salam|assalam|as-salamu|good (morning|afternoon|evening)|thanks|thank you|ok|okay)\\W*$/;\n\nlet score = 20;\nconst why = [];\nconst add = (n, label) => { score += n; why.push((n >= 0 ? '+' : '') + n + ' ' + label); };\n\nif (lead.phone) add(25, 'reachable by phone');\nif (lead.email) add(10, 'email present');\n\nif (!msg)                 add(-15, 'no enquiry text');\nelse if (GREET.test(msg)) add(-10, 'greeting only, no enquiry');\nelse if (msg.length >= 3) add(20, 'named an enquiry');\n\nif (BUY.test(msg))    add(25, 'buying-intent phrase');\nif (URGENT.test(msg)) add(15, 'urgency phrase');\n\nif (budget >= 100000)   add(15, 'budget >= AED 100k');\nelse if (budget > 0)    add(10, 'budget stated');\n\nif (String(lead.origin || '') === 'whatsapp-bdc') add(10, 'already in a live WhatsApp thread');\n\nscore = Math.max(0, Math.min(100, score));\n\n// No enquiry text and no budget is not a cold lead, it is an unreadable one.\n// Send it to a human rather than inventing a temperature for it.\nconst unreadable = !msg && budget <= 0;\nconst rules = {\n  intent: unreadable ? 'UNKNOWN' : (score >= 70 ? 'HOT' : (score >= 40 ? 'WARM' : 'COLD')),\n  score: score,\n  reason: unreadable\n    ? 'No enquiry text and no budget — rules cannot classify this lead. Needs a human.'\n    : ('Rules: ' + why.join(', ') + ' = ' + score + '.')\n};\n\n// ------------------------------------------------------------ who decides\nconst useAi = AUTHORITY === 'AI' && ai.structured;\nconst decided = useAi ? ai : rules;\n\n// One label, three values, never mixed in a metric.\n//   RULES              — the deterministic scorer decided (today's default)\n//   AI_SCORE_CONFIRMED — the model returned valid structured JSON and decided\n//   AI_SCORE_FALLBACK  — the model did not return a usable verdict\nconst score_source = useAi\n  ? 'AI_SCORE_CONFIRMED'\n  : (AUTHORITY === 'AI' ? 'AI_SCORE_FALLBACK' : 'RULES');\n\nconst ai_decision = {\n  intent: decided.intent,\n  score: decided.score,\n  reason: [decided.reason, ai.reason ? ('Model said: ' + ai.reason) : null]\n            .filter(Boolean).join(' | ') || null,\n  budget_aed: aiBudget,\n\n  // provenance — persisted, not just logged\n  score_source: score_source,\n  rules_score: rules.score,\n  rules_intent: rules.intent,\n  ai_score_raw: ai.score,\n  ai_intent_raw: ai.intent,\n  ai_structured: ai.structured,\n\n  // kept for the Slack card and the audit row. True whenever the model failed\n  // to produce a usable verdict, whether or not the rules covered for it.\n  parse_failed: !ai.structured,\n  ai_raw_excerpt: ai.structured ? null : text.substring(0, 300)\n};\n\nreturn [{ json: { lead, ai_decision } }];"
       },
       "id": "6",
       "name": "Parse AI Decision",
@@ -456,7 +456,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\n//\n// 30 Aug 2026: groqModel changed from 'llama-3.3-70b-versatile' to\n// 'openai/gpt-oss-120b' on every tier. Groq SHUT DOWN llama-3.3-70b-versatile\n// for free and developer tiers on 16 Aug 2026 -- their deprecations page names\n// openai/gpt-oss-120b as the replacement, their models page marks the old id\n// Enterprise/Contact-Sales, and it has no row at all in the free-tier\n// rate-limit table. Groq is only the FALLBACK slot, so it had never fired in\n// production and nothing surfaced this: it would have failed for the first\n// time on the day OpenRouter was already down. The same fix went into the\n// WhatsApp BDC agent earlier today; this workflow was missed, which meant the\n// two agents disagreed about which model exists.\n// Free-tier ceiling: 30 RPM / 1K RPD / 8K TPM / 200K TPD -- tokens-per-minute\n// binds well before requests-per-minute on an agent this prompt-heavy.\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',                groqModel: GROQ_FALLBACK }\n];\n\nconst prev = $input.first().json;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((prev.lead && prev.lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: prev.lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
+        "jsCode": "// n8n's Agent node accepts a maximum of 2 language models, so a deeper\n// fallback chain is built as a retry ladder. Each tier swaps the OpenRouter slot.\n// 16 Aug 2026: every id below was verified live against OpenRouter -- it exists,\n// it is :free (no paid model, per the free-tier rule), and it actually returned\n// a tool_call in a real request. The previous ladder had a PAID gemini tier plus\n// two dead ids (gemma-4-31b-it:free rate-limited 429, ling-3.0-flash:free is\n// 404 free-tier-discontinued), which is why all 4 tiers failed on live traffic.\n//\n// 29 Aug 2026: REMOVED tier 1, 'nvidia/nemotron-3-ultra-550b-a55b:free'. It failed\n// on BOTH agents inside the same real run -- exec 6251 (BDC, 46.5s wasted) and\n// exec 6253 (Router, 45.8s wasted) -- with 'Cannot read properties of undefined\n// (reading \\'message\\')'. The ladder escalated correctly each time, so this is not\n// a ladder bug: the model is dead and every single request was paying ~45s for it\n// before getting a real answer. That latency is also a direct contributor to\n// concurrency exhaustion at 5 production slots.\n//\n// 30 Aug 2026: groqModel changed from 'llama-3.3-70b-versatile' to\n// 'openai/gpt-oss-120b' on every tier. Groq SHUT DOWN llama-3.3-70b-versatile\n// for free and developer tiers on 16 Aug 2026 -- their deprecations page names\n// openai/gpt-oss-120b as the replacement, their models page marks the old id\n// Enterprise/Contact-Sales, and it has no row at all in the free-tier\n// rate-limit table. Groq is only the FALLBACK slot, so it had never fired in\n// production and nothing surfaced this: it would have failed for the first\n// time on the day OpenRouter was already down. The same fix went into the\n// WhatsApp BDC agent earlier today; this workflow was missed, which meant the\n// two agents disagreed about which model exists.\n// Free-tier ceiling: 30 RPM / 1K RPD / 8K TPM / 200K TPD -- tokens-per-minute\n// binds well before requests-per-minute on an agent this prompt-heavy.\nconst GROQ_FALLBACK = 'openai/gpt-oss-120b';\nconst TIERS = [\n  { orModel: 'nvidia/nemotron-3.5-lightning:free',       groqModel: GROQ_FALLBACK },\n  { orModel: 'nvidia/nemotron-3-super-120b-a12b:free',   groqModel: GROQ_FALLBACK },\n  { orModel: 'minimax/minimax-m2.7:free',                groqModel: GROQ_FALLBACK }\n];\n\nconst prev = $input.first().json;\n// NX1002 persist-first bug fix (20 Sep 2026, found live on exec 16124):\n// 'Persist Lead (deterministic)' now runs BEFORE this node and uses\n// 'Prefer: return=minimal', so its HTTP response body -- and therefore\n// $input.first().json on THIS node's first invocation -- is {} with no\n// .lead at all. prev.lead was silently undefined on every tier, which fed\n// 'undefined' lead data into the AI agent and into 'Rule-Based Lead Scorer',\n// and then made 'Update Lead Scoring (PATCH)' fail outright (tenant_id=\n// eq.undefined is not a valid uuid), leaving every lead stuck at\n// scoring_state='PENDING' forever. Read lead from the named node instead --\n// same pattern 'Parse AI Decision' already uses for the same reason -- so it\n// is available on every iteration of this retry loop, not just derived from\n// this node's own previous (lead-less) output.\nconst lead = $('Validate & Enrich Input').first().json.lead;\nconst attempt = Number(prev.attempt ?? -1) + 1;\n\nif (attempt >= TIERS.length) {\n  throw new Error('All ' + TIERS.length + ' model tiers failed for lead ' +\n    ((lead && lead.email) || 'unknown') + '. Tried: ' +\n    TIERS.map(t => t.orModel + ' / ' + t.groqModel).join(', '));\n}\n\nreturn [{ json: {\n  lead: lead,\n  attempt: attempt,\n  maxTiers: TIERS.length,\n  orModel: TIERS[attempt].orModel,\n  groqModel: TIERS[attempt].groqModel\n} }];"
       },
       "id": "mr-ladder-01",
       "name": "Model Ladder",
@@ -465,7 +465,8 @@
       "position": [
         352,
         304
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -685,7 +686,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify(Object.assign({ name: $json.lead.name || 'Unknown', email: $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead'), phone: $json.lead.phone, vehicle_interest: $json.lead.vehicle_interest, ai_score: $json.ai_decision.score, status: $json.ai_decision.intent, source: 'nexus-master-router' }, (Number($json.ai_decision.budget_aed) > 0 || Number($json.lead.budget_aed) > 0) ? { budget_aed: Number($json.ai_decision.budget_aed) > 0 ? Number($json.ai_decision.budget_aed) : Number($json.lead.budget_aed) } : {}, $json.lead.tenant_id ? { tenant_id: $json.lead.tenant_id } : {})) }}",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ name: $json.lead.name || 'Unknown', email: $json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead'), phone: $json.lead.phone, vehicle_interest: $json.lead.vehicle_interest, source: 'nexus-master-router', scoring_state: 'PENDING' }, (Number($json.lead.budget_aed) > 0) ? { budget_aed: Number($json.lead.budget_aed) } : {}, $json.lead.tenant_id ? { tenant_id: $json.lead.tenant_id } : {})) }}",
         "options": {}
       },
       "notes": "Added 29 Aug 2026. The lead row must not depend on the model choosing to call a tool - on exec 6253 it simply did not, and the run still audited SUCCESS. Values are bound from Parse AI Decision's item, not from $fromAI.",
@@ -743,6 +744,62 @@
       "maxTries": 3,
       "waitBetweenTries": 1000,
       "alwaysOutputData": true
+    },
+    {
+      "id": "nx1002-update-scoring-01",
+      "name": "Update Lead Scoring (PATCH)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1400,
+        180
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?tenant_id=eq.{{ encodeURIComponent($json.lead.tenant_id) }}&email=eq.{{ encodeURIComponent($json.lead.email || ('+' + String($json.lead.phone || '').replace(/[^0-9]/g,'') + '@whatsapp.lead')) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ ai_score: $json.ai_decision.score, status: $json.ai_decision.intent, scoring_state: 'SCORED', scored_at: new Date().toISOString(), score_source: $json.ai_decision.score_source || 'AI_SCORE_UNKNOWN' }, ($json.ai_decision.score_source === 'RULES') ? { rules_score: $json.ai_decision.rules_score } : { ai_score_raw: ($json.ai_decision.ai_score_raw === undefined ? null : $json.ai_decision.ai_score_raw), ai_intent_raw: ($json.ai_decision.ai_intent_raw === undefined ? null : $json.ai_decision.ai_intent_raw) })) }}",
+        "options": {}
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "dv4OeARarErZLHCj",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Added 20 Sep 2026 (NX1002). Second half of persist-first/score-later: 'Persist Lead (deterministic)' already wrote this row as PENDING right after 'Validate & Enrich Input'. This PATCHes the SAME row (same natural key: tenant_id + the same email/synthetic-whatsapp-email derivation Persist Lead uses) to SCORED now that 'Parse AI Decision' has a real ai_decision. Runs in parallel with 'Intent Switch' so a PATCH failure here can never delay or block Slack/ERP/WhatsApp routing. onError=continueRegularOutput: a failure to mark SCORED must not fail the execution -- the row just stays PENDING and the hourly rescore sweep (NEW_rescore_pending_leads) picks it up and finishes the job later; it is idempotent (nexus_record_lead_scoring_result's `scoring_state <> 'SCORED'` guard).",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "mr-rules-01",
+      "name": "Rule-Based Lead Scorer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        480
+      ],
+      "parameters": {
+        "jsCode": "// mr-rules-01 :: Rule-Based Lead Scorer (deterministic, zero-API, LAST tier)\n// ---------------------------------------------------------------------------\n// Why this file exists: the AI Lead Scoring Agent's Model Ladder tries up to\n// 3 OpenRouter :free models (each with a Groq fallback). When OpenRouter's\n// DAILY free quota is exhausted AND Groq also fails/is exhausted, the Model\n// Ladder code node throws (attempt >= TIERS.length) and, because it has no\n// onError handler, the whole execution dies -- the lead is never scored,\n// never routed, never persisted. Nothing downstream of scoring ever runs.\n//\n// This node is the answer: it makes NO network call, needs NO credential and\n// NEVER runs out of quota, so a lead is ALWAYS scored even at zero AI budget.\n// It is meant to sit as the terminal tier of the ladder (see\n// ops/tenant-precedence/patched4/model-ladder.md for exactly where it is\n// wired in) and produces the SAME { lead, ai_decision } shape that\n// \"Parse AI Decision\" produces today, so it can feed straight into\n// \"Intent Switch\" + \"Persist Lead (deterministic)\" unchanged.\n//\n// score_source is deliberately the literal string 'RULES' (upper-case), NOT\n// 'rules'. This matches leads.score_source's live check constraint\n// (leads_score_source_is_a_known_label, migration\n// 20260914065739_nx920_a_score_now_says_who_decided_it.sql:\n// RULES / AI_SCORE_CONFIRMED / AI_SCORE_FALLBACK / AI_SCORE_UNKNOWN) --\n// writing lowercase 'rules' to that column would fail the constraint outright.\n// `rules_score` is also emitted (== score) because that is the column NX920\n// added for it. See ops/ADR-003-who-decides-the-score.md: per that accepted\n// (but, as of this file, not yet n8n-implemented) decision, RULES is meant to\n// be the AUTHORITATIVE score for every lead today (zero paying dealers, no\n// model on the ladder supports structured output) -- this file only wires it\n// in as the ladder's last tier per this task's brief, but it is written so\n// that promoting it to score-every-lead later is a one-line change in\n// whatever calls it, not a rewrite.\n//\n// Every point added or subtracted is pushed onto `reasons` so the output is\n// auditable by a human (or by Slack: Unclassified Lead) -- this is the whole\n// point of a rules engine standing in for an LLM: you can see exactly why.\n//\n// Inputs used (all already on the `lead` object built by\n// \"Validate & Enrich Input\" -- see master-router.Validate-and-Enrich-Input.js):\n//   lead.budget_aed        number|null   -- stated budget in AED\n//   lead.vehicle_interest  string|null   -- vehicle named AND/OR raw free-text\n//                                           message (Validate & Enrich falls\n//                                           back to the raw message when no\n//                                           explicit vehicle field is sent)\n//   lead.message           string|null   -- optional explicit message text,\n//                                           scanned in addition to\n//                                           vehicle_interest when present\n//   lead.source             string|null  -- lead origin channel\n//   lead.phone              string|null\n//   lead.email               string|null\n//   lead.received_at        ISO string   -- used for the time-of-day signal\n//\n// Output: { intent: 'HOT'|'WARM'|'COLD', score: 0-100, reason: string,\n//           budget_aed: number|null, parse_failed: false,\n//           score_source: 'RULES', rules_score: number, score_reasons: string[] }\n// ---------------------------------------------------------------------------\n\n// Fixed offset: Asia/Dubai is UTC+4 year-round (no DST). Avoids depending on\n// ICU/timezone data being present in whatever sandbox this runs in.\nconst DUBAI_UTC_OFFSET_HOURS = 4;\n\n// ---- keyword dictionaries (lowercased; matched as substrings) -------------\n// English\nconst LUXURY_KEYWORDS = [\n  'range rover', 'land rover', 'bentley', 'rolls royce', 'rolls-royce',\n  'ferrari', 'lamborghini', 'porsche', 'maserati', 'aston martin',\n  'g63', 'g-wagon', 'g wagon', 'g wagen', 'amg', 's-class', 's class',\n  '7 series', 'x7', 'gt3', 'mclaren', 'bentayga', 'cullinan', 'mercedes',\n];\nconst URGENCY_KEYWORDS_EN = [\n  'today', 'right now', 'asap', 'urgent', 'urgently', 'ready to buy',\n  'cash ready', 'this week', 'immediately', 'right away', 'buy now',\n  'need it now', 'visit today', 'test drive today', 'ready to purchase',\n];\n// Arabic (Gulf-dialect friendly) urgency / buying-intent terms\nconst URGENCY_KEYWORDS_AR = [\n  'عاجل', 'اليوم', 'الآن', 'بسرعة', 'جاهز', 'أريد شراء', 'اشتري الان',\n];\n// Hinglish / Roman Urdu-Hindi urgency / buying-intent terms\nconst URGENCY_KEYWORDS_HINGLISH = [\n  'jaldi', 'abhi', 'turant', 'chahiye', 'kharidna hai', 'abhi chahiye',\n];\nconst BROWSING_KEYWORDS = [\n  'just checking', 'just browsing', 'just looking', 'window shopping',\n  'no rush', 'not in a hurry', 'someday', 'not sure yet', 'just curious',\n];\nconst SPAM_KEYWORDS = [\n  'click here', 'www.', 'http://', 'https://', 'free followers',\n  'crypto', 'bitcoin', 'casino', 'loan approved', 'seo services',\n  'backlink', 'guaranteed income', 'work from home', 'viagra',\n  'subscribe now', '100% free', 'earn money fast', 'act now buy',\n];\nconst REPEAT_KEYWORDS = [\n  'second time', 'third time', 'again', 'as i mentioned', 'as mentioned before',\n  'previously asked', 'following up', 'follow up on my', 'already contacted',\n  'asked before', 'still waiting for a reply', 'still waiting', 'once more',\n];\nconst HIGH_INTENT_SOURCES = /test.?drive|financing|finance.?application|showroom|whatsapp|website.?form/i;\nconst LOW_INTENT_SOURCES = /cold.?list|scrape|bulk.?import|purchased.?list/i;\n\nfunction toText(lead) {\n  return [lead && lead.vehicle_interest, lead && lead.message, lead && lead.name]\n    .filter((v) => typeof v === 'string' && v.trim().length)\n    .join(' \\n ')\n    .toLowerCase();\n}\n\nfunction matchAny(text, keywords) {\n  return keywords.filter((k) => text.includes(k.toLowerCase()));\n}\n\nfunction dubaiHour(isoOrDate) {\n  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate || Date.now());\n  if (Number.isNaN(d.getTime())) return new Date().getUTCHours();\n  const utcHour = d.getUTCHours();\n  return (utcHour + DUBAI_UTC_OFFSET_HOURS) % 24;\n}\n\n/**\n * Pure, deterministic, zero-API lead scorer.\n * @param {object} lead - lead object as built by Validate & Enrich Input.\n * @param {object} [opts]\n * @param {Date|string} [opts.now] - override \"current time\" for time-of-day\n *   scoring/testing. Defaults to lead.received_at, then real now.\n * @returns {{intent:string, score:number, reason:string, budget_aed:(number|null),\n *            parse_failed:boolean, score_source:string, score_reasons:string[]}}\n */\nfunction scoreLead(lead, opts) {\n  lead = lead || {};\n  opts = opts || {};\n  const reasons = [];\n  let score = 0;\n  let forcedIntent = null; // set to override the score->tier mapping entirely\n\n  const text = toText(lead);\n\n  // ---- 1. budget_aed (weight up to 35) -------------------------------\n  const rawBudget = Number(lead.budget_aed);\n  const budget_aed = Number.isFinite(rawBudget) && rawBudget > 0 ? Math.round(rawBudget) : null;\n  if (budget_aed === null) {\n    reasons.push('no budget stated (+0)');\n  } else if (budget_aed >= 300000) {\n    score += 35;\n    reasons.push(`budget_aed ${budget_aed} >= 300,000 AED: high-value buyer (+35)`);\n  } else if (budget_aed >= 100000) {\n    score += 22;\n    reasons.push(`budget_aed ${budget_aed} in the 100k-300k AED band: solid buyer (+22)`);\n  } else {\n    score += 8;\n    reasons.push(`budget_aed ${budget_aed} is a modest stated budget, still a real number (+8)`);\n  }\n\n  // ---- 2. vehicle / message keyword signals --------------------------\n  const luxuryHits = matchAny(text, LUXURY_KEYWORDS);\n  const specificVehicle = !luxuryHits.length && lead.vehicle_interest &&\n    String(lead.vehicle_interest).trim().length > 3;\n  if (luxuryHits.length) {\n    score += 15;\n    reasons.push(`luxury/high-end vehicle keyword(s) matched: ${luxuryHits.join(', ')} (+15)`);\n  } else if (specificVehicle) {\n    score += 8;\n    reasons.push(`a specific vehicle was named (\"${lead.vehicle_interest}\"), genuine interest signal (+8)`);\n  } else {\n    reasons.push('no specific vehicle or luxury signal in the text (+0)');\n  }\n\n  // ---- 3. urgency keywords, English + Arabic + Hinglish --------------\n  const urgencyHitsEn = matchAny(text, URGENCY_KEYWORDS_EN);\n  const urgencyHitsAr = matchAny(text, URGENCY_KEYWORDS_AR);\n  const urgencyHitsHi = matchAny(text, URGENCY_KEYWORDS_HINGLISH);\n  const urgencyHits = [...urgencyHitsEn, ...urgencyHitsAr, ...urgencyHitsHi];\n  if (urgencyHits.length) {\n    score += 20;\n    reasons.push(`urgency/buy-now language matched (EN/AR/Hinglish aware): ${urgencyHits.join(', ')} (+20)`);\n  } else {\n    reasons.push('no urgency language detected (+0)');\n  }\n\n  // ---- 4. browsing / low-intent language ------------------------------\n  const browsingHits = matchAny(text, BROWSING_KEYWORDS);\n  if (browsingHits.length) {\n    score -= 10;\n    reasons.push(`browsing/no-rush language matched: ${browsingHits.join(', ')} (-10)`);\n  }\n\n  // ---- 5. repeat / follow-up enquiry -----------------------------------\n  const repeatHits = matchAny(text, REPEAT_KEYWORDS);\n  if (repeatHits.length) {\n    score += 10;\n    reasons.push(`repeat/follow-up language matched: ${repeatHits.join(', ')} (+10) -- this person has ` +\n      'already contacted us before; rules mode cannot check purchase history (no DB call), so this is a ' +\n      'text-only proxy for \"engaged, possibly getting impatient\" and should be prioritised for a fast human reply');\n  }\n\n  // ---- 6. contact completeness (weight up to 8) ------------------------\n  const hasPhone = !!(lead.phone && String(lead.phone).trim());\n  const hasEmail = !!(lead.email && String(lead.email).trim());\n  if (hasPhone) { score += 5; reasons.push('phone on file, directly callable/WhatsApp-able (+5)'); }\n  if (hasEmail) { score += 3; reasons.push('email on file (+3)'); }\n  if (!hasPhone && !hasEmail) {\n    reasons.push('NO phone and NO email on file -- this lead cannot be reached through any channel we have; ' +\n      'capping the score and forcing COLD regardless of every other signal, because a highly scored but ' +\n      'unreachable lead is worse than a low one (it looks actionable but is not)');\n    forcedIntent = 'COLD';\n  }\n\n  // ---- 7. source signal (weight up to 5) --------------------------------\n  const source = String(lead.source || '');\n  if (HIGH_INTENT_SOURCES.test(source)) {\n    score += 5;\n    reasons.push(`source \"${source}\" is a high-intent channel (test drive / financing / showroom / whatsapp) (+5)`);\n  } else if (LOW_INTENT_SOURCES.test(source)) {\n    score -= 10;\n    reasons.push(`source \"${source}\" looks like a bulk/cold/purchased list (-10)`);\n  }\n\n  // ---- 8. spam detection (dominant, overrides everything above) ---------\n  const spamHits = matchAny(text, SPAM_KEYWORDS);\n  if (spamHits.length) {\n    reasons.push(`spam-pattern keyword(s) matched: ${spamHits.join(', ')} -- overriding score to near-zero ` +\n      'and forcing COLD regardless of any other signal above');\n    score = Math.max(0, 10 - spamHits.length * 3);\n    forcedIntent = 'COLD';\n  }\n\n  // ---- 9. time-of-day (weight +/-5, soft signal only) --------------------\n  const hour = dubaiHour(opts.now || lead.received_at);\n  const isBusinessHours = hour >= 8 && hour < 20;\n  if (isBusinessHours) {\n    score += 5;\n    reasons.push(`received at ${hour}:00 Asia/Dubai, inside business hours (+5)`);\n  } else {\n    score -= 5;\n    reasons.push(`received at ${hour}:00 Asia/Dubai, outside business hours -- follow-up will likely wait for ` +\n      'the next shift, small penalty (-5)');\n  }\n\n  // ---- clamp + classify ---------------------------------------------------\n  score = Math.max(0, Math.min(100, Math.round(score)));\n\n  let intent;\n  if (forcedIntent) {\n    intent = forcedIntent;\n    // A forced-COLD lead should never carry a score that reads as hot to a\n    // human skimming a table, even if the raw signals were strong.\n    score = Math.min(score, 15);\n  } else if (score >= 70) {\n    intent = 'HOT';\n  } else if (score >= 40) {\n    intent = 'WARM';\n  } else {\n    intent = 'COLD';\n  }\n\n  const topReason = reasons[0] || 'deterministic rule-based score';\n  const reason = `Rule-based score ${score}/100 -> ${intent}. No AI quota was available for this lead; ` +\n    `every signal is listed in score_reasons. Top factor: ${topReason}`;\n\n  return {\n    intent,\n    score,\n    reason,\n    budget_aed,\n    parse_failed: false,\n    score_source: 'RULES',   // matches leads.score_source's live check constraint (NX920)\n    rules_score: score,      // matches leads.rules_score (NX920)\n    score_reasons: reasons,\n  };\n}\n\n// ---- CommonJS export for the standalone test harness ---------------------\n// `typeof module` is a safe check even where `module` is never declared (an\n// n8n Code node sandbox): `typeof` never throws on an undeclared identifier.\n// This line never runs inside n8n in a way that affects the node's output --\n// n8n's sandbox has no CommonJS `module`, so the guard is simply false there.\nif (typeof module !== 'undefined' && module.exports) {\n  module.exports = { scoreLead };\n}\n\n// ---- n8n Code node glue ----------------------------------------------------\n// Only executes inside n8n, where the `$input` global exists. Kept last and\n// guarded so this same file can be `require()`d by the test harness (where\n// `$input` is undefined) without touching n8n's execution API.\nif (typeof $input !== 'undefined') {\n  const prev = $input.first().json;\n  // NX1002/model-ladder patch bug fix (20 Sep 2026, found live on exec\n  // 16124/16127): when Model Ladder's retry ladder is exhausted, its\n  // onError=continueErrorOutput error-output item is JUST { error: <msg> }\n  // -- n8n does NOT carry the node's own input (or .lead) through on a Code\n  // node's THROWN error, contrary to this patch's original spec assumption\n  // (which guessed this from reading the code, not from a live throw). Read\n  // the real lead from the named node instead, same fix as 'Model Ladder'.\n  let lead;\n  try {\n    lead = $('Validate & Enrich Input').first().json.lead;\n  } catch (e) {\n    lead = prev.lead || prev;\n  }\n  const ai_decision = scoreLead(lead);\n  return [{ json: { lead, ai_decision } }];\n}"
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -766,7 +823,7 @@
             "index": 0
           },
           {
-            "node": "Persist Lead (deterministic)",
+            "node": "Update Lead Scoring (PATCH)",
             "type": "main",
             "index": 0
           }
@@ -831,17 +888,6 @@
         [
           {
             "node": "Delivery Report",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate & Enrich Input": {
-      "main": [
-        [
-          {
-            "node": "Model Ladder",
             "type": "main",
             "index": 0
           }
@@ -926,6 +972,13 @@
         [
           {
             "node": "AI Lead Scoring Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rule-Based Lead Scorer",
             "type": "main",
             "index": 0
           }
@@ -1044,6 +1097,39 @@
           }
         ]
       ]
+    },
+    "Validate & Enrich Input": {
+      "main": [
+        [
+          {
+            "node": "Persist Lead (deterministic)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Lead (deterministic)": {
+      "main": [
+        [
+          {
+            "node": "Model Ladder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rule-Based Lead Scorer": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -1059,7 +1145,7 @@
   "_exported_from": {
     "id": "JnlZFAVmFAuNXVya",
     "active": true,
-    "updatedAt": "2026-09-20T07:09:30.129Z",
+    "updatedAt": "2026-09-21T02:21:31.117Z",
     "published": true
   }
 }

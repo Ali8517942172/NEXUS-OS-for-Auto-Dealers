@@ -381,3 +381,40 @@ workflow's own ladder too, or is manually seeded.
 - The node that hung 16068 for 10 minutes has no timeout. Every LLM/HTTP node in the Master Router needs an explicit timeout so a hung provider falls through to the rules tier instead of burning the run.
 - Caddy has no access log. Add a `log` block so the proxy hop is provable next time.
 - The harness's execution finder ignores `canceled` status — add it.
+
+## 21 Sep 2026 — Master Router `Parse AI Decision` provenance logic restored, live
+
+CI job "Scoring provenance" (`ops/scoring/parse-ai-decision.test.js`, 18 cases)
+was failing against the LIVE Master Router (`JnlZFAVmFAuNXVya`): its
+`Parse AI Decision` node (3517 bytes) was an older draft that never got the
+ADR-003/NX920 provenance rewrite — decoder babble could score a buying lead
+0, an empty `{}` model response was indistinguishable from a genuine
+WARM/50, partial JSON was trusted, fenced JSON wasn't recognised, and the
+rules didn't decide even with `AUTHORITY='RULES'`. `origin/main`'s version
+(5893 bytes) had the fix but was never deployed.
+
+Fix: replaced the live node's code with main's version, re-adding the
+`score_source === 'RULES'` short-circuit (pass the Rule-Based Lead Scorer's
+already-finished decision straight through, unparsed) that the live workflow
+had separately gained on 20 Sep. New jsCode is 6357 bytes. Verified locally
+(18/18) on a patched copy of the export before touching the live workflow,
+applied via `update_workflow` `setNodeParameter` `/jsCode`, published
+(`versionId == activeVersionId == 8ea32b23-1ffb-4eea-892a-ab04a1bdb7ff`), then
+re-exported with `scripts/export_workflows.py` and re-ran the test against
+that fresh export — 18/18 again. Also ran
+`ops/tenant-precedence/code/rule-scorer.test.mjs` — 10/10.
+
+**Live proof (exec `16187`, lead id `152`, tenant `fff6a2b5-cfd5-4460-8383-875bc5826de0` = dealer A / ALBA):**
+pushed one NEXUS-TEST lead through the Master Router webhook as dealer A
+(marker `NXTEST-496e60820198`, no `tenant_id` claim). The live free model
+babbled its own system-prompt instructions back ("We need to return a raw
+JSON object and nothing else...") instead of JSON — exactly the failure mode
+ADR-003 exists for. `Parse AI Decision` correctly recorded
+`ai_structured=false`, `parse_failed=true`, and (with `AUTHORITY='RULES'`)
+`score_source='RULES'`, `score=75`/`HOT` from the deterministic scorer —
+**not** the old bug's WARM/0 or a false-confident WARM/50. Supabase
+confirms the persisted row: `scoring_state=SCORED`, `score_source=RULES`,
+`status=HOT`, `ai_score=75`, `scored_at` set. This run's re-export
+(`scripts/export_workflows.py`) is what's committed in `n8n-workflows/`
+alongside this note; other files in that refresh reflect unrelated live
+drift from other sessions' work, not this change.

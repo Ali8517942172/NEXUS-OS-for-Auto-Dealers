@@ -274,35 +274,22 @@
         304
       ],
       "parameters": {
-        "method": "GET",
-        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads",
+        "method": "POST",
+        "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/rpc/nexus_erp_bitrix24_hot_leads_backlog",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
-        "sendQuery": true,
-        "queryParameters": {
+        "sendHeaders": true,
+        "headerParameters": {
           "parameters": [
             {
-              "name": "select",
-              "value": "id,name,email,phone,source,vehicle_interest,budget_aed,ai_score,status,created_at,bitrix_lead_id,crm_synced_at,tenant_id"
-            },
-            {
-              "name": "status",
-              "value": "eq.HOT"
-            },
-            {
-              "name": "or",
-              "value": "={{ '(crm_synced_at.is.null,crm_synced_at.lt.\"' + $now.minus({ hours: 6 }).toUTC().toISO() + '\")' }}"
-            },
-            {
-              "name": "order",
-              "value": "created_at.desc"
-            },
-            {
-              "name": "limit",
-              "value": "100"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_tenant: $json._nexus_sweep_caller_tenant_id }) }}",
         "options": {
           "timeout": 30000
         }
@@ -564,6 +551,19 @@
       "maxTries": 3,
       "waitBetweenTries": 1000,
       "alwaysOutputData": true
+    },
+    {
+      "id": "erp-resolve-sweep-caller-0001",
+      "name": "Resolve Sweep Caller Tenant",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        312,
+        480
+      ],
+      "parameters": {
+        "jsCode": "// wf_108 ERP Sync -- the webhook door IS the sweep. ErpSyncWebhook is a\n// public POST gated only by 'Verify JWT' + 'Auth Gate', i.e. by 'is this a\n// valid Supabase session token', not 'does this caller belong to ALBA'. Live\n// execution data (15964-15966) showed a dealer-B user's own valid token\n// reaching 'Fetch HOT Leads from Supabase' exactly as an ALBA user's does,\n// and the tenant check that already existed ('Resolve Tenant''s ids.length\n// guard) ran AFTER that fetch -- too late to stop it.\n//\n// This node resolves and VALIDATES the caller's OWN dealership BEFORE the\n// fetch runs, using the same tenant_members lookup ('Tenant For JWT User')\n// and the exact same '[NEXUS-UNATTRIBUTED]' refusal contract 'Resolve Tenant'\n// already uses for this signal (0 rows or >1 rows both refuse). The resolved\n// id is a CLAIM, not a grant: 'Fetch HOT Leads from Supabase' now calls\n// nexus_erp_bitrix24_hot_leads_backlog(p_tenant) with it, and that function's\n// own fixed allowlist (NX1001) is what decides whether this dealership's\n// leads are ever returned -- a validated dealer-B caller gets zero rows, not\n// another dealership's data.\nconst NEXUS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n\nconst ids = Array.from(new Set(\n  $('Tenant For JWT User').all()\n    .map((i) => (i && i.json ? i.json.tenant_id : null))\n    .filter(Boolean)\n    .map(String)\n));\n\nif (ids.length > 1) {\n  throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: the authenticated user is a member of ' + ids.length + ' dealerships. This endpoint will not choose one on their behalf.');\n}\nif (ids.length === 0 || !NEXUS_UUID.test(ids[0])) {\n  throw new Error('[NEXUS-UNATTRIBUTED] ERP sync rejected: the authenticated user has no tenant_members row. A dealership is never taken from the request body.');\n}\n\n// Re-emit the ORIGINAL item (Auth Gate's passthrough of ErpSyncWebhook)\n// untouched apart from the one added key, so downstream sees exactly the\n// shape it saw before this gate was inserted.\nreturn $input.all().map((i) => ({\n  json: Object.assign({}, i.json, { _nexus_sweep_caller_tenant_id: ids[0] })\n}));"
+      }
     }
   ],
   "connections": {
@@ -661,17 +661,6 @@
         [
           {
             "node": "Log to Supabase audit_log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Auth Gate": {
-      "main": [
-        [
-          {
-            "node": "Fetch HOT Leads from Supabase",
             "type": "main",
             "index": 0
           }
@@ -812,6 +801,28 @@
           }
         ]
       ]
+    },
+    "Auth Gate": {
+      "main": [
+        [
+          {
+            "node": "Resolve Sweep Caller Tenant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Sweep Caller Tenant": {
+      "main": [
+        [
+          {
+            "node": "Fetch HOT Leads from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -828,7 +839,7 @@
   "_exported_from": {
     "id": "bxNBzBrcOtcFpMPn",
     "active": true,
-    "updatedAt": "2026-09-20T07:14:51.198Z",
+    "updatedAt": "2026-09-20T14:28:35.981Z",
     "published": true
   }
 }

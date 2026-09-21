@@ -236,8 +236,8 @@
         "filters": {
           "conditions": [
             {
-              "keyName": "email",
-              "keyValue": "={{ $json.lead?.email || $json.body?.email || $json.email }}"
+              "keyName": "={{ $json._nexus_lead_id ? 'id' : 'email' }}",
+              "keyValue": "={{ $json._nexus_lead_id || ($json.lead?.email || $json.body?.email || $json.email) }}"
             },
             {
               "keyName": "tenant_id",
@@ -407,7 +407,7 @@
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?email=eq.{{ encodeURIComponent($('Fetch Escalated Lead').first().json.email) }}&tenant_id=eq.{{ $('Fetch Escalated Lead').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}",
+        "url": "=https://dsvuoovivysszdoiorch.supabase.co/rest/v1/leads?id=eq.{{ $('Fetch Escalated Lead').first().json.id }}&tenant_id=eq.{{ $('Fetch Escalated Lead').first().json.tenant_id || '00000000-0000-0000-0000-000000000000' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "supabaseApi",
         "sendHeaders": true,
@@ -494,7 +494,7 @@
                 "operation": "notEmpty",
                 "singleValue": true
               },
-              "leftValue": "={{ $json.email }}",
+              "leftValue": "={{ $json.id }}",
               "rightValue": ""
             }
           ]
@@ -1031,7 +1031,7 @@
   "_exported_from": {
     "id": "KI6P1Qcf3MIZakNa",
     "active": true,
-    "updatedAt": "2026-09-20T07:16:15.593Z",
+    "updatedAt": "2026-09-20T09:38:53.458Z",
     "published": true
   }
 }

@@ -63,6 +63,10 @@
             {
               "name": "input",
               "type": "string"
+            },
+            {
+              "name": "tenant_id",
+              "type": "string"
             }
           ]
         }
@@ -453,7 +457,7 @@
   "_exported_from": {
     "id": "unMMpeL9uuPO79pp",
     "active": true,
-    "updatedAt": "2026-09-20T07:12:08.646Z",
+    "updatedAt": "2026-09-20T09:37:02.331Z",
     "published": true
   }
 }
