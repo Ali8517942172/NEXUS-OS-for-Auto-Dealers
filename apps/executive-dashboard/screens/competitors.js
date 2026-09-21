@@ -227,7 +227,8 @@
    wiring itself after `const card = await panel(...)`, which panel() cannot
    replay on retry; it is on the `.then` form the two panels at the foot of this
    file already use. */
-import { canEditUnit, db } from '../lib/data.js';
+import { HOOK, canEditUnit, db, n8n } from '../lib/data.js';
+import { N8N_BASE } from '../lib/env.js';
 import { $, el } from '../lib/dom.js';
 import { aed, aedSigned, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
@@ -1030,14 +1031,30 @@ const deltaCell = c => {
     ${c.unrated ? '<div class="cell-sub t-warm" style="white-space:normal">Match never rated — this comparison predates the 1 Sep provenance fix</div>' : ''}`;
 };
 
-/* The obvious answer to "these prices are old" is "run the scrape again", and
-   there is no way to do that from here: the competitors table is written by a
-   scheduled workflow with no webhook in the HOOK map, so the control is rendered
-   disabled and says what is missing rather than being left off the screen — an
-   absent button reads as "not possible", a disabled one as "not wired yet". */
-const NO_SCRAPE_HOOK = {
-  label: 'Re-run scrape',
-  why: 'The competitor listings are collected on a schedule, and that job has no manual start — nothing in this dashboard can make it run early. Ask NEXUS support if it needs running now.',
+/* NX1006, 21 Sep 2026. "Re-run scrape" used to be permanently disabled here:
+   the competitors table was written by a scheduled workflow with no webhook in
+   the HOOK map at all, so there was genuinely no way to trigger one early. That
+   workflow (LphiGg4iqF1bn6El, patched under ops/fill-screens/patched/) now also
+   listens on an authenticated webhook — same Verify-JWT / Tenant-For-JWT-User
+   contract as deals/closed-won and finance-calc — rate-limited server-side to
+   one manual run per tenant per hour. `RESCRAPE_COOLDOWN_MS` mirrors that limit
+   here so the button reads as disabled BEFORE a click would be refused, not
+   only after; the workflow's own check is the one that actually holds, this is
+   only what lets the button say why without a round trip.
+
+   `newest` (computed above from the tenant's own rows) doubles as "last run
+   time" for the button's tooltip — there is no separate read for it. */
+const RESCRAPE_COOLDOWN_MS = 3600000;
+const rescrapeBtnHtml = newest => {
+  if (!N8N_BASE) {
+    return `<button class="btn sm" disabled title="This deployment is not configured to reach n8n, so nothing here can trigger the scrape early. Ask NEXUS support if it needs running now.">Re-run scrape</button>`;
+  }
+  const last = newest ? Date.parse(newest) : null;
+  const withinCooldown = last != null && !Number.isNaN(last) && (Date.now() - last) < RESCRAPE_COOLDOWN_MS;
+  if (withinCooldown) {
+    return `<button class="btn sm" disabled title="A rescrape already ran ${esc(ago(newest))} (${esc(dt(newest))}). Limited to once per hour per dealership; the workflow enforces this even if this button did not.">Re-run scrape</button>`;
+  }
+  return `<button class="btn sm" data-rescrape="1" title="Trigger the next batch on the existing rotation now instead of waiting for the scheduled run (${esc(SCRAPE_SCHEDULE)}). Limited to once per hour per dealership.${newest ? ` Last run ${esc(ago(newest))} (${esc(dt(newest))}).` : ' No run is on file for this dealership yet.'}">Re-run scrape</button>`;
 };
 
 /* Icons for the kinds `v_needs_attention` routes to this screen. `undercut` is
@@ -1206,6 +1223,40 @@ SCREENS.competitors = async host => {
   const index = buildIndex(inv);
   const all = rows.map(r => compare(r, index));
   const reload = () => go('competitors');
+
+  /* NX1006, 21 Sep 2026. One handler shared by every 'Re-run scrape' button
+     this screen renders (the empty state's and each alert row's) -- bound
+     freshly each time its container is (re)rendered, the same convention this
+     screen already uses for [data-alert] and [data-unit] rows just below.
+     Nothing here is bound to `host` itself, which nav.js reuses across
+     navigations and never discards -- only to `body`/`alertHost`, which this
+     function recreates on every call, so there is nothing here to leak. */
+  const runRescrape = async btn => {
+    if (btn.disabled) return;
+    const group = Array.from(host.querySelectorAll('[data-rescrape]'));
+    group.forEach(b => { b.dataset.origLabel = b.dataset.origLabel || b.textContent; b.disabled = true; b.textContent = 'Starting…'; });
+    try {
+      const res = await n8n(HOOK.rescrapeCompetitors, {});
+      const msg = (res && typeof res === 'object' && res.message) ? String(res.message) : 'Rescrape started for this dealership.';
+      alertHost.insertAdjacentHTML('afterbegin', `<div class="banner info" style="margin-bottom:12px">
+        <span class="material-symbols-outlined" style="font-size:20px">schedule_send</span>
+        <div style="flex:1">${esc(msg)} <button class="btn sm" id="cRescrapeRefresh" style="margin-left:8px">Refresh now</button></div></div>`);
+      $('cRescrapeRefresh')?.addEventListener('click', reload);
+    } catch (err) {
+      /* .message is the user-safe clause lib/data.js's n8n() attaches to every
+         thrown failure -- a 429 reads as "A rescrape already ran for this
+         dealership within the last hour...", a 401 as a session refusal, same
+         as every other webhook button on this dashboard. Never .technical. */
+      const msg = String(err?.message || err);
+      alertHost.insertAdjacentHTML('afterbegin', `<div class="banner warm" style="margin-bottom:12px">
+        <span class="material-symbols-outlined" style="font-size:20px">gpp_maybe</span>
+        <div>${esc(msg)}</div></div>`);
+      group.forEach(b => { b.disabled = false; b.textContent = b.dataset.origLabel || 'Re-run scrape'; });
+    }
+  };
+  const wireRescrape = container => {
+    container.querySelectorAll('[data-rescrape]').forEach(btn => btn.addEventListener('click', () => runRescrape(btn)));
+  };
 
   /* Rows the scraper produced that are not competitors — a name of "null", or
      the title of a bot-detection page. They are held apart from here down.
@@ -1473,11 +1524,12 @@ SCREENS.competitors = async host => {
         <div class="cell-sub" style="white-space:normal;margin-top:8px">More than they used to, and each row will say how much. Since 1 Sep 2026 the scrape records the page's own listing title beside our model string, which offer on the page the price came from and whether that page called it new or used, what kind of site it was read off, and its own rating of how well that price is tied to our unit. Where it rates a match <strong>weak</strong> — nothing on the page ties the price to our car — the row is still written, because a cheap page is worth knowing about, and this screen draws no gap, no percentage and no market position from it. ${esc(NO_MAKE)} So a rated gap says what offer on what page was compared with which of our cars, and a weak one says only that a page quotes a figure for something. The scrape still has no listing contact and no stock number on their side, and when it is blocked it stores the block page — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 24px">
-          <button class="btn sm" disabled title="${esc(NO_SCRAPE_HOOK.why)}">${esc(NO_SCRAPE_HOOK.label)}</button>
+          ${rescrapeBtnHtml(newest)}
           <button class="btn sm" id="cInvEmpty">Open Inventory</button>
         </div>
       </div></div>`;
     $('cInvEmpty').addEventListener('click', () => go('inventory'));
+    wireRescrape(body);
 
     /* The blind-spot panel is the only one with a real answer today, so it is
        rendered even here — and with its own wording, because "no scraped row
@@ -1761,7 +1813,7 @@ SCREENS.competitors = async host => {
       titleHtml: 'These prices are undated',
       detailHtml: 'Not one row carries a scrape timestamp, so nothing on this screen can be said to be current. Every gap below is a comparison against a price of unknown age.',
       agoHtml: '<span class="t-hot">age unknown</span>',
-      noHook: NO_SCRAPE_HOOK,
+      rescrapeHtml: rescrapeBtnHtml(newest),
       why: 'There is no timestamp to sort or filter on, so there is no row this can open.',
     });
   } else if (stale) {
@@ -1773,7 +1825,7 @@ SCREENS.competitors = async host => {
          describes the twice-daily cron that replaced it. */
       detailHtml: `${freshLine} It is a cron now, firing ${SCRAPE_SCHEDULE} — what drifted before was a rolling "every 24 hours" timer, which stops firing after a restart without ever failing, and that is not what is happening today. ${healthLine} Until a run lands a price, every gap on this screen is measured against figures that old and none of them is safe to quote at a customer without being re-checked first.`,
       agoHtml: `<span title="${esc(dt(newest))}">price ${esc(dayWord(daysOld))} old</span>`,
-      noHook: NO_SCRAPE_HOOK,
+      rescrapeHtml: rescrapeBtnHtml(newest),
       actLabel: 'Oldest first',
       act: () => focusFilter('ALL', '', 'oldest'),
     });
@@ -1798,7 +1850,7 @@ SCREENS.competitors = async host => {
       agoHtml: health && health.last_run
         ? `<span title="${esc(dt(health.last_run))}">last run ${esc(ago(health.last_run))}</span>`
         : '<span class="t-muted">no run recorded</span>',
-      noHook: NO_SCRAPE_HOOK,
+      rescrapeHtml: rescrapeBtnHtml(newest),
       why: 'This screen reads the health view; it has no control over the workflow.',
     });
   }
@@ -1853,7 +1905,7 @@ SCREENS.competitors = async host => {
         : `The match quality on ${plural(unratedRows.length, 'this listing', 'these listings')} is missing or holds a value this screen has no words for${unratedMissing.length ? `, and ${unratedMissing.join(' and ')}` : ''}.`} How well each price is tied to our car was therefore never established — unrated, which is neither weak nor confirmed, and nothing on this screen can say which it would have turned out to be. ${unratedRows.some(c => !c.offer) ? `${PRICE_UNCONSTRAINED} ` : ''}The gaps below are a true subtraction of two stored numbers and are shown as that and no more.`)
         + ` The next scheduled run is ${esc(dt(due.toISOString()))}, ${esc(waitWord(due - Date.now()))}, and will rewrite ${plural(unratedRows.length, 'it', 'them')} with a rated match — on the Fortuner page that changes which offer the price is taken from, and with it the direction of the gap.`,
       agoHtml: '<span class="t-warm">never rated</span>',
-      noHook: NO_SCRAPE_HOOK,
+      rescrapeHtml: rescrapeBtnHtml(newest),
       actLabel: 'Show them',
       act: () => focusFilter(counts.UNRATED && counts.UNRATED < counts.ALL ? 'UNRATED' : 'ALL', '', 'oldest'),
     });
@@ -2075,7 +2127,7 @@ SCREENS.competitors = async host => {
       agoHtml: newestJunk
         ? `<span title="${esc(dt(newestJunk.at))}">written ${esc(ago(newestJunk.at))}</span>`
         : '<span class="t-muted">no scrape date</span>',
-      noHook: NO_SCRAPE_HOOK,
+      rescrapeHtml: rescrapeBtnHtml(newest),
       actLabel: 'Show them',
       act: () => focusFilter('BROKEN', ''),
     });
@@ -2214,7 +2266,7 @@ SCREENS.competitors = async host => {
       </div>
       <div style="text-align:right;flex-shrink:0" class="cell-sub">${waited}
         ${clickable ? `<div class="t-muted">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
-      ${a.noHook ? `<button class="btn sm" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
+      ${a.rescrapeHtml || ''}
       ${clickable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
     </div>`;
   };
@@ -2248,6 +2300,7 @@ SCREENS.competitors = async host => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(node.dataset.alert); }
       });
     });
+    wireRescrape(alertHost);
   }
 
   /* ── Table chrome ────────────────────────────────────────────────────────── */

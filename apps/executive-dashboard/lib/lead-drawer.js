@@ -74,6 +74,7 @@
       not coloured by direction. */
 import { SILENCE_MARKER, isInternalRow, isMessageRow } from './comm-events.js';
 import { canReassignLead, db, dbWrite } from './data.js';
+import { dealForm } from './deal-form.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
 /* audit_log.status is not ours to read literally: lib/health.js mirrors
@@ -198,10 +199,26 @@ async function leadDrawer(lead) {
     <div class="drawer-foot">
       <button class="btn" id="dWhats"><span class="material-symbols-outlined">chat</span>Open conversation</button>
       <button class="btn" id="dAssign"${canReassignLead(lead.tenant_id) ? '' : ' disabled title="Moving a lead to a different owner is an owner, admin or manager decision at this dealership. It moves commission and it moves who is answerable for the 5-minute rule."'}>Assign to…</button>
+      <button class="btn primary" id="dWon"><span class="material-symbols-outlined">handshake</span>Mark deal won</button>
     </div>`);
 
   $('dClose').addEventListener('click', closeDrawer);
   $('dWhats').addEventListener('click', () => { closeDrawer(); go('conversations'); });
+  /* NX1006 (fill-screens wave, 21 Sep 2026). This is the SOURCE fix for three
+     screens that render real but empty: Deals reads purchase_history directly;
+     Attribution walks purchase_history's chain hop by hop; Deal Rescue's own
+     readiness panel names a DEAL_RECORD as the first thing that would populate
+     it. All three were structurally empty for the same reason -- the only path
+     that writes a sale, lib/deal-form.js's dealForm() posting to
+     n8n('deals/closed-won'), existed but was reachable from nowhere except the
+     Deals screen itself, so a rep closing a sale on a LEAD had no way to record
+     it without first navigating away and re-finding the customer.
+     dealForm() and the closed-won workflow (dhy2DDjWUqwuzHLW) are unchanged --
+     both already resolve the caller's own tenant_id from the verified JWT
+     (tenant-precedence wave, 18 Sep 2026) and write purchase_history +
+     deals_embeddings under it. This button is the missing wiring, not a new
+     write path. */
+  $('dWon').addEventListener('click', () => dealForm([lead], () => { closeDrawer(); go('deals'); }));
   /* rbac_04's leads_role_update policy carries assigned_to_id in BOTH its USING
      and its WITH CHECK for a sales login, so a rep cannot move a lead to
      anyone — not even one already theirs. The database refuses regardless of

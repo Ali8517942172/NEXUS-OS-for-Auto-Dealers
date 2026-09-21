@@ -1,0 +1,960 @@
+{
+ "updatedAt": "2026-09-02T11:09:44.565Z",
+ "createdAt": "2026-07-23T19:16:53.067Z",
+ "id": "LphiGg4iqF1bn6El",
+ "name": "Competitor Price Scraping & Supabase Update",
+ "description": null,
+ "active": true,
+ "isArchived": false,
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "cronExpression",
+       "expression": "0 5,17 * * *"
+      }
+     ]
+    }
+   },
+   "id": "e1f13b65-0a88-4444-a0ab-48e0c8bdf92a",
+   "name": "Schedule Trigger",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.1,
+   "position": [
+    224,
+    128
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "// The Supabase 'inventory' table has: id, model, vin, status, days_in_stock,\n// price_aed, cost_aed, gross_margin, ... There is no brand/make/year column,\n// so build the search query from what actually exists.\n// This node runs once for ALL items. It used to read `$json`, which is only the\n// FIRST inventory row -- so of twelve units in stock, exactly one (the Land\n// Cruiser) was ever priced against the market and the other eleven were never\n// scanned at all. The run went green every night regardless, because one item\n// in and one item out looks exactly like success.\n//\n// \u2500\u2500 30 Aug 2026 \u2014 THE RUN NEVER FINISHED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// Fixing the fan-out exposed the next wall. The workflow carries\n// executionTimeout: 300 (five minutes). `Apify - Search Competitor Price` had a\n// 120 000 ms timeout and retryOnFail with maxTries 2, and `Extract Price with\n// AI` a 60 000 ms timeout with maxTries 3 -- and an HTTP node processes its\n// items one after another. Worst case that is 240 s + 180 s = 420 s FOR A\n// SINGLE UNIT, against a 300 s ceiling for the whole run. Sixteen units in,\n// roughly two out, then n8n killed the execution. The filter was never the\n// bottleneck; the ceiling was.\n//\n// Three things now hold the run inside its own ceiling, and they only work\n// together:\n//   1. per-request budgets were cut (Apify 45 s and no retry, AI 25 s x2), so\n//      one unit costs at most ~95 s;\n//   2. this node emits at most BATCH_SIZE units, so the run's worst case is\n//      BATCH_SIZE * 95 s and is a number somebody can check against the ceiling;\n//   3. the workflow ceiling was raised to 1200 s, which is 8 * 95 s plus room.\n// Change any one of the three and re-do the arithmetic. A batch that does not\n// fit is not slower -- it is silently truncated, which is the bug this replaces.\n//\n// Coverage is preserved by rotating, not by scanning everything: the schedule\n// fires twice a day (05:00 and 17:00 Asia/Dubai) and each run takes the next\n// BATCH_SIZE units off a stable ring, so a 16-unit fleet is fully covered every\n// 24 hours -- the same daily Apify spend the once-nightly design intended, just\n// spread across two executions instead of dying inside one.\nconst BATCH_SIZE = 8;\nconst SLOT_HOURS = 12;          // must match the schedule interval\n\nconst units = [];\nfor (const row of $input.all()) {\n  const item = row.json;\n  const model = String(item.model || '').trim();\n  if (!model) continue;   // nothing searchable; do not query 'undefined UAE price'\n  // A sold unit cannot be repriced and cannot be undercut. Scraping one spends a\n  // scrape slot that a unit still on the lot needed.\n  if (String(item.status || '').trim().toLowerCase() === 'sold') continue;\n  units.push({\n    id: item.id,\n    model: model,\n    vin: item.vin || null,\n    localPrice: Number(item.price_aed) || null,\n    daysInStock: Number(item.days_in_stock) || 0,\n    searchQuery: model + ' price UAE dealership',\n    // TENANCY (2 Sep 2026). The scrape sweeps every dealership's lot, which is\n    // right -- but a competitors row and its audit row are about ONE unit, and\n    // that unit's owner is known: inventory.tenant_id is NOT NULL. Carry it so\n    // 'Log Competitor Intel' and 'Audit Log' stamp the dealership that owns the\n    // car instead of letting the column default to the unattributed-default\n    // tenant and showing one dealership pricing intel about another's stock.\n    // 'Parse AI Price' rebuilds its item field by field and drops this, so both\n    // consumers read it back via $('Build Apify Query').item.json.tenant_id --\n    // the same back-reference 'Parse AI Price' itself already relies on.\n    tenant_id: item.tenant_id || null\n  });\n}\n\nif (!units.length) return [];\n\n// Sort by id so the ring is the same on every run regardless of the order\n// PostgREST happened to return rows in. Without a stable order the offset below\n// rotates over a shuffled list and coverage stops being guaranteed.\nunits.sort((a, b) => String(a.id).localeCompare(String(b.id)));\n\nconst take  = Math.min(BATCH_SIZE, units.length);\nconst slot  = Math.floor(Date.now() / (SLOT_HOURS * 3600 * 1000));\nconst start = (slot * BATCH_SIZE) % units.length;\n\nconst out = [];\nfor (let i = 0; i < take; i++) {\n  const u = units[(start + i) % units.length];\n  out.push({ json: Object.assign({}, u, {\n    // Carried so a run can say what it looked at rather than implying it looked\n    // at everything. `Delivery Report` and the audit summary read these.\n    batchSize:   take,\n    batchStart:  start,\n    fleetSize:   units.length,\n    batchOf:     take + ' of ' + units.length + ' units on the lot, offset ' + start,\n  }) });\n}\nreturn out;\n\n"
+   },
+   "id": "a7af0b27-7266-4f26-be34-d943fd45566c",
+   "name": "Build Apify Query",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    832,
+    128
+   ],
+   "notes": "Emits one query per inventory unit. It used to read $json and scan only the first of twelve."
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://api.apify.com/v2/acts/apify~rag-web-browser/run-sync-get-dataset-items",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpQueryAuth",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ query: $json.searchQuery, maxResults: 3, outputFormats: ['markdown'] }) }}",
+    "options": {
+     "timeout": 45000
+    },
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "timeout",
+       "value": "40"
+      }
+     ]
+    }
+   },
+   "id": "cd288bec-24e5-4660-ac8d-2f35bfda0290",
+   "name": "Apify - Search Competitor Price",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    1040,
+    128
+   ],
+   "retryOnFail": false,
+   "maxTries": 2,
+   "waitBetweenTries": 3000,
+   "credentials": {
+    "httpQueryAuth": {
+     "id": "NBPWuHrq7fLlfHvT",
+     "name": "Apify account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://openrouter.ai/api/v1/chat/completions",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "openRouterApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ model: 'google/gemini-2.5-flash', max_tokens: 300, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You are a pricing data extraction assistant. Given scraped web content about a vehicle, extract the lowest advertised price in AED as a plain number. Respond with ONLY valid JSON: {\"price\": <number or null>, \"currency\": \"AED\", \"source\": \"<domain or site name>\"}. If no clear price is found, return null for price.' }, { role: 'user', content: 'Vehicle: ' + $('Build Apify Query').item.json.model + '\\n\\nScraped content:\\n' + (Array.isArray($json) ? ($json[0] && ($json[0].markdown || $json[0].text) || 'No content found') : ($json.markdown || $json.text || JSON.stringify($json))).substring(0, 6000) } ] }) }}",
+    "options": {
+     "timeout": 25000
+    }
+   },
+   "id": "774f32ec-c606-4040-ae64-606ef0704556",
+   "name": "Extract Price with AI",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.1,
+   "position": [
+    1264,
+    128
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "openRouterApi": {
+     "id": "UUtKrBzkQOztAOzZ",
+     "name": "OpenRouter account"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "alwaysOutputData": true
+  },
+  {
+   "parameters": {
+    "jsCode": "// Runs ONCE PER ITEM. It used to run once for all of them and read `$json`,\n// which is only the FIRST item -- so of sixteen scraped pages exactly one was\n// ever parsed and the other fifteen were dropped without a trace.\n//\n// -- 01 Sep 2026 - THE COMPARISON WAS NEVER A COMPARISON -----------------------\n// Two defects made every row on the Competitors screen unfalsifiable.\n//\n// 1. The row stored OUR model string in `model` and nothing from the other\n//    page, so the screen's \"match\" compared our string to itself. It agreed by\n//    construction, and the match-quality warning could never fire. The listing's\n//    own title now goes to `listingTitle`, and `model` is documented as the\n//    join key it always was.\n//\n// 2. The price was Math.min of EVERY AED figure over 20,000 anywhere in the\n//    page's JSON-LD -- no year, trim, mileage or condition constraint. Our used\n//    2.7 VXR at 152,000 was compared against toyota.ae's cheapest NEW BASE\n//    Fortuner at 128,900 and the screen printed \"+AED 23,100 - 17.9% above\n//    theirs\" in red. A rep repricing on that is matching a different car.\n//    Offers now carry their own name and condition, the offer is chosen by how\n//    well it matches our unit, and the row records WHICH offer won and how\n//    confident that match is. When nothing ties an offer to our car the row is\n//    still written -- a cheap page is worth knowing about -- but it is stamped\n//    `weak`, and the screen is expected to refuse to draw a conclusion from it.\nconst response = $json;\n\nlet original = {};\ntry { original = $('Build Apify Query').item.json || {}; } catch (e) { original = {}; }\n\nlet apifyItem = {};\ntry { apifyItem = $('Apify - Search Competitor Price').item.json || {}; } catch (e) { apifyItem = {}; }\n\nlet parsed = { price: null };\ntry { parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}'); } catch (e) { /* keep default */ }\n\nconst meta   = apifyItem.metadata || {};\nconst jsonLd = meta.jsonLd || {};\nconst offers = jsonLd.offers || {};\n\n/* A dealership LISTING page publishes an ItemList, not a single offer, so the\n   prices live at @graph.itemListElement[].item.offers.price. Walk the whole\n   structure -- but carry each price's own name and condition out with it, so\n   the choice below can be about the right car instead of the lowest number. */\nfunction collectOffers(node, depth, inheritedName, inheritedCondition) {\n  if (!node || depth > 8) return [];\n  if (Array.isArray(node)) {\n    return node.flatMap(v => collectOffers(v, depth + 1, inheritedName, inheritedCondition));\n  }\n  if (typeof node !== 'object') return [];\n\n  const name = (typeof node.name === 'string' && node.name.trim()) ? node.name.trim() : inheritedName;\n  let condition = inheritedCondition;\n  const rawCond = node.itemCondition || node.condition;\n  if (typeof rawCond === 'string') {\n    if (/used|second|pre-?owned/i.test(rawCond)) condition = 'used';\n    else if (/new/i.test(rawCond)) condition = 'new';\n  }\n\n  let found = [];\n  const cur = node.priceCurrency ? String(node.priceCurrency).toUpperCase() : null;\n  if (node.price !== undefined && (!cur || cur === 'AED')) {\n    const n = Number(String(node.price).replace(/[^0-9.]/g, ''));\n    // Under 20k is a deposit, an accessory or a monthly instalment, not a car.\n    if (Number.isFinite(n) && n >= 20000) found.push({ price: n, name: name || null, condition: condition || null });\n  }\n  for (const k of Object.keys(node)) {\n    found = found.concat(collectOffers(node[k], depth + 1, name, condition));\n  }\n  return found;\n}\n\nconst yearOf  = s => { const m = String(s || '').match(/\\b(19|20)\\d{2}\\b/); return m ? m[0] : null; };\nconst tokens  = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(t => t.length > 1);\n\nconst ourModel = original.model ?? null;\nconst ourYear  = yearOf(ourModel);\nconst ourToks  = tokens(ourModel).filter(t => !/^(19|20)\\d{2}$/.test(t));\n\nconst ldOffers = collectOffers(jsonLd, 0, null, null);\n\n/* Rank every offer against OUR unit rather than against zero. An offer that\n   names our model year is the only kind that can support a price claim; an\n   offer that matches the model name but not the year is worth showing with the\n   caveat; anything else is the page's cheapest number and proves nothing. */\nfunction rate(offer) {\n  const oToks = tokens(offer.name);\n  if (!offer.name || !oToks.length) return { q: 'weak', hits: 0 };\n  const hits = ourToks.filter(t => oToks.includes(t)).length;\n  const oYear = yearOf(offer.name);\n  if (ourYear && oYear && oYear === ourYear && hits > 0) return { q: 'exact_year', hits };\n  if (ourYear && oYear && oYear !== ourYear)             return { q: 'weak', hits };\n  if (hits >= Math.max(1, Math.ceil(ourToks.length / 2))) return { q: 'model_only', hits };\n  return { q: 'weak', hits };\n}\n\nconst RANK = { exact_year: 3, model_only: 2, weak: 1 };\nlet chosen = null, chosenRate = null;\nfor (const o of ldOffers) {\n  const r = rate(o);\n  if (!chosen) { chosen = o; chosenRate = r; continue; }\n  // Best match first; among equally good matches, the lowest price -- that was\n  // the original intent and is right once \"equally good\" actually means it.\n  if (RANK[r.q] > RANK[chosenRate.q] ||\n     (RANK[r.q] === RANK[chosenRate.q] && r.hits > chosenRate.hits) ||\n     (RANK[r.q] === RANK[chosenRate.q] && r.hits === chosenRate.hits && o.price < chosen.price)) {\n    chosen = o; chosenRate = r;\n  }\n}\n\nconst ldPrice    = chosen ? chosen.price : null;\nconst modelPrice = (typeof parsed.price === 'number' && parsed.price > 0) ? parsed.price : null;\nconst competitorPrice = ldPrice !== null ? ldPrice : modelPrice;\nconst priceFrom = ldPrice !== null ? 'schema.org JSON-LD' : 'model extraction';\nconst localPrice = original.localPrice ?? null;\n\n/* The model extraction path is asked for \"the lowest advertised price\" with no\n   way to say what it was for, so it can never be better than weak. */\nlet matchQuality = ldPrice !== null ? chosenRate.q : (competitorPrice !== null ? 'weak' : null);\nlet matchNote = null;\nif (matchQuality === 'exact_year') {\n  matchNote = 'The chosen offer names our model year (' + ourYear + ').';\n} else if (matchQuality === 'model_only') {\n  matchNote = 'Model name matched but the offer states no year, so trim and year are unconfirmed.';\n} else if (matchQuality === 'weak') {\n  matchNote = ldPrice !== null\n    ? 'Nothing on the page ties this price to our unit; it is the best available offer on a page about this model.'\n    : 'Price came from the language model asked for the lowest advertised figure, which cannot say what it was for.';\n}\n\n/* The source is not a judgement call: the page's own hostname always exists.\n   Asking the model to name the site from the first 6000 characters of markdown\n   is what produced the null sources the guard below kept rejecting. */\nlet hostSource = null;\ntry {\n  const u = String(meta.url || meta.canonicalUrl || '');\n  if (u) hostSource = new URL(u).hostname.replace(/^www\\./, '');\n} catch (e) { /* not parseable */ }\nconst ldSeller = (offers.seller && typeof offers.seller.name === 'string') ? offers.seller.name.trim() : '';\nconst modelSource = typeof parsed.source === 'string' ? parsed.source.trim() : '';\n\n/* A hostname is not a dealership. toyota.ae is the manufacturer quoting new-car\n   list prices; dubizzle is a marketplace of other people's ads. Both were\n   stored under a column called `competitor` and read on the floor as rival\n   showrooms. Classify what we can and admit the rest. */\nconst OEM = /^(toyota|lexus|nissan|infiniti|honda|hyundai|kia|mitsubishi|ford|chevrolet|gmc|jeep|dodge|ram|bmw|mercedes-benz|mercedes|audi|volkswagen|vw|porsche|landrover|land-rover|jaguar|volvo|mazda|suzuki|renault|peugeot|citroen|skoda|seat|mini|bentley|rollsroyce|ferrari|lamborghini|maserati|tesla|byd|mg|chery|haval|geely|changan|jetour|gac)\\./i;\nconst MARKETPLACE = /(dubizzle|yallamotor|carswitch|opensooq|cars24|kavak|autotrader|dubicars|motory|hatla2ee|carsome|sellanycar|copart|olx)\\./i;\nlet sourceKind = 'unknown';\nif (hostSource) {\n  if (OEM.test(hostSource)) sourceKind = 'oem';\n  else if (MARKETPLACE.test(hostSource)) sourceKind = 'marketplace';\n  else sourceKind = 'dealer';\n}\n\n/* The listing's own words about what it is selling. This is the field that\n   makes a match falsifiable; without it the screen was comparing our string to\n   our string. */\nconst listingTitle = (typeof jsonLd.name === 'string' && jsonLd.name.trim())\n  ? jsonLd.name.trim()\n  : ((typeof meta.title === 'string' && meta.title.trim()) ? meta.title.trim().slice(0, 200) : null);\n\n/* A bot-detection interstitial is a scrape failure wearing a dealership's\n   clothes -- \"Pardon Our Interruption\" once entered `competitors` as a rival. */\nconst BLOCK_PAGE = /pardon our interruption|just a moment|access denied|are you a robot|captcha|cloudflare|attention required|verify you are human|enable javascript|403 forbidden|too many requests|unusual traffic/i;\nconst NOT_A_NAME = /^(null|undefined|none|n\\/?a|unknown|-{1,}|\\s*)$/i;\n\n/* A hostname always exists, which is exactly the trap: a Google results page\n   has one too. The first real run filed `google.com` as a rival dealership\n   quoting 105,200 for a Fortuner -- a search page's own snippet, not an offer\n   anyone will honour. */\nconst NOT_A_SELLER = /^(www\\.)?(google|bing|duckduckgo|yahoo|search|youtube|facebook|instagram|twitter|x|linkedin|tiktok|pinterest|reddit|quora|wikipedia|wikiwand|medium|blogspot|wordpress|tripadvisor|amazon|aliexpress|ebay)\\./i;\n\nconst raw = ldSeller || hostSource || modelSource;\nlet source = raw;\nlet skipReason = null;\n\nif (!raw)                      skipReason = 'the page carried no identifiable source';\nelse if (NOT_A_SELLER.test(raw + '.')) skipReason = '\"' + raw + '\" is a search or social site, not a seller';\nelse if (NOT_A_NAME.test(raw)) skipReason = 'the source was the placeholder \"' + raw + '\"';\nelse if (BLOCK_PAGE.test(raw)) skipReason = 'the page was a bot-detection interstitial (\"' + raw.slice(0, 60) + '\")';\nelse if (raw.length > 80)      skipReason = 'the source read as prose, not a seller name';\nif (skipReason) source = null;\n\n/* No price is not intel either: a row with a null price cannot support an\n   undercut claim, and every one written so far was noise in the table the\n   dashboard reads. */\nif (competitorPrice === null && !skipReason) skipReason = 'no price could be extracted from the page';\n\nreturn { json: {\n  id: original.id ?? null,\n  model: original.model ?? null,\n  listingTitle: listingTitle,\n  pageUrl: meta.url || null,\n  localPrice: localPrice,\n  competitorPrice: competitorPrice,\n  priceDiff: (competitorPrice !== null && localPrice !== null) ? (competitorPrice - localPrice) : null,\n  competitorSource: source,\n  sourceHost: hostSource,\n  sourceKind: sourceKind,\n  offerName: chosen ? chosen.name : null,\n  offerCondition: chosen ? chosen.condition : null,\n  matchQuality: matchQuality,\n  matchNote: matchNote,\n  offersSeen: ldOffers.length,\n  currency: parsed.currency || 'AED',\n  daysInStock: original.daysInStock ?? 0,\n  priceFrom: priceFrom,\n  usable: !skipReason,\n  skipReason: skipReason,\n} };\n",
+    "mode": "runOnceForEachItem",
+    "notes": "Runs once per item. Carries each JSON-LD offer's own name and condition, then picks the offer that best matches OUR unit rather than the lowest number on the page, and records which offer won and how confident the match is. Also stores the listing's own title, the page host and a source class, so the Competitors screen can show a comparison instead of asserting one."
+   },
+   "id": "172a82ea-c373-49db-ac3b-51ffb95150ae",
+   "name": "Parse AI Price",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1488,
+    128
+   ],
+   "notes": "Runs once per item. In all-items mode it read $json and parsed exactly one of sixteen scraped pages; .first() also mispaired the metadata. Prefers schema.org JSON-LD over the model, and takes the source from the page hostname, which always exists."
+  },
+  {
+   "parameters": {
+    "operation": "getAll",
+    "tableId": "inventory",
+    "returnAll": true
+   },
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "position": [
+    560,
+    128
+   ],
+   "id": "8daa883b-cf45-4e2f-b329-9b12f71e4a68",
+   "name": "Fetch Local Inventory",
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   }
+  },
+  {
+   "parameters": {
+    "tableId": "competitors",
+    "fieldsUi": {
+     "fieldValues": [
+      {
+       "fieldId": "competitor",
+       "fieldValue": "={{ $json.competitorSource || 'unknown' }}"
+      },
+      {
+       "fieldId": "model",
+       "fieldValue": "={{ $json.model }}"
+      },
+      {
+       "fieldId": "listing_title",
+       "fieldValue": "={{ $json.listingTitle }}"
+      },
+      {
+       "fieldId": "source_host",
+       "fieldValue": "={{ $json.sourceHost }}"
+      },
+      {
+       "fieldId": "source_kind",
+       "fieldValue": "={{ $json.sourceKind }}"
+      },
+      {
+       "fieldId": "offer_name",
+       "fieldValue": "={{ $json.offerName }}"
+      },
+      {
+       "fieldId": "offer_condition",
+       "fieldValue": "={{ $json.offerCondition }}"
+      },
+      {
+       "fieldId": "match_quality",
+       "fieldValue": "={{ $json.matchQuality }}"
+      },
+      {
+       "fieldId": "match_note",
+       "fieldValue": "={{ $json.matchNote }}"
+      },
+      {
+       "fieldId": "price_aed",
+       "fieldValue": "={{ $json.competitorPrice }}"
+      },
+      {
+       "fieldId": "our_price_aed",
+       "fieldValue": "={{ $json.localPrice }}"
+      },
+      {
+       "fieldId": "price_diff_aed",
+       "fieldValue": "={{ $json.priceDiff }}"
+      },
+      {
+       "fieldId": "ai_recommendation",
+       "fieldValue": "={{ $json.competitorPrice === null ? 'No competitor price found' : ($json.matchQuality === 'weak' ? 'NO CONCLUSION: nothing on the page ties this price to our unit. ' + ($json.matchNote || '') : ($json.priceDiff < 0 ? 'UNDERCUT: competitor is AED ' + Math.abs($json.priceDiff) + ' cheaper on ' + ($json.offerName || 'an unnamed offer') + '. Consider matching, especially at ' + $json.daysInStock + ' days in stock.' : 'HOLD: we are already AED ' + $json.priceDiff + ' cheaper than ' + ($json.offerName || 'this competitor') + '.')) }}"
+      },
+      {
+       "fieldId": "scraped_at",
+       "fieldValue": "={{ $now.toISO() }}"
+      },
+      {
+       "fieldId": "tenant_id",
+       "fieldValue": "={{ (() => { let t = null; try { t = $('Build Apify Query').item.json.tenant_id || null; } catch (e) { t = null; } if (t) return t; const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); if (k.length === 1 && U.test(String(m[k[0]] || ''))) return String(m[k[0]]); return null; })() }}"
+      }
+     ]
+    }
+   },
+   "id": "882f5cb9-92fc-45d9-81d4-2454a8a454f9",
+   "name": "Log Competitor Intel",
+   "type": "n8n-nodes-base.supabase",
+   "typeVersion": 1,
+   "position": [
+    1712,
+    320
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "supabaseApi",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Prefer",
+       "value": "return=minimal"
+      },
+      {
+       "name": "Content-Type",
+       "value": "application/json"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ (() => { let t = null; try { t = $('Build Apify Query').item.json.tenant_id || null; } catch (e) { t = null; } if (!t) { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); if (k.length === 1 && U.test(String(m[k[0]] || ''))) t = String(m[k[0]]); } return JSON.stringify({ workflow: 'Competitor Price Scraping', status: ($json.delivery ? $json.delivery.status : ($json.skipReason ? 'REJECTED' : 'SUCCESS')), lead_name: null, lead_email: null, summary: (($json.skipReason ? ('Scrape produced no usable intel for ' + ($json.model || 'a unit') + ' \u2014 ' + $json.skipReason) : ('Competitor price recorded for ' + ($json.model || 'a unit'))) + ($json.delivery ? ' | ' + $json.delivery.note : '') + (t ? '' : ' | TENANT UNRESOLVED')), logged_at: $now.toUTC().toISO(), tenant_id: t }); })() }}",
+    "options": {
+     "timeout": 15000
+    }
+   },
+   "id": "audit-dynamic_pric",
+   "name": "Audit Log",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    2208,
+    608
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 1500,
+   "credentials": {
+    "supabaseApi": {
+     "id": "dv4OeARarErZLHCj",
+     "name": "Supabase account"
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "loose",
+      "version": 3
+     },
+     "conditions": [
+      {
+       "id": "usable",
+       "leftValue": "={{ $json.usable }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "c0mpet1t-0r5a-4n1t-8a1e-000000000001",
+   "name": "Is This Real Intel?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    1360,
+    544
+   ]
+  },
+  {
+   "id": "b48d2e71-95c3-4a0f-8d16-lphicompdel02",
+   "name": "Delivery Report",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1920,
+    448
+   ],
+   "parameters": {
+    "mode": "runOnceForEachItem",
+    "jsCode": "// Verify every node whose success this audit row is about to claim.\n// This edge is the TRUE branch of 'Is This Real Intel?', so the intel row was\n// just written here and both this node and its claim always run together.\n// NOTE: 'Update Prices in Supabase' is NOT claimed. It is orphaned - nothing\n// connects into 'Should Update Price?', so that whole sub-branch never runs and\n// $('Update Prices in Supabase') would THROW.\nconst CLAIMED = [\n  { node: 'Log Competitor Intel', what: 'competitors intel row', critical: true },\n];\n\nfunction check(c) {\n  let it;\n  try { it = $(c.node).item; }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!it) return { ...c, ok: false, why: 'node produced no items' };\n  const j = it.json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst base = $json;\n\n// When the insert swallows, its output item is the error rather than the stored\n// row, so `model` disappears and the audit summary degrades to 'a unit'. Carry\n// the model forward from the parse step so the row still names the vehicle.\nlet p = {};\ntry { p = $('Parse AI Price').item.json || {}; } catch (e) { p = {}; }\n\nreturn { json: {\n  ...base,\n  model: (base.model !== undefined && base.model !== null) ? base.model : (p.model || null),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' - ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} };\n"
+   }
+  }
+ ],
+ "connections": {
+  "Schedule Trigger": {
+   "main": [
+    [
+     {
+      "node": "Fetch Local Inventory",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build Apify Query": {
+   "main": [
+    [
+     {
+      "node": "Apify - Search Competitor Price",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Apify - Search Competitor Price": {
+   "main": [
+    [
+     {
+      "node": "Extract Price with AI",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Extract Price with AI": {
+   "main": [
+    [
+     {
+      "node": "Parse AI Price",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse AI Price": {
+   "main": [
+    [
+     {
+      "node": "Is This Real Intel?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Fetch Local Inventory": {
+   "main": [
+    [
+     {
+      "node": "Build Apify Query",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Log Competitor Intel": {
+   "main": [
+    [
+     {
+      "node": "Delivery Report",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Is This Real Intel?": {
+   "main": [
+    [
+     {
+      "node": "Log Competitor Intel",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Audit Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Delivery Report": {
+   "main": [
+    [
+     {
+      "node": "Audit Log",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "availableInMCP": true,
+  "binaryMode": "separate",
+  "timezone": "Asia/Dubai",
+  "saveDataErrorExecution": "all",
+  "errorWorkflow": "iYJkh1kztWxZXDbT",
+  "executionTimeout": 1200
+ },
+ "staticData": {
+  "node:Schedule Trigger": {
+   "recurrenceRules": [
+    null
+   ],
+   "recurrenceRuleSignatures": [
+    null
+   ]
+  }
+ },
+ "meta": {
+  "aiBuilderAssisted": true,
+  "builderVariant": "mcp",
+  "templateCredsSetupCompleted": true
+ },
+ "nodeGroups": [],
+ "pinData": {},
+ "versionId": "6241a419-4a03-4339-b83b-8e0c51120653",
+ "activeVersionId": "6241a419-4a03-4339-b83b-8e0c51120653",
+ "versionCounter": 59,
+ "triggerCount": 1,
+ "sourceWorkflowId": null,
+ "shared": [
+  {
+   "updatedAt": "2026-07-23T19:16:53.067Z",
+   "createdAt": "2026-07-23T19:16:53.067Z",
+   "role": "workflow:owner",
+   "workflowId": "LphiGg4iqF1bn6El",
+   "projectId": "uRMuMPNZkIs0l37n",
+   "project": {
+    "updatedAt": "2026-07-23T18:54:00.785Z",
+    "createdAt": "2026-07-23T18:51:58.519Z",
+    "id": "uRMuMPNZkIs0l37n",
+    "name": "Ali Asgher Ujjain Wala  <aliasgher892@gmail.com>",
+    "type": "personal",
+    "icon": null,
+    "description": null,
+    "customTelemetryTags": [],
+    "creatorId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  }
+ ],
+ "tags": [],
+ "activeVersion": {
+  "updatedAt": "2026-09-02T11:09:44.567Z",
+  "createdAt": "2026-09-02T11:09:44.567Z",
+  "versionId": "6241a419-4a03-4339-b83b-8e0c51120653",
+  "workflowId": "LphiGg4iqF1bn6El",
+  "nodes": [
+   {
+    "parameters": {
+     "rule": {
+      "interval": [
+       {
+        "field": "cronExpression",
+        "expression": "0 5,17 * * *"
+       }
+      ]
+     }
+    },
+    "id": "e1f13b65-0a88-4444-a0ab-48e0c8bdf92a",
+    "name": "Schedule Trigger",
+    "type": "n8n-nodes-base.scheduleTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     224,
+     128
+    ]
+   },
+   {
+    "parameters": {
+     "jsCode": "// The Supabase 'inventory' table has: id, model, vin, status, days_in_stock,\n// price_aed, cost_aed, gross_margin, ... There is no brand/make/year column,\n// so build the search query from what actually exists.\n// This node runs once for ALL items. It used to read `$json`, which is only the\n// FIRST inventory row -- so of twelve units in stock, exactly one (the Land\n// Cruiser) was ever priced against the market and the other eleven were never\n// scanned at all. The run went green every night regardless, because one item\n// in and one item out looks exactly like success.\n//\n// \u2500\u2500 30 Aug 2026 \u2014 THE RUN NEVER FINISHED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n// Fixing the fan-out exposed the next wall. The workflow carries\n// executionTimeout: 300 (five minutes). `Apify - Search Competitor Price` had a\n// 120 000 ms timeout and retryOnFail with maxTries 2, and `Extract Price with\n// AI` a 60 000 ms timeout with maxTries 3 -- and an HTTP node processes its\n// items one after another. Worst case that is 240 s + 180 s = 420 s FOR A\n// SINGLE UNIT, against a 300 s ceiling for the whole run. Sixteen units in,\n// roughly two out, then n8n killed the execution. The filter was never the\n// bottleneck; the ceiling was.\n//\n// Three things now hold the run inside its own ceiling, and they only work\n// together:\n//   1. per-request budgets were cut (Apify 45 s and no retry, AI 25 s x2), so\n//      one unit costs at most ~95 s;\n//   2. this node emits at most BATCH_SIZE units, so the run's worst case is\n//      BATCH_SIZE * 95 s and is a number somebody can check against the ceiling;\n//   3. the workflow ceiling was raised to 1200 s, which is 8 * 95 s plus room.\n// Change any one of the three and re-do the arithmetic. A batch that does not\n// fit is not slower -- it is silently truncated, which is the bug this replaces.\n//\n// Coverage is preserved by rotating, not by scanning everything: the schedule\n// fires twice a day (05:00 and 17:00 Asia/Dubai) and each run takes the next\n// BATCH_SIZE units off a stable ring, so a 16-unit fleet is fully covered every\n// 24 hours -- the same daily Apify spend the once-nightly design intended, just\n// spread across two executions instead of dying inside one.\nconst BATCH_SIZE = 8;\nconst SLOT_HOURS = 12;          // must match the schedule interval\n\nconst units = [];\nfor (const row of $input.all()) {\n  const item = row.json;\n  const model = String(item.model || '').trim();\n  if (!model) continue;   // nothing searchable; do not query 'undefined UAE price'\n  // A sold unit cannot be repriced and cannot be undercut. Scraping one spends a\n  // scrape slot that a unit still on the lot needed.\n  if (String(item.status || '').trim().toLowerCase() === 'sold') continue;\n  units.push({\n    id: item.id,\n    model: model,\n    vin: item.vin || null,\n    localPrice: Number(item.price_aed) || null,\n    daysInStock: Number(item.days_in_stock) || 0,\n    searchQuery: model + ' price UAE dealership',\n    // TENANCY (2 Sep 2026). The scrape sweeps every dealership's lot, which is\n    // right -- but a competitors row and its audit row are about ONE unit, and\n    // that unit's owner is known: inventory.tenant_id is NOT NULL. Carry it so\n    // 'Log Competitor Intel' and 'Audit Log' stamp the dealership that owns the\n    // car instead of letting the column default to the unattributed-default\n    // tenant and showing one dealership pricing intel about another's stock.\n    // 'Parse AI Price' rebuilds its item field by field and drops this, so both\n    // consumers read it back via $('Build Apify Query').item.json.tenant_id --\n    // the same back-reference 'Parse AI Price' itself already relies on.\n    tenant_id: item.tenant_id || null\n  });\n}\n\nif (!units.length) return [];\n\n// Sort by id so the ring is the same on every run regardless of the order\n// PostgREST happened to return rows in. Without a stable order the offset below\n// rotates over a shuffled list and coverage stops being guaranteed.\nunits.sort((a, b) => String(a.id).localeCompare(String(b.id)));\n\nconst take  = Math.min(BATCH_SIZE, units.length);\nconst slot  = Math.floor(Date.now() / (SLOT_HOURS * 3600 * 1000));\nconst start = (slot * BATCH_SIZE) % units.length;\n\nconst out = [];\nfor (let i = 0; i < take; i++) {\n  const u = units[(start + i) % units.length];\n  out.push({ json: Object.assign({}, u, {\n    // Carried so a run can say what it looked at rather than implying it looked\n    // at everything. `Delivery Report` and the audit summary read these.\n    batchSize:   take,\n    batchStart:  start,\n    fleetSize:   units.length,\n    batchOf:     take + ' of ' + units.length + ' units on the lot, offset ' + start,\n  }) });\n}\nreturn out;\n\n"
+    },
+    "id": "a7af0b27-7266-4f26-be34-d943fd45566c",
+    "name": "Build Apify Query",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     832,
+     128
+    ],
+    "notes": "Emits one query per inventory unit. It used to read $json and scan only the first of twelve."
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://api.apify.com/v2/acts/apify~rag-web-browser/run-sync-get-dataset-items",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpQueryAuth",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ query: $json.searchQuery, maxResults: 3, outputFormats: ['markdown'] }) }}",
+     "options": {
+      "timeout": 45000
+     },
+     "sendQuery": true,
+     "queryParameters": {
+      "parameters": [
+       {
+        "name": "timeout",
+        "value": "40"
+       }
+      ]
+     }
+    },
+    "id": "cd288bec-24e5-4660-ac8d-2f35bfda0290",
+    "name": "Apify - Search Competitor Price",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.1,
+    "position": [
+     1040,
+     128
+    ],
+    "retryOnFail": false,
+    "maxTries": 2,
+    "waitBetweenTries": 3000,
+    "credentials": {
+     "httpQueryAuth": {
+      "id": "NBPWuHrq7fLlfHvT",
+      "name": "Apify account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://openrouter.ai/api/v1/chat/completions",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "openRouterApi",
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify({ model: 'google/gemini-2.5-flash', max_tokens: 300, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'You are a pricing data extraction assistant. Given scraped web content about a vehicle, extract the lowest advertised price in AED as a plain number. Respond with ONLY valid JSON: {\"price\": <number or null>, \"currency\": \"AED\", \"source\": \"<domain or site name>\"}. If no clear price is found, return null for price.' }, { role: 'user', content: 'Vehicle: ' + $('Build Apify Query').item.json.model + '\\n\\nScraped content:\\n' + (Array.isArray($json) ? ($json[0] && ($json[0].markdown || $json[0].text) || 'No content found') : ($json.markdown || $json.text || JSON.stringify($json))).substring(0, 6000) } ] }) }}",
+     "options": {
+      "timeout": 25000
+     }
+    },
+    "id": "774f32ec-c606-4040-ae64-606ef0704556",
+    "name": "Extract Price with AI",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.1,
+    "position": [
+     1264,
+     128
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "openRouterApi": {
+      "id": "UUtKrBzkQOztAOzZ",
+      "name": "OpenRouter account"
+     }
+    },
+    "onError": "continueRegularOutput",
+    "alwaysOutputData": true
+   },
+   {
+    "parameters": {
+     "jsCode": "// Runs ONCE PER ITEM. It used to run once for all of them and read `$json`,\n// which is only the FIRST item -- so of sixteen scraped pages exactly one was\n// ever parsed and the other fifteen were dropped without a trace.\n//\n// -- 01 Sep 2026 - THE COMPARISON WAS NEVER A COMPARISON -----------------------\n// Two defects made every row on the Competitors screen unfalsifiable.\n//\n// 1. The row stored OUR model string in `model` and nothing from the other\n//    page, so the screen's \"match\" compared our string to itself. It agreed by\n//    construction, and the match-quality warning could never fire. The listing's\n//    own title now goes to `listingTitle`, and `model` is documented as the\n//    join key it always was.\n//\n// 2. The price was Math.min of EVERY AED figure over 20,000 anywhere in the\n//    page's JSON-LD -- no year, trim, mileage or condition constraint. Our used\n//    2.7 VXR at 152,000 was compared against toyota.ae's cheapest NEW BASE\n//    Fortuner at 128,900 and the screen printed \"+AED 23,100 - 17.9% above\n//    theirs\" in red. A rep repricing on that is matching a different car.\n//    Offers now carry their own name and condition, the offer is chosen by how\n//    well it matches our unit, and the row records WHICH offer won and how\n//    confident that match is. When nothing ties an offer to our car the row is\n//    still written -- a cheap page is worth knowing about -- but it is stamped\n//    `weak`, and the screen is expected to refuse to draw a conclusion from it.\nconst response = $json;\n\nlet original = {};\ntry { original = $('Build Apify Query').item.json || {}; } catch (e) { original = {}; }\n\nlet apifyItem = {};\ntry { apifyItem = $('Apify - Search Competitor Price').item.json || {}; } catch (e) { apifyItem = {}; }\n\nlet parsed = { price: null };\ntry { parsed = JSON.parse(response.choices?.[0]?.message?.content || '{}'); } catch (e) { /* keep default */ }\n\nconst meta   = apifyItem.metadata || {};\nconst jsonLd = meta.jsonLd || {};\nconst offers = jsonLd.offers || {};\n\n/* A dealership LISTING page publishes an ItemList, not a single offer, so the\n   prices live at @graph.itemListElement[].item.offers.price. Walk the whole\n   structure -- but carry each price's own name and condition out with it, so\n   the choice below can be about the right car instead of the lowest number. */\nfunction collectOffers(node, depth, inheritedName, inheritedCondition) {\n  if (!node || depth > 8) return [];\n  if (Array.isArray(node)) {\n    return node.flatMap(v => collectOffers(v, depth + 1, inheritedName, inheritedCondition));\n  }\n  if (typeof node !== 'object') return [];\n\n  const name = (typeof node.name === 'string' && node.name.trim()) ? node.name.trim() : inheritedName;\n  let condition = inheritedCondition;\n  const rawCond = node.itemCondition || node.condition;\n  if (typeof rawCond === 'string') {\n    if (/used|second|pre-?owned/i.test(rawCond)) condition = 'used';\n    else if (/new/i.test(rawCond)) condition = 'new';\n  }\n\n  let found = [];\n  const cur = node.priceCurrency ? String(node.priceCurrency).toUpperCase() : null;\n  if (node.price !== undefined && (!cur || cur === 'AED')) {\n    const n = Number(String(node.price).replace(/[^0-9.]/g, ''));\n    // Under 20k is a deposit, an accessory or a monthly instalment, not a car.\n    if (Number.isFinite(n) && n >= 20000) found.push({ price: n, name: name || null, condition: condition || null });\n  }\n  for (const k of Object.keys(node)) {\n    found = found.concat(collectOffers(node[k], depth + 1, name, condition));\n  }\n  return found;\n}\n\nconst yearOf  = s => { const m = String(s || '').match(/\\b(19|20)\\d{2}\\b/); return m ? m[0] : null; };\nconst tokens  = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(t => t.length > 1);\n\nconst ourModel = original.model ?? null;\nconst ourYear  = yearOf(ourModel);\nconst ourToks  = tokens(ourModel).filter(t => !/^(19|20)\\d{2}$/.test(t));\n\nconst ldOffers = collectOffers(jsonLd, 0, null, null);\n\n/* Rank every offer against OUR unit rather than against zero. An offer that\n   names our model year is the only kind that can support a price claim; an\n   offer that matches the model name but not the year is worth showing with the\n   caveat; anything else is the page's cheapest number and proves nothing. */\nfunction rate(offer) {\n  const oToks = tokens(offer.name);\n  if (!offer.name || !oToks.length) return { q: 'weak', hits: 0 };\n  const hits = ourToks.filter(t => oToks.includes(t)).length;\n  const oYear = yearOf(offer.name);\n  if (ourYear && oYear && oYear === ourYear && hits > 0) return { q: 'exact_year', hits };\n  if (ourYear && oYear && oYear !== ourYear)             return { q: 'weak', hits };\n  if (hits >= Math.max(1, Math.ceil(ourToks.length / 2))) return { q: 'model_only', hits };\n  return { q: 'weak', hits };\n}\n\nconst RANK = { exact_year: 3, model_only: 2, weak: 1 };\nlet chosen = null, chosenRate = null;\nfor (const o of ldOffers) {\n  const r = rate(o);\n  if (!chosen) { chosen = o; chosenRate = r; continue; }\n  // Best match first; among equally good matches, the lowest price -- that was\n  // the original intent and is right once \"equally good\" actually means it.\n  if (RANK[r.q] > RANK[chosenRate.q] ||\n     (RANK[r.q] === RANK[chosenRate.q] && r.hits > chosenRate.hits) ||\n     (RANK[r.q] === RANK[chosenRate.q] && r.hits === chosenRate.hits && o.price < chosen.price)) {\n    chosen = o; chosenRate = r;\n  }\n}\n\nconst ldPrice    = chosen ? chosen.price : null;\nconst modelPrice = (typeof parsed.price === 'number' && parsed.price > 0) ? parsed.price : null;\nconst competitorPrice = ldPrice !== null ? ldPrice : modelPrice;\nconst priceFrom = ldPrice !== null ? 'schema.org JSON-LD' : 'model extraction';\nconst localPrice = original.localPrice ?? null;\n\n/* The model extraction path is asked for \"the lowest advertised price\" with no\n   way to say what it was for, so it can never be better than weak. */\nlet matchQuality = ldPrice !== null ? chosenRate.q : (competitorPrice !== null ? 'weak' : null);\nlet matchNote = null;\nif (matchQuality === 'exact_year') {\n  matchNote = 'The chosen offer names our model year (' + ourYear + ').';\n} else if (matchQuality === 'model_only') {\n  matchNote = 'Model name matched but the offer states no year, so trim and year are unconfirmed.';\n} else if (matchQuality === 'weak') {\n  matchNote = ldPrice !== null\n    ? 'Nothing on the page ties this price to our unit; it is the best available offer on a page about this model.'\n    : 'Price came from the language model asked for the lowest advertised figure, which cannot say what it was for.';\n}\n\n/* The source is not a judgement call: the page's own hostname always exists.\n   Asking the model to name the site from the first 6000 characters of markdown\n   is what produced the null sources the guard below kept rejecting. */\nlet hostSource = null;\ntry {\n  const u = String(meta.url || meta.canonicalUrl || '');\n  if (u) hostSource = new URL(u).hostname.replace(/^www\\./, '');\n} catch (e) { /* not parseable */ }\nconst ldSeller = (offers.seller && typeof offers.seller.name === 'string') ? offers.seller.name.trim() : '';\nconst modelSource = typeof parsed.source === 'string' ? parsed.source.trim() : '';\n\n/* A hostname is not a dealership. toyota.ae is the manufacturer quoting new-car\n   list prices; dubizzle is a marketplace of other people's ads. Both were\n   stored under a column called `competitor` and read on the floor as rival\n   showrooms. Classify what we can and admit the rest. */\nconst OEM = /^(toyota|lexus|nissan|infiniti|honda|hyundai|kia|mitsubishi|ford|chevrolet|gmc|jeep|dodge|ram|bmw|mercedes-benz|mercedes|audi|volkswagen|vw|porsche|landrover|land-rover|jaguar|volvo|mazda|suzuki|renault|peugeot|citroen|skoda|seat|mini|bentley|rollsroyce|ferrari|lamborghini|maserati|tesla|byd|mg|chery|haval|geely|changan|jetour|gac)\\./i;\nconst MARKETPLACE = /(dubizzle|yallamotor|carswitch|opensooq|cars24|kavak|autotrader|dubicars|motory|hatla2ee|carsome|sellanycar|copart|olx)\\./i;\nlet sourceKind = 'unknown';\nif (hostSource) {\n  if (OEM.test(hostSource)) sourceKind = 'oem';\n  else if (MARKETPLACE.test(hostSource)) sourceKind = 'marketplace';\n  else sourceKind = 'dealer';\n}\n\n/* The listing's own words about what it is selling. This is the field that\n   makes a match falsifiable; without it the screen was comparing our string to\n   our string. */\nconst listingTitle = (typeof jsonLd.name === 'string' && jsonLd.name.trim())\n  ? jsonLd.name.trim()\n  : ((typeof meta.title === 'string' && meta.title.trim()) ? meta.title.trim().slice(0, 200) : null);\n\n/* A bot-detection interstitial is a scrape failure wearing a dealership's\n   clothes -- \"Pardon Our Interruption\" once entered `competitors` as a rival. */\nconst BLOCK_PAGE = /pardon our interruption|just a moment|access denied|are you a robot|captcha|cloudflare|attention required|verify you are human|enable javascript|403 forbidden|too many requests|unusual traffic/i;\nconst NOT_A_NAME = /^(null|undefined|none|n\\/?a|unknown|-{1,}|\\s*)$/i;\n\n/* A hostname always exists, which is exactly the trap: a Google results page\n   has one too. The first real run filed `google.com` as a rival dealership\n   quoting 105,200 for a Fortuner -- a search page's own snippet, not an offer\n   anyone will honour. */\nconst NOT_A_SELLER = /^(www\\.)?(google|bing|duckduckgo|yahoo|search|youtube|facebook|instagram|twitter|x|linkedin|tiktok|pinterest|reddit|quora|wikipedia|wikiwand|medium|blogspot|wordpress|tripadvisor|amazon|aliexpress|ebay)\\./i;\n\nconst raw = ldSeller || hostSource || modelSource;\nlet source = raw;\nlet skipReason = null;\n\nif (!raw)                      skipReason = 'the page carried no identifiable source';\nelse if (NOT_A_SELLER.test(raw + '.')) skipReason = '\"' + raw + '\" is a search or social site, not a seller';\nelse if (NOT_A_NAME.test(raw)) skipReason = 'the source was the placeholder \"' + raw + '\"';\nelse if (BLOCK_PAGE.test(raw)) skipReason = 'the page was a bot-detection interstitial (\"' + raw.slice(0, 60) + '\")';\nelse if (raw.length > 80)      skipReason = 'the source read as prose, not a seller name';\nif (skipReason) source = null;\n\n/* No price is not intel either: a row with a null price cannot support an\n   undercut claim, and every one written so far was noise in the table the\n   dashboard reads. */\nif (competitorPrice === null && !skipReason) skipReason = 'no price could be extracted from the page';\n\nreturn { json: {\n  id: original.id ?? null,\n  model: original.model ?? null,\n  listingTitle: listingTitle,\n  pageUrl: meta.url || null,\n  localPrice: localPrice,\n  competitorPrice: competitorPrice,\n  priceDiff: (competitorPrice !== null && localPrice !== null) ? (competitorPrice - localPrice) : null,\n  competitorSource: source,\n  sourceHost: hostSource,\n  sourceKind: sourceKind,\n  offerName: chosen ? chosen.name : null,\n  offerCondition: chosen ? chosen.condition : null,\n  matchQuality: matchQuality,\n  matchNote: matchNote,\n  offersSeen: ldOffers.length,\n  currency: parsed.currency || 'AED',\n  daysInStock: original.daysInStock ?? 0,\n  priceFrom: priceFrom,\n  usable: !skipReason,\n  skipReason: skipReason,\n} };\n",
+     "mode": "runOnceForEachItem",
+     "notes": "Runs once per item. Carries each JSON-LD offer's own name and condition, then picks the offer that best matches OUR unit rather than the lowest number on the page, and records which offer won and how confident the match is. Also stores the listing's own title, the page host and a source class, so the Competitors screen can show a comparison instead of asserting one."
+    },
+    "id": "172a82ea-c373-49db-ac3b-51ffb95150ae",
+    "name": "Parse AI Price",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1488,
+     128
+    ],
+    "notes": "Runs once per item. In all-items mode it read $json and parsed exactly one of sixteen scraped pages; .first() also mispaired the metadata. Prefers schema.org JSON-LD over the model, and takes the source from the page hostname, which always exists."
+   },
+   {
+    "parameters": {
+     "operation": "getAll",
+     "tableId": "inventory",
+     "returnAll": true
+    },
+    "type": "n8n-nodes-base.supabase",
+    "typeVersion": 1,
+    "position": [
+     560,
+     128
+    ],
+    "id": "8daa883b-cf45-4e2f-b329-9b12f71e4a68",
+    "name": "Fetch Local Inventory",
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    }
+   },
+   {
+    "parameters": {
+     "tableId": "competitors",
+     "fieldsUi": {
+      "fieldValues": [
+       {
+        "fieldId": "competitor",
+        "fieldValue": "={{ $json.competitorSource || 'unknown' }}"
+       },
+       {
+        "fieldId": "model",
+        "fieldValue": "={{ $json.model }}"
+       },
+       {
+        "fieldId": "listing_title",
+        "fieldValue": "={{ $json.listingTitle }}"
+       },
+       {
+        "fieldId": "source_host",
+        "fieldValue": "={{ $json.sourceHost }}"
+       },
+       {
+        "fieldId": "source_kind",
+        "fieldValue": "={{ $json.sourceKind }}"
+       },
+       {
+        "fieldId": "offer_name",
+        "fieldValue": "={{ $json.offerName }}"
+       },
+       {
+        "fieldId": "offer_condition",
+        "fieldValue": "={{ $json.offerCondition }}"
+       },
+       {
+        "fieldId": "match_quality",
+        "fieldValue": "={{ $json.matchQuality }}"
+       },
+       {
+        "fieldId": "match_note",
+        "fieldValue": "={{ $json.matchNote }}"
+       },
+       {
+        "fieldId": "price_aed",
+        "fieldValue": "={{ $json.competitorPrice }}"
+       },
+       {
+        "fieldId": "our_price_aed",
+        "fieldValue": "={{ $json.localPrice }}"
+       },
+       {
+        "fieldId": "price_diff_aed",
+        "fieldValue": "={{ $json.priceDiff }}"
+       },
+       {
+        "fieldId": "ai_recommendation",
+        "fieldValue": "={{ $json.competitorPrice === null ? 'No competitor price found' : ($json.matchQuality === 'weak' ? 'NO CONCLUSION: nothing on the page ties this price to our unit. ' + ($json.matchNote || '') : ($json.priceDiff < 0 ? 'UNDERCUT: competitor is AED ' + Math.abs($json.priceDiff) + ' cheaper on ' + ($json.offerName || 'an unnamed offer') + '. Consider matching, especially at ' + $json.daysInStock + ' days in stock.' : 'HOLD: we are already AED ' + $json.priceDiff + ' cheaper than ' + ($json.offerName || 'this competitor') + '.')) }}"
+       },
+       {
+        "fieldId": "scraped_at",
+        "fieldValue": "={{ $now.toISO() }}"
+       },
+       {
+        "fieldId": "tenant_id",
+        "fieldValue": "={{ (() => { let t = null; try { t = $('Build Apify Query').item.json.tenant_id || null; } catch (e) { t = null; } if (t) return t; const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); if (k.length === 1 && U.test(String(m[k[0]] || ''))) return String(m[k[0]]); return null; })() }}"
+       }
+      ]
+     }
+    },
+    "id": "882f5cb9-92fc-45d9-81d4-2454a8a454f9",
+    "name": "Log Competitor Intel",
+    "type": "n8n-nodes-base.supabase",
+    "typeVersion": 1,
+    "position": [
+     1712,
+     320
+    ],
+    "retryOnFail": true,
+    "maxTries": 3,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "method": "POST",
+     "url": "https://dsvuoovivysszdoiorch.supabase.co/rest/v1/audit_log",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "supabaseApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "Prefer",
+        "value": "return=minimal"
+       },
+       {
+        "name": "Content-Type",
+        "value": "application/json"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ (() => { let t = null; try { t = $('Build Apify Query').item.json.tenant_id || null; } catch (e) { t = null; } if (!t) { const B = { 'default': 'fff6a2b5-cfd5-4460-8383-875bc5826de0' }; const U = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; let m = {}; try { m = JSON.parse(String($env.NEXUS_TENANT_MAP || '')) || {}; } catch (e) { m = {}; } if (!m || typeof m !== 'object' || !Object.keys(m).length) m = B; const k = Object.keys(m); if (k.length === 1 && U.test(String(m[k[0]] || ''))) t = String(m[k[0]]); } return JSON.stringify({ workflow: 'Competitor Price Scraping', status: ($json.delivery ? $json.delivery.status : ($json.skipReason ? 'REJECTED' : 'SUCCESS')), lead_name: null, lead_email: null, summary: (($json.skipReason ? ('Scrape produced no usable intel for ' + ($json.model || 'a unit') + ' \u2014 ' + $json.skipReason) : ('Competitor price recorded for ' + ($json.model || 'a unit'))) + ($json.delivery ? ' | ' + $json.delivery.note : '') + (t ? '' : ' | TENANT UNRESOLVED')), logged_at: $now.toUTC().toISO(), tenant_id: t }); })() }}",
+     "options": {
+      "timeout": 15000
+     }
+    },
+    "id": "audit-dynamic_pric",
+    "name": "Audit Log",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2208,
+     608
+    ],
+    "retryOnFail": true,
+    "maxTries": 2,
+    "waitBetweenTries": 1500,
+    "credentials": {
+     "supabaseApi": {
+      "id": "dv4OeARarErZLHCj",
+      "name": "Supabase account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "parameters": {
+     "conditions": {
+      "options": {
+       "caseSensitive": true,
+       "leftValue": "",
+       "typeValidation": "loose",
+       "version": 3
+      },
+      "conditions": [
+       {
+        "id": "usable",
+        "leftValue": "={{ $json.usable }}",
+        "rightValue": "",
+        "operator": {
+         "type": "boolean",
+         "operation": "true",
+         "singleValue": true
+        }
+       }
+      ],
+      "combinator": "and"
+     },
+     "options": {}
+    },
+    "id": "c0mpet1t-0r5a-4n1t-8a1e-000000000001",
+    "name": "Is This Real Intel?",
+    "type": "n8n-nodes-base.if",
+    "typeVersion": 2,
+    "position": [
+     1360,
+     544
+    ]
+   },
+   {
+    "id": "b48d2e71-95c3-4a0f-8d16-lphicompdel02",
+    "name": "Delivery Report",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1920,
+     448
+    ],
+    "parameters": {
+     "mode": "runOnceForEachItem",
+     "jsCode": "// Verify every node whose success this audit row is about to claim.\n// This edge is the TRUE branch of 'Is This Real Intel?', so the intel row was\n// just written here and both this node and its claim always run together.\n// NOTE: 'Update Prices in Supabase' is NOT claimed. It is orphaned - nothing\n// connects into 'Should Update Price?', so that whole sub-branch never runs and\n// $('Update Prices in Supabase') would THROW.\nconst CLAIMED = [\n  { node: 'Log Competitor Intel', what: 'competitors intel row', critical: true },\n];\n\nfunction check(c) {\n  let it;\n  try { it = $(c.node).item; }\n  catch (e) { return { ...c, ok: false, why: 'node did not run on this branch' }; }\n  if (!it) return { ...c, ok: false, why: 'node produced no items' };\n  const j = it.json || {};\n  if (j.error !== undefined) {\n    const m = j.error && (j.error.message || j.error.description) || j.error;\n    return { ...c, ok: false, why: String(m).slice(0, 300) };\n  }\n  return { ...c, ok: true };\n}\n\nconst results = CLAIMED.map(check);\nconst dropped = results.filter(r => !r.ok);\nconst fatal   = dropped.filter(r => r.critical);\n\nconst status = fatal.length   ? 'FAILED'\n             : dropped.length ? 'PARTIAL'\n             : 'SUCCESS';\n\nconst base = $json;\n\n// When the insert swallows, its output item is the error rather than the stored\n// row, so `model` disappears and the audit summary degrades to 'a unit'. Carry\n// the model forward from the parse step so the row still names the vehicle.\nlet p = {};\ntry { p = $('Parse AI Price').item.json || {}; } catch (e) { p = {}; }\n\nreturn { json: {\n  ...base,\n  model: (base.model !== undefined && base.model !== null) ? base.model : (p.model || null),\n  delivery: {\n    status,\n    verified: results.filter(r => r.ok).map(r => r.what),\n    dropped:  dropped.map(r => r.what + ' - ' + r.why),\n    note: dropped.length\n      ? dropped.length + ' of ' + results.length + ' claimed steps did not land'\n      : 'all ' + results.length + ' claimed steps verified',\n  },\n} };\n"
+    }
+   }
+  ],
+  "connections": {
+   "Schedule Trigger": {
+    "main": [
+     [
+      {
+       "node": "Fetch Local Inventory",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Build Apify Query": {
+    "main": [
+     [
+      {
+       "node": "Apify - Search Competitor Price",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Apify - Search Competitor Price": {
+    "main": [
+     [
+      {
+       "node": "Extract Price with AI",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Extract Price with AI": {
+    "main": [
+     [
+      {
+       "node": "Parse AI Price",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Parse AI Price": {
+    "main": [
+     [
+      {
+       "node": "Is This Real Intel?",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Fetch Local Inventory": {
+    "main": [
+     [
+      {
+       "node": "Build Apify Query",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Log Competitor Intel": {
+    "main": [
+     [
+      {
+       "node": "Delivery Report",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Is This Real Intel?": {
+    "main": [
+     [
+      {
+       "node": "Log Competitor Intel",
+       "type": "main",
+       "index": 0
+      }
+     ],
+     [
+      {
+       "node": "Audit Log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Delivery Report": {
+    "main": [
+     [
+      {
+       "node": "Audit Log",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  },
+  "nodeGroups": [],
+  "authors": "Ali Asgher Ujjain Wala  (via MCP)",
+  "name": "competitors rows carry the owning dealership",
+  "description": "Updated nodes: Log Competitor Intel",
+  "autosaved": false,
+  "workflowPublishHistory": [
+   {
+    "createdAt": "2026-09-02T11:09:47.085Z",
+    "id": 796,
+    "workflowId": "LphiGg4iqF1bn6El",
+    "versionId": "6241a419-4a03-4339-b83b-8e0c51120653",
+    "event": "activated",
+    "userId": "d07f35f6-cf6f-4002-af4d-c3eff05e563b"
+   }
+  ]
+ }
+}

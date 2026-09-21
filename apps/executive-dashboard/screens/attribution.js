@@ -516,7 +516,12 @@ SCREENS.attribution = async host => {
     title: 'Every recorded sale, walked',
     sub: 'Eight hops per sale. Confirmed revenue is a column of the sale record and is never attribution; margin is '
        + 'not computable and that is not the same as zero',
-    actions: linkBtn('inventory', 'Open Inventory'),
+    /* NX1006, 21 Sep 2026. This chain has nothing to walk until a sale exists in
+       purchase_history, and the only screen that writes one is Deals (via the
+       Leads drawer's new "Mark deal won", or Deals' own "Record a deal"). Linked
+       here rather than left implicit, same reasoning as the Inventory link
+       beside it. */
+    actions: linkBtn('deals', 'Record a deal') + ' ' + linkBtn('inventory', 'Open Inventory'),
     load: async () => {
       const [s, b] = await Promise.all([settle(readSale()), settle(readBasis())]);
       if (s.err) throw s.err;

@@ -369,6 +369,10 @@ const HOOK = {
   kyc:        'audit-kyc',
   erpSync:    'erp-sync',
   escalation: 'lead-escalation',
+  /* NX1006, 21 Sep 2026: manual off-cycle trigger for Competitors' 'Re-run
+     scrape' button. Authenticated + rate-limited (one per tenant per hour) in
+     the workflow itself; see ops/fill-screens/patched/. */
+  rescrapeCompetitors: 'competitors/rescrape',
   /* Operator replies from the conversations screen. Guarded by the same JWT as
      the rest, and NOT fire-and-forget: it answers with a status of sent or
      error, so the UI can tell the operator whether the message actually left.
