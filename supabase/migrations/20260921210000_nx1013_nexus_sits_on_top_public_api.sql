@@ -1420,14 +1420,14 @@ set search_path to 'public', 'pg_catalog'
 as $fn$
 declare v_event text;
 begin
-  if tg_op = 'UPDATE' and row(new.name, new.email, new.phone, new.source, new.vehicle_interest, new.budget_aed,
-                              new.status, new.ai_score, new.scoring_state, new.assigned_to_id, new.assigned_to)
-                      is not distinct from
-                          row(old.name, old.email, old.phone, old.source, old.vehicle_interest, old.budget_aed,
-                              old.status, old.ai_score, old.scoring_state, old.assigned_to_id, old.assigned_to) then
-    return null;
-  end if;
   begin
+    if tg_op = 'UPDATE' and row(new.name, new.email, new.phone, new.source, new.vehicle_interest, new.budget_aed,
+                                new.status, new.ai_score, new.scoring_state, new.assigned_to_id, new.assigned_to)
+                        is not distinct from
+                            row(old.name, old.email, old.phone, old.source, old.vehicle_interest, old.budget_aed,
+                                old.status, old.ai_score, old.scoring_state, old.assigned_to_id, old.assigned_to) then
+      return null;
+    end if;
     insert into public.api_lead_clock (lead_id, tenant_id, changed_at)
     values (new.id, new.tenant_id, now())
     on conflict (lead_id) do update set changed_at = excluded.changed_at, tenant_id = excluded.tenant_id;
@@ -1489,10 +1489,10 @@ security definer
 set search_path to 'public', 'pg_catalog'
 as $fn$
 begin
-  if lower(coalesce(new.direction_key, new.direction, '')) <> 'inbound' then
-    return null;
-  end if;
   begin
+    if lower(coalesce(new.direction_key, new.direction, '')) <> 'inbound' then
+      return null;
+    end if;
     if exists (select 1 from public.outbound_webhook w
                 where w.tenant_id = new.tenant_id and w.status = 'active' and 'message.received' = any (w.events)) then
       perform public.nexus_webhook_enqueue(new.tenant_id, 'message.received', jsonb_build_object(

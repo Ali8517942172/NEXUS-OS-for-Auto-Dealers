@@ -83,6 +83,10 @@ declare
   v_tok text;
   v_request_id bigint;
 begin
+  if not exists (select 1 from public.outbound_webhook_delivery d
+                  where d.status in ('pending','failed') and d.next_attempt_at <= now()) then
+    return null;
+  end if;
   select decrypted_secret into v_tok
     from vault.decrypted_secrets
    where name = 'nexus_webhook_dispatch_token'
