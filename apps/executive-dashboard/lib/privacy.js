@@ -72,7 +72,15 @@ const TOKENS = new Map();   // lower-cased word of a multi-word name -> that nam
    are never masked on their own (the full name still is). */
 const STOP = new Set(('customer customers lead leads test sales service motors motor cars auto autos trading '
   + 'general company group llc fze fzco est establishment the and new used walk unknown contact dealer '
-  + 'dealership showroom team manager admin owner support info office store shop centre center').split(' '));
+  + 'dealership showroom team manager admin owner support info office store shop centre center '
+  /* 22 Sep 2026: channel and product names. A WhatsApp contact saved as
+     "WhatsApp customer 2172" made the word WhatsApp itself a masked token,
+     so the Integrations screen read "Your own Customer X21 Business number". */
+  + 'whatsapp facebook instagram messenger google website web email mail phone call calls sms slack '
+  + 'bitrix bitrix24 zoho hubspot salesforce odoo business form forms ads api nexus uae dubai sharjah').split(' '));
+/* Staff (the signed-in user and the team roster) are never masked: Privacy mode
+   hides customers, not the people using the app. */
+const STAFF = new Set();   // lower-cased full names and their words
 const PHONES = new Set();   // digit strings, 7+ digits
 const EMAILS = new Set();   // lower-cased
 let pattern = null;         // rebuilt lazily when the registry grows
@@ -80,7 +88,7 @@ let pattern = null;         // rebuilt lazily when the registry grows
 const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function registerName(raw) {
   const s = typeof raw === 'string' ? raw.trim() : '';
-  if (s.length < 3 || isTestName(s) || hasTestToken(s)) return;
+  if (s.length < 3 || isTestName(s) || hasTestToken(s) || STAFF.has(s.toLowerCase())) return;
   const label = pseudonym(s);
   const add = form => {
     const k = form.trim().toLowerCase();
@@ -92,8 +100,14 @@ function registerName(raw) {
   /* Every distinctive word of a multi-word name, so a preview that names only
      part of it ("Hi Ammar", "Mustafa Fefco …") is masked whole: a run of these
      words becomes ONE pseudonym, never "Customer A7 Fefco". */
-  const words = plain.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w) && !STOP.has(w.toLowerCase()));
+  const words = plain.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w) && !STOP.has(w.toLowerCase()) && !STAFF.has(w.toLowerCase()));
   if (plain.includes(' ')) for (const w of words) { const k = w.toLowerCase(); if (!TOKENS.has(k) && !NAMES.has(k)) { TOKENS.set(k, label); pattern = null; } }
+}
+function registerStaffName(raw) {
+  const s = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (s.length < 2) return;
+  const forms = [s, ...s.split(/\s+/).filter(w => w.length >= 3)];
+  for (const f of forms) { if (!STAFF.has(f)) STAFF.add(f); if (NAMES.delete(f) | TOKENS.delete(f)) pattern = null; }
 }
 function registerPhone(raw) {
   const d = String(raw || '').replace(/\D+/g, '');
@@ -224,6 +238,9 @@ function scrubRows(path, rows) {
       HIDDEN_KEYS.add(String(lid ?? row.id ?? row.thread_key ?? row.name ?? row.lead_name ?? row.display_name ?? JSON.stringify(row).slice(0, 80)));
       if (!showTests) continue;
     }
+    if (/^(users|v_team[a-z0-9_]*|team[a-z0-9_]*|tenant_members?|nexus_team[a-z0-9_]*)$/.test(rel) || /roster|staff/.test(rel))
+      for (const f of ['full_name', 'name', 'display_name', 'user_name', 'member_name']) registerStaffName(row[f]);
+    if (row.users && typeof row.users === 'object') registerStaffName(row.users.full_name || row.users.name);
     if (!NOT_PERSON_REL.test(rel)) {
       if (personRel) registerName(row.name);
       registerFrom(row, 0);
@@ -321,6 +338,6 @@ function installPrivacyGuard(root = document.body) {
 
 export {
   TEST_RECORD_RE, isTestName, privacyOn, setPrivacy, onPrivacyChange, showTestRecords, setShowTestRecords,
-  pseudonym, displayName, maskPhone, maskEmail, maskText, maskPII, maskTests, scrubText, hasTestToken, isKnownPerson, scrubRows, isHiddenLead,
+  pseudonym, displayName, registerStaffName, maskPhone, maskEmail, maskText, maskPII, maskTests, scrubText, hasTestToken, isKnownPerson, scrubRows, isHiddenLead,
   hiddenTestCount, installPrivacyGuard,
 };

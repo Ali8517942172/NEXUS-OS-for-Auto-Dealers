@@ -3310,6 +3310,13 @@ function piiScan(src) {
                         'call +971 56 721 5948', 'call 0567215948'])
       if (REAL.test(P.scrubText(line))) bad.push(`with Privacy mode on, "${line}" renders as "${P.scrubText(line)}"`);
     if (P.scrubText('Customer service is here') !== 'Customer service is here') bad.push('ordinary copy was altered by the name mask');
+    P.scrubRows('v_conversations', [{ display_name: 'WhatsApp customer 2172', phone: '971500002172' }]);
+    for (const line of ['Your own WhatsApp Business number', 'Website · Facebook · Google', 'Bitrix24 outbound webhooks'])
+      if (P.scrubText(line) !== line) bad.push(`product words are masked: "${line}" renders as "${P.scrubText(line)}"`);
+    if (/WhatsApp customer 2172/.test(P.scrubText('WhatsApp customer 2172 wrote'))) bad.push('the WhatsApp contact itself is no longer masked');
+    P.scrubRows('leads?select=id,name', [{ id: 7, name: 'Ali' }]);
+    P.registerStaffName('Ali Asgher');
+    if (P.scrubText('Assigned to Ali Asgher') !== 'Assigned to Ali Asgher') bad.push(`a staff name is masked: "${P.scrubText('Assigned to Ali Asgher')}"`);
     P.setPrivacy(false);
   } catch (e) {
     bad.push(`lib/privacy.js could not be exercised: ${e.message}`);
