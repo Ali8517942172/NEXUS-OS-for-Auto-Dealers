@@ -2011,7 +2011,7 @@ SCREENS.settings = async host => {
     };
     const tDraw = () => {
       team.innerHTML = `<div class="card-title">Team</div>
-        <div class="card-sub" style="margin-bottom:14px">Invite a teammate into ${esc(teamTenantName || 'this dealership')}. NEXUS sends a real Supabase Auth invite email through the founder-invite Edge Function -- the one place in this deployment that holds a service-role key, and it never reaches this browser.</div>
+        <div class="card-sub" style="margin-bottom:14px">Invite a teammate into ${esc(teamTenantName || 'this dealership')}. NEXUS sends them a real invite email. The invite is sent from NEXUS&rsquo;s servers; no privileged key ever reaches this browser.</div>
         ${tMsg ? `<div class="banner ${tTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${tTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(tMsg)}</div></div>` : ''}
         <div class="grid g2" style="gap:12px">
           <div class="field"><label for="teamEmail">Email</label><input id="teamEmail" type="email" placeholder="colleague@dealer.com" /></div>

@@ -16,9 +16,9 @@
    integration in this app -- Pay now opens Ali's own hosted Ziina payment
    link in a new tab, and Ziina handles the card. Either way, the only
    record of a payment having happened on NEXUS's side is Ali typing a
-   reference into the founder panel at the bottom of this screen (visible
-   only to Ali) and subscription_event holding what he typed, forever,
-   unchangeable.
+   reference into the separate founder page (/founder -- never part of this
+   dealer app since 22 Sep 2026) and subscription_event holding what he
+   typed, forever, unchangeable.
 
    ═══════════════════════════════════════════════════════════════════════════
    WHERE THE ANSWER COMES FROM
@@ -35,11 +35,10 @@
    the payment history: append-only, so what it shows cannot have been quietly
    edited after the fact.
 
-   `public.nexus_is_platform_admin()` decides whether the founder panel draws
-   at all. A `false` here is not this screen refusing to show a button — the
-   function itself refuses the write regardless of what this file renders, so
-   the check here is purely about not showing a form that would only ever
-   answer refused.
+   Nothing on this screen is founder-only. The "record a payment" control
+   that used to draw here for a platform admin moved to the founder page on
+   22 Sep 2026, so a dealer's Subscription screen is the same for every
+   account, the founder's included.
 
    ═══════════════════════════════════════════════════════════════════════════
    NX1008/NX1010 — WHERE "HOW TO PAY" NOW COMES FROM
@@ -62,14 +61,11 @@
    no column for one. A dealer always gets a row back once it has an active
    membership; payment_link_url is null until Ali sets it, and this screen
    renders that as "online payment is being set up", never as an error. */
-import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { db, onIdentityChange } from '../lib/data.js';
 import { esc, n0 } from '../lib/format.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
-import { openModal } from '../lib/modal.js';
-import { refreshSubscription } from '../lib/subscription.js';
-import { loadPlatformAdmin } from '../lib/platform.js';
 
 const str = v => String(v == null ? '' : v).trim();
 const muted = h => `<div class="cell-sub">${h}</div>`;
@@ -199,71 +195,6 @@ SCREENS.subscription = async host => {
           () => { copyBtn.textContent = 'Copy blocked'; copyBtn.title = 'The browser refused clipboard access for this page.'; });
       });
     }
-  });
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P3 · Founder panel — renders only for a platform admin, and the RPC
-     refuses regardless of whether this draws
-     ──────────────────────────────────────────────────────────────────────── */
-  /* The tenant id the button below needs comes back from load(); the click
-     handler is wired separately via .then(), so it is captured here rather
-     than re-read from the DOM or re-queried on click. */
-  let founderTenantId = null;
-  panel(host, {
-    title: 'Founder: record a payment',
-    sub: 'Visible only to a NEXUS platform admin. Marks THIS dealership paid by hand -- nexus_founder_mark_paid() '
-       + 'refuses this even if you can somehow see the button, so this is convenience, not the security boundary',
-    load: async () => {
-      const [isAdmin, subRows] = await Promise.all([loadPlatformAdmin(), readSub()]);
-      return { isAdmin, tenantId: Array.isArray(subRows) && subRows[0] ? subRows[0].tenant_id : null };
-    },
-    render: ({ isAdmin, tenantId }) => {
-      founderTenantId = tenantId;
-      if (!isAdmin) {
-        return stateEmpty('Not visible to your account',
-          'This panel only draws for a NEXUS platform admin. It refusing to show you a form is not an error -- it '
-          + 'is the same rule nexus_founder_mark_paid() enforces at the database either way.', 'lock');
-      }
-      if (!tenantId) {
-        return stateEmpty('No dealership to mark paid', 'Your own subscription record has no tenant id.', 'error');
-      }
-      return `<button class="btn primary" id="markPaidBtn">Record a payment for this dealership</button>`
-        + muted('Opens a small form: how many months this payment covers, and the bank/cash reference to reconcile '
-          + 'it against later. Extends from the current paid-through date if there is time left on it, otherwise '
-          + 'starts from today.');
-    },
-  }).then(card => {
-    card.querySelector('#markPaidBtn')?.addEventListener('click', async () => {
-      const tenantId = founderTenantId;
-      const body = `<div class="grid" style="gap:14px">
-        <div class="field"><label for="mpMonths">Months paid for</label>
-          <input type="number" id="mpMonths" min="1" max="12" value="1" /></div>
-        <div class="field"><label for="mpRef">Payment reference</label>
-          <input type="text" id="mpRef" placeholder="Bank transfer id, receipt number, etc." /></div>
-      </div>`;
-      const m = openModal('Record a payment', body,
-        `<button class="btn primary" id="mpGo">Record</button><button class="btn ghost" id="mpCancel">Cancel</button>`);
-      m.wrap.querySelector('#mpCancel').addEventListener('click', m.close);
-      m.wrap.querySelector('#mpGo').addEventListener('click', async () => {
-        const btn = m.wrap.querySelector('#mpGo');
-        const months = Number(m.wrap.querySelector('#mpMonths').value);
-        const reference = m.wrap.querySelector('#mpRef').value.trim();
-        if (!reference) { m.msg('A reference is required -- nexus_founder_mark_paid() will refuse without one.'); return; }
-        btn.disabled = true; btn.textContent = 'Recording…';
-        try {
-          await dbWrite('POST', 'rpc/nexus_founder_mark_paid', {
-            p_tenant: tenantId, p_months: months, p_reference: reference,
-          });
-          m.close();
-          resetReads();
-          await refreshSubscription();
-          location.hash = 'subscription';
-        } catch (e) {
-          btn.disabled = false; btn.textContent = 'Record';
-          m.msg(esc(str(e && e.message) || 'The database refused this. Nothing was recorded.'));
-        }
-      });
-    });
   });
 
   /* ────────────────────────────────────────────────────────────────────────
