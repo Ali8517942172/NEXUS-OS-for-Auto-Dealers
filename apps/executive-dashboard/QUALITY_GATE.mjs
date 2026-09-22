@@ -211,7 +211,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ARGV = process.argv.slice(2);
@@ -3279,6 +3279,49 @@ function piiScan(src) {
   }
   verdict('S13', LANE.SOURCE, 'P0', 'No screen prints a customer name, phone or email without the privacy helper', bad,
     [`${scanned} files scanned; every esc() of a PII-shaped field is masked or on the staff/non-customer allowlist`]);
+}
+
+/* ── S14 · the privacy helpers, run rather than read ────────────────────────
+   Added 22 Sep 2026, after a live scan found test fixtures on Overview, Leads
+   and Revenue Recovery (a title or customer_label a view composed around the
+   fixture's name) and part of a customer's name on Attribution ("Mustafa Fefco
+   …" masked as "Customer X Fefco"). lib/privacy.js is imported here with a
+   stub storage and body, fed rows shaped like those views, and asked what it
+   would paint. */
+{
+  const bad = [];
+  const saved = { localStorage: globalThis.localStorage, document: globalThis.document };
+  try {
+    globalThis.localStorage = { getItem: () => null, setItem() {} };
+    globalThis.document = { body: { classList: { toggle() {} } } };
+    const P = await import(pathToFileURL(join(HERE, 'lib', 'privacy.js')).href + '?gate=' + Date.now());
+    P.scrubRows('leads?select=id,name', [{ id: 1, name: 'Mustafa Fefco Trading' }, { id: 2, name: 'KAWKAB AL NUJOOM COSMETIC' }, { id: 3, name: 'Syed' }]);
+    P.scrubRows('v_attribution_lead_chain', [{ lead_id: 4, lead_name: 'Real Person', chain: [{ customer_name: 'Hussain Baravdawala' }] }]);
+    const kept = (rel, rows) => P.scrubRows(rel, rows).length;
+    if (kept('v_needs_attention', [{ title: 'NEXUS TEST Ahmed [NXTEST-496e60820198] has had no reply' }]) !== 0) bad.push('a v_needs_attention row titled after a test fixture is not dropped');
+    if (kept('v_deal_rescue', [{ lead_id: 9, customer_label: 'Preflight Walk-In' }]) !== 0) bad.push('a v_deal_rescue row whose customer_label is a test fixture is not dropped');
+    if (kept('v_attribution_sale_chain', [{ sale_id: 1, lead_name: 'x', lead_note: 'matched to NEXUS TEST Dealer A Customer 1 [4fa7d95b-a-c1]' }]) !== 0) bad.push('a row whose note names a test fixture is not dropped');
+    if (kept('v_needs_attention', [{ title: 'A real lead is waiting' }]) !== 1) bad.push('a real v_needs_attention row was dropped');
+    const t = P.scrubText('NEXUS TEST Dealer A Customer 1 [4fa7d95b-a-c1] waiting, and Preflight Walk-In');
+    if (/NEXUS TEST|NXTEST|Preflight/i.test(t)) bad.push(`test markers survive in rendered text while hidden: "${t}"`);
+    P.setPrivacy(true);
+    const REAL = /Mustafa|Fefco|KAWKAB|NUJOOM|Syed|Hussain|Baravdawala|\+?971\s?5\d|05\d{8}/i;
+    for (const line of ['Mustafa Fefco …', 'Fefco replied', 'KAWKAB AL NUJOOM', 'Syed', 'Hussain Baravdawala bought',
+                        'call +971 56 721 5948', 'call 0567215948'])
+      if (REAL.test(P.scrubText(line))) bad.push(`with Privacy mode on, "${line}" renders as "${P.scrubText(line)}"`);
+    if (P.scrubText('Customer service is here') !== 'Customer service is here') bad.push('ordinary copy was altered by the name mask');
+    P.setPrivacy(false);
+  } catch (e) {
+    bad.push(`lib/privacy.js could not be exercised: ${e.message}`);
+  } finally {
+    if (saved.localStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = saved.localStorage;
+    if (saved.document === undefined) delete globalThis.document; else globalThis.document = saved.document;
+  }
+  const A = SRC.get('app.js')?.code || '';
+  for (const rel of ['leads?', 'v_conversations?', 'whatsapp_contacts?', 'customer?'])
+    if (!A.includes(`'${rel}select=`)) bad.push(`app.js does not read ${rel.slice(0, -1)} before the first screen, so its names are unknown to the mask`);
+  verdict('S14', LANE.SOURCE, 'P0', 'Test fixtures and partial customer names never reach the screen', bad,
+    ['composed titles, labels and notes that name a fixture are dropped; a partial or multi-word customer name masks to one pseudonym; phones in any UAE form are masked']);
 }
 
 /* ── S2 · helper-contract lint ─────────────────────────────────────────────

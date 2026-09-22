@@ -30,7 +30,11 @@ const PRIVACY_KEY = 'nexus.privacy';
 const TESTS_KEY   = 'nexus.showTestRecords';
 
 const TEST_RECORD_RE = /^NEXUS TEST|\[NXTEST-|\[step4-|^Preflight /i;
+/* The same markers anywhere in a string: a title, label or journey note that a
+   view composed server-side around a test fixture's name. */
+const TEST_TOKEN_RE = /NEXUS TEST|NXTEST-|\[step4-|\bPreflight\b/i;
 const isTestName = v => typeof v === 'string' && TEST_RECORD_RE.test(v.trim());
+const hasTestToken = v => typeof v === 'string' && TEST_TOKEN_RE.test(v);
 
 let privacy = readFlag(PRIVACY_KEY, false);
 let showTests = readFlag(TESTS_KEY, false);
@@ -43,7 +47,10 @@ function setPrivacy(on) {
   document.body.classList.toggle('privacy-on', privacy);
   listeners.forEach(fn => { try { fn(privacy); } catch { /* a listener must not stop the toggle */ } });
 }
-function setShowTestRecords(on) { showTests = !!on; writeFlag(TESTS_KEY, showTests); }
+function setShowTestRecords(on) {
+  showTests = !!on; writeFlag(TESTS_KEY, showTests);
+  listeners.forEach(fn => { try { fn(privacy); } catch { /* as above */ } });
+}
 const onPrivacyChange = fn => { listeners.add(fn); return () => listeners.delete(fn); };
 
 /* ── Pseudonyms ────────────────────────────────────────────────────────── */
@@ -60,6 +67,12 @@ const pseudonym = key => {
 
 /* ── The registry of values seen on customer-bearing rows ──────────────── */
 const NAMES  = new Map();   // lower-cased surface form -> pseudonym
+const TOKENS = new Map();   // lower-cased word of a multi-word name -> that name's pseudonym
+/* Words that are also this app's own vocabulary, or too common to be a person,
+   are never masked on their own (the full name still is). */
+const STOP = new Set(('customer customers lead leads test sales service motors motor cars auto autos trading '
+  + 'general company group llc fze fzco est establishment the and new used walk unknown contact dealer '
+  + 'dealership showroom team manager admin owner support info office store shop centre center').split(' '));
 const PHONES = new Set();   // digit strings, 7+ digits
 const EMAILS = new Set();   // lower-cased
 let pattern = null;         // rebuilt lazily when the registry grows
@@ -67,7 +80,7 @@ let pattern = null;         // rebuilt lazily when the registry grows
 const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function registerName(raw) {
   const s = typeof raw === 'string' ? raw.trim() : '';
-  if (s.length < 3 || isTestName(s)) return;
+  if (s.length < 3 || isTestName(s) || hasTestToken(s)) return;
   const label = pseudonym(s);
   const add = form => {
     const k = form.trim().toLowerCase();
@@ -76,8 +89,11 @@ function registerName(raw) {
   add(s);
   const plain = s.replace(/[^\p{L}\p{N}\s'.-]+/gu, ' ').replace(/\s+/g, ' ').trim();   // "HaMza💫" -> "HaMza"
   if (plain !== s) add(plain);
-  const first = plain.split(' ')[0] || '';
-  if (first.length >= 4 && plain.includes(' ')) add(first);      // "Hi Ammar," in a preview
+  /* Every distinctive word of a multi-word name, so a preview that names only
+     part of it ("Hi Ammar", "Mustafa Fefco …") is masked whole: a run of these
+     words becomes ONE pseudonym, never "Customer A7 Fefco". */
+  const words = plain.split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w) && !STOP.has(w.toLowerCase()));
+  if (plain.includes(' ')) for (const w of words) { const k = w.toLowerCase(); if (!TOKENS.has(k) && !NAMES.has(k)) { TOKENS.set(k, label); pattern = null; } }
 }
 function registerPhone(raw) {
   const d = String(raw || '').replace(/\D+/g, '');
@@ -113,10 +129,27 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
    so amounts (commas), dates and ids (letters) are never touched. */
 const PHONE_RE = /(?<![\p{L}\p{N}+])(?:\+\d[\d\s-]{6,17}\d|(?:00)?971[\d\s-]{7,11}\d|0?5\d(?:[\s-]?\d){7})(?![\p{N}])/gu;
 function buildPattern() {
-  const names = [...NAMES.keys()].sort((a, b) => b.length - a.length).map(escRe);
-  pattern = names.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${names.join('|')})(?![\\p{L}\\p{N}])`, 'giu') : /(?!)/g;
+  const safe = list => list.sort((a, b) => b.length - a.length).map(escRe).filter(x => {
+    try { new RegExp(x, 'u'); return true; } catch { return false; }
+  });
+  const names = safe([...NAMES.keys()]), toks = safe([...TOKENS.keys()]);
+  const unit = [...names, ...toks].join('|');
+  /* A run of registered names/words, separated by spaces or light punctuation,
+     is one match and one pseudonym. */
+  pattern = unit ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${unit})(?:[\\s.'-]+(?:\\p{L}{1,3}[\\s.'-]+)?(?:${unit}))*(?![\\p{L}\\p{N}])`, 'giu') : /(?!)/g;
   return pattern;
 }
+const labelFor = m => {
+  const words = m.toLowerCase().split(/[\s.'-]+/).filter(Boolean);
+  for (let n = words.length; n > 0; n--) {          // the longest registered prefix names the person
+    const k = words.slice(0, n).join(' ');
+    if (NAMES.has(k)) return NAMES.get(k);
+  }
+  const k = m.toLowerCase();
+  if (NAMES.has(k)) return NAMES.get(k);
+  for (const w of words) if (TOKENS.has(w)) return TOKENS.get(w);
+  return pseudonym(m);
+};
 /* Free text: a message preview, a tooltip, a sentence naming the customer.
    Every registered name is replaced by its pseudonym; phone- and email-shaped
    substrings are masked whether or not they were registered. */
@@ -127,13 +160,31 @@ function maskText(v) {
   s = s.replace(EMAIL_RE, m => maskEmail(m));
   s = s.replace(PHONE_RE, m => maskPhone(m));
   if (PHONES.size) s = s.replace(/\d[\d\s-]{5,}\d/g, m => (PHONES.has(m.replace(/\D+/g, '')) ? maskPhone(m) : m));
-  s = s.replace(pattern || buildPattern(), m => NAMES.get(m.toLowerCase()) || pseudonym(m));
+  s = s.replace(pattern || buildPattern(), labelFor);
   return s;
 }
+/* Test-fixture markers in rendered text, while test records are hidden: the
+   row filter drops what it can recognise, and this catches a fixture's name
+   that a view folded into some other sentence. */
+function maskTests(v) {
+  if (showTests || v == null) return v == null ? '' : String(v);
+  const s = String(v);
+  if (!TEST_TOKEN_RE.test(s)) return s;
+  return s
+    .replace(/NEXUS TEST[^\[\]\n]{0,48}?\[[^\]\n]*\]/gi, 'Test record')
+    .replace(/NEXUS TEST(?:[ \t]+[\p{L}\p{N}]+){0,2}/giu, 'Test record')
+    .replace(/\[?(?:NXTEST|step4)-[^\]\s]*\]?/gi, '')
+    .replace(/\bPreflight(?:[ \t]+[\p{L}\p{N}-]+)?/giu, 'Test record');
+}
+const scrubText = v => maskTests(maskText(v));
 const maskPII = maskText;
 
 /* ── The data-layer hook ───────────────────────────────────────────────── */
-const NAME_FIELDS  = ['lead_name', 'customer_name', 'contact_name', 'display_name', 'full_name', 'push_name', 'sender_name', 'profile_name', 'customer_display_name'];
+const NAME_FIELDS  = ['lead_name', 'customer_name', 'contact_name', 'display_name', 'full_name', 'push_name', 'sender_name', 'profile_name', 'customer_display_name',
+  'customer_label', 'lead_label', 'contact_label', 'first_touch_name', 'person_name', 'who'];
+/* Keys whose value may be a sentence built around a customer's name. A test
+   marker in any of them marks the row as a test record. */
+const TEXT_FIELD_RE = /name|label|title|subject|ref|summary|detail|note|display|customer|lead|who|person|chain|evidence/;
 const PHONE_FIELDS = ['phone', 'phone_e164', 'phone_number', 'phone_digits', 'customer_phone', 'contact_phone', 'wa_id', 'customer_wa_id', 'recipient_wa_id', 'chat_id', 'from_number'];
 const EMAIL_FIELDS = ['email', 'lead_email', 'customer_email', 'contact_email'];
 /* `name` is a person only on these; elsewhere it is a unit, a workflow, a
@@ -148,7 +199,12 @@ const relationOf = path => String(path || '').split('?')[0].replace(/^rpc\//, ''
 function rowIsTest(row, rel) {
   if (!row || typeof row !== 'object') return false;
   if (PERSON_REL.test(rel) && isTestName(row.name)) return true;
-  for (const f of NAME_FIELDS) if (isTestName(row[f])) return true;
+  for (const f of NAME_FIELDS) if (isTestName(row[f]) || hasTestToken(row[f])) return true;
+  if (!NOT_PERSON_REL.test(rel)) for (const [k, v] of Object.entries(row)) {
+    if (!TEXT_FIELD_RE.test(k)) continue;
+    if (hasTestToken(v)) return true;
+    if (v && typeof v === 'object' && hasTestToken(JSON.stringify(v).slice(0, 4000))) return true;
+  }
   if (row.lead_id != null && HIDDEN_LEADS.has(String(row.lead_id))) return true;
   if (rel === 'leads' && row.id != null && HIDDEN_LEADS.has(String(row.id))) return true;
   return false;
@@ -170,13 +226,21 @@ function scrubRows(path, rows) {
     }
     if (!NOT_PERSON_REL.test(rel)) {
       if (personRel) registerName(row.name);
-      for (const f of NAME_FIELDS) if (typeof row[f] === 'string') registerName(row[f]);
-      for (const f of PHONE_FIELDS) if (row[f] != null) registerPhone(row[f]);
-      for (const f of EMAIL_FIELDS) if (typeof row[f] === 'string') registerEmail(row[f]);
+      registerFrom(row, 0);
     }
     out.push(row);
   }
   return out;
+}
+/* Name, phone and email keys at any depth: journey chains and evidence arrays
+   carry the customer inside nested JSON. `users` (the assigned rep) is staff. */
+function registerFrom(o, depth) {
+  if (!o || typeof o !== 'object' || depth > 4) return;
+  if (Array.isArray(o)) { for (const x of o.slice(0, 200)) registerFrom(x, depth + 1); return; }
+  for (const f of NAME_FIELDS) if (typeof o[f] === 'string') registerName(o[f]);
+  for (const f of PHONE_FIELDS) if (o[f] != null && typeof o[f] !== 'object') registerPhone(o[f]);
+  for (const f of EMAIL_FIELDS) if (typeof o[f] === 'string') registerEmail(o[f]);
+  for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object' && k !== 'users') registerFrom(v, depth + 1);
 }
 const isHiddenLead = id => !showTests && id != null && HIDDEN_LEADS.has(String(id));
 const hiddenTestCount = () => HIDDEN_KEYS.size;
@@ -189,14 +253,15 @@ const ATTRS = ['title', 'aria-label', 'alt'];
    value is pinned first: an option with no value attribute submits its label,
    and the pseudonym must never be what a form sends. */
 function maskOption(o) {
-  const t = o.textContent; const m = maskText(t);
+  const t = o.textContent; const m = scrubText(t);
   if (m === t) return;
   if (!o.hasAttribute('value')) o.setAttribute('value', o.value);
   const rec = ORIGINAL.get(o) || {}; if (rec.option == null) rec.option = t; ORIGINAL.set(o, rec);
   o.textContent = m;
 }
+const guardActive = () => privacy || !showTests;
 function maskNode(root) {
-  if (!privacy || !root) return;
+  if (!guardActive() || !root) return;
   if (root.nodeType === 3) { maskTextNode(root); return; }
   if (root.nodeType !== 1 || root.closest?.('[data-privacy-exempt]')) return;
   if (root.tagName === 'SCRIPT' || root.tagName === 'STYLE') return;
@@ -204,11 +269,11 @@ function maskNode(root) {
   for (const e of els) {
     for (const a of ATTRS) {
       if (!e.hasAttribute || !e.hasAttribute(a)) continue;
-      const t = e.getAttribute(a); const m = maskText(t);
+      const t = e.getAttribute(a); const m = scrubText(t);
       if (m !== t) { const o = ORIGINAL.get(e) || {}; if (!(a in o)) o[a] = t; ORIGINAL.set(e, o); e.setAttribute(a, m); }
     }
     if (e.tagName === 'OPTION') maskOption(e);
-    if ((e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && e.value && maskText(e.value) !== e.value) e.classList.add('pii-blur');
+    if (privacy && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && e.value && maskText(e.value) !== e.value) e.classList.add('pii-blur');
   }
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: n => (n.parentElement && (SKIP.has(n.parentElement.tagName) || n.parentElement.closest('[data-privacy-exempt]'))
@@ -219,7 +284,7 @@ function maskNode(root) {
 }
 function maskTextNode(n) {
   const t = n.nodeValue; if (!t || !t.trim()) return;
-  const m = maskText(t);
+  const m = scrubText(t);
   if (m !== t) { if (!ORIGINAL.has(n)) ORIGINAL.set(n, { text: t }); n.nodeValue = m; }
 }
 function restoreAll() {
@@ -238,7 +303,7 @@ function installPrivacyGuard(root = document.body) {
   document.body.classList.toggle('privacy-on', privacy);
   if (observer) return;
   observer = new MutationObserver(muts => {
-    if (!privacy) return;
+    if (!guardActive()) return;
     for (const m of muts) try {
       if (m.type === 'characterData') {
         const o = m.target.parentElement;
@@ -250,12 +315,12 @@ function installPrivacyGuard(root = document.body) {
     for (const n of ORIGINAL.keys()) if (!n.isConnected) ORIGINAL.delete(n);
   });
   observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS });
-  onPrivacyChange(on => { if (on) maskNode(root); else restoreAll(); });
-  if (privacy) maskNode(root);
+  onPrivacyChange(() => { restoreAll(); maskNode(root); });
+  maskNode(root);
 }
 
 export {
   TEST_RECORD_RE, isTestName, privacyOn, setPrivacy, onPrivacyChange, showTestRecords, setShowTestRecords,
-  pseudonym, displayName, maskPhone, maskEmail, maskText, maskPII, isKnownPerson, scrubRows, isHiddenLead,
+  pseudonym, displayName, maskPhone, maskEmail, maskText, maskPII, maskTests, scrubText, hasTestToken, isKnownPerson, scrubRows, isHiddenLead,
   hiddenTestCount, installPrivacyGuard,
 };

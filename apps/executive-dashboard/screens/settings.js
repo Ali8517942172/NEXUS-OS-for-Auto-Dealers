@@ -1998,7 +1998,7 @@ SCREENS.settings = async host => {
     </label>
     ${hidden && !showTestRecords() ? `<div class="cell-sub t-muted" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
   $('setPrivacy').addEventListener('change', e => setPrivacy(e.target.checked));
-  $('setShowTests').addEventListener('change', e => { setShowTestRecords(e.target.checked); go('settings'); });
+  $('setShowTests').addEventListener('change', e => setShowTestRecords(e.target.checked));  // app.js re-renders on the change
 
   /* -- Team --------------------------------------------------------------
      Added 21 Sep 2026 (nx1004). See the header rule above for the honesty

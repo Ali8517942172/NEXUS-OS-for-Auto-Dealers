@@ -304,7 +304,15 @@ async function boot() {
      lib/privacy.js know which lead ids are internal test records (so a row that
      only carries a lead_id is hidden with its lead) and which names to mask,
      before anything is painted. A failure costs nothing but that head start. */
-  try { await db('leads?select=id,name,phone,email&limit=5000'); } catch { /* the screens report their own reads */ }
+  /* WhatsApp contacts and customer records too: a contact with no lead is still
+     a person, and a screen that is opened first (Attribution, Revenue) may name
+     them before any screen that reads them has run. */
+  await Promise.all([
+    'leads?select=id,name,phone,email&limit=5000',
+    'v_conversations?select=display_name,push_name,lead_name,phone&limit=5000',
+    'whatsapp_contacts?select=push_name,phone&limit=5000',
+    'customer?select=display_name,phone_digits,email&limit=5000',
+  ].map(q => db(q).catch(() => null)));   // the screens report their own reads
   go(location.hash.slice(1) || 'moneyleaks');
 }
 
