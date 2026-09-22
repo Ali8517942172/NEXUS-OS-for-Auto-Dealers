@@ -197,6 +197,7 @@
 import { db, signedUrl } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { ago, clock, esc, n0, num, pill } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 /* The canonical identity resolver. This screen holds no rule of its own for
    deciding whether two keys name the same person — see the header. */
 import { KEY_SHAPE, expandIdentity, normalizeKey } from '../lib/identity.js';
@@ -806,8 +807,8 @@ const whoLabel = w => w.name || w.chatId || 'Unidentified contact';
 function whoCell(w) {
   const dup = w.phone && w.phone === w.name;
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      ${w.name ? esc(w.name) : '<span class="t-muted">No name on record</span>'}
-      ${w.phone && !dup ? `<span class="mono">${esc(w.phone)}</span>` : ''}
+      ${w.name ? esc(maskText(w.name)) : '<span class="t-muted">No name on record</span>'}
+      ${w.phone && !dup ? `<span class="mono">${esc(maskText(w.phone))}</span>` : ''}
       ${w.chip ? `<span class="chip">${esc(w.chip)}</span>` : ''}
     </div>
     <div class="cell-sub ${w.kind === 'lead' ? '' : 't-warm'}" style="white-space:normal">${
@@ -1312,7 +1313,7 @@ SCREENS.compliance = async host => {
     const r = reviewerOf(d);
     if (!r) return '';
     return r.name
-      ? `by ${esc(r.name)}`
+      ? `by ${esc(maskText(r.name))}`
       : `by <span class="mono">${esc(r.id)}</span> <span class="t-muted">(user id — ${esc(r.note)})</span>`;
   };
 
@@ -1606,9 +1607,9 @@ SCREENS.compliance = async host => {
         <strong>${num(escalations.length)} KYC case${escalations.length === 1 ? '' : 's'} the auditor handed to a human.</strong>
         Newest ${esc(ago(first.logged_at))} —
         ${n.name
-          ? esc(n.name)
+          ? esc(maskText(n.name))
           : `<span class="mono t-muted">${esc(n.note)}</span>`}${
-          n.phone && n.phone !== n.name ? ` <span class="mono">${esc(n.phone)}</span>` : ''}${
+          n.phone && n.phone !== n.name ? ` <span class="mono">${esc(maskText(n.phone))}</span>` : ''}${
           n.phone ? '' : ' <span class="t-muted">(no phone stored for this contact)</span>'}${
           /* A KYC escalation IS an identity record. Where the customer record
              and the name on the case disagree, both are shown: replacing one
@@ -1681,7 +1682,7 @@ SCREENS.compliance = async host => {
       return `<div class="list-item" style="cursor:default;align-items:flex-start">
         <div style="flex:1;min-width:0">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="font-weight:500">${n.name ? esc(n.name) : `<span class="mono t-muted">${esc(n.note)}</span>`}</span>
+            <span style="font-weight:500">${n.name ? esc(maskText(n.name)) : `<span class="mono t-muted">${esc(n.note)}</span>`}</span>
             ${n.recorded && n.recorded !== n.name ? `<span class="t-warm">recorded on the case as ${esc(n.recorded)}</span>` : ''}
             <span class="t-muted">audited</span> ${casePill(c.audit)}
             <span class="t-muted">register</span> ${casePill(c.register)}
@@ -1799,9 +1800,9 @@ SCREENS.compliance = async host => {
       retCard.innerHTML = `
         <div class="label-caps">This register is one customer's document trail</div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
-          <span style="font-size:18px;font-weight:600">${w0.name ? esc(w0.name) : 'Unidentified contact'}</span>
+          <span style="font-size:18px;font-weight:600">${w0.name ? esc(maskText(w0.name)) : 'Unidentified contact'}</span>
           ${w0.phone
-            ? `<span class="mono">${esc(w0.phone)}</span>`
+            ? `<span class="mono">${esc(maskText(w0.phone))}</span>`
             : '<span class="t-warm">No phone stored for this contact</span>'}
           ${w0.chip ? `<span class="chip">${esc(w0.chip)}</span>` : `<span class="chip">${esc(w0.label)}</span>`}
         </div>
@@ -1941,7 +1942,7 @@ SCREENS.compliance = async host => {
             : lapsed ? ' (expired since)'
             : unreadable ? ' (not a date this screen can read, so whether it has expired is unknown)' : '';
           const cls = atAudit ? 't-hot' : lapsed || unreadable ? 't-warm' : '';
-          return `<div>${esc(d.full_name || '—')}</div>
+          return `<div>${esc(maskText(d.full_name || '—'))}</div>
             <div class="cell-sub">DOB ${d.date_of_birth ? esc(d.date_of_birth) : '—'} · expires
               ${d.expiry_date ? `<span class="${cls}">${esc(d.expiry_date)}${note}</span>` : '—'}</div>`;
         } },
@@ -2210,7 +2211,7 @@ SCREENS.compliance = async host => {
     const whoHtml = `<div class="section">
         <div class="label-caps">Who this is</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-          ${w.name ? `<span style="font-weight:500">${esc(w.name)}</span>` : '<span class="t-muted">No name on record</span>'}
+          ${w.name ? `<span style="font-weight:500">${esc(maskText(w.name))}</span>` : '<span class="t-muted">No name on record</span>'}
           <span class="chip">${esc(w.label)}</span>
         </div>
         <dl class="kv" style="margin-top:12px">
@@ -2227,22 +2228,22 @@ SCREENS.compliance = async host => {
                     : `<span class="t-ok">Matched in leads.</span> <span class="t-warm">The lead row's address column holds <span class="mono">${esc(w.leadAddress)}</span>, a routing key rather than somewhere this customer can be written to.</span>`)
                 : '<span class="t-ok">Matched in leads.</span> <span class="t-warm">That lead row carries no address at all, so there is nothing here to write to.</span>')
             : w.kind === 'email_only'
-              ? `${esc(w.email)} <span class="t-warm">· ${leadsErr ? 'Your leads could not be read, so this is unconfirmed' : 'no matching row in leads'}</span>`
+              ? `${esc(maskText(w.email))} <span class="t-warm">· ${leadsErr ? 'Your leads could not be read, so this is unconfirmed' : 'no matching row in leads'}</span>`
               : `<span class="t-warm">${leadsErr ? 'Your leads could not be read, so whether there is a lead behind this row is unknown here.' : 'No lead behind this row'}</span>`}</dd>
           <dt>WhatsApp profile name</dt><dd>${w.contact && w.contact.push_name
-            ? `${esc(w.contact.push_name)} <span class="t-muted">· the name this person set on WhatsApp, not a customer record</span>`
+            ? `${esc(maskText(w.contact.push_name))} <span class="t-muted">· the name this person set on WhatsApp, not a customer record</span>`
             : (w.contactMissing
                 ? '<span class="t-muted">No the saved contact details row for this chat id</span>'
                 : '<span class="t-muted">Not captured</span>')}</dd>
           <dt>Phone</dt><dd>${w.phone
-            ? `<span class="mono">${esc(w.phone)}</span> <span class="t-muted">· ${esc(w.phoneFrom)}</span>`
+            ? `<span class="mono">${esc(maskText(w.phone))}</span> <span class="t-muted">· ${esc(w.phoneFrom)}</span>`
             : '<span class="t-muted">Not stored — historic contacts predate phone capture, and none is inferred from the chat id</span>'}</dd>
           <dt>Chat id</dt><dd class="mono" style="word-break:break-all">${w.chatId
             ? esc(w.chatId)
             : '<span class="t-muted">none</span>'}</dd>
           <dt>Name on the KYC row</dt><dd>${d.lead_name
-            ? `${esc(d.lead_name)}${w.name && w.name !== String(d.lead_name).trim()
-                ? ` <span class="t-warm">· the customer record for this person is filed as ${esc(w.name)}; both are kept because a KYC row is itself an identity record</span>`
+            ? `${esc(maskText(d.lead_name))}${w.name && w.name !== String(d.lead_name).trim()
+                ? ` <span class="t-warm">· the customer record for this person is filed as ${esc(maskText(w.name))}; both are kept because a KYC row is itself an identity record</span>`
                 : ''}`
             : '<span class="t-muted">none</span>'}</dd>
         </dl>
@@ -2277,7 +2278,7 @@ SCREENS.compliance = async host => {
               <dt>Described as</dt><dd>${d.document_type ? esc(d.document_type) : '<span class="t-muted">nothing recorded</span>'}</dd>
               <dt>Machine verdict</dt><dd><span class="chip">${d.verdict ? esc(String(d.verdict)) : 'none'} · void</span></dd>
               <dt>Confidence</dt><dd class="num">${conf == null ? '<span class="t-muted">Not scored</span>' : num(conf) + '%'}</dd>
-              <dt>Extracted name</dt><dd>${d.full_name ? esc(d.full_name) : '<span class="t-muted">Nothing extracted</span>'}</dd>
+              <dt>Extracted name</dt><dd>${d.full_name ? esc(maskText(d.full_name)) : '<span class="t-muted">Nothing extracted</span>'}</dd>
             </dl>
             ${d.remarks ? `<div class="quote" style="margin-top:12px">${esc(d.remarks)}</div>` : ''}
           </div>
@@ -2398,7 +2399,7 @@ SCREENS.compliance = async host => {
         <div class="section">
           <div class="label-caps">Extracted identity</div>
           <dl class="kv" style="margin-top:8px">
-            <dt>Full name</dt><dd>${d.full_name ? esc(d.full_name) : '<span class="t-muted">Not extracted</span>'}</dd>
+            <dt>Full name</dt><dd>${d.full_name ? esc(maskText(d.full_name)) : '<span class="t-muted">Not extracted</span>'}</dd>
             <dt>Date of birth</dt><dd>${d.date_of_birth ? esc(d.date_of_birth) : '<span class="t-muted">Not extracted</span>'}</dd>
             <dt>Expiry date</dt><dd>${d.expiry_date
               ? `<span class="${atAudit ? 't-hot' : lapsed || unreadableExpiry ? 't-warm' : ''}">${esc(d.expiry_date)}${
@@ -2562,9 +2563,9 @@ SCREENS.compliance = async host => {
           ${e.register ? `<span class="t-muted" style="font-size:12px">register</span>${casePill(e.register)}` : ''}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${n.name
-              ? esc(n.name)
+              ? esc(maskText(n.name))
               : `<span class="mono t-muted">${esc(n.note)}</span>`}${
-              n.phone && n.phone !== n.name ? ` <span class="mono t-muted" style="font-weight:400">${esc(n.phone)}</span>` : ''}${
+              n.phone && n.phone !== n.name ? ` <span class="mono t-muted" style="font-weight:400">${esc(maskText(n.phone))}</span>` : ''}${
               n.recorded && n.recorded !== n.name
                 ? ` <span class="t-warm" style="font-weight:400">recorded as ${esc(n.recorded)}</span>`
                 : ''}</div>

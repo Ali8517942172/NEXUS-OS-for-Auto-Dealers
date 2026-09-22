@@ -4,6 +4,7 @@
 import { HOOK, n8n } from './data.js';
 import { $ } from './dom.js';
 import { esc } from './format.js';
+import { maskText } from './privacy.js';
 /* The shared contact rule. This file used to ask `l.email` — a truthy test on a
    text column — which is not the same question as "do we know who this is". See
    pickableLeads() below. Nothing about identity is decided here; the three
@@ -84,8 +85,8 @@ function dealForm(leads, onDone) {
     ${f('dLead', 'Lead', `<select id="dLead">
         <option value="">— pick a lead, or type the details below —</option>
         ${offered.map(({ lead: l, anchor }) =>
-          `<option value="${esc(anchor)}" data-lead-id="${esc(l.id)}" data-name="${esc(l.name || '')}" data-veh="${esc(l.vehicle_interest || '')}"
-            data-budget="${esc(l.budget_aed || '')}">${esc(l.name || anchor)} — ${esc(l.vehicle_interest || 'no vehicle noted')}</option>`).join('')}
+          `<option value="${esc(anchor)}" data-lead-id="${esc(l.id)}" data-name="${esc(maskText(l.name || ''))}" data-veh="${esc(l.vehicle_interest || '')}"
+            data-budget="${esc(l.budget_aed || '')}">${esc(maskText(l.name || anchor))} — ${esc(l.vehicle_interest || 'no vehicle noted')}</option>`).join('')}
       </select>`, pickerHint)}
     <div class="grid g2">
       ${f('dName', 'Customer name', `<input id="dName" placeholder="Vikram Malhotra" />`)}

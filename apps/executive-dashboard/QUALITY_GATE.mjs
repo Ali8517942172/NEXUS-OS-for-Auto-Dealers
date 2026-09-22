@@ -3156,6 +3156,131 @@ if (flag('--print-sql')) { console.log(CATALOGUE_SQL); process.exit(0); }
     ['lib/privacy.js owns masking and test-record filtering; db() routes every read through scrubRows(); Money Leaks\' next step calls lead_recovery_decide and opens the lead']);
 }
 
+/* ── S13 · no screen prints a customer's name, phone or email past the helper ─
+   Added 22 Sep 2026, after Finance Desk's lead picker printed "name — phone —
+   message" in full with Privacy mode on. Every esc(...) in screens/ and lib/
+   whose argument reads name / full_name / phone / email / contact_name /
+   customer_name (and the lead_/push_/display_ variants) must pass it through
+   displayName / maskPhone / maskEmail / maskText. The allowlist below is the
+   exception list, per file, and it is only staff, users, workflows, sources,
+   competitors and API keys: a `receiver.field` in it is not a customer. */
+{
+const PII_FIELDS = 'name|full_name|phone|phone_e164|email|contact_name|customer_name|lead_name|display_name|push_name|lead_email|customer_phone|customer_display_name';
+const PII_HELPER = /\b(displayName|maskPhone|maskEmail|maskText|maskPII)\(/;
+function piiCodeOnly(s) {
+  let out = '', i = 0;
+  const tmpl = () => { i++; while (i < s.length && s[i] !== '`') { if (s[i] === '\\') { i += 2; continue; } if (s[i] === '$' && s[i + 1] === '{') { i += 2; let d = 1, st = i; while (i < s.length && d) { if (s[i] === '{') d++; else if (s[i] === '}') d--; else if (s[i] === '`') { out += ' '; } i++; } out += ' ' + piiCodeOnly(s.slice(st, i - 1)) + ' '; continue; } i++; } i++; };
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "'" || c === '"') { i++; while (i < s.length && s[i] !== c) { if (s[i] === '\\') i++; i++; } i++; out += ' "" '; continue; }
+    if (c === '`') { tmpl(); out += ' '; continue; }
+    out += c; i++;
+  }
+  return out;
+}
+function piiScan(src) {
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' ')).replace(/(^|[^:'"`\\])(\/\/.*)$/gm, (m, p, c) => p + c.replace(/./g, ' '));
+  const hits = []; const re = /\besc\(/g; let m;
+  while ((m = re.exec(code))) {
+    let i = m.index + 4, d = 1;
+    while (i < code.length && d) { const ch = code[i]; if (ch === "'" || ch === '"' || ch === '`') { const q = ch; i++; while (i < code.length && code[i] !== q) { if (code[i] === '\\') i++; i++; } } else if (ch === '(') d++; else if (ch === ')') d--; i++; }
+    const arg = code.slice(m.index + 4, i - 1);
+    if (PII_HELPER.test(arg)) continue;
+    const c = piiCodeOnly(arg);
+    const keys = [...c.matchAll(new RegExp(`(?:([A-Za-z_$][\\w$]*|\\)|\\])\\s*\\??\\.\\s*(${PII_FIELDS})|(?<![\\w$.])(${PII_FIELDS}))\\b`, 'g'))]
+      .map(k => (k[1] ? `${k[1]}.${k[2]}` : k[3]));
+    if (keys.length) hits.push({ start: m.index + 4, end: i - 1, line: code.slice(0, m.index).split('\n').length, keys, arg });
+  }
+  return hits;
+}
+
+  const PII_ALLOW = {
+    "*": [
+      "ME.name",
+      "user.email",
+      "u.name",
+      "u.email",
+      "rep.name"
+    ],
+    "screens/automation.js": [
+      "worst.name",
+      "w.name"
+    ],
+    "screens/ask.js": [
+      "w.name"
+    ],
+    "screens/campaigns.js": [
+      "w.name"
+    ],
+    "screens/competitors.js": [
+      "c.name",
+      "].name",
+      "oldestTrail.name",
+      "one.name",
+      "g.name",
+      "a.name",
+      "b.name"
+    ],
+    "screens/founder.js": [
+      "r.name"
+    ],
+    "screens/integrations.js": [
+      "name",
+      "r.name"
+    ],
+    "lib/integrations.js": [
+      "c.name",
+      "m.name",
+      "name"
+    ],
+    "screens/lead-sources.js": [
+      "rd.name",
+      "s.name"
+    ],
+    "screens/record-lead.js": [
+      "m.name"
+    ],
+    "screens/channels.js": [
+      "r.display_name"
+    ],
+    "lib/manual-lead-form.js": [
+      "r.display_name"
+    ],
+    "screens/settings.js": [
+      "email",
+      "w.name"
+    ],
+    "screens/team.js": [
+      "r.name",
+      "r.email",
+      "only.name",
+      "p.email"
+    ],
+    "screens/overview.js": [
+      "w.name"
+    ],
+    "screens/leads.js": [
+      "name"
+    ],
+    "lib/lead-drawer.js": [
+      "name"
+    ]
+  };
+  const allowed = (path, k) => PII_ALLOW['*'].includes(k) || (PII_ALLOW[path] || []).includes(k);
+  const bad = [];
+  let scanned = 0;
+  for (const [path, { raw }] of SRC) {
+    if (!/^(screens|lib)\//.test(path) || path === 'lib/privacy.js') continue;
+    scanned++;
+    for (const h of piiScan(raw)) {
+      const miss = h.keys.filter(k => !allowed(path, k));
+      if (miss.length) bad.push(`${path}:${h.line} prints ${miss.join(', ')} without displayName/maskPhone/maskEmail/maskText`);
+    }
+  }
+  verdict('S13', LANE.SOURCE, 'P0', 'No screen prints a customer name, phone or email without the privacy helper', bad,
+    [`${scanned} files scanned; every esc() of a PII-shaped field is masked or on the staff/non-customer allowlist`]);
+}
+
 /* ── S2 · helper-contract lint ─────────────────────────────────────────────
    Extended from screens/ to lib/ and app.js. Each banned construct has exactly
    one owner in this codebase, named here so an exception is a decision rather

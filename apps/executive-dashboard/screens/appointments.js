@@ -86,6 +86,7 @@
 import { db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { loadSubscription, isReadOnly } from '../lib/subscription.js';
 import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import { openModal } from '../lib/modal.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
@@ -599,7 +600,7 @@ SCREENS.appointments = async host => {
                   : muted('The database does NOT count this as booked.'));
           } },
         { label: 'Customer', render: r => wrap(
-            bold(esc(str(r.customer_name) || 'No customer name recorded'))
+            bold(esc(maskText(str(r.customer_name) || 'No customer name recorded')))
             + muted([str(r.channel) ? 'via ' + str(r.channel) : '', str(r.tenant_name)]
                 .filter(Boolean).map(chip).join(' ')
               || 'No channel and no dealership name came back on this row.')) },
@@ -671,7 +672,7 @@ SCREENS.appointments = async host => {
 
       return riskBanner + table([
         { label: 'The slot', strong: true, render: r => wrap(whenCell(r)) },
-        { label: 'Customer', render: r => wrap(esc(str(r.customer_name) || 'No customer name recorded')) },
+        { label: 'Customer', render: r => wrap(esc(maskText(str(r.customer_name) || 'No customer name recorded'))) },
         { label: 'Agreed on', render: r => wrap(r.confirmed_at
             ? bold(esc(dubaiStamp(r.confirmed_at))) + muted(esc(ago(r.confirmed_at)))
             : muted('No confirmation time is recorded, although the row is CONFIRMED.')) },

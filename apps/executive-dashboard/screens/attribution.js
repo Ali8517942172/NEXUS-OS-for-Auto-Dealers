@@ -65,6 +65,7 @@
 
 import { db } from '../lib/data.js';
 import { aed, dubaiDate, dubaiStamp, esc, num, pct, pill } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
@@ -595,7 +596,7 @@ SCREENS.attribution = async host => {
           </div>`;
 
         return `<div class="section" style="margin-top:16px">
-            ${bold(`${esc(str(sale.customer_name) || 'Customer not named')} &mdash; ${esc(str(sale.vehicle_text) || 'vehicle not named')}`)}
+            ${bold(`${esc(maskText(str(sale.customer_name) || 'Customer not named'))} &mdash; ${esc(str(sale.vehicle_text) || 'vehicle not named')}`)}
             ${muted(`Recorded ${esc(dubaiDate(sale.purchase_date))}`
               + (sale.recorded_at ? ` &middot; entered ${esc(dubaiStamp(sale.recorded_at))}` : '')
               + (str(sale.deal_id) ? ` &middot; deal <span class="mono">${esc(str(sale.deal_id))}</span>` : ''))}
@@ -643,7 +644,7 @@ SCREENS.attribution = async host => {
 
       const body = table([
         { label: 'Lead', strong: true, render: l =>
-            `<div>${esc(str(l.lead_name) || ('Lead ' + str(l.lead_id)))}</div>`
+            `<div>${esc(maskText(str(l.lead_name) || ('Lead ' + str(l.lead_id))))}</div>`
             + muted(`#${esc(str(l.lead_id))} &middot; ${esc(str(l.status) || 'no status')} &middot; `
               + `created ${esc(dubaiDate(l.created_at))}`) },
         /* Every one of these columns is written the same way on purpose: the
@@ -689,7 +690,7 @@ SCREENS.attribution = async host => {
       const interest = `<div class="section" style="margin-top:16px">
           <div class="label-caps">What each customer actually wrote, and why it is not a link</div>
           ${table([
-            { label: 'Lead', strong: true, render: l => esc(str(l.lead_name) || ('Lead ' + str(l.lead_id))) },
+            { label: 'Lead', strong: true, render: l => esc(maskText(str(l.lead_name) || ('Lead ' + str(l.lead_id)))) },
             { label: 'Vehicle interest, verbatim', render: l => wrap(str(l.vehicle_interest_text)
                 ? muted(esc(str(l.vehicle_interest_text)))
                 : muted('No vehicle interest text is recorded on this lead.')) },

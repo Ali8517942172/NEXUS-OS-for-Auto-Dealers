@@ -1084,7 +1084,7 @@ SCREENS.leads = async host => {
         ? 'This deployment is not configured to reach the automation service, so nothing can be started from here. Only NEXUS can change that.'
         : a.blocker(r);
       return `<button class="btn sm" data-act="${a.key}" data-id="${esc(r.id)}"
-        aria-label="${esc(a.label)} — ${esc(r.name || r.email || 'this lead')}"
+        aria-label="${esc(a.label)} — ${esc(maskText(r.name || r.email || 'this lead'))}"
         title="${esc(blocked || a.title)}"${blocked ? ' disabled' : ''}>${esc(a.label)}</button>`;
     }).join('');
 
@@ -1133,9 +1133,9 @@ SCREENS.leads = async host => {
     { label:'Email', render: r => {
         const shape = keyShape(r.email);
         if (shape === KEY_SHAPE.NONE) return '<span class="t-muted" title="The email column on this row is empty.">—</span>';
-        if (shape === KEY_SHAPE.EMAIL) return esc(r.email);
-        return `<span class="mono t-warm" title="${esc(
-          `Not an email address — ${describeKey(r.email)}. The email column on this lead holds a key the workflows file its messages under, not something a person can be written to.`)}">${esc(str(r.email))}</span>
+        if (shape === KEY_SHAPE.EMAIL) return esc(maskText(r.email));
+        return `<span class="mono t-warm" title="${esc(maskText(
+          `Not an email address — ${describeKey(r.email)}. The email column on this lead holds a key the workflows file its messages under, not something a person can be written to.`))}">${esc(maskText(str(r.email)))}</span>
           <div class="cell-sub">Not an address</div>`;
       }},
     { label:'Vehicle interest', render: r => `<span class="t-2">${esc(r.vehicle_interest || '—')}</span>` },
@@ -1282,7 +1282,7 @@ SCREENS.leads = async host => {
           if (shape === KEY_SHAPE.NONE) return '<span class="t-muted">No email address on this lead</span>';
           if (shape === KEY_SHAPE.EMAIL) return esc(maskEmail(lead.email));
           return `<span class="mono t-warm">${esc(maskText(str(lead.email)))}</span>`
-            + `<div class="cell-sub">Not an address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under.</div>`;
+            + `<div class="cell-sub">Not an address — ${esc(maskText(describeKey(lead.email)))}. It is the key this lead's messages are filed under.</div>`;
         })()}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
         <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>

@@ -108,7 +108,10 @@ function maskEmail(v) {
   return `${s[0]}***${s.slice(at)}`;
 }
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const PHONE_RE = /(?<![\p{L}\p{N}+])(?:\+\d[\d\s-]{6,17}\d|(?:00|0)?971[\d\s-]{7,11}\d)(?!\d)/gu;
+/* International (+…), 00971/971, and UAE mobiles written locally: 05X XXX XXXX
+   and the bare nine digits 5X XXX XXXX. Separators are spaces or hyphens only,
+   so amounts (commas), dates and ids (letters) are never touched. */
+const PHONE_RE = /(?<![\p{L}\p{N}+])(?:\+\d[\d\s-]{6,17}\d|(?:00)?971[\d\s-]{7,11}\d|0?5\d(?:[\s-]?\d){7})(?![\p{N}])/gu;
 function buildPattern() {
   const names = [...NAMES.keys()].sort((a, b) => b.length - a.length).map(escRe);
   pattern = names.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${names.join('|')})(?![\\p{L}\\p{N}])`, 'giu') : /(?!)/g;
@@ -130,8 +133,8 @@ function maskText(v) {
 const maskPII = maskText;
 
 /* ── The data-layer hook ───────────────────────────────────────────────── */
-const NAME_FIELDS  = ['lead_name', 'customer_name', 'contact_name', 'display_name', 'full_name', 'push_name', 'sender_name', 'profile_name'];
-const PHONE_FIELDS = ['phone', 'phone_e164', 'phone_number', 'customer_phone', 'contact_phone', 'wa_id', 'chat_id', 'from_number'];
+const NAME_FIELDS  = ['lead_name', 'customer_name', 'contact_name', 'display_name', 'full_name', 'push_name', 'sender_name', 'profile_name', 'customer_display_name'];
+const PHONE_FIELDS = ['phone', 'phone_e164', 'phone_number', 'phone_digits', 'customer_phone', 'contact_phone', 'wa_id', 'customer_wa_id', 'recipient_wa_id', 'chat_id', 'from_number'];
 const EMAIL_FIELDS = ['email', 'lead_email', 'customer_email', 'contact_email'];
 /* `name` is a person only on these; elsewhere it is a unit, a workflow, a
    source or a member of staff, and masking those would hide the wrong thing. */
@@ -181,6 +184,17 @@ const hiddenTestCount = () => HIDDEN_KEYS.size;
 /* ── The safety net ────────────────────────────────────────────────────── */
 const ORIGINAL = new Map();   // Text node / Element -> original text or title
 const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'NOSCRIPT']);
+const ATTRS = ['title', 'aria-label', 'alt'];
+/* An <option>'s label is what a closed <select> shows, so it is masked too. Its
+   value is pinned first: an option with no value attribute submits its label,
+   and the pseudonym must never be what a form sends. */
+function maskOption(o) {
+  const t = o.textContent; const m = maskText(t);
+  if (m === t) return;
+  if (!o.hasAttribute('value')) o.setAttribute('value', o.value);
+  const rec = ORIGINAL.get(o) || {}; if (rec.option == null) rec.option = t; ORIGINAL.set(o, rec);
+  o.textContent = m;
+}
 function maskNode(root) {
   if (!privacy || !root) return;
   if (root.nodeType === 3) { maskTextNode(root); return; }
@@ -188,10 +202,12 @@ function maskNode(root) {
   if (root.tagName === 'SCRIPT' || root.tagName === 'STYLE') return;
   const els = [root, ...root.querySelectorAll('*')];
   for (const e of els) {
-    if (e.hasAttribute && e.hasAttribute('title')) {
-      const t = e.getAttribute('title'); const m = maskText(t);
-      if (m !== t) { if (!ORIGINAL.has(e)) ORIGINAL.set(e, { title: t }); e.setAttribute('title', m); }
+    for (const a of ATTRS) {
+      if (!e.hasAttribute || !e.hasAttribute(a)) continue;
+      const t = e.getAttribute(a); const m = maskText(t);
+      if (m !== t) { const o = ORIGINAL.get(e) || {}; if (!(a in o)) o[a] = t; ORIGINAL.set(e, o); e.setAttribute(a, m); }
     }
+    if (e.tagName === 'OPTION') maskOption(e);
     if ((e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && e.value && maskText(e.value) !== e.value) e.classList.add('pii-blur');
   }
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -210,7 +226,8 @@ function restoreAll() {
   for (const [n, o] of ORIGINAL) {
     if (!n.isConnected) continue;
     if (o.text != null) n.nodeValue = o.text;
-    if (o.title != null) n.setAttribute('title', o.title);
+    if (o.option != null) n.textContent = o.option;
+    for (const a of ATTRS) if (o[a] != null) n.setAttribute(a, o[a]);
   }
   ORIGINAL.clear();
   document.querySelectorAll('.pii-blur').forEach(e => e.classList.remove('pii-blur'));
@@ -222,14 +239,17 @@ function installPrivacyGuard(root = document.body) {
   if (observer) return;
   observer = new MutationObserver(muts => {
     if (!privacy) return;
-    for (const m of muts) {
-      if (m.type === 'characterData') maskTextNode(m.target);
+    for (const m of muts) try {
+      if (m.type === 'characterData') {
+        const o = m.target.parentElement;
+        if (o && o.tagName === 'OPTION') maskOption(o); else maskTextNode(m.target);
+      }
       else if (m.type === 'attributes') maskNode(m.target);
       else m.addedNodes.forEach(maskNode);
-    }
+    } catch (e) { console.error('[NEXUS] privacy guard skipped a node:', e && e.message); }
     for (const n of ORIGINAL.keys()) if (!n.isConnected) ORIGINAL.delete(n);
   });
-  observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['title'] });
+  observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ATTRS });
   onPrivacyChange(on => { if (on) maskNode(root); else restoreAll(); });
   if (privacy) maskNode(root);
 }

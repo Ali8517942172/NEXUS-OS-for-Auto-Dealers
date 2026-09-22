@@ -200,7 +200,7 @@
 import { canGrantOwner, canManageAccess, db, dbWrite } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
-import { displayName } from '../lib/privacy.js';
+import { displayName, maskText } from '../lib/privacy.js';
 import { SCREENS, go } from '../lib/nav.js';
 /* Open pipeline, defined once. TERMINAL_TONES and isOpenLead used to be
    declared here AND word for word in screens/overview.js, and the read ceiling
@@ -326,7 +326,7 @@ const nameList = (rows, n = 4) => {
    really is a lead we hold no number for — rendered as a dash that says so, not
    as an empty cell and never as a placeholder number. */
 const leadPhone = l => (str(l?.phone)
-  ? `<span class="mono">${esc(str(l.phone))}</span>`
+  ? `<span class="mono">${esc(maskText(str(l.phone)))}</span>`
   : '<span class="t-muted" title="No phone number is recorded on this lead.">\u2014</span>');
 
 const low = v => String(v ?? '').trim().toLowerCase();
@@ -837,7 +837,7 @@ SCREENS.team = async host => {
            claimed, and the unowned leads are named when there are any. */
         + (leads
           ? (unassigned.length
-            ? `No HOT lead is unassigned, but ${num(unassigned.length)} ${plural(unassigned.length, 'lead has', 'leads have')} no owner at all${topUnowned ? ` — the highest-scored of them is ${esc(str(topUnowned.name) || 'an unnamed lead')} at ${num(topUnowned.ai_score)}` : ''}, so there is unowned work on the floor beside an idle rep. `
+            ? `No HOT lead is unassigned, but ${num(unassigned.length)} ${plural(unassigned.length, 'lead has', 'leads have')} no owner at all${topUnowned ? ` — the highest-scored of them is ${esc(maskText(str(topUnowned.name) || 'an unnamed lead'))} at ${num(topUnowned.ai_score)}` : ''}, so there is unowned work on the floor beside an idle rep. `
             : 'Every lead read here has an owner, so there is no unowned work waiting on them. ')
           : '')
         + 'A rep with nothing is new, away, or being skipped by the auto-assign trigger, and this screen cannot tell those three apart: the only thing stored is the finished assignment, never who made it.',
@@ -1998,7 +1998,7 @@ SCREENS.team = async host => {
           : `<div>${owned.slice(0, 10).map(l => `<div class="list-item" style="cursor:default">
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
-                  ${esc(l.name || 'Unnamed lead')} ${leadPhone(l)}</div>
+                  ${esc(maskText(l.name || 'Unnamed lead'))} ${leadPhone(l)}</div>
                 <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
                   ${/* A null here is NOT "nobody answered". This printed
                         ' · no reply recorded' in HOT red until 1 Sep 2026 — a

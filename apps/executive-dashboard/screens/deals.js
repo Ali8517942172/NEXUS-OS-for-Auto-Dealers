@@ -118,6 +118,7 @@ import { db } from '../lib/data.js';
 import { dealForm } from '../lib/deal-form.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 /* One contact-matching rule for the whole product, new on 31 Aug 2026. This
    screen used to key a deal to a lead on lower(email) and nothing else, which
    is the read that shows a PARTIAL history and looks complete. Three matches on
@@ -1214,13 +1215,13 @@ SCREENS.deals = async host => {
             <div class="list-item" style="cursor:default">
               ${pill(num(g.n) + ' deals', 'vip', { verbatim: false })}
               <div style="flex:1;min-width:0">
-                <div style="font-weight:500">${esc(g.name
+                <div style="font-weight:500">${esc(maskText(g.name
                   /* A WhatsApp address is not a person's name. identity.js keeps
                      handles out of the name slot everywhere else in the product
                      and the same classifier does it here: only an email-shaped
                      value may stand in for a missing name. */
                   || (keyShape(g.email) === KEY_SHAPE.EMAIL ? g.email : '')
-                  || 'Unnamed customer')}</div>
+                  || 'Unnamed customer'))}</div>
                 <div class="cell-sub">${contactValue(g.email) || esc(g.byName
                   ? 'No email, phone or WhatsApp key on these rows — grouped by customer name, which two people can share'
                   : 'No email on these rows — grouped on the phone or WhatsApp key they share')}${

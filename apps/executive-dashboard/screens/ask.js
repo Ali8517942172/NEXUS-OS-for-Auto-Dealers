@@ -137,6 +137,7 @@ import { HOOK, db, n8n, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pill, tone } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import { HEALTH_WORDS, healthWords, isQualifying, isRefusal, isSuccess, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -1740,7 +1741,7 @@ SCREENS.ask = async host => {
             ? `<span class="mono" title="A WhatsApp chat handle, not a name. A LID contains no phone digits and identifies nobody on its own.">${esc(nm)}</span> <span class="chip">chat handle</span>`
             : esc(nm);
         let phoneHtml;
-        if (rec && rec.found) phoneHtml = rec.phone ? `<span class="mono">${esc(rec.phone)}</span>` : '— no phone on the lead';
+        if (rec && rec.found) phoneHtml = rec.phone ? `<span class="mono">${esc(maskText(rec.phone))}</span>` : '— no phone on the lead';
         else if (rec) phoneHtml = '— no lead row matches this email';
         else if (!em) phoneHtml = '— no email to look a number up by';
         else if (phoneErr) phoneHtml = '<span class="t-warm">phone lookup failed</span>';

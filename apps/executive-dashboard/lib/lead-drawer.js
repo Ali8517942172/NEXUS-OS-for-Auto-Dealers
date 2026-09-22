@@ -138,7 +138,7 @@ function recommendedBanner(rec) {
 async function leadDrawer(lead, opts = {}) {
   openDrawer(`
     <div class="drawer-head">
-      <div class="avatar">${esc(initials(lead.name))}</div>
+      <div class="avatar">${esc(maskText(initials(lead.name)))}</div>
       <div style="flex:1;min-width:0">
         <h2 style="font-size:18px">${esc(displayName(lead.name, lead.id))}</h2>
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}
@@ -160,7 +160,7 @@ async function leadDrawer(lead, opts = {}) {
             if (shape === KEY_SHAPE.NONE) return '<span class="cell-sub">No email address is recorded on this lead.</span>';
             if (shape === KEY_SHAPE.EMAIL) return esc(maskEmail(lead.email));
             return `<span class="mono t-warm">${esc(maskText(String(lead.email)))}</span>`
-              + `<span class="cell-sub"> · not an email address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under, not somewhere a person can be written to.</span>`;
+              + `<span class="cell-sub"> · not an email address — ${esc(maskText(describeKey(lead.email)))}. It is the key this lead's messages are filed under, not somewhere a person can be written to.</span>`;
           })()}</dd>
           <dt>Phone</dt><dd>${lead.phone
             ? esc(maskPhone(lead.phone))
