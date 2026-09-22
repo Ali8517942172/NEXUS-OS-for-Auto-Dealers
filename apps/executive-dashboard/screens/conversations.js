@@ -261,6 +261,7 @@ import { N8N_BASE } from '../lib/env.js';
    than "HOT" — that derivation falls through to the neutral grey. See the
    severity pill in renderAlerts(). */
 import { TZ, ago, dubaiDate, dubaiStamp, esc, initials, num, pct, pill, tone } from '../lib/format.js';
+import { displayName } from '../lib/privacy.js';
 /* The only module allowed to interpret audit_log.status or v_workflow_health.
    `status === 'FAILED'` is never written on a screen; see lib/health.js. */
 import { HEALTH_WORDS, healthWords, successRate } from '../lib/health.js';
@@ -859,7 +860,7 @@ const linkWhy = t => {
     + `${NAME_SOURCE[s.identified] || NAME_SOURCE.unidentified}.`;
 };
 const anyPhone = t => addressPhone(t.phone) || addressPhone(t.keyDigits);
-const titleOf = t => t.name || linkedName(t) || (anyPhone(t) ? 'Name not known' : 'Unidentified contact');
+const titleOf = t => (t.name || linkedName(t)) ? displayName(t.name || linkedName(t)) : (anyPhone(t) ? 'Name not known' : 'Unidentified contact');
 /* The middle branch used to say "no lead record matches it" unconditionally,
    which is a claim about the leads table made from the absence of a NAME.
    Corrected 1 Sep 2026 alongside §1b: a contact can be a lead and still have no
@@ -2493,7 +2494,7 @@ SCREENS.conversations = async host => {
                 it came from, on the title — never bare, and never as though
                 v_conversations had answered with it. */''}
           <label for="cvReply">Reply on WhatsApp to ${t.name
-            ? esc(t.name)
+            ? esc(displayName(t.name))
             : (linkedName(t)
                 ? `<span title="${esc(linkWhy(t))}">${esc(linkedName(t))}</span> <span class="t-muted">(named by the linked thread, not by this one)</span>`
                 : (anyPhone(t) ? esc(anyPhone(t)) : 'this contact'))}</label>
@@ -2892,7 +2893,7 @@ SCREENS.conversations = async host => {
       </div>
       <dl class="kv" style="margin-top:16px">
         <dt>To</dt><dd>${t.name
-          ? esc(t.name)
+          ? esc(displayName(t.name))
           /* A name borrowed from a linked thread is shown here — an operator
              about to send on the dealership's live number should know who they
              are writing to — but never without the sentence that says where it

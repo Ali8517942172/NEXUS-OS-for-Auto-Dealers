@@ -37,6 +37,7 @@ import { loadSubscription, paintSubscriptionBanner, refreshSubscription, startWr
 import { buildNav, current, go } from './lib/nav.js';
 import { closeDrawer } from './lib/ui.js';
 import { applyDensity } from './lib/prefs.js';
+import { installPrivacyGuard, onPrivacyChange, privacyOn, setPrivacy } from './lib/privacy.js';
 import { refreshBadges, startBadges, stopBadges } from './lib/badges.js';
 
 /* Screen modules, imported for their registration side effect only. Removing
@@ -245,6 +246,21 @@ async function boot() {
 
   buildNav();
   applyDensity();
+
+  /* Privacy mode (lib/privacy.js): the top-bar toggle, and the guard that masks
+     customer names, phones and emails wherever they are painted while it is on.
+     Flipping it re-renders the screen so helpers that mask at render time
+     (displayName and friends) repaint too. */
+  installPrivacyGuard(document.body);
+  const pBtn = $('privacyBtn');
+  const paintPrivacy = on => {
+    pBtn.classList.toggle('on', on);
+    pBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    pBtn.querySelector('.material-symbols-outlined').textContent = on ? 'visibility_off' : 'visibility';
+  };
+  paintPrivacy(privacyOn());
+  pBtn.addEventListener('click', () => setPrivacy(!privacyOn()));
+  onPrivacyChange(on => { paintPrivacy(on); go(current); });
   $('signOutBtn').addEventListener('click', async () => { await supabase.auth.signOut(); location.reload(); });
   /* Refresh means "tell me the truth right now", so it re-reads the badges as
      well as the screen. Re-rendering the screen alone would leave the sidebar
@@ -284,6 +300,11 @@ async function boot() {
      state. Only the FALLBACK moved — a hash still wins, so every existing
      bookmark and every deep link lands exactly where it did before, and
      lib/nav.js holds the same id so the two cannot drift. */
+  /* One read of every lead's id and name before the first screen: it lets
+     lib/privacy.js know which lead ids are internal test records (so a row that
+     only carries a lead_id is hidden with its lead) and which names to mask,
+     before anything is painted. A failure costs nothing but that head start. */
+  try { await db('leads?select=id,name,phone,email&limit=5000'); } catch { /* the screens report their own reads */ }
   go(location.hash.slice(1) || 'moneyleaks');
 }
 

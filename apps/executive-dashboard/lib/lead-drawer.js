@@ -78,6 +78,7 @@ import { loadSubscription, isReadOnly } from './subscription.js';
 import { dealForm } from './deal-form.js';
 import { $, el } from './dom.js';
 import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
+import { displayName, maskEmail, maskPhone, maskText } from './privacy.js';
 /* audit_log.status is not ours to read literally: lib/health.js mirrors
    public.nexus_outcome_class() and is the only place allowed to say what one
    means. The timeline used to colour its dot straight from `tone(a.status)`,
@@ -119,18 +120,34 @@ const LINK_LIMIT = 50;
    play at all. */
 const POOL_LIMIT = 50;
 
-async function leadDrawer(lead) {
+/* `opts.recommended` (added 22 Sep 2026) is how Money Leaks' "Contact now"
+   arrives here: the recommendation the owner acted on, pinned at the top of the
+   drawer with the decision it recorded, so the next step is the first thing on
+   screen. { label, reason, decision: { ok, text } } — every part optional. */
+function recommendedBanner(rec) {
+  if (!rec || !rec.label) return '';
+  const d = rec.decision;
+  return `<div class="section"><div class="banner ${d && d.ok === false ? 'warm' : 'info'} rec-highlight" style="margin:0">
+      <span class="material-symbols-outlined" style="font-size:20px">campaign</span>
+      <div><strong>Recommended: ${esc(rec.label)}</strong>
+        ${rec.reason ? `<div class="cell-sub" style="white-space:normal">${esc(rec.reason)}</div>` : ''}
+        ${d && d.text ? `<div class="cell-sub" style="white-space:normal">${esc(d.text)}</div>` : ''}</div>
+    </div></div>`;
+}
+
+async function leadDrawer(lead, opts = {}) {
   openDrawer(`
     <div class="drawer-head">
       <div class="avatar">${esc(initials(lead.name))}</div>
       <div style="flex:1;min-width:0">
-        <h2 style="font-size:18px">${esc(lead.name)}</h2>
+        <h2 style="font-size:18px">${esc(displayName(lead.name, lead.id))}</h2>
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}
           ${n0(lead.ai_score) != null ? `<span class="chip">AI score ${lead.ai_score}</span>` : ''}</div>
       </div>
       <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
     </div>
     <div class="drawer-body">
+      ${recommendedBanner(opts && opts.recommended)}
       <div class="section">
         <div class="label-caps">Contact</div>
         <dl class="kv">
@@ -141,12 +158,12 @@ async function leadDrawer(lead) {
                the purchase-history read below refuses to use it. */
             const shape = keyShape(lead.email);
             if (shape === KEY_SHAPE.NONE) return '<span class="cell-sub">No email address is recorded on this lead.</span>';
-            if (shape === KEY_SHAPE.EMAIL) return esc(lead.email);
-            return `<span class="mono t-warm">${esc(String(lead.email))}</span>`
+            if (shape === KEY_SHAPE.EMAIL) return esc(maskEmail(lead.email));
+            return `<span class="mono t-warm">${esc(maskText(String(lead.email)))}</span>`
               + `<span class="cell-sub"> · not an email address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under, not somewhere a person can be written to.</span>`;
           })()}</dd>
           <dt>Phone</dt><dd>${lead.phone
-            ? esc(lead.phone)
+            ? esc(maskPhone(lead.phone))
             : '<span class="cell-sub">No phone number is recorded on this lead.</span>'}</dd>
           <dt>Source</dt><dd>${esc(lead.source || '—')}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>

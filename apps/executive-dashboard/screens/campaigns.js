@@ -161,6 +161,7 @@ import { el } from '../lib/dom.js';
 import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
+import { displayName } from '../lib/privacy.js';
 /* The only place allowed to decide what an audit_log status means. This screen
    used to carry its own definition — `['FAILED', 'REJECTED'].includes(status)`
    — and then printed "Every logged drip run succeeded" of everything else,
@@ -1799,7 +1800,7 @@ SCREENS.campaigns = async host => {
       { label:'', align:'r', render: l => {
           const title = blockedGlobal || deliveryTitle;
           return `<button class="btn sm" data-enrol="${esc(l.id)}"
-            aria-label="Enrol ${esc(str(l.name) || str(l.email))} in the 7-day drip"
+            aria-label="Enrol ${esc(displayName(str(l.name) || str(l.email), l.id))} in the 7-day drip"
             title="${esc(title)}"${blockedGlobal ? ' disabled' : ''}>Enrol</button>`;
         } },
     ];

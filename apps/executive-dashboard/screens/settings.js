@@ -85,6 +85,7 @@ import { HEALTH_WORDS, OUTCOME, healthWords, outcomeOf, outcomeWords } from '../
 import { renderIntegrations } from '../lib/integrations.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { applyDensity } from '../lib/prefs.js';
+import { hiddenTestCount, privacyOn, setPrivacy, setShowTestRecords, showTestRecords } from '../lib/privacy.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { tenantState } from '../lib/tenant.js';
 import { closeDrawer, openDrawer, table, wireRows } from '../lib/ui.js';
@@ -1977,6 +1978,27 @@ SCREENS.settings = async host => {
     });
     $('setDensityHint').textContent = DENSITIES.find(d => d.id === b.dataset.d).hint;
   }));
+
+  /* ── Privacy and test records (lib/privacy.js) ───────────────────────────
+     Both are per-browser switches, remembered by lib/prefs.js. Privacy mode is
+     also on the top bar; it is repeated here so it can be found. Test records
+     are the fixtures NEXUS's own checks write (NEXUS TEST …, Preflight …): hidden
+     from every list and count unless this is on. */
+  const priv = el('div', 'card'); priv.style.marginTop = '16px'; host.appendChild(priv);
+  const hidden = hiddenTestCount();
+  priv.innerHTML = `<div class="card-title" style="margin-bottom:4px">Privacy</div>
+    <div class="card-sub" style="margin-bottom:14px">For screen sharing, and for what appears in lists</div>
+    <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
+      <input type="checkbox" id="setPrivacy" ${privacyOn() ? 'checked' : ''} />
+      <span><strong>Privacy mode</strong><div class="cell-sub" style="white-space:normal">Masks customer names, phones and emails, for screen sharing.</div></span>
+    </label>
+    <label style="display:flex;gap:10px;align-items:flex-start">
+      <input type="checkbox" id="setShowTests" ${showTestRecords() ? 'checked' : ''} />
+      <span><strong>Show internal test records</strong><div class="cell-sub" style="white-space:normal">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</div></span>
+    </label>
+    ${hidden && !showTestRecords() ? `<div class="cell-sub t-muted" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
+  $('setPrivacy').addEventListener('change', e => setPrivacy(e.target.checked));
+  $('setShowTests').addEventListener('change', e => { setShowTestRecords(e.target.checked); go('settings'); });
 
   /* -- Team --------------------------------------------------------------
      Added 21 Sep 2026 (nx1004). See the header rule above for the honesty
