@@ -107,7 +107,11 @@ const EXEMPT_LINES = new Map([
   // functions (feat/connect-everything, live on dsvuoovivysszdoiorch) joined
   // the snapshot's RPC map -- 96 lines added above this statement. Same
   // `fixtureResidue` template, re-read, unchanged.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5042])],
+  // Moved 5042 -> 5112 on 22 Sep 2026: the founder console moved out of the
+  // dealer app, and the gate gained S11 (the separation, checked from source)
+  // and a founder-page render in the R lane -- 70 lines added above this
+  // statement. Same `fixtureResidue` template, re-read, unchanged.
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5112])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.

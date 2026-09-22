@@ -7,6 +7,9 @@
     { "source": "/developers", "destination": "/developers/index.html" },
     { "source": "/developers/", "destination": "/developers/index.html" },
     { "source": "/developers/index.html", "destination": "/developers/index.html" },
+    { "source": "/founder", "destination": "/founder/index.html" },
+    { "source": "/founder/", "destination": "/founder/index.html" },
+    { "source": "/founder/index.html", "destination": "/founder/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

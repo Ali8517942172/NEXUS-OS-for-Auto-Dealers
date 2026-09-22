@@ -2279,21 +2279,19 @@ const navRaw = await readFile(join(libDir, 'nav.js'), 'utf8');
 const navBlock = navRaw.slice(navRaw.indexOf('const NAV = ['), navRaw.indexOf('const SCREENS'));
 const NAV_IDS = [...navBlock.matchAll(/\bid\s*:\s*'([a-z0-9_]+)'/g)].map(m => m[1]);
 
-/* NX1004 (21 Sep 2026) added the Founder Console item with founderOnly: true,
-   and lib/nav.js's own buildNav()/flatNav() drop a founderOnly item from the
-   rendered nav bar (and from hash routing) whenever isPlatformAdmin() is
-   false -- which is every account except the platform founder's own. The R1
-   render check below signs in as a stub dealership user (STUB_URL's fixed
-   'u1'/'ali@example.com', never seeded into platform_admin), so the DOM can
-   never show more than NAV_IDS.length minus the founderOnly items, no matter
-   how correctly the app is behaving. Comparing the rendered count against the
-   full NAV_IDS.length (as this check did before NX1004) made a correctly
-   hidden Founder Console item look like a missing screen. Parsed from the
-   same NAV block by the same regex shape so a second founderOnly item added
-   later is picked up without a second edit here. */
+/* THE FOUNDER CONSOLE IS NOT PART OF THE DEALER APP (22 Sep 2026).
+   NX1004 put it in lib/nav.js as a founderOnly item, hidden from everyone but
+   the platform admin. That still put founder UI in front of anyone watching a
+   screen recording of the dealer app made while the founder was signed in, so
+   it moved to its own page (founder/index.html, served at /founder), which
+   renders screens/founder.js directly. These modules are the founder page's
+   own: they live in screens/ so every source check below still reads them,
+   but they must NOT register into the dealer app's SCREENS registry -- S1
+   exempts them from "registers a screen" and S11 asserts they do not. */
+const FOUNDER_PAGE_MODULES = new Set(['screens/founder.js']);
+/* Any founderOnly flag surviving in NAV is itself a defect (S11). */
 const NAV_FOUNDER_ONLY_IDS = new Set(
   [...navBlock.matchAll(/\{\s*id\s*:\s*'([a-z0-9_]+)'[^}]*founderOnly\s*:\s*true/g)].map(m => m[1]));
-const NAV_IDS_VISIBLE_NON_FOUNDER = NAV_IDS.filter(id => !NAV_FOUNDER_ONLY_IDS.has(id));
 
 /* THE SCREENS THAT PUT MONEY OR A RATE IN FRONT OF A READER, and therefore the
    ones R4 and R5 sweep. Not a copy of NAV_IDS: Settings and Team have no
@@ -3051,6 +3049,7 @@ if (flag('--print-sql')) { console.log(CATALOGUE_SQL); process.exit(0); }
   const registered = new Map();
   for (const [path, { code }] of screenSrc) {
     const ids = [...code.matchAll(/SCREENS\.([a-z0-9_]+)\s*=/g)].map(m => m[1]);
+    if (FOUNDER_PAGE_MODULES.has(path)) continue;   // the founder page's, see S11
     if (!ids.length) bad.push(`${path}: registers no SCREENS.<id>`);
     ids.forEach(id => registered.set(id, path));
   }
@@ -3058,6 +3057,56 @@ if (flag('--print-sql')) { console.log(CATALOGUE_SQL); process.exit(0); }
   for (const [id, path] of registered) if (!NAV_IDS.includes(id)) bad.push(`${path} registers "${id}" which the navigation never offers`);
   verdict('S1', LANE.SOURCE, 'P0', 'Navigation and screen registry agree', bad,
     [`${NAV_IDS.length} nav entries, ${registered.size} registered screens, parsed from lib/nav.js: ${NAV_IDS.join(', ')}`]);
+}
+
+/* ── S11 · the founder console is a separate page, not part of the dealer app ─
+   The owner's rule (22 Sep 2026): a dealer, and a screen recording of the
+   dealer app made while the founder is signed in, must show zero founder UI.
+   So: no founder item in the dealer nav, no founder module or platform-admin
+   check anywhere in the dealer app's own code, and a founder page that
+   exists, is built as its own Vite entry, is routed at /founder, and gates
+   its console on nexus_is_platform_admin(). R1 checks the rendered half. */
+{
+  const bad = [];
+  if (NAV_FOUNDER_ONLY_IDS.size) bad.push(`lib/nav.js still declares founderOnly item(s): ${[...NAV_FOUNDER_ONLY_IDS].join(', ')}`);
+  if (NAV_IDS.includes('founder')) bad.push('lib/nav.js still offers a "founder" screen to the dealer app');
+  if (/founder/i.test(navBlock.replace(/\/\*[\s\S]*?\*\//g, ''))) bad.push('lib/nav.js NAV names a founder group or item');
+  for (const [path, { code }] of SRC) {
+    if (FOUNDER_PAGE_MODULES.has(path) || path === 'lib/platform.js') continue;
+    if (/screens\/founder\.js/.test(code)) bad.push(`${path} imports screens/founder.js -- the dealer app must not`);
+    if (/lib\/platform\.js|\.\/platform\.js|isPlatformAdmin|loadPlatformAdmin/.test(code)) bad.push(`${path} reads the platform-admin check -- nothing in the dealer app is founder-gated any more`);
+    if (/nexus_founder_(?!invite)/.test(code)) bad.push(`${path} calls a nexus_founder_* RPC -- those belong to the founder page`);
+  }
+  for (const path of FOUNDER_PAGE_MODULES) {
+    const f = SRC.get(path);
+    if (!f) { bad.push(`${path} is missing`); continue; }
+    if (/SCREENS\.[a-z0-9_]+\s*=/.test(f.code)) bad.push(`${path} registers into the dealer app's SCREENS registry`);
+    if (/from\s+'\.\.\/lib\/nav\.js'/.test(f.code)) bad.push(`${path} imports lib/nav.js`);
+  }
+  const fp = join(HERE, 'founder', 'index.html'), fa = join(HERE, 'founder', 'app.js');
+  const fhtml = existsSync(fp) ? await readFile(fp, 'utf8') : null;
+  const fapp = existsSync(fa) ? stripComments(await readFile(fa, 'utf8')) : null;
+  if (!fhtml) bad.push('founder/index.html does not exist');
+  else if (!/src="\/founder\/app\.js"/.test(fhtml)) bad.push('founder/index.html does not load /founder/app.js');
+  if (!fapp) bad.push('founder/app.js does not exist');
+  else {
+    if (!/from '\.\.\/screens\/founder\.js'/.test(fapp)) bad.push('founder/app.js does not render screens/founder.js');
+    if (!/loadPlatformAdmin\(\)/.test(fapp) || !/isPlatformAdmin\(\)/.test(fapp)) bad.push('founder/app.js does not gate on the platform-admin check');
+    if (!/Not authorised/.test(fapp)) bad.push('founder/app.js has no "Not authorised" state for a non-founder');
+    if (/lib\/nav\.js/.test(fapp)) bad.push('founder/app.js imports the dealer nav');
+  }
+  const vite = await readFile(join(HERE, 'vite.config.js'), 'utf8');
+  if (!/founder\/index\.html/.test(vite)) bad.push('vite.config.js does not build founder/index.html as its own entry');
+  const vpath = join(HERE, '..', '..', 'vercel.json');
+  if (existsSync(vpath)) {
+    const rw = (JSON.parse(await readFile(vpath, 'utf8')).rewrites || []);
+    const iF = rw.findIndex(x => x.source === '/founder' && x.destination === '/founder/index.html');
+    const iAll = rw.findIndex(x => x.source === '/(.*)');
+    if (iF < 0) bad.push('vercel.json does not route /founder to /founder/index.html');
+    else if (iAll >= 0 && iAll < iF) bad.push('vercel.json\'s catch-all rewrite shadows /founder');
+  }
+  verdict('S11', LANE.SOURCE, 'P0', 'The founder console is a separate page, absent from the dealer app', bad,
+    [`dealer nav: ${NAV_IDS.length} items, 0 founder; founder page: founder/index.html + founder/app.js, gated on nexus_is_platform_admin()`]);
 }
 
 /* ── S2 · helper-contract lint ─────────────────────────────────────────────
@@ -3808,9 +3857,24 @@ try {
     });
     screens[id].newErrors = errs.length - before;
   }
+  /* A stale #founder hash (a bookmark from when the console lived in this app)
+     must land on the default screen, and no nav item may name the founder. */
+  await page.evaluate(() => { location.hash = 'founder'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
+  await page.waitForTimeout(900);
+  const staleFounder = await page.evaluate(() => ({ hash: location.hash,
+    navFounder: [...document.querySelectorAll('.nav-item')].some(b => /founder/i.test(b.innerText || '')) }));
+  /* The founder page, opened by this same NON-founder stub account (never
+     seeded into platform_admin): it must say "Not authorised" and draw no
+     console. */
+  await page.goto('http://127.0.0.1:8071/founder/index.html', { waitUntil: 'load' });
+  await page.waitForTimeout(1500);
+  const founderPage = await page.evaluate(() => ({
+    appShown: !document.getElementById('app').classList.contains('hide'),
+    boot: (document.getElementById('boot').innerText || '').slice(0, 200),
+    consoleChars: document.getElementById('screen').innerHTML.length }));
   await browser.close();
   srv.close();
-  render = { loggedIn, nav, bootText, screens, errs, rejections, restCalls };
+  render = { loggedIn, nav, bootText, screens, errs, rejections, restCalls, staleFounder, founderPage };
 } catch (e) {
   render = { failed: String(e.message || e) };
 }
@@ -3830,8 +3894,14 @@ if (render.failed) {
 
   verdict('R1', LANE.RENDER, 'P0', 'The app boots and registers every screen',
     [!r.loggedIn && `the app did not reach a signed-in state (boot said: ${r.bootText || 'nothing'})`,
-     r.nav !== NAV_IDS_VISIBLE_NON_FOUNDER.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length} (${NAV_IDS_VISIBLE_NON_FOUNDER.length} visible to the non-founder stub account this render signs in as, ${NAV_FOUNDER_ONLY_IDS.size} founderOnly)`].filter(Boolean),
-    [`loggedIn=true, navItems=${r.nav} matching the ${NAV_IDS_VISIBLE_NON_FOUNDER.length} lib/nav.js offers a non-founder account`, `${r.errs.length} page errors across the whole run`]);
+     r.nav !== NAV_IDS.length && `navigation rendered ${r.nav} items; lib/nav.js declares ${NAV_IDS.length}`,
+     r.staleFounder.hash !== '#moneyleaks' && `a stale #founder hash landed on ${r.staleFounder.hash}, not the default screen`,
+     r.staleFounder.navFounder && 'a dealer nav item names the founder',
+     ...NAV_IDS.filter(id => /founder/i.test(r.screens[id].text || '')).map(id => `the ${id} screen shows the word "founder" to a dealer`),
+     (r.founderPage.appShown || r.founderPage.consoleChars > 0) && 'the founder page drew its console for a non-founder account',
+     !/Not authorised/.test(r.founderPage.boot) && `the founder page did not say "Not authorised" to a non-founder (it said: ${r.founderPage.boot || 'nothing'})`].filter(Boolean),
+    [`loggedIn=true, navItems=${r.nav} matching the ${NAV_IDS.length} lib/nav.js declares`, `${r.errs.length} page errors across the whole run`,
+     `#founder -> ${r.staleFounder.hash}; founder page as a non-founder: "Not authorised"`]);
 
   const broken = NAV_IDS.filter(id => { const s = r.screens[id]; return s.len < 200 || s.errored || s.newErrors > 0 || s.stuckLoading; });
   verdict('R2', LANE.RENDER, 'P0', 'Every screen renders real content with no page errors',

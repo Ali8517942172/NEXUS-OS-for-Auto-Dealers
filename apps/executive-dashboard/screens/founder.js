@@ -15,11 +15,16 @@
    ===========================================================================
    WHO MAY EVEN SEE THIS, AND WHY THAT IS NOT WHAT MAKES IT SAFE
    ===========================================================================
-   lib/nav.js drops the "Founder Console" button entirely for anyone who is
-   not the platform admin, and go() redirects a typed #founder hash the same
-   way. Both of those are read from lib/platform.js's isPlatformAdmin(), and
-   lib/platform.js says outright, in its own header comment, that this is not
-   a security boundary. It is repeated here because it is the single most
+   Since 22 Sep 2026 this console is NOT part of the dealer app at all. It
+   is rendered only by the separate founder page (founder/index.html and
+   founder/app.js, served at /founder), which calls renderFounderConsole()
+   below directly. The dealer app (app.js) never imports this module, and
+   lib/nav.js carries no founder item, so a dealer -- or a screen recording
+   of the dealer app made while the founder is signed in -- has no founder
+   UI to show. The founder page's own gate reads lib/platform.js's
+   isPlatformAdmin(), and lib/platform.js says outright, in its own header
+   comment, that this is not a security boundary. It is repeated here
+   because it is the single most
    important fact about this file: every read and every write below runs
    through an RPC (nexus_founder_list_tenants, nexus_founder_onboard_dealer,
    nexus_founder_set_tenant_status, nexus_founder_quarantine_census) or the
@@ -33,7 +38,7 @@
    Because of that, this screen renders one more guard at its own top: it
    awaits loadPlatformAdmin() and, on a "no" or an unreadable answer, paints a
    polite explanation instead of the console. That guard exists for the one
-   path lib/nav.js's redirect cannot cover -- a render already in flight at
+   path the founder page's gate cannot cover -- a render already in flight at
    the instant an identity changes -- and it fails CLOSED like the rest of
    lib/platform.js, not because it is load-bearing, but because a screen that
    might show "1,204 dealerships" to the wrong person for one frame does not
@@ -71,7 +76,6 @@ import { db, dbWrite, edgeFn, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
 import { isPlatformAdmin, loadPlatformAdmin } from '../lib/platform.js';
-import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
 
@@ -143,7 +147,7 @@ const errorText = e => refusalText(e) || String(e && e.message || 'The request d
 
 /* -- The one state where nothing else on this screen renders ---------------
    See the header comment: this is a courtesy, repeated here because
-   lib/nav.js's gate cannot see a render already in flight. */
+   the founder page's gate cannot see a render already in flight. */
 function stateFounderOnly() {
   return `<div class="state err"><span class="material-symbols-outlined">shield_person</span>
     <h3>This is the NEXUS founder console</h3>
@@ -155,11 +159,11 @@ function stateFounderOnly() {
 /* ==========================================================================
    SCREEN
    ========================================================================== */
-SCREENS.founder = async host => {
+export async function renderFounderConsole(host) {
   resetReads();
 
-  /* Usually already resolved -- app.js awaits this at boot, before the nav
-     (and therefore before this screen) can even be reached -- so this is
+  /* Usually already resolved -- founder/app.js awaits this at boot, before
+     this console is ever rendered -- so this is
      normally a synchronous read of a settled cache, not a second round-trip. */
   await loadPlatformAdmin();
   if (!isPlatformAdmin()) { host.innerHTML = stateFounderOnly(); return; }
@@ -502,4 +506,66 @@ SCREENS.founder = async host => {
     };
     draw();
   }
-};
+
+  /* ------------------------------------------------------------------------
+     P8 . Record a payment -- moved here from screens/subscription.js on
+     22 Sep 2026, where it used to draw (for the founder only) at the bottom
+     of the dealer's own Subscription screen. Here the founder names the
+     dealership explicitly, from the same nexus_founder_list_tenants() list
+     every other card on this console reads. nexus_founder_mark_paid()
+     re-checks nexus_is_platform_admin() server-side and refuses without a
+     reference, whatever this form does.
+     ------------------------------------------------------------------------ */
+  const paid = el('div', 'card');
+  paid.style.marginTop = '16px';
+  host.appendChild(paid);
+  {
+    let busy = false, msg = '', msgTone = 'ok', rows = null, rowsErr = null;
+    const draw = () => {
+      const opts = rows
+        ? rows.map(r => `<option value="${esc(r.tenant_id)}">${esc(r.name || r.slug)}${r.is_test ? ' (test)' : ''}</option>`).join('')
+        : '';
+      paid.innerHTML = `<div class="card-title">Record a payment</div>
+        <div class="card-sub" style="margin-bottom:14px">Marks a dealership paid by hand through nexus_founder_mark_paid(). Extends from the current paid-through date if there is time left on it, otherwise starts from today. The reference is kept forever in subscription_event.</div>
+        ${!rows && !rowsErr ? stateLoading(2) : ''}
+        ${rowsErr ? `<div class="cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
+        ${rows ? `
+        ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
+        <div class="grid g3" style="gap:12px">
+          <div class="field"><label for="mpTenant">Dealership</label><select id="mpTenant">${opts}</select></div>
+          <div class="field"><label for="mpMonths">Months paid for</label><input type="number" id="mpMonths" min="1" max="12" value="1" /></div>
+          <div class="field"><label for="mpRef">Payment reference</label><input type="text" id="mpRef" placeholder="Ziina receipt, bank transfer id, etc." /></div>
+        </div>
+        <button class="btn primary" id="mpGo" style="margin-top:14px"${busy ? ' disabled' : ''}>${busy ? 'Recording…' : 'Record payment'}</button>` : ''}`;
+      $('mpGo')?.addEventListener('click', submit);
+    };
+    const submit = async () => {
+      if (busy) return;
+      const tenant = $('mpTenant')?.value;
+      const months = Number($('mpMonths')?.value);
+      const reference = str($('mpRef')?.value);
+      if (!tenant) { msg = 'Choose a dealership first.'; msgTone = 'hot'; draw(); return; }
+      if (!Number.isInteger(months) || months < 1 || months > 12) { msg = 'Months must be a whole number from 1 to 12.'; msgTone = 'hot'; draw(); return; }
+      if (!reference) { msg = 'A reference is required -- nexus_founder_mark_paid() will refuse without one.'; msgTone = 'hot'; draw(); return; }
+      busy = true; msg = ''; draw();
+      try {
+        await dbWrite('POST', 'rpc/nexus_founder_mark_paid', {
+          p_tenant: tenant, p_months: months, p_reference: reference,
+        });
+        const hit = (rows || []).find(r => r.tenant_id === tenant);
+        msg = `Payment recorded for ${hit ? (hit.name || hit.slug) : 'that dealership'}: ${months} month${months === 1 ? '' : 's'}, reference ${reference}.`;
+        msgTone = 'ok';
+        resetReads();
+        await reloadTenantsTable();
+      } catch (e) {
+        msg = errorText(e); msgTone = 'hot';
+      } finally {
+        busy = false; draw();
+      }
+    };
+    (async () => {
+      try { rows = await readTenants(); rowsErr = null; } catch (e) { rowsErr = e; }
+      draw();
+    })();
+  }
+}

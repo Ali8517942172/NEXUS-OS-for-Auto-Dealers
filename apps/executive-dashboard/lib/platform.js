@@ -7,10 +7,11 @@
    THIS IS NOT A SECURITY BOUNDARY. Every founder-only RPC (nexus_founder_*)
    and the founder-invite Edge Function re-check the same nexus_is_platform_
    admin() server-side on every call, independently of anything this file
-   decides. What this file controls is only whether the Founder item appears
-   in the sidebar and whether Settings offers the founder-scoped invite path
-   -- hiding a button is a courtesy to a reader who is not the founder, never
-   the reason a founder-only action is safe.
+   decides. What this file controls is only whether the separate founder
+   page (founder/index.html, /founder) draws its console or a plain "Not
+   authorised" -- a courtesy to a reader who is not the founder, never the
+   reason a founder-only action is safe. The dealer app does not import this
+   file at all since 22 Sep 2026.
 
    Read once per signed-in identity, the same shape as lib/tenant.js's
    loadTenant(): a read that FAILS is not cached, so a dropped connection does
