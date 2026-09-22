@@ -3109,6 +3109,53 @@ if (flag('--print-sql')) { console.log(CATALOGUE_SQL); process.exit(0); }
     [`dealer nav: ${NAV_IDS.length} items, 0 founder; founder page: founder/index.html + founder/app.js, gated on nexus_is_platform_admin()`]);
 }
 
+/* ── S12 · a shared screen shows no customer and no test fixture ─────────────
+   Added 22 Sep 2026. Privacy mode masks customer names, phones and emails
+   through ONE module (lib/privacy.js): screens call displayName()/maskPhone()/
+   maskEmail(), every db() read registers what to mask via scrubRows(), and a
+   guard installed by app.js masks whatever is painted. The same scrubRows()
+   drops internal test records from every read by default. Both switches
+   default OFF/hidden. And no screen may ship a button that says it is not
+   wired: the Money Leaks next step was one, and now records and opens. */
+{
+  const bad = [];
+  const P = SRC.get('lib/privacy.js');
+  if (!P) bad.push('lib/privacy.js is missing');
+  else {
+    for (const fn of ['displayName', 'maskPhone', 'maskEmail', 'maskText', 'scrubRows', 'installPrivacyGuard', 'isHiddenLead'])
+      if (!new RegExp(`export\\s*\\{[^}]*\\b${fn}\\b`).test(P.code)) bad.push(`lib/privacy.js does not export ${fn}()`);
+    if (!/readFlag\(PRIVACY_KEY,\s*false\)/.test(P.code)) bad.push('Privacy mode does not default to OFF');
+    if (!/readFlag\(TESTS_KEY,\s*false\)/.test(P.code)) bad.push('internal test records are not hidden by default');
+    const re = (P.code.match(/TEST_RECORD_RE\s*=\s*(\/.*\/[a-z]*);/) || [])[1];
+    if (!re) bad.push('lib/privacy.js has no TEST_RECORD_RE');
+    else {
+      const lit = re.match(/^\/(.*)\/([a-z]*)$/);
+      const R = new RegExp(lit[1], lit[2]);
+      for (const n of ['NEXUS TEST Ahmed [NXTEST-496e60820198]', 'NEXUS TEST Dealer A Customer 1 [4fa7d95b-a-c1]', 'X [step4-abc]', 'Preflight Walk-In'])
+        if (!R.test(n)) bad.push(`TEST_RECORD_RE does not match the test fixture "${n}"`);
+      for (const n of ['Ahmed Khan', 'Preflighted Motors']) if (R.test(n)) bad.push(`TEST_RECORD_RE hides a real name "${n}"`);
+    }
+    if (!/if\s*\(!showTests\)\s*continue/.test(P.code)) bad.push('scrubRows() does not drop test rows while they are hidden');
+  }
+  const D = SRC.get('lib/data.js');
+  if (!D || !/return scrubRows\(path, await res\.json\(\)\)/.test(D.code)) bad.push('lib/data.js db() does not pass every read through scrubRows()');
+  const A = SRC.get('app.js');
+  if (!A || !/installPrivacyGuard\(/.test(A.code)) bad.push('app.js does not install the privacy guard');
+  for (const f of ['screens/money-leaks.js', 'screens/leads.js', 'lib/lead-drawer.js', 'screens/conversations.js', 'screens/customers.js', 'screens/overview.js'])
+    if (!/from '\.\.?\/(lib\/)?privacy\.js'/.test(SRC.get(f)?.code || '') || !/displayName\(/.test(SRC.get(f)?.code || ''))
+      bad.push(`${f} prints a customer name without routing it through displayName()`);
+  const idx = await readFile(join(HERE, 'index.html'), 'utf8');
+  if (!/id="privacyBtn"[\s\S]{0,200}title="Masks customer names, phones and emails, for screen sharing"/.test(idx)) bad.push('index.html has no Privacy mode toggle with its tooltip');
+  if (/demo/i.test((idx.match(/<button[^>]*id="privacyBtn"[\s\S]*?<\/button>/) || [''])[0])) bad.push('the Privacy mode toggle mentions "demo"');
+  for (const [path, { raw }] of SRC)
+    for (const phrase of ['not wired yet', 'cannot be pressed'])
+      if (raw.toLowerCase().includes(phrase)) bad.push(`${path} contains "${phrase}"`);
+  const ML = SRC.get('screens/money-leaks.js')?.code || '';
+  if (!/data-contact=/.test(ML) || !/rpc\/lead_recovery_decide/.test(ML) || !/leadDrawer\(/.test(ML)) bad.push('Money Leaks\' next-step button does not record the decision and open the lead');
+  verdict('S12', LANE.SOURCE, 'P0', 'Privacy mode masks through one helper, test records are hidden, no button says it is unwired', bad,
+    ['lib/privacy.js owns masking and test-record filtering; db() routes every read through scrubRows(); Money Leaks\' next step calls lead_recovery_decide and opens the lead']);
+}
+
 /* ── S2 · helper-contract lint ─────────────────────────────────────────────
    Extended from screens/ to lib/ and app.js. Each banned construct has exactly
    one owner in this codebase, named here so an exception is a decision rather

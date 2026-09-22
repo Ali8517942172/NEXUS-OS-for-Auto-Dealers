@@ -1,6 +1,7 @@
 /* NEXUS OS — lib/data.js
    Split out of the original monolithic app.js on 17 Aug 2026. The body below is
    the original code, moved not rewritten. */
+import { scrubRows } from './privacy.js';
 import { createClient } from '@supabase/supabase-js';
 import { N8N_BASE, SUPABASE_ANON, SUPABASE_URL, envErrors } from './env.js';
 import { caseFromStatus, logError, requestFailure } from './errors.js';
@@ -284,7 +285,10 @@ async function db(path) {
   const res = await request(`${SUPABASE_URL}/rest/v1/${path}`, { headers: await headers() }, label);
   if (!res.ok) throw await failure(res, label);
   try {
-    return await res.json();
+    /* scrubRows (lib/privacy.js): internal test records are dropped here, before
+       any screen can list or count them, and customer names/phones/emails are
+       registered so Privacy mode can mask them wherever they are painted. */
+    return scrubRows(path, await res.json());
   } catch (e) {
     const err = requestFailure('generic', { status: res.status, technical: `${label} — response body did not parse: ${String(e && e.message || e)}`, cause: e });
     logError(label, err, e);

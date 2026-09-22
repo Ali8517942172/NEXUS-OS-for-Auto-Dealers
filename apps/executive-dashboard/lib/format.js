@@ -2,6 +2,7 @@
    Split out of the original monolithic app.js on 17 Aug 2026. The body below is
    the original code, moved not rewritten. */
 import { $ } from './dom.js';
+import { displayName, isKnownPerson, privacyOn } from './privacy.js';
 
 function esc(v) {
   if (v == null) return '';
@@ -74,7 +75,9 @@ const dubaiTime  = (ts, fb = '—') => { const d = tsDate(ts); return d ? `${F_T
 const dubaiStamp = (ts, fb = '—') => { const d = tsDate(ts); return d ? `${F_STAMP.format(d)} ${TZ_LABEL}` : fb; };
 /* The topbar/mono clock. Same formatter, same label, older placeholder. */
 const clock = ts => dubaiTime(ts, '--:--:--');
-const initials = name => (name || '?').split(/\s+/).filter(Boolean).slice(0,2).map(w => w[0]).join('').toUpperCase();
+/* Privacy mode: a customer's initials are the pseudonym's, never their own.
+   Staff names are not registered as customers and keep their initials. */
+const initials = raw => (privacyOn() && isKnownPerson(raw) ? displayName(raw) : raw || '?').split(/\s+/).filter(Boolean).slice(0,2).map(w => w[0]).join('').toUpperCase();
 
 /* Every severity vocabulary in the system maps through this one table.
    WARNING was missing until 24 Aug 2026, and its absence was silent in the

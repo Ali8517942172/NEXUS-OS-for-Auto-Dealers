@@ -200,6 +200,7 @@
 import { canGrantOwner, canManageAccess, db, dbWrite } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { displayName } from '../lib/privacy.js';
 import { SCREENS, go } from '../lib/nav.js';
 /* Open pipeline, defined once. TERMINAL_TONES and isOpenLead used to be
    declared here AND word for word in screens/overview.js, and the read ceiling
@@ -809,7 +810,7 @@ SCREENS.team = async host => {
      doorstep and somebody standing in the showroom with nothing to do. */
   if (leads && unassignedHot.length) {
     const shown = unassignedHot.slice(0, 4).map(l =>
-      `${esc(str(l.name) || 'Unnamed lead')} ${leadPhone(l)} <span class="t-muted">(${esc(ago(l.created_at))})</span>`).join(' · ');
+      `${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')} ${leadPhone(l)} <span class="t-muted">(${esc(ago(l.created_at))})</span>`).join(' · ');
     add({
       sev: 'HOT', icon: 'person_add_disabled', at: unassignedHot[0].created_at, atLabel: 'oldest arrived',
       titleHtml: `${num(unassignedHot.length)} HOT ${plural(unassignedHot.length, 'lead has', 'leads have')} no owner`

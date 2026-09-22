@@ -107,6 +107,7 @@ import { HOOK, db, dbWrite, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, dubaiStamp, esc, mins, n0, num, pill, tone } from '../lib/format.js';
+import { displayName, maskEmail, maskPhone, maskText } from '../lib/privacy.js';
 /* audit_log.status is not ours to read literally. lib/health.js is the only
    module allowed to say what one means — it mirrors public.nexus_outcome_class()
    — and a row whose summary says a step "did not land" is a PARTIAL however it
@@ -366,10 +367,10 @@ function leadName(l) {
     return '<span class="t-warm">Unnamed lead</span> '
       + `<span class="chip mono" title="This is a WhatsApp chat handle stored in the name column, not a person's name. A LID contains no phone digits and identifies nobody.">${esc(n)}</span>`;
   }
-  return esc(n);
+  return esc(displayName(n, l.id));
 }
 const phoneText = l => str(l.phone)
-  ? `<span class="mono">${esc(str(l.phone))}</span>`
+  ? `<span class="mono">${esc(maskPhone(str(l.phone)))}</span>`
   : '<span class="t-muted" title="No phone number on this lead">—</span>';
 /* Name and number on one line, for the places that have no second line. */
 const nameAndPhone = l => `${leadName(l)} <span class="t-muted">·</span> ${phoneText(l)}`;
@@ -1279,8 +1280,8 @@ SCREENS.leads = async host => {
              send. */
           const shape = keyShape(lead.email);
           if (shape === KEY_SHAPE.NONE) return '<span class="t-muted">No email address on this lead</span>';
-          if (shape === KEY_SHAPE.EMAIL) return esc(lead.email);
-          return `<span class="mono t-warm">${esc(str(lead.email))}</span>`
+          if (shape === KEY_SHAPE.EMAIL) return esc(maskEmail(lead.email));
+          return `<span class="mono t-warm">${esc(maskText(str(lead.email)))}</span>`
             + `<div class="cell-sub">Not an address — ${esc(describeKey(lead.email))}. It is the key this lead's messages are filed under.</div>`;
         })()}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>

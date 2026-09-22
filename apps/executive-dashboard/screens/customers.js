@@ -128,6 +128,7 @@ import { $, el } from '../lib/dom.js';
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
 import { aed, ago, dubaiDate, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { displayName, maskEmail } from '../lib/privacy.js';
 import { SILENCE_MARKER, silenceCount, splitEvents } from '../lib/comm-events.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -461,7 +462,7 @@ function spineFromSources(leads, purchases) {
   return map;
 }
 
-const nameOf = c => c.name || (c.view && str(c.view.name)) || (c.profile && str(c.profile.name)) || c.email || 'Unnamed customer';
+const nameOf = c => { const n = c.name || (c.view && str(c.view.name)) || (c.profile && str(c.profile.name)); return n ? displayName(n) : (c.email ? maskEmail(c.email) : 'Unnamed customer'); };
 
 /* The phone, and where it was found. Five sources this screen reads carry one —
    v_customer_directory, v_customer_360, customer_360_profiles, purchase_history
@@ -1895,7 +1896,7 @@ SCREENS.customers = async host => {
 
   const otherCols = [
     { label: 'Contact', strong: true, render: o => o.name
-      ? `${esc(o.name)}<div class="cell-sub" style="white-space:normal">${esc(o.idBasis || 'Name as recorded by the source table')}</div>`
+      ? `${esc(displayName(o.name))}<div class="cell-sub" style="white-space:normal">${esc(o.idBasis || 'Name as recorded by the source table')}</div>`
       : `<span class="mono t-muted" style="word-break:break-all">${esc(o.chatId || o.email || o.key)}</span>
          <div class="cell-sub t-warm" style="white-space:normal">${esc(o.idBasis || 'No name on record — this is an identifier, not a person’s name')}</div>` },
     /* Headed for what the column can actually establish. "Why this is not a

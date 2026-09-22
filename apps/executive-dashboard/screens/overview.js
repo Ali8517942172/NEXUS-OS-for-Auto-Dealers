@@ -232,6 +232,7 @@ import { isInternalRow, isReply } from '../lib/comm-events.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, clock, dubaiStamp, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { displayName } from '../lib/privacy.js';
 /* The only place in this app allowed to decide what a run outcome means. This
    screen reads the columns v_workflow_health already computed from the same
    rule and does not classify anything itself. */
@@ -2346,7 +2347,7 @@ SCREENS.overview = async host => {
           ${pill(l.status || 'Unscored', undefined, { verbatim: !!l.status })}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
-              <span>${esc(str(l.name) || 'Unnamed lead')}</span>
+              <span>${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')}</span>
               ${str(l.phone)
                 ? `<span class="mono cell-sub">${esc(str(l.phone))}</span>`
                 : `<span class="cell-sub t-warm" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
@@ -2854,7 +2855,7 @@ SCREENS.overview = async host => {
         let head, sub;
         if (it.kind === 'unanswered_chat') {
           const c = chatRow(it);
-          head = `${c.named ? esc(c.name) : '<span class="t-warm">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
+          head = `${c.named ? esc(displayName(c.name)) : '<span class="t-warm">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
           sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
             c.phone ? `<span class="mono">${esc(c.phone)}</span>` : '<span class="t-muted">No phone number stored for this thread</span>'
           } · <span class="mono" title="WhatsApp chat handle — a LID contains no phone digits and identifies nobody on its own">${esc(c.ref)}</span></div>`;

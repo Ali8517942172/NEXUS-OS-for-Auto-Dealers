@@ -117,7 +117,9 @@
    lead; 0 of 9 Deal Rescue prerequisites met; 0 comparables of accepted match
    quality on any unit. Two leak lines. That is the correct output. */
 
-import { db, onIdentityChange } from '../lib/data.js';
+import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { leadDrawer } from '../lib/lead-drawer.js';
+import { displayName, isHiddenLead } from '../lib/privacy.js';
 import { el } from '../lib/dom.js';
 import { UNKNOWN_WHY, aed, ago, dubaiStamp, esc, n0, num, tone } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
@@ -537,21 +539,74 @@ const REC_LABEL = {
 };
 const recLabel = v => REC_LABEL[up(v)] || null;
 
-/* Why the primary button is dead, in the dealership's language and not the
-   database's. It is disabled and says so on its face rather than being wired
-   to something that looks live: screens/overview.js states the rule this obeys
-   — "a click that silently does nothing is the one outcome that must not
-   happen". The lane that CAN take a decision is linked beside it. */
-const NOT_WIRED = 'NEXUS cannot record this decision from this screen yet. The dashboard is allowed to READ the '
-  + 'recovery queue and has not been given a way to write a decision back to it, so this button would change '
-  + 'nothing — it is disabled rather than shown as live. Open Lead Recovery to see the queue in full.';
-
+/* The primary button IS the recommendation, and pressing it does two things,
+   in this order:
+     1. records the decision, through the same lead_recovery_decide() RPC the
+        recovery desk's contract defines (APPROVE — the owner has accepted the
+        recommendation), and only for an account action_approver_context() says
+        may decide: a refused call would still write an audit row, so it is not
+        made on behalf of someone who cannot decide. The RPC is idempotent, and
+        a refusal comes back as ok = false, which is read and shown;
+     2. opens the lead itself, with the recommendation and the outcome of step 1
+        pinned at the top, so the next step (call, WhatsApp, book) is one click.
+   A recommendation this screen has no wording for still opens the lead, under
+   a neutral label, and records nothing. */
 const actionButton = a => {
   const label = recLabel(a.recommendation);
-  return label
-    ? `<button class="btn sm ghost" disabled title="${esc(NOT_WIRED)}">${esc(label)} — not wired yet</button>`
-    : `<button class="btn sm ghost" disabled title="${esc('The engine recommends "' + (str(a.recommendation) || 'nothing') + '" and this screen has no wording for it, so no instruction is put in the reader’s mouth. ' + NOT_WIRED)}">No wording for this recommendation</button>`;
+  return `<button class="btn sm primary" type="button" data-contact="${esc(str(a.id))}" data-lead="${esc(str(a.lead_id))}"`
+    + ` data-rec="${esc(label || '')}" title="${esc(label
+      ? 'Records that you are acting on this recommendation, then opens the lead with it highlighted.'
+      : 'Opens the lead. This recommendation (' + (str(a.recommendation) || 'none') + ') has no wording on this screen, so no decision is recorded.')}">`
+    + `${esc(label || 'Open lead')}</button>`;
 };
+
+let approverCtx = null;
+const readApprover = () => (approverCtx ||= db('rpc/action_approver_context')
+  .then(r => (Array.isArray(r) ? r[0] : r) || null)
+  .catch(e => { approverCtx = null; throw e; }));
+
+async function recordDecision(actionId) {
+  let ctx = null;
+  try { ctx = await readApprover(); } catch (e) {
+    return { ok: false, text: `Your decision was not recorded: who may decide could not be read (${e.message}).` };
+  }
+  if (!ctx || !ctx.may_decide) {
+    return { ok: false, text: 'Not recorded as a decision: ' + (str(ctx && ctx.refusal_reason)
+      || 'your account is not one this dealership allows to approve actions.') + ' The lead is open so you can still act on it.' };
+  }
+  try {
+    const r = await dbWrite('POST', 'rpc/lead_recovery_decide', { p_action_id: actionId, p_decision: 'APPROVE' });
+    const row = Array.isArray(r) ? r[0] : r;
+    if (row && row.ok) return { ok: true, text: row.idempotent ? 'You had already approved this. Nothing new was recorded.' : 'Decision recorded: approved by you, just now.' };
+    return { ok: false, text: 'Not recorded: ' + (str(row && row.refusal_reason) || 'the database gave no reason.') };
+  } catch (e) {
+    return { ok: false, text: `Your decision was not recorded: ${e.message}` };
+  }
+}
+
+function wireContact(card, reasons) {
+  card.querySelectorAll('button[data-contact]').forEach(b => b.addEventListener('click', async () => {
+    if (b.disabled) return;
+    const label = b.textContent;
+    const rec = str(b.dataset.rec);
+    b.disabled = true; b.textContent = 'Opening…';
+    try {
+      const decision = rec ? await recordDecision(str(b.dataset.contact)) : null;
+      const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(str(b.dataset.lead))}&limit=1`);
+      if (rows.length) {
+        await leadDrawer(rows[0], { recommended: { label: rec || 'Open lead', reason: reasons.get(str(b.dataset.contact)) || '', decision } });
+        b.textContent = decision && decision.ok ? 'Approved · open again' : label;
+      } else {
+        b.textContent = 'Lead not found';
+      }
+    } catch (e) {
+      b.textContent = label;
+      b.title = `Could not open this lead — ${e.message}`;
+    } finally {
+      b.disabled = false;
+    }
+  }));
+}
 
 /* The score's provenance, straight out of leads.score_source and never
    translated. Rendered VERBATIM — lib/format.js's pill() explains why that is
@@ -962,9 +1017,8 @@ SCREENS.moneyleaks = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(root, {
     title: 'Right now',
-    sub: 'Who is hot, what is waiting on a decision, who has been left on read, and what came back. Every tile says '
-       + 'how its number was arrived at, and a question nothing in the database answers is shown as NOT KNOWN — '
-       + 'never as nought',
+    sub: 'Hot leads, decisions waiting, unanswered chats and sales that came back. Each tile shows how it was '
+       + 'counted; what cannot be measured shows as NOT KNOWN',
     actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('conversations', 'Open Conversations'),
     load: async () => {
       const [ld, ac, th, cv] = await Promise.all([settle(readAllLeads()), settle(readActions()),
@@ -1074,11 +1128,10 @@ SCREENS.moneyleaks = async host => {
      `leads` and the columns it needs about the decision are on
      `lead_recovery_actions`. A missing lead row is SAID, not blanked.
      ──────────────────────────────────────────────────────────────────────── */
+  const reasons = new Map();
   panel(root, {
     title: 'Waiting on you',
-    sub: 'Every recovery action the engine has raised and nobody has answered. The button on each row is the '
-       + 'recommendation itself — and it is disabled, with the reason on it, because this build cannot write a '
-       + 'decision back',
+    sub: 'Recovery actions the engine raised that still need a decision. Press the next step to act on it',
     actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('actions', 'Open the Action Center'),
     load: async () => {
       const [ac, ld, tr] = await Promise.all([settle(readActions()), settle(readAllLeads()), settle(readTrail())]);
@@ -1089,7 +1142,7 @@ SCREENS.moneyleaks = async host => {
       const actions = ac.v || [];
       const leads = ld.err ? null : (ld.v || []);
       const trail = tr.err ? null : (tr.v || []);
-      const proposed = actions.filter(a => up(a.status) === 'PROPOSED');
+      const proposed = actions.filter(a => up(a.status) === 'PROPOSED' && !isHiddenLead(a.lead_id));
 
       if (!proposed.length) {
         return dsEmpty({ title: 'Nothing is waiting on a decision', name: 'check', intent: 'success',
@@ -1104,7 +1157,7 @@ SCREENS.moneyleaks = async host => {
       });
 
       const leadCell = r => {
-        if (r.lead) return `${bold(esc(str(r.lead.name) || 'Unnamed'))}${muted('Lead ' + mono(r.a.lead_id))}`;
+        if (r.lead) return `${bold(esc(str(r.lead.name) ? displayName(str(r.lead.name), r.lead.id) : 'Unnamed'))}${muted('Lead ' + mono(r.a.lead_id))}`;
         return `${bold('Lead ' + esc(str(r.a.lead_id)))}`
           + (r.leadUnread
               ? hot('The leads table could not be read on this load, so nothing about this customer is shown. '
@@ -1159,24 +1212,18 @@ SCREENS.moneyleaks = async host => {
         { label: 'Next step', mid: true, render: r => actionButton(r.a) },
       ], rows, { caption: 'Recovery actions awaiting a decision' });
 
-      return table + `<div style="padding:12px 16px 16px">${dsCallout({
-        intent: 'warning', name: 'alert',
-        lede: 'The button on each row cannot be pressed, and that is deliberate.',
-        noteLabel: 'why',
-        note: para(esc(NOT_WIRED))
-          + para('The alternative — a live-looking button that quietly does nothing — is the one outcome this app '
-            + 'refuses everywhere. The decision itself is taken in Lead Recovery.'),
-      })}</div>`;
+      reasons.clear();
+      rows.forEach(r => { if (r.reason) reasons.set(str(r.a.id), firstSentence(r.reason.text)); });
+      return table;
     },
-  }).then(wireGo);
+  }).then(card => { wireGo(card); wireContact(card, reasons); });
 
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */
   panel(root, {
     title: "Today's money leaks",
-    sub: 'One question: where is money leaking right now, and what should be done about it. A check that came back '
-       + 'clear and a check that could not run are counted separately and never added together',
+    sub: 'Where money is leaking right now, and what to do about it',
     actions: linkBtn('actions', 'Open the Action Center') + ' ' + linkBtn('revenue', 'Open Revenue Recovery'),
     load: async () => {
       /* Every read the four registers below use, so the tiles are computed from
@@ -1315,8 +1362,7 @@ SCREENS.moneyleaks = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(root, {
     title: 'What is leaking, worst first',
-    sub: 'Ranked by the money behind it. Every line carries WHY, the EVIDENCE, the SIZE in a named word, the '
-       + 'CONFIDENCE and one ACTION — and a line that cannot carry all six is shown as a fault, not as a row',
+    sub: 'Ranked by the money behind each line, with the evidence, the confidence and the next step',
     actions: linkBtn('actions', 'Open the Action Center'),
     load: async () => {
       const [e, q, l] = await Promise.all([settle(readEngine()), settle(readQueue()), settle(readLeads())]);
@@ -1431,7 +1477,7 @@ SCREENS.moneyleaks = async host => {
      ──────────────────────────────────────────────────────────────────────── */
   panel(root, {
     title: 'Checks that came back clear',
-    sub: 'A zero is only a finding when it says what it counted. Each of these names its denominator',
+    sub: 'What was checked and found clear, and how much was checked',
     load: async () => {
       const [e, q, l] = await Promise.all([settle(readEngine()), settle(readQueue()), settle(readLeads())]);
       if (e.err && q.err && l.err) throw q.err;
@@ -1486,9 +1532,8 @@ SCREENS.moneyleaks = async host => {
      P4 · Register 3 — checks that could not run
      ──────────────────────────────────────────────────────────────────────── */
   panel(root, {
-    title: 'Checks that could not run — unknown is not zero',
-    sub: 'The engine could not look. Each line says since when, why, and the one thing that would light it up. This '
-       + 'is the roadmap made concrete rather than a feature list',
+    title: 'Checks that could not run',
+    sub: 'Not measured yet, so not counted as zero. Each line says why, and what would switch it on',
     actions: linkBtn('inventory', 'Open Inventory') + ' ' + linkBtn('dealrescue', 'Open Deal Rescue'),
     load: async () => {
       const [e, c, l, w, r] = await Promise.all([settle(readEngine()), settle(readCoverage()), settle(readLeads()),
@@ -1520,10 +1565,17 @@ SCREENS.moneyleaks = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P5 · Register 4 — what this screen refuses to call a leak
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'What this screen refuses to call a leak',
-    sub: 'The alert feed, audited against the engines rather than trusted. A competitor’s dashboard would show '
-       + 'every one of these as a finding; showing why they are not is the trust the product is selling',
+  /* The two explanatory registers live behind one disclosure: the honesty
+     model is unchanged, and it no longer stands between an owner and the work. */
+  const howCounts = el('details', 'card how-counts');
+  howCounts.innerHTML = '<summary><span class="material-symbols-outlined">info</span>How NEXUS counts money</summary>';
+  const howBody = el('div', 'how-counts-body');
+  howCounts.appendChild(howBody);
+  root.appendChild(howCounts);
+
+  panel(howBody, {
+    title: 'Alerts that are not leaks',
+    sub: 'Alerts checked against the engines, and why each one is not counted as a leak',
     actions: linkBtn('conversations', 'Open Conversations') + ' ' + linkBtn('competitors', 'Open Competitors'),
     load: async () => {
       const [a, e, q] = await Promise.all([settle(readAttention()), settle(readEngine()), settle(readQueue())]);
@@ -1674,9 +1726,9 @@ SCREENS.moneyleaks = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P6 · The four money words, and what NEXUS has actually earned
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'The words this screen is allowed to use about money',
-    sub: 'Four words, one gate each. A figure that has not earned its word is not shown',
+  panel(howBody, {
+    title: 'The four money words',
+    sub: 'Each money word has one rule. A figure that has not met its rule is not shown',
     load: async () => {
       const [q, c] = await Promise.all([settle(readQueue()), settle(readCoverage())]);
       if (q.err && c.err) throw q.err;
