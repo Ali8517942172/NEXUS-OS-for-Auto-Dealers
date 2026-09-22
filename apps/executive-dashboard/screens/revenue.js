@@ -75,6 +75,7 @@
 
 import { db } from '../lib/data.js';
 import { aed, dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
@@ -666,7 +667,7 @@ SCREENS.revenue = async host => {
         ? `<div class="section">${readFailed('The lead list', l.err)}</div>`
         : table([
             { label: 'Lead', strong: true, render: d =>
-                `<div>${esc(str(d.lead_name) || ('Lead ' + str(d.lead_id)))}</div>`
+                `<div>${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))}</div>`
                 + `<div class="cell-sub mono">#${esc(str(d.lead_id))} · ${esc(str(d.lead_status) || 'no status')}</div>` },
             { label: 'State', render: d => pill(str(d.state), '', { verbatim: true }) },
             { label: 'Risk', render: d => pill(str(d.risk_level), '', { verbatim: true }) },
@@ -980,7 +981,7 @@ SCREENS.revenue = async host => {
           : muted('The view returned no chain for this sale, so no hop can be shown. That is a missing explanation, '
               + 'not an unbroken chain.');
         return `<div class="section" style="margin-top:16px">
-            ${bold(`${esc(str(s.customer_name) || 'Customer not named')} — ${esc(str(s.vehicle_text) || 'vehicle not named')}`)}
+            ${bold(`${esc(maskText(str(s.customer_name) || 'Customer not named'))} — ${esc(str(s.vehicle_text) || 'vehicle not named')}`)}
             ${muted(`${aed(s.revenue_aed)} on ${esc(dubaiDate(s.purchase_date))} · `
               + `${num(s.hops_evidenced)} of ${num(s.hops_total)} hops evidenced · `
               + `first break at ${esc(str(s.first_break) || 'no break recorded')}`)}

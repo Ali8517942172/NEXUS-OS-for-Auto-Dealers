@@ -161,7 +161,7 @@ import { el } from '../lib/dom.js';
 import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
-import { displayName } from '../lib/privacy.js';
+import { displayName, maskText } from '../lib/privacy.js';
 /* The only place allowed to decide what an audit_log status means. This screen
    used to carry its own definition — `['FAILED', 'REJECTED'].includes(status)`
    — and then printed "Every logged drip run succeeded" of everything else,
@@ -965,7 +965,7 @@ SCREENS.campaigns = async host => {
       return esc(n);
     }
     const phoneHtml = (phone, lead) => str(phone)
-      ? `<span class="mono">${esc(str(phone))}</span>`
+      ? `<span class="mono">${esc(maskText(str(phone)))}</span>`
       : lead
         ? '<span class="t-muted" title="The lead row for this address carries no phone number">—</span>'
         : '<span class="t-muted" title="No lead row matches this address, so there is no phone number to look up">—</span>';
@@ -986,7 +986,7 @@ SCREENS.campaigns = async host => {
     const chipFor = p => p.lead
       ? `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-lead="${esc(p.lead.id)}"
           title="Open this lead">${personLine(p)}</button>`
-      : `<span class="chip" title="No lead row matches ${esc(p.email || 'this contact')}, so there is nothing to open">${personLine(p)}</span>`;
+      : `<span class="chip" title="No lead row matches ${esc(maskText(p.email || 'this contact'))}, so there is nothing to open">${personLine(p)}</span>`;
 
     const previewOf = people => {
       const shown = people.slice(0, PREVIEW).map(chipFor).join(' ');
@@ -1322,7 +1322,7 @@ SCREENS.campaigns = async host => {
         chip: 'not an address',
         title: `${num(bad)} drip ${plural(bad, 'run carries', 'runs carry')} a chat key in the email on the lead record rather than an email address`,
         detailHtml: `${num(nonEmailIdx.length)} ${plural(nonEmailIdx.length, 'run carries', 'runs carry')} a <span class="mono">The email on the lead record</span> that an email sequence cannot send to `
-          + `(${unaddressable.slice(0, PREVIEW).map(r => `<span class="mono">${esc(r.email || r.key)}</span>`).join(', ')}${unaddressable.length > PREVIEW ? `, +${num(unaddressable.length - PREVIEW)} more` : ''}). `
+          + `(${unaddressable.slice(0, PREVIEW).map(r => `<span class="mono">${esc(maskText(r.email || r.key))}</span>`).join(', ')}${unaddressable.length > PREVIEW ? `, +${num(unaddressable.length - PREVIEW)} more` : ''}). `
           + 'A <span class="mono">+digits@whatsapp.lead</span> or <span class="mono">@lid</span> value parses like an address and is not one. '
           + 'Those runs cannot have delivered an email, and something upstream enrolled a lead without checking it had a real address.',
         target: activityCard,
@@ -1414,7 +1414,7 @@ SCREENS.campaigns = async host => {
              live Enrol button, and the Gmail node would have attempted a send. */
           + (synthEmailLeads.length
             ? `${num(synthEmailLeads.length)} ${plural(synthEmailLeads.length, 'carries', 'carry')} a WhatsApp key in <span class="mono">The email on the lead record</span> rather than an address `
-              + `(${synthEmailLeads.slice(0, PREVIEW).map(l => `<span class="mono">${esc(str(l.email))}</span>`).join(', ')}${synthEmailLeads.length > PREVIEW ? `, +${num(synthEmailLeads.length - PREVIEW)} more` : ''}) — `
+              + `(${synthEmailLeads.slice(0, PREVIEW).map(l => `<span class="mono">${esc(maskText(str(l.email)))}</span>`).join(', ')}${synthEmailLeads.length > PREVIEW ? `, +${num(synthEmailLeads.length - PREVIEW)} more` : ''}) — `
               + 'the Master Router synthesises those when a WhatsApp lead has no email, and they parse as addresses because the domain contains a dot. '
               + 'Until 31 Aug 2026 such a lead appeared in the table below with the Enrol button live, and the sequence would have tried to mail it. '
             : '')
@@ -1774,7 +1774,7 @@ SCREENS.campaigns = async host => {
          "phone them", and a roster that only carries an email address makes the
          operator go and look the number up somewhere else. */
       { label:'Lead', strong:true, render: l => `${nameHtml(l.name)} <span class="t-muted">·</span> ${phoneHtml(l.phone, l)}
-          <div class="cell-sub">${esc(str(l.email))}</div>` },
+          <div class="cell-sub">${esc(maskText(str(l.email)))}</div>` },
       { label:'Status', render: l => pill(l.status || 'NEW', undefined, { verbatim: !!l.status }) },
       { label:'Interest', render: l => `<span class="t-2">${esc(l.vehicle_interest || '—')}</span>` },
       /* budget_aed is NULL for router-created leads. A zero here would understate
@@ -1883,7 +1883,7 @@ SCREENS.campaigns = async host => {
         <dl class="kv">
           <dt>Lead</dt><dd>${nameHtml(lead.name)}</dd>
           <dt>Phone</dt><dd>${phoneHtml(lead.phone, lead)}</dd>
-          <dt>Email</dt><dd>${esc(str(lead.email))}</dd>
+          <dt>Email</dt><dd>${esc(maskText(str(lead.email)))}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
           <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
           <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
@@ -1950,7 +1950,7 @@ SCREENS.campaigns = async host => {
                   ${r.stops ? `<span class="chip" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
                   ${r.addressable ? '' : '<span class="chip t-hot" title="The audit row carries this in the email on the lead record, but it is not an address an email sequence can send to.">not an email address</span>'}
                 </div>
-                <div class="cell-sub">${esc(str(r.email) || 'no email on the audit row')} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
+                <div class="cell-sub">${esc(maskText(str(r.email) || 'no email on the audit row'))} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
                 ${r.keyExpanded
                   ? `<div class="cell-sub t-muted" title="the message history files one person under several keys — a real address, a @c.us chat id, a +digits@whatsapp.lead key and a @lid handle. Messages under all of them are counted for this person. NEXUS’s identity rules resolves them: the phone-shaped keys on the last nine digits of the number, the @lid handle through the saved contact details row that ties it to that number, because a LID carries no phone digits of its own.">Messages counted across ${num(r.matchedKeys.size)} keys this person is filed under</div>`
                   /* Not "only the enrolment key is searched" any more, which is
@@ -2011,7 +2011,7 @@ SCREENS.campaigns = async host => {
             <span class="mono t-muted" title="${esc(stamp(msg.created_at))}">${clock(msg.created_at)}</span>
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">No recipient recorded</span>'}</div>
-              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(str(msg.lead_email))}</div>
+              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(maskText(str(msg.lead_email)))}</div>
               <div class="cell-sub">${esc(String(msg.message || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="t-muted">No message text recorded</span>'}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
@@ -2100,7 +2100,7 @@ SCREENS.campaigns = async host => {
                 ? personLine(p)
                 : `<span class="t-warm">No lead on this run</span> <span class="chip mono">${esc(str(x.workflow) || 'unnamed workflow')}</span>`}</div>
               ${keyed && !isRealEmail(keyed)
-                ? `<div class="cell-sub t-hot">The email on the lead record is <span class="mono">${esc(str(x.lead_email))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
+                ? `<div class="cell-sub t-hot">The email on the lead record is <span class="mono">${esc(maskText(str(x.lead_email)))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
                 : ''}
               <div class="cell-sub">${esc(dealerText(x.summary).slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
             </div>

@@ -119,6 +119,7 @@ import { $, el } from '../lib/dom.js';
 import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
 import { N8N_BASE } from '../lib/env.js';
 import { ago, clock, esc, n0, num, pct, pill } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import {
   OUTCOME, OUTCOME_WORDS, healthWords, isIncomplete, outcomeOf, outcomeWords, successRate,
 } from '../lib/health.js';
@@ -1901,7 +1902,7 @@ SCREENS.automation = async host => {
                       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                         ${a.status ? outcomePill(a) : pill('No status written', 'unknown', { verbatim: false })}
                         <span class="cell-sub">${esc(ago(a.logged_at))}</span>
-                        ${a.lead_name ? `<span class="chip">${esc(a.lead_name)}</span>` : ''}
+                        ${a.lead_name ? `<span class="chip">${esc(maskText(a.lead_name))}</span>` : ''}
                       </div>
                       <div class="tl-meta" style="white-space:normal">${esc(String(a.summary || 'No summary written.').slice(0, 240))}</div>
                     </div>
@@ -2092,9 +2093,9 @@ SCREENS.automation = async host => {
          carries no phone — and every way that lookup can come up empty is
          spelled out rather than rendered as a dash. */
       { label: 'Customer', render: a => a.lead_name || a.lead_email
-          ? `${esc(a.lead_name || 'Name not recorded on this run')}
+          ? `${esc(maskText(a.lead_name || 'Name not recorded on this run'))}
              <div class="cell-sub">${phoneLine(a.lead_email)}</div>
-             <div class="cell-sub">${esc(a.lead_email || 'no email on the row')}</div>`
+             <div class="cell-sub">${esc(maskText(a.lead_email || 'no email on the row'))}</div>`
           : '<span class="t-muted">Not a per-customer run</span>' },
       { label: 'Score', align: 'r', render: a => n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score) },
       { label: 'Summary', render: a => a.summary
@@ -2271,9 +2272,9 @@ SCREENS.automation = async host => {
         <div class="section">
           <div class="label-caps">Subject</div>
           <dl class="kv" style="margin-top:8px">
-            <dt>Customer</dt><dd>${a.lead_name ? esc(a.lead_name) : '<span class="t-muted">not a per-customer run</span>'}</dd>
+            <dt>Customer</dt><dd>${a.lead_name ? esc(maskText(a.lead_name)) : '<span class="t-muted">not a per-customer run</span>'}</dd>
             <dt>Phone</dt><dd>${phoneLine(a.lead_email)}</dd>
-            <dt>Email</dt><dd>${a.lead_email ? esc(a.lead_email) : '<span class="t-muted">—</span>'}</dd>
+            <dt>Email</dt><dd>${a.lead_email ? esc(maskText(a.lead_email)) : '<span class="t-muted">—</span>'}</dd>
             <dt>Lead score</dt><dd class="num">${n0(a.lead_score) == null ? '<span class="t-muted">—</span>' : num(a.lead_score)}</dd>
           </dl>
           <div class="cell-sub" style="margin-top:8px;white-space:normal">The phone number is read from <span class="mono">The phone number on the lead record</span> matched on this run's email — The activity log carries no phone of its own.

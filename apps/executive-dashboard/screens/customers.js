@@ -128,7 +128,7 @@ import { $, el } from '../lib/dom.js';
 import { OUTCOME, healthWords, outcomeOf, outcomeWords, successRate } from '../lib/health.js';
 import { expandIdentity, normalizeKey, personFilter, personQuery } from '../lib/identity.js';
 import { aed, ago, dubaiDate, dubaiStamp, esc, initials, mins, n0, num, pct, pill, tone } from '../lib/format.js';
-import { displayName, maskEmail } from '../lib/privacy.js';
+import { displayName, maskEmail, maskText } from '../lib/privacy.js';
 import { SILENCE_MARKER, silenceCount, splitEvents } from '../lib/comm-events.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -1181,9 +1181,9 @@ SCREENS.customers = async host => {
                   ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>'
                   : ''}</div>
               <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ph.phone
-                ? `<span class="mono" title="${esc('From ' + ph.from)}">${esc(ph.phone)}</span>`
+                ? `<span class="mono" title="${esc('From ' + ph.from)}">${esc(maskText(ph.phone))}</span>`
                 : '<span class="t-warm">No phone on any source</span>'}
-                · ${esc(c.email || 'No email on the directory row')}</div>
+                · ${esc(maskText(c.email || 'No email on the directory row'))}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div class="cell-sub num">${ltv == null || !hasPurchase ? '' : aed(ltv)}</div>
@@ -1648,12 +1648,12 @@ SCREENS.customers = async host => {
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
               <span class="material-symbols-outlined t-muted" style="font-size:18px">chat</span>
               <div style="flex:1;min-width:0">
-                <div style="font-weight:500">${lab.name ? esc(lab.name) : '<span class="t-muted">No name captured on this chat</span>'}</div>
+                <div style="font-weight:500">${lab.name ? esc(maskText(lab.name)) : '<span class="t-muted">No name captured on this chat</span>'}</div>
                 <div class="cell-sub" style="white-space:normal">${esc(lab.basis)} · linked to this customer by the email on the lead record.</div>
                 <div class="cell-sub mono" style="word-break:break-all">${esc(str(w.chat_id) || 'no chat id')}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
-                <div class="cell-sub">${str(w.phone) ? `<span class="mono">${esc(str(w.phone))}</span>` : '<span class="t-muted">no phone stored</span>'}</div>
+                <div class="cell-sub">${str(w.phone) ? `<span class="mono">${esc(maskText(str(w.phone)))}</span>` : '<span class="t-muted">no phone stored</span>'}</div>
                 <div class="cell-sub">${waCount(w)} · ${esc(ago(w.last_seen))}</div>
               </div>
             </div>`;
@@ -1668,9 +1668,9 @@ SCREENS.customers = async host => {
             ${v.is_vip ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>' : ''}
             ${buyErr ? '' : c.purchases.length ? pill('Buyer', 'ok', { verbatim: false }) : '<span class="chip">Enquiry — no purchase on file</span>'}</div>
           <div class="card-sub">${ph.phone
-            ? `<span class="mono">${esc(ph.phone)}</span> <span class="t-muted">· ${esc(ph.from)}</span>`
+            ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="t-muted">· ${esc(ph.from)}</span>`
             : '<span class="t-warm">No phone number on any source</span>'}
-            · ${esc(c.email || 'No email on the directory row')}</div>
+            · ${esc(maskText(c.email || 'No email on the directory row'))}</div>
         </div>
         ${leads.rows && leads.rows.length
           ? `<button class="btn sm" data-act="lead">Open ${leads.rows.length === 1 ? 'this lead' : 'newest lead'}</button>`
@@ -1713,14 +1713,14 @@ SCREENS.customers = async host => {
             <dt>Last seen</dt><dd>${c.lastSeen
               ? `${esc(ago(c.lastSeen))} <span class="cell-sub">· the newest last_seen_at on this address</span>`
               : '<span class="t-muted">No last_seen_at on this row</span>'}</dd>
-            <dt>Email key</dt><dd class="mono" style="word-break:break-all">${esc(c.email || '—')}</dd>
+            <dt>Email key</dt><dd class="mono" style="word-break:break-all">${esc(maskText(c.email || '—'))}</dd>
             <dt>Message keys</dt><dd>${commsFilter.ok
               ? `<span class="mono" style="word-break:break-all">${esc(commsFilter.keys.join(', '))}</span>
                  <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)} The key each message is filed under holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
               : `<span class="t-warm">None</span>
                  <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
             <dt>Phone</dt><dd>${ph.phone
-              ? `<span class="mono">${esc(ph.phone)}</span> <span class="cell-sub">· found on ${esc(ph.from)}</span>`
+              ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="cell-sub">· found on ${esc(ph.from)}</span>`
               : `<span class="t-warm">Not recorded</span>
                  <div class="cell-sub" style="white-space:normal">${esc(NO_PHONE_LONG)}</div>`}</dd>
             <dt>Source system</dt><dd>NEXUS <span class="t-muted">· not your CRM</span>
@@ -1760,9 +1760,9 @@ SCREENS.customers = async host => {
                               <div class="cell-sub" style="white-space:normal">No the activity log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced the figures above is not on record. The aggregation has logged ${esc(String(custRuns.length))} run${custRuns.length === 1 ? '' : 's'} naming this customer, the newest ${esc(ago(custLatestRun.logged_at))} — that run is older than this row and did not write it, so its outcome is deliberately not shown against these numbers. Its summary read: ${esc(str(custLatestRun.summary) || 'no summary.')}</div>`
                            : `<span class="t-warm">No the activity log row names this customer</span>
                               <div class="cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the activity log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
-                   <dt>Name on profile</dt><dd>${esc(str(c.profile.name) || '—')}</dd>
+                   <dt>Name on profile</dt><dd>${esc(maskText(str(c.profile.name) || '—'))}</dd>
                    <dt>Phone on profile</dt><dd>${str(c.profile.phone)
-                     ? `<span class="mono">${esc(str(c.profile.phone))}</span>`
+                     ? `<span class="mono">${esc(maskText(str(c.profile.phone)))}</span>`
                      : '<span class="t-muted">None on this profile row</span>'}</dd>
                  </dl>
                  <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))}</div>`
@@ -1789,7 +1789,7 @@ SCREENS.customers = async host => {
               <div class="cell-sub">${x.purchase_date
                 ? `${esc(dubaiDate(x.purchase_date, str(x.purchase_date)))} · ${esc(ago(x.purchase_date))}`
                 : 'No purchase date recorded'}${x.deal_id ? ` · deal ${esc(String(x.deal_id))}` : ''}</div>
-              <div class="cell-sub">Recorded as ${esc(str(x.customer_name) || nameOf(c))} ·
+              <div class="cell-sub">Recorded as ${esc(maskText(str(x.customer_name) || nameOf(c)))} ·
                 ${rowPhone
                   ? `<span class="mono">${esc(rowPhone)}</span>`
                   : '<span class="t-muted">no phone on this purchase row</span>'}</div>
@@ -1804,7 +1804,7 @@ SCREENS.customers = async host => {
               <div class="tl-body">
                 <div class="tl-meta">${esc(ago(l.created_at))}${l.source ? ' · ' + esc(l.source) : ''}${n0(l.ai_score) == null ? '' : ' · score ' + num(l.ai_score)}
                   · ${str(l.phone)
-                       ? `<span class="mono">${esc(str(l.phone))}</span>`
+                       ? `<span class="mono">${esc(maskText(str(l.phone)))}</span>`
                        : '<span class="t-muted">no phone on this lead</span>'}
                   · ${n0(l.response_time_minutes) == null
                        /* Shown, not omitted. This column was a permanent 0 for
@@ -1897,7 +1897,7 @@ SCREENS.customers = async host => {
   const otherCols = [
     { label: 'Contact', strong: true, render: o => o.name
       ? `${esc(displayName(o.name))}<div class="cell-sub" style="white-space:normal">${esc(o.idBasis || 'Name as recorded by the source table')}</div>`
-      : `<span class="mono t-muted" style="word-break:break-all">${esc(o.chatId || o.email || o.key)}</span>
+      : `<span class="mono t-muted" style="word-break:break-all">${esc(maskText(o.chatId || o.email || o.key))}</span>
          <div class="cell-sub t-warm" style="white-space:normal">${esc(o.idBasis || 'No name on record — this is an identifier, not a person’s name')}</div>` },
     /* Headed for what the column can actually establish. "Why this is not a
        customer" asserted the conclusion in the heading, so a row whose reason is
@@ -1905,7 +1905,7 @@ SCREENS.customers = async host => {
        contradicted it. */
     { label: 'Why this row is not in the customer list', render: o => `<span class="cell-sub" style="white-space:normal">${esc(o.basis)}</span>` },
     { label: 'Phone', render: o => o.phone
-      ? `<span class="mono">${esc(o.phone)}</span>`
+      ? `<span class="mono">${esc(maskText(o.phone))}</span>`
       : '<span class="t-muted">Not stored on any row for this contact</span>' },
     { label: 'Where it appears', render: o => [...o.sources].map(s => `<span class="chip">${esc(s)}</span>`).join(' ') },
     /* Headed for the column it is rather than for the thing a reader would

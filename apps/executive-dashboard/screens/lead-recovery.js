@@ -68,6 +68,7 @@
 
 import { db } from '../lib/data.js';
 import { aed, dubaiDate, dubaiStamp, esc, mins, num, pct, pill } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
@@ -446,7 +447,7 @@ SCREENS.leadrecovery = async host => {
 
       const body = table([
         { label: 'Lead', strong: true, render: d =>
-            `<div>${esc(str(d.lead_name) || ('Lead ' + str(d.lead_id)))}</div>`
+            `<div>${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))}</div>`
             + muted(`#${esc(str(d.lead_id))} &middot; ${esc(str(d.lead_status) || 'no status')} &middot; `
               + (d.lead_is_open === true ? 'open' : d.lead_is_open === false ? 'closed' : 'open/closed not stated')) },
         { label: 'State', render: d =>
@@ -488,7 +489,7 @@ SCREENS.leadrecovery = async host => {
       const disclaimers = F.unattributedSales.map(d => `<div class="banner warm" style="margin-top:12px">
           <span class="material-symbols-outlined" style="font-size:20px">handshake</span>
           <div>
-            ${bold(`${esc(str(d.lead_name) || ('Lead ' + str(d.lead_id)))} converted — and NEXUS is not claiming it.`)}
+            ${bold(`${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))} converted — and NEXUS is not claiming it.`)}
             ${muted(esc(str(d.recovery_attribution_basis))
               || 'The engine records this state with no basis, which is itself a gap.')}
             ${muted(`Confirmed: ${aed(d.confirmed_revenue_aed)}`
@@ -634,7 +635,7 @@ SCREENS.leadrecovery = async host => {
         ? `<div class="section">${readFailed('The recovery queue', q.err)}</div>`
         : table([
             { label: 'Lead', strong: true, render: a =>
-                `<div>${esc(str(a.lead_name) || ('Lead ' + str(a.lead_id)))}</div>`
+                `<div>${esc(maskText(str(a.lead_name) || ('Lead ' + str(a.lead_id))))}</div>`
                 + muted(`#${esc(str(a.lead_id))} &middot; ${esc(str(a.lead_status) || 'no status')}`) },
             { label: 'Recommended', render: a => pill(str(a.recommendation) || 'NONE', '', { verbatim: true }) },
             { label: 'Status', render: a => pill(str(a.status) || 'UNKNOWN', '', { verbatim: true })

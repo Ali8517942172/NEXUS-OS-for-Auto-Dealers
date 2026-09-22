@@ -232,7 +232,7 @@ import { isInternalRow, isReply } from '../lib/comm-events.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { aed, ago, clock, dubaiStamp, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
-import { displayName } from '../lib/privacy.js';
+import { displayName, maskText } from '../lib/privacy.js';
 /* The only place in this app allowed to decide what a run outcome means. This
    screen reads the columns v_workflow_health already computed from the same
    rule and does not classify anything itself. */
@@ -2349,7 +2349,7 @@ SCREENS.overview = async host => {
             <div style="font-weight:500;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
               <span>${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')}</span>
               ${str(l.phone)
-                ? `<span class="mono cell-sub">${esc(str(l.phone))}</span>`
+                ? `<span class="mono cell-sub">${esc(maskText(str(l.phone)))}</span>`
                 : `<span class="cell-sub t-warm" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
             </div>
             <div class="cell-sub">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
@@ -2600,14 +2600,14 @@ SCREENS.overview = async host => {
           <span class="material-symbols-outlined t-warm" style="font-size:20px">folder_off</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span style="font-weight:500">${esc(str(d.lead_name) || str(d.full_name) || str(d.lead_email) || 'Unknown contact')}</span>
+              <span style="font-weight:500">${esc(maskText(str(d.lead_name) || str(d.full_name) || str(d.lead_email) || 'Unknown contact'))}</span>
               ${d.verdict ? pill(d.verdict, undefined, { verbatim: true }) : ''}
             </div>
             <div class="cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
               attempt != null ? ' · attempt ' + esc(num(attempt)) + (maxAttempt != null ? ' of ' + esc(num(maxAttempt)) : '') : ''}${
               d.retain_until ? ' · retain until ' + esc(d.retain_until) : ''}</div>
             <div class="cell-sub">${str(d.lead_email)
-              ? `<span class="mono">${esc(str(d.lead_email))}</span>`
+              ? `<span class="mono">${esc(maskText(str(d.lead_email)))}</span>`
               : '<span class="t-warm">No address on the submission</span>'}</div>
           </div>
           <button class="btn sm" disabled
@@ -2857,14 +2857,14 @@ SCREENS.overview = async host => {
           const c = chatRow(it);
           head = `${c.named ? esc(displayName(c.name)) : '<span class="t-warm">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
           sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
-            c.phone ? `<span class="mono">${esc(c.phone)}</span>` : '<span class="t-muted">No phone number stored for this thread</span>'
+            c.phone ? `<span class="mono">${esc(maskText(c.phone))}</span>` : '<span class="t-muted">No phone number stored for this thread</span>'
           } · <span class="mono" title="WhatsApp chat handle — a LID contains no phone digits and identifies nobody on its own">${esc(c.ref)}</span></div>`;
         } else if (lead) {
           head = esc(it.title);
           sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
-            str(lead.phone) ? `<span class="mono">${esc(str(lead.phone))}</span>`
+            str(lead.phone) ? `<span class="mono">${esc(maskText(str(lead.phone)))}</span>`
               : '<span class="t-warm">No phone number on this lead record</span>'
-          }${str(lead.email) ? ` · <span class="mono">${esc(str(lead.email))}</span>` : ''}</div>`;
+          }${str(lead.email) ? ` · <span class="mono">${esc(maskText(str(lead.email)))}</span>` : ''}</div>`;
         } else if (it.kind === 'workflow_failure') {
           head = esc(it.title);
           /* The second line is the whole point of the enrichment: "failed 6
@@ -3088,9 +3088,9 @@ SCREENS.overview = async host => {
       return table([
         { label:'When', render: r => `<div class="t-muted">${esc(ago(r.created_at))}</div><div class="cell-sub mono">${esc(clock(r.created_at))}</div>` },
         { label:'Status',  render: r => pill(str(r.status) || 'Unscored', undefined, { verbatim: !!str(r.status) }) },
-        { label:'Name',    strong: true, render: r => esc(str(r.name) || 'Unnamed lead') },
+        { label:'Name',    strong: true, render: r => esc(maskText(str(r.name) || 'Unnamed lead')) },
         { label:'Phone',   render: r => str(r.phone)
-            ? `<span class="mono">${esc(str(r.phone))}</span>`
+            ? `<span class="mono">${esc(maskText(str(r.phone)))}</span>`
             : `<span class="cell-sub t-warm">Not captured</span>` },
         { label:'Interest',render: r => `<span class="t-2">${str(r.vehicle_interest) ? esc(str(r.vehicle_interest)) : '<span class="cell-sub">Not recorded</span>'}</span>` },
         { label:'Score', align:'r', render: r => num(r.ai_score) },

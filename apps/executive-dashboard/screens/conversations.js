@@ -261,7 +261,7 @@ import { N8N_BASE } from '../lib/env.js';
    than "HOT" — that derivation falls through to the neutral grey. See the
    severity pill in renderAlerts(). */
 import { TZ, ago, dubaiDate, dubaiStamp, esc, initials, num, pct, pill, tone } from '../lib/format.js';
-import { displayName } from '../lib/privacy.js';
+import { displayName, maskText } from '../lib/privacy.js';
 /* The only module allowed to interpret audit_log.status or v_workflow_health.
    `status === 'FAILED'` is never written on a screen; see lib/health.js. */
 import { HEALTH_WORDS, healthWords, successRate } from '../lib/health.js';
@@ -874,7 +874,7 @@ const titleWhy = t => t.name
           : identNote(t)));
 /* Initials off a borrowed name would read as though the view had named the row,
    and an avatar cannot carry the attribution that name requires. */
-const avatarOf = t => t.name ? esc(initials(t.name)) : '?';
+const avatarOf = t => t.name ? esc(maskText(initials(t.name))) : '?';
 
 /* The phone, beside the name, everywhere a thread is listed. This is the whole
    point of the LID backfill: the number is the one identifier that is now true
@@ -885,10 +885,10 @@ const avatarOf = t => t.name ? esc(initials(t.name)) : '?';
 function phoneHtml(t, cls) {
   const c = cls == null ? 'cell-sub' : cls;
   const readable = addressPhone(t.phone);
-  if (readable) return `<span class="mono ${c}" title="Saved for this contact as ${esc(t.phone)}">${esc(readable)}</span>`;
+  if (readable) return `<span class="mono ${c}" title="Saved for this contact as ${esc(maskText(t.phone))}">${esc(readable)}</span>`;
   /* Something is stored but it does not read as a number. Show it exactly as
      stored — formatting it would turn a handle into a phone number nobody has. */
-  if (t.phone) return `<span class="mono ${c}" title="${esc('Stored in v_conversations.phone as-is. It reads as a ' + keyKind(t.phone) + ', not a dialable number, so it is shown exactly as stored and not formatted as one.')}">${esc(t.phone)}</span>`;
+  if (t.phone) return `<span class="mono ${c}" title="${esc(maskText('Stored in v_conversations.phone as-is. It reads as a ' + keyKind(t.phone) + ', not a dialable number, so it is shown exactly as stored and not formatted as one.'))}">${esc(maskText(t.phone))}</span>`;
   /* The view has no phone and the key carries one. Added 1 Sep 2026: this is the
      row that read "No number on file" for +918517942172@whatsapp.lead — a
      warning, in amber, about a number sitting in the string beside it. It is a
@@ -979,7 +979,7 @@ const leadBit = t => {
   if (m.state === 'ambiguous') return `<span class="t-warm" title="${esc(leadWhy(t))}">Two leads share these digits — not matched</span>`;
   if (m.state === 'none') return `<span class="t-muted" title="${esc(NOT_A_LEAD)}">Not in leads</span>`;
   const l = m.leads[0];
-  return `<span class="t-muted" title="${esc(leadWhy(t))}">In leads as ${esc(str(l.email) || 'lead ' + str(l.id))}`
+  return `<span class="t-muted" title="${esc(leadWhy(t))}">In leads as ${esc(maskText(str(l.email) || 'lead ' + str(l.id)))}`
     + `${m.via === 'suffix' ? `, matched on the last ${SUFFIX_LEN} digits` : ''}</span>`;
 };
 
@@ -1035,7 +1035,7 @@ function subLine(t) {
      thread's, which names the row that IS matched; then lib/identity.js's, which
      is the only one of the three that can see lead 35. Each says whose answer it
      is rather than being folded into a single "In leads". */
-  if (t.lead_email) bits.push(esc(t.lead_email));
+  if (t.lead_email) bits.push(esc(maskText(t.lead_email)));
   /* "Not in leads" is a claim about the leads table, and on a linked row it was
      a false one: Ali's whatsapp.lead thread has no lead_email of its own and IS
      in leads, under the sibling's address. Added 1 Sep 2026 — the sibling's
@@ -1044,7 +1044,7 @@ function subLine(t) {
      explains why there are two rows on this screen at all. */
   else if (t.siblings.some(s => s.lead_email)) {
     const s = t.siblings.find(x => x.lead_email);
-    bits.push(`<span class="t-muted" title="${esc('NEXUS resolved no email address for this thread, because it matches leads on an exact address and this thread is keyed on "' + t.key + '". The same person’s other thread is matched, to ' + s.lead_email + ', and the two share the last ' + SUFFIX_LEN + ' digits ' + t.suffix + '.')}">In leads as ${esc(s.lead_email)}, via the linked thread</span>`);
+    bits.push(`<span class="t-muted" title="${esc(maskText('NEXUS resolved no email address for this thread, because it matches leads on an exact address and this thread is keyed on "' + t.key + '". The same person’s other thread is matched, to ' + s.lead_email + ', and the two share the last ' + SUFFIX_LEN + ' digits ' + t.suffix + '.'))}">In leads as ${esc(maskText(s.lead_email))}, via the linked thread</span>`);
   } else bits.push(leadBit(t));
   if (t.siblings.length) {
     bits.push(`<span class="chip" title="${esc(sameAsWhy(t))}">Same person as ${esc(t.siblings.map(s => titleOf(s)).join(', '))}</span>`);
@@ -1452,7 +1452,7 @@ SCREENS.conversations = async host => {
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
               <span title="${esc(sevWhy)}">${pill(`${a.severity} severity`, sevTone, { verbatim: false })}</span>
-              <span style="font-weight:500${name ? '' : ';font-style:italic'}" class="${name ? '' : 't-muted'}">${esc(name || 'Unidentified contact')}</span>
+              <span style="font-weight:500${name ? '' : ';font-style:italic'}" class="${name ? '' : 't-muted'}">${esc(maskText(name || 'Unidentified contact'))}</span>
               ${phone}
               ${t ? leadStatusPill(t) : ''}
               ${handle ? `<span class="mono cell-sub" title="${esc(keyKind(handle))}">${esc(handle)}</span>` : ''}
@@ -2284,7 +2284,7 @@ SCREENS.conversations = async host => {
       out.push(`<div class="banner info">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">merge</span>
         <div>${esc(sameAsWhy(t))}
-        ${named && !t.name ? ` The name above (${esc(named.name)}) is that thread’s, not this one’s.` : ''}</div>
+        ${named && !t.name ? ` The name above (${esc(maskText(named.name))}) is that thread’s, not this one’s.` : ''}</div>
       </div>`);
     }
     if (t.identified === 'unidentified') {
@@ -2476,7 +2476,7 @@ SCREENS.conversations = async host => {
                  being the reason when the button started opening by lead id, so
                  the reason it gives is the real one and it still names the row
                  that does open. */
-              ? `<button class="btn sm" disabled title="${esc(leadWhy(t) + ' The same person IS in leads, as ' + t.siblings.find(s => s.lead_email).lead_email + ', on the linked thread keyed "' + t.siblings.find(s => s.lead_email).key + '" — open that row and the button may work there.')}">Open lead</button>`
+              ? `<button class="btn sm" disabled title="${esc(maskText(leadWhy(t) + ' The same person IS in leads, as ' + t.siblings.find(s => s.lead_email).lead_email + ', on the linked thread keyed "' + t.siblings.find(s => s.lead_email).key + '" — open that row and the button may work there.'))}">Open lead</button>`
               : `<button class="btn sm" disabled title="${esc((leadOf(t).state === 'none'
                     ? 'No lead record resolves for this thread. '
                     : 'No lead record can be offered for this thread. ') + leadWhy(t))}">Open lead</button>`)}
@@ -2904,23 +2904,23 @@ SCREENS.conversations = async host => {
                   ? '<span class="t-muted">We have this number but not a name for it</span>'
                   : '<span class="t-muted">Unidentified contact — we do not know whose number this is</span>'))}</dd>
         <dt>Phone</dt><dd>${addressPhone(t.phone)
-          ? `<span class="mono" title="Stored as ${esc(t.phone)}">${esc(addressPhone(t.phone))}</span>`
+          ? `<span class="mono" title="Stored as ${esc(maskText(t.phone))}">${esc(maskText(addressPhone(t.phone)))}</span>`
           : addressPhone(t.keyDigits)
             ? `<span class="mono">${esc(addressPhone(t.keyDigits))}</span> <span class="t-muted">— not stored in the number saved for this contact; these digits are read out of the thread key <span class="mono">${esc(t.key)}</span>, which a workflow minted from the number it was given</span>`
             : (t.phone
-                ? `<span class="mono">${esc(t.phone)}</span> <span class="t-muted">— stored as something that does not read as a dialable number, so it is shown exactly as stored</span>`
+                ? `<span class="mono">${esc(maskText(t.phone))}</span> <span class="t-muted">— stored as something that does not read as a dialable number, so it is shown exactly as stored</span>`
                 : `<span class="t-warm">Not stored for this contact</span> <span class="t-muted">${esc(NO_PHONE_WHY)}</span>`)}</dd>
         <dt>In leads</dt><dd>${t.lead_email
-          ? esc(t.lead_email)
+          ? esc(maskText(t.lead_email))
           : (t.siblings.find(s => s.lead_email)
-              ? `${esc(t.siblings.find(s => s.lead_email).lead_email)} <span class="t-muted">— not on this thread’s own row. NEXUS matched it to the linked thread <span class="mono">${esc(t.siblings.find(s => s.lead_email).key)}</span>, which is the same person by the last ${SUFFIX_LEN} digits. The bot may therefore answer this number automatically.</span>`
+              ? `${esc(maskText(t.siblings.find(s => s.lead_email).lead_email))} <span class="t-muted">— not on this thread’s own row. NEXUS matched it to the linked thread <span class="mono">${esc(maskText(t.siblings.find(s => s.lead_email).key))}</span>, which is the same person by the last ${SUFFIX_LEN} digits. The bot may therefore answer this number automatically.</span>`
               /* The last branch used to be an unconditional "No — the bot does
                  not answer this number automatically", printed from a null
                  column, on the dialog that sends a real WhatsApp message. On
                  lead 35 it was a false statement about a customer, made at the
                  moment an operator was deciding what to say to them. */
               : (leadOf(t).state === 'matched'
-                  ? `${esc(str(leadRow(t).email) || 'lead ' + str(leadRow(t).id))} <span class="t-muted">— not on this thread’s own row and not resolved by NEXUS. ${esc(leadWhy(t))}</span>`
+                  ? `${esc(maskText(str(leadRow(t).email) || 'lead ' + str(leadRow(t).id)))} <span class="t-muted">— not on this thread’s own row and not resolved by NEXUS. ${esc(leadWhy(t))}</span>`
                   : leadOf(t).state === 'none'
                     ? `<span class="t-muted" title="${esc(NOT_A_LEAD)}">No — the bot does not answer this number automatically, so this reply is the first one they get from a person.</span>`
                     : `<span class="t-warm">${esc(leadWhy(t))}</span>`))}</dd>

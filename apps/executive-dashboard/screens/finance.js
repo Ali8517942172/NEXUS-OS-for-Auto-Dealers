@@ -246,6 +246,7 @@ import { HOOK, ME, SESSION, db, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
 import { aed, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { maskText } from '../lib/privacy.js';
 import { OUTCOME, isQualifying, isRefusal, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
@@ -868,7 +869,7 @@ SCREENS.finance = async host => {
   function nameVariantChip(q) {
     const p = personFor(q);
     if (!p || p.names.size < 2) return '';
-    return ` <span class="chip t-warm" title="${esc(`${p.email} is recorded under ${p.names.size} different names across its ${p.quotes.length} quotes: ${namesList(p)}. The finance quotes stores the name typed at quote time; the email is the identity, and this is one person, not ${p.names.size}.`)}">1 of ${p.names.size} names</span>`;
+    return ` <span class="chip t-warm" title="${esc(maskText(`${p.email} is recorded under ${p.names.size} different names across its ${p.quotes.length} quotes: ${namesList(p)}. The finance quotes stores the name typed at quote time; the email is the identity, and this is one person, not ${p.names.size}.`))}">1 of ${p.names.size} names</span>`;
   }
 
   function phoneCell(q) {
@@ -885,7 +886,7 @@ SCREENS.finance = async host => {
     if (!str(lead.phone)) {
       return '<span class="t-muted" title="This lead has no phone number on file.">—</span>';
     }
-    return `<span class="mono">${esc(str(lead.phone))}</span>`;
+    return `<span class="mono">${esc(maskText(str(lead.phone)))}</span>`;
   }
 
   /* ── Three ways for a figure to be missing ───────────────────────────────
@@ -1169,7 +1170,7 @@ SCREENS.finance = async host => {
       { label: 'Customer', strong: true, render: r =>
         `${personName(r.lead_name, personName(leadFor(r)?.name, '<span class="t-muted">Unnamed</span>'))}${nameVariantChip(r)}
          <div class="cell-sub">${phoneCell(r)} · ${r.lead_email
-           ? esc(str(r.lead_email))
+           ? esc(maskText(str(r.lead_email)))
            : '<span class="t-hot" title="This quote has no email address on it, so it can never be matched back to a person.">no email recorded</span>'}</div>` },
       { label: 'Score', align: 'r', render: r => num(r.credit_score) },
       /* Both are what the rep TYPED, not what the calculator returned, and both
@@ -1921,8 +1922,8 @@ SCREENS.finance = async host => {
             : '')
           + 'Read the conversation before quoting them again: a second, different figure is how one lost row becomes a dispute.')}</div>
         <div class="cell-sub" style="margin-top:4px">${lostPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
-          personName(p.name, esc(p.email || 'Unnamed customer'))}${
-          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(p.email)}` : ''} <span class="t-muted">·</span> ${
+          personName(p.name, esc(maskText(p.email || 'Unnamed customer')))}${
+          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(maskText(p.email))}` : ''} <span class="t-muted">·</span> ${
           esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
           lostPeople.length > PREVIEW ? ` <span class="t-muted">+${num(lostPeople.length - PREVIEW)} more</span>` : ''}</div>
         <div class="cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
@@ -1957,8 +1958,8 @@ SCREENS.finance = async host => {
               + `add the two counts for a total of quotes, never for a count of customers.`
             : ''))}</div>
         <div class="cell-sub" style="margin-top:4px">${orphanPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
-          personName(p.name, esc(p.email || 'Unnamed customer'))}${
-          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(p.email)}` : ''} <span class="t-muted">·</span> ${
+          personName(p.name, esc(maskText(p.email || 'Unnamed customer')))}${
+          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(maskText(p.email))}` : ''} <span class="t-muted">·</span> ${
           esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${
           esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
           orphanPeople.length > PREVIEW ? ` <span class="t-muted">+${num(orphanPeople.length - PREVIEW)} more</span>` : ''}</div>
@@ -2475,7 +2476,7 @@ SCREENS.finance = async host => {
           <dl class="kv">
             <dt>Customer</dt><dd>${personName(q.lead_name, '—')}</dd>
             <dt>Phone</dt><dd>${phoneCell(q)}</dd>
-            <dt>Email</dt><dd>${q.lead_email ? esc(str(q.lead_email)) : '<span class="t-hot">— no email, so this quote matches no person</span>'}</dd>
+            <dt>Email</dt><dd>${q.lead_email ? esc(maskText(str(q.lead_email))) : '<span class="t-hot">— no email, so this quote matches no person</span>'}</dd>
             <dt>Lead record</dt><dd>${leads
               ? (lead
                 ? `${personName(lead.name, '<span class="t-muted">Unnamed lead</span>')}${lead.status ? ' · ' + esc(str(lead.status)) : ''}`
@@ -2809,7 +2810,7 @@ SCREENS.finance = async host => {
             + 'produced again by this dealership — not for the customer, not for the bank, and not for a regulator — so it is not a figure this desk may read out. '
             + 'That is not a display fault; it is the one rule this screen exists to enforce.')}</div>
       <dl class="kv" style="margin-top:16px">
-        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(str(sent.lead_email))}</div></dd>
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(maskText(str(sent.lead_email)))}</div></dd>
         <dt>Trade-in value entered</dt><dd class="num">${sent.vehicleValue ? aed(sent.vehicleValue) : '<span class="t-muted">no trade-in</span>'}</dd>
         <dt>Payoff entered</dt><dd class="num">${sent.loanPayoffAmount === '' || sent.loanPayoffAmount == null ? '<span class="t-muted">none</span>' : aed(sent.loanPayoffAmount)}</dd>
         <dt>Credit score entered</dt><dd class="num">${num(sent.creditScore)}</dd>
@@ -2854,7 +2855,7 @@ SCREENS.finance = async host => {
         <dt>Credit band</dt><dd>${band ? esc(band) : '—'}</dd>
         <dt>Credit score</dt><dd class="num">${num(res.credit_score ?? sent.creditScore)}</dd>
         ${equity == null ? '' : `<dt>Equity on the trade-in</dt><dd class="num ${eqClass(res.equity_status)}">${aed(equity)}</dd>`}
-        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(sent.lead_email)}</div></dd>
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(maskText(sent.lead_email))}</div></dd>
       </dl>
       ${res.disclaimer ? `<div class="quote" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
       <div id="fRefRecord"></div>`;
@@ -3034,7 +3035,7 @@ SCREENS.finance = async host => {
           ${b.state === 'priced' ? esc(' Say it as a span, with the rate, the tenure and the deposit attached, or do not say it.') : ''}</div>
       </div>
       <dl class="kv" style="margin-top:16px">
-        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(sent.lead_email)}</div></dd>
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="cell-sub">${esc(maskText(sent.lead_email))}</div></dd>
         <dt>On a value of</dt><dd class="num">${noTradeIn ? '<span class="t-muted">no trade-in</span>' : aed(sent.vehicleValue)}</dd>
         <dt>Payoff</dt><dd class="num">${noTradeIn ? '<span class="t-muted">none</span>' : aed(sent.loanPayoffAmount)}</dd>
         <dt>Credit score</dt><dd class="num">${num(sent.creditScore)}</dd>
@@ -3133,13 +3134,13 @@ SCREENS.finance = async host => {
     }
     sel.disabled = false;
     sel.innerHTML = '<option value="">— pick a lead, or type the customer in by hand —</option>'
-      + usable.map(l => `<option value="${esc(l.email)}"
-           data-name="${esc(l.name || '')}"
-           data-phone="${esc(l.phone || '')}"
+      + usable.map(l => `<option value="${esc(maskText(l.email))}"
+           data-name="${esc(maskText(l.name || ''))}"
+           data-phone="${esc(maskText(l.phone || ''))}"
            data-veh="${esc(l.vehicle_interest || '')}"
            data-budget="${esc(l.budget_aed == null ? '' : l.budget_aed)}"
            data-status="${esc(l.status || '')}"
-         >${esc(l.name || l.email)}${l.phone ? ' — ' + esc(l.phone) : ''}${l.vehicle_interest ? ' — ' + esc(l.vehicle_interest) : ''}</option>`).join('');
+         >${esc(maskText(l.name || l.email))}${l.phone ? ' — ' + esc(maskText(l.phone)) : ''}${l.vehicle_interest ? ' — ' + esc(l.vehicle_interest) : ''}</option>`).join('');
     sel.onchange = e => {
       const o = e.target.selectedOptions[0];
       const ctx = $('fLeadCtx');
@@ -3153,7 +3154,7 @@ SCREENS.finance = async host => {
       ctx.innerHTML = `<div class="quote">
           ${o.dataset.status ? pill(o.dataset.status, undefined, { verbatim: true }) + ' ' : ''}
           ${o.dataset.phone
-            ? `<span class="mono">${esc(o.dataset.phone)}</span>. `
+            ? `<span class="mono">${esc(maskText(o.dataset.phone))}</span>. `
             : '<span class="t-muted">No phone number on this lead.</span> '}
           ${o.dataset.veh ? `Interested in ${esc(o.dataset.veh)}. ` : ''}
           ${o.dataset.budget ? `Budget on file ${aed(o.dataset.budget)}` : 'No budget captured by the router'}

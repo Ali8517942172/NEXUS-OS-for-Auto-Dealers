@@ -114,7 +114,10 @@ const EXEMPT_LINES = new Map([
   // Moved 5112 -> 5159 on 22 Sep 2026: the gate gained S12 (Privacy mode,
   // hidden test records, no unwired button) -- 47 lines added above this
   // statement. Same `fixtureResidue` template, re-read, unchanged.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5159])],
+  // Moved 5159 -> 5284 on 22 Sep 2026: the gate gained S13 (no customer name,
+  // phone or email printed past the privacy helper) -- 125 lines added above
+  // this statement. Same `fixtureResidue` template, re-read, unchanged.
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5284])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.
