@@ -231,8 +231,15 @@ import { COUNTS as BADGE_SEVERITIES, LAST as BADGE_SNAPSHOT } from '../lib/badge
 import { isInternalRow, isReply } from '../lib/comm-events.js';
 import { db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, clock, dubaiStamp, esc, mins, n0, num, pct, pill, tone } from '../lib/format.js';
+import { UNKNOWN_WHY, aed, ago, clock, dubaiStamp, esc, mins, n0, num, pct, tone } from '../lib/format.js';
 import { displayName, maskText } from '../lib/privacy.js';
+/* The design-system component layer. Converted onto it 27 Sep 2026, on the
+   same footing as screens/setup.js and screens/money-leaks.js: this screen no
+   longer calls lib/ui.js's kpi()/table() or lib/format.js's pill(), and its
+   text renders no `.kpi`, `.pill` or `.table.data` markup — see the note by
+   `const root` below for why the wrapper this buys its restyling from is a div
+   the screen appends, never `#screen` itself. */
+import { dsChip, dsEmpty, dsIntent, dsStat, dsStatRow, dsTable } from '../lib/design-system.js';
 /* The only place in this app allowed to decide what a run outcome means. This
    screen reads the columns v_workflow_health already computed from the same
    rule and does not classify anything itself. */
@@ -254,8 +261,8 @@ import { SCREENS, go } from '../lib/nav.js';
    because these are the ones this screen can attribute row by row and disclose a
    truncation on. */
 import { CAP_NOTE, LEAD_LIMIT, isOpenLead, openPipeline } from '../lib/pipeline.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, panel, table, wireRows } from '../lib/ui.js';
+import { stateError, stateLoading } from '../lib/states.js';
+import { panel } from '../lib/ui.js';
 
 /* The reply-gap analysis is windowed so it is provably complete rather than
    merely likely: a reply to a lead can only be logged at or after that lead was
@@ -350,8 +357,19 @@ const SLA_WINDOW_DAYS = 30;
 const THIN = 5;
 
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
-const warn = msg => `<span class="t-warm">${esc(msg)}</span>`;
-const muted = msg => `<span class="t-muted">${esc(msg)}</span>`;
+const warn = msg => `<span class="ds-t-warning">${esc(msg)}</span>`;
+const muted = msg => `<span class="ds-t-tertiary">${esc(msg)}</span>`;
+/* A chip for a raw database value whose colour is DERIVED rather than given —
+   the design-system equivalent of calling lib/format.js's pill() with no
+   explicit tone. `verbatim` is the caller's claim, never a guess: true says
+   this exact word came off the row, so a tone this table has no word for
+   explains why in the chip's own tooltip (dsChip's `title`) rather than
+   silently pretending the app recognises it — the same UNKNOWN_WHY sentence
+   pill() attaches under the same condition (see lib/format.js). */
+const rawChip = (label, verbatim) => {
+  const i = dsIntent(tone(label));
+  return dsChip(label, i, { verbatim: !!verbatim, title: i === 'unknown' && verbatim ? UNKNOWN_WHY : '' });
+};
 
 /* Why the reply-gap check was withheld, in the operator's words. Said the same
    way in the KPI subtitle and in the panel below it, so the two cannot describe
@@ -518,7 +536,7 @@ const failureState = w => {
   const hasIncomplete = !Number.isNaN(incompleteAt);
   if (health === 'PRODUCING_NOTHING') {
     return { key: 'failing',
-      text: `<span class="t-hot">most of what it runs produces nothing usable, so a newer run is not evidence of recovery${
+      text: `<span class="ds-t-danger">most of what it runs produces nothing usable, so a newer run is not evidence of recovery${
         Number.isNaN(successAt) ? ' — nothing it has run in the window succeeded outright' : `; its last outright success was ${esc(ago(w.last_success))}`}</span>` };
   }
   /* Which kind of not-clean the newest one was. last_incomplete is the newer of
@@ -528,25 +546,25 @@ const failureState = w => {
   if (Number.isNaN(successAt)) {
     if (hasIncomplete) {
       return { key: 'failing',
-        text: `<span class="t-hot">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
+        text: `<span class="ds-t-danger">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
     }
     if (Number.isNaN(ranAt)) {
       return { key: 'unknown',
-        text: '<span class="t-muted">the view records no time for any run, so whether anything has succeeded cannot be told from here</span>' };
+        text: '<span class="ds-t-tertiary">the view records no time for any run, so whether anything has succeeded cannot be told from here</span>' };
     }
     return { key: 'failing',
-      text: `<span class="t-hot">nothing it has run in the window succeeded outright; its newest run was ${esc(ago(w.last_run))} and it was not one</span>` };
+      text: `<span class="ds-t-danger">nothing it has run in the window succeeded outright; its newest run was ${esc(ago(w.last_run))} and it was not one</span>` };
   }
   if (hasIncomplete && successAt <= incompleteAt) {
     return { key: 'failing',
-      text: `<span class="t-hot">its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}, and nothing has succeeded outright since</span>` };
+      text: `<span class="ds-t-danger">its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}, and nothing has succeeded outright since</span>` };
   }
   if (!Number.isNaN(ranAt) && ranAt > successAt) {
     return { key: 'stale',
-      text: `<span class="t-warm">its newest run is not a success — something ran ${esc(ago(w.last_run))} that did not succeed, and its last outright success was ${esc(ago(w.last_success))}</span>` };
+      text: `<span class="ds-t-warning">its newest run is not a success — something ran ${esc(ago(w.last_run))} that did not succeed, and its last outright success was ${esc(ago(w.last_success))}</span>` };
   }
   return { key: 'recovered',
-    text: `<span class="t-ok">its newest run is a success, ${esc(ago(w.last_success))}</span>` };
+    text: `<span class="ds-t-success">its newest run is a success, ${esc(ago(w.last_success))}</span>` };
 };
 /* Said wherever a row above claims to have recovered. The audit log holds one
    row per run that COMPLETED, so "it has succeeded since" is evidence about the
@@ -636,26 +654,37 @@ const collapseSnapshots = rows => {
    to be spelled out here and again, word for word, in screens/team.js. The
    paragraph that explained it now lives with the rule. */
 SCREENS.overview = async host => {
+  /* ── The design system is scoped to a container THIS SCREEN OWNS ──────────
+     `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads and Inventory and restyle two screens nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree.
+     Same pattern as screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* First on the page, above the activity strip, because the order of a screen
      is an argument about what matters. Leads, messages and pipeline are what
      happened; this is what is costing money and who has to answer for it. */
-  const leakHost = el('div'); host.appendChild(leakHost);
+  const leakHost = el('div'); root.appendChild(leakHost);
   /* Directly under the leak panel, because it answers the question that panel
      raises and cannot close: what about the customers and the sales? */
-  const recoveryHost = el('div'); recoveryHost.style.marginTop = '16px'; host.appendChild(recoveryHost);
+  const recoveryHost = el('div'); recoveryHost.style.marginTop = '16px'; root.appendChild(recoveryHost);
 
-  const strip = el('div', 'grid g5'); strip.style.marginTop = '16px';
-  strip.innerHTML = stateLoading(2); host.appendChild(strip);
+  const strip = el('div'); strip.style.marginTop = '16px';
+  strip.innerHTML = stateLoading(2); root.appendChild(strip);
 
-  const triage = el('div', 'grid g3 top'); triage.style.marginTop = '16px'; host.appendChild(triage);
+  const triage = el('div', 'grid g3 top'); triage.style.marginTop = '16px'; root.appendChild(triage);
   const replyHost = el('div'); const flowHost = el('div'); const kycHost = el('div');
   triage.appendChild(replyHost); triage.appendChild(flowHost); triage.appendChild(kycHost);
 
-  const mid = el('div', 'grid g2 top'); mid.style.marginTop = '16px'; host.appendChild(mid);
+  const mid = el('div', 'grid g2 top'); mid.style.marginTop = '16px'; root.appendChild(mid);
   const attnHost = el('div'); const feedHost = el('div');
   mid.appendChild(attnHost); mid.appendChild(feedHost);
 
-  const pipeCard = el('div', 'card'); pipeCard.style.marginTop = '16px'; host.appendChild(pipeCard);
+  const pipeCard = el('div', 'card'); pipeCard.style.marginTop = '16px'; root.appendChild(pipeCard);
   pipeCard.innerHTML = stateLoading(2);
 
   /* ── Reads more than one panel depends on ───────────────────────────────
@@ -1358,11 +1387,11 @@ SCREENS.overview = async host => {
          has changed since yesterday. daily_metrics is the one table on this
          screen whose columns were never probed, so this is a real possibility
          and not a defensive flourish. */
-      if (before == null) return `<span class="t-muted">${when.charAt(0).toUpperCase() + when.slice(1)} records no comparable figure, so no change is shown</span>`;
+      if (before == null) return `<span class="ds-t-tertiary">${when.charAt(0).toUpperCase() + when.slice(1)} records no comparable figure, so no change is shown</span>`;
       const d = Number(now) - Number(before);
-      if (!d) return `<span class="t-muted">No change against ${when}</span>`;
+      if (!d) return `<span class="ds-t-tertiary">No change against ${when}</span>`;
       const good = lowerIsBetter ? d < 0 : d > 0;
-      return `<span class="${good ? 't-ok' : 't-hot'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}</span> <span class="t-muted">against ${when}</span>`;
+      return `<span class="${good ? 'ds-t-success' : 'ds-t-danger'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}</span> <span class="ds-t-tertiary">against ${when}</span>`;
     };
 
     /* A snapshot that counted more open leads than the table now holds in total
@@ -1380,7 +1409,7 @@ SCREENS.overview = async host => {
     const snapshotWhen = prev && prev.snapshot_date ? `The ${prev.snapshot_date} snapshot` : 'The previous snapshot';
 
     /* ── Open leads ─────────────────────────────────────────────────────── */
-    const leadsSub = `${pill(`${hot} HOT`, 'hot', { verbatim: false })} ${pill(`${warm} WARM`, 'warm', { verbatim: false })} ${pill(`${cold} COLD`, 'cold', { verbatim: false })}`
+    const leadsSub = `${dsChip(`${hot} HOT`, dsIntent('hot'))} ${dsChip(`${warm} WARM`, dsIntent('warm'))} ${dsChip(`${cold} COLD`, dsIntent('cold'))}`
       /* What the headline leaves out, named. The tile counts leads still being
          worked; the table also holds the finished ones, and an owner comparing
          this number against a row count elsewhere has to be able to see the
@@ -1424,11 +1453,11 @@ SCREENS.overview = async host => {
     const waitSub = !bridgeOk
       ? warn(`This check did not run. ${bridgeWhy(contactsErr, contactsCapped)} No lead is being claimed as answered or unanswered.`)
       : waiting.length
-      ? `<span class="t-hot">Oldest arrived ${esc(ago(waiting[0].created_at))}, still unanswered</span>`
+      ? `<span class="ds-t-danger">Oldest arrived ${esc(ago(waiting[0].created_at))}, still unanswered</span>`
         + `<br>${muted(`Out of ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked`)}`
         + untestedNote
       : testedCount
-        ? `<span class="t-ok">All ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(testedCount, 'has', 'have')} an outbound message sent after ${plural(testedCount, 'it arrived', 'they arrived')}</span>`
+        ? `<span class="ds-t-success">All ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(testedCount, 'has', 'have')} an outbound message sent after ${plural(testedCount, 'it arrived', 'they arrived')}</span>`
           + (testedCount <= THIN ? `<br>${warn(`On ${num(testedCount)} ${plural(testedCount, 'lead', 'leads')} this says almost nothing about the reply habit.`)}` : '')
           + untestedNote
         : recentCount
@@ -1478,8 +1507,8 @@ SCREENS.overview = async host => {
             ? 'The only lead on file has no response time recorded, so there is no average to report'
             : `None of the ${num(leads.length)} leads on file has a response time recorded, so there is no average to report`)
       : (avgResp > 5
-          ? `<span class="t-hot">Breaches the 5-minute rule</span><br>${respBasis}`
-          : `<span class="t-ok">Inside the 5-minute rule</span><br>${respBasis}`)
+          ? `<span class="ds-t-danger">Breaches the 5-minute rule</span><br>${respBasis}`
+          : `<span class="ds-t-success">Inside the 5-minute rule</span><br>${respBasis}`)
         + (oneMeasure
             ? `<br>${warn('This is one lead’s recorded response time, not an average of anything. It says how fast that enquiry was answered and nothing about how the dealership performs.')}`
             : withResp.length <= THIN
@@ -1594,7 +1623,7 @@ SCREENS.overview = async host => {
            this tile is not allowed to do. */
         ? warn(`The Profit Sentinel could not be read (${sentinelErr.message}), so nothing is claimed about stock, margin or ageing. No figure is shown rather than a zero — this is a question that went unanswered, not a lot with nothing wrong with it.`)
       : needsDecision.length
-        ? `<span class="${worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 't-hot' : 't-warm'}">${esc(riskWords)}</span>`
+        ? `<span class="${worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 'ds-t-danger' : 'ds-t-warning'}">${esc(riskWords)}</span>`
           + `<br>${muted(exposureLine(exposed, plural(needsDecision.length, 'that unit', 'those units')))}`
         : sentinel.length
           ? muted(`The engine recommends HOLD on every one of the ${num(sentinel.length)} ${plural(sentinel.length, 'unit', 'units')} it scored, so it is not asking for a decision on any of them`)
@@ -1622,19 +1651,21 @@ SCREENS.overview = async host => {
          the engine. */
       + `<br>${muted('Inventory records no sale date, so this screen cannot show what sold, what it sold for, or how long a sold unit sat on the lot. Days in stock is the only ageing figure the database keeps.')}`;
 
-    strip.innerHTML = [
-      kpi('Open leads', num(openCount), leadsSub),
+    strip.innerHTML = dsStatRow([
+      dsStat({ label: 'Open leads', value: num(openCount), meta: leadsSub }),
       /* The one number on this screen that maps to a person waiting. */
-      kpi('Awaiting first reply', num(waiting.length), waitSub, waiting.length ? 't-hot' : ''),
-      kpi(respLabel, mins(avgResp), respSub),
-      kpi('Pipeline value', aed(pipeline), pipeSub),
+      dsStat({ label: 'Awaiting first reply', value: num(waiting.length), meta: waitSub,
+               intent: waiting.length ? 'danger' : '' }),
+      dsStat({ label: respLabel, value: mins(avgResp), meta: respSub }),
+      dsStat({ label: 'Pipeline value', value: aed(pipeline), meta: pipeSub }),
       /* `num(null)` is an em dash, and that is the whole point on the error
          branch: the value slot says "not known", the subtitle says why, and
          neither of them says nought. */
-      kpi('Units needing a decision', sentinelErr ? num(null) : num(needsDecision.length), decisionSub,
-          sentinelErr || !needsDecision.length ? ''
-            : (worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 't-hot' : 't-warm')),
-    ].join('');
+      dsStat({ label: 'Units needing a decision', value: sentinelErr ? num(null) : num(needsDecision.length),
+               meta: decisionSub,
+               intent: sentinelErr || !needsDecision.length ? ''
+                 : (worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 'danger' : 'warning') }),
+    ].join(''));
 
     const seg = [['HOT', hot, 'var(--hot)'], ['WARM', warm, 'var(--warm)'], ['COLD', cold, 'var(--cold)']];
     const graded = hot + warm + cold;
@@ -1660,7 +1691,7 @@ SCREENS.overview = async host => {
         : '',
     ].filter(Boolean);
     const stageRestHtml = stageRest.length
-      ? `<div class="cell-sub" style="margin-top:6px">${stageRest.map(muted).join('<br>')}</div>`
+      ? `<div class="ds-cell-sub" style="margin-top:6px">${stageRest.map(muted).join('<br>')}</div>`
       : '';
     /* One scored lead paints a full-width bar in one colour, and a full-width
        bar is read as a share before any caption under it is. A caption cannot
@@ -1672,10 +1703,10 @@ SCREENS.overview = async host => {
     pipeCard.innerHTML = single
       ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          ${onlyStage ? pill(onlyStage, undefined, { verbatim: false }) : ''}
+          ${onlyStage ? dsChip(onlyStage, dsIntent(tone(onlyStage))) : ''}
           <span>Exactly one lead has been scored${onlyStage ? `, and it is ${esc(onlyStage)}` : ''}.</span>
         </div>
-        <div class="cell-sub" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
+        <div class="ds-cell-sub" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
         ${stageRestHtml}`
       : graded
       ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
@@ -1683,22 +1714,21 @@ SCREENS.overview = async host => {
         <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
           ${seg.map(([k, v, c]) => `<div style="display:flex;align-items:center;gap:8px">
             <span style="width:8px;height:8px;border-radius:50%;background:${c}"></span>
-            <span style="font-weight:500">${esc(k)}</span><span class="t-muted num">${num(v)} ${plural(v, 'lead', 'leads')}</span></div>`).join('')}
+            <span style="font-weight:500">${esc(k)}</span><span class="ds-t-tertiary num">${num(v)} ${plural(v, 'lead', 'leads')}</span></div>`).join('')}
         </div>
         ${stageRestHtml}
         ${graded <= THIN
           /* A full-width bar drawn from one row looks like a market share. It
              is one row, and the caption says so directly under it. */
-          ? `<div class="cell-sub" style="margin-top:10px">${warn(`This bar is ${num(graded)} scored ${plural(graded, 'lead', 'leads')} in total. The proportions are shapes, not shares.`)}</div>`
+          ? `<div class="ds-cell-sub" style="margin-top:10px">${warn(`This bar is ${num(graded)} scored ${plural(graded, 'lead', 'leads')} in total. The proportions are shapes, not shares.`)}</div>`
           : ''}`
-      : stateEmpty('Nothing to chart yet',
+      : dsEmpty({ title: 'Nothing to chart yet', name: 'gauge', body:
           leads.length
             ? `${leads.length === 1 ? 'The one lead on file is not' : `None of the ${leads.length} leads on file is`} HOT, WARM or COLD. The router writes that grade when it processes an enquiry, and the stage mix appears here once it has.`
               + (otherStatus.length
                   ? ` That is not the same as unprocessed: ${stageRest[0]}`
                   : '')
-            : 'Your leads is empty, so there are no stages to chart. The first row arrives when the router webhook receives an enquiry.',
-          'donut_small');
+            : 'Your leads is empty, so there are no stages to chart. The first row arrives when the router webhook receives an enquiry.' });
   }
 
   /* ── Opening the row an item is about ───────────────────────────────────
@@ -1716,15 +1746,15 @@ SCREENS.overview = async host => {
   const openLead = async (id, msg) => {
     const say = html => { if (msg) msg.innerHTML = html; };
     try {
-      say('<span class="t-muted">Opening…</span>');
+      say('<span class="ds-t-tertiary">Opening…</span>');
       const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(id)}&limit=1`);
       /* Awaited, not fired: the drawer does its own reads, and an unawaited
          rejection would land in the console instead of in the row that was
          clicked. */
       if (rows.length) { say(''); await leadDrawer(rows[0]); }
-      else say(`<span class="t-warm">${esc('That lead is no longer in your leads, so there is nothing to open.')}</span>`);
+      else say(`<span class="ds-t-warning">${esc('That lead is no longer in your leads, so there is nothing to open.')}</span>`);
     } catch (e) {
-      say(`<span class="t-hot">${esc(`Could not open this lead — ${e.message}`)}</span>`);
+      say(`<span class="ds-t-danger">${esc(`Could not open this lead — ${e.message}`)}</span>`);
     }
   };
   /* Keyboard-operable for the same reason the attention rows are: this is the
@@ -1826,20 +1856,28 @@ SCREENS.overview = async host => {
       const clear = [];
       const notes = [];
 
-      const row = ({ icon, iconTone, head, badge, lines, right, rightNote, target }) => `
+      const row = ({ icon, iconTone, head, badge, lines, right, rightNote, target }) => {
+        /* iconTone here is always one of the 'hot'/'warm' tone words a caller
+           below states directly — dsIntent() is the same tone→intent map
+           dsChip already applies to `badge`, so the glyph and the figure next
+           to it agree with the chip beside them rather than carrying their own
+           colour vocabulary. */
+        const iconIntent = dsIntent(iconTone);
+        return `
         <div class="list-item" role="button" tabindex="0" data-goto="${esc(target)}"
              title="Open ${esc(target)}" style="align-items:flex-start">
-          <span class="material-symbols-outlined t-${esc(iconTone)}" style="font-size:20px">${esc(icon)}</span>
+          <span class="material-symbols-outlined ds-t-${iconIntent}" style="font-size:20px">${esc(icon)}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${badge || ''}</div>
-            ${lines.filter(Boolean).map(l => `<div class="cell-sub">${l}</div>`).join('')}
+            ${lines.filter(Boolean).map(l => `<div class="ds-cell-sub">${l}</div>`).join('')}
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="num t-${esc(iconTone)}" style="font-weight:600;font-size:18px">${right}</div>
-            ${rightNote ? `<div class="cell-sub">${esc(rightNote)}</div>` : ''}
+            <div class="num ds-t-${iconIntent}" style="font-weight:600;font-size:18px">${right}</div>
+            ${rightNote ? `<div class="ds-cell-sub">${esc(rightNote)}</div>` : ''}
           </div>
-          <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
+          <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">chevron_right</span>
         </div>`;
+      };
 
       /* ── Inventory ─────────────────────────────────────────────────────
          Straight off rpc/sentinel_inventory_actions(), partitioned in the core
@@ -1856,7 +1894,7 @@ SCREENS.overview = async host => {
         rows.push(row({
           icon: 'directions_car', iconTone: worst,
           head: `${num(core.needsDecision.length)} of ${num(core.sentinel.length)} ${plural(core.sentinel.length, 'unit', 'units')} ${plural(core.needsDecision.length, 'needs', 'need')} a pricing or stock decision`,
-          badge: core.riskSplit.map(([k, n]) => pill(`${n} ${k}`, tone(k), { verbatim: false })).join(' '),
+          badge: core.riskSplit.map(([k, n]) => dsChip(`${n} ${k}`, dsIntent(tone(k)))).join(' '),
           lines: [
             esc(exposureLine(core.exposed, plural(core.needsDecision.length, 'that unit', 'those units'))),
             muted(EXPOSURE_CAVEAT),
@@ -1922,7 +1960,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'pending_actions', iconTone: 'warm',
             head: `${num(awaiting.length)} ${plural(awaiting.length, 'action is', 'actions are')} waiting on a decision`,
-            badge: pill('Nobody has answered', 'warm', { verbatim: false }),
+            badge: dsChip('Nobody has answered', dsIntent('warm')),
             lines: [
               esc(exposureLine(t, plural(awaiting.length, 'that action', 'those actions'))
                 + `. ${plural(awaiting.length, 'That figure is', 'Those figures are')} frozen at what the engine said when ${plural(awaiting.length, 'it was', 'each was')} raised, not recomputed tonight.`),
@@ -1947,7 +1985,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'task_alt', iconTone: 'hot',
             head: `${num(approvedOpen.length)} approved ${plural(approvedOpen.length, 'action has', 'actions have')} not been carried out`,
-            badge: pill('Decided, not done', 'hot', { verbatim: false }),
+            badge: dsChip('Decided, not done', dsIntent('hot')),
             lines: [
               esc(exposureLine(t, plural(approvedOpen.length, 'that unit', 'those units'))),
               str(oldest.outcome_sentence) ? muted(str(oldest.outcome_sentence)) : '',
@@ -1968,7 +2006,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'escalator_warning', iconTone: 'hot',
             head: `${num(escalated.length)} ${plural(escalated.length, 'action was', 'actions were')} escalated because nobody here may approve ${plural(escalated.length, 'it', 'them')}`,
-            badge: pill('No approver', 'hot', { verbatim: false }),
+            badge: dsChip('No approver', dsIntent('hot')),
             lines: [
               muted(str(escalated[0].escalation_reason) || 'The database recorded no reason on this escalation.'),
               muted('An escalation is a request for a person, not a decision: these stay PROPOSED and nothing about the unit has changed.'),
@@ -1985,7 +2023,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'event_repeat', iconTone: 'warm',
             head: `${num(dueAgain.length)} deferred ${plural(dueAgain.length, 'action is', 'actions are')} due again`,
-            badge: pill('Deferral expired', 'warm', { verbatim: false }),
+            badge: dsChip('Deferral expired', dsIntent('warm')),
             lines: [muted('Somebody chose to wait and the date they chose has passed. The decision is open again.')],
             right: num(dueAgain.length),
             rightNote: 'due again',
@@ -2009,7 +2047,7 @@ SCREENS.overview = async host => {
             rows.push(row({
               icon: 'help', iconTone: 'warm',
               head: `${num(unraised.length)} ${plural(unraised.length, 'unit the engine is asking about has', 'units the engine is asking about have')} never been put to a person`,
-              badge: pill('No record', 'warm', { verbatim: false }),
+              badge: dsChip('No record', dsIntent('warm')),
               lines: [
                 esc(exposureLine(t, plural(unraised.length, 'that unit', 'those units'))),
                 muted(`There is no action record for ${plural(unraised.length, 'it', 'them')}, so ${plural(unraised.length, 'it appears', 'they appear')} on no queue and nobody is late answering. Raising one freezes what the engine says today onto a record somebody then answers.`),
@@ -2084,7 +2122,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'person_alert', iconTone: 'warm',
             head: `${num(core.openUnassignedCount)} open ${plural(core.openUnassignedCount, 'enquiry has', 'enquiries have')} no rep on the record`,
-            badge: pill('Unowned', 'warm', { verbatim: false }),
+            badge: dsChip('Unowned', dsIntent('warm')),
             lines: [
               muted(`Of ${num(core.openCount)} open ${plural(core.openCount, 'enquiry', 'enquiries')} in the table. An enquiry with no owner is nobody's to follow up, whatever its grade — this is not the view's HOT-only unassigned check and the two counts are not the same number.`),
               core.terminalCount
@@ -2108,7 +2146,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'mark_email_unread', iconTone: 'hot',
             head: `${num(core.waiting.length)} open ${plural(core.waiting.length, 'enquiry has', 'enquiries have')} had no reply since ${plural(core.waiting.length, 'it', 'they')} arrived`,
-            badge: pill('No reply sent', 'hot', { verbatim: false }),
+            badge: dsChip('No reply sent', dsIntent('hot')),
             lines: [
               muted(`Out of ${num(core.testedCount)} open ${plural(core.testedCount, 'enquiry', 'enquiries')} from the last ${WINDOW_DAYS} days that could be checked against the message history. The oldest arrived ${ago(core.waiting[0].created_at)}.`),
               core.untestable ? warn(`${num(core.untestable)} could not be checked at all and ${plural(core.untestable, 'is', 'are')} in neither figure.`) : '',
@@ -2131,7 +2169,7 @@ SCREENS.overview = async host => {
           rows.push(row({
             icon: 'timer', iconTone: 'hot',
             head: `${num(core.slaBreached)} of ${num(core.withResp.length)} timed ${plural(core.withResp.length, 'enquiry', 'enquiries')} ${plural(core.slaBreached, 'breached', 'breached')} the five-minute rule`,
-            badge: pill('SLA breach', 'hot', { verbatim: false }),
+            badge: dsChip('SLA breach', dsIntent('hot')),
             lines: [
               core.noResponseTime ? warn(`${num(core.noResponseTime)} further ${plural(core.noResponseTime, 'enquiry has', 'enquiries have')} no recorded response time. That is unmeasured, not compliant, and ${plural(core.noResponseTime, 'it is', 'they are')} in neither figure.`) : '',
               core.withResp.length <= THIN ? warn(`${num(core.withResp.length)} ${plural(core.withResp.length, 'measurement is', 'measurements are')} not a response-time record.`) : '',
@@ -2163,7 +2201,7 @@ SCREENS.overview = async host => {
         rows.push(row({
           icon: 'mark_chat_unread', iconTone: 'hot',
           head: `${num(threads.length)} WhatsApp ${plural(threads.length, 'thread is', 'threads are')} waiting on a reply`,
-          badge: known ? pill(`${known} identified`, 'ok', { verbatim: false }) : pill('None identified', 'warm', { verbatim: false }),
+          badge: known ? dsChip(`${known} identified`, dsIntent('ok')) : dsChip('None identified', dsIntent('warm')),
           lines: [
             attItems
               ? muted(`${num(inWindow)} of them fall inside the ${CHAT_WINDOW_DAYS}-day window Needs attention uses; the rest are older and appear only on Conversations.`)
@@ -2189,19 +2227,20 @@ SCREENS.overview = async host => {
 
       const clearLine = clear.length
         ? `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="material-symbols-outlined t-ok" style="font-size:20px">check_circle</span>
-             <div class="cell-sub" style="white-space:normal">${esc(`Checked and clear right now: ${clear.join('; ')}.`)} ${
+             <span class="material-symbols-outlined ds-t-success" style="font-size:20px">check_circle</span>
+             <div class="ds-cell-sub" style="white-space:normal">${esc(`Checked and clear right now: ${clear.join('; ')}.`)} ${
                esc('Each of these ran and found nothing — that is not the same as a check this panel does not make.')}</div>
            </div>`
         : '';
       const foot = `<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+        <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
 
       if (!rows.length) {
-        return stateEmpty('No leak this screen can measure is open',
-          'Every check this panel makes came back empty. It measures inventory decisions, the action queue, lead ownership, reply gaps, response time and waiting WhatsApp threads — and nothing else, so this is not a statement about the parts of the business NEXUS cannot see.',
-          'savings') + clearLine + foot;
+        /* 'savings' is not in the design system's small icon set (lib/icons.js)
+           — 'coins' is the nearest it has. */
+        return dsEmpty({ title: 'No leak this screen can measure is open', name: 'coins', body:
+          'Every check this panel makes came back empty. It measures inventory decisions, the action queue, lead ownership, reply gaps, response time and waiting WhatsApp threads — and nothing else, so this is not a statement about the parts of the business NEXUS cannot see.' }) + clearLine + foot;
       }
       return `<div>${rows.join('')}${clearLine}${foot}</div>`;
     },
@@ -2242,29 +2281,29 @@ SCREENS.overview = async host => {
     },
     render: ({ c, inFlight }) => {
       if (!c) {
-        return stateEmpty('The Lead Recovery coverage view returned no row',
+        return dsEmpty({ title: 'The Lead Recovery coverage view returned no row', name: 'coins', body:
           'It reports one row per dealership, so an empty answer means this account matched none of them. No count is '
-          + 'shown rather than a zero, because a zero here would read as a finding about the business.', 'savings');
+          + 'shown rather than a zero, because a zero here would read as a finding about the business.' });
       }
       /* Each caption states the denominator its figure came out of, and each is
          written for the branch it sits in — the zero wording and the non-zero
          wording are separate strings, not one sentence with a number in it. */
-      return `<div class="grid g3">
-        ${kpi('Leads at risk', num(c.leads_at_risk),
-          `<div class="cell-sub">${esc(n0(c.leads_at_risk)
+      return dsStatRow([
+        dsStat({ label: 'Leads at risk', value: num(c.leads_at_risk),
+          meta: `<div class="ds-cell-sub">${esc(n0(c.leads_at_risk)
             ? `Of ${num(c.leads_total)} scored. Each one is listed on Revenue Recovery with its evidence.`
             : `Of ${num(c.leads_total)} scored, and ${num(c.leads_risk_unknown)} whose risk could not be determined. `
               + 'No measurable recovery opportunity is currently detected: the engine scored every lead and flagged '
               + 'none. Its reason for each is on Revenue Recovery.')}</div>`,
-          n0(c.leads_at_risk) ? 't-hot' : '')}
-        ${kpi('Deals in flight', num(inFlight.length),
-          `<div class="cell-sub">${esc(inFlight.length
+          intent: n0(c.leads_at_risk) ? 'danger' : '' }),
+        dsStat({ label: 'Deals in flight', value: num(inFlight.length),
+          meta: `<div class="ds-cell-sub">${esc(inFlight.length
             ? 'Deals the rescue engine is tracking. Each is ranked by what it is stuck on.'
             : 'No deal record exists while a deal is in progress — the sale record is written at the moment of sale — '
               + 'so this engine has nothing to rank. A gap in the schema, not a quiet sales floor.')}</div>`,
-          inFlight.length ? 't-hot' : '')}
-        ${kpi('Sales linked to a recovery action', num(c.sales_attributed_to_a_recovery_action),
-          `<div class="cell-sub">${esc(n0(c.sales_attributed_to_a_recovery_action)
+          intent: inFlight.length ? 'danger' : '' }),
+        dsStat({ label: 'Sales linked to a recovery action', value: num(c.sales_attributed_to_a_recovery_action),
+          meta: `<div class="ds-cell-sub">${esc(n0(c.sales_attributed_to_a_recovery_action)
             ? `Of ${num(c.leads_with_a_confirmed_sale)} confirmed on file.`
             /* Scoped to what this panel actually read — the lead recovery lane.
                Whether ANY lane has attributed an outcome is a wider claim than
@@ -2272,8 +2311,8 @@ SCREENS.overview = async host => {
                which reads both lanes. */
             : `${num(c.leads_with_a_confirmed_sale)} confirmed ${Number(c.leads_with_a_confirmed_sale) === 1 ? 'sale is' : 'sales are'} `
               + `on file (${aed(c.confirmed_revenue_aed)}), and none is linked to a recovery action. `
-              + 'Confirmed is not attributed.')}</div>`)}
-      </div>`;
+              + 'Confirmed is not attributed.')}</div>` }),
+      ].join(''));
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('revenue'));
@@ -2320,50 +2359,56 @@ SCREENS.overview = async host => {
         d.waiting.length ? NO_STAFF_PHONE : '',
       ].filter(Boolean);
       const foot = notes.length
-        ? `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-             <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
+        ? `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+             <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
         : '';
       if (!d.waiting.length) {
         /* The headline names the cohort it is about. "Every lead has been
            answered" over a set that excluded the untested ones is the same
            overclaim the KPI strip was making, one panel down. */
-        return stateEmpty(
-          !d.bridgeOk ? 'This check could not be run'
+        /* 'mark_email_read' is not in the design system's icon set; 'check' is
+           the nearest — every branch here is a form of "nothing outstanding",
+           whether because everyone was answered or because there was nothing
+           to check, so one settled-looking glyph fits all four. */
+        return dsEmpty({
+          title: !d.bridgeOk ? 'This check could not be run'
             : d.testedCount ? 'Every lead we could check has been answered'
             : d.recentCount ? 'No lead in this window could be checked'
               : 'No leads in this window',
-          !d.bridgeOk
+          name: 'check',
+          body: !d.bridgeOk
             ? 'An empty list here would be an all-clear over a check that never ran, so nothing is claimed either way. The note below says what could not be read.'
             : d.testedCount
             ? `All ${d.testedCount} open ${plural(d.testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(d.testedCount, 'has', 'have')} an outbound message filed under one of the keys ${plural(d.testedCount, 'it resolves', 'they resolve')} to, sent after ${plural(d.testedCount, 'it', 'they')} arrived.`
             : d.recentCount
               ? `${d.recentCount} ${plural(d.recentCount, 'lead was', 'leads were')} created in the last ${WINDOW_DAYS} days and none of them could be matched to the message history, so this list is empty for want of evidence rather than because everyone was answered.`
-              : `No lead was created in the last ${WINDOW_DAYS} days, so there is nothing to answer.`, 'mark_email_read') + foot;
+              : `No lead was created in the last ${WINDOW_DAYS} days, so there is nothing to answer.`,
+        }) + foot;
       }
       const shown = d.waiting.slice(0, 8);
       return `<div>${shown.map(l => `
         <div class="list-item" role="button" tabindex="0" data-lead="${esc(l.id)}"
              title="Open this lead" style="align-items:flex-start">
-          ${pill(l.status || 'Unscored', undefined, { verbatim: !!l.status })}
+          ${rawChip(l.status || 'Unscored', !!l.status)}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
               <span>${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')}</span>
               ${str(l.phone)
-                ? `<span class="mono cell-sub">${esc(maskText(str(l.phone)))}</span>`
-                : `<span class="cell-sub t-warm" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
+                ? `<span class="mono ds-cell-sub">${esc(maskText(str(l.phone)))}</span>`
+                : `<span class="ds-cell-sub ds-t-warning" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
             </div>
-            <div class="cell-sub">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
-            <div class="cell-sub" aria-live="polite" data-leadmsg></div>
+            <div class="ds-cell-sub">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
+            <div class="ds-cell-sub" aria-live="polite" data-leadmsg></div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="t-hot">${esc(ago(l.created_at))}</div>
-            <div class="cell-sub">${str(l.assigned_to)
+            <div class="ds-t-danger">${esc(ago(l.created_at))}</div>
+            <div class="ds-cell-sub">${str(l.assigned_to)
               ? esc(str(l.assigned_to))
-              : l.assigned_to_id ? 'assigned' : '<span class="t-warm">unassigned</span>'}</div>
+              : l.assigned_to_id ? 'assigned' : '<span class="ds-t-warning">unassigned</span>'}</div>
           </div>
         </div>`).join('')}
         ${d.waiting.length > shown.length
-          ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(d.waiting.length - shown.length)} more waiting — see Leads</div></div>`
+          ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(d.waiting.length - shown.length)} more waiting — see Leads</div></div>`
           : ''}${foot}</div>`;
     },
   }).then(card => {
@@ -2383,8 +2428,9 @@ SCREENS.overview = async host => {
     load: () => readHealth(),
     render: rows => {
       if (!rows.length) {
-        return stateEmpty('No workflow is degraded',
-          'Nothing failed, went out half-done or produced nothing usable in the last 30 days. Workflows that do not write to the audit log cannot report health at all — Automation lists those separately.', 'task_alt');
+        /* 'task_alt' is not in the design system's icon set; 'check' is nearest. */
+        return dsEmpty({ title: 'No workflow is degraded', name: 'check', body:
+          'Nothing failed, went out half-done or produced nothing usable in the last 30 days. Workflows that do not write to the audit log cannot report health at all — Automation lists those separately.' });
       }
       /* Ordered so the ones still broken sit above the ones that recovered.
          The read is sorted by failure count, which put a workflow that failed
@@ -2441,13 +2487,13 @@ SCREENS.overview = async host => {
            it — that is the view's judgement and this panel does not overrule
            it, only spells it out. */
         const ICONS = {
-          failing:   { name: 'error',   cls: 't-hot' },
-          stale:     { name: 'history', cls: 't-warm' },
-          recovered: { name: 'history', cls: 't-muted' },
-          unknown:   { name: 'help',    cls: 't-muted' },
+          failing:   { name: 'error',   cls: 'ds-t-danger' },
+          stale:     { name: 'history', cls: 'ds-t-warning' },
+          recovered: { name: 'history', cls: 'ds-t-tertiary' },
+          unknown:   { name: 'help',    cls: 'ds-t-tertiary' },
         };
         const icon = ICONS[st.key] || ICONS.unknown;
-        const NUM_CLS = { failing: 't-hot', stale: 't-warm', recovered: 't-muted', unknown: 't-muted' };
+        const NUM_CLS = { failing: 'ds-t-danger', stale: 'ds-t-warning', recovered: 'ds-t-tertiary', unknown: 'ds-t-tertiary' };
         const outcomes = eff == null || eff <= 0
           ? muted('No run in this window counted toward a rate: every one of them was refused by design or handed to a person on purpose.')
           : muted(`${num(succ)} of ${num(eff)} qualifying ${plural(eff, 'run', 'runs')} succeeded outright (${pct(rate)})`
@@ -2462,23 +2508,23 @@ SCREENS.overview = async host => {
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(w.name)}</span>
-              <span title="${esc(hw.blurb)}">${pill(hw.label, hw.tone, { verbatim: false })}</span>
-              ${w.is_active === false ? pill('Inactive', 'cold', { verbatim: false }) : ''}
+              <span title="${esc(hw.blurb)}">${dsChip(hw.label, dsIntent(hw.tone))}</span>
+              ${w.is_active === false ? dsChip('Inactive', dsIntent('cold')) : ''}
             </div>
-            <div class="cell-sub">${esc(w.category || 'Uncategorised')}${w.last_incomplete ? ' · last bad run ' + esc(ago(w.last_incomplete)) : ''}${
-              scarce ? ' · <span class="t-warm">too few runs in 30 days to rate</span>' : ''}</div>
-            <div class="cell-sub">${st.text}</div>
-            <div class="cell-sub">${outcomes}</div>
+            <div class="ds-cell-sub">${esc(w.category || 'Uncategorised')}${w.last_incomplete ? ' · last bad run ' + esc(ago(w.last_incomplete)) : ''}${
+              scarce ? ' · <span class="ds-t-warning">too few runs in 30 days to rate</span>' : ''}</div>
+            <div class="ds-cell-sub">${st.text}</div>
+            <div class="ds-cell-sub">${outcomes}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="num ${NUM_CLS[st.key] || 't-muted'}" style="font-weight:500"
+            <div class="num ${NUM_CLS[st.key] || 'ds-t-tertiary'}" style="font-weight:500"
                  title="Runs in the last 30 days that did not succeed outright: failures, half-done runs, runs that produced nothing usable, and any status this system does not define. Runs refused by design and runs escalated to a person are excluded from both halves.">${num(notClean)}</div>
-            <div class="cell-sub">${eff == null ? 'did not succeed' : `of ${num(eff)} that counted`}</div>
+            <div class="ds-cell-sub">${eff == null ? 'did not succeed' : `of ${num(eff)} that counted`}</div>
           </div>
         </div>`;
       }).join('')}<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div></div>`;
+        <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div></div>`;
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('automation'));
@@ -2572,17 +2618,20 @@ SCREENS.overview = async host => {
       ].filter(Boolean);
 
       const foot = `<div class="list-item" style="cursor:default">
-          <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-          <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}${esc('Repairing these is NEXUS’s to do. There is also nothing here to open: this dashboard can open a stored document, but no archived file was ever recorded for any row in this list — the missing file is the gap.')}</div>
+          <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+          <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}${esc('Repairing these is NEXUS’s to do. There is also nothing here to open: this dashboard can open a stored document, but no archived file was ever recorded for any row in this list — the missing file is the gap.')}</div>
         </div>`;
 
       if (!live.length) {
-        return stateEmpty(
-          voided.length ? 'No genuine submission is missing its file' : 'Every audited document is archived',
-          voided.length
+        /* 'inventory_2' is not in the design system's icon set; 'shield' is
+           the nearest — this card's subject is a compliance archive gap. */
+        return dsEmpty({
+          title: voided.length ? 'No genuine submission is missing its file' : 'Every audited document is archived',
+          name: 'shield',
+          body: voided.length
             ? `The ${voided.length} ${plural(voided.length, 'row', 'rows')} here with no stored file ${plural(voided.length, 'was', 'were')} voided as ${plural(voided.length, 'a non-submission', 'non-submissions')}. Rows already purged on schedule are not counted either.`
             : 'No KYC row is missing its stored file. Rows already purged on schedule are not counted here.',
-          'inventory_2') + foot;
+        }) + foot;
       }
 
       /* This card sits in a three-across triage row, and every row in it is
@@ -2597,24 +2646,24 @@ SCREENS.overview = async host => {
         return `
         <div class="list-item" role="button" tabindex="0" data-goto="compliance"
              title="Open Compliance, where this document's audit trail is" style="align-items:flex-start">
-          <span class="material-symbols-outlined t-warm" style="font-size:20px">folder_off</span>
+          <span class="material-symbols-outlined ds-t-warning" style="font-size:20px">folder_off</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(maskText(str(d.lead_name) || str(d.full_name) || str(d.lead_email) || 'Unknown contact'))}</span>
-              ${d.verdict ? pill(d.verdict, undefined, { verbatim: true }) : ''}
+              ${d.verdict ? rawChip(d.verdict, true) : ''}
             </div>
-            <div class="cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
+            <div class="ds-cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
               attempt != null ? ' · attempt ' + esc(num(attempt)) + (maxAttempt != null ? ' of ' + esc(num(maxAttempt)) : '') : ''}${
               d.retain_until ? ' · retain until ' + esc(d.retain_until) : ''}</div>
-            <div class="cell-sub">${str(d.lead_email)
+            <div class="ds-cell-sub">${str(d.lead_email)
               ? `<span class="mono">${esc(maskText(str(d.lead_email)))}</span>`
-              : '<span class="t-warm">No address on the submission</span>'}</div>
+              : '<span class="ds-t-warning">No address on the submission</span>'}</div>
           </div>
           <button class="btn sm" disabled
             title="Re-archiving is not something this dashboard can start. The documents and the store they live in are NEXUS’s to write, and there is nothing here that can re-run the archive step. Ask NEXUS support.">Re-archive</button>
         </div>`;
       }).join('')}${rest > 0
-        ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${esc(`${num(rest)} older ${plural(rest, 'gap is', 'gaps are')} not listed here — all ${num(live.length)} are counted above and every one of them is in Compliance.`)}</div></div>`
+        ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${esc(`${num(rest)} older ${plural(rest, 'gap is', 'gaps are')} not listed here — all ${num(live.length)} are counted above and every one of them is in Compliance.`)}</div></div>`
         : ''}${foot}</div>`;
     },
   }).then(card => {
@@ -2846,24 +2895,24 @@ SCREENS.overview = async host => {
            gets the neutral wording and claims nothing. */
         const meaning = AT_WORDS[it.kind] || AT_WORDS._default;
         const waited = meaning.none
-          ? `<span class="t-muted">${esc(meaning.blank)}</span>`
+          ? `<span class="ds-t-tertiary">${esc(meaning.blank)}</span>`
           : it.at
-            ? `<span class="t-muted">${esc(meaning.verb)} ${esc(ago(it.at))}</span>`
-            : '<span class="t-muted">no timestamp on this item, so when it arrived is unknown</span>';
+            ? `<span class="ds-t-tertiary">${esc(meaning.verb)} ${esc(ago(it.at))}</span>`
+            : '<span class="ds-t-tertiary">no timestamp on this item, so when it arrived is unknown</span>';
         const lead = leadFor(it);
         if (LEAD_KINDS.has(it.kind)) { if (lead) matchedLeads += 1; else unmatchedLeadRefs += 1; }
         let head, sub;
         if (it.kind === 'unanswered_chat') {
           const c = chatRow(it);
-          head = `${c.named ? esc(displayName(c.name)) : '<span class="t-warm">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
-          sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
-            c.phone ? `<span class="mono">${esc(maskText(c.phone))}</span>` : '<span class="t-muted">No phone number stored for this thread</span>'
+          head = `${c.named ? esc(displayName(c.name)) : '<span class="ds-t-warning">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
+          sub = `${esc(it.detail)} · ${waited}<div class="ds-cell-sub">${
+            c.phone ? `<span class="mono">${esc(maskText(c.phone))}</span>` : '<span class="ds-t-tertiary">No phone number stored for this thread</span>'
           } · <span class="mono" title="WhatsApp chat handle — a LID contains no phone digits and identifies nobody on its own">${esc(c.ref)}</span></div>`;
         } else if (lead) {
           head = esc(it.title);
-          sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
+          sub = `${esc(it.detail)} · ${waited}<div class="ds-cell-sub">${
             str(lead.phone) ? `<span class="mono">${esc(maskText(str(lead.phone)))}</span>`
-              : '<span class="t-warm">No phone number on this lead record</span>'
+              : '<span class="ds-t-warning">No phone number on this lead record</span>'
           }${str(lead.email) ? ` · <span class="mono">${esc(maskText(str(lead.email)))}</span>` : ''}</div>`;
         } else if (it.kind === 'workflow_failure') {
           head = esc(it.title);
@@ -2872,11 +2921,11 @@ SCREENS.overview = async host => {
              says which. Where v_workflow_health had no row to match, that is
              said too — an unmatched item is not evidence of anything. */
           const fc = flow ? runCounts(flow) : null;
-          sub = `${esc(it.detail)} · ${waited}<div class="cell-sub">${
+          sub = `${esc(it.detail)} · ${waited}<div class="ds-cell-sub">${
             flowState ? flowState.text
-              : '<span class="t-muted">no row in the automation health figures matched this item, so whether it has succeeded since cannot be told from here</span>'
+              : '<span class="ds-t-tertiary">no row in the automation health figures matched this item, so whether it has succeeded since cannot be told from here</span>'
           }${fc && fc.notClean != null
-            ? ` <span class="t-muted">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
+            ? ` <span class="ds-t-tertiary">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
             : ''}</div>`;
         } else if (it.kind === 'inventory_aging') {
           /* The view's detail for this kind is
@@ -2902,17 +2951,17 @@ SCREENS.overview = async host => {
             agedFromEngine += 1;
             const days = n0(unit.days_in_stock);
             sub = `${esc(days == null ? 'Days in stock are not recorded for this unit' : `${num(days)} days in stock`)}`
-              + `${str(unit.aging_band) ? ` · ${pill(str(unit.aging_band), undefined, { verbatim: true })}` : ''} · ${waited}`
-              + `<div class="cell-sub">${muted('The view could not build a sentence for this item: it prints the unit’s accrued holding cost, and there is none on record. The age beside the name is the Profit Sentinel’s, read from the same unit.')}</div>`;
+              + `${str(unit.aging_band) ? ` · ${rawChip(str(unit.aging_band), true)}` : ''} · ${waited}`
+              + `<div class="ds-cell-sub">${muted('The view could not build a sentence for this item: it prints the unit’s accrued holding cost, and there is none on record. The age beside the name is the Profit Sentinel’s, read from the same unit.')}</div>`;
           } else {
             unmatchedUnits += 1;
-            sub = `<span class="t-warm">${esc(core?.sentinelErr
+            sub = `<span class="ds-t-warning">${esc(core?.sentinelErr
               ? 'This item arrived with no detail and the Profit Sentinel could not be read, so nothing is claimed about how old this unit is.'
               : 'This item arrived with no detail and its unit is not in the Sentinel read, so nothing is claimed about how old it is.')}</span> · ${waited}`;
           }
         } else {
           head = esc(it.title);
-          sub = `${str(it.detail) ? `${esc(str(it.detail))} · ` : `<span class="t-muted">${esc('The view recorded no detail for this item.')}</span> · `}${waited}`;
+          sub = `${str(it.detail) ? `${esc(str(it.detail))} · ` : `<span class="ds-t-tertiary">${esc('The view recorded no detail for this item.')}</span> · `}${waited}`;
         }
         /* A matched lead opens that lead. Everything else goes to the screen the
            view named, which is as close to the row as this app can get from
@@ -2925,16 +2974,16 @@ SCREENS.overview = async host => {
            run is a success" is the screen arguing with itself, and the operator
            believes the colour. The severity pill is untouched: that is the
            view's rating and it stays visible. */
-        const iconTone = flowState && flowState.key === 'recovered' ? 'muted' : tone(it.severity);
+        const iconIntent = flowState && flowState.key === 'recovered' ? 'tertiary' : dsIntent(tone(it.severity));
         return `<div class="list-item" role="button" tabindex="0" ${jump}>
-          <span class="material-symbols-outlined t-${iconTone}" style="font-size:20px">${icon}</span>
+          <span class="material-symbols-outlined ds-t-${iconIntent}" style="font-size:20px">${icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${
-              pill(str(it.severity) || 'Unrated', undefined, { verbatim: !!str(it.severity) })}</div>
-            <div class="cell-sub">${sub}</div>
-            ${lead ? '<div class="cell-sub" aria-live="polite" data-leadmsg></div>' : ''}
+              rawChip(str(it.severity) || 'Unrated', !!str(it.severity))}</div>
+            <div class="ds-cell-sub">${sub}</div>
+            ${lead ? '<div class="ds-cell-sub" aria-live="polite" data-leadmsg></div>' : ''}
           </div>
-          <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
+          <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">chevron_right</span>
         </div>`;
       }).join('');
 
@@ -3028,13 +3077,13 @@ SCREENS.overview = async host => {
             : `Nothing here is missing from that count, so the Overview badge is left exactly as badges.js painted it${need.floor == null ? '' : ` — ${num(need.floor)}`}.`,
       ].filter(Boolean);
       const foot = `<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+        <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
 
       if (!items.length) {
-        return stateEmpty('Nothing needs you right now',
-          'No unanswered WhatsApp thread inside the 7-day window, no unassigned HOT lead, SLA breach, KYC archive gap, workflow failure, undercut or aging unit.',
-          'task_alt') + foot;
+        /* 'task_alt' is not in the design system's icon set; 'check' is nearest. */
+        return dsEmpty({ title: 'Nothing needs you right now', name: 'check', body:
+          'No unanswered WhatsApp thread inside the 7-day window, no unassigned HOT lead, SLA breach, KYC archive gap, workflow failure, undercut or aging unit.' }) + foot;
       }
       return `<div>${body}${foot}</div>`;
     },
@@ -3070,8 +3119,8 @@ SCREENS.overview = async host => {
     render: ({ rows, readAt }, card) => {
       card.__rows = rows;
       if (!rows.length) {
-        return stateEmpty('No leads yet',
-          `Nothing in your leads as of ${clock(readAt)}, when this panel read it. New enquiries appear here on the next read, not as they arrive — reopen Overview to check.`);
+        return dsEmpty({ title: 'No leads yet', body:
+          `Nothing in your leads as of ${clock(readAt)}, when this panel read it. New enquiries appear here on the next read, not as they arrive — reopen Overview to check.` });
       }
       /* Fewer rows than the page size means this is not the top of a long list,
          it is the whole list — which reads very differently. */
@@ -3082,17 +3131,17 @@ SCREENS.overview = async host => {
           : '',
         'A row opens that lead. Leads has no last-modified timestamp, so this is ordered by when each one arrived, which is the only time the table records.',
       ].filter(Boolean);
-      const note = `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-             <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}
+      const note = `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+             <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}
                <div aria-live="polite" data-feedmsg></div></div></div>`;
-      return table([
-        { label:'When', render: r => `<div class="t-muted">${esc(ago(r.created_at))}</div><div class="cell-sub mono">${esc(clock(r.created_at))}</div>` },
-        { label:'Status',  render: r => pill(str(r.status) || 'Unscored', undefined, { verbatim: !!str(r.status) }) },
+      return dsTable([
+        { label:'When', render: r => `<div class="ds-t-tertiary">${esc(ago(r.created_at))}</div><div class="ds-cell-sub mono">${esc(clock(r.created_at))}</div>` },
+        { label:'Status',  render: r => rawChip(str(r.status) || 'Unscored', !!str(r.status)) },
         { label:'Name',    strong: true, render: r => esc(maskText(str(r.name) || 'Unnamed lead')) },
         { label:'Phone',   render: r => str(r.phone)
             ? `<span class="mono">${esc(maskText(str(r.phone)))}</span>`
-            : `<span class="cell-sub t-warm">Not captured</span>` },
-        { label:'Interest',render: r => `<span class="t-2">${str(r.vehicle_interest) ? esc(str(r.vehicle_interest)) : '<span class="cell-sub">Not recorded</span>'}</span>` },
+            : `<span class="ds-cell-sub ds-t-warning">Not captured</span>` },
+        { label:'Interest',render: r => `<span class="ds-t-secondary">${str(r.vehicle_interest) ? esc(str(r.vehicle_interest)) : '<span class="ds-cell-sub">Not recorded</span>'}</span>` },
         { label:'Score', align:'r', render: r => num(r.ai_score) },
       ], rows, { onRow: true }) + note;
     },
@@ -3100,8 +3149,17 @@ SCREENS.overview = async host => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('leads'));
     /* The same drawer the Leads screen opens, on the row that was clicked. A
        failed read reports itself in the footnote under the table rather than
-       leaving a click that did nothing. */
-    wireRows(card, card.__rows || [], r => openLead(r.id, card.querySelector('[data-feedmsg]')));
+       leaving a click that did nothing.
+
+       Not lib/ui.js's wireRows(): dsTable() (lib/design-system.js) marks a
+       clickable row `ds-row--clickable`, not wireRows()'s `clickable`, so that
+       helper's selector would silently match nothing. Same handler and same
+       `data-i` index into the rows the render just set on the card — only the
+       selector changes, to the one the design-system table actually emits. */
+    const rows = card.__rows || [];
+    card.querySelectorAll('tbody tr.ds-row--clickable').forEach(tr => {
+      tr.addEventListener('click', () => openLead(rows[Number(tr.dataset.i)]?.id, card.querySelector('[data-feedmsg]')));
+    });
   }));
 
   await Promise.all(panels);
