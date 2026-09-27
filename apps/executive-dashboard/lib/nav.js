@@ -13,7 +13,7 @@ const NAV = [
      (founder/index.html, served at /founder) so that a dealer -- or a screen
      recording of this app made while the founder is signed in -- shows no
      founder UI at all. Every id below names a dealership's own screen. */
-  { group: 'Work', items: [
+  { group: 'Work', accent: '#2563C9', items: [
     /* ── Today's Money Leaks ─────────────────────────────────────────────────
        First, and the app's default landing screen, because it is the only one
        that answers a question rather than reporting a state: where is money
@@ -81,23 +81,23 @@ const NAV = [
      them by glob precisely so a module that has not landed cannot break the
      build. go() below renders an explicit "not in this build" state for an id
      the registry does not hold. */
-  { group: 'Revenue recovery', items: [
+  { group: 'Revenue recovery', accent: '#157A5B', items: [
     { id:'revenue',      title:'Revenue Recovery', icon:'savings' },
     { id:'leadrecovery', title:'Lead Recovery',    icon:'restore' },
     { id:'dealrescue',   title:'Deal Rescue',      icon:'handyman' },
     { id:'attribution',  title:'Attribution',      icon:'hub' },
     { id:'policy',       title:'Policy',           icon:'gavel' },
   ]},
-  { group: 'Assets', items: [
+  { group: 'Assets', accent: '#B26A00', items: [
     { id:'inventory',   title:'Inventory',   icon:'directions_car' },
     { id:'competitors', title:'Competitors', icon:'trending_up' },
   ]},
-  { group: 'Intelligence', items: [
+  { group: 'Intelligence', accent: '#7C3AED', items: [
     { id:'ask',      title:'Ask AI',        icon:'auto_awesome' },
     { id:'finance',  title:'Finance Desk',  icon:'calculate' },
     { id:'customers',title:'Customer 360',  icon:'contacts' },
   ]},
-  { group: 'Operations', items: [
+  { group: 'Operations', accent: '#0E7490', items: [
     /* The Action Center. It sits at the top of Operations because it is the only
        screen in the app where a person is expected to answer something rather
        than read something: everything on it is waiting on a decision. */
@@ -107,7 +107,7 @@ const NAV = [
     { id:'automation', title:'Automation', icon:'account_tree' },
     { id:'team',       title:'Team',       icon:'groups' },
   ]},
-  { group: '', items: [
+  { group: '', accent: '#64748B', items: [
     /* ── Setup ───────────────────────────────────────────────────────────────
        Added 14 Sep 2026. It sits beside Settings, at the bottom and outside
        every working group, because it is not a screen anybody works from: it
@@ -208,6 +208,11 @@ function buildNav() {
     const items = group.items;
     if (!items.length) return;
     const wrap = el('div', 'nav-group');
+    /* The module colour. It is set on the GROUP and read by the icon only —
+       never by the label — so every nav word keeps the one text colour whose
+       contrast styles.css has already accounted for. A sidebar that colours
+       its text is a sidebar with six different contrast ratios in it. */
+    if (group.accent) wrap.style.setProperty('--nav-accent', group.accent);
     if (group.group) wrap.appendChild(el('div', 'nav-group-label', esc(group.group)));
     items.forEach(item => {
       const b = el('button', 'nav-item', `<span class="material-symbols-outlined">${item.icon}</span><span>${esc(item.title)}</span><span class="nav-badge hide" id="badge-${item.id}"></span>`);

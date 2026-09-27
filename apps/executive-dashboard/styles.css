@@ -426,3 +426,33 @@ details.how-counts > summary::-webkit-details-marker { display: none; }
 details.how-counts > summary::after { content: 'expand_more'; font-family: 'Material Symbols Outlined'; margin-left: auto; }
 details.how-counts[open] > summary::after { content: 'expand_less'; }
 details.how-counts .how-counts-body { display: grid; gap: 16px; padding: 0 16px 16px; }
+
+/* ── Sidebar: module colour ────────────────────────────────────────────────
+   27 September 2026. The sidebar was white on white with grey icons, so every
+   module looked like every other module and the eye had nothing to aim at. A
+   good CRM gives each area of the product a colour and lets you learn the
+   shape of the nav rather than read it every time.
+
+   The colour is carried by the ICON ONLY, off `--nav-accent`, which lib/nav.js
+   sets per group. Deliberately not on the label: six coloured labels is six
+   contrast ratios to defend, and the one this file already defends is
+   `--text-2`. Deliberately not on the background either — a tinted row behind
+   every item would leave the ACTIVE row with nothing left to say.
+
+   Active still wins, and it wins louder than before: the row keeps the brand
+   tint and the left rule, and the icon drops its module colour and takes the
+   brand, so exactly one icon in the sidebar is ever blue-on-tint. */
+.nav-item .material-symbols-outlined {
+  color: var(--nav-accent, var(--text-muted));
+  transition: color var(--dur-micro) ease-out;
+}
+.nav-item:hover .material-symbols-outlined { color: var(--nav-accent, var(--text-2)); }
+.nav-item.active .material-symbols-outlined { color: var(--primary); }
+
+/* The group label picks up a hairline in the module colour, which is the
+   cheapest way to say "these five screens belong together" without adding a
+   box, a divider or a second font size. */
+.nav-group-label {
+  border-left: 2px solid var(--nav-accent, transparent);
+  padding-left: 8px; margin-left: 2px; border-radius: 1px;
+}
