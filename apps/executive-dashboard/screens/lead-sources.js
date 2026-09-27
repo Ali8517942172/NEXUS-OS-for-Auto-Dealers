@@ -136,8 +136,8 @@ import {
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="cell-sub">${h}</div>`;
-const hot   = h => `<div class="cell-sub t-hot">${h}</div>`;
+const muted = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 const chip  = (t, title) => `<span class="chip"${title ? ` title="${esc(title)}"` : ''}>${esc(t)}</span>`;
@@ -329,7 +329,7 @@ function attestationCell(a) {
               : '.');
 
   return `<div style="font-weight:600" title="${esc(why || band.blurb)}">${esc(String(min))}/100`
-    + `${min !== max ? ` <span class="cell-sub" style="font-weight:400">weakest, up to ${esc(String(max))}/100</span>` : ''}</div>`
+    + `${min !== max ? ` <span class="ds-cell-sub" style="font-weight:400">weakest, up to ${esc(String(max))}/100</span>` : ''}</div>`
     + `<div>${pill(band.label, band.tone, { verbatim: false })}</div>`
     + muted(esc(why || band.blurb))
     + (min !== max
@@ -552,7 +552,7 @@ const GOOGLE_STEPS = `<ol style="margin:8px 0 0 18px;padding:0">
     <li>Go to <b>Lead delivery → Webhook integration</b>.</li>
     <li>Paste the <b>Webhook URL</b> and the <b>Key</b> shown here.</li>
     <li>Click <b>Send test data</b> — this card switches to “Receiving” when it lands.</li></ol>`;
-const META_HELP = `<div class="cell-sub" style="margin-bottom:12px;white-space:normal">
+const META_HELP = `<div class="ds-cell-sub" style="margin-bottom:12px;white-space:normal">
     Get the token in <b>Meta Business Settings → System users → Generate token</b> with the permissions
     <code>pages_manage_metadata</code>, <code>leads_retrieval</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>.
     The Page must also be subscribed to the NEXUS app (webhook <code>${esc(META_WEBHOOK_URL)}</code>, field <code>leadgen</code>).
@@ -586,18 +586,18 @@ function mountSourceConnections(host) {
   const details = r => {
     const s = up(r.status), k = str(r.connect_kind);
     const connected = s && s !== 'NOT_CONNECTED' && s !== 'DISABLED';
-    const igNote = str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="cell-sub" style="margin-bottom:6px">${esc(IG_NOTE)}</div>` : '';
+    const igNote = str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="ds-cell-sub" style="margin-bottom:6px">${esc(IG_NOTE)}</div>` : '';
     if (k === 'manual') return muted(`Record phone and walk-in enquiries from ${SCREENS.recordlead
       ? '<a href="#recordlead" data-go="recordlead">Record a Lead</a>' : 'Record a Lead'}.`);
     if (k === 'email') return muted('Forwarding instructions for marketplace emails come from NEXUS support after you connect.');
     if (!connected) return igNote;
     if (k === 'webhook_key') return (str(r.ingest_url) ? copyField('Webhook URL', str(r.ingest_url)) : '')
       + muted(r.has_secret ? 'A key is installed. It cannot be shown again — use “Rotate key” to issue a new one.' : 'No key is installed.')
-      + `<details style="margin-top:6px"><summary class="cell-sub">Setup steps in Google Ads</summary>${GOOGLE_STEPS}</details>`;
+      + `<details style="margin-top:6px"><summary class="ds-cell-sub">Setup steps in Google Ads</summary>${GOOGLE_STEPS}</details>`;
     if (k === 'embed') return (str(r.public_key) ? copyField('Embed on your website', embedSnippet(str(r.public_key)), 'Copy snippet') : '')
       + (Array.isArray(r.origin_allowlist) && r.origin_allowlist.length
           ? muted(`Allowed domains: ${esc(r.origin_allowlist.join(', '))}`) : '')
-      + (str(r.ingest_url) ? `<details style="margin-top:6px"><summary class="cell-sub">Alternative: plain HTML form</summary>
+      + (str(r.ingest_url) ? `<details style="margin-top:6px"><summary class="ds-cell-sub">Alternative: plain HTML form</summary>
           ${copyField('Form posting to NEXUS', plainFormSnippet(str(r.ingest_url)), 'Copy form')}</details>` : '');
     if (k === 'meta_page') return igNote + muted(`Page ID ${esc(str(r.identity_value) || 'not recorded')} · `
       + (r.has_secret ? 'Page access token installed (never displayed).' : 'No Page access token installed.'));
@@ -651,12 +651,12 @@ function mountSourceConnections(host) {
     let body = '';
     if (k === 'embed') body = `<div class="field"><label for="lsDomains">Allowed website domain(s)</label>
         <input id="lsDomains" placeholder="example.ae, www.example.ae" value="${esc(Array.isArray(r.origin_allowlist) ? r.origin_allowlist.join(', ') : '')}" />
-        <div class="cell-sub">Only forms on these domains can send leads with your key. Separate several with commas.</div></div>`;
+        <div class="ds-cell-sub">Only forms on these domains can send leads with your key. Separate several with commas.</div></div>`;
     else if (k === 'meta_page') body = (str(r.source_key) === 'meta_lead_ads_instagram' ? `<div class="banner warm" style="margin-bottom:12px">${esc(IG_NOTE)} If your Page is already connected on the Facebook card, you do not need to connect it here.</div>` : '') + META_HELP + `<div class="field"><label for="lsPage">Facebook Page ID</label>
         <input id="lsPage" inputmode="numeric" placeholder="123456789012345" value="${esc(str(r.identity_value))}" /></div>
         <div class="field"><label for="lsToken">Page access token</label>
         <input id="lsToken" type="password" autocomplete="off" placeholder="Paste the system user token" />
-        <div class="cell-sub">Stored securely. It is never displayed again.${r.has_secret ? ' Leave empty to keep the token already installed.' : ''}</div></div>`;
+        <div class="ds-cell-sub">Stored securely. It is never displayed again.${r.has_secret ? ' Leave empty to keep the token already installed.' : ''}</div></div>`;
     else if (k === 'email') body = muted('Connecting turns this source on. NEXUS support will send you the forwarding address and instructions.');
     else if (k === 'webhook_key') body = muted('NEXUS will create a Webhook URL and a Key for Google Ads. The key is shown once, right after you connect.');
     const m = openModal(`Connect ${name}`, body,
@@ -688,7 +688,7 @@ function mountSourceConnections(host) {
           muted('Connected. Paste these into Google Ads now.'));
         else if (k === 'embed' && row && str(row.public_key)) {
           const m2 = openModal(`${name} connected`, copyField('Paste this into your website', embedSnippet(str(row.public_key)), 'Copy snippet')
-            + (str(row.ingest_url) ? `<details><summary class="cell-sub">Alternative: plain HTML form</summary>${copyField('Form posting to NEXUS', plainFormSnippet(str(row.ingest_url)), 'Copy form')}</details>` : ''),
+            + (str(row.ingest_url) ? `<details><summary class="ds-cell-sub">Alternative: plain HTML form</summary>${copyField('Form posting to NEXUS', plainFormSnippet(str(row.ingest_url)), 'Copy form')}</details>` : ''),
             '<button class="btn primary" id="lsDone">Done</button>');
           wireCopy(m2.wrap); m2.wrap.querySelector('#lsDone').addEventListener('click', m2.close);
         }
@@ -729,10 +729,21 @@ function mountSourceConnections(host) {
 }
 
 SCREENS.leadsources = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto another screen and restyle one nobody converted. A wrapper
+     cannot leak — go() removes it with the rest of the subtree. Same pattern as
+     screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* Every visit re-reads. See the note on `shared` above for what this repairs
      and why a stale source register is worse than a slow one. */
   resetReads();
-  mountSourceConnections(host);
+  mountSourceConnections(root);
 
   const loadBoth = async () => {
     const [o, d] = await Promise.all([settle(readOrigin()), settle(readReadiness())]);
@@ -752,7 +763,7 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Where your enquiries came from',
     sub: 'Every arrival NEXUS recorded, the door it came through, and how much of that origin could actually be '
        + 'verified. Test traffic is counted nowhere in these four figures',
@@ -851,7 +862,7 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P2 · Every source that produced something
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Sources that produced enquiries',
     sub: 'Busiest first. Every line carries how well its origin is attested, because a source that proves who it is '
        + 'and one that merely says who it is must never look the same',
@@ -913,7 +924,7 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P3 · Enquiries that arrived and were lost
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Enquiries that arrived and were then lost',
     sub: 'Refused, held back, or left until the time to act ran out. Each is a customer this dealership had, shown '
        + 'with the reason recorded against it — never as an absence, and never with a price on it',
@@ -977,7 +988,7 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P4 · Sources that are set up and produced nothing
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Sources set up that produced nothing',
     sub: 'A source nobody ever connected and a source having a quiet week are opposite facts. This is the only place '
        + 'in the product that tells them apart',
@@ -1089,7 +1100,7 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P5 · Test traffic, in a band of its own
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Test traffic — counted nowhere above',
     sub: 'Simulator output, shown because hiding it would be its own kind of lie, and separated because a dealership '
        + 'must never be shown one of these as business',
@@ -1137,7 +1148,7 @@ SCREENS.leadsources = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P6 · What this screen could not check
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'What this screen could not check — unknown is not zero',
     sub: 'Every gap above, named, with what it would take to close it. The last line is permanent and is here so the '
        + 'promise is on the screen rather than only in a document',

@@ -584,7 +584,7 @@ function entryBody(e) {
     return head + `<div style="display:flex;align-items:center;gap:10px">
         <div class="skeleton" style="width:18px;height:18px;border-radius:50%;flex-shrink:0"></div>
         <div><div>Searching the knowledge base, then asking the model…</div>
-        <div class="cell-sub">Waiting <span id="askT${e.id}" class="num">${esc(secs(Date.now() - e.at))}</span> · this workflow has taken 9 s on a good run · giving up at ${Math.round(DEADLINE_MS / 1000)} s</div></div>
+        <div class="ds-cell-sub">Waiting <span id="askT${e.id}" class="num">${esc(secs(Date.now() - e.at))}</span> · this workflow has taken 9 s on a good run · giving up at ${Math.round(DEADLINE_MS / 1000)} s</div></div>
       </div>
       <div class="skeleton" style="height:14px;margin-top:16px;width:92%"></div>
       <div class="skeleton" style="height:14px;margin-top:10px;width:78%"></div>`;
@@ -596,7 +596,7 @@ function entryBody(e) {
       ${raw ? `<button class="btn sm ghost" data-act="raw" data-id="${e.id}" aria-expanded="${e.showRaw ? 'true' : 'false'}">${e.showRaw ? 'Hide' : 'Show'} raw response</button>` : ''}
       ${e.answer ? `<button class="btn sm ghost" data-act="copy" data-id="${e.id}">Copy answer</button>` : ''}
     </div>
-    ${raw && e.showRaw ? `<div class="mono cell-sub" style="margin-top:12px;padding:12px;background:var(--surface-sunken);border-radius:8px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto">${esc(raw)}</div>` : ''}`;
+    ${raw && e.showRaw ? `<div class="mono ds-cell-sub" style="margin-top:12px;padding:12px;background:var(--surface-sunken);border-radius:8px;white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto">${esc(raw)}</div>` : ''}`;
 
   if (e.status === 'error' || e.status === 'timeout') {
     const isTimeout = e.status === 'timeout';
@@ -611,7 +611,7 @@ function entryBody(e) {
             : esc(e.err || 'Unknown error')}</div>
           ${hint ? `<div style="margin-top:6px">${esc(hint)}</div>` : ''}</div>
       </div>
-      <div class="cell-sub" style="margin-top:10px">Asked at ${esc(clock(e.at))}${e.ms != null ? (isTimeout ? ' · stopped waiting after ' : ' · failed after ') + esc(secs(e.ms)) : ''}</div>`
+      <div class="ds-cell-sub" style="margin-top:10px">Asked at ${esc(clock(e.at))}${e.ms != null ? (isTimeout ? ' · stopped waiting after ' : ' · failed after ') + esc(secs(e.ms)) : ''}</div>`
       + foot(e.rawText);
   }
 
@@ -675,7 +675,7 @@ function entryBody(e) {
       ${r.kind === 'unseen' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${g.unseen.map(u => esc(`${u.ref || '?'} ${u.title || u.file || 'untitled'}`)).join(' · ')}</div>` : ''}
       ${r.kind === 'dropped' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${gr.dropped.map(f => esc(f)).join('   ')}</div>` : ''}
       ${r.kind === 'truncated' ? `<div class="mono" style="margin-top:6px;word-break:break-word">${(gr.truncated.length ? gr.truncated : g.citedCut.map(c => c.ref || '?')).map(f => esc(f)).join('   ')}</div>` : ''}
-      ${r.kind === 'model' && g.modelError ? `<div class="mono cell-sub" style="margin-top:6px;white-space:normal;word-break:break-word">${esc(g.modelError.slice(0, 300))}</div>` : ''}
+      ${r.kind === 'model' && g.modelError ? `<div class="mono ds-cell-sub" style="margin-top:6px;white-space:normal;word-break:break-word">${esc(g.modelError.slice(0, 300))}</div>` : ''}
     </div>`).join('');
 
   const severeList = g.reasons.filter(r => r.sev === 'severe');
@@ -723,30 +723,30 @@ function entryBody(e) {
       ${src.map((s, i) => s.unknown
         ? `<div class="list-item" style="cursor:default;align-items:flex-start">
              <span class="chip">${i + 1}</span>
-             <div class="mono cell-sub" style="flex:1;min-width:0;white-space:normal;word-break:break-word">${esc(s.blob)}</div></div>`
+             <div class="mono ds-cell-sub" style="flex:1;min-width:0;white-space:normal;word-break:break-word">${esc(s.blob)}</div></div>`
         : `<div class="list-item" style="cursor:default;align-items:flex-start">
              <span class="chip">${esc(s.ref || String(i + 1))}</span>
              <div style="flex:1;min-width:0">
                <div style="font-weight:500">${esc(s.title || s.file || 'Untitled document')}</div>
-               <div class="cell-sub">${[
+               <div class="ds-cell-sub">${[
                   s.section ? esc(s.section) : null,
                   s.page != null ? 'p. ' + esc(s.page) : null,
                   s.file && s.file !== s.title ? esc(s.file) : null,
                 ].filter(Boolean).join(' · ') || 'No section recorded'}</div>
                ${s.shown === false ? `<div class="t-hot" style="font-size:13px;font-weight:600;margin-top:4px">Never sent to the model — the answer cannot have come from this section</div>` : ''}
                ${s.cut === true ? `<div class="t-warm" style="font-size:13px;font-weight:600;margin-top:4px">Cut short${s.charsFed != null && s.charsTotal != null ? ` — the model was given ${esc(num(s.charsFed))} of its ${esc(num(s.charsTotal))} characters` : ''}</div>` : ''}
-               ${s.note ? `<div class="cell-sub" style="white-space:normal;margin-top:4px">${esc(s.note)}</div>` : ''}
-               ${s.snippet ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
+               ${s.note ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:4px">${esc(s.note)}</div>` : ''}
+               ${s.snippet ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(s.snippet.length > 320 ? s.snippet.slice(0, 320) + '…' : s.snippet)}</div>` : ''}
              </div></div>`).join('')}
-      <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(`This list is ${g.cited} distinct [S#] marker${plural(g.cited, '', 's')} the MODEL emitted that named a section the search really returned${g.unreadable.length ? `, plus ${g.unreadable.length} entr${plural(g.unreadable.length, 'y', 'ies')} printed verbatim because nothing in ${plural(g.unreadable.length, 'it', 'them')} could be read as a document` : ''}. It is a count of the model's claims, not proof that any sentence came from the section it points at — the workflow's own note says so: a marker is the model claiming a source. What is checked deterministically is the figures, and that check is reported above.`)}</div>
-      <div class="cell-sub" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: Your documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
+      <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(`This list is ${g.cited} distinct [S#] marker${plural(g.cited, '', 's')} the MODEL emitted that named a section the search really returned${g.unreadable.length ? `, plus ${g.unreadable.length} entr${plural(g.unreadable.length, 'y', 'ies')} printed verbatim because nothing in ${plural(g.unreadable.length, 'it', 'them')} could be read as a document` : ''}. It is a count of the model's claims, not proof that any sentence came from the section it points at — the workflow's own note says so: a marker is the model claiming a source. What is checked deterministically is the figures, and that check is reported above.`)}</div>
+      <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">A citation also cannot say how old the section is: Your documents stores no ingest date, so a cited answer is grounded but of unknown vintage. Open the document itself before quoting a rate, a term or a policy to a customer.</div>
     </div>` : '';
 
   /* Printed on every answered turn that carried grounding, whatever the
      verdict. It is the audit trail for the pill: the numbers the verdict was
      computed from, in one place, so a clean turn can be checked as easily as a
      failing one. */
-  const evidence = gr.present ? `<div class="cell-sub" style="white-space:normal;margin-top:10px">${esc([
+  const evidence = gr.present ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:10px">${esc([
       `Grounding state ${gr.state || 'empty'}`,
       `${retrieved == null ? 'unknown' : num(retrieved)} retrieved`,
       `${sent == null ? 'unknown' : num(sent)} sent to the model`,
@@ -763,10 +763,10 @@ function entryBody(e) {
           only part that changes what a reader should do: the answer carries no
           marker saying how it was produced, so nothing here can confirm it came
           from the intended path. */ ''}
-    <div class="cell-sub" style="white-space:normal;margin-top:4px">${esc('The reply carries no marker saying how it was produced, so this screen cannot confirm the answer came from the intended path. Judge it on the grounding above, which is checked rather than claimed.')}</div>` : '';
+    <div class="ds-cell-sub" style="white-space:normal;margin-top:4px">${esc('The reply carries no marker saying how it was produced, so this screen cannot confirm the answer came from the intended path. Judge it on the grounding above, which is checked rather than claimed.')}</div>` : '';
 
   return head + body + severeBanner + warnBanner + declinedBanner + unknownBanner + sources
-    + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">${verdict}<span class="cell-sub">${meta}</span></div>`
+    + `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">${verdict}<span class="ds-cell-sub">${meta}</span></div>`
     + evidence
     + foot(e.rawText);
 }
@@ -786,10 +786,21 @@ function turnEdge(e) {
 }
 
 SCREENS.ask = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
+     screens/setup.js, screens/inventory.js and screens/conversations.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const wrap = el('div');
   wrap.style.maxWidth = '900px';
   wrap.style.margin = '0 auto';
-  host.appendChild(wrap);
+  root.appendChild(wrap);
 
   wrap.innerHTML = `
     <div class="card flush" id="askAlerts" style="margin-bottom:16px">
@@ -797,7 +808,7 @@ SCREENS.ask = async host => {
         <div class="card-title">Alerts</div>
         <div class="card-sub" id="askAlertSub">Checking the knowledge base, the workflow's health and v_needs_attention…</div>
       </div></div>
-      <div id="askAlertBody"><div class="cell-sub" style="padding:16px 20px">Reading…</div></div>
+      <div id="askAlertBody"><div class="ds-cell-sub" style="padding:16px 20px">Reading…</div></div>
     </div>
     <div class="card" id="askComposer">
       <div class="card-title" style="margin-bottom:4px">Ask the knowledge base</div>
@@ -1214,7 +1225,7 @@ SCREENS.ask = async host => {
     ].filter(Boolean);
     const foot = `<div class="list-item" style="cursor:default;align-items:flex-start">
       <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-      <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+      <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
 
     /* The all-clear used to be one fixed sentence asserting three things at
        once. It outlived its own conditions more than once — it still claimed the
@@ -1253,12 +1264,12 @@ SCREENS.ask = async host => {
         ? `<div class="list-item" style="cursor:default;align-items:flex-start">
              <span class="material-symbols-outlined t-muted" style="font-size:20px">hourglass_top</span>
              <div><div style="font-weight:500">Still checking</div>
-               <div class="cell-sub" style="white-space:normal">Nothing has been found yet, which is not the same as nothing being wrong — ${esc(num(waiting))} of the three checks ${plural(waiting, 'is', 'are')} still reading.</div></div>
+               <div class="ds-cell-sub" style="white-space:normal">Nothing has been found yet, which is not the same as nothing being wrong — ${esc(num(waiting))} of the three checks ${plural(waiting, 'is', 'are')} still reading.</div></div>
            </div>`
         : `<div class="list-item" style="cursor:default;align-items:flex-start">
              <span class="material-symbols-outlined t-ok" style="font-size:20px">task_alt</span>
              <div><div style="font-weight:500">Nothing on this screen needs a human</div>
-               <div class="cell-sub" style="white-space:normal">${cleared.map(esc).join('<br>')}</div></div>
+               <div class="ds-cell-sub" style="white-space:normal">${cleared.map(esc).join('<br>')}</div></div>
            </div>`) + foot;
       return;
     }
@@ -1270,8 +1281,8 @@ SCREENS.ask = async host => {
           <div style="font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${esc(a.title)}
             ${a.badge ? `<span class="chip">${esc(a.badge)}</span>` : ''}
             ${a.durable ? '' : '<span class="chip" title="Computed from this browser session. It is stored nowhere and disappears when the tab reloads.">this session</span>'}</div>
-          <div class="cell-sub" style="white-space:normal">${a.detail}</div>
-          ${a.foot ? `<div class="cell-sub">${a.foot}</div>` : ''}
+          <div class="ds-cell-sub" style="white-space:normal">${a.detail}</div>
+          ${a.foot ? `<div class="ds-cell-sub">${a.foot}</div>` : ''}
         </div>
         ${a.settings ? `<button class="btn sm ghost" data-goto="settings" title="Settings lists every indexed document and the columns your documents actually returned.">Knowledge base</button>` : ''}
         ${a.target ? '<span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>' : ''}
@@ -1521,7 +1532,7 @@ SCREENS.ask = async host => {
         syncControls();
       }));
     } else {
-      $('askChips').innerHTML = `<div class="cell-sub">${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')}, none of them titled, so there is nothing to offer as a starting point.</div>`;
+      $('askChips').innerHTML = `<div class="ds-cell-sub">${esc(num(kb.count))} indexed section${plural(kb.count, '', 's')}, none of them titled, so there is nothing to offer as a starting point.</div>`;
     }
     renderAlerts();
     syncControls();
@@ -1700,7 +1711,7 @@ SCREENS.ask = async host => {
       ].filter(Boolean);
       const foot = `<div class="list-item" style="cursor:default;align-items:flex-start">
         <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="cell-sub" style="white-space:normal">${provenance.map(esc).join('<br>')}</div></div>`;
+        <div class="ds-cell-sub" style="white-space:normal">${provenance.map(esc).join('<br>')}</div></div>`;
 
       if (!rows.length) {
         return stateEmpty('No Ask-AI runs recorded',
@@ -1721,7 +1732,7 @@ SCREENS.ask = async host => {
       const rated = rows.filter(isQualifying);
       const ok = rated.filter(isSuccess).length;
       const refused = rows.filter(isRefusal).length;
-      const head = `<div class="cell-sub" style="padding:14px 20px 0">${esc(num(ok))} of the ${esc(num(rated.length))} rated run${plural(rated.length, '', 's')} succeeded${
+      const head = `<div class="ds-cell-sub" style="padding:14px 20px 0">${esc(num(ok))} of the ${esc(num(rated.length))} rated run${plural(rated.length, '', 's')} succeeded${
         refused ? ` · ${esc(num(refused))} further request${plural(refused, '', 's')} refused by design and not rated` : ''}${
         rows.length !== rated.length + refused ? ` · ${esc(num(rows.length - rated.length - refused))} handed to a person on purpose` : ''}${
         rows[0]?.logged_at ? ' · most recent ' + esc(ago(rows[0].logged_at)) : ''}</div>`;
@@ -1746,7 +1757,7 @@ SCREENS.ask = async host => {
         else if (!em) phoneHtml = '— no email to look a number up by';
         else if (phoneErr) phoneHtml = '<span class="t-warm">phone lookup failed</span>';
         else phoneHtml = '— not looked up';
-        return `<div>${nameHtml}</div><div class="cell-sub">${phoneHtml}${em ? ` · ${esc(em)}` : ''}</div>`;
+        return `<div>${nameHtml}</div><div class="ds-cell-sub">${phoneHtml}${em ? ` · ${esc(em)}` : ''}</div>`;
       };
 
       return head + table([
@@ -1762,7 +1773,7 @@ SCREENS.ask = async host => {
           } },
         { label: 'Workflow', render: r => esc(str(r.workflow) || '—') },
         { label: 'Lead', render: who },
-        { label: 'Summary', render: r => `${esc(str(r.summary) || '—')}${r.intent ? `<div class="cell-sub">${esc(r.intent)}</div>` : ''}` },
+        { label: 'Summary', render: r => `${esc(str(r.summary) || '—')}${r.intent ? `<div class="ds-cell-sub">${esc(r.intent)}</div>` : ''}` },
       ], rows) + foot;
     },
   });

@@ -64,6 +64,7 @@
       folded into a denominator as zeroes. */
 
 import { db } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { aed, dubaiDate, dubaiStamp, esc, num, pct, pill } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -76,8 +77,8 @@ const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="cell-sub">${h}</div>`;
-const hot    = h => `<div class="cell-sub t-hot">${h}</div>`;
+const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const bold   = h => `<div style="font-weight:600">${h}</div>`;
 const wrap   = h => `<div style="white-space:normal">${h}</div>`;
 const mono   = v => `<span class="mono">${esc(str(v))}</span>`;
@@ -136,6 +137,17 @@ const wireGo = card => {
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.attribution = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto another screen and restyle one nobody converted. A wrapper
+     cannot leak — go() removes it with the rest of the subtree. Same pattern as
+     screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* Every path is a literal so QUALITY_GATE.mjs can extract it and check each
      column name against the live catalogue. Do not move these into a map keyed
      by name: the gate cannot follow a variable, and a column renamed in the
@@ -238,7 +250,7 @@ SCREENS.attribution = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P1 · The chain, and the question it cannot answer
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Campaign → Lead → Conversation → Vehicle → Deal → Sale',
     sub: 'What this database can evidence about how money arrived, hop by hop — and, first, the one hop that makes '
        + 'the owner&rsquo;s question unanswerable',
@@ -264,7 +276,7 @@ SCREENS.attribution = async host => {
              <span class="material-symbols-outlined" style="font-size:20px">campaign</span>
              <div>
                ${bold('&ldquo;Which channel made me money?&rdquo; cannot be answered — and this screen will not guess.')}
-               <div class="cell-sub" style="margin-top:6px">${esc(str(campaign.finding))}</div>
+               <div class="ds-cell-sub" style="margin-top:6px">${esc(str(campaign.finding))}</div>
                ${str(campaign.unlocked_by)
                   ? muted('<strong>What would answer it:</strong> ' + esc(str(campaign.unlocked_by)))
                   : muted('The engine records no integration that would close this hop, which is itself a gap.')}
@@ -377,7 +389,7 @@ SCREENS.attribution = async host => {
      before the ingestion layer existed, so nothing recorded an origin for it.
      A screen that hid that would be hiding the reason the campaign hop above is
      unanswerable. ══════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Where the enquiries came from',
     sub: 'Of the enquiries whose arrival was recorded, which platform each came from &mdash; and how many were '
        + 'never recorded at all',
@@ -391,7 +403,7 @@ SCREENS.attribution = async host => {
         return `<div class="banner warm">
           <span class="material-symbols-outlined" style="font-size:20px">help</span>
           <div>${bold('Nothing came back, not even an UNKNOWN row.')}
-          <div class="cell-sub" style="margin-top:6px">This function emits the UNKNOWN bucket even when it is
+          <div class="ds-cell-sub" style="margin-top:6px">This function emits the UNKNOWN bucket even when it is
           empty, so an empty answer means the question could not be asked for this account rather than that there
           were no enquiries.</div></div></div>`;
       }
@@ -401,7 +413,7 @@ SCREENS.attribution = async host => {
         ? `<div class="banner hot">
              <span class="material-symbols-outlined" style="font-size:20px">error</span>
              <div>${bold('Not one enquiry has a recorded platform.')}
-             <div class="cell-sub" style="margin-top:6px">Every lead this dealership holds arrived before NEXUS was
+             <div class="ds-cell-sub" style="margin-top:6px">Every lead this dealership holds arrived before NEXUS was
              recording where enquiries come from, so there is nothing to attribute spend against. This is the reason
              the campaign question above cannot be answered, stated as a number.</div></div></div>`
         : '';
@@ -429,7 +441,7 @@ SCREENS.attribution = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P2 · Every hop, what is true today, and what would unlock it
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'The chain hop by hop',
     sub: 'Sixteen hops, each with the state it resolves to in this dealership&rsquo;s live data, what that state is '
        + 'based on, how much of it is evidence, and the finding written against the live catalogue',
@@ -513,7 +525,7 @@ SCREENS.attribution = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P3 · The recorded sales, walked hop by hop
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Every recorded sale, walked',
     sub: 'Eight hops per sale. Confirmed revenue is a column of the sale record and is never attribution; margin is '
        + 'not computable and that is not the same as zero',
@@ -621,7 +633,7 @@ SCREENS.attribution = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P4 · The same walk, forward from every lead
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Every lead, walked forward',
     sub: 'Campaign → Conversation → Vehicle → Finance → Sale → Revenue. A lead with no sale recorded is a statement '
        + 'about the records, never a statement that the person did not buy',
@@ -710,7 +722,7 @@ SCREENS.attribution = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P5 · The event stream, including the events that resolve to nobody
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'The event stream',
     sub: 'Every event the graph models, with how each end was established. An event whose customer does not resolve is '
        + 'still here, with the reason — unknown is not none',
@@ -808,7 +820,7 @@ SCREENS.attribution = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P6 · The evidence vocabulary, and the provenance of this page
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'What counts as evidence here',
     sub: 'The closed list of ways a link can be established, and which of them this product is allowed to reason from',
     load: async () => {

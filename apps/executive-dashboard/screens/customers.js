@@ -517,25 +517,36 @@ function contactLabel(c) {
 }
 
 SCREENS.customers = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
+     screens/setup.js, screens/inventory.js and screens/conversations.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const strip = el('div', 'grid g5');
   strip.innerHTML = stateLoading(2);
-  host.appendChild(strip);
+  root.appendChild(strip);
 
   const noteHost = el('div');
   noteHost.style.marginTop = '16px';
-  host.appendChild(noteHost);
+  root.appendChild(noteHost);
 
   const grid = el('div', 'card flush');
   grid.style.display = 'grid';
   grid.style.gridTemplateColumns = '340px minmax(0,1fr)';
   grid.style.minHeight = '620px';
   grid.innerHTML = stateLoading(6);
-  host.appendChild(grid);
+  root.appendChild(grid);
 
   const otherHost = el('div', 'card flush');
   otherHost.style.marginTop = '16px';
   otherHost.innerHTML = stateLoading(4);
-  host.appendChild(otherHost);
+  root.appendChild(otherHost);
 
   /* Every source is read independently. "The aggregation is down" and "the
      customer list is down" are different events and the screen stays useful
@@ -861,7 +872,7 @@ SCREENS.customers = async host => {
     return newestOutcome === OUTCOME.SUCCESS
       ? `<span class="t-ok">Newest logged run succeeded outright · ${esc(ago(newestRun.logged_at))}</span>`
       : `<span class="t-hot">Newest logged run ${esc(w.label.toLowerCase())} · ${esc(ago(newestRun.logged_at))}</span>
-         <div class="cell-sub" style="white-space:normal">${esc(w.blurb)}</div>`;
+         <div class="ds-cell-sub" style="white-space:normal">${esc(w.blurb)}</div>`;
   })();
 
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
@@ -1119,7 +1130,7 @@ SCREENS.customers = async host => {
           <button class="btn sm" disabled title="${esc(NO_SYNC_HOOK)}">Re-run sync</button>
         </div>
         <div id="custList" style="overflow-y:auto;flex:1"></div>
-        <div class="cell-sub" style="padding:12px 20px;border-top:1px solid var(--border-subtle);white-space:normal">
+        <div class="ds-cell-sub" style="padding:12px 20px;border-top:1px solid var(--border-subtle);white-space:normal">
           ${esc(CRM_NOTE)}
         </div>
       </div>
@@ -1146,7 +1157,7 @@ SCREENS.customers = async host => {
     const foot = collapsed
       ? `<div class="list-item" style="cursor:default;align-items:flex-start">
            <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-           <div class="cell-sub" style="white-space:normal">${esc(String(collapsed))} further
+           <div class="ds-cell-sub" style="white-space:normal">${esc(String(collapsed))} further
            ${collapsed === 1 ? 'row' : 'rows'} from ${esc(spineSource)} shared an email address with a customer
            above and ${collapsed === 1 ? 'was' : 'were'} collapsed into it, because leads and purchases are keyed
            on email. Messages are not — they are read under every key the person is filed under.</div>
@@ -1180,14 +1191,14 @@ SCREENS.customers = async host => {
                 ${c.view && c.view.is_vip
                   ? '<span class="pill vip" title="is_vip is set on this customer’s v_customer_360 row. The view decides the rule; this screen does not know what it is."><span class="dot"></span>VIP</span>'
                   : ''}</div>
-              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ph.phone
+              <div class="ds-cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ph.phone
                 ? `<span class="mono" title="${esc('From ' + ph.from)}">${esc(maskText(ph.phone))}</span>`
                 : '<span class="t-warm">No phone on any source</span>'}
                 · ${esc(maskText(c.email || 'No email on the directory row'))}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
-              <div class="cell-sub num">${ltv == null || !hasPurchase ? '' : aed(ltv)}</div>
-              <div class="cell-sub">${basis}</div>
+              <div class="ds-cell-sub num">${ltv == null || !hasPurchase ? '' : aed(ltv)}</div>
+              <div class="ds-cell-sub">${basis}</div>
             </div>
           </div>`;
         }).join('')
@@ -1297,11 +1308,11 @@ SCREENS.customers = async host => {
     if (selected !== key) return;
 
     const v = c.view || {};
-    const noEmailNote = '<div class="cell-sub" style="margin-top:8px">This directory row carries no email address, and leads and purchases are keyed on email — so neither can be matched to it. Messages are read separately, under every key this person is filed under.</div>';
+    const noEmailNote = '<div class="ds-cell-sub" style="margin-top:8px">This directory row carries no email address, and leads and purchases are keyed on email — so neither can be matched to it. Messages are read separately, under every key this person is filed under.</div>';
     const section = (title, res, empty, body, nullNote) => {
       if (res.err) return `<div class="section"><div class="label-caps">${esc(title)}</div>${stateError(title.toLowerCase(), res.err, 'x')}</div>`;
       if (res.rows == null) return `<div class="section"><div class="label-caps">${esc(title)}</div>${nullNote || noEmailNote}</div>`;
-      if (!res.rows.length) return `<div class="section"><div class="label-caps">${esc(title)}</div><div class="cell-sub" style="margin-top:8px">${esc(empty)}</div></div>`;
+      if (!res.rows.length) return `<div class="section"><div class="label-caps">${esc(title)}</div><div class="ds-cell-sub" style="margin-top:8px">${esc(empty)}</div></div>`;
       return `<div class="section"><div class="label-caps">${esc(title)}</div>${body(res.rows)}</div>`;
     };
 
@@ -1634,14 +1645,14 @@ SCREENS.customers = async host => {
     } else if (ltvFromView != null) {
       ltvValue = aed(ltvFromView);
       ltvSub = `<span class="t-warm">Every purchase amount on file, summed · the customer record${viewPurchases == null ? '' : ` · ${num(viewPurchases)} purchase${viewPurchases === 1 ? '' : 's'}`} — The recorded sales could not be read here, so it could not be checked against the rows themselves</span>`
-        + `<div class="cell-sub" style="white-space:normal">${esc(DISTINCT_CAVEAT)}</div>`;
+        + `<div class="ds-cell-sub" style="white-space:normal">${esc(DISTINCT_CAVEAT)}</div>`;
     } else {
       ltvValue = '—';
       ltvSub = `<span class="t-muted">No purchase amount recorded, and ${esc(viewGap.replace('that column', 'lifetime_value_aed'))}</span>`;
     }
 
     const waHtml = waErr
-      ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">The saved contact details could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
+      ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The saved contact details could not be read (${esc(waErr)}), so any WhatsApp channel for this customer cannot be shown.</div>`
       : c.contacts.length
         ? `<div style="margin-top:8px">${c.contacts.map(w => {
             const lab = contactLabel(w);
@@ -1649,16 +1660,16 @@ SCREENS.customers = async host => {
               <span class="material-symbols-outlined t-muted" style="font-size:18px">chat</span>
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500">${lab.name ? esc(maskText(lab.name)) : '<span class="t-muted">No name captured on this chat</span>'}</div>
-                <div class="cell-sub" style="white-space:normal">${esc(lab.basis)} · linked to this customer by the email on the lead record.</div>
-                <div class="cell-sub mono" style="word-break:break-all">${esc(str(w.chat_id) || 'no chat id')}</div>
+                <div class="ds-cell-sub" style="white-space:normal">${esc(lab.basis)} · linked to this customer by the email on the lead record.</div>
+                <div class="ds-cell-sub mono" style="word-break:break-all">${esc(str(w.chat_id) || 'no chat id')}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
-                <div class="cell-sub">${str(w.phone) ? `<span class="mono">${esc(maskText(str(w.phone)))}</span>` : '<span class="t-muted">no phone stored</span>'}</div>
-                <div class="cell-sub">${waCount(w)} · ${esc(ago(w.last_seen))}</div>
+                <div class="ds-cell-sub">${str(w.phone) ? `<span class="mono">${esc(maskText(str(w.phone)))}</span>` : '<span class="t-muted">no phone stored</span>'}</div>
+                <div class="ds-cell-sub">${waCount(w)} · ${esc(ago(w.last_seen))}</div>
               </div>
             </div>`;
           }).join('')}</div>`
-        : '<div class="cell-sub" style="margin-top:8px;white-space:normal">No the saved contact details row is linked to this email. Most of the WhatsApp contacts in this system are not customers, so the absence of one here is normal.</div>';
+        : '<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">No the saved contact details row is linked to this email. Most of the WhatsApp contacts in this system are not customers, so the absence of one here is normal.</div>';
 
     pane.innerHTML = `
       <div class="card-head">
@@ -1701,30 +1712,30 @@ SCREENS.customers = async host => {
                 ? '<span class="t-muted">Cannot be matched without an email address</span>'
                 : `${esc(String(purch.rows.length))}${foreignNote(purch)}`}</dd>
             <dt>Directory row</dt><dd>${c.id
-              ? `<span class="mono">${esc(c.id)}</span> <span class="cell-sub">· their id in the customer list</span>`
+              ? `<span class="mono">${esc(c.id)}</span> <span class="ds-cell-sub">· their id in the customer list</span>`
               : '<span class="t-muted">Rebuilt from leads and the recorded sales — there is no directory row behind it</span>'}</dd>
             <dt>Underlying records</dt><dd>${dirErr
               ? '<span class="t-muted">Not available — the view that reports it could not be read</span>'
               : c.sourceRecords == null
                 ? '<span class="t-muted">The customer list returned no source_records value for this address</span>'
                 : n0(c.sourceRecords) != null
-                  ? `${num(c.sourceRecords)} <span class="cell-sub">source_records, as the customer list counts them</span>`
-                  : `<span class="mono">${esc(String(c.sourceRecords))}</span> <span class="cell-sub">source_records, exactly as the customer list reports it</span>`}</dd>
+                  ? `${num(c.sourceRecords)} <span class="ds-cell-sub">source_records, as the customer list counts them</span>`
+                  : `<span class="mono">${esc(String(c.sourceRecords))}</span> <span class="ds-cell-sub">source_records, exactly as the customer list reports it</span>`}</dd>
             <dt>Last seen</dt><dd>${c.lastSeen
-              ? `${esc(ago(c.lastSeen))} <span class="cell-sub">· the newest last_seen_at on this address</span>`
+              ? `${esc(ago(c.lastSeen))} <span class="ds-cell-sub">· the newest last_seen_at on this address</span>`
               : '<span class="t-muted">No last_seen_at on this row</span>'}</dd>
             <dt>Email key</dt><dd class="mono" style="word-break:break-all">${esc(maskText(c.email || '—'))}</dd>
             <dt>Message keys</dt><dd>${commsFilter.ok
               ? `<span class="mono" style="word-break:break-all">${esc(commsFilter.keys.join(', '))}</span>
-                 <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)} The key each message is filed under holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
+                 <div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)} The key each message is filed under holds four incompatible key shapes for one person, so a history read under the address alone is a fragment of itself. ${ident.keyDetail.some(k => k.synthetic) ? 'The derived keys are the exact spellings the workflows write for a known phone number; they are queried whether or not a contact row exists for them.' : ''}</div>`
               : `<span class="t-warm">None</span>
-                 <div class="cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
+                 <div class="ds-cell-sub" style="white-space:normal">${esc(commsFilter.note)}</div>`}</dd>
             <dt>Phone</dt><dd>${ph.phone
-              ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="cell-sub">· found on ${esc(ph.from)}</span>`
+              ? `<span class="mono">${esc(maskText(ph.phone))}</span> <span class="ds-cell-sub">· found on ${esc(ph.from)}</span>`
               : `<span class="t-warm">Not recorded</span>
-                 <div class="cell-sub" style="white-space:normal">${esc(NO_PHONE_LONG)}</div>`}</dd>
+                 <div class="ds-cell-sub" style="white-space:normal">${esc(NO_PHONE_LONG)}</div>`}</dd>
             <dt>Source system</dt><dd>NEXUS <span class="t-muted">· not your CRM</span>
-              <div class="cell-sub" style="white-space:normal">${esc(CRM_NOTE)}</div></dd>
+              <div class="ds-cell-sub" style="white-space:normal">${esc(CRM_NOTE)}</div></dd>
           </dl>
         </div>
 
@@ -1736,14 +1747,14 @@ SCREENS.customers = async host => {
         <div class="section">
           <div class="label-caps">Unified profile · the customer profiles</div>
           ${profErr
-            ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">The profile table could not be read (${esc(profErr)}).</div>`
+            ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The profile table could not be read (${esc(profErr)}).</div>`
             : c.profile
               ? `<dl class="kv" style="margin-top:8px">
                    <dt>Customer ID</dt><dd class="mono">${esc(c.profile.customer_id == null ? '—' : String(c.profile.customer_id))}</dd>
                    <dt>Email touches</dt><dd>${touchCell(c.profile.total_emails, c.profile.last_synced_at, custRun)}</dd>
                    <dt>Slack messages</dt><dd>${touchCell(c.profile.total_slack_messages, c.profile.last_synced_at, custRun)}</dd>
                    <dt>Last synced</dt><dd>${esc(ago(c.profile.last_synced_at))}${c.profile.last_synced_at
-                     ? ` <span class="cell-sub">· ${syncedAfterFix(c.profile.last_synced_at)
+                     ? ` <span class="ds-cell-sub">· ${syncedAfterFix(c.profile.last_synced_at)
                           ? 'after the mail connection was restored'
                           : 'before the mail connection was restored'}</span>`
                      : ' <span class="t-muted">(the row exists but carries no timestamp, so which run wrote it is unknown)</span>'}</dd>
@@ -1753,28 +1764,28 @@ SCREENS.customers = async host => {
                        ? '<span class="t-muted">Unknown — no entry in the automation register identifies the aggregation</span>'
                        : custRun
                          ? `${pill(outcomeWords(outcomeOf(custRun)).label, outcomeWords(outcomeOf(custRun)).tone, { verbatim: false })}
-                            <span class="cell-sub">· ${esc(ago(custRun.logged_at))} · logged beside this row’s last_synced_at · ${esc(String(custRuns.length))} logged run${custRuns.length === 1 ? '' : 's'} in all name this customer</span>
-                            <div class="cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
+                            <span class="ds-cell-sub">· ${esc(ago(custRun.logged_at))} · logged beside this row’s last_synced_at · ${esc(String(custRuns.length))} logged run${custRuns.length === 1 ? '' : 's'} in all name this customer</span>
+                            <div class="ds-cell-sub" style="white-space:normal">${esc(str(custRun.summary) || 'The run logged no summary.')}</div>`
                          : custLatestRun
                            ? `<span class="t-warm">Not recorded</span>
-                              <div class="cell-sub" style="white-space:normal">No the activity log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced the figures above is not on record. The aggregation has logged ${esc(String(custRuns.length))} run${custRuns.length === 1 ? '' : 's'} naming this customer, the newest ${esc(ago(custLatestRun.logged_at))} — that run is older than this row and did not write it, so its outcome is deliberately not shown against these numbers. Its summary read: ${esc(str(custLatestRun.summary) || 'no summary.')}</div>`
+                              <div class="ds-cell-sub" style="white-space:normal">No the activity log row was written within ${esc(String(RUN_WINDOW_MS / 60000))} minutes of this profile’s last_synced_at, so which run produced the figures above is not on record. The aggregation has logged ${esc(String(custRuns.length))} run${custRuns.length === 1 ? '' : 's'} naming this customer, the newest ${esc(ago(custLatestRun.logged_at))} — that run is older than this row and did not write it, so its outcome is deliberately not shown against these numbers. Its summary read: ${esc(str(custLatestRun.summary) || 'no summary.')}</div>`
                            : `<span class="t-warm">No the activity log row names this customer</span>
-                              <div class="cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the activity log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
+                              <div class="ds-cell-sub" style="white-space:normal">The aggregation has logged ${esc(String(aggLog.length))}${logCapped ? ' or more' : ''} run${aggLog.length === 1 ? '' : 's'}${logCapped ? ` — the activity log read came back at its ${esc(String(AGG_LOG_LIMIT))}-row limit, so older runs were not read` : ''}, none of them under any key this customer is filed under, so what the run that wrote these figures actually collected is not recorded. Everything above is inferred from the timestamp alone.</div>`}</dd>
                    <dt>Name on profile</dt><dd>${esc(maskText(str(c.profile.name) || '—'))}</dd>
                    <dt>Phone on profile</dt><dd>${str(c.profile.phone)
                      ? `<span class="mono">${esc(maskText(str(c.profile.phone)))}</span>`
                      : '<span class="t-muted">None on this profile row</span>'}</dd>
                  </dl>
-                 <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))}</div>`
+                 <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${esc(aggNote(c.profile.last_synced_at, custRun))}</div>`
               : (n0(v.total_emails) != null || n0(v.total_slack_messages) != null)
-                ? `<div class="cell-sub" style="white-space:normal">The nightly job has written no customer profile for this customer.
+                ? `<div class="ds-cell-sub" style="white-space:normal">The nightly job has written no customer profile for this customer.
                      The customer record carries the same two counters for them and they are shown here — but it records no time of
                      collection, so when these were counted, and therefore whether they predate the mail connection being restored, cannot be told from it.</div>
                    <dl class="kv" style="margin-top:8px">
                      <dt>Email touches</dt><dd>${touchCell(v.total_emails, null, custRun)}</dd>
                      <dt>Slack messages</dt><dd>${touchCell(v.total_slack_messages, null, custRun)}</dd>
                    </dl>
-                   <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
+                   <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${esc(AGG_ZERO_CAUSE)}</div>`
                 : noSource('The nightly Customer 360 aggregation has not written a row for this customer, and the customer record reports no touch counts for them either, so there are no email or Slack figures to show and no last_synced_at. Identity, phone, leads, purchases and logged messages on this screen are read live and are current.')}
         </div>
 
@@ -1786,17 +1797,17 @@ SCREENS.customers = async host => {
               <strong>${vehicle
                 ? esc(vehicle)
                 : '<span class="t-muted">No vehicle recorded on this purchase</span>'}</strong>${n0(x.amount_aed) == null ? '' : ' · ' + aed(x.amount_aed)}
-              <div class="cell-sub">${x.purchase_date
+              <div class="ds-cell-sub">${x.purchase_date
                 ? `${esc(dubaiDate(x.purchase_date, str(x.purchase_date)))} · ${esc(ago(x.purchase_date))}`
                 : 'No purchase date recorded'}${x.deal_id ? ` · deal ${esc(String(x.deal_id))}` : ''}</div>
-              <div class="cell-sub">Recorded as ${esc(maskText(str(x.customer_name) || nameOf(c)))} ·
+              <div class="ds-cell-sub">Recorded as ${esc(maskText(str(x.customer_name) || nameOf(c)))} ·
                 ${rowPhone
                   ? `<span class="mono">${esc(rowPhone)}</span>`
                   : '<span class="t-muted">no phone on this purchase row</span>'}</div>
             </div>`;
           }).join('')}
-          ${purchTotal == null ? '' : `<div class="cell-sub num" style="margin-top:10px">${esc(String(rows.length))} purchase${rows.length === 1 ? '' : 's'} · ${aed(purchTotal)} total</div>`}
-          <div class="cell-sub" style="margin-top:10px;white-space:normal">${esc(NO_INVENTORY_LINK)}</div>`)}
+          ${purchTotal == null ? '' : `<div class="ds-cell-sub num" style="margin-top:10px">${esc(String(rows.length))} purchase${rows.length === 1 ? '' : 's'} · ${aed(purchTotal)} total</div>`}
+          <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${esc(NO_INVENTORY_LINK)}</div>`)}
 
         ${section('Leads', leads, 'No lead recorded for this customer.', rows => `
           <div class="timeline" style="margin-top:8px">${rows.map(l => `
@@ -1824,7 +1835,7 @@ SCREENS.customers = async host => {
                             ? '<span class="t-hot">· breaches the 5-minute rule</span>'
                             : '<span class="t-ok">· within SLA</span>'}`}</div>
                 <div>${esc(str(l.vehicle_interest) || 'No vehicle recorded')} ${pill(l.status || 'NEW', undefined, { verbatim: !!l.status })}</div>
-                ${n0(l.budget_aed) == null ? '' : `<div class="cell-sub">Budget ${aed(l.budget_aed)}</div>`}
+                ${n0(l.budget_aed) == null ? '' : `<div class="ds-cell-sub">Budget ${aed(l.budget_aed)}</div>`}
               </div></div>`).join('')}</div>`)}
 
         ${section('Recent messages', comms,
@@ -1834,7 +1845,7 @@ SCREENS.customers = async host => {
             <div class="tl-item"><span class="tl-dot"></span><div class="tl-body">
               <div class="tl-meta"><span class="chip">${esc(str(m.channel) || 'unknown channel')}</span> ${esc(str(m.direction))} · ${esc(ago(m.created_at))}</div>
               <div style="white-space:pre-wrap">${esc(String(m.message || '').slice(0, 240))}</div></div></div>`).join('')}</div>
-          <div class="cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} rows read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}${events && events.internalCount
+          <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">${rows.length > 10 ? `Showing the newest 10 of ${esc(String(rows.length))} rows read${rows.length >= MSG_LIMIT ? ` (capped at ${esc(String(MSG_LIMIT))}, so there are more)` : ''}. ` : ''}${events && events.internalCount
             /* This list is EVENTS, and the figure above is MESSAGES, so the two
                will not tally whenever an internal note is among the rows — said
                here rather than left for the reader to notice. It used to call
@@ -1848,7 +1859,7 @@ SCREENS.customers = async host => {
                 <div>${esc(a.message)}</div></div>`).join('')
             : ''}`,
           comms.noKey
-            ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(commsFilter.note)} No read was issued: a query with no key would have matched every message in the table rather than none, and returning that as this customer's history is the failure this section exists to avoid.</div>`
+            ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(commsFilter.note)} No read was issued: a query with no key would have matched every message in the table rather than none, and returning that as this customer's history is the failure this section exists to avoid.</div>`
             : undefined)}
       </div>`;
 
@@ -1896,14 +1907,14 @@ SCREENS.customers = async host => {
 
   const otherCols = [
     { label: 'Contact', strong: true, render: o => o.name
-      ? `${esc(displayName(o.name))}<div class="cell-sub" style="white-space:normal">${esc(o.idBasis || 'Name as recorded by the source table')}</div>`
+      ? `${esc(displayName(o.name))}<div class="ds-cell-sub" style="white-space:normal">${esc(o.idBasis || 'Name as recorded by the source table')}</div>`
       : `<span class="mono t-muted" style="word-break:break-all">${esc(maskText(o.chatId || o.email || o.key))}</span>
-         <div class="cell-sub t-warm" style="white-space:normal">${esc(o.idBasis || 'No name on record — this is an identifier, not a person’s name')}</div>` },
+         <div class="ds-cell-sub t-warm" style="white-space:normal">${esc(o.idBasis || 'No name on record — this is an identifier, not a person’s name')}</div>` },
     /* Headed for what the column can actually establish. "Why this is not a
        customer" asserted the conclusion in the heading, so a row whose reason is
        "a view dropped a lead with no email address" was filed under a title that
        contradicted it. */
-    { label: 'Why this row is not in the customer list', render: o => `<span class="cell-sub" style="white-space:normal">${esc(o.basis)}</span>` },
+    { label: 'Why this row is not in the customer list', render: o => `<span class="ds-cell-sub" style="white-space:normal">${esc(o.basis)}</span>` },
     { label: 'Phone', render: o => o.phone
       ? `<span class="mono">${esc(maskText(o.phone))}</span>`
       : '<span class="t-muted">Not stored on any row for this contact</span>' },

@@ -76,9 +76,9 @@ import { $, el } from '../lib/dom.js';
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="cell-sub">${h}</div>`;
-const hot   = h => `<div class="cell-sub t-hot">${h}</div>`;
-const warm  = h => `<div class="cell-sub t-warm">${h}</div>`;
+const muted = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
+const warm  = h => `<div class="ds-cell-sub t-warm">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 const chip  = t => `<span class="chip">${esc(t)}</span>`;
@@ -170,6 +170,17 @@ const orderRows = rows => (Array.isArray(rows) ? rows.slice() : []).sort((a, b) 
    SCREEN
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.channels = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* Every visit re-reads. See the note on `shared` above for what this repairs
      and why a stale channel register is worse than a slow one. */
   resetReads();
@@ -187,7 +198,7 @@ SCREENS.channels = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Every channel, counted by what is actually true of it',
     sub: 'Four separate figures, never added together and never rolled into a score. A channel that is switched off '
        + 'and a channel that is carrying customers are opposite facts, and only one of these four columns has ever '
@@ -289,7 +300,7 @@ SCREENS.channels = async host => {
                  an unverified claim. */
   {
     const card = el('div', 'card');
-    host.appendChild(card);
+    root.appendChild(card);
     let rows = null;
     let loadErr = null;
 
@@ -345,19 +356,19 @@ SCREENS.channels = async host => {
 
     const openConnectModal = () => {
       const m = openModal('Connect WhatsApp Cloud number', `
-        <div class="cell-sub" style="margin-bottom:12px">These come from your own Meta Business Manager — WhatsApp
+        <div class="ds-cell-sub" style="margin-bottom:12px">These come from your own Meta Business Manager — WhatsApp
           Business API settings for the app you registered. NEXUS never holds a WhatsApp asset of its own; every
           dealership brings its own number.</div>
         <div class="field"><label for="cwDisplay">Display number (optional)</label>
           <input id="cwDisplay" placeholder="+971 4 xxx xxxx" /></div>
         <div class="field"><label for="cwPnid">Phone number ID</label>
           <input id="cwPnid" placeholder="1306545252542419" />
-          <div class="cell-sub">The numeric id from WhatsApp Business API settings — not the phone number itself.</div></div>
+          <div class="ds-cell-sub">The numeric id from WhatsApp Business API settings — not the phone number itself.</div></div>
         <div class="field"><label for="cwWaba">WABA id (optional)</label>
           <input id="cwWaba" placeholder="Numeric WhatsApp Business Account id" /></div>
         <div class="field"><label for="cwToken">System user access token</label>
           <textarea id="cwToken" rows="3" placeholder="Scope: whatsapp_business_messaging"></textarea>
-          <div class="cell-sub">Stored in Vault. This screen will never display it again — only a short fingerprint
+          <div class="ds-cell-sub">Stored in Vault. This screen will never display it again — only a short fingerprint
             so you can confirm which token is installed.</div></div>`,
         `<button class="btn primary" id="cwSave">Connect</button><button class="btn" id="cwCancel">Cancel</button>`);
       m.wrap.querySelector('#cwCancel').addEventListener('click', m.close);
@@ -388,7 +399,7 @@ SCREENS.channels = async host => {
 
     const openTestModal = integrationId => {
       const m = openModal('Send a test message', `
-        <div class="cell-sub" style="margin-bottom:12px">One real WhatsApp message is sent through Meta’s API to the
+        <div class="ds-cell-sub" style="margin-bottom:12px">One real WhatsApp message is sent through Meta’s API to the
           number below. If it is accepted, this channel is marked ACTIVE immediately — that happens on the server,
           only after a real send succeeds, never on this form alone.</div>
         <div class="field"><label for="cwRecipient">Send the test to (WhatsApp number)</label>
@@ -423,7 +434,7 @@ SCREENS.channels = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P2 · The register itself
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Every channel, and what is actually true of it',
     sub: 'Receiving first, then switched on, then switched off, then not built. Within a state, the most recent '
        + 'arrival first. Every line carries the database’s own account of why it is in the state it is in',
@@ -485,7 +496,7 @@ SCREENS.channels = async host => {
      that. What this panel must NOT do is dress it up: if the state is anything
      other than RECEIVING, it says plainly that nothing has arrived, in the same
      place and the same size it would have said the opposite. */
-  panel(host, {
+  panel(root, {
     title: 'WhatsApp Business Cloud',
     sub: 'The official WhatsApp Cloud API channel, shown on its own because it is the one channel that has actually '
        + 'carried a customer into this database rather than merely being configured to',
@@ -572,7 +583,7 @@ SCREENS.channels = async host => {
      Fixed rows. They are true whether or not the read above succeeded, which is
      why this panel takes the soft load: a screen whose job is to state what it
      cannot tell you must not go blank at exactly the moment it knows least. */
-  panel(host, {
+  panel(root, {
     title: 'What this screen cannot tell you',
     sub: 'Four things that are outside what the database can answer. They are listed because a dashboard that only '
        + 'shows what it knows reads as though it knows everything',
