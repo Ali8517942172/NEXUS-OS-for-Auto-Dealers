@@ -2738,10 +2738,16 @@ text does not match what ran is precisely the lie this file keeps warning about.
 So: **semantic parity, stated as semantic parity.** The same distinction this
 file already draws for `md5(prosrc)`.
 
-### The Supabase GitHub integration was pointed at the production database — and STILL IS, 19 days later
+### The Supabase GitHub integration was pointed at the production database — it is DISCONNECTED, and `list_branches` was the wrong witness
 
-> **Re-measured 27 September 2026. The branch row is byte-for-byte what was
-> recorded on 8 September:**
+> **Corrected 28 September 2026 — and the correction is the more useful half.**
+> Six hours earlier this same section was rewritten to say the integration was
+> **STILL CONNECTED, 19 days later, and the cheapest open item in the
+> repository**. That was wrong, and it was wrong for a reason this file already
+> names in five other places: **it was read off the wrong witness.**
+>
+> `list_branches(dsvuoovivysszdoiorch)` does still return the branch row, byte
+> for byte as recorded on 8 September:
 >
 > ```
 > name: main   git_branch: main   project_ref: dsvuoovivysszdoiorch
@@ -2749,17 +2755,39 @@ file already draws for `md5(prosrc)`.
 > created_at 2026-08-03   updated_at 2026-08-03   (unchanged)
 > ```
 >
-> **The decision recorded below was never carried out.** Every merge to `main`
-> still points `db push` at the database holding a real dealership's customers,
-> and the only thing standing between that and a schema change nobody reviewed is
-> that it keeps failing. **A loaded gun that has been jamming for eight weeks is
-> not a safety mechanism.**
+> **A branch row is a record. It is not a trigger.** The question that actually
+> matters — *does a merge to `main` still make Supabase push migrations at the
+> production database?* — is answered on GitHub, by whether the check runs:
 >
-> This is the **cheapest open item in this repository**: one toggle, no code, no
-> migration, no rehearsal, a decision already made by the owner. It has outlived
-> three weeks of far harder work being completed around it. When an item is this
-> cheap and this old, the reason is usually that it lives in nobody's section —
-> so it is named here, in the section that found it, as owed.
+> | witness | says |
+> |---|---|
+> | `list_branches` | a `main` branch row exists, `MIGRATIONS_FAILED` |
+> | Supabase project settings -> Integrations -> GitHub | **"Choose GitHub repository"** — no repository connected |
+> | PR #54 (merged 22 Sep), Checks tab | **Vercel and CI only. No `Supabase Preview`.** |
+> | every merge commit on `main` since | **8/8 green** — on 8 September the same commits carried a red X *because* `Supabase Preview` was failing |
+>
+> Three independent witnesses against one. **The integration was disconnected
+> at some point between 8 and 22 September; the branch row it left behind is an
+> orphan.** Ali's decision WAS carried out. Nobody recorded it, which is how it
+> came to be re-reported as open three weeks later.
+>
+> **The orphan row is deliberately left in place.** Deleting a branch whose
+> `project_ref` is production, to tidy a cosmetic record, is a real action
+> against a live database taken for no operational reason. It is documented here
+> instead, because that costs nothing and the next reader of `list_branches`
+> needs this paragraph more than the row needs deleting.
+>
+> **Two rules earned, and they outlast this incident:**
+>
+> 1. **An integration's state is measured where it fires, not where it is
+>    recorded.** For a GitHub integration that is the Checks tab on a real
+>    merge, not an API listing and not a settings page alone.
+> 2. **When a decision is carried out, write it down the same day.** The entire
+>    cost here — an audit finding, a CLAUDE.md rewrite, and a "cheapest open
+>    item" that was already closed — came from a completed action that nobody
+>    recorded. This file is very good at recording what broke and much worse at
+>    recording what was fixed, and an unrecorded fix reads exactly like an open
+>    defect.
 
 Found on 8 September while chasing a red X on the merge commit. **The X was
 never CI** — all ~~four~~ CI jobs were green (Dashboard builds 14s, Quality gate 1m
