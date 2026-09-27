@@ -631,9 +631,9 @@ SCREENS.campaigns = async host => {
        workflow_registry exists for exactly this mapping: `audit_name` plus
        `audit_aliases[]` tie a workflow's n8n name to the string it writes into
        audit_log. Reading it means the roster is not built on a guessed regex.
-       Where the registry cannot be read, or holds no workflow pointing at the
-       lead-trigger webhook, the fallback is a name match and the difference is
-       stated on screen rather than hidden. */
+       Where the registry cannot be read, or holds no workflow this screen can
+       recognise as a drip, the fallback is a name match on audit_log itself and
+       the difference is stated on screen rather than hidden. */
     let registry = null;
     const notes = [];
     try {
@@ -642,10 +642,16 @@ SCREENS.campaigns = async host => {
       notes.push(`The automation register could not be read (${e.message}), so drip runs are matched on the workflow name instead of the registry's audit aliases.`);
     }
 
-    /* The same test on both sources: a workflow is the drip if it triggers on
-       the lead-trigger webhook, or if it is named or categorised as one. */
-    const looksLikeDrip = w => low(w.trigger_detail).includes(HOOK.warmDrip)
-      || /drip|nurture|campaign/i.test(`${w.name || ''} ${w.category || ''}`);
+    /* The same test on both sources: a workflow is the drip if it is named or
+       categorised as one. The webhook path would be the exact test and neither
+       source can carry it — `trigger_detail` is a control-plane column, absent
+       from `nexus_workflow_catalogue()`'s result type and not selected by
+       `v_workflow_health` (CONTROL-PLANE.md 5.2; see `triggerReadable` in
+       screens/automation.js). The clause that tested it sat first here, matched
+       nothing on any row, and the captions downstream reported its failure as a
+       finding about the register. Name and category are what this login may
+       read, so they are the whole test and the captions now say so. */
+    const looksLikeDrip = w => /drip|nurture|campaign/i.test(`${w.name || ''} ${w.category || ''}`);
 
     const dripFlows = (registry || []).filter(looksLikeDrip);
     const dripNames = new Set();
@@ -659,7 +665,7 @@ SCREENS.campaigns = async host => {
       : /drip|nurture/i.test(String(a.workflow || ''));
 
     if (registry && !matchedByRegistry) {
-      notes.push('No the automation register row points at the lead-trigger webhook or is named as a drip, so runs are matched on the workflow name.');
+      notes.push('No row in the automation register is named or categorised as a drip, so runs are matched on the workflow name in the audit trail instead.');
     }
     /* An empty roster has two very different causes and they must not look
        alike: nobody enrolled, or the workflow never writes an audit row. */
@@ -1402,7 +1408,7 @@ SCREENS.campaigns = async host => {
         chip: 'workflow off',
         title: 'Every registered drip workflow is switched off',
         detailHtml: (dripHealth.length ? 'v_workflow_health' : 'workflow_registry')
-          + ` reports <span class="mono">is_active = false</span> on every workflow that triggers on <span class="mono">${esc(HOOK.warmDrip)}</span> or is named as a drip. `
+          + ' reports <span class="mono">is_active = false</span> on every workflow named or categorised as a drip. '
           + 'An enrolment posted from this screen would be accepted by the webhook and then picked up by nothing.',
         target: null,
         why: 'This is a workflow state, not a row on this screen. The Automation screen is where a workflow is switched back on.',

@@ -179,6 +179,17 @@ const sevRank = s => SEV_RANK[up(s)] ?? 3;
 const isPublicPage = w =>
   /nexus\s*public/i.test(String(w?.name || ''))
   || /^\s*[—-]\s*(?:privacy|terms)\s*$/i.test(String(w?.name || ''));
+/* What starts a workflow, and why this screen never says it is unrecorded.
+   `trigger_type` and `trigger_detail` are control-plane columns: the n8n
+   trigger kind, the cron expressions and the webhook paths. A dealership is
+   entitled to know whether its automation is running; where the job lives and
+   how it is reached is the vendor's. So an empty trigger here is never evidence
+   of an empty register — it is a column this session did not ask for and may
+   not have. Worded the same way as screens/automation.js's TRIGGER_NOT_AVAILABLE
+   deliberately: one fact, one sentence, two screens. */
+const TRIGGER_NOT_AVAILABLE =
+  'NEXUS operates the trigger and the schedule for this workflow, and this dashboard is not permitted to read either \u2014 a boundary, not a gap. The cadence is on file, on the vendor\u2019s side of it; nothing here is waiting for you to enter one.';
+
 /* One reason, worded once, so the chip tooltip and the alert cannot drift. */
 const PAGE_WHY =
   'It is a page NEXUS publishes rather than an automation of yours.';
@@ -1501,7 +1512,7 @@ SCREENS.settings = async host => {
         { label: 'Workflow', strong: true, render: w => `
           <div>${esc(str(w.name) || 'Unnamed workflow')}${
             isPublicPage(w) ? ` <span class="chip" title="${esc(PAGE_NOTE)}">web page</span>` : ''}</div>
-          <div class="ds-cell-sub">${esc([str(w.category), str(w.trigger_type)].filter(Boolean).join(' · ') || 'no category recorded')}${
+          <div class="ds-cell-sub">${esc(str(w.category) || 'no category recorded')}${
             w.is_active === false
               ? ' · <span class="t-warm">switched off — it will not run</span>'
               : ' · <span class="t-muted" title="This workflow is switched on and will run. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
@@ -1571,7 +1582,19 @@ SCREENS.settings = async host => {
         <div class="drawer-head">
           <div style="flex:1">
             <h2 style="font-size:18px">${esc(str(w.name) || 'Unnamed workflow')}</h2>
-            <div class="ds-cell-sub">${esc([str(w.category), str(w.trigger_type), str(w.trigger_detail)].filter(Boolean).join(' · ') || 'no trigger recorded')}</div>
+            <div class="ds-cell-sub">${esc(str(w.category) || 'no category recorded')}</div>
+            ${/* This line used to join `category`, `trigger_type` and
+                 `trigger_detail` and print “no trigger recorded” when all three
+                 were empty. The last two are control-plane columns — absent from
+                 `nexus_workflow_catalogue()`'s result type, not selected by
+                 `v_workflow_health` (CONTROL-PLANE.md 5.2) — so they were empty
+                 on every row and any workflow with a blank category told this
+                 dealership its own register held no trigger. It holds one; this
+                 login may not read it. screens/automation.js reached the same
+                 verdict and replaced the same wording; this is that fix carried
+                 across, and the line below states the boundary instead of
+                 asserting an absence. */ ''}
+            <div class="ds-cell-sub" style="white-space:normal;margin-top:2px">${esc(TRIGGER_NOT_AVAILABLE)}</div>
           </div>
           <button class="btn ghost sm" id="wfClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
         </div>

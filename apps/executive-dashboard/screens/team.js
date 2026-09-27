@@ -243,6 +243,15 @@ import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
    and a staff record is not a login. */
 const NO_INVITE =
   'This is a staff record, not a login. Access is granted by the email address the person will sign in with — use "Add a colleague" under Who has access, below.';
+/* The same distinction, for the disabled control on the pending-invite alert.
+   NO_INVITE is about a staff record not being a login and points at this
+   screen's own seat card, which is the right answer there and the wrong one
+   here: the seat already exists, and what is missing is the mail. This button
+   stays disabled because team.js has no send path — nexus_team_invite records a
+   membership and sends nothing — and it names the one that does rather than
+   implying nothing does. */
+const NO_INVITE_FROM_HERE =
+  'This screen records seats; it does not send mail. The invitation email is sent by NEXUS from the Team card on Settings, which an owner opens \u2014 that card, not this button, is the send path.';
 const NO_ROLE_WRITE =
   'This is the job title on the staff record, and it grants nothing. The account role that decides what somebody may do is changed under Who has access, below.';
 const NO_DELETE =
@@ -671,11 +680,19 @@ SCREENS.team = async host => {
              is not happening. It appears when there is something to report. */
           : `${num(withAccount.length)} with an account${pending.length ? ` · ${num(pending.length)} pending invite` : ''}`
             + (roster.length === 1 ? '<div class="t-muted">The whole floor is one person</div>' : '')),
+      /* These two lines said sending an invitation was not built. It is, and it
+         ships in this bundle: the Team card on Settings calls the founder-invite
+         Edge Function, which returns outcome 'invited' after NEXUS sends the
+         mail. What is true of THIS screen is narrower — "Add a colleague" below
+         calls nexus_team_invite, which records the seat and the role and sends
+         nothing — so that is what these say now. Wording the narrow fact as a
+         product limit sent an owner out of the product for a job the product
+         does. */
       kpi('Awaiting an invite', num(pending.length),
         pending.length
-          ? '<span class="t-warm">No account, and nothing here can send one yet</span>'
+          ? '<span class="t-warm">A seat is recorded but no account exists — the invitation mail goes out from the Team card on Settings, which an owner opens</span>'
           : '<span class="t-ok">Nobody is waiting on an invitation</span>'
-            + '<div class="t-muted">Sending one is not built either, so the first hire has to be added outside this dashboard</div>',
+            + '<div class="t-muted">Adding a colleague below records the seat and the role; the invitation mail itself is sent by NEXUS from the Team card on Settings, which an owner opens</div>',
         pending.length ? 't-warm' : ''),
       /* The counts here are within_sla / breached_sla straight off the view, and
          both are count(*) FILTER on response_time_minutes, so their sum is the
@@ -810,10 +827,10 @@ SCREENS.team = async host => {
         + `${plural(pending.length, 'sits', 'sit')} at <span class="mono">pending_invite</span>. They cannot sign in, cannot be alerted when a HOT lead lands and cannot be assigned one, `
         + `so their share of the floor is being carried by whoever else is on it. `
         + (oldest ? `The oldest of these accounts was created ${esc(ago(oldest))}. ` : 'None of these rows carries a creation date, so how long they have been waiting is not knowable. ')
-        + 'Sending the invitation is not built, so this stays outstanding until the endpoint exists.',
+        + 'Adding them here recorded a seat and a role; it sends no mail \u2014 that is all nexus_team_invite does. The invitation itself is sent by NEXUS from the Team card on Settings, which an owner can open, so this stays outstanding until somebody sends it from there rather than until an endpoint is written.',
       act: () => focusRoster('PENDING'),
       actLabel: 'Show them',
-      noHook: { label: `Send invite${plural(pending.length, '', 's')}`, why: NO_INVITE },
+      noHook: { label: `Send invite${plural(pending.length, '', 's')}`, why: NO_INVITE_FROM_HERE },
     });
   }
 
@@ -2069,7 +2086,7 @@ SCREENS.team = async host => {
           ${isPending(r) ? `<div class="banner warm" style="margin-top:12px">
             <span class="material-symbols-outlined">mark_email_unread</span>
             <div>This person cannot sign in, cannot be alerted and cannot be assigned a lead until the account exists.
-            Sending the invitation is not built yet.</div></div>` : ''}
+            This screen recorded the seat and the role, and sends no mail. The invitation itself is sent by NEXUS from the Team card on Settings.</div></div>` : ''}
           ${r.unlinked ? `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
             This row came from <span class="mono">The team figures</span> and matched nobody in <span class="mono">users</span> by id,
             email or name. They have activity against their name but no account record.</div>` : ''}

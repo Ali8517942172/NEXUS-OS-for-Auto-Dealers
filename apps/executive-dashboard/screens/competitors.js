@@ -186,11 +186,13 @@
    computed from it. The log is read separately, without blocking, for the two
    questions where the history IS the subject.
 
-   And the registry caught up. `workflow_registry.trigger_detail` now reads
-   "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00 UTC)",
-   which agrees with the deployed cron, so the drift sentence this screen
-   carried renders empty. The check stays — it is what noticed the
-   disagreement — but nothing here asserts a disagreement that has been fixed.
+   And the registry's own schedule is no longer this screen's business.
+   `workflow_registry.trigger_detail` is a control-plane column — withheld from
+   a dealership login, absent from `nexus_workflow_catalogue()`'s result type
+   and not selected by `v_workflow_health` — so the schedule-drift check that
+   used to live here could never run and has been removed rather than left
+   rendering empty for a reason nobody could read off the code. The schedule
+   this screen states is the deployed cron, which is the only one it has.
 
    1 Sep 2026, finishing that pass. The work above stopped part-way down the
    file and left the half below it reading variables that no longer existed:
@@ -250,16 +252,19 @@ import { deriveUnit, unitForm } from '../lib/unit-form.js';
    and 13:00, which is the evidence for the second hour: the 13:00 run fires and
    writes nothing.
 
-   `workflow_registry.trigger_detail` is NOT the source used here, deliberately.
-   It reads "Cron 0 5 * * * (05:00 Asia/Dubai = 01:00 UTC)" — right about the
-   hour, a day behind on the cadence — so deriving from it would reinstate the
-   halved cycle count this round exists to remove. It is read at runtime and
-   the disagreement is reported on the screen instead, because a registry that
-   describes a different schedule from the one running is itself worth saying.
+   `workflow_registry.trigger_detail` is NOT the source used here, and cannot
+   be: it is a control-plane column and a dealership session may not read it
+   (CONTROL-PLANE.md 5.2; see `triggerReadable` in screens/automation.js).
+   Deriving the cadence from it was never available, and comparing against it —
+   which this screen used to claim it did — was comparing against nothing. The
+   deployed cron below is the single stated source, and if it goes out of date
+   the fix is here rather than on a screen that cannot see the register.
 
    The hour list is named in both clocks because the schedule is fixed in UTC
    and the reader is not. */
 const SCRAPE_HOURS_UTC = [1, 13];
+/* The deployed cron, kept as the written record of where SCRAPE_HOURS_UTC comes
+   from. Nothing renders it: the screen states the hours, not the expression. */
 const SCRAPE_CRON = '0 5,17 * * *';                        // as deployed, Asia/Dubai
 const SCRAPE_EVERY_HOURS = 24 / SCRAPE_HOURS_UTC.length;   // 12 — the gap between runs
 const SCRAPE_SCHEDULE = 'twice a day, at 01:00 and 13:00 UTC (05:00 and 17:00 GST)';
@@ -363,23 +368,16 @@ function cyclesSince(from, to = Date.now()) {
   return n;
 }
 
-/* The hours a cron string in `workflow_registry.trigger_detail` names, in UTC.
-   Used for one thing: telling the reader when the registry's recorded schedule
-   is not the schedule the workflow is running. It reads the hour field only,
-   which is all a "0 5,17 * * *" style entry carries, and returns null rather
-   than guessing at anything it cannot parse. */
-function registryHoursUtc(detail) {
-  const s = String(detail == null ? '' : detail);
-  const m = /(^|\s)([0-9*,\-/]+)\s+([0-9,]+)\s+\*\s+\*\s+\*/.exec(s);
-  if (!m) return null;
-  const hours = m[3].split(',').map(h => Number(h)).filter(h => Number.isInteger(h) && h >= 0 && h < 24);
-  if (!hours.length) return null;
-  /* Every workflow in this system runs on "timezone": "Asia/Dubai", which is a
-     fixed +04:00 with no daylight saving — so the shift is arithmetic, not a
-     calendar question. */
-  const shift = /dubai|gst|\+0?4/i.test(s) ? 4 : 0;
-  return [...new Set(hours.map(h => (h - shift + 24) % 24))].sort((a, b) => a - b);
-}
+/* A cron parser used to live here, together with a schedule-drift sentence that
+   read the registry's own trigger against the deployed one. Both are gone. The
+   parser's only input was `workflow_registry.trigger_detail`, which a dealership
+   session may not read — absent from `nexus_workflow_catalogue()`'s result type
+   and not selected by `v_workflow_health` (CONTROL-PLANE.md 5.2; see
+   `triggerReadable` in screens/automation.js) — so it was handed null on every
+   render and the comparison never ran, while the comment above it read as live
+   coverage. The alternative was to add the column to the query, and the column
+   is withheld on purpose. The deployed cron is the only schedule this screen
+   has, and it is stated as such. */
 /* How long until then, in the units a person waits in. Under an hour is stated
    in minutes because "in about 0 hours" is not an answer. */
 const waitWord = ms => {
@@ -1200,21 +1198,16 @@ SCREENS.competitors = async host => {
     : !health
       ? `The automation health figures carries no row named "${esc(SCRAPE_WORKFLOW)}", so how the scrape itself is doing is unknown here — the rows below are all this screen can speak for.`
       : `The automation health figures rates the scrape ${esc(hWords.label)} — ${esc(hWords.blurb)}${runs30 ? ` ${num(runs30)} ${plural(runs30, 'run', 'runs')} in 30 days, ${num(success30)} ${plural(success30, 'success', 'successes')}, ${num(noResult30)} producing no usable price.` : ''}`;
-  /* The registry's recorded schedule against the one the workflow is running.
-     They disagreed until 1 Sep 2026, when the registry was corrected: it now
-     reads "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00
-     UTC)", which parses to the same two UTC hours as the deployed cron, so this
-     renders empty and nothing on the screen claims a drift.
-
-     The check stays, and stays derived from the deployed cron rather than from
-     the registry, because a registry nobody updates is how "expected daily at
-     05:00 UTC" and a next run at 09:00 GST got onto this screen in the first
-     place. It reports a disagreement; it does not assert one. */
-  const regHours = health ? registryHoursUtc(health.trigger_detail) : null;
-  const scheduleDrift = regHours && regHours.join(',') !== SCRAPE_HOURS_UTC.join(',')
-    ? `The automation register records this job's trigger as "${esc(String(health.trigger_detail))}" — ${num(regHours.length)} ${plural(regHours.length, 'run', 'runs')} a day, where the deployed cron is "${esc(SCRAPE_CRON)}" in Asia/Dubai and the activity log carries runs at both hours. The schedule stated here follows the deployed cron; the registry entry is out of date.`
-    : '';
-
+  /* A schedule-drift sentence used to sit here, comparing the registry's own
+     recorded trigger against the deployed cron. It could not run: its input was
+     `health.trigger_detail`, and `trigger_detail` is a control-plane column that
+     `v_workflow_health` does not select, so the comparison was always skipped
+     and the sentence always empty. The comment above it named a true outcome —
+     nothing on the screen claimed a drift — and gave a false reason for it, the
+     registry having been corrected, when the real reason was that no comparison
+     took place. Removed rather than fed by widening the query: the column is
+     withheld on purpose. `SCRAPE_HOURS_UTC` and `SCRAPE_SCHEDULE` hold the
+     deployed schedule, and it is the only one this screen speaks for. */
   /* One re-issuable inventory read, for the two blind-spot panels below.
      panel()'s Retry calls `load` again, and a loader that closes over an
      already-settled rejection (`if (invErr) throw invErr`) hands back the same
@@ -1529,7 +1522,7 @@ SCREENS.competitors = async host => {
         <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">The fifteen rows this table held until 24 August were deleted. Twelve were seed prices that contradicted the stock we actually hold — one quoted a Land Cruiser at AED 290,000 against a list price of AED 385,000, and four of them named models that have never been on the lot at all — and the remaining three were scrape failures stored as dealerships. Every undercut this screen reported, including the five it fed to Overview, was computed from those rows, so all of them went when the rows did.</div>
 
         <div class="label-caps" style="margin-top:18px">When it fills</div>
-        <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market. ${healthLine}${scheduleDrift ? ` ${scheduleDrift}` : ''}</div>
+        <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market. ${healthLine}</div>
 
         <div class="label-caps" style="margin-top:18px">What the rows will be able to prove</div>
         <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">More than they used to, and each row will say how much. Since 1 Sep 2026 the scrape records the page's own listing title beside our model string, which offer on the page the price came from and whether that page called it new or used, what kind of site it was read off, and its own rating of how well that price is tied to our unit. Where it rates a match <strong>weak</strong> — nothing on the page ties the price to our car — the row is still written, because a cheap page is worth knowing about, and this screen draws no gap, no percentage and no market position from it. ${esc(NO_MAKE)} So a rated gap says what offer on what page was compared with which of our cars, and a weak one says only that a page quotes a figure for something. The scrape still has no listing contact and no stock number on their side, and when it is blocked it stores the block page — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
@@ -1857,7 +1850,7 @@ SCREENS.competitors = async host => {
       titleHtml: health && !healthErr
         ? `The scrape itself is rated ${esc(hWords.label)}`
         : 'The scrape\'s own health could not be established',
-      detailHtml: `${healthLine} Every figure on this screen is drawn from the rows it did manage to write; none of them says anything about the runs that wrote nothing.${scheduleDrift ? ` ${scheduleDrift}` : ''}`,
+      detailHtml: `${healthLine} Every figure on this screen is drawn from the rows it did manage to write; none of them says anything about the runs that wrote nothing.`,
       agoHtml: health && health.last_run
         ? `<span title="${esc(dt(health.last_run))}">last run ${esc(ago(health.last_run))}</span>`
         : '<span class="t-muted">no run recorded</span>',

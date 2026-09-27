@@ -71,6 +71,15 @@ import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
 import { kpi, panel, table } from '../lib/ui.js';
+/* The one definition of the v_attribution_sale_chain reduction, which both this
+   screen and Revenue Recovery print `Confirmed revenue` from. It used to exist
+   here as well, verbatim in its shared half, so the same figure had two
+   derivations — see the comment above `saleFacts` in screens/revenue.js, which
+   also says why the definition lives in that module rather than in this one:
+   revenue.js is a plain static import in app.js and is always in the bundle,
+   while this file is registered through `import.meta.glob` because it may not be
+   on disk. The dependency points that way round on purpose. */
+import { saleFacts } from './revenue.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
@@ -230,21 +239,6 @@ SCREENS.attribution = async host => {
     return { hops, evidenced, refused, ungraded, measured, unmeasured, instances, asEvidence, asRefusal, unlocks,
       campaign: hops.find(h => up(h.edge) === 'CAMPAIGN_TO_LEAD') || null,
       firstUnlock: unlocks[0] || null };
-  };
-
-  const saleFacts = rows => {
-    const sales = rows || [];
-    const confirmed = sales.filter(s => up(s.revenue_state) === 'CONFIRMED' && n0(s.revenue_aed) != null);
-    const withMargin = sales.filter(s => n0(s.gross_margin_aed) != null);
-    return {
-      sales, confirmed, withMargin,
-      unconfirmed: sales.length - confirmed.length,
-      revenue: confirmed.reduce((a, s) => a + Number(s.revenue_aed), 0),
-      /* Summed over the hop counters the view itself produced, so this page and
-         the per-sale detail below it cannot disagree about the same chain. */
-      hopsTotal: sales.reduce((a, s) => a + (n0(s.hops_total) || 0), 0),
-      hopsEvidenced: sales.reduce((a, s) => a + (n0(s.hops_evidenced) || 0), 0),
-    };
   };
 
   /* ══════════════════════════════════════════════════════════════════════

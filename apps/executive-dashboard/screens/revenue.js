@@ -151,6 +151,48 @@ const wireGo = card => {
 const readFailed = (what, err) =>
   hot(`${esc(what)} could not be read (${esc(str(err && err.message) || 'no reason given')}), so nothing is claimed here and nothing is ruled out.`);
 
+/* ── v_attribution_sale_chain, reduced once, for both screens that read it ──
+   EXPORTED, and it is the only definition. Until 27 Sep 2026 this function
+   existed twice — here and in screens/attribution.js — and the two agreed only
+   because the shared half of them was character-for-character the same. Both
+   print `Confirmed revenue` off `revenue`, so one edit to either copy and the
+   same figure had two derivations, which is precisely what
+   NEXUS_INVARIANTS.md's "one figure, one derivation" rule exists to stop. The
+   two screens are a click apart in the nav, so the disagreement would have been
+   visible to the owner before it was visible to us.
+
+   WHY THE DEFINITION LIVES HERE AND NOT IN attribution.js, which is the more
+   natural owner of the view: app.js imports this module with a plain
+   `import './screens/revenue.js'`, so it is unconditionally part of the bundle —
+   its absence is already a build failure. attribution.js is registered through
+   the `import.meta.glob` block instead, precisely because it is one of the five
+   engine screens that "may legitimately not have landed yet"; a static
+   `import './attribution.js'` from here would turn that absence into a build
+   failure that takes every other screen down with it. So the dependency points
+   from the optional module to the guaranteed one, and it must never be inverted.
+   A shared lib/ module would be the tidier home and is outside this pass.
+
+   The returned object is the UNION of what the two screens print, not a base
+   the callers extend: an extension point is a second place a figure can be
+   derived, which is the defect. Every field is reduced from the columns both
+   readers already select, so each screen reads the fields it renders and
+   ignores the rest. Nothing here is a new figure and no rounding changed. */
+export const saleFacts = rows => {
+  const sales = rows || [];
+  const confirmed = sales.filter(s => up(s.revenue_state) === 'CONFIRMED' && n0(s.revenue_aed) != null);
+  const withMargin = sales.filter(s => n0(s.gross_margin_aed) != null);
+  return {
+    sales, confirmed, withMargin,
+    unconfirmed: sales.length - confirmed.length,
+    revenue: confirmed.reduce((a, s) => a + Number(s.revenue_aed), 0),
+    margin: withMargin.reduce((a, s) => a + Number(s.gross_margin_aed), 0),
+    /* Summed over the hop counters the view itself produced, so this page and
+       the per-sale detail below it cannot disagree about the same chain. */
+    hopsTotal: sales.reduce((a, s) => a + (n0(s.hops_total) || 0), 0),
+    hopsEvidenced: sales.reduce((a, s) => a + (n0(s.hops_evidenced) || 0), 0),
+  };
+};
+
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
@@ -245,18 +287,6 @@ SCREENS.revenue = async host => {
       noMarket: units.filter(u => up(u.market_position).startsWith('UNKNOWN')).length,
       defaults: units.some(u => u.settings_are_defaults === true),
       computedAt: units.length ? units[0].computed_at : null,
-    };
-  };
-
-  const saleFacts = rows => {
-    const sales = rows || [];
-    const confirmed = sales.filter(s => up(s.revenue_state) === 'CONFIRMED' && n0(s.revenue_aed) != null);
-    const withMargin = sales.filter(s => n0(s.gross_margin_aed) != null);
-    return {
-      sales, confirmed, withMargin,
-      unconfirmed: sales.length - confirmed.length,
-      revenue: confirmed.reduce((a, s) => a + Number(s.revenue_aed), 0),
-      margin: withMargin.reduce((a, s) => a + Number(s.gross_margin_aed), 0),
     };
   };
 

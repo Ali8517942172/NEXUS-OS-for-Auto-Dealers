@@ -1021,7 +1021,7 @@ SCREENS.ask = async host => {
       out.push({
         id: 'wf-missing', tone: 'warm', icon: 'search_off', durable: true,
         title: 'No registered workflow matches ask-ai',
-        detail: `The automation health figures returned ${esc(num(healthState.rows.length))} workflow${plural(healthState.rows.length, '', 's')} and none names the <span class="mono">${esc(HOOK.askAi)}</span> webhook in its trigger detail or mentions Ask AI. So nothing here can report this endpoint's health, and its absence from the automation register is itself worth fixing.`,
+        detail: `The automation health figures returned ${esc(num(healthState.rows.length))} workflow${plural(healthState.rows.length, '', 's')} and none of them mentions Ask AI in its name or description. Matching on the registered <span class="mono">${esc(HOOK.askAi)}</span> webhook path would settle it, and this dashboard is not permitted to read that column — so this is a name that did not match, not a workflow missing from the register. Nothing here can report this endpoint's health; the Ask button is still the direct test.`,
         target: 'askComposer',
       });
     } else if (healthState?.row) {
@@ -1544,14 +1544,18 @@ SCREENS.ask = async host => {
   });
 
   /* ── Which registered workflow is this screen talking to? ────────────────
-     trigger_detail carrying the webhook path is the strong match — it is the
-     same string n8n routes on. A mention in the name or description is a weaker
-     one, and is labelled as a guess rather than presented as a fact. */
+     The exact match would be the registry's webhook path, and this screen can
+     never have it: `trigger_detail` is a control-plane column — absent from
+     `nexus_workflow_catalogue()`'s result type and not selected by
+     `v_workflow_health` (CONTROL-PLANE.md 5.2; see `triggerReadable` in
+     screens/automation.js). The test on it used to sit above this one and could
+     not fire on any row, while the sentence below reported that as a finding
+     about the register. Both are gone. What is left is the name-and-description
+     match, which is a weaker join, and it says so without blaming the registry
+     for a column this session is not permitted to read. */
   const matchAsk = rows => {
-    const byHook = (rows || []).find(w => low(w.trigger_detail).includes(HOOK.askAi));
-    if (byHook) return { row: byHook, how: `Matched on trigger_detail naming the ${HOOK.askAi} webhook.` };
     const byName = (rows || []).find(w => /ask[\s._-]?ai|\brag\b/i.test(`${str(w.name)} ${str(w.description)}`));
-    if (byName) return { row: byName, how: 'Matched on its name or description mentioning Ask AI. No registered trigger_detail names the webhook path, so this match is a guess.' };
+    if (byName) return { row: byName, how: 'Matched on its name or description mentioning Ask AI. The registered webhook path would be the exact match, but which endpoint starts a workflow is configuration NEXUS operates and this dashboard cannot read, so this match is by name only.' };
     return { row: null, how: null };
   };
 
@@ -1568,7 +1572,7 @@ SCREENS.ask = async host => {
     healthState = { row: m.row, how: m.how, rows };
     if (line) {
       if (!m.row) {
-        line.innerHTML = `<span class="t-warm">${esc(`No registered workflow names the ${HOOK.askAi} webhook, so this endpoint's health is unknown`)}</span>`;
+        line.innerHTML = `<span class="t-warm">${esc("No registered workflow's name or description mentions Ask AI, so this endpoint's health is unknown")}</span>`;
       } else {
         const w = m.row;
         const h = str(w.health).toUpperCase();

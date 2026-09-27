@@ -14,8 +14,35 @@ import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { table } from '../lib/ui.js';
 import { openModal, modalError } from '../lib/modal.js';
 import { el } from '../lib/dom.js';
+import { SUPABASE_URL } from '../lib/env.js';
 
-const API_BASE = 'https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1';
+/* This was the literal `https://dsvuoovivysszdoiorch.supabase.co/...` until
+   27 Sep 2026 — the VENDOR's own production project ref, printed on this screen
+   as the reader's API base and pasted into every curl example, every Zapier /
+   Make instruction and the PBX webhook line below. CLAUDE.md: "A fact that is
+   really one dealership's configuration belongs in per-tenant data, never in a
+   constant and never in code." This was a step worse than that: it was not even
+   the reader's own configuration, so a second dealership on its own deployment
+   would have been handed ALBA's endpoint and told it was theirs.
+
+   Derived from SUPABASE_URL instead, which lib/env.js has already trimmed of
+   trailing slashes — the exact defect that turned every path into `//functions`
+   and answered 404. On ALBA's deployment the derived string is byte-identical
+   to the literal it replaces, so nothing a reader sees changes today; on any
+   other deployment it now follows that deployment.
+
+   It cannot render empty: app.js boot() stops at the configuration card before
+   any screen is reached when VITE_SUPABASE_URL is missing, so there is no path
+   on which this screen paints with SUPABASE_URL unset. */
+const API_BASE = `${SUPABASE_URL}/functions/v1/api-v1/v1`;
+/* Checked 27 Sep 2026 rather than assumed: `public/developers/index.html` is on
+   disk (31,564 bytes), Vite copies public/ verbatim so it lands at
+   `dist/developers/index.html`, and the repository-root vercel.json rewrites
+   `/developers`, `/developers/` AND `/developers/index.html` to that file —
+   ahead of the `/(.*)` catch-all, so the link does not fall through to the SPA.
+   The link resolves. What it resolves TO still carries the hardcoded vendor
+   project ref in its own curl blocks; that file is not this screen's and is
+   reported rather than edited here. */
 const DOCS = '/developers/';
 const EVENTS = ['lead.created', 'lead.updated', 'lead.scored', 'appointment.created', 'appointment.updated', 'message.received'];
 const SCOPES = ['leads:read', 'leads:write', 'inventory:read', 'inventory:write', 'calls:write', 'appointments:read'];
