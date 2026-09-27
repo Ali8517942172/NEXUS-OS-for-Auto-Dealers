@@ -18,6 +18,11 @@
    ========================================================================== */
 import '../styles.css';
 import '../lib/design-system.css';
+import '../lib/theme-tokens.css';
+import '../lib/theme-shell.css';
+import '../lib/theme-surfaces.css';
+import '../lib/theme-controls.css';
+import '../lib/theme-data.css';
 
 import { $ } from '../lib/dom.js';
 import { esc } from '../lib/format.js';

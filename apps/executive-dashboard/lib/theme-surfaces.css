@@ -1,0 +1,356 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-surfaces.css
+   ---------------------------------------------------------------------------
+   The SURFACES half of the reference design system: the boxes that hold
+   everything else. Panels (`.card` and its parts), banners, sections, list
+   rows, key/value blocks, empty and loading states, and the grid helpers.
+
+   Loaded after styles.css and lib/design-system.css, so a plain selector here
+   already wins a tie. Nothing below uses `!important`, and nothing below
+   redefines a `.ds-*` class — those belong to lib/design-system.css.
+
+   WHAT THIS FILE IS ALLOWED TO CHANGE, AND WHAT IT IS NOT
+   -------------------------------------------------------
+   Structure only: spacing, radii, elevation, dividers, motion. Every value
+   comes from lib/theme-tokens.css or from the app's own `:root` in styles.css.
+   NO NEW COLOUR VALUE IS INTRODUCED ANYWHERE IN THIS FILE. The app's colour
+   system carries a measured contrast ratio beside every text token and names
+   its own traps -- amber text is #96570A and not #B26A00 because #B26A00 is
+   4.2:1. The reference's palette was never held to that standard, so the
+   reference contributes its geometry and none of its colour.
+
+   Two derived values are used and neither is a new colour:
+     · `color-mix(in srgb, currentColor 20%, transparent)` for a banner's
+       hairline. It is the banner's OWN severity text colour at 20% alpha over
+       the banner's own fill -- a boundary, never type, so no contrast ratio
+       applies to it, and it cannot drift away from the severity it belongs to
+       because it is computed from it. `color-mix` already ships in this app
+       (`#privacyBtn.on` in styles.css), so this is not a new dependency.
+     · the severity rails below, which reuse the EXISTING `-solid` tokens
+       (`--hot`, `--warm`, `--cold`, `--ok`, `--primary`) whose documented job
+       in styles.css is exactly this: "dots/bars/icons".
+
+   HOW THIS FILE SITS NEXT TO design-system.css
+   --------------------------------------------
+   All 29 screens carry `.ds-screen`, and design-system.css already owns
+   `.ds-screen > .card` (border, radius, elevation, overflow),
+   `.ds-screen .card-head/-title/-sub`, `.ds-screen .skeleton` and the
+   `.ds-screen .state` typography. Those rules are more specific than the
+   plain ones here, so they keep winning and this file does not fight them.
+   The values below are deliberately set to MATCH them, so that
+
+     · a card nested inside a `.grid` (which `.ds-screen > .card` never
+       matches, because it is a child combinator) stops looking different from
+       the top-level card beside it, and
+     · a card outside a converted screen -- the login card, lib/modal.js's
+       dialog, the drawer -- reads the same as one inside.
+
+   What this file genuinely adds inside a converted screen is everything
+   design-system.css does not touch: `.pbody` padding, `.banner`, `.section`,
+   `.kv`, `.list-item` and the grid helpers.
+   =========================================================================== */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1 · THE PANEL
+   `.panel` is included on the shell selector deliberately: lib/ui.js's
+   panel() builds these, its body is already called `.pbody`, and no markup in
+   the app spells the container `.panel` today. Naming it here costs one
+   selector and stops the two halves of that component diverging later.
+   ══════════════════════════════════════════════════════════════════════════ */
+.card,
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);          /* 8px, and NOT the reference's 12px.
+                                          design-system.css pins a converted
+                                          screen's top-level card at 8px
+                                          (`--ds-r-lg`) and that rule is more
+                                          specific than anything here, so 12px
+                                          would leave a card and the card
+                                          nested inside it 4px apart -- a
+                                          disagreement far more visible than
+                                          the difference between 8 and 12. */
+  box-shadow: var(--sh-rest);          /* `none`. A resting card is separated
+                                          by its border, not by a glow. */
+  min-width: 0;                        /* a card is almost always a grid child,
+                                          and a grid child that will not shrink
+                                          is how a table forces a column wider
+                                          than the viewport */
+}
+
+/* The card's own padding. styles.css used a literal 20px, which sat off every
+   scale in the product and 4px away from the head's own inset, so head text
+   and body text did not line up. 16px is the reference's `.card-pad` and is
+   also design-system.css's card-head inline padding, which is what makes the
+   two agree. `.card.flush` (0,2,0 in styles.css) keeps padding 0 by
+   specificity and is not restated here. */
+.card,
+.panel { padding: var(--sp-4); }
+
+/* Overflow is deliberately NOT declared anywhere in this file.
+   styles.css says `.card.flush { overflow: hidden }` and design-system.css
+   answers with `.ds-screen > .card { overflow: visible }` so that a popover,
+   a `<details>` or a sticky header inside a converted panel is not clipped.
+   Restating either value here would silently pick a winner in an argument
+   this pass has no evidence to settle. */
+
+/* ── The head ─────────────────────────────────────────────────────────────
+   Values identical to `.ds-screen .card-head` so a nested or unconverted
+   panel head is indistinguishable from a converted one. */
+.card-head {
+  display: flex;
+  align-items: flex-start;             /* was `center`; a two-line sub under a
+                                          one-line title dragged the title off
+                                          centre */
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.card-title {
+  font-size: 16px; line-height: 22px;
+  font-weight: 600; letter-spacing: -.01em;
+  color: var(--text);
+}
+.card-sub {
+  font-size: 12px; line-height: 17px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  max-width: 92ch;                     /* a measure, so a long sub does not run
+                                          the full width of a 1440px screen */
+}
+
+/* A PADDED card whose first child is a head. This is the shape
+   `el('div','card')` + `head + '<div class="pbody">…'` produces, and it is
+   used on lead-sources, integrations, settings, founder, finance and more.
+   Before this rule the head sat 36px in from the card edge (20px of card
+   padding plus 16px of its own) and its divider stopped 20px short of both
+   sides, so the panel had a rule through the middle of it that did not reach
+   the walls. Pulling the head out by exactly the card's padding puts its text
+   at the same 16px as the body text and lets the divider span the panel.
+   Scoped to `:first-child` so a head appearing anywhere else is left alone. */
+.card:not(.flush) > .card-head:first-child,
+.panel:not(.flush) > .card-head:first-child {
+  margin: calc(var(--sp-4) * -1) calc(var(--sp-4) * -1) var(--sp-4);
+}
+
+/* ── The body ─────────────────────────────────────────────────────────────
+   `.pbody` had exactly one declaration in the whole app —
+   `.ds-screen .pbody { position: relative }` — and no padding at all. Every
+   panel() body therefore rendered flush against the card border: the tile
+   grids on Appointments, the banner stacks on Customers, the connector grid
+   on Lead Sources. screens/settings.js:1474 already carries
+   `class="pbody" style="padding-top:0"`, which is a no-op written by somebody
+   who reasonably assumed this padding existed. It does now.
+
+   `.card-body` is the name the same thing goes by in the reference. No markup
+   in the app uses it; it is listed alongside `.pbody` so that a screen written
+   against the reference's vocabulary lands on the right box instead of on
+   nothing at all. */
+.pbody,
+.card-body { padding: var(--sp-4); }
+
+/* In a padded card the card already supplies the inset, so the body must not
+   supply it twice. */
+.card:not(.flush) > .pbody,
+.card:not(.flush) > .card-body,
+.panel:not(.flush) > .pbody,
+.panel:not(.flush) > .card-body { padding: 0; }
+
+/* Full-bleed bodies. A table, a row list and an empty/error state each carry
+   their own internal padding and are meant to reach the panel wall — a table
+   inset from the card border reads as a table that failed to fill. Written as
+   separate `:has()` selectors rather than one selector list so that a browser
+   which does not understand one of the inner names discards only that line.
+   Where `:has()` is absent entirely the body simply keeps its padding, which
+   is a slightly generous table and not a broken screen. */
+.pbody:has(> .state)        { padding: 0; }
+.pbody:has(> .table-wrap)   { padding: 0; }
+.pbody:has(> table)         { padding: 0; }
+.pbody:has(> .ds-tablewrap) { padding: 0; }
+.pbody:has(> .ds-table)     { padding: 0; }
+.pbody:has(> .ds-rowlist)   { padding: 0; }
+/* lib/states.js's stateLoading() wraps its skeleton bars in an element with an
+   inline `padding:20px`, which no stylesheet can reach. Standing the body's
+   own padding down keeps the loading state at the 20px it was designed at
+   instead of stacking to 36px. */
+.pbody:has(> div > .skeleton) { padding: 0; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2 · BANNERS
+   Severity is meaning, and none of it moves here. `hot` keeps the hot pair,
+   `warm` the warm pair, `info` the brand pair — exactly as styles.css
+   assigns them. What changes is the SHAPE: a leading rail in the severity's
+   own solid token, a hairline derived from the severity's own text colour,
+   and spacing off the scale.
+
+   Two gaps are filled rather than changed:
+     · a bare `class="banner"` (screens/finance.js:3078) had NO background and
+       NO colour, so it rendered as loose text on the canvas. It now takes the
+       neutral pair, which is the system's own "no severity stated" answer.
+     · `class="banner ok"` is produced by screens/settings.js
+       (`acMsgTone === 'ok' ? 'ok' : 'hot'`) and `.banner.ok` was never
+       defined, so a SUCCESS message rendered with no styling at all. It now
+       takes the existing `--ok-fill` / `--ok-text` pair — the same pair
+       `.pill.ok` uses, measured at #157A5B on #E6F4EF. That is a missing
+       severity being given the system's own colour for it, not an existing
+       severity being repainted.
+   ══════════════════════════════════════════════════════════════════════════ */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-sm);          /* matches the card it sits inside */
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-inline-start: 3px solid var(--border);
+  margin-bottom: var(--sp-4);
+  font-size: 14px; line-height: 20px;
+  background: var(--neutral-fill);
+  color: var(--neutral-text);
+}
+/* Only the rail is set per severity. Background and text colour stay where
+   styles.css put them (those rules are 0,2,0 and are not restated). */
+.banner.hot  { border-inline-start-color: var(--hot); }
+.banner.warm { border-inline-start-color: var(--warm); }
+.banner.cold { border-inline-start-color: var(--cold); }
+.banner.info { border-inline-start-color: var(--primary); }
+.banner.ok   { border-inline-start-color: var(--ok);
+               background: var(--ok-fill); color: var(--ok-text); }
+
+/* A banner's leading icon should not shrink, and should sit on the first line
+   of text rather than be stretched by `align-items: flex-start`. */
+.banner > .material-symbols-outlined {
+  font-size: 20px; flex-shrink: 0; margin-top: 0;
+}
+/* Scoped to a DIRECT child: an unqualified descendant selector here would
+   reach into anything a banner happens to contain. */
+.banner > :last-child { margin-bottom: 0; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3 · SECTIONS
+   `.section` is the in-panel grouping used 111 times, usually with a
+   `.label-caps` overline. The reference's section head is an overline plus a
+   measured gap; that is all this needs.
+   ══════════════════════════════════════════════════════════════════════════ */
+.section { margin-bottom: var(--sp-5); }
+.section:last-child { margin-bottom: 0; }   /* the trailing 24px inside a panel
+                                               body doubled the panel's own
+                                               bottom padding */
+.section > .label-caps { display: block; margin-bottom: var(--sp-2); }
+.section > .label-caps + * { margin-top: 0; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4 · KEY / VALUE
+   A `<dl>` at 130px + 1fr. The label column is kept at 130px rather than the
+   reference's 104px because these labels are sentences, not field names
+   ("Attributed revenue", "Endpoint provenance"), and 104px wraps them.
+   ══════════════════════════════════════════════════════════════════════════ */
+.kv {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  font-size: 14px; line-height: 20px;
+  margin: 0;
+}
+.kv dt { color: var(--text-muted); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* Below ~520px a 130px label column leaves nothing for the value, and an
+   email or a workflow id then overflows its cell. Stack instead. */
+@media (max-width: 520px) {
+  .kv { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
+  .kv dd { margin-bottom: var(--sp-2); }
+  .kv dd:last-child { margin-bottom: 0; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5 · LIST ROWS
+   ══════════════════════════════════════════════════════════════════════════ */
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  border-inline-start: 3px solid transparent;
+  cursor: pointer;
+  transition: background var(--m-micro) ease-out;
+}
+/* The last row's divider drew a line immediately above the panel's own
+   bottom border — two hairlines a pixel apart. */
+.list-item:last-child { border-bottom: 0; }
+.list-item:hover { background: var(--surface-hover); }
+/* Selection is carried by the rail as well as the tint, because the tint alone
+   is a colour-only signal. */
+.list-item.on {
+  background: var(--primary-subtle);
+  border-inline-start-color: var(--primary);
+}
+.list-item:focus-visible { outline-offset: -2px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6 · EMPTY, ERROR AND LOADING
+   design-system.css owns the typography and the icon chip of `.state` inside
+   a converted screen. Only the geometry it does not set is added here, plus
+   the same geometry for the unconverted cases (the login card, lib/modal.js,
+   the drawer) so they do not read as a different product.
+   ══════════════════════════════════════════════════════════════════════════ */
+.state {
+  padding: var(--sp-8) var(--sp-5);
+  text-align: center;
+}
+.state p { max-width: 74ch; margin-inline: auto; }
+/* An empty state's action sits below the sentence, never beside it. */
+.state .btn { margin-top: var(--sp-1); }
+
+/* Loading. Inside a converted screen design-system.css replaces this with a
+   travelling gradient; everything below it is the geometry that applies either
+   way, and the pulse is left as styles.css wrote it for the unconverted case.
+   The reduced-motion stop is repeated here because styles.css's `@keyframes
+   pulse` has none of its own — a stationary bar is still a legible
+   placeholder. */
+.skeleton { border-radius: var(--r-xs); }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7 · GRID HELPERS
+   The gap stays at 16px — it was already right, it is now `--sp-4` instead of
+   a literal. What changes is the breakpoint ladder. styles.css stepped
+   four/five columns straight down to two at 1200px and left them there, so a
+   phone rendered two 150px-wide KPI tiles side by side and every figure in
+   them wrapped. Each step below narrows by one stage rather than collapsing.
+   ══════════════════════════════════════════════════════════════════════════ */
+.grid { display: grid; gap: var(--sp-4); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+/* `minmax(0, 1fr)` on every track above is what stops a wide child — a table,
+   a long unbroken id — from pushing its column past its share. */
+
+@media (max-width: 1320px) {
+  .g5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1200px) {
+  .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .g2, .g3 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .g4, .g5 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* A grid child stretches to the tallest sibling by default, which is why
+   styles.css added `.grid.top`. Nothing here changes that: `.grid.top` is
+   0,2,0 and still wins. */

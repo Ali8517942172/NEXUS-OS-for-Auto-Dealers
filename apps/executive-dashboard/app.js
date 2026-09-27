@@ -28,6 +28,15 @@ import './styles.css';
    `.ds-screen`, which only a converted screen sets on its host. Importing it
    changes the rendering of no screen that has not asked for it. */
 import './lib/design-system.css';
+/* The theme layer. Order is the contract: tokens first, then the four
+   surface-specific files, all AFTER design-system.css so a theme rule wins a
+   tie without needing !important. Split by surface rather than by screen so
+   four people can work at once without touching one another's file. */
+import './lib/theme-tokens.css';
+import './lib/theme-shell.css';
+import './lib/theme-surfaces.css';
+import './lib/theme-controls.css';
+import './lib/theme-data.css';
 
 import { $ } from './lib/dom.js';
 import { esc, initials } from './lib/format.js';

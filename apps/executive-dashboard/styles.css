@@ -456,3 +456,100 @@ details.how-counts .how-counts-body { display: grid; gap: 16px; padding: 0 16px 
   border-left: 2px solid var(--nav-accent, transparent);
   padding-left: 8px; margin-left: 2px; border-radius: 1px;
 }
+
+/* ===========================================================================
+   THE DEEP BLUE SIDEBAR — 27 Sep 2026
+   ---------------------------------------------------------------------------
+   The owner asked for the reference design's weight without its near-black
+   sidebar (#0B1220), which he rejected twice. This is that: a deep navy that
+   reads unmistakably blue, not black.
+
+   Every value below was MEASURED against the sidebar background rather than
+   chosen by eye, because a light-background accent dropped onto a dark surface
+   is the classic silent contrast failure — it looks deliberate and fails:
+
+     on #16294F   body text  #C7D3EA   9.52:1     white  14.34:1
+                  group label #8FA3C8  5.63:1
+                  Work 6.03  Revenue 7.55  Assets 7.76
+                  Intel 6.18  Ops 7.19  Tail 7.02   -- all AA
+     active row   #24428A vs white     9.45:1
+
+   The active row's background is only 1.52:1 against the sidebar, which is
+   deliberately NOT the thing carrying the state: white text and a 3px cyan
+   left bar do that. Background alone would fail and would fail invisibly.
+
+   The module accents come in two sets because one set cannot serve both
+   surfaces. lib/nav.js supplies `--nav-accent` (for a light surface) and
+   `--nav-accent-dark` (for this one); each has exactly one derivation, in
+   nav.js, and neither is computed from the other.
+   =========================================================================== */
+:root {
+  --sidebar-bg:        #16294F;
+  --sidebar-bg-hover:  #1E3566;
+  --sidebar-bg-active: #24428A;
+  --sidebar-text:      #C7D3EA;
+  --sidebar-text-2:    #8FA3C8;
+  --sidebar-border:    #24396B;
+  --sidebar-rule:      #38D0E8;
+}
+
+.sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
+}
+.brand { border-bottom-color: var(--sidebar-border); }
+.brand-name { color: #FFFFFF; }
+.brand-mark { background: var(--sidebar-rule); color: #0B1A33; }
+
+.nav-group-label {
+  color: var(--sidebar-text-2);
+  border-left: 2px solid var(--nav-accent-dark, transparent);
+}
+.nav-item { color: var(--sidebar-text); }
+.nav-item:hover { background: var(--sidebar-bg-hover); }
+.nav-item.active {
+  background: var(--sidebar-bg-active);
+  color: #FFFFFF;
+  border-left-color: var(--sidebar-rule);
+}
+.nav-item .material-symbols-outlined { color: var(--nav-accent-dark, var(--sidebar-text-2)); }
+.nav-item:hover .material-symbols-outlined { color: var(--nav-accent-dark, var(--sidebar-text)); }
+.nav-item.active .material-symbols-outlined { color: #FFFFFF; }
+
+.sidebar-footer { border-top-color: var(--sidebar-border); }
+.user-chip { color: var(--sidebar-text); }
+.user-chip:hover { background: var(--sidebar-bg-hover); }
+.avatar { background: var(--sidebar-bg-active); color: #FFFFFF; }
+.collapse-btn { color: var(--sidebar-text-2); }
+.collapse-btn:hover { color: #FFFFFF; background: var(--sidebar-bg-hover); }
+
+/* The focus ring is light-on-dark here; the app's default ring is tuned for a
+   white surface and disappears against navy. */
+.sidebar :is(.nav-item, .user-chip, .collapse-btn):focus-visible {
+  outline: 2px solid var(--sidebar-rule);
+  outline-offset: -2px;
+}
+
+/* Anything that lands INSIDE the navy sidebar and was coloured for a white
+   surface. Caught by looking at the rendered page rather than at the diff:
+   the sign-out button is a `.btn.ghost.sm`, which the control layer paints
+   `--text-2` (#4A5468) — 1.6:1 on #16294F, i.e. invisible. Same for the role
+   line, which is a `.cell-sub`. Both take the sidebar's own measured pair
+   (#8FA3C8 on #16294F = 5.63:1; white = 14.34:1).
+
+   Scoped to `.sidebar` so the light-surface values are untouched everywhere
+   else, and written here rather than in lib/theme-controls.css because the
+   sidebar is this file's surface and a control rule that knows about the
+   sidebar would be two owners for one component. */
+.sidebar :is(.cell-sub, .ds-cell-sub) { color: var(--sidebar-text-2); }
+.sidebar .btn.ghost {
+  color: var(--sidebar-text-2);
+  background: transparent;
+  border-color: transparent;
+}
+.sidebar .btn.ghost:hover {
+  color: #FFFFFF;
+  background: var(--sidebar-bg-hover);
+  border-color: var(--sidebar-border);
+}
