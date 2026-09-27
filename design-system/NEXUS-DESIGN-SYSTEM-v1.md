@@ -264,3 +264,68 @@ Add visual regression screenshots per screen at all four widths. That is how one
 No permanent gradients. No glassmorphism. No neon glow. No always-animating charts. No pills on every button. No shadows on everything. No 15 KPI cards above the fold. No chart without a decision attached. No red everywhere. No AI chat floating over every screen. No page navigation for what a drawer handles. No modal for what an undo handles. No generic SaaS dashboard with a car icon dropped on it.
 
 **Formula: 70% neutral · 20% brand blue/cyan · 10% semantic.**
+
+---
+
+# v1.1 — the remaining items from the research brief
+
+v1.0 covered tokens, the shell, the money-leak card, tables, the drawer and the
+seven UI states. v1.1 closes the rest. Everything below is **Level 1
+IMPLEMENTED** on sample data — nothing here has carried a real dealership.
+
+## Modes
+Executive (big signals, charts), Operations (dense queue, no charts), Focus (one
+action at a time) and Wallboard (`route=wallboard`, no chrome, showroom monitor).
+One product, four compositions, same components.
+
+## Automation transparency — Action Engine
+Every automation shows trigger → matched → what it did → what it did not do →
+last run. A failed step says what failed and, crucially, what is merely *unknown*:
+"the channel accepted the message and no delivery receipt came back. Unknown is
+not the same as failed." A capability that cannot run says **Blocked by a missing
+capability** rather than sitting there looking broken.
+
+## Notification centre
+Not a red dot. Grouped Urgent / Action required / Information, filterable by
+All / Urgent / Assigned to me / System. Automation output is **batched**: one
+"17 lead updates", never 17 notifications.
+
+## Setup & Health
+A health score built from four measured things (data freshness, integration
+health, workflow health, action completion) — never an invented "AI confidence"
+number. A connection checklist with a real BLOCKED state. An incident list that
+gives the dealership symptom and impact while mechanism and location stay with
+the vendor.
+
+## Forms
+Sectioned (Customer / Vehicle / Source / commercial details / Consent), with
+commercial fields behind progressive disclosure. **Inline validation** fires per
+field once touched, never as a list of errors after submit. **Autosave** shows
+"Saving…" then "Draft saved 15:50" — the optimistic state and the confirmed state
+are different words. The source picker offers manual sources only; attributed
+sources cannot be typed by hand, because that is what ad spend gets judged against.
+
+## Import & sync
+An import reports found / valid / warnings / errors separately and offers the
+error report. It never says "Import successful" when 12 records failed. A sync
+conflict shows both values with both timestamps and makes a person choose.
+
+## Charts
+Two, and each states its takeaway in words next to it. Recovered revenue is one
+series, so no legend — the title names it. Estimated-vs-confirmed is two, and
+they are direct-labelled and drawn dashed-hollow vs solid, because amber and
+green sit at ΔE 6.2 for protanopia and colour must never be the only cue.
+
+## Table
+Real pagination, column personalization, and **selection memory** — a selection
+survives paging and opening a record. The footer states only what is true.
+
+## Keyboard
+`⌘K` / `/` command bar, `G` then `L I C M A H`, `N` for a new lead, `Esc` to
+close, `?` for the list. Never required.
+
+## Internationalisation
+Currency, dates and times run through `Intl` off `LOCALE` / `CURRENCY` — nothing
+is a hardcoded string, so a SAR or USD dealership needs one constant changed.
+Layout is built on logical properties and there is an RTL toggle in the top bar:
+Arabic will not need a second stylesheet.

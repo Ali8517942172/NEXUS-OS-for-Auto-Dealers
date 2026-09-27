@@ -3,16 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="NEXUS OS Automotive Design System v1.0 — the locked reference implementation. Revenue Command Center, Money Leaks, Lead Recovery, Profit Sentinel, Channel Health.">
+<meta name="description" content="NEXUS OS Automotive Design System v1.1 — the locked reference implementation.">
 <meta name="robots" content="noindex, nofollow">
-<meta property="og:title" content="NEXUS Command Center">
-<meta property="og:description" content="Revenue & Action OS for auto dealerships — reference UI.">
 <style>
   html{color-scheme:light}
   :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-  body{margin:0}
-  img{max-width:100%}
-  [hidden]{display:none!important}
+  body{margin:0} img{max-width:100%} [hidden]{display:none!important}
 </style>
 <title>NEXUS Command Center</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -740,6 +736,219 @@ tbody tr:hover .row-act,tbody tr:focus-within .row-act{opacity:1}
 }
 .hide-sm{display:none}
 @media (min-width:620px){.hide-sm{display:inline-flex}}
+
+/* ============================================================
+   v1.1 — the rest of the locked spec
+   ============================================================ */
+
+/* RTL readiness: everything below uses logical properties.
+   UAE market means Arabic eventually; the toggle proves nothing breaks. */
+[dir="rtl"] .nav-item.active::before{left:auto; right:-12px; border-radius:2px 0 0 2px}
+[dir="rtl"] .drawer{left:0; right:auto; border-left:0; border-right:1px solid var(--border); transform:translateX(-100%)}
+[dir="rtl"] .drawer.open{transform:none}
+[dir="rtl"] .leak{border-left:0; border-right:3px solid var(--border-strong)}
+[dir="rtl"] .leak.sev-4{border-right-color:var(--att-4)}
+[dir="rtl"] .leak.sev-3{border-right-color:var(--att-3)}
+[dir="rtl"] .leak.sev-2{border-right-color:var(--att-2)}
+[dir="rtl"] .leak.sev-1{border-right-color:var(--att-1)}
+[dir="rtl"] .crumbs svg,[dir="rtl"] .btn svg.chev{transform:scaleX(-1)}
+[dir="rtl"] .select{background-position:left 8px center; padding:0 11px 0 30px}
+
+/* Mode switcher — same product, different composition */
+.modes{display:inline-flex; background:var(--surface-sunken); border:1px solid var(--border); border-radius:var(--r-btn); padding:3px; gap:2px}
+.modes button{
+  height:32px; padding:0 13px; border:0; background:none; border-radius:7px; cursor:pointer;
+  font-size:12.5px; font-weight:600; color:var(--muted); display:inline-flex; align-items:center; gap:6px;
+}
+.modes button.active{background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(11,18,32,.08)}
+.modes svg{width:14px; height:14px; stroke-width:2}
+
+/* Notification centre — a panel, not a red dot */
+.notif{
+  position:fixed; top:0; right:0; bottom:0; width:min(400px,100%); z-index:62;
+  background:var(--surface); border-left:1px solid var(--border); box-shadow:var(--sh-drawer);
+  display:flex; flex-direction:column; transform:translateX(100%);
+  transition:transform var(--m-comp) var(--ease); padding-top:env(safe-area-inset-top,0px);
+}
+.notif.open{transform:none}
+[dir="rtl"] .notif{left:0; right:auto; border-left:0; border-right:1px solid var(--border); transform:translateX(-100%)}
+[dir="rtl"] .notif.open{transform:none}
+.notif-head{padding:var(--s4); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:var(--s3)}
+.notif-head h3{flex:1; font-size:16px; font-weight:650}
+.notif-tabs{display:flex; gap:6px; padding:var(--s3) var(--s4); border-bottom:1px solid var(--border); overflow-x:auto}
+.notif-body{flex:1; overflow-y:auto; padding:var(--s3) var(--s4) var(--s8)}
+.notif-group{margin-bottom:var(--s5)}
+.notif-group h6{
+  font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  margin:0 0 var(--s2); display:flex; align-items:center; gap:6px;
+}
+.notif-group.urgent h6{color:var(--danger)}
+.notif-group.action h6{color:var(--warning)}
+.notif-group.info h6{color:var(--muted)}
+.notif-item{
+  display:grid; gap:4px; padding:var(--s3); border:1px solid var(--border); border-radius:var(--r-sm);
+  margin-bottom:var(--s2); background:var(--surface); cursor:pointer;
+}
+.notif-item:hover{border-color:var(--border-strong); background:var(--surface-sunken)}
+.notif-item .t{font-size:13px; font-weight:600}
+.notif-item .m{font-size:11.5px; color:var(--muted)}
+.notif-item .batch{font-size:11px; color:var(--nx-blue); font-weight:600}
+
+/* Automation transparency */
+.auto-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+  padding:var(--s4); display:grid; gap:var(--s3);
+}
+.auto-top{display:flex; align-items:flex-start; gap:var(--s3); flex-wrap:wrap}
+.auto-top h4{flex:1; min-width:160px; font-size:14.5px; font-weight:650}
+.auto-grid{display:grid; gap:var(--s3); grid-template-columns:1fr}
+@media (min-width:700px){.auto-grid{grid-template-columns:1fr 1fr}}
+.auto-block h6{font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+.auto-block .v{font-size:13px}
+.auto-steps{list-style:none; margin:0; padding:0; display:grid; gap:4px}
+.auto-steps li{display:flex; gap:var(--s2); font-size:12.5px; align-items:flex-start}
+.auto-steps li svg{width:13px; height:13px; margin-top:3px; flex:0 0 13px; stroke-width:2.6}
+.auto-steps li.ok svg{color:var(--success)}
+.auto-steps li.fail svg{color:var(--danger)}
+.auto-steps li.notrun{color:var(--muted)}
+.auto-fail{
+  display:flex; align-items:flex-start; gap:var(--s3); padding:var(--s3); border-radius:var(--r-sm);
+  background:var(--warning-soft); border:1px solid var(--warning-border); font-size:12.5px; flex-wrap:wrap;
+}
+.auto-fail svg{width:15px; height:15px; color:var(--warning); flex:0 0 15px; margin-top:1px; stroke-width:2.4}
+
+/* Forms — sections, progressive disclosure, inline validation, autosave */
+.form-wrap{max-width:660px}
+.fsec{border-top:1px solid var(--border); padding-block:var(--s4)}
+.fsec:first-of-type{border-top:0; padding-top:0}
+.fsec > h5{font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin:0 0 4px}
+.fsec > .hint{font-size:12.5px; color:var(--muted); margin:0 0 var(--s3)}
+.frow{display:grid; gap:var(--s3); grid-template-columns:1fr}
+@media (min-width:560px){.frow.two{grid-template-columns:1fr 1fr}}
+.field{display:grid; gap:5px}
+.field label{font-size:12.5px; font-weight:600}
+.field label .opt{font-weight:400; color:var(--subtle)}
+.field input,.field textarea,.field select{
+  height:40px; padding:0 12px; border-radius:var(--r-sm); border:1px solid var(--border);
+  background:var(--surface); color:var(--text); font:inherit; font-size:13.5px; width:100%;
+}
+.field textarea{height:auto; min-height:76px; padding-block:10px; resize:vertical}
+.field input:hover,.field textarea:hover{border-color:var(--border-strong)}
+.field.bad input,.field.bad textarea{border-color:var(--danger); background:var(--danger-soft)}
+.field.good input{border-color:var(--success-border)}
+.field .err{
+  display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--danger); font-weight:550;
+}
+.field .err svg{width:12px; height:12px; flex:0 0 12px; stroke-width:2.6}
+.field .note{font-size:11.5px; color:var(--subtle)}
+.autosave{
+  display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted);
+}
+.autosave .pip{width:6px; height:6px; border-radius:50%; background:var(--success)}
+.autosave.saving .pip{background:var(--warning); animation:shimmer 1s ease-in-out infinite}
+.adv-toggle{
+  background:none; border:0; color:var(--nx-blue); font-size:12.5px; font-weight:600; cursor:pointer;
+  padding:4px 0; display:inline-flex; align-items:center; gap:5px;
+}
+.adv-toggle svg{width:13px; height:13px; stroke-width:2.4; transition:transform var(--m-micro)}
+.adv-toggle[aria-expanded="true"] svg{transform:rotate(90deg)}
+.form-foot{
+  display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap;
+  border-top:1px solid var(--border); padding-top:var(--s4); margin-top:var(--s2);
+}
+
+/* Import result + sync conflict */
+.import-sum{display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:var(--s4)}
+.import-stat{padding:var(--s3); border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface)}
+.import-stat .n{font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+.import-stat .l{font-size:11.5px; color:var(--muted); margin-top:2px}
+.import-stat.warn .n{color:var(--warning)} .import-stat.err .n{color:var(--danger)} .import-stat.ok .n{color:var(--success)}
+.conflict{border:1px solid var(--warning-border); background:var(--warning-soft); border-radius:var(--r-card); padding:var(--s4); display:grid; gap:var(--s3)}
+.conflict-rows{display:grid; gap:var(--s2)}
+.conflict-row{
+  display:grid; grid-template-columns:1fr auto auto; gap:var(--s3); align-items:center;
+  padding:var(--s2) var(--s3); background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm);
+  font-size:13px;
+}
+.conflict-row .src{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; font-weight:650}
+.conflict-row b{font-variant-numeric:tabular-nums}
+
+/* Health score + readiness */
+.health{display:flex; align-items:center; gap:var(--s4); flex-wrap:wrap}
+.health-ring{position:relative; width:86px; height:86px; flex:0 0 86px}
+.health-ring svg{transform:rotate(-90deg)}
+.health-ring .val{
+  position:absolute; inset:0; display:grid; place-items:center; font-size:21px; font-weight:700;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em;
+}
+.health-parts{flex:1; min-width:220px; display:grid; gap:7px}
+.health-part{display:grid; grid-template-columns:150px 1fr 44px; gap:var(--s3); align-items:center; font-size:12.5px}
+.health-part b{text-align:right; font-variant-numeric:tabular-nums}
+
+/* Incident center */
+.incident{
+  display:grid; grid-template-columns:auto 1fr auto; gap:var(--s3); align-items:start;
+  padding:var(--s3) var(--s4); border-bottom:1px solid var(--border);
+}
+.incident:last-child{border-bottom:0}
+.incident .sev{width:8px; height:8px; border-radius:50%; margin-top:6px}
+.incident .sev.crit{background:var(--danger)} .incident .sev.warn{background:var(--warning)} .incident .sev.info{background:var(--info)}
+.incident h5{font-size:13.5px; font-weight:650}
+.incident p{margin:3px 0 0; font-size:12.5px; color:var(--muted)}
+
+/* Wallboard — showroom monitor */
+body.wallboard .sidebar,body.wallboard .topbar,body.wallboard .context-strip{display:none}
+.wall{padding:var(--s6) var(--s5); display:grid; gap:var(--s5); min-height:100%}
+.wall-head{display:flex; align-items:baseline; gap:var(--s4); flex-wrap:wrap}
+.wall-head h1{font-size:clamp(24px,3.4vw,40px); font-weight:700; letter-spacing:-.025em}
+.wall-head .when{color:var(--muted); font-size:14px; margin-left:auto}
+.wall-grid{display:grid; gap:var(--s4); grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+.wall-tile{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-panel);
+  padding:var(--s5); display:grid; gap:var(--s2);
+}
+.wall-tile .l{font-size:12px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted)}
+.wall-tile .n{font-size:clamp(30px,4.6vw,52px); font-weight:700; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums}
+.wall-tile .s{font-size:13px; color:var(--muted)}
+.wall-tile.alarm{border-color:var(--danger-border); background:var(--danger-soft)}
+
+/* Charts */
+.chartbox{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); padding:var(--s4)}
+.chart-head{display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s4); flex-wrap:wrap; margin-bottom:var(--s3)}
+.chart-take{font-size:13px; color:var(--text); max-width:52ch}
+.chart-take b{font-weight:650}
+.chart-svg{width:100%; height:auto; display:block; overflow:visible}
+.chart-legend{display:flex; gap:var(--s4); flex-wrap:wrap; margin-top:var(--s3); font-size:12px; color:var(--muted)}
+.chart-legend span{display:inline-flex; align-items:center; gap:6px}
+.chart-legend i{width:11px; height:11px; border-radius:3px; flex:0 0 11px}
+.chart-legend i.est{background:var(--warning-soft); border:1.5px dashed var(--warning)}
+.chart-legend i.conf{background:var(--success); border:1.5px solid var(--success)}
+
+/* Column picker */
+.colpick{
+  position:absolute; z-index:30; top:38px; right:0; width:210px; background:var(--surface);
+  border:1px solid var(--border-strong); border-radius:var(--r-card); box-shadow:var(--sh-pop); padding:var(--s2);
+}
+.colpick label{
+  display:flex; align-items:center; gap:var(--s2); padding:7px var(--s2); border-radius:var(--r-xs);
+  font-size:12.5px; cursor:pointer;
+}
+.colpick label:hover{background:var(--surface-sunken)}
+.colpick input{accent-color:var(--nx-blue); width:15px; height:15px}
+.rel{position:relative}
+
+/* Shortcut sheet */
+.keys{display:grid; gap:var(--s2); grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.keyrow{display:flex; align-items:center; gap:var(--s3); font-size:12.5px; padding:6px 0}
+.keyrow .k{display:flex; gap:4px}
+.keyrow .d{color:var(--muted)}
+
+/* Teaching affordance */
+.teach{
+  display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--nx-blue);
+  background:none; border:0; cursor:pointer; padding:2px 0; font-weight:600;
+}
+.teach svg{width:12px; height:12px; stroke-width:2.4}
 </style>
 </head>
 <body>
@@ -782,6 +991,9 @@ tbody tr:hover .row-act,tbody tr:focus-within .row-act{opacity:1}
         </span>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
+      <button class="icon-btn" id="rtlBtn" aria-label="Toggle text direction" title="Toggle RTL — Arabic readiness">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4h7M13 4v16M9 4a4 4 0 000 8h1M4 20l3-3-3-3"/></svg>
+      </button>
       <button class="icon-btn" id="densityBtn" aria-label="Display density" title="Display density">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
       </button>
@@ -809,6 +1021,9 @@ tbody tr:hover .row-act,tbody tr:focus-within .row-act{opacity:1}
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Record detail" hidden></aside>
 
+<!-- Notification centre -->
+<aside class="notif" id="notif" role="dialog" aria-modal="true" aria-label="Notifications" hidden></aside>
+
 <!-- Command palette -->
 <div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Ask NEXUS">
   <div class="cmdk-panel">
@@ -834,8 +1049,16 @@ tbody tr:hover .row-act,tbody tr:focus-within .row-act{opacity:1}
    NEXUS OS — demo shell. Data is illustrative sample data,
    shaped exactly like the real engine output.
    ============================================================ */
-const AED = n => 'AED ' + n.toLocaleString('en-AE');
-const AEDk = n => n >= 1000 ? 'AED ' + (n/1000).toFixed(n>=100000?0:1) + 'K' : AED(n);
+/* Locale and currency are per-dealership settings, never hardcoded strings.
+   Change LOCALE/CURRENCY and every figure, date and time on every screen follows. */
+const LOCALE = 'en-AE', CURRENCY = 'AED', TZ_LABEL = 'Dubai time';
+const _money = new Intl.NumberFormat(LOCALE, {style:'currency', currency:CURRENCY, maximumFractionDigits:0});
+const AED  = n => _money.format(n);
+const AEDk = n => n >= 1000
+  ? _money.format(0).replace(/[\d.,\s]+/,'') + ' ' + (n/1000).toFixed(n>=100000?0:1) + 'K'
+  : AED(n);
+const fmtDate = d => new Intl.DateTimeFormat(LOCALE,{day:'numeric',month:'short',year:'numeric'}).format(d);
+const fmtTime = d => new Intl.DateTimeFormat(LOCALE,{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
 
 const I = {
   gauge:'<circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/>',
@@ -884,10 +1107,12 @@ const NAV = [
     {id:'sentinel', label:'Profit Sentinel', icon:I.car, badge:2}
   ]},
   {label:'Operations', items:[
-    {id:'actions', label:'Action Engine', icon:I.bolt},
-    {id:'channels', label:'Channels', icon:I.plug, badge:1}
+    {id:'actions', label:'Action Engine', icon:I.bolt, badge:1},
+    {id:'channels', label:'Channels', icon:I.plug, badge:1},
+    {id:'importing', label:'Import &amp; Sync', icon:I.inbox}
   ]},
   {label:'Admin', items:[
+    {id:'setup', label:'Setup &amp; Health', icon:I.shield},
     {id:'team', label:'Team &amp; Roles', icon:I.cog},
     {id:'finance', label:'Finance', icon:I.wallet, locked:true}
   ]}
@@ -898,7 +1123,9 @@ const TITLES = {
   leads:['Customers','Lead Recovery'], conversations:['Customers','Conversations'],
   sentinel:['Inventory','Profit Sentinel'], actions:['Operations','Action Engine'],
   channels:['Operations','Channel Health'], team:['Admin','Team & Roles'], finance:['Admin','Finance'],
-  focus:['Revenue','Focus Mode']
+  focus:['Revenue','Focus Mode'], importing:['Operations','Import & Sync'],
+  setup:['Admin','Setup & Health'], addlead:['Customers','Add a lead'],
+  wallboard:['Revenue','Wallboard'], shortcuts:['Admin','Keyboard shortcuts']
 };
 
 /* ---------- SAMPLE DATA ---------- */
@@ -1051,7 +1278,84 @@ function leakCard(l,i){
     </div>
   </article>`;
 }
+/* Recovered revenue over time. One series, so no legend — the title names it.
+   Every chart on this screen carries its takeaway; a chart with no decision attached is decoration. */
+function chartRecovery(){
+  const wks = [[ 'W1',1800],['W2',3100],['W3',2400],['W4',4600],['W5',3900],['W6',5200],['W7',4300],['W8',4200]];
+  const W=680,H=170,PL=54,PR=16,PT=14,PB=26;
+  const max = 6000, iw = W-PL-PR, ih = H-PT-PB;
+  const x = i => PL + (iw*i)/(wks.length-1);
+  const y = v => PT + ih - (ih*v)/max;
+  const pts = wks.map((w,i)=>[x(i),y(w[1])]);
+  const line = pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area = line+` L${x(wks.length-1).toFixed(1)} ${(PT+ih).toFixed(1)} L${PL} ${(PT+ih).toFixed(1)} Z`;
+  const last = pts[pts.length-1];
+  return `
+  <div class="chartbox">
+    <div class="chart-head">
+      <div>
+        <div class="overline">Confirmed recovered revenue</div>
+        <div style="font-size:24px;font-weight:700;letter-spacing:-.025em" class="num">${AED(27500)}</div>
+        <div style="font-size:12px;color:var(--muted)">Last 8 weeks · confirmed only</div>
+      </div>
+      <p class="chart-take"><b>Up 14% on the previous 8 weeks.</b> The rise is almost entirely lead-response recovery —
+        repricing contributed ${AED(9200)} of it and has been flat for three weeks.</p>
+    </div>
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Confirmed recovered revenue by week, rising from AED 1,800 to AED 4,200">
+      <defs><linearGradient id="recFill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="var(--nx-blue)" stop-opacity=".22"/>
+        <stop offset="100%" stop-color="var(--nx-blue)" stop-opacity="0"/></linearGradient></defs>
+      ${[0,2000,4000,6000].map(v=>`
+        <line x1="${PL}" x2="${W-PR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
+        <text x="${PL-8}" y="${(y(v)+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--subtle)">${v/1000}K</text>`).join('')}
+      <path d="${area}" fill="url(#recFill)"/>
+      <path d="${line}" fill="none" stroke="var(--nx-blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="var(--surface)" stroke="var(--nx-blue)" stroke-width="2"><title>${wks[i][0]} — ${AED(wks[i][1])}</title></circle>`).join('')}
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="5" fill="var(--nx-blue)" stroke="var(--surface)" stroke-width="2"/>
+      <text x="${(last[0]-6).toFixed(1)}" y="${(last[1]-12).toFixed(1)}" text-anchor="end" font-size="11" font-weight="600" fill="var(--text)">${AED(4200)}</text>
+      ${wks.map((w,i)=>`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--subtle)">${w[0]}</text>`).join('')}
+    </svg>
+  </div>`;
+}
+/* Estimated vs confirmed, side by side. The two never share a treatment:
+   estimated is dashed and hollow, confirmed is solid. Both are direct-labelled,
+   because amber and green are close for protanopia and colour must never be the only cue. */
+function chartEstVsConf(){
+  const rows = [['Lead response',19500,18300],['Stock pricing',52300,9200],['Appointments',12400,0]];
+  const max = 55000, W=680, BH=22, GAP=8, ROWH=64, PL=126, PR=96;
+  const H = rows.length*ROWH + 8;
+  const w = v => Math.max(2,((W-PL-PR)*v)/max);
+  return `
+  <div class="chartbox">
+    <div class="chart-head">
+      <div><div class="overline">Estimated at risk vs confirmed recovered</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">By leak type · last 30 days</div></div>
+      <p class="chart-take"><b>Stock pricing is the widest gap</b> — ${AEDk(52300)} estimated against ${AEDk(9200)} confirmed.
+        Appointments have recovered nothing yet, which is honest: no appointment has been through the loop.</p>
+    </div>
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated at risk versus confirmed recovered, by leak type">
+      ${rows.map(([l,e,c],i)=>{
+        const top = i*ROWH+10;
+        return `
+        <text x="0" y="${top+15}" font-size="12" font-weight="600" fill="var(--text)">${l}</text>
+        <rect x="${PL}" y="${top}" width="${w(e).toFixed(1)}" height="${BH}" rx="4"
+              fill="var(--warning-soft)" stroke="var(--warning)" stroke-width="1.5" stroke-dasharray="5 3"/>
+        <text x="${(PL+w(e)+8).toFixed(1)}" y="${top+15}" font-size="11" font-weight="600" fill="var(--muted)">${AEDk(e)} est.</text>
+        <rect x="${PL}" y="${top+BH+GAP}" width="${w(c).toFixed(1)}" height="${BH}" rx="4" fill="var(--success)"/>
+        <text x="${(PL+w(c)+8).toFixed(1)}" y="${top+BH+GAP+15}" font-size="11" font-weight="600" fill="var(--muted)">${c?AEDk(c)+' conf.':'nothing confirmed'}</text>`;
+      }).join('')}
+    </svg>
+    <div class="chart-legend">
+      <span><i class="est"></i> Estimated at risk — modelled, dashed</span>
+      <span><i class="conf"></i> Confirmed recovered — linked to a deal, solid</span>
+    </div>
+  </div>`;
+}
+
+let mode = 'owner';
+const MODE_LABEL = {owner:'Executive', ops:'Operations'};
 function screenCommand(){
+  if(mode==='ops') return screenOps();
   return `
   <div class="attention">
     <div class="attention-body">
@@ -1062,6 +1366,16 @@ function screenCommand(){
       <button class="btn btn-lg btn-primary" data-route="leaks">Review priority actions</button>
       <button class="btn btn-lg btn-onink" data-route="focus">${svg(I.focus,16)} Focus mode</button>
     </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s5)">
+    <div class="modes">
+      <button class="active" data-mode="owner">${svg(I.gauge,14)} Executive</button>
+      <button data-mode="ops">${svg(I.list,14)} Operations</button>
+    </div>
+    <span class="section-note">Same product, different density. Executive gets big signals; Operations gets the queue.</span>
+    <span class="spacer"></span>
+    <button class="btn btn-secondary btn-sm" data-route="wallboard">${svg(I.gauge,14)} Wallboard</button>
   </div>
 
   <div class="grid kpis" style="margin-bottom:var(--s6)">
@@ -1092,6 +1406,13 @@ function screenCommand(){
   </div>
   <div class="grid" style="gap:var(--s3); margin-bottom:var(--s6)">${LEAKS.map(leakCard).join('')}</div>
 
+  <div class="section-head"><div><h3 class="section-title">Where the money went</h3>
+    <div class="section-note">Every chart states its takeaway. A chart with no decision attached does not belong on this screen.</div></div></div>
+  <div class="grid" style="gap:var(--s3);margin-bottom:var(--s6)">
+    ${chartRecovery()}
+    ${chartEstVsConf()}
+  </div>
+
   <div class="section-head"><h3 class="section-title">Channel health</h3>
     <button class="btn btn-tertiary" data-route="channels">Open control room ${svg(I.arrow,14)}</button></div>
   <div class="card card-pad" style="display:flex;gap:var(--s5);flex-wrap:wrap">
@@ -1102,6 +1423,40 @@ function screenCommand(){
         <div style="font-size:11.5px;color:var(--muted);margin-top:7px">Last event ${c.last}</div>
       </div>`).join('')}
   </div>`;
+}
+
+/* Operations mode — the BDC view. Dense, queue-first, no charts. */
+function screenOps(){
+  const q = [
+    ['Unanswered', LEADS.filter(l=>l.over).length, 'danger', 'leads'],
+    ['Hot', LEADS.filter(l=>l.status==='HOT').length, 'warning', 'leads'],
+    ['Unassigned', LEADS.filter(l=>l.owner==='—').length, 'warning', 'leads'],
+    ['Callbacks due', 5, 'info', 'leads'],
+    ['Appointments today', 18, 'info', 'leads'],
+    ['Tasks open', 7, 'muted', 'leads']
+  ];
+  return `
+  <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s4)">
+    <div>
+      <h1 class="page-title" style="font-size:22px">Operations queue</h1>
+      <p class="page-sub" style="font-size:13px">Dense by design. Density is a role setting, not a preference — a BDC agent works hundreds of rows a day.</p>
+    </div>
+    <span class="spacer"></span>
+    <div class="modes">
+      <button data-mode="owner">${svg(I.gauge,14)} Executive</button>
+      <button class="active" data-mode="ops">${svg(I.list,14)} Operations</button>
+    </div>
+  </div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:var(--s5)">
+    ${q.map(([l,n,tone,to])=>`
+      <button class="kpi" data-route="${to}" style="cursor:pointer;text-align:left;gap:4px;padding:var(--s3)">
+        <span class="overline">${l}</span>
+        <span class="kpi-value" style="font-size:26px;color:${tone==='muted'?'var(--text)':'var(--'+tone+')'}">${n}</span>
+      </button>`).join('')}
+  </div>
+  <div class="section-head"><h3 class="section-title">Work the queue</h3>
+    <button class="btn btn-primary btn-sm" data-route="addlead">${svg(I.users,14)} Add a lead</button></div>
+  <div class="grid" style="gap:var(--s3)">${LEAKS.slice(0,3).map(leakCard).join('')}</div>`;
 }
 
 /* ---------- SCREEN: FOCUS MODE ---------- */
@@ -1144,8 +1499,26 @@ function rowsForView(){
 }
 function scoreColor(s){ return s>=80?'var(--danger)':s>=65?'var(--warning)':'var(--info)'; }
 function statusTone(s){ return s==='HOT'?'b-danger':s==='WARM'?'b-warning':'b-neutral'; }
+const COLUMNS = [
+  {id:'customer', label:'Customer', fixed:true},
+  {id:'vehicle',  label:'Vehicle of interest'},
+  {id:'source',   label:'Source'},
+  {id:'score',    label:'Score'},
+  {id:'status',   label:'Status'},
+  {id:'age',      label:'No reply for'},
+  {id:'owner',    label:'Owner'},
+  {id:'phone',    label:'Phone'}
+];
+let cols = {customer:1, vehicle:1, source:1, score:1, status:1, age:1, owner:1, phone:0};
+let colPickOpen = false;
+const PER_PAGE = 5;
+const allOnPageSelected = rs => rs.length>0 && rs.every(r=>selected.has(r.id));
 function screenLeads(){
   const rows = rowsForView();
+  const pages = Math.max(1, Math.ceil(rows.length/PER_PAGE));
+  if(page > pages) page = pages;
+  const from = (page-1)*PER_PAGE;
+  const pageRows = rows.slice(from, from+PER_PAGE);
   return `
   <div style="margin-bottom:var(--s5)">
     <h1 class="page-title">Lead Recovery</h1>
@@ -1164,7 +1537,13 @@ function screenLeads(){
       <select class="select" data-set="0"><option>Owner · any</option><option>Unassigned</option><option>Ali A.</option><option>Omar S.</option><option>Sara K.</option></select>
       <span class="filter-count">1 filter active <button class="link-btn" data-act="Filters cleared">Clear all</button></span>
       <div class="spacer"></div>
-      <span class="count-note hide-sm">Columns and density are saved per user</span>
+      <span class="rel">
+        <button class="btn btn-secondary btn-sm" id="colBtn">${svg(I.list,14)} Columns</button>
+        ${colPickOpen?`<span class="colpick" id="colPick">
+          ${COLUMNS.map(c=>`<label><input type="checkbox" data-col="${c.id}" ${cols[c.id]?'checked':''} ${c.fixed?'disabled':''}>${c.label}${c.fixed?' <span style="color:var(--subtle)">always</span>':''}</label>`).join('')}
+        </span>`:''}
+      </span>
+      <button class="btn btn-primary btn-sm" data-route="addlead">${svg(I.users,14)} Add a lead</button>
     </div>
   </div>
 
@@ -1172,38 +1551,37 @@ function screenLeads(){
     <div class="table-scroll">
       <table>
         <thead><tr>
-          <th class="tight"><button class="chk" id="chkAll" role="checkbox" aria-checked="false" aria-label="Select all">${svg(I.check,11)}</button></th>
-          <th class="sortable">Customer</th>
-          <th class="sortable">Vehicle of interest</th>
-          <th class="sortable">Source</th>
-          <th class="sortable sorted">Score <span class="arrow">▼</span></th>
-          <th class="sortable">Status</th>
-          <th class="sortable">No reply for</th>
-          <th class="sortable">Owner</th>
+          <th class="tight"><button class="chk" id="chkAll" role="checkbox" aria-checked="${allOnPageSelected(pageRows)}" aria-label="Select all on this page">${svg(I.check,11)}</button></th>
+          ${COLUMNS.filter(c=>cols[c.id]).map(c=>`<th class="sortable ${c.id==='score'?'sorted':''}">${c.label}${c.id==='score'?' <span class="arrow">▼</span>':''}</th>`).join('')}
           <th style="text-align:right">Action</th>
         </tr></thead>
         <tbody id="leadRows">
-          ${rows.map(l=>`
+          ${pageRows.map(l=>`
           <tr data-lead="${l.id}" class="${selected.has(l.id)?'selected':''}">
             <td class="tight"><button class="chk" role="checkbox" aria-checked="${selected.has(l.id)}" data-sel="${l.id}" aria-label="Select ${l.name}">${svg(I.check,11)}</button></td>
-            <td><div class="cellbox"><div class="who"><div class="nm">${l.name}</div><div class="sub mono">${l.id} · ${l.phone}</div></div></div></td>
-            <td><div class="who"><div class="nm" style="font-weight:550">${l.veh}</div><div class="sub">${l.budget}</div></div></td>
-            <td><span class="badge b-neutral">${l.src}</span></td>
-            <td><span class="score"><span class="score-num">${l.score}</span><span class="score-bar"><i style="width:${l.score}%;background:${scoreColor(l.score)}"></i></span></span></td>
-            <td><span class="badge ${statusTone(l.status)}"><i class="pip"></i>${l.status}</span></td>
-            <td class="num age ${l.over?'over':''}">${l.age}</td>
-            <td>${l.owner==='—'?'<span class="badge b-warning">Unassigned</span>':l.owner}</td>
+            ${cols.customer?`<td><div class="cellbox"><div class="who"><div class="nm">${l.name}</div><div class="sub mono">${l.id} · ${l.phone}</div></div></div></td>`:''}
+            ${cols.vehicle?`<td><div class="who"><div class="nm" style="font-weight:550">${l.veh}</div><div class="sub">${l.budget}</div></div></td>`:''}
+            ${cols.source?`<td><span class="badge b-neutral">${l.src}</span></td>`:''}
+            ${cols.score?`<td><span class="score"><span class="score-num">${l.score}</span><span class="score-bar"><i style="width:${l.score}%;background:${scoreColor(l.score)}"></i></span></span></td>`:''}
+            ${cols.status?`<td><span class="badge ${statusTone(l.status)}"><i class="pip"></i>${l.status}</span></td>`:''}
+            ${cols.age?`<td class="num age ${l.over?'over':''}">${l.age}</td>`:''}
+            ${cols.owner?`<td>${l.owner==='—'?'<span class="badge b-warning">Unassigned</span>':l.owner}</td>`:''}
+            ${cols.phone?`<td class="mono" style="font-size:12px">${l.phone}</td>`:''}
             <td style="text-align:right"><span class="row-act"><button class="btn btn-secondary btn-sm" data-quick="${l.id}">${svg(I.wa,14)} WhatsApp</button></span></td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>
     <div class="table-foot">
-      <span class="count-note">Showing ${rows.length} of ${rows.length} · filters and page are kept in the URL, so reload and back both work</span>
+      <span class="count-note">
+        Showing ${pageRows.length ? (from+1)+'–'+(from+pageRows.length) : 0} of ${rows.length}
+        ${selected.size?` · <b>${selected.size} selected, kept across pages</b>`:''}
+        · page, filters and selection survive opening a record
+      </span>
       <div class="pager">
-        <button aria-label="Previous">‹</button>
-        <button class="active">1</button><button>2</button><button>3</button>
-        <button aria-label="Next">›</button>
+        <button aria-label="Previous page" data-page="${Math.max(1,page-1)}" ${page===1?'disabled':''}>‹</button>
+        ${Array.from({length:pages},(_,i)=>`<button class="${page===i+1?'active':''}" data-page="${i+1}">${i+1}</button>`).join('')}
+        <button aria-label="Next page" data-page="${Math.min(pages,page+1)}" ${page===pages?'disabled':''}>›</button>
       </div>
     </div>
   </div>
@@ -1443,15 +1821,296 @@ function screenGeneric(title,body){
     <div class="state-actions"><button class="btn btn-primary" data-route="command">Back to Command Center</button></div></div>`;
 }
 
+/* ---------- SCREEN: ACTION ENGINE — automation is never a black box ---------- */
+const AUTOMATIONS = [
+  {name:'Lead Escalation', state:'ACTIVE', tone:'b-success',
+   trigger:'Lead unanswered for more than 4 hours', matched:7, last:'09:42',
+   steps:[['Assigned a manager','ok'],['Created a follow-up task','ok'],['Sent the Slack alert','ok']],
+   fail:null},
+  {name:'Stock Ageing Sweep', state:'ACTIVE', tone:'b-success',
+   trigger:'Vehicle passes 60 days in stock', matched:2, last:'06:00',
+   steps:[['Flagged margin risk','ok'],['Matched against open leads','ok'],['Queued a pricing review','ok']],
+   fail:null},
+  {name:'Appointment Confirmation', state:'DEGRADED', tone:'b-warning',
+   trigger:'Appointment created and not confirmed within 24 hours', matched:3, last:'10:05',
+   steps:[['Built the reminder','ok'],['Recorded the audit row','ok'],['Sent on WhatsApp','fail']],
+   fail:{what:'WhatsApp delivery was not confirmed for 1 of 3 appointments.',
+         why:'The channel accepted the message and no delivery receipt came back. Unknown is not the same as failed — the customer may have it.'}},
+  {name:'Service Due Reminder', state:'NOT BUILT', tone:'b-neutral',
+   trigger:'—', matched:0, last:'—',
+   steps:[['Detect service due','notrun'],['Compose reminder','notrun'],['Send','notrun']],
+   fail:null, blocked:'Blocked by a missing capability: there is no service table and no appointment table to read. This is roadmap, not capability.'}
+];
+function screenActions(){
+  const mk = s => s==='ok'?`${svg(I.check,13)}`: s==='fail'?`${svg(I.x,13)}`:`<span style="width:13px;display:inline-block">—</span>`;
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Action Engine</h1>
+    <p class="page-sub">What triggered, what happened, and what did not. An automation that cannot show its own run is a black box.</p>
+  </div>
+  <div class="grid" style="gap:var(--s3)">
+    ${AUTOMATIONS.map(a=>`
+      <article class="auto-card">
+        <div class="auto-top">
+          <h4>${a.name}</h4>
+          <span class="badge ${a.tone}"><i class="pip"></i>${a.state}</span>
+        </div>
+        ${a.blocked?`<div class="auto-fail" style="background:var(--neutral-soft);border-color:var(--neutral-border)">
+            ${svg(I.info,15)}<span>${a.blocked}</span></div>`:''}
+        <div class="auto-grid">
+          <div class="auto-block">
+            <h6>Trigger</h6><div class="v">${a.trigger}</div>
+            <h6 style="margin-top:var(--s3)">Matched</h6>
+            <div class="v"><b class="num">${a.matched}</b> ${a.matched===1?'record':'records'} · last run ${a.last} ${a.last!=='—'?TZ_LABEL:''}</div>
+          </div>
+          <div class="auto-block">
+            <h6>What it did</h6>
+            <ul class="auto-steps">${a.steps.map(([l,s])=>`<li class="${s}">${mk(s)}<span>${l}</span></li>`).join('')}</ul>
+          </div>
+        </div>
+        ${a.fail?`<div class="auto-fail">${svg(I.warn,15)}
+            <div style="flex:1;min-width:180px"><b>${a.fail.what}</b><div style="color:var(--muted);margin-top:3px">${a.fail.why}</div></div>
+            <span style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" data-act="Retry queued for ${a.name}">Retry</button>
+              <button class="btn btn-secondary btn-sm" data-act="Execution opened">View execution</button>
+            </span></div>`:''}
+      </article>`).join('')}
+  </div>`;
+}
+
+/* ---------- SCREEN: SETUP & HEALTH ---------- */
+const READINESS = [['Core setup',100],['WhatsApp',80],['Website',100],['Facebook',60],['Instagram',40],['Phone',0]];
+const HEALTH = [['Data freshness',96],['Integration health',78],['Workflow health',88],['Action completion',91]];
+const INCIDENTS = [
+  {sev:'warn', t:'WhatsApp outbound delivery degraded', p:'1 of 3 appointment reminders has no delivery receipt. Inbound is unaffected.', when:'10:05'},
+  {sev:'crit', t:'Instagram webhook verification failing', p:'No inbound messages received on this channel since 26 Sep 17:16. Any Instagram enquiry since then is not in NEXUS.', when:'Yesterday'},
+  {sev:'info', t:'Inventory sync completed', p:'118 vehicles read, 6 changed, 0 rejected.', when:'06:00'}
+];
+function ring(score){
+  const r=38, c=2*Math.PI*r, off=c*(1-score/100);
+  const col = score>=85?'var(--success)':score>=65?'var(--warning)':'var(--danger)';
+  return `<div class="health-ring">
+    <svg viewBox="0 0 86 86" width="86" height="86">
+      <circle cx="43" cy="43" r="${r}" fill="none" stroke="var(--surface-sunken)" stroke-width="7"/>
+      <circle cx="43" cy="43" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round"
+              stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>
+    </svg><span class="val">${score}</span></div>`;
+}
+function screenSetup(){
+  const overall = Math.round(HEALTH.reduce((a,[,v])=>a+v,0)/HEALTH.length);
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Setup &amp; Health</h1>
+    <p class="page-sub">Overall readiness is <b>PARTIAL</b>, and it stays PARTIAL until every check has actually run.</p>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">NEXUS health</h3>
+    <div class="section-note">Four measured things. Not an invented "AI confidence" score.</div></div></div>
+  <div class="card card-pad" style="margin-bottom:var(--s6)">
+    <div class="health">
+      ${ring(overall)}
+      <div class="health-parts">
+        ${HEALTH.map(([l,v])=>`<div class="health-part">
+          <span>${l}</span>
+          <span class="evidence-bar" style="height:6px"><i style="width:${v}%;background:${v>=85?'var(--success)':v>=65?'var(--warning)':'var(--danger)'}"></i></span>
+          <b>${v}</b></div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">Getting connected</h3>
+    <div class="section-note">First login should not be an empty dashboard. This is the checklist and where it stands.</div></div>
+    <span class="badge b-warning"><i class="pip"></i>4 of 7 done</span></div>
+  <div class="card card-pad" style="display:grid;gap:var(--s3);margin-bottom:var(--s6)">
+    ${READINESS.map(([l,p])=>`
+      <div style="display:grid;grid-template-columns:130px 1fr 72px;gap:var(--s3);align-items:center;font-size:12.5px">
+        <span>${l}</span>
+        <span class="evidence-bar" style="height:6px"><i style="width:${p}%;background:${p===100?'var(--success)':p===0?'var(--danger)':'var(--warning)'}"></i></span>
+        <b class="num" style="text-align:right">${p===0?'BLOCKED':p+'%'}</b></div>`).join('')}
+    <div style="border-top:1px solid var(--border);padding-top:var(--s3);display:flex;gap:var(--s2);flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" data-route="channels">Finish channel setup</button>
+      <button class="btn btn-tertiary" data-act="Guide opened">${svg(I.info,14)} What does each one do?</button>
+    </div>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">Incidents</h3>
+    <div class="section-note">Symptom and impact here. Mechanism and location stay on the vendor's side.</div></div></div>
+  <div class="card">
+    ${INCIDENTS.map(i=>`<div class="incident">
+      <span class="sev ${i.sev}"></span>
+      <div><h5>${i.t}</h5><p>${i.p}</p></div>
+      <span style="font-size:11.5px;color:var(--subtle);white-space:nowrap">${i.when}</span>
+    </div>`).join('')}
+  </div>`;
+}
+
+/* ---------- SCREEN: ADD A LEAD — inline validation, autosave, progressive disclosure ---------- */
+let advOpen = false, formTouched = {}, saveState = 'idle';
+function fieldErr(id, val){
+  if(id==='name')  return val.trim() ? '' : 'Enter the customer’s name.';
+  if(id==='phone'){
+    if(!val.trim()) return 'Enter a phone number, or an email below.';
+    return /^\+?[\d\s()-]{7,}$/.test(val.trim()) ? '' : 'That does not look like a reachable number. Include the country code.';
+  }
+  if(id==='email') return !val.trim() || /^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(val.trim()) ? '' : 'Enter a valid email address, or leave it empty.';
+  return '';
+}
+function screenAddLead(){
+  const f = (id,label,ph,opt,note,type) => {
+    const v = formTouched[id] ?? '';
+    const e = formTouched[id]!==undefined ? fieldErr(id,v) : '';
+    const good = formTouched[id]!==undefined && !e && v.trim();
+    return `<div class="field ${e?'bad':good?'good':''}">
+      <label for="f-${id}">${label}${opt?' <span class="opt">optional</span>':''}</label>
+      <input id="f-${id}" type="${type||'text'}" placeholder="${ph}" value="${v.replace(/"/g,'&quot;')}" data-field="${id}">
+      ${e?`<span class="err">${svg(I.warn,12)}${e}</span>`:note?`<span class="note">${note}</span>`:''}
+    </div>`;
+  };
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Add a lead</h1>
+    <p class="page-sub">A walk-in or a phone call. Recorded as a person’s word, not as an attested delivery — and the record says so.</p>
+  </div>
+  <div class="form-wrap card card-pad">
+    <div class="fsec">
+      <h5>Customer</h5>
+      <p class="hint">A phone number alone is enough. Most UAE walk-ins never give an email.</p>
+      <div class="frow two">${f('name','Full name','Sarah Ahmed')}${f('phone','Phone','+971 50 000 0000',false,'Include the country code.','tel')}</div>
+      <div class="frow" style="margin-top:var(--s3)">${f('email','Email','name@example.com',true,'','email')}</div>
+    </div>
+    <div class="fsec">
+      <h5>Vehicle</h5>
+      <div class="frow two">
+        <div class="field"><label for="f-veh">Vehicle of interest <span class="opt">optional</span></label>
+          <input id="f-veh" placeholder="2024 BMW X5 xDrive40i"></div>
+        <div class="field"><label for="f-stock">Stock number <span class="opt">optional</span></label>
+          <input id="f-stock" placeholder="A1832"></div>
+      </div>
+    </div>
+    <div class="fsec">
+      <h5>Source</h5>
+      <div class="field"><label for="f-src">How did they reach you</label>
+        <select id="f-src" class="field"><option>Walk-in</option><option>Phone call</option></select>
+        <span class="note">Only manual sources appear here. Attributed sources like Facebook cannot be entered by hand — that is what ad spend gets judged against.</span></div>
+    </div>
+    <div class="fsec">
+      <button class="adv-toggle" data-adv="1" aria-expanded="${advOpen}">${svg(I.arrow,13)} ${advOpen?'Hide':'Show'} commercial details</button>
+      ${advOpen?`<div class="frow two" style="margin-top:var(--s3)">
+        <div class="field"><label for="f-budget">Budget <span class="opt">optional</span></label><input id="f-budget" placeholder="240,000 – 260,000"></div>
+        <div class="field"><label for="f-trade">Trade-in <span class="opt">optional</span></label><input id="f-trade" placeholder="2019 Nissan Patrol"></div>
+      </div>
+      <div class="field" style="margin-top:var(--s3)"><label for="f-notes">Notes <span class="opt">optional</span></label>
+        <textarea id="f-notes" placeholder="What did they actually ask for?"></textarea></div>`:''}
+    </div>
+    <div class="fsec">
+      <h5>Consent</h5>
+      <label style="display:flex;gap:var(--s3);align-items:flex-start;font-size:13px;cursor:pointer">
+        <input type="checkbox" style="width:16px;height:16px;margin-top:2px;accent-color:var(--nx-blue)">
+        <span>The customer agreed to be contacted on WhatsApp.
+          <span class="note" style="display:block">Recorded with today’s date and your name. Without it NEXUS will not send marketing, even inside an open window.</span></span>
+      </label>
+    </div>
+    <div class="form-foot">
+      <button class="btn btn-primary" data-submit="1">Record the lead</button>
+      <button class="btn btn-secondary" data-route="leads">Cancel</button>
+      <span class="spacer"></span>
+      <span class="autosave ${saveState==='saving'?'saving':''}" id="autosaveNote">
+        <i class="pip"></i>${saveState==='saving'?'Saving…':saveState==='saved'?'Draft saved just now':'Draft autosaves as you type'}</span>
+    </div>
+  </div>`;
+}
+
+/* ---------- SCREEN: IMPORT & SYNC ---------- */
+function screenImport(){
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Import &amp; Sync</h1>
+    <p class="page-sub">An import that partly failed is never reported as "Import successful".</p>
+  </div>
+
+  <div class="section-head"><h3 class="section-title">Last vehicle import</h3>
+    <span class="section-note">stock-2026-09-27.csv · ${fmtTime(new Date())} ${TZ_LABEL}</span></div>
+  <div class="card card-pad" style="margin-bottom:var(--s6)">
+    <div class="import-sum">
+      <div class="import-stat"><div class="n">1,284</div><div class="l">Records found</div></div>
+      <div class="import-stat ok"><div class="n">1,251</div><div class="l">Valid</div></div>
+      <div class="import-stat warn"><div class="n">21</div><div class="l">Warnings</div></div>
+      <div class="import-stat err"><div class="n">12</div><div class="l">Errors</div></div>
+    </div>
+    <div style="display:flex;gap:var(--s2);flex-wrap:wrap;border-top:1px solid var(--border);padding-top:var(--s3)">
+      <button class="btn btn-primary btn-sm" data-act="1,251 valid records imported">Import the 1,251 valid records</button>
+      <button class="btn btn-secondary btn-sm" data-act="Error report prepared">Download the error report</button>
+      <button class="btn btn-tertiary" data-act="Warnings listed">Review 21 warnings</button>
+    </div>
+    <div class="provenance" style="margin-top:var(--s3)">${svg(I.info,12)} The 12 errors are not imported and not silently dropped — they stay in the report until someone fixes them.</div>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">Sync conflict</h3>
+    <div class="section-note">NEXUS and the DMS disagree. Neither value is picked automatically.</div></div></div>
+  <div class="conflict">
+    <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
+      <span class="badge b-warning"><i class="pip"></i>1 conflict</span>
+      <b style="font-size:13.5px">2024 BMW X5 xDrive40i · <span class="mono">#A1832</span></b>
+    </div>
+    <div class="conflict-rows">
+      <div class="conflict-row"><span class="src">NEXUS</span><b>${AED(220000)}</b><span style="font-size:11.5px;color:var(--muted)">updated 10:41</span></div>
+      <div class="conflict-row"><span class="src">DMS</span><b>${AED(225000)}</b><span style="font-size:11.5px;color:var(--muted)">updated 10:44</span></div>
+    </div>
+    <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" data-act="DMS value applied to #A1832">Use the DMS value</button>
+      <button class="btn btn-secondary btn-sm" data-act="NEXUS value kept for #A1832">Keep the NEXUS value</button>
+      <button class="btn btn-tertiary" data-act="Full history opened">See what changed</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- SCREEN: WALLBOARD ---------- */
+function screenWallboard(){
+  const now = new Date();
+  return `<div class="wall">
+    <div class="wall-head">
+      <h1>ALBA CARS · Today</h1>
+      <span class="when">${fmtDate(now)} · ${fmtTime(now)} ${TZ_LABEL} · refreshes every 60s</span>
+    </div>
+    <div class="wall-grid">
+      <div class="wall-tile alarm"><div class="l">Need a reply now</div><div class="n">4</div><div class="s">Oldest waiting 26h 12m</div></div>
+      <div class="wall-tile"><div class="l">Hot leads</div><div class="n">12</div><div class="s">+3 today</div></div>
+      <div class="wall-tile"><div class="l">Appointments</div><div class="n">18</div><div class="s">3 unconfirmed</div></div>
+      <div class="wall-tile"><div class="l">Money at risk</div><div class="n">${AEDk(84200)}</div><div class="s">Estimated · 9 open leaks</div></div>
+      <div class="wall-tile"><div class="l">Recovered</div><div class="n">${AEDk(27500)}</div><div class="s">Confirmed · last 30 days</div></div>
+      <div class="wall-tile"><div class="l">Channel health</div><div class="n">5/6</div><div class="s">Instagram degraded</div></div>
+    </div>
+    <div style="text-align:center"><button class="btn btn-secondary" data-route="command">Leave wallboard</button></div>
+  </div>`;
+}
+
+/* ---------- SCREEN: KEYBOARD SHORTCUTS ---------- */
+function screenShortcuts(){
+  const rows = [['⌘K','Search or ask NEXUS'],['/','Search or ask NEXUS'],['G then L','Lead Recovery'],
+    ['G then I','Profit Sentinel'],['G then C','Conversations'],['G then M','Money Leaks'],
+    ['G then A','Action Engine'],['G then H','Setup & Health'],['N','Add a lead'],['Esc','Close drawer or panel'],['?','This list']];
+  return `<div style="margin-bottom:var(--s5)"><h1 class="page-title">Keyboard shortcuts</h1>
+    <p class="page-sub">Never required. Once a BDC agent learns four of them the product gets noticeably faster.</p></div>
+  <div class="card card-pad"><div class="keys">
+    ${rows.map(([k,d])=>`<div class="keyrow"><span class="k">${k.split(' then ').map(x=>`<kbd>${x}</kbd>`).join('<span style="color:var(--subtle)">then</span>')}</span><span class="d">${d}</span></div>`).join('')}
+  </div></div>`;
+}
+
 /* ---------- ROUTER ---------- */
 const SCREENS = {
   command:screenCommand, focus:screenFocus, leaks:screenLeaks, leads:screenLeads,
   sentinel:screenSentinel, channels:screenChannels, recovered:screenRecovered,
-  rescue:screenRescue, conversations:screenConversations
+  rescue:screenRescue, conversations:screenConversations, actions:screenActions,
+  setup:screenSetup, addlead:screenAddLead, importing:screenImport,
+  wallboard:screenWallboard, shortcuts:screenShortcuts
 };
 function render(){
+  document.body.classList.toggle('wallboard', route==='wallboard');
   const fn = SCREENS[route] || (()=>screenGeneric(TITLES[route]?TITLES[route][1]:'Module','Composed from the same locked component set.'));
-  document.getElementById('page').innerHTML = fn();
+  const pg = document.getElementById('page');
+  pg.innerHTML = fn();
+  if(route==='wallboard'){ pg.style.padding='0'; pg.style.maxWidth='none'; }
+  else { pg.style.padding=''; pg.style.maxWidth=''; }
   renderNav(); renderCrumbs(); renderBulk();
   const fresh = document.getElementById('freshness');
   if(route==='sentinel'){ fresh.className='freshness stale'; fresh.innerHTML='<i class="live"></i> Inventory data may be stale · last sync 3h 14m ago'; }
@@ -1630,6 +2289,59 @@ function cmdkOpen(){
 }
 function cmdkClose(){ document.getElementById('cmdk').classList.remove('open'); }
 
+/* ---------- NOTIFICATION CENTRE ---------- */
+const NOTIFS = {
+  urgent:[
+    {t:'2 hot leads unanswered for over 24h', m:'Sarah Ahmed and Fatima Noor · AED 15,300 estimated', to:'leads'},
+    {t:'Instagram is not receiving', m:'Webhook verification failing since 26 Sep 17:16', to:'channels'}
+  ],
+  action:[
+    {t:'WhatsApp access token expires in 6 days', m:'Renew it before 3 Oct or outbound stops', to:'channels'},
+    {t:'1 sync conflict waiting on a decision', m:'Stock #A1832 price · NEXUS and the DMS disagree', to:'importing'}
+  ],
+  info:[
+    {t:'17 lead updates', m:'Batched from this morning’s automation run', batch:true, to:'leads'},
+    {t:'Inventory sync completed', m:'118 vehicles read, 6 changed, 0 rejected', to:'importing'}
+  ]
+};
+let notifFilter = 'all';
+function renderNotif(){
+  const el = document.getElementById('notif');
+  const groups = [['urgent','Urgent'],['action','Action required'],['info','Information']];
+  const show = g => notifFilter==='all' || notifFilter===g || (notifFilter==='mine' && g!=='info');
+  el.innerHTML = `
+  <div class="notif-head">
+    <h3>Notifications</h3>
+    <button class="btn btn-tertiary" data-act="All marked read">Mark all read</button>
+    <button class="icon-btn" id="notifClose" aria-label="Close">${svg(I.x,18)}</button>
+  </div>
+  <div class="notif-tabs">
+    ${[['all','All'],['urgent','Urgent'],['mine','Assigned to me'],['info','System']].map(([k,l])=>
+      `<button class="view-chip ${notifFilter===k?'active':''}" data-nfilter="${k}">${l}</button>`).join('')}
+  </div>
+  <div class="notif-body">
+    ${groups.filter(([k])=>show(k)).map(([k,label])=>`
+      <div class="notif-group ${k}">
+        <h6>${k==='urgent'?svg(I.warn,12):k==='action'?svg(I.bolt,12):svg(I.info,12)} ${label} · ${NOTIFS[k].length}</h6>
+        ${NOTIFS[k].map(n=>`<button class="notif-item" data-route="${n.to}" data-closenotif="1">
+          <span class="t">${n.t}</span><span class="m">${n.m}</span>
+          ${n.batch?'<span class="batch">Batched — 17 events, one notification</span>':''}
+        </button>`).join('')}
+      </div>`).join('')}
+    <p style="font-size:11.5px;color:var(--subtle);margin:0">Automation runs are batched. NEXUS will never send you 283 notifications for one job.</p>
+  </div>`;
+}
+function openNotif(){
+  const el=document.getElementById('notif'), sc=document.getElementById('scrim');
+  renderNotif(); el.hidden=false; sc.hidden=false;
+  requestAnimationFrame(()=>{el.classList.add('open'); sc.classList.add('open');});
+}
+function closeNotif(){
+  const el=document.getElementById('notif'), sc=document.getElementById('scrim');
+  el.classList.remove('open'); sc.classList.remove('open');
+  setTimeout(()=>{el.hidden=true; if(document.getElementById('drawer').hidden) sc.hidden=true;},200);
+}
+
 /* ---------- EVENTS ---------- */
 document.addEventListener('click', e => {
   const t = e.target;
@@ -1644,11 +2356,44 @@ document.addEventListener('click', e => {
     document.documentElement.setAttribute('data-theme', dark?'light':'dark');
     return toast(dark?'Light theme':'Dark theme',{sub:'Dark suits the command centre and wallboard; light stays the default for tables'});
   }
+  if(near('#rtlBtn')){
+    const rtl = document.documentElement.getAttribute('dir')==='rtl';
+    document.documentElement.setAttribute('dir', rtl?'ltr':'rtl');
+    return toast(rtl?'Left-to-right':'Right-to-left',{sub:'Built on logical properties, so Arabic will not need a second stylesheet'});
+  }
   if(near('#densityBtn')){
     densIdx=(densIdx+1)%3; document.body.dataset.density=dens[densIdx];
     return toast('Display density: '+dens[densIdx],{sub:'Saved to your user preferences'});
   }
-  if(near('#bellBtn')) return toast('17 lead updates batched',{tone:'warn',sub:'One notification, not seventeen — batching is a product rule'});
+  if(near('#bellBtn')) return openNotif();
+  if(near('#notifClose')) return closeNotif();
+  if(near('[data-closenotif]')) closeNotif();
+  const nf = near('[data-nfilter]'); if(nf){ notifFilter = nf.dataset.nfilter; return renderNotif(); }
+
+  const md = near('[data-mode]'); if(md){ mode = md.dataset.mode; return render(); }
+
+  if(near('#colBtn')){ colPickOpen = !colPickOpen; return render(); }
+  const cb = near('[data-col]');
+  if(cb){ e.stopPropagation(); cols[cb.dataset.col] = cb.checked?1:0; colPickOpen = true; render();
+    return toast('Columns updated',{sub:'Saved to your user preferences'}); }
+  if(colPickOpen && !near('.rel')){ colPickOpen=false; render(); }
+
+  const pg = near('[data-page]');
+  if(pg && !pg.disabled){ page = +pg.dataset.page; return render(); }
+
+  const advb = near('[data-adv]'); if(advb){ advOpen = !advOpen; return render(); }
+  if(near('[data-submit]')){
+    ['name','phone'].forEach(k => { if(formTouched[k]===undefined) formTouched[k]=''; });
+    render();
+    const bad = ['name','phone','email'].some(k => fieldErr(k, formTouched[k] ?? ''));
+    if(bad) return toast('Two fields need attention',{tone:'warn',sub:'Errors are shown on the fields themselves, not in a list at the top'});
+    const btn = document.querySelector('[data-submit]');
+    if(btn){ btn.classList.add('is-loading');
+      setTimeout(()=>{ btn.classList.remove('is-loading');
+        toast('Lead recorded',{sub:'Origin walk_in · recorded as a person’s word · audit row written'});
+        formTouched={}; go('leads'); },700); }
+    return;
+  }
   if(near('#tenantBtn')) return toast('Tenant switching is guarded',{tone:'warn',sub:'Switching clears filters and results so no action lands on the wrong dealership'});
 
   const ex = near('[data-explain]');
@@ -1700,7 +2445,8 @@ document.addEventListener('click', e => {
   }
 
   const lead = near('[data-lead]'); if(lead) return openDrawer(lead.dataset.lead);
-  if(near('#scrim')||near('#drawerClose')) return closeDrawer();
+  if(near('#scrim')){ if(!document.getElementById('notif').hidden) closeNotif(); return closeDrawer(); }
+  if(near('#drawerClose')) return closeDrawer();
 
   const cg = near('[data-cmdgo]');
   if(cg){ if(cg.dataset.cmdview) view=cg.dataset.cmdview; cmdkClose(); return go(cg.dataset.cmdgo); }
@@ -1724,13 +2470,58 @@ document.addEventListener('click', e => {
   }
 });
 document.getElementById('cmdkInput').addEventListener('input', e => cmdkRender(e.target.value));
+
+/* Inline validation as they type, and an autosaving draft.
+   Validation only fires once a field has been touched — nobody wants an error
+   on a field they have not reached yet. */
+let saveTimer;
+document.addEventListener('input', e => {
+  const f = e.target.closest('[data-field]'); if(!f) return;
+  const id = f.dataset.field;
+  formTouched[id] = f.value;
+  const wrap = f.closest('.field');
+  const err = fieldErr(id, f.value);
+  wrap.classList.toggle('bad', !!err);
+  wrap.classList.toggle('good', !err && !!f.value.trim());
+  let slot = wrap.querySelector('.err, .note');
+  if(err){
+    if(!slot){ slot=document.createElement('span'); wrap.appendChild(slot); }
+    slot.className='err'; slot.innerHTML = svg(I.warn,12)+err;
+  } else if(slot && slot.classList.contains('err')){ slot.remove(); }
+
+  const note = document.getElementById('autosaveNote');
+  if(note){
+    saveState='saving'; note.className='autosave saving';
+    note.innerHTML='<i class="pip"></i>Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{ saveState='saved'; note.className='autosave';
+      note.innerHTML='<i class="pip"></i>Draft saved '+fmtTime(new Date()); }, 650);
+  }
+});
+
+/* Keyboard shortcuts. Never required; they make the product faster once learned. */
+let gPending = false, gTimer;
+const G_MAP = {l:'leads', i:'sentinel', c:'conversations', m:'leaks', a:'actions', h:'setup'};
 document.addEventListener('keydown', e => {
+  const typing = /input|textarea|select/i.test(document.activeElement.tagName);
   if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); return cmdkOpen(); }
   if(e.key==='Escape'){
     if(document.getElementById('cmdk').classList.contains('open')) return cmdkClose();
+    if(!document.getElementById('notif').hidden) return closeNotif();
     if(!document.getElementById('drawer').hidden) return closeDrawer();
+    if(colPickOpen){ colPickOpen=false; return render(); }
   }
-  if(e.key==='/' && !/input|textarea/i.test(document.activeElement.tagName)){ e.preventDefault(); cmdkOpen(); }
+  if(typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(e.key==='/'){ e.preventDefault(); return cmdkOpen(); }
+  if(e.key==='?'){ e.preventDefault(); return go('shortcuts'); }
+  if(gPending){
+    const to = G_MAP[e.key.toLowerCase()];
+    gPending=false; clearTimeout(gTimer);
+    if(to){ e.preventDefault(); return go(to); }
+    return;
+  }
+  if(e.key.toLowerCase()==='g'){ gPending=true; clearTimeout(gTimer); gTimer=setTimeout(()=>gPending=false,1200); return; }
+  if(e.key.toLowerCase()==='n'){ e.preventDefault(); return go('addlead'); }
 });
 
 render();
