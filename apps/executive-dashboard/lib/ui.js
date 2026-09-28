@@ -51,6 +51,48 @@ function kpi(label, value, sub, cls = '') {
     ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 }
 
+/* The column count at which a table is treated as genuinely wide and given its
+   own horizontal scrollport instead of a sticky header. It is measured, not
+   chosen: parsing every literal `table([...])` call in screens/, lib/ and
+   app.js on 28 Sep 2026 gives 55 call sites and this distribution —
+
+     cols  2  3  4  5   6  7  8  9  10  11
+     sites 4  7  9  15 13  3  2  1   0   1
+
+   — 51 of 55 at seven columns or fewer, then a clean gap, then 8, 8, 9 and 11
+   (screens/appointments.js, screens/founder.js, screens/lead-recovery.js,
+   screens/finance.js). The threshold is put in that gap, so the four tables
+   that are actually wide scroll and the fifty-one that are not get the sticky
+   header this change exists to restore.
+
+   Why a count is a fair proxy and where it stops being one: what makes these
+   tables wide is `table.data th { white-space: nowrap }` against
+   `table.data { width: 100% }`, so the table's min-content width is the sum of
+   its header labels. Measured at 1440x900 — a 5-column table needs 616px and a
+   12-column one 1216px, so a 12-column table already overflows a 1280px laptop
+   while a 5-column table only overflows below about 640px. A count cannot know
+   how long a label is, which is exactly why `opts.scroll` exists and overrides
+   it in both directions.
+
+   It is a tidiness threshold, not a correctness one. Being under it can no
+   longer cut a table off: lib/theme-table.css rule 4 stops the enclosing card
+   clipping, so a table wider than its card bleeds over the card wall and stays
+   reachable through the document's own horizontal scroll. The threshold only
+   decides which of the two legitimate behaviours a table gets. */
+const TABLE_SCROLL_AT_COLS = 8;
+
+/* `opts.scroll` — tri-state and INERT BY DEFAULT. Left undefined, which is what
+   every one of the existing call sites passes, the column count above decides.
+   `true` forces the horizontal scrollport onto a narrow table with long labels;
+   `false` forces the sticky header onto a wide one whose labels are short. No
+   caller changes behaviour by being upgraded to this signature, because none of
+   them sets the key.
+
+   The two behaviours are mutually exclusive and the reason is in
+   lib/design-system.css:368-390 and restated in lib/theme-table.css: a wrapper
+   that scrolls horizontally is a scrollport, and a sticky header inside a
+   scrollport pins to that port rather than to the top bar. A table can have the
+   header or the scrollbar, and the class is how it says which. */
 function table(cols, rows, opts = {}) {
   if (!rows.length) return opts.empty || stateEmpty('Nothing here yet', 'No rows matched.');
   const head = cols.map(c => `<th class="${c.align === 'r' ? 'r' : ''}">${esc(c.label)}</th>`).join('');
@@ -58,7 +100,13 @@ function table(cols, rows, opts = {}) {
     const tds = cols.map(c => `<td class="${c.align === 'r' ? 'r num' : ''} ${c.strong ? 'strong' : ''}">${c.render(r)}</td>`).join('');
     return `<tr class="${opts.onRow ? 'clickable' : ''}" data-i="${i}">${tds}</tr>`;
   }).join('');
-  return `<div class="table-wrap"><table class="data"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const scrolls = opts.scroll === undefined ? cols.length >= TABLE_SCROLL_AT_COLS : !!opts.scroll;
+  /* `.table-wrap` is kept on the element in both cases, never replaced. Three
+     selectors elsewhere key off it — `.pbody:has(> .table-wrap)` in
+     lib/theme-surfaces.css and the two rules in lib/theme-table.css — so the
+     modifier is additive, exactly as `.ds-tablewrap--scroll` is. */
+  const wrap = scrolls ? 'table-wrap table-wrap--scroll' : 'table-wrap';
+  return `<div class="${wrap}"><table class="data"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function wireRows(host, rows, handler) {

@@ -127,11 +127,11 @@ const POOL_LIMIT = 50;
 function recommendedBanner(rec) {
   if (!rec || !rec.label) return '';
   const d = rec.decision;
-  return `<div class="section"><div class="banner ${d && d.ok === false ? 'warm' : 'info'} rec-highlight" style="margin:0">
-      <span class="material-symbols-outlined" style="font-size:20px">campaign</span>
+  return `<div class="section"><div class="banner ${d && d.ok === false ? 'warm' : 'info'} rec-highlight banner-flush">
+      <span class="material-symbols-outlined">campaign</span>
       <div><strong>Recommended: ${esc(rec.label)}</strong>
-        ${rec.reason ? `<div class="cell-sub" style="white-space:normal">${esc(rec.reason)}</div>` : ''}
-        ${d && d.text ? `<div class="cell-sub" style="white-space:normal">${esc(d.text)}</div>` : ''}</div>
+        ${rec.reason ? `<div class="cell-sub cell-sub-wrap">${esc(rec.reason)}</div>` : ''}
+        ${d && d.text ? `<div class="cell-sub cell-sub-wrap">${esc(d.text)}</div>` : ''}</div>
     </div></div>`;
 }
 
@@ -139,9 +139,9 @@ async function leadDrawer(lead, opts = {}) {
   openDrawer(`
     <div class="drawer-head">
       <div class="avatar">${esc(maskText(initials(lead.name)))}</div>
-      <div style="flex:1;min-width:0">
-        <h2 style="font-size:18px">${esc(displayName(lead.name, lead.id))}</h2>
-        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}
+      <div class="drawer-head-main">
+        <h2>${esc(displayName(lead.name, lead.id))}</h2>
+        <div class="drawer-tags">${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}
           ${n0(lead.ai_score) != null ? `<span class="chip">AI score ${lead.ai_score}</span>` : ''}</div>
       </div>
       <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
@@ -234,7 +234,7 @@ async function leadDrawer(lead, opts = {}) {
         <div id="dTimeline">${stateLoading(3)}</div>
       </div>
     </div>
-    <div class="drawer-foot">
+    <div class="drawer-foot foot-actions">
       <button class="btn" id="dWhats"><span class="material-symbols-outlined">chat</span>Open conversation</button>
       <button class="btn" id="dAssign"${canReassignLead(lead.tenant_id) ? '' : ' disabled title="Moving a lead to a different owner is an owner, admin or manager decision at this dealership. It moves commission and it moves who is answerable for the 5-minute rule."'}>Assign to…</button>
       <!-- NX1005: only meaningful on a FAILED lead -- shown and disabled rather
@@ -431,7 +431,7 @@ async function leadDrawer(lead, opts = {}) {
   if (vipBox) {
     vipBox.innerHTML = purch.length
       ? `<div class="label-caps">Purchase history · returning customer</div>
-         ${purch.map(p => `<div class="quote" style="margin-top:8px">
+         ${purch.map(p => `<div class="quote purchase-row">
             <strong>${esc(p.vehicle)}</strong> · ${aed(p.amount_aed)}
             <div class="cell-sub">${esc(p.purchase_date || '')}</div></div>`).join('')}`
       : purchase.ok
@@ -440,10 +440,10 @@ async function leadDrawer(lead, opts = {}) {
           /* The read was never issued. Silence here would be the same false
              all-clear as a failed read, and for a worse reason: nobody even
              asked. */
-          ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">warning</span>
+          ? `<div class="banner warm"><span class="material-symbols-outlined">warning</span>
              <div>Purchase history was not looked up for this lead. ${esc(purchase.skipped)}
              This customer is <strong>not</strong> being shown as a first-time buyer — nothing here knows either way.</div></div>`
-          : `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+          : `<div class="banner warm"><span class="material-symbols-outlined">error</span>
              <div>Purchase history could not be read (${esc(purchase.err)}), so this customer is
              <strong>not</strong> being shown as a first-time buyer — we do not know either way.</div></div>`;
   }
@@ -492,6 +492,12 @@ async function leadDrawer(lead, opts = {}) {
   ].sort((a, b) => new Date(b.at) - new Date(a.at));
 
   if (timelineBox) {
+    /* The dot's `style` is the ONE inline style left in this file, and it stays.
+       `e.tone` is decided per row at runtime -- from tone(c.direction) for a
+       message, and from lib/health.js's outcome word for a workflow run -- so it
+       is data, not presentation, and no stylesheet can hold a value the row
+       itself chooses. Everything else in this template moved to
+       lib/theme-forms.css. */
     timelineBox.innerHTML = events.length ? `<div class="timeline">${events.map(e => `
     <div class="tl-item">
       <span class="tl-dot" style="background:var(--${esc(e.tone)})"></span>
@@ -499,7 +505,7 @@ async function leadDrawer(lead, opts = {}) {
         <div class="tl-meta"><span class="chip">${esc(e.kind)}</span>${e.note
           ? ` <span class="t-${esc(e.tone)}" title="${esc(e.title)}">${esc(e.note)}</span>`
           : ''} ${ago(e.at)}</div>
-        <div style="margin-top:4px;white-space:pre-wrap">${esc(String(e.text || '').slice(0, 400))}</div>
+        <div class="tl-text">${esc(String(e.text || '').slice(0, 400))}</div>
       </div>
     </div>`).join('')}</div>`
       : (comm.ok && aud.ok)
@@ -510,7 +516,7 @@ async function leadDrawer(lead, opts = {}) {
         ? stateEmpty('No activity recorded',
             `Nothing is logged under any of the ${ident.keys.length} ${ident.keys.length === 1 ? 'key' : 'keys'} this lead is filed under — ${ident.keys.join(', ')} — nor under the last-nine-digit rule the workflows match on.`,
             'history')
-        : `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+        : `<div class="banner hot"><span class="material-symbols-outlined">error</span>
          <div><strong>This timeline is incomplete — it is not empty.</strong>
          ${!comm.ok ? `Messages ${comm.skipped ? 'were not read' : `could not be read (${esc(comm.err)})`}. ${comm.skipped ? esc(comm.skipped) + ' ' : ''}` : ''}
          ${!aud.ok ? `Workflow activity ${aud.skipped ? 'was not read' : `could not be read (${esc(aud.err)})`}. ` : ''}
@@ -541,7 +547,7 @@ async function leadDrawer(lead, opts = {}) {
     ].filter(Boolean);
     if (events.length && gaps.length) {
       timelineBox.insertAdjacentHTML('afterbegin',
-        `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">warning</span>
+        `<div class="banner warm"><span class="material-symbols-outlined">warning</span>
        <div>Showing only part of the history — ${esc(gaps.join('; '))}.</div></div>`);
     }
     /* Ambiguity is not a gap; it is a decision the resolver made and refused to
@@ -550,7 +556,7 @@ async function leadDrawer(lead, opts = {}) {
        reasons a timeline may be shorter than the operator expects. */
     if (ident.ambiguous) {
       timelineBox.insertAdjacentHTML('afterbegin',
-        `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">warning</span>
+        `<div class="banner warm"><span class="material-symbols-outlined">warning</span>
        <div>${esc(ident.ambiguity.map(a => a.message).join(' '))}</div></div>`);
     }
   }
@@ -583,25 +589,36 @@ async function leadDrawer(lead, opts = {}) {
    handed back, and the message names it so a rep does not re-click and create
    a second visit for the same customer. */
 function bookVisitDialog(lead) {
+  /* `.form-stack` / `.frow` / `.field` come from lib/theme-forms.css, which is
+     also where `datetime-local` finally gets the app's own field treatment
+     instead of the browser's native box. Ids, types, `value="45"` and the
+     `min`/`step` bounds are untouched -- the submit handler and NX995 read
+     those. */
   const m = openModal(`Book a visit -- ${lead.name || 'this lead'}`, `
-    <div class="cell-sub" style="margin-bottom:12px">
-      Requests a visit for this lead and confirms it for the time below in one step. The appointment belongs to this
-      lead's own dealership, never any other one, and is recorded under your own account as the actor.
-    </div>
-    <label class="cell-sub" for="bvWhen" style="display:block">When (this device's own clock)</label>
-    <input id="bvWhen" type="datetime-local" style="width:100%">
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
-      <div style="flex:1;min-width:160px">
-        <label class="cell-sub" for="bvDuration" style="display:block">Duration (minutes)</label>
-        <input id="bvDuration" type="number" min="5" step="5" value="45" style="width:100%">
+    <div class="form-stack">
+      <div class="cell-sub">
+        Requests a visit for this lead and confirms it for the time below in one step. The appointment belongs to this
+        lead's own dealership, never any other one, and is recorded under your own account as the actor.
       </div>
-      <div style="flex:1;min-width:220px">
-        <label class="cell-sub" for="bvSalesWrap" style="display:block">Salesperson (optional)</label>
-        <div id="bvSalesWrap" class="cell-sub">Loading staff…</div>
+      <div class="field">
+        <label for="bvWhen">When (this device's own clock)</label>
+        <input id="bvWhen" type="datetime-local">
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label for="bvDuration">Duration (minutes)</label>
+          <input id="bvDuration" type="number" min="5" step="5" value="45">
+        </div>
+        <div class="field">
+          <label for="bvSalesWrap">Salesperson (optional)</label>
+          <div id="bvSalesWrap" class="cell-sub">Loading staff…</div>
+        </div>
+      </div>
+      <div class="field">
+        <label for="bvNotes">Notes (optional)</label>
+        <input id="bvNotes" type="text" maxlength="400" placeholder="What the customer wants to see or do">
       </div>
     </div>
-    <label class="cell-sub" for="bvNotes" style="display:block;margin-top:12px">Notes (optional)</label>
-    <input id="bvNotes" type="text" maxlength="400" style="width:100%" placeholder="What the customer wants to see or do">
   `, `<button class="btn primary" id="bvGo">Book it</button>
       <button class="btn" id="bvCancel">Cancel</button>`);
 
@@ -611,7 +628,7 @@ function bookVisitDialog(lead) {
   db('users?select=id,name,status&order=name').then(users => {
     const list = users || [];
     $$('#bvSalesWrap').innerHTML = list.length
-      ? `<select id="bvSales" style="width:100%"><option value="">Unassigned</option>${list.map(u =>
+      ? `<select id="bvSales"><option value="">Unassigned</option>${list.map(u =>
           `<option value="${esc(u.id)}"${u.id === lead.assigned_to_id ? ' selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`).join('')}</select>`
       : '<span class="t-muted">No staff accounts to offer -- the visit can still be booked with no salesperson attached.</span>';
   }).catch(e => {
@@ -688,25 +705,33 @@ async function assignDialog(lead) {
   const body = $('drawer').querySelector('.drawer-body');
   if (!body) return;
   body.scrollTop = 0;
-  const box = el('div', 'card');
-  box.style.marginBottom = '16px';
+  /* `assign-card` carries the 16px separation this panel needs from the Contact
+     section it is prepended above; it was `box.style.marginBottom` and is now
+     the one class name in lib/theme-forms.css that replaces a JS-set value
+     rather than an attribute. The panel keeps `card`, so its surface, border and
+     radius still arrive from theme-surfaces.css. */
+  const box = el('div', 'card assign-card');
   const canAssign = users.length > 0;
-  box.innerHTML = `<div class="label-caps" style="margin-bottom:10px">Assign this lead</div>
+  box.innerHTML = `<div class="form-stack">
+    <div class="label-caps">Assign this lead</div>
     ${rosterErr
-      ? `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">error</span>
+      ? `<div class="banner hot banner-flush"><span class="material-symbols-outlined">error</span>
          <div>The staff list could not be read (${esc(rosterErr)}), so there is nobody to pick.
          This is not an empty team — reload and try again.</div></div>`
       : !canAssign
-        ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">warning</span>
+        ? `<div class="banner warm banner-flush"><span class="material-symbols-outlined">warning</span>
            <div>There are no staff accounts to assign to.</div></div>`
         : ''}
     <select id="assignSel" ${canAssign ? '' : 'disabled'}>${users.map(u => `<option value="${esc(u.id)}" ${u.id === lead.assigned_to_id ? 'selected' : ''}>${esc(u.name)}${u.status === 'pending_invite' ? ' (pending invite)' : ''}</option>`).join('')}</select>
-    <label class="cell-sub" for="assignWhy" style="display:block;margin-top:12px">Why (optional — recorded with the change)</label>
-    <input id="assignWhy" type="text" maxlength="200" placeholder="e.g. customer asked for someone else" style="width:100%">
-    <div style="display:flex;gap:8px;margin-top:12px">
+    <div class="field">
+      <label for="assignWhy">Why (optional — recorded with the change)</label>
+      <input id="assignWhy" type="text" maxlength="200" placeholder="e.g. customer asked for someone else">
+    </div>
+    <div class="form-foot">
     <button class="btn primary" id="assignGo" ${canAssign ? '' : 'disabled title="No staff list was loaded, so saving could only clear the current owner."'}>Save</button>
     <button class="btn" id="assignCancel">Cancel</button></div>
-    <div class="cell-sub" id="assignMsg" style="margin-top:8px"></div>`;
+    <div class="cell-sub form-msg" id="assignMsg"></div>
+    </div>`;
   body.prepend(box);
   box.querySelector('#assignCancel').addEventListener('click', () => box.remove());
   box.querySelector('#assignGo').addEventListener('click', async () => {

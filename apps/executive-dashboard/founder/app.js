@@ -23,6 +23,10 @@ import '../lib/theme-shell.css';
 import '../lib/theme-surfaces.css';
 import '../lib/theme-controls.css';
 import '../lib/theme-data.css';
+import '../lib/theme-auth.css';
+import '../lib/theme-modal.css';
+import '../lib/theme-table.css';
+import '../lib/theme-forms.css';
 
 import { $ } from '../lib/dom.js';
 import { esc } from '../lib/format.js';

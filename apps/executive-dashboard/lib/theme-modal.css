@@ -1,0 +1,163 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-modal.css
+   ---------------------------------------------------------------------------
+   The MODAL half of the reference design pass: the overlay lib/modal.js builds,
+   and the head / body / foot rhythm of the panel inside it.
+
+   WHY THIS FILE EXISTS AT ALL. lib/theme-shell.css says, in its own comment:
+
+     "lib/modal.js builds `#modalWrap` with `style.cssText`, so the overlay's
+      own background, padding and z-index are INLINE and unreachable from a
+      stylesheet without `!important`. They are therefore not restyled."
+
+   That was an accurate reading of the markup and the wrong place to stop. An
+   inline style is not a wall, it is a line of JavaScript, and the honest fix is
+   to move it rather than to shout over it with `!important`. Every declaration
+   below was an inline style in lib/modal.js until this pass; the JS now sets
+   class names and writes no `style` attribute of any kind. theme-shell.css's
+   `#modalWrap > .card` rules are untouched and still apply — the panel keeps
+   `class="card"` precisely so they do.
+
+   WHAT THIS FILE IS NOT ALLOWED TO DO, and does not:
+
+   - No `!important`. This file is imported after styles.css, design-system.css
+     and the other theme-*.css files that touch a card, so a plain class
+     selector here already wins a tie. Where a rule of theme-shell.css is more
+     specific than one here (`#modalWrap > .card` is 1,0,1) that rule is left to
+     win, because its value is the value this pass wanted anyway.
+   - No new colour value. The one colour below, the scrim, is the rgba()
+     lib/modal.js already shipped; it is `--text` (#0F1729, 17.9:1 on white) at
+     45% alpha. No token was invented and no hex was added.
+   - No `::before` / `::after` on the overlay, and this one is load-bearing
+     rather than stylistic. Dismissal is `wrap.addEventListener('mousedown',
+     e => { if (e.target === wrap) close(); })` — it compares the event target
+     against the overlay by identity. A pseudo-element painting the scrim would
+     become that target on every backdrop click and the modal would stop closing
+     when you clicked outside it. The scrim is therefore a `background` on the
+     overlay itself, as it was inline, and must stay one.
+   - No scroll lock on `<body>`, no `overscroll-behavior`, no focus trap and no
+     focus restore. None of those exist in lib/modal.js today. Adding one here
+     would be a behaviour change smuggled in under a theme pass, and two of them
+     (the trap, the restore) belong in the JS anyway. They are owed; they are
+     not owed to this file. See the report accompanying this change.
+
+   THE ONE STRUCTURAL FACT THE FILE OBEYS: the OVERLAY scrolls, not the panel.
+   `overflow: auto` sits on `.modal-wrap` and the panel is centred by `margin:
+   auto` against `align-items: flex-start`. That pairing is not decoration — it
+   is the only arrangement in which a dialog taller than the viewport can be
+   scrolled to its own top edge. `align-items: center` centres the same panel
+   and makes its top unreachable; `margin: auto` wins over `align-items` when
+   there is room and yields to the scrollport when there is not. Both halves
+   stay exactly as lib/modal.js had them.
+   =========================================================================== */
+
+/* ── The overlay ──────────────────────────────────────────────────────────── */
+
+/* Every value here was in `wrap.style.cssText`. `z-index: 60` is kept to the
+   digit: styles.css runs `.topbar` at 20, `.scrim` at 40 and `.drawer` at 50,
+   so 60 is the layer that puts a modal over an open drawer, and changing it
+   would reorder two surfaces that are allowed to be open at once. */
+.modal-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;      /* see the header note — NOT center */
+  justify-content: center;
+  padding: var(--sp-7) var(--sp-4);   /* 40px 16px, which the 8pt scale already
+                                         spelled exactly; nothing was rounded */
+  overflow: auto;
+  background: rgba(15,23,41,.45);     /* --text at 45%, the shipped value */
+  animation: modal-scrim-in var(--m-comp) var(--ease);
+}
+
+/* The scrim fades rather than appearing whole, which is what styles.css's
+   `.scrim` already does for the drawer. It is an ANIMATION and not a
+   transition on purpose: a transition needs a class toggled on a second frame,
+   which is JavaScript this file does not own, and an animation needs nothing.
+   Opacity does not affect hit testing, so the backdrop is clickable and the
+   dialog is focusable from the first frame. Under `prefers-reduced-motion`
+   `--m-comp` is 0ms, so the keyframe still resolves — instantly, at its end
+   state. Same mechanism theme-shell.css uses for the panel. */
+@keyframes modal-scrim-in { from { opacity: 0; } }
+
+/* 40px of top padding is right on a desktop and costs an eighth of the
+   viewport on a phone. 640px is a breakpoint styles.css already uses. */
+@media (max-width: 640px) {
+  .modal-wrap { padding: var(--sp-4); }
+}
+
+/* ── The panel ────────────────────────────────────────────────────────────── */
+
+/* Was `style="width:100%;max-width:720px;margin:auto"`, moved verbatim. The
+   element also keeps `class="card"`, so its surface, border, padding, 16px
+   radius (`--r-panel`) and `--sh-pop` elevation continue to arrive from
+   theme-surfaces.css and theme-shell.css rather than being restated here —
+   one figure, one derivation. `margin: auto` is the scroll-safe centring
+   described in the header; it is not a shorthand for "centre it". */
+.modal-panel {
+  width: 100%;
+  max-width: 720px;
+  margin: auto;
+}
+
+/* ── Head, body, foot ─────────────────────────────────────────────────────── */
+
+/* Was `style="margin-bottom:4px"`. Kept at 4px (`--sp-1`): the head already
+   carries a bottom border and 16px of padding beneath its text, so the gap the
+   reader sees is 20px, which is the rhythm the reference asks for. Raising this
+   to 8px would open it to 24px and detach the head from what it labels.
+   Head PADDING is deliberately not declared here — theme-shell.css's
+   `#modalWrap > .card > .card-head` already zeroes the inline and top padding
+   so the head's text lines up with the body's, and it is more specific than
+   anything in this file. Restating it would be a second derivation of a figure
+   that is already settled. */
+.modal-head { margin-bottom: var(--sp-1); }
+
+/* Was `style="flex:1"` on the title. `min-width: 0` is added and is inert
+   today — `.card-title` does not set `white-space`, so the title wraps and a
+   flex item that can wrap can already shrink. It is here so that a later
+   `nowrap` on a card title cannot push the close button off the panel edge,
+   which is the failure this one declaration is cheap insurance against. */
+.modal-title {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Was `style="display:flex;gap:8px;align-items:center;margin-top:20px;
+   flex-wrap:wrap"`. Two changes, both deliberate:
+
+   · `margin-top` 20px -> `--sp-5` (24px). 20px was the one value in the
+     original modal that sat off the 8pt scale entirely, and the foot is the
+     element that most needs to read as a separate register from the body. This
+     is the single measurable spacing change in the file.
+   · `:empty` now collapses. `openModal(title, body)` with no third argument
+     renders `<div class="modal-foot"></div>`, and that empty div was carrying
+     24px of margin under every footless dialog — dead space that read as a
+     misaligned panel. `display: none` rather than `margin-top: 0` because it
+     re-evaluates the moment anything is put inside, and nothing in the app
+     selects the foot container to inject into it (callers address ids inside
+     their own footHtml), so there is no live case where it can hide content. */
+.modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+}
+.modal-foot:empty { display: none; }
+
+/* Was `style="margin-top:12px"`, kept exactly as `--sp-3`. Same empty-collapse
+   argument, and here the element is genuinely empty most of the time: it is the
+   error line, written only by `m.msg()` / `modalError()`, and it was reserving
+   12px in every dialog that never failed. It keeps `class="cell-sub"`, so its
+   13px/18px `--text-muted` type is unchanged. */
+.modal-msg { margin-top: var(--sp-3); }
+.modal-msg:empty { display: none; }
+
+/* NOT DECLARED, and named so the next reader does not think it was missed:
+   `#modalBody` gets no class. It carried no inline style, the panel's own
+   `--sp-4` padding already governs its box, and a class with nothing in it is
+   a hook pretending to be a rule. The focus ring inside the dialog is not
+   restated either — theme-shell.css already pins `#modalWrap :focus-visible`
+   to a 2px `--primary` outline at a 2px offset, and one ring is enough. */
