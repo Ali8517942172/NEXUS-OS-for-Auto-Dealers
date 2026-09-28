@@ -85,43 +85,55 @@ function manualLeadDialog(onSaved) {
      regenerated after a refusal. */
   const requestId = mintRequestId();
 
+  /* `.form-stack` / `.frow` / `.field` come from lib/theme-forms.css. Every
+     `style="…"` this template used to carry lives there now; the ids, the
+     types, the maxlengths and the placeholders are untouched, because those are
+     what the submit handler and the server read. */
   const m = openModal('Add a lead by hand', `
-    <div class="cell-sub" style="margin-bottom:12px">
-      For the customer who walked in or telephoned. It is recorded as
-      <strong>your word</strong> that this enquiry happened — which is exactly what it is — and it will show on the
-      Leads screen with that origin rather than as a lead nobody can place.
-    </div>
-    <div id="mlSourceWrap" class="cell-sub">Loading the sources a person may record…</div>
-    <label class="cell-sub" for="mlName" style="display:block;margin-top:12px">Name</label>
-    <input id="mlName" type="text" maxlength="120" style="width:100%" placeholder="As they gave it">
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
-      <div style="flex:1;min-width:220px">
-        <label class="cell-sub" for="mlPhone" style="display:block">Phone</label>
-        <input id="mlPhone" type="tel" maxlength="32" style="width:100%" placeholder="+9715…">
+    <div class="form-stack">
+      <div class="cell-sub">
+        For the customer who walked in or telephoned. It is recorded as
+        <strong>your word</strong> that this enquiry happened — which is exactly what it is — and it will show on the
+        Leads screen with that origin rather than as a lead nobody can place.
       </div>
-      <div style="flex:1;min-width:220px">
-        <label class="cell-sub" for="mlEmail" style="display:block">Email</label>
-        <input id="mlEmail" type="email" maxlength="160" style="width:100%" placeholder="optional">
+      <div id="mlSourceWrap" class="field cell-sub">Loading the sources a person may record…</div>
+      <div class="field">
+        <label for="mlName">Name</label>
+        <input id="mlName" type="text" maxlength="120" placeholder="As they gave it">
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label for="mlPhone">Phone</label>
+          <input id="mlPhone" type="tel" maxlength="32" placeholder="+9715…">
+        </div>
+        <div class="field">
+          <label for="mlEmail">Email</label>
+          <input id="mlEmail" type="email" maxlength="160" placeholder="optional">
+        </div>
+        <div class="cell-sub frow-note">
+          One of the two is enough, and one of the two is required — a lead nobody can be contacted on is refused rather
+          than filed and left to rot.
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field">
+          <label for="mlVehicle">Vehicle they asked about</label>
+          <input id="mlVehicle" type="text" maxlength="120" placeholder="optional">
+        </div>
+        <div class="field">
+          <label for="mlBudget">Budget (AED)</label>
+          <input id="mlBudget" type="number" min="0" step="1000" placeholder="optional">
+        </div>
+      </div>
+      <div class="field">
+        <label for="mlRef">Your reference (optional)</label>
+        <input id="mlRef" type="text" maxlength="80" placeholder="floor ticket, call log id, anything you use">
+      </div>
+      <div class="field">
+        <label for="mlNotes">Notes (optional)</label>
+        <input id="mlNotes" type="text" maxlength="400">
       </div>
     </div>
-    <div class="cell-sub" style="margin-top:6px">
-      One of the two is enough, and one of the two is required — a lead nobody can be contacted on is refused rather
-      than filed and left to rot.
-    </div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
-      <div style="flex:1;min-width:220px">
-        <label class="cell-sub" for="mlVehicle" style="display:block">Vehicle they asked about</label>
-        <input id="mlVehicle" type="text" maxlength="120" style="width:100%" placeholder="optional">
-      </div>
-      <div style="flex:1;min-width:160px">
-        <label class="cell-sub" for="mlBudget" style="display:block">Budget (AED)</label>
-        <input id="mlBudget" type="number" min="0" step="1000" style="width:100%" placeholder="optional">
-      </div>
-    </div>
-    <label class="cell-sub" for="mlRef" style="display:block;margin-top:12px">Your reference (optional)</label>
-    <input id="mlRef" type="text" maxlength="80" style="width:100%" placeholder="floor ticket, call log id, anything you use">
-    <label class="cell-sub" for="mlNotes" style="display:block;margin-top:12px">Notes (optional)</label>
-    <input id="mlNotes" type="text" maxlength="400" style="width:100%">
   `, `<button class="btn primary" id="mlGo" disabled>Record this lead</button>
       <button class="btn" id="mlCancel">Cancel</button>`);
 
@@ -136,8 +148,8 @@ function manualLeadDialog(onSaved) {
       return;
     }
     $$('#mlSourceWrap').innerHTML =
-      `<label class="cell-sub" for="mlSource" style="display:block">How did they reach you</label>
-       <select id="mlSource" style="width:100%">${rows.map(r =>
+      `<label for="mlSource">How did they reach you</label>
+       <select id="mlSource">${rows.map(r =>
          `<option value="${esc(r.source_key)}">${esc(r.display_name || r.source_key)}</option>`).join('')}</select>`;
     $$('#mlGo').disabled = false;
   }).catch(e => {

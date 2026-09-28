@@ -359,29 +359,40 @@ const settle = p => p.then(v => [v, null], e => [null, e]);
    lib/identity.js, which decides which database rows are the same person. */
 function leadName(l) {
   const n = str(l.name);
-  if (!n) return '<span class="t-warm">Unnamed lead</span>';
+  if (!n) return '<span class="ds-t-warning">Unnamed lead</span>';
   /* A chat handle is not a name. Leads should never carry one, but the router
      has written worse into this column, and the whole point of the 24 Aug
      addendum is that a handle printed as a name misleads whoever reads it. */
   if (HANDLE.test(n)) {
-    return '<span class="t-warm">Unnamed lead</span> '
+    return '<span class="ds-t-warning">Unnamed lead</span> '
       + `<span class="chip mono" title="This is a WhatsApp chat handle stored in the name column, not a person's name. A LID contains no phone digits and identifies nobody.">${esc(n)}</span>`;
   }
   return esc(displayName(n, l.id));
 }
 const phoneText = l => str(l.phone)
   ? `<span class="mono">${esc(maskPhone(str(l.phone)))}</span>`
-  : '<span class="t-muted" title="No phone number on this lead">—</span>';
+  : '<span class="ds-t-tertiary" title="No phone number on this lead">—</span>';
 /* Name and number on one line, for the places that have no second line. */
-const nameAndPhone = l => `${leadName(l)} <span class="t-muted">·</span> ${phoneText(l)}`;
+const nameAndPhone = l => `${leadName(l)} <span class="ds-t-tertiary">·</span> ${phoneText(l)}`;
 
 SCREENS.leads = async host => {
-  const alertCard = el('div', 'card flush'); host.appendChild(alertCard);
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Inventory or Money Leaks and restyle a screen nobody
+     converted. A wrapper cannot leak — go() removes it with the rest of the
+     subtree. Same pattern as screens/overview.js, screens/money-leaks.js and
+     screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
+  const alertCard = el('div', 'card flush'); root.appendChild(alertCard);
   alertCard.innerHTML = `<div class="card-head"><div><div class="card-title">Needs attention</div>
     <div class="card-sub">The attention list for this screen, plus four checks this screen runs on the leads it just read</div></div></div>
     <div class="pbody">${stateLoading(2)}</div>`;
 
-  const card = el('div', 'card flush'); card.style.marginTop = '16px'; host.appendChild(card);
+  const card = el('div', 'card flush'); card.style.marginTop = '16px'; root.appendChild(card);
   card.innerHTML = stateLoading(8);
 
   /* The strip's three extra reads are started before the leads read is awaited,
@@ -775,7 +786,7 @@ SCREENS.leads = async host => {
       `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-lead="${esc(l.id)}"
         title="Open this lead">${nameAndPhone(l)}</button>`).join(' ');
     const rest = ls.length - Math.min(ls.length, PREVIEW);
-    return `${shown}${rest ? ` <span class="t-muted">+${num(rest)} more</span>` : ''}`;
+    return `${shown}${rest ? ` <span class="ds-t-tertiary">+${num(rest)} more</span>` : ''}`;
   };
 
   const viewRows = viewItems.map(it => {
@@ -784,8 +795,8 @@ SCREENS.leads = async host => {
     const sev = str(it.severity);
     const openable = !!lead;
     const idLine = lead
-      ? `<div class="cell-sub">${nameAndPhone(lead)}</div>`
-      : `<div class="cell-sub t-muted">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} loaded here, so it cannot be opened from this screen.</div>`;
+      ? `<div class="ds-cell-sub">${nameAndPhone(lead)}</div>`
+      : `<div class="ds-cell-sub ds-t-tertiary">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(all.length)} ${plural(all.length, 'lead', 'leads')} loaded here, so it cannot be opened from this screen.</div>`;
     return `<div class="list-item"${openable
         ? ` role="button" tabindex="0" data-open-lead="${esc(lead.id)}" title="Open this lead"`
         : ' style="cursor:default"'}>
@@ -795,13 +806,13 @@ SCREENS.leads = async host => {
           ${sev ? pill(sev, undefined, { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
           <span class="chip">${esc(str(it.kind) || 'item')}</span>
         </div>
-        <div class="cell-sub">${esc(str(it.detail))}</div>
+        <div class="ds-cell-sub">${esc(str(it.detail))}</div>
         ${idLine}
-        <div class="cell-sub t-muted">${it.at
+        <div class="ds-cell-sub ds-t-tertiary">${it.at
           ? `Waiting since ${esc(when(it.at))} — ${esc(ago(it.at))}`
           : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
       </div>
-      ${openable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>' : ''}
+      ${openable ? '<span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">chevron_right</span>' : ''}
     </div>`;
   }).join('');
 
@@ -813,10 +824,10 @@ SCREENS.leads = async host => {
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${pill(c.sev, undefined, { verbatim: false })}${esc(c.title)}
         </div>
-        <div class="cell-sub">${esc(c.detail)}</div>
-        <div class="cell-sub" style="margin-top:4px">${previewOf(c.leads)}</div>
+        <div class="ds-cell-sub">${esc(c.detail)}</div>
+        <div class="ds-cell-sub" style="margin-top:4px">${previewOf(c.leads)}</div>
       </div>
-      <span class="material-symbols-outlined t-muted" style="font-size:18px">filter_alt</span>
+      <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">filter_alt</span>
     </div>`).join('');
 
   /* The honest empty case, which today is the only case. Not a box with nothing
@@ -862,16 +873,16 @@ SCREENS.leads = async host => {
   ].filter(Boolean);
 
   const nothing = `<div class="list-item" style="cursor:default">
-    <span class="material-symbols-outlined t-ok" style="font-size:20px">task_alt</span>
+    <span class="material-symbols-outlined ds-t-success" style="font-size:20px">task_alt</span>
     <div style="flex:1;min-width:0">
       <div style="font-weight:500">Nothing on this screen needs attention right now</div>
-      <div class="cell-sub" style="white-space:normal">${nothingLines.map(esc).join('<br>')}</div>
+      <div class="ds-cell-sub" style="white-space:normal">${nothingLines.map(esc).join('<br>')}</div>
     </div>
   </div>`;
 
   const notesRow = stripNotes.length ? `<div class="list-item" style="cursor:default">
-    <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-    <div class="cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
+    <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
+    <div class="ds-cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
   </div>` : '';
 
   alertCard.querySelector('.pbody').innerHTML =
@@ -1064,12 +1075,12 @@ SCREENS.leads = async host => {
       </select>
       <select id="fSort" aria-label="Sort leads" style="width:auto">${Object.entries(SORTS)
         .map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join('')}</select>
-      <div class="t-muted num" id="resultCount"></div>
+      <div class="ds-t-tertiary num" id="resultCount"></div>
     </div>
-    ${all.length && all.length <= THIN ? `<div class="cell-sub" style="padding:12px 20px 0;white-space:normal">${esc(
+    ${all.length && all.length <= THIN ? `<div class="ds-cell-sub" style="padding:12px 20px 0;white-space:normal">${esc(
       `Those counts are the whole your leads — ${num(all.length)} ${plural(all.length, 'row', 'rows')}, not a sample of it. `
       + `${plural(all.length, 'One row', `${num(all.length)} rows`)} cannot carry a share, a conversion rate or a trend, so this screen prints none: every figure on it is a count of the rows above, and the segments are a tally rather than a distribution.`)}</div>` : ''}
-    ${segNote ? `<div class="cell-sub" style="padding:10px 20px 0;white-space:normal">${esc(segNote)}</div>` : ''}
+    ${segNote ? `<div class="ds-cell-sub" style="padding:10px 20px 0;white-space:normal">${esc(segNote)}</div>` : ''}
     <div id="focusNote" style="padding:0 20px"></div>
     ${notes.length ? `<div style="padding:14px 20px 0">${notes.map(n => `<div class="banner warm">
       <span class="material-symbols-outlined">warning</span><div>${esc(n)}</div></div>`).join('')}</div>` : ''}
@@ -1093,7 +1104,7 @@ SCREENS.leads = async host => {
       const at = sent.get(`${r.id}|${a.key}`);
       /* This session's own receipt, and it says so: a 2xx from the webhook is
          the only thing we know, and it is not an audit_log row. */
-      if (at) lines.push(`<span class="t-ok">${esc(a.done)} ${ago(at)} · this session</span>`);
+      if (at) lines.push(`<span class="ds-t-success">${esc(a.done)} ${ago(at)} · this session</span>`);
       const past = lastRun(r, a.key);
       if (past) {
         /* The raw status used to be printed here. It is a label the writer chose
@@ -1108,7 +1119,7 @@ SCREENS.leads = async host => {
       }
     }
     return `<div style="display:flex;gap:6px;justify-content:flex-end">${buttons}</div>
-      ${lines.length ? `<div class="cell-sub" style="text-align:right;margin-top:4px">${lines.join('<br>')}</div>` : ''}`;
+      ${lines.length ? `<div class="ds-cell-sub" style="text-align:right;margin-top:4px">${lines.join('<br>')}</div>` : ''}`;
   }
 
   const cols = [
@@ -1121,7 +1132,7 @@ SCREENS.leads = async host => {
            `+digits@whatsapp.lead` or an empty string can never be a buyer there,
            and asking is how a blank comes to equal a blank. */
         `${leadName(r)}${realEmail(r) && vipSet?.has(realEmail(r)) ? ' ' + pill('VIP', 'vip', { verbatim: false }) : ''}
-         <div class="cell-sub">${phoneText(r)}</div>` },
+         <div class="ds-cell-sub">${phoneText(r)}</div>` },
     /* `leads.email` is not always an email. Live on 1 Sep 2026 lead 34's holds
        `+971547484167@whatsapp.lead`, a key the Master Router synthesises for a
        lead that arrived over WhatsApp with no address, and lead 35's holds an
@@ -1132,18 +1143,18 @@ SCREENS.leads = async host => {
        this person's messages under — but it is labelled for what it is. */
     { label:'Email', render: r => {
         const shape = keyShape(r.email);
-        if (shape === KEY_SHAPE.NONE) return '<span class="t-muted" title="The email column on this row is empty.">—</span>';
+        if (shape === KEY_SHAPE.NONE) return '<span class="ds-t-tertiary" title="The email column on this row is empty.">—</span>';
         if (shape === KEY_SHAPE.EMAIL) return esc(maskText(r.email));
-        return `<span class="mono t-warm" title="${esc(maskText(
+        return `<span class="mono ds-t-warning" title="${esc(maskText(
           `Not an email address — ${describeKey(r.email)}. The email column on this lead holds a key the workflows file its messages under, not something a person can be written to.`))}">${esc(maskText(str(r.email)))}</span>
-          <div class="cell-sub">Not an address</div>`;
+          <div class="ds-cell-sub">Not an address</div>`;
       }},
-    { label:'Vehicle interest', render: r => `<span class="t-2">${esc(r.vehicle_interest || '—')}</span>` },
+    { label:'Vehicle interest', render: r => `<span class="ds-t-secondary">${esc(r.vehicle_interest || '—')}</span>` },
     /* budget_aed is NULL for router-created leads because the Master Router does
        not capture it. Rendering 0 would understate the pipeline silently. */
-    { label:'Budget', align:'r', render: r => n0(r.budget_aed) == null ? '<span class="t-muted">—</span>' : aed(r.budget_aed) },
+    { label:'Budget', align:'r', render: r => n0(r.budget_aed) == null ? '<span class="ds-t-tertiary">—</span>' : aed(r.budget_aed) },
     { label:'AI score', align:'r', render: r => {
-        const s = n0(r.ai_score); if (s == null) return '<span class="t-muted">—</span>';
+        const s = n0(r.ai_score); if (s == null) return '<span class="ds-t-tertiary">—</span>';
         /* Straight from tone(), because every tone it can return now has a
            solid colour token behind it. The old three-way ternary painted a WON
            lead's score bar in the COLD blue. */
@@ -1171,15 +1182,15 @@ SCREENS.leads = async host => {
         const attempts = n0(r.scoring_attempts);
         const err = str(r.scoring_last_error);
         return `<div>${statePill}</div>`
-          + (source ? `<div class="cell-sub"><span class="chip mono">${esc(source)}</span></div>` : '')
-          + (rules != null ? `<div class="cell-sub">rules_score ${esc(String(rules))}</div>` : '')
+          + (source ? `<div class="ds-cell-sub"><span class="chip mono">${esc(source)}</span></div>` : '')
+          + (rules != null ? `<div class="ds-cell-sub">rules_score ${esc(String(rules))}</div>` : '')
           + (state === 'FAILED'
-              ? `<div class="cell-sub t-hot">${esc(String(attempts ?? 0))} attempt${attempts === 1 ? '' : 's'}`
+              ? `<div class="ds-cell-sub ds-t-danger">${esc(String(attempts ?? 0))} attempt${attempts === 1 ? '' : 's'}`
                 + (err
                     ? ` -- ${esc(err.length > 90 ? err.slice(0, 90) + '…' : err)}`
                     : ' -- no error text recorded')
                 + '</div>'
-              : (attempts ? `<div class="cell-sub">${esc(String(attempts))} attempt${attempts === 1 ? '' : 's'}</div>` : ''));
+              : (attempts ? `<div class="ds-cell-sub">${esc(String(attempts))} attempt${attempts === 1 ? '' : 's'}</div>` : ''));
       }},
     /* ── Where it came from ──────────────────────────────────────────────
        This column was headed "Source" and rendered `leads.source`, which is the
@@ -1202,13 +1213,13 @@ SCREENS.leads = async host => {
     { label:'Came from', render: r => {
         if (attribErr) {
           return `${pill('Not read', 'unknown', { verbatim: false })}
-                  <div class="cell-sub">Where this lead came from could not be read, so nothing is claimed either way.</div>`;
+                  <div class="ds-cell-sub">Where this lead came from could not be read, so nothing is claimed either way.</div>`;
         }
         const a = attribByLead.get(r.id);
         if (!a) {
           return `${pill('No arrival recorded', 'unknown', { verbatim: false })}
-                  <div class="cell-sub">${esc(ORIGIN_NOT_RECORDED)}</div>
-                  <div class="cell-sub"><span style="font-weight:600">${esc(WRITER_COLUMN_LABEL)}</span> ${esc(r.source || '—')}</div>`;
+                  <div class="ds-cell-sub">${esc(ORIGIN_NOT_RECORDED)}</div>
+                  <div class="ds-cell-sub"><span style="font-weight:600">${esc(WRITER_COLUMN_LABEL)}</span> ${esc(r.source || '—')}</div>`;
         }
         const conf = attributionConfidence(a.ad_platform_confidence);
         const comp = attributionCompleteness(a.attribution_completeness);
@@ -1216,11 +1227,11 @@ SCREENS.leads = async host => {
         return `<div>${platformKnown
                   ? pill(String(a.ad_platform), conf ? conf.tone : 'unknown', { verbatim: true })
                   : pill('Unknown platform', 'unknown', { verbatim: false })}</div>`
-             + (conf ? `<div class="cell-sub">${esc(conf.label)}</div>` : '')
-             + (comp ? `<div class="cell-sub">${esc(comp.label)}</div>` : '')
-             + (a.campaign_name ? `<div class="cell-sub">${esc(a.campaign_name)}</div>` : '')
+             + (conf ? `<div class="ds-cell-sub">${esc(conf.label)}</div>` : '')
+             + (comp ? `<div class="ds-cell-sub">${esc(comp.label)}</div>` : '')
+             + (a.campaign_name ? `<div class="ds-cell-sub">${esc(a.campaign_name)}</div>` : '')
              + (a.is_test_traffic
-                 ? `<div class="cell-sub"><span class="t-hot">Test traffic — counted nowhere as business.</span></div>` : '');
+                 ? `<div class="ds-cell-sub"><span class="ds-t-danger">Test traffic — counted nowhere as business.</span></div>` : '');
       }},
     /* Three columns can name an owner and this cell reads all three, in the same
        order lib/lead-drawer.js does. Reading only the users embed made a lead
@@ -1234,12 +1245,12 @@ SCREENS.leads = async host => {
                same fact as no owner at all, and the operator can act on the
                difference: one needs assigning, the other needs a users row. */
             ? `${pill('Owner not resolved', 'unknown', { verbatim: false })}
-               <div class="cell-sub">assigned_to_id ${esc(str(r.assigned_to_id))} is set, but no users row came back for it and assigned_to is empty.</div>`
+               <div class="ds-cell-sub">assigned_to_id ${esc(str(r.assigned_to_id))} is set, but no users row came back for it and assigned_to is empty.</div>`
             : pill('Unassigned', 'warm', { verbatim: false });
         }
-        return `${esc(name)}${r.users?.name || r.assigned_to_id ? '' : '<div class="cell-sub">Named on the lead\'s assigned_to column; there is no rep id on the row.</div>'}`;
+        return `${esc(name)}${r.users?.name || r.assigned_to_id ? '' : '<div class="ds-cell-sub">Named on the lead\'s assigned_to column; there is no rep id on the row.</div>'}`;
       }},
-    { label:'Age', render: r => `<span class="t-muted" title="${esc(when(r.created_at))}">${ago(r.created_at)}</span>` },
+    { label:'Age', render: r => `<span class="ds-t-tertiary" title="${esc(when(r.created_at))}">${ago(r.created_at)}</span>` },
     /* An empty response-time cell reads as "answered instantly" to anyone who
        glances at it. Until 31 Aug the wording here was "Not measured", which was
        the right shape for the wrong reason — the column then held 0 on every
@@ -1253,10 +1264,10 @@ SCREENS.leads = async host => {
        was never timed, which is the only thing a null actually carries. */
     { label:'First reply', align:'r', render: r => {
         const m = respOf(r);
-        if (m == null) return `<span class="t-warm" title="${esc(
+        if (m == null) return `<span class="ds-t-warning" title="${esc(
           'response_time_minutes is null on this row. The trigger on the message history stamps it for the first reply it can match to this lead, and it has not stamped this one. Usually that means nothing has gone back since the lead row was created; it can also mean the only reply on file predates the lead row, which the trigger will not measure. '
           + `Either way there is no measured wait: this is not a fast reply and not a slow one, the ${SLA_MINUTES}-minute rule cannot be applied to this lead at all, and the attention list cannot raise an sla_breach for it either.`)}">No first reply timed</span>`;
-        return `<span class="${m > SLA_MINUTES ? 't-hot' : 't-ok'}" title="${esc(
+        return `<span class="${m > SLA_MINUTES ? 'ds-t-danger' : 'ds-t-success'}" title="${esc(
           `The minutes between the lead being created and the first outbound whatsapp, email or sms message the message history trigger could attribute to it, rounded to the nearest whole minute. A reply logged up to 90 seconds before the lead row is recorded as 0 when no inbound message was already on file — an allowance for the two clocks involved disagreeing — and anything earlier is left unmeasured rather than clamped. The ${SLA_MINUTES}-minute rule is the dealership's own promise, not a database constraint.`)}">${esc(mins(m))}</span>`;
       }},
     { label:'Actions', align:'r', render: actionCell },
@@ -1267,7 +1278,7 @@ SCREENS.leads = async host => {
      reason sends the operator to n8n's execution list to guess. */
   function confirmAction(a, lead) {
     const m = openModal(a.title, `
-      <p class="t-2" style="margin:0 0 16px">${esc(a.blurb)}</p>
+      <p class="ds-t-secondary" style="margin:0 0 16px">${esc(a.blurb)}</p>
       <dl class="kv">
         <dt>Lead</dt><dd>${leadName(lead)}</dd>
         <dt>Phone</dt><dd>${phoneText(lead)}</dd>
@@ -1279,14 +1290,14 @@ SCREENS.leads = async host => {
              the column above was rewritten to stop, on the last screen before the
              send. */
           const shape = keyShape(lead.email);
-          if (shape === KEY_SHAPE.NONE) return '<span class="t-muted">No email address on this lead</span>';
+          if (shape === KEY_SHAPE.NONE) return '<span class="ds-t-tertiary">No email address on this lead</span>';
           if (shape === KEY_SHAPE.EMAIL) return esc(maskEmail(lead.email));
-          return `<span class="mono t-warm">${esc(maskText(str(lead.email)))}</span>`
-            + `<div class="cell-sub">Not an address — ${esc(maskText(describeKey(lead.email)))}. It is the key this lead's messages are filed under.</div>`;
+          return `<span class="mono ds-t-warning">${esc(maskText(str(lead.email)))}</span>`
+            + `<div class="ds-cell-sub">Not an address — ${esc(maskText(describeKey(lead.email)))}. It is the key this lead's messages are filed under.</div>`;
         })()}</dd>
         <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
         <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
-        <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
+        <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="ds-t-tertiary">Not scored</span>' : num(lead.ai_score)}</dd>
       </dl>`,
       `<button class="btn primary" id="actGo">${esc(a.confirm)}</button>
        <button class="btn" id="actCancel">Cancel</button>`);
@@ -1298,7 +1309,7 @@ SCREENS.leads = async host => {
     go.addEventListener('click', async () => {
       const label = go.textContent;
       go.disabled = true; cancel.disabled = true; go.textContent = 'Sending…';
-      m.msg('<span class="t-muted">Calling the workflow…</span>');
+      m.msg('<span class="ds-t-tertiary">Calling the workflow…</span>');
       try {
         /* Two kinds of action share this one confirm step: an n8n webhook
            (`a.hook`) or a direct database write via PostgREST's rpc/ endpoint
@@ -1307,13 +1318,13 @@ SCREENS.leads = async host => {
           ? await dbWrite('POST', `rpc/${a.rpc}`, a.payload(lead))
           : await n8n(a.hook, a.payload(lead));
         sent.set(`${lead.id}|${a.key}`, Date.now());
-        m.msg(`<span class="t-ok">${esc(a.done)}. ${esc((a.describeResult || replyNote)(res))}</span>`);
+        m.msg(`<span class="ds-t-success">${esc(a.done)}. ${esc((a.describeResult || replyNote)(res))}</span>`);
         go.textContent = 'Done';
         cancel.disabled = false; cancel.textContent = 'Close';
         draw();
       } catch (e) {
         go.disabled = false; cancel.disabled = false; go.textContent = label;
-        m.msg(`<span class="t-hot">Nothing was sent — ${esc(e.message)}</span>`);
+        m.msg(`<span class="ds-t-danger">Nothing was sent — ${esc(e.message)}</span>`);
       }
     });
   }

@@ -1,0 +1,257 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-forms.css
+   ---------------------------------------------------------------------------
+   The two surfaces that WRITE, and the inline styles that kept the design
+   system out of them.
+
+     · lib/lead-drawer.js      — opens from seven screens; where a salesperson
+                                 works a lead. Calls rpc/nexus_lead_assign_owner.
+     · lib/manual-lead-form.js — the ONLY way a human can put an enquiry into
+                                 NEXUS. Calls rpc/nexus_lead_record_manual.
+
+   Between them they carried 58 `style="…"` attributes and one `.style.*`
+   assignment. An inline style outranks every rule short of `!important`, so
+   every theme file loaded before this one was being shouted over on the two
+   screens that matter most commercially. This file is where those declarations
+   went; it loads LAST in app.js's chain, so a plain class selector here already
+   wins a tie and no `!important` appears below.
+
+   WHAT THIS FILE IS NOT ALLOWED TO DO, and does not:
+
+   - No new colour value. Every colour named below is an existing token from
+     styles.css's `:root`, where each text value carries a measured contrast
+     ratio. The one colour that CHANGES as a result of this pass is a form
+     label: it was `.cell-sub` (--text-muted, 4.86:1) and is now `.field label`
+     (--text-2, 7.6:1) — up the ratio ladder, not down, and the token was
+     already there.
+   - No `!important`, per the note above.
+   - No new focus treatment and no smaller control. styles.css's global
+     `:focus-visible` and theme-controls.css's control ring are untouched; the
+     only control this file resizes is `datetime-local`, which goes from the
+     browser's native box to the app's 40px field — larger, not smaller.
+   - No behaviour. Not one declaration below can reach a fetch, an RPC name, an
+     argument, a validation rule or the request id that makes
+     nexus_lead_record_manual idempotent.
+
+   THREE INLINE STYLES ARE DELIBERATELY LEFT IN THE JS and are not here:
+
+     1. `.tl-dot`'s `background:var(--<tone>)` in lead-drawer.js — the tone is
+        computed per row from `tone(c.direction)` or from lib/health.js's
+        outcome word. It is data, not presentation, and a stylesheet cannot
+        hold a value the row decides.
+     2/3. The two `#mlSourceWrap` / `#bvSalesWrap` bodies are written by JS
+        after a read returns; their classes are set here but their CONTENT is
+        not, so nothing was left inline there either. (Counted as class swaps,
+        listed for completeness.)
+
+   WHAT CHANGED ON PURPOSE, RATHER THAN BEING MOVED VERBATIM. Four spacing
+   literals sat off the 8pt scale in lib/theme-tokens.css and are snapped to it
+   by the rules below: the 12px stack gap between form groups becomes --sp-4
+   (16px), the 10px head gap and 6px tag gaps become --sp-2 (8px), and the
+   per-field `min-width:220px` / `min-width:160px` pair becomes one
+   `flex-basis: 200px`. That is the "spacing rhythm" half of the brief; it is
+   named here rather than left for a reader to diff.
+   =========================================================================== */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1 · THE DRAWER HEAD
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* theme-shell.css says, beside its own `.drawer-head h2` rule: "The drawer
+   titles are `<h2 style="font-size:18px">` in five screens, so the size is out
+   of reach." It is out of reach from there. It is not out of reach from here,
+   and the value is not in dispute — all eleven drawer titles in this app are
+   inline 18px, so declaring it once changes the rendering of exactly nothing
+   and lets the two files this pass owns drop the attribute. The other nine
+   keep their inline copy and land on the identical number; whoever removes
+   those next has somewhere for them to go. */
+.drawer-head h2 { font-size: 18px; }
+
+/* Was `style="flex:1;min-width:0"`. The reference calls this `.drawer-head .t`;
+   a bare `.t` is too generic to introduce into a 22-screen app, so the name is
+   spelled out. `min-width: 0` is the load-bearing half — without it a long
+   customer name pushes the close button off the drawer's edge. */
+.drawer-head-main { flex: 1; min-width: 0; }
+
+/* Was `style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"`. The
+   reference's `.drawer-tags`, on the reference's name, with both 6px literals
+   snapped to --sp-2. */
+.drawer-tags {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2 · THE DRAWER FOOT — five actions, not two
+   ──────────────────────────────────────────────────────────────────────────
+   The reference's foot holds two or three buttons and gives each `flex: 1`.
+   The lead drawer's holds FIVE buttons and two inline message spans, and
+   `flex: 1` across seven items would reduce "Open conversation" to an
+   ellipsis. So the reference's intent is honoured rather than its declaration:
+   the tray wraps instead of overflowing, which is what a 520px drawer holding
+   five actions actually needs. `.drawer-foot` itself is left exactly as
+   theme-shell.css set it; this is an additive class on one foot.
+   ══════════════════════════════════════════════════════════════════════════ */
+.foot-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: var(--sp-2);
+}
+
+/* `#dRetryScoreMsg` and `#dBookVisitMsg` are empty until their button is
+   pressed. An empty inline span is still a flex item, so each was contributing
+   a --sp-2 gap to a tray that had no room to spare. They collapse until they
+   have something to say, and re-appear the moment they do. */
+.foot-actions > .cell-sub:empty { display: none; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3 · BANNERS AND LONG SENTENCES INSIDE THEM
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Was `style="margin:0"` on the Money-Leaks recommendation banner. It is the
+   only child of its `.section`, and the section already carries the spacing, so
+   the banner's own --sp-4 bottom margin was doubling it. Named for what it does
+   rather than for the one banner that needs it, because the next banner alone
+   in a section will need the same thing. */
+.banner-flush { margin: 0; }
+
+/* Was `style="white-space:normal"`, twice, on the reason and decision lines of
+   that banner. It is inert against today's cascade — nothing above a banner
+   sets `nowrap` — and it is kept rather than deleted precisely because it is
+   cheap insurance the original author thought worth writing: these are full
+   sentences, and `.chip.nowrap` in styles.css shows this app does put `nowrap`
+   on things. Moved, not dropped, and not restated as a colour or a size. */
+.cell-sub-wrap { white-space: normal; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4 · THE TIMELINE ROW AND THE PURCHASE HISTORY
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Was `style="margin-top:4px;white-space:pre-wrap"`. `.tl-item`, `.tl-dot`,
+   `.tl-body` and `.tl-meta` are already styles.css's names for the parts of
+   this row; the message body was the one part that had no name and therefore
+   no rule. `pre-wrap` is not decoration here — a WhatsApp message's own line
+   breaks are part of what the customer wrote. */
+.tl-text {
+  margin-top: var(--sp-1);
+  white-space: pre-wrap;
+}
+
+/* Was `style="margin-top:8px"` on each `.quote` in the returning-customer box.
+   One class per row rather than a grid on the container: the box also holds a
+   `.label-caps` and, on a failed read, a `.banner`, and a container-level gap
+   would have restated spacing those two already carry. */
+.purchase-row { margin-top: var(--sp-2); }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5 · FORMS — the stack, the row, the field, the foot
+   ──────────────────────────────────────────────────────────────────────────
+   This is the half of the file that earns its name. Every dialog in these two
+   files was a flat list of `<label style="display:block;margin-top:12px">`
+   followed by `<input style="width:100%">`, with two-up rows built from
+   `display:flex` plus a per-field `min-width` literal. Twenty-nine of the 58
+   inline styles were that one pattern repeated.
+
+   It is replaced by the reference's own three-part shape — stack, row, field —
+   landed on the app's EXISTING `.field` class rather than on a new one, so the
+   label weight (600, theme-controls.css), the 5px label-to-input gap and the
+   40px control height all arrive from where they already live. One figure, one
+   derivation.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The vertical rhythm of a form, replacing thirteen `margin-top:12px`
+   literals. A grid rather than margins because a grid gap cannot collapse, so
+   the first and last groups sit at the same distance from their neighbours as
+   the middle ones do — which is the failure the literals had: the intro
+   paragraph carried `margin-bottom:12px` and the field after it carried
+   `margin-top:12px`, and whether those collapsed depended on what was between
+   them. 16px (--sp-4) rather than 12px: the group spacing has to be visibly
+   larger than the 12px WITHIN a row (`.frow`, below) or the two-up rows stop
+   reading as rows. */
+.form-stack {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+/* A two-up (or three-up) row of fields. Flex and not grid, deliberately: the
+   reference switches its `.frow.two` to two columns at a 560px VIEWPORT, and
+   these forms live inside a 720px modal and a 520px drawer, so a viewport
+   query would give the wrong answer for both. Flex wrapping asks the question
+   the right way round — it measures the space the row actually has.
+
+   `flex: 1 1 200px` replaces the `min-width:220px` / `min-width:160px` pair
+   that was written per field. One basis, so the columns in a row come out
+   equal instead of 220/160, and a narrow container wraps them rather than
+   crushing them. */
+.frow {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.frow > .field { flex: 1 1 200px; }
+
+/* A sentence that belongs to the ROW rather than to either field in it — "one
+   of the two is enough, and one of the two is required". It takes a line of its
+   own inside the row, so it sits --sp-3 under the fields it qualifies rather
+   than --sp-4 away as a separate group. It keeps `class="cell-sub"` in the
+   markup, so its size and colour are not restated here. */
+.frow > .frow-note { flex: 1 0 100%; }
+
+/* `datetime-local` is absent from styles.css's base input rule AND from
+   theme-controls.css's `tel`/`url` top-up, so the "When" field on Book Visit
+   has been rendering as a native OS box inside an app that draws its own
+   controls. The base treatment is copied from theme-controls.css rather than
+   re-invented, and it is scoped to `.field` on purpose: screens/appointments.js
+   has four more of these and is not this pass's to change. When that screen
+   adopts `.field`, it inherits the fix; until then nothing outside these two
+   files moves. */
+.field input[type=datetime-local] {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  width: 100%;
+  transition: border-color var(--m-micro) var(--ease),
+              background var(--m-micro) var(--ease);
+}
+.field input[type=datetime-local]:hover:not(:focus):not(:disabled) {
+  border-color: var(--text-disabled);
+}
+
+/* The action row at the bottom of an in-page form — the Assign panel's Save /
+   Cancel pair. The reference's `.form-foot`: a hairline and a padded gap, which
+   is what separates "the thing you are filling in" from "the thing that
+   commits it". Inside `.form-stack` the 16px gap above the hairline and the
+   16px below it are symmetrical, which the reference achieves with a
+   margin-top; a grid parent makes the margin unnecessary. */
+.form-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--sp-4);
+}
+
+/* A form's own result line. Same `:empty` collapse as the drawer foot above,
+   and for the same reason: in a grid, an empty div is still a row and was
+   holding 16px of dead space under every Assign panel that had not been
+   submitted yet. theme-modal.css makes the identical call for `.modal-foot`. */
+.form-msg:empty { display: none; }
+
+/* Was `box.style.marginBottom = '16px'` — the one presentational value in
+   these two files set from JavaScript rather than from an attribute. The panel
+   is prepended INTO the drawer body above the Contact section, so it needs its
+   own separation; the body's own padding cannot provide it. */
+.assign-card { margin-bottom: var(--sp-4); }

@@ -116,7 +116,7 @@ enters the transcript.
 
 ```bash
 TOK=$(sed -e 's|.*://[^:]*:||' -e 's|@github.com||' ~/.git-credentials)
-API=https://api.github.com/repos/Ali8517942172/autodealer-ai-os
+API=https://api.github.com/repos/Ali8517942172/NEXUS-OS-for-Auto-Dealers
 ```
 
 | what | call |

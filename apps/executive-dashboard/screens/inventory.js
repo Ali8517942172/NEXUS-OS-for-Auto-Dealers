@@ -189,8 +189,8 @@ function stateFigure(state, value, note, inputs) {
     /* The reason is rendered, not hidden in a title. A hover is not an
        explanation on a screen somebody screenshots into a meeting. */
     const lines = [str(note), str(inputs)].filter(Boolean);
-    return '<span class="t-warm">Not computable</span>'
-      + (lines.length ? `<div class="cell-sub" style="white-space:normal;text-align:right">${lines.map(esc).join('<br>')}</div>` : '');
+    return '<span class="ds-t-warning">Not computable</span>'
+      + (lines.length ? `<div class="ds-cell-sub" style="white-space:normal;text-align:right">${lines.map(esc).join('<br>')}</div>` : '');
   }
   if (s === 'PLACEHOLDER') {
     return `${aed(value)} <span class="pill warm" title="${esc(str(note)
@@ -217,7 +217,7 @@ const holdingInputs = r => `Inputs — ${aed(r.capital_tied_aed)} capital tied u
    wrote it, with no arithmetic. */
 function marginPct(v) {
   const s = str(v);
-  if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return '<span class="t-muted">—</span>';
+  if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return '<span class="ds-t-tertiary">—</span>';
   return `${esc(s)}%`;
 }
 
@@ -246,10 +246,21 @@ const spread = (m, order) => [...m.entries()]
 
 
 SCREENS.inventory = async (host) => {
-  const provHost = el('div'); provHost.style.marginBottom = '16px'; host.appendChild(provHost);
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js
+     and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
+  const provHost = el('div'); provHost.style.marginBottom = '16px'; root.appendChild(provHost);
   provHost.innerHTML = `<div class="card flush">${stateLoading(2)}</div>`;
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
-  const body = el('div'); body.style.marginTop = '16px'; host.appendChild(body);
+  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const body = el('div'); body.style.marginTop = '16px'; root.appendChild(body);
   body.innerHTML = `<div class="card flush">${stateLoading(8)}</div>`;
 
   const reload = () => go('inventory');
@@ -263,7 +274,7 @@ SCREENS.inventory = async (host) => {
   } catch (e) {
     provHost.remove(); strip.remove();
     body.innerHTML = `<div class="card flush">${stateError('the Inventory Profit Sentinel', e, 'sentinel')}
-      <div class="cell-sub" style="white-space:normal;padding:0 20px 20px">Nothing on this screen is derived in the browser, so with the engine unreadable there is no partial view to fall back to. That is deliberate: a lot summary assembled from whatever happened to load is the failure this screen was rebuilt to end.</div></div>`;
+      <div class="ds-cell-sub" style="white-space:normal;padding:0 20px 20px">Nothing on this screen is derived in the browser, so with the engine unreadable there is no partial view to fall back to. That is deliberate: a lot summary assembled from whatever happened to load is the failure this screen was rebuilt to end.</div></div>`;
     body.querySelector('[data-retry]')?.addEventListener('click', reload);
     return;
   }
@@ -305,7 +316,7 @@ SCREENS.inventory = async (host) => {
         ${canAddUnit() ? '<button class="btn primary sm" id="invAdd"><span class="material-symbols-outlined">add</span>Add vehicle</button>' : ''}</div>
       ${stateEmpty('No vehicles on the lot',
         'The Sentinel reads one row per unit in inventory. Add the first unit and it will start reporting ageing, margin and a recommendation for it.', 'directions_car')}
-      ${why ? `<div class="cell-sub" style="white-space:normal;padding:0 20px 20px">${esc(why)}</div>` : ''}</div>`;
+      ${why ? `<div class="ds-cell-sub" style="white-space:normal;padding:0 20px 20px">${esc(why)}</div>` : ''}</div>`;
     $('invAdd')?.addEventListener('click', () => unitForm(null, rows, reload));
     return;
   }
@@ -361,7 +372,7 @@ SCREENS.inventory = async (host) => {
       + (actionable.length
         ? `<br>Top of the list: ${esc(str(topOfList.id))} — ${esc(str(topOfList.overall_risk) || 'risk not rated')}, ${n0(topOfList.days_in_stock) != null ? `${num(topOfList.days_in_stock)} days on the lot` : 'no day count'}`
         : '<br>The engine attaches an owner to none of them: nothing on this lot needs a person today'),
-      actionable.length ? 't-warm' : ''),
+      actionable.length ? 'ds-t-warning' : ''),
 
     /* EXPOSED. The engine's impact_basis: "This is the amount AT RISK. It is not
        expected loss, not attributed revenue and not recovered revenue." */
@@ -372,7 +383,7 @@ SCREENS.inventory = async (host) => {
           + 'Exposed — not lost, not expected loss, not revenue, not recovered.'
           + `<br>${num(rows.length - exposed.n)} ${plural(rows.length - exposed.n, 'unit is', 'units are')} outside this total because the engine claims no impact for ${plural(rows.length - exposed.n, 'it', 'them')}`)
       + (actionNoImpact ? ` · ${num(actionNoImpact)} ${plural(actionNoImpact, 'carries an action', 'carry an action')} whose impact it could not put a number on` : ''),
-      exposed.total == null ? '' : 't-warm'),
+      exposed.total == null ? '' : 'ds-t-warning'),
 
     kpi('Capital tied up', capital.total == null ? 'Unknown' : aed(capital.total),
       capital.total == null
@@ -398,14 +409,14 @@ SCREENS.inventory = async (host) => {
           + (basis === 'PLACEHOLDER'
             ? ' · the rate behind this is a PLACEHOLDER, so this total is an assumption and every figure derived from it is marked as one'
             : basis === 'DEALERSHIP_SUPPLIED' ? ` · ${aed(rate)} a day, on record from this dealership` : ''),
-      holding.total == null ? 't-muted' : ''),
+      holding.total == null ? 'ds-t-tertiary' : ''),
 
     kpi('Past the critical threshold', num(crit),
       `${num(warnB)} more past the warning threshold · ${num(healthy)} healthy`
       + (undated ? ` · ${num(undated)} with no acquisition date and therefore no band` : '')
       + `<br>Warning at ${num(first.warn_days)} days, critical at ${num(first.crit_days)}, `
       + `${cfgDefaults ? 'the engine’s built-in defaults — no configuration row exists for this dealership' : 'from this dealership’s own configuration'}`,
-      crit ? 't-hot' : ''),
+      crit ? 'ds-t-danger' : ''),
   ].join('');
 
   /* ── Provenance. What the engine could not know, said out loud. ─────────
@@ -437,7 +448,7 @@ SCREENS.inventory = async (host) => {
       <div class="card-title">Profit Sentinel</div>
       <div class="card-sub">${num(rows.length)} ${plural(rows.length, 'unit', 'units')}, worst first, from public.sentinel_inventory_actions() · computed ${esc(dubaiStamp(first.computed_at))}</div>
     </div><div style="flex:1"></div></div>
-    <div style="padding:0 20px 18px"><div class="cell-sub" style="white-space:normal">
+    <div style="padding:0 20px 18px"><div class="ds-cell-sub" style="white-space:normal">
       <strong>No figure on this screen is derived in the browser.</strong>
       Every band, risk word, recommendation and money figure on a unit is read from
       <span class="mono">The margin review</span>, which is
@@ -529,7 +540,7 @@ SCREENS.inventory = async (host) => {
         title="Passed to the engine as p_min_risk_rank. A unit whose risk is UNKNOWN is never removed by this floor — unknown is not low, so it stays visible for a person to look at.">
         ${RISK_FLOORS.map(r => `<option value="${r.v}">${esc(r.label)}</option>`).join('')}
       </select>
-      <div class="t-muted num" id="invCount"></div>
+      <div class="ds-t-tertiary num" id="invCount"></div>
       ${canAddUnit() ? '<button class="btn primary sm" id="invAdd"><span class="material-symbols-outlined">add</span>Add vehicle</button>' : ''}
     </div>
     <div id="invTable"></div>`;
@@ -539,27 +550,27 @@ SCREENS.inventory = async (host) => {
   const cols = [
     {
       label: 'Unit', strong: true, render: r => `<span class="mono">${esc(str(r.id))}</span>`
-        + (str(r.vin) ? `<div class="cell-sub mono">${esc(str(r.vin))}</div>` : '<div class="cell-sub">No VIN on record</div>'),
+        + (str(r.vin) ? `<div class="ds-cell-sub mono">${esc(str(r.vin))}</div>` : '<div class="ds-cell-sub">No VIN on record</div>'),
     },
     {
       label: 'Model', render: r => `${esc(str(r.model) || 'Unnamed unit')}`
-        + `<div class="cell-sub">${esc(str(r.status) || 'no status')}</div>`,
+        + `<div class="ds-cell-sub">${esc(str(r.status) || 'no status')}</div>`,
     },
     {
       label: 'Days', align: 'r', render: (r) => {
         const d = n0(r.days_in_stock);
         if (d == null) {
-          return `<span class="t-muted" title="${esc('No acquisition date on record, so the engine cannot count days for this unit and does not band it. It is not a new car; it is an undated one.')}">Undated</span>`;
+          return `<span class="ds-t-tertiary" title="${esc('No acquisition date on record, so the engine cannot count days for this unit and does not band it. It is not a new car; it is an undated one.')}">Undated</span>`;
         }
         const toCrit = n0(r.days_to_critical);
-        return `<div>${num(d)}</div><div class="cell-sub">${toCrit == null ? '' : toCrit > 0
+        return `<div>${num(d)}</div><div class="ds-cell-sub">${toCrit == null ? '' : toCrit > 0
           ? `${num(toCrit)} to critical` : 'past critical'}</div>`;
       },
     },
     {
       label: 'Band', render: (r) => {
         const b = up(r.aging_band);
-        if (!b) return `<span class="t-muted" title="${esc('The engine did not band this unit — there is no day count to band it by.')}">Not banded</span>`;
+        if (!b) return `<span class="ds-t-tertiary" title="${esc('The engine did not band this unit — there is no day count to band it by.')}">Not banded</span>`;
         return `<span title="${esc(`Warning at ${num(r.warn_days)} days, critical at ${num(r.crit_days)}.`)}">${pill(b, tone(b), { verbatim: true })}</span>`;
       },
     },
@@ -568,24 +579,24 @@ SCREENS.inventory = async (host) => {
     {
       label: 'Gross margin', align: 'r', render: (r) => {
         const g = n0(r.gross_margin_aed);
-        return `<span class="${g != null && g < 0 ? 't-hot' : ''}">${aed(r.gross_margin_aed)}</span>`;
+        return `<span class="${g != null && g < 0 ? 'ds-t-danger' : ''}">${aed(r.gross_margin_aed)}</span>`;
       },
     },
     { label: 'Margin %', align: 'r', render: r => marginPct(r.gross_margin_pct) },
     {
       label: 'Overall risk', render: (r) => {
         const w = up(r.overall_risk);
-        if (!w) return `<span class="t-muted">Not rated</span>`;
+        if (!w) return `<span class="ds-t-tertiary">Not rated</span>`;
         return `<span title="${esc(str(r.risk_basis))}">${pill(w, riskTone(w), { verbatim: true })}</span>`;
       },
     },
     {
       label: 'Recommendation', render: (r) => {
         const w = up(r.recommendation);
-        if (!w) return `<span class="t-muted">None</span>`;
+        if (!w) return `<span class="ds-t-tertiary">None</span>`;
         return `<span title="${esc(str(r.reason))}">${pill(w, recTone(w), { verbatim: true })}</span>`
           + (r.human_approval_required === true
-            ? '<div class="cell-sub">approval required</div>' : '');
+            ? '<div class="ds-cell-sub">approval required</div>' : '');
       },
     },
   ];
@@ -600,7 +611,7 @@ SCREENS.inventory = async (host) => {
     $('invCount').textContent = `${view.length} of ${rows.length} units`;
     if (err) {
       th.innerHTML = `${stateError('that view of the Sentinel', err, 'filter')}
-        <div class="cell-sub" style="white-space:normal;padding:0 20px 24px">The filter is applied by the engine, not here, so a failed filter leaves no rows to show rather than a guess at which ones would have matched.</div>`;
+        <div class="ds-cell-sub" style="white-space:normal;padding:0 20px 24px">The filter is applied by the engine, not here, so a failed filter leaves no rows to show rather than a guess at which ones would have matched.</div>`;
       th.querySelector('[data-retry]')?.addEventListener('click', refilter);
       return;
     }
@@ -649,7 +660,7 @@ SCREENS.inventory = async (host) => {
     openDrawer(`
       <div class="drawer-head">
         <div style="flex:1"><h2 style="font-size:18px">${esc(str(r.model) || 'Unnamed unit')}</h2>
-          <div class="cell-sub mono">${esc(str(r.id))}${str(r.vin) ? ' · ' + esc(str(r.vin)) : ''}</div></div>
+          <div class="ds-cell-sub mono">${esc(str(r.id))}${str(r.vin) ? ' · ' + esc(str(r.vin)) : ''}</div></div>
         <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="drawer-body">
@@ -664,12 +675,12 @@ SCREENS.inventory = async (host) => {
         <div class="section">
           <div class="label-caps">${noAction ? 'Nothing is wrong with this unit' : 'What is wrong'}</div>
           <div class="quote" style="margin-top:8px">${esc(str(r.reason) || 'The engine gave no reason for this unit.')}</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.risk_basis))}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.risk_basis))}</div>
           <dl class="kv" style="margin-top:8px">
-            <dt>Age risk</dt><dd>${up(r.age_risk) ? pill(up(r.age_risk), riskTone(r.age_risk), { verbatim: true }) : '<span class="t-muted">not rated</span>'}</dd>
-            <dt>Margin risk</dt><dd>${up(r.margin_risk) ? pill(up(r.margin_risk), riskTone(r.margin_risk), { verbatim: true }) : '<span class="t-muted">not rated</span>'}</dd>
-            <dt>Days to warning</dt><dd class="num">${n0(r.days_to_warning) == null ? '<span class="t-muted">no day count</span>' : n0(r.days_to_warning) === 0 ? 'past it' : num(r.days_to_warning)}</dd>
-            <dt>Days to critical</dt><dd class="num">${n0(r.days_to_critical) == null ? '<span class="t-muted">no day count</span>' : n0(r.days_to_critical) === 0 ? 'past it' : num(r.days_to_critical)}</dd>
+            <dt>Age risk</dt><dd>${up(r.age_risk) ? pill(up(r.age_risk), riskTone(r.age_risk), { verbatim: true }) : '<span class="ds-t-tertiary">not rated</span>'}</dd>
+            <dt>Margin risk</dt><dd>${up(r.margin_risk) ? pill(up(r.margin_risk), riskTone(r.margin_risk), { verbatim: true }) : '<span class="ds-t-tertiary">not rated</span>'}</dd>
+            <dt>Days to warning</dt><dd class="num">${n0(r.days_to_warning) == null ? '<span class="ds-t-tertiary">no day count</span>' : n0(r.days_to_warning) === 0 ? 'past it' : num(r.days_to_warning)}</dd>
+            <dt>Days to critical</dt><dd class="num">${n0(r.days_to_critical) == null ? '<span class="ds-t-tertiary">no day count</span>' : n0(r.days_to_critical) === 0 ? 'past it' : num(r.days_to_critical)}</dd>
           </dl>
         </div>
 
@@ -684,14 +695,14 @@ SCREENS.inventory = async (host) => {
           </div>
           <dl class="kv" style="margin-top:10px">
             <dt>Who</dt><dd>${noAction
-              ? `<span class="t-muted">${esc(str(r.suggested_owner_note) || 'No action, so no owner.')}</span>`
-              : `${esc(str(r.suggested_owner_role) || 'not stated')}<div class="cell-sub" style="white-space:normal">${esc(str(r.suggested_owner_note))}</div>`}</dd>
+              ? `<span class="ds-t-tertiary">${esc(str(r.suggested_owner_note) || 'No action, so no owner.')}</span>`
+              : `${esc(str(r.suggested_owner_role) || 'not stated')}<div class="ds-cell-sub" style="white-space:normal">${esc(str(r.suggested_owner_note))}</div>`}</dd>
             <dt>Impact</dt><dd class="num">${
               up(r.impact_kind) === 'MARGIN_EXPOSED' && n0(r.impact_aed) != null
-                ? `${aed(r.impact_aed)}<div class="cell-sub">${esc(impactWord(r.impact_kind))}</div>`
-                : `<span class="t-muted">${esc(impactWord(r.impact_kind))}</span>`}</dd>
+                ? `${aed(r.impact_aed)}<div class="ds-cell-sub">${esc(impactWord(r.impact_kind))}</div>`
+                : `<span class="ds-t-tertiary">${esc(impactWord(r.impact_kind))}</span>`}</dd>
           </dl>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.impact_basis))}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.impact_basis))}</div>
         </div>
 
         <div class="section">
@@ -699,7 +710,7 @@ SCREENS.inventory = async (host) => {
           <div style="margin-top:8px">${up(r.confidence)
             ? pill(up(r.confidence), tone(r.confidence), { verbatim: true })
             : '<span class="chip">not stated</span>'}</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.confidence_basis))}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.confidence_basis))}</div>
         </div>
 
         <div class="section">
@@ -707,7 +718,7 @@ SCREENS.inventory = async (host) => {
           <dl class="kv" style="margin-top:8px">
             <dt>Cost</dt><dd class="num">${aed(r.cost_aed)}</dd>
             <dt>List price</dt><dd class="num">${aed(r.price_aed)}</dd>
-            <dt>Gross margin</dt><dd class="num"><strong class="${n0(r.gross_margin_aed) != null && n0(r.gross_margin_aed) < 0 ? 't-hot' : ''}">${aed(r.gross_margin_aed)}</strong> <span class="t-muted">${marginPct(r.gross_margin_pct)}</span></dd>
+            <dt>Gross margin</dt><dd class="num"><strong class="${n0(r.gross_margin_aed) != null && n0(r.gross_margin_aed) < 0 ? 'ds-t-danger' : ''}">${aed(r.gross_margin_aed)}</strong> <span class="ds-t-tertiary">${marginPct(r.gross_margin_pct)}</span></dd>
             <dt>Capital tied up</dt><dd class="num">${aed(r.capital_tied_aed)}</dd>
             <dt>Holding cost</dt><dd class="num">${stateFigure(holdState, r.holding_cost_accrued_aed, r.holding_cost_note, holdState === 'NOT_COMPUTABLE' ? inputs : '')}</dd>
             <dt>Net margin</dt><dd class="num">${stateFigure(netState, r.net_margin_aed, r.net_margin_note, netState === 'NOT_COMPUTABLE' ? inputs : '')}</dd>
@@ -726,10 +737,10 @@ SCREENS.inventory = async (host) => {
           ${str(r.market_competitor) ? `<dl class="kv" style="margin-top:8px">
             <dt>Competitor</dt><dd>${esc(str(r.market_competitor))}</dd>
             <dt>Their price</dt><dd class="num">${aed(r.market_price_aed)}</dd>
-            <dt>Match quality</dt><dd>${str(r.market_match_quality) ? esc(str(r.market_match_quality)) : '<span class="t-muted">not recorded</span>'}</dd>
+            <dt>Match quality</dt><dd>${str(r.market_match_quality) ? esc(str(r.market_match_quality)) : '<span class="ds-t-tertiary">not recorded</span>'}</dd>
             <dt>Scraped</dt><dd>${esc(dubaiStamp(r.market_scraped_at))}</dd>
           </dl>` : ''}
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.market_note))}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.market_note))}</div>
         </div>
 
         <div class="section">
@@ -740,18 +751,18 @@ SCREENS.inventory = async (host) => {
           <dl class="kv" style="margin-top:8px">
             <dt>Enquiries in ${num(r.enquiry_window_days)} days</dt><dd class="num">${num(r.enquiries_in_window)}</dd>
             <dt>From leads · messages</dt><dd class="num">${num(r.enquiry_leads)} · ${num(r.enquiry_messages)}</dd>
-            <dt>Last enquiry</dt><dd>${r.enquiry_last_at ? esc(dubaiStamp(r.enquiry_last_at)) : '<span class="t-muted">none in the window</span>'}</dd>
+            <dt>Last enquiry</dt><dd>${r.enquiry_last_at ? esc(dubaiStamp(r.enquiry_last_at)) : '<span class="ds-t-tertiary">none in the window</span>'}</dd>
             <dt>Coverage</dt><dd>${esc(str(r.enquiry_coverage) || 'not stated')}</dd>
           </dl>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.enquiry_note))}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(r.enquiry_note))}</div>
         </div>
 
         <div class="section">
           <div class="label-caps">Evidence · ${num(evidence.length)}</div>
           ${evidence.length
-            ? evidence.map(x => `<div class="cell-sub" style="white-space:normal;margin-top:8px">
+            ? evidence.map(x => `<div class="ds-cell-sub" style="white-space:normal;margin-top:8px">
                 <strong>${esc(str(x && x.fact))}</strong><br>${esc(str(x && x.source))}</div>`).join('')
-            : '<div class="cell-sub" style="white-space:normal;margin-top:8px">The engine attached no evidence to this unit. A leak with no evidence is not displayed, so there is nothing to act on here.</div>'}
+            : '<div class="ds-cell-sub" style="white-space:normal;margin-top:8px">The engine attached no evidence to this unit. A leak with no evidence is not displayed, so there is nothing to act on here.</div>'}
         </div>
 
         <div class="section">
@@ -764,7 +775,7 @@ SCREENS.inventory = async (host) => {
             <dt>Enquiry floor · model words</dt><dd class="num">${num(r.min_enq_sources)} · ${num(r.min_model_token_overlap)}</dd>
             <dt>Comparable goes stale after</dt><dd class="num">${num(r.market_max_age_days)} days</dd>
           </dl>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${r.settings_are_defaults === true
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${r.settings_are_defaults === true
             ? 'These are the engine’s built-in defaults. No configuration row exists for this dealership yet, so nothing here has been agreed with them.'
             : 'These come from this dealership’s own configuration row, not from a constant in this dashboard.'}</div>
         </div>

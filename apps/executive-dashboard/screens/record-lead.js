@@ -97,6 +97,7 @@
    file does not hide them. */
 
 import { db, onIdentityChange } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { ago, dubaiStamp, esc, n0, num, pill } from '../lib/format.js';
 import { manualLeadDialog } from '../lib/manual-lead-form.js';
 import { SCREENS, go } from '../lib/nav.js';
@@ -108,9 +109,9 @@ import { connectionState, leadPhase } from '../lib/vocabulary.js';
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="cell-sub">${h}</div>`;
-const hot   = h => `<div class="cell-sub t-hot">${h}</div>`;
-const warm  = h => `<div class="cell-sub t-warm">${h}</div>`;
+const muted = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
+const warm  = h => `<div class="ds-cell-sub t-warm">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 const chip  = t => `<span class="chip">${esc(t)}</span>`;
@@ -227,6 +228,17 @@ function readinessByKey(rows) {
    SCREEN
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.recordlead = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* Every visit re-reads. See the note on `shared` above for what that repairs
      and why a stale picture of what has been recorded is worse than a slow one. */
   resetReads();
@@ -270,7 +282,7 @@ SCREENS.recordlead = async host => {
      decides what may be recorded, not this page, and hiding the only working
      lead path in the product because a decorative read failed would be the
      worst trade available here. */
-  panel(host, {
+  panel(root, {
     title: 'Record a walk-in or a phone call',
     sub: 'The only path in this product through which a person can put an enquiry into NEXUS. It is recorded as your '
        + 'word that this enquiry happened, with your name and the time on it, and it arrives with a real origin '
@@ -356,7 +368,7 @@ SCREENS.recordlead = async host => {
      ──────────────────────────────────────────────────────────────────────
      The finding, stated at the size of a finding. One arrival in the life of
      this database is not a quiet week and is not rendered as one. */
-  panel(host, {
+  panel(root, {
     title: 'Everything ever recorded by hand',
     sub: 'Every enquiry a person has put into NEXUS, newest first. Test traffic is counted nowhere in the headline, '
        + 'and an arrival whose marking is absent is counted in neither figure',
@@ -472,7 +484,7 @@ SCREENS.recordlead = async host => {
      Fixed rows, true whether or not the reads above succeeded, which is why
      this panel takes the soft load: a panel whose job is to state what it cannot
      tell you must not go blank at exactly the moment it knows least. */
-  panel(host, {
+  panel(root, {
     title: 'What this screen cannot tell you',
     sub: 'Five things that are outside what the database can answer. They are listed because a screen that only shows '
        + 'what it knows reads as though it knows everything',

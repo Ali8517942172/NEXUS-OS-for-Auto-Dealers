@@ -63,6 +63,7 @@
       — it never implies the value cannot occur. */
 
 import { db } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
@@ -74,8 +75,8 @@ const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="cell-sub">${h}</div>`;
-const hot    = h => `<div class="cell-sub t-hot">${h}</div>`;
+const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const bold   = h => `<div style="font-weight:600">${h}</div>`;
 const wrap   = h => `<div style="white-space:normal">${h}</div>`;
 const mono   = v => `<span class="mono">${esc(str(v))}</span>`;
@@ -155,6 +156,17 @@ const wireGo = card => {
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.policy = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const readRules = shared(() => db('v_policy_rule'
     + '?select=id,is_global_rule,jurisdiction,rule_type,rule_name,version,value_numeric,value_text,unit,value_kind,'
     + 'value_display,status,verification_status,confidence,effective_from,effective_to,source_name,source_url,'
@@ -230,7 +242,7 @@ SCREENS.policy = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P1 · Can anything on this page be relied on?
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'What this product is standing on',
     sub: 'Jurisdiction and commercial rules are meant to be data with a source, an effective date and an owner. These '
        + 'are the versions on record and how far any of them may be trusted',
@@ -342,7 +354,7 @@ SCREENS.policy = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P2 · The two axes, counted separately
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Checked, and in force',
     sub: 'The same versions counted twice, on the two axes that must never be merged. A state with no rows is shown as '
        + 'a state with no rows, not left off the page',
@@ -425,7 +437,7 @@ SCREENS.policy = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P3 · The rules, with their citations
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Every rule version, and what it cites',
     sub: 'The source line is the point of this table. Where a rule&rsquo;s only source is this codebase, that is what '
        + 'it says',
@@ -508,7 +520,7 @@ SCREENS.policy = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P4 · The safe read
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'What a consumer actually receives',
     sub: 'The safe read holds only rule versions that state a value, are in force, are inside their effective span and '
        + 'were verified against a named source. Everything else is simply absent from it',
@@ -552,7 +564,7 @@ SCREENS.policy = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P5 · The work order
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Constants still hard-coded',
     sub: 'The cost of migrating to the Policy Engine, written down with the exact file and line. It asserts nothing '
        + 'about whether any listed value is correct — only that it is asserted with no source',
@@ -644,7 +656,7 @@ SCREENS.policy = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P6 · Where this page stands
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Where this page stands',
     sub: 'The provenance of everything above, read from the same views rather than asserted here',
     load: async () => {

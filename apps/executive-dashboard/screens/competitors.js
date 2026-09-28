@@ -186,11 +186,13 @@
    computed from it. The log is read separately, without blocking, for the two
    questions where the history IS the subject.
 
-   And the registry caught up. `workflow_registry.trigger_detail` now reads
-   "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00 UTC)",
-   which agrees with the deployed cron, so the drift sentence this screen
-   carried renders empty. The check stays — it is what noticed the
-   disagreement — but nothing here asserts a disagreement that has been fixed.
+   And the registry's own schedule is no longer this screen's business.
+   `workflow_registry.trigger_detail` is a control-plane column — withheld from
+   a dealership login, absent from `nexus_workflow_catalogue()`'s result type
+   and not selected by `v_workflow_health` — so the schedule-drift check that
+   used to live here could never run and has been removed rather than left
+   rendering empty for a reason nobody could read off the code. The schedule
+   this screen states is the deployed cron, which is the only one it has.
 
    1 Sep 2026, finishing that pass. The work above stopped part-way down the
    file and left the half below it reading variables that no longer existed:
@@ -250,16 +252,19 @@ import { deriveUnit, unitForm } from '../lib/unit-form.js';
    and 13:00, which is the evidence for the second hour: the 13:00 run fires and
    writes nothing.
 
-   `workflow_registry.trigger_detail` is NOT the source used here, deliberately.
-   It reads "Cron 0 5 * * * (05:00 Asia/Dubai = 01:00 UTC)" — right about the
-   hour, a day behind on the cadence — so deriving from it would reinstate the
-   halved cycle count this round exists to remove. It is read at runtime and
-   the disagreement is reported on the screen instead, because a registry that
-   describes a different schedule from the one running is itself worth saying.
+   `workflow_registry.trigger_detail` is NOT the source used here, and cannot
+   be: it is a control-plane column and a dealership session may not read it
+   (CONTROL-PLANE.md 5.2; see `triggerReadable` in screens/automation.js).
+   Deriving the cadence from it was never available, and comparing against it —
+   which this screen used to claim it did — was comparing against nothing. The
+   deployed cron below is the single stated source, and if it goes out of date
+   the fix is here rather than on a screen that cannot see the register.
 
    The hour list is named in both clocks because the schedule is fixed in UTC
    and the reader is not. */
 const SCRAPE_HOURS_UTC = [1, 13];
+/* The deployed cron, kept as the written record of where SCRAPE_HOURS_UTC comes
+   from. Nothing renders it: the screen states the hours, not the expression. */
 const SCRAPE_CRON = '0 5,17 * * *';                        // as deployed, Asia/Dubai
 const SCRAPE_EVERY_HOURS = 24 / SCRAPE_HOURS_UTC.length;   // 12 — the gap between runs
 const SCRAPE_SCHEDULE = 'twice a day, at 01:00 and 13:00 UTC (05:00 and 17:00 GST)';
@@ -363,23 +368,16 @@ function cyclesSince(from, to = Date.now()) {
   return n;
 }
 
-/* The hours a cron string in `workflow_registry.trigger_detail` names, in UTC.
-   Used for one thing: telling the reader when the registry's recorded schedule
-   is not the schedule the workflow is running. It reads the hour field only,
-   which is all a "0 5,17 * * *" style entry carries, and returns null rather
-   than guessing at anything it cannot parse. */
-function registryHoursUtc(detail) {
-  const s = String(detail == null ? '' : detail);
-  const m = /(^|\s)([0-9*,\-/]+)\s+([0-9,]+)\s+\*\s+\*\s+\*/.exec(s);
-  if (!m) return null;
-  const hours = m[3].split(',').map(h => Number(h)).filter(h => Number.isInteger(h) && h >= 0 && h < 24);
-  if (!hours.length) return null;
-  /* Every workflow in this system runs on "timezone": "Asia/Dubai", which is a
-     fixed +04:00 with no daylight saving — so the shift is arithmetic, not a
-     calendar question. */
-  const shift = /dubai|gst|\+0?4/i.test(s) ? 4 : 0;
-  return [...new Set(hours.map(h => (h - shift + 24) % 24))].sort((a, b) => a - b);
-}
+/* A cron parser used to live here, together with a schedule-drift sentence that
+   read the registry's own trigger against the deployed one. Both are gone. The
+   parser's only input was `workflow_registry.trigger_detail`, which a dealership
+   session may not read — absent from `nexus_workflow_catalogue()`'s result type
+   and not selected by `v_workflow_health` (CONTROL-PLANE.md 5.2; see
+   `triggerReadable` in screens/automation.js) — so it was handed null on every
+   render and the comparison never ran, while the comment above it read as live
+   coverage. The alternative was to add the column to the query, and the column
+   is withheld on purpose. The deployed cron is the only schedule this screen
+   has, and it is stated as such. */
 /* How long until then, in the units a person waits in. Under an hour is stated
    in minutes because "in about 0 hours" is not an answer. */
 const waitWord = ms => {
@@ -1009,7 +1007,7 @@ const deltaCell = c => {
   if (!c.concludable) {
     const why = `No gap is drawn from this row. ${provenance(c)}`;
     return `<span class="t-muted" title="${esc(why)}">not comparable</span>
-      <div class="cell-sub t-hot" style="white-space:normal">Their ${esc(aed(c.price))} is not tied to our car — shown as context, not as a position</div>`;
+      <div class="ds-cell-sub t-hot" style="white-space:normal">Their ${esc(aed(c.price))} is not tied to our car — shown as context, not as a position</div>`;
   }
   if (c.delta === 0) return '<span class="t-muted">level</span>';
   const worse = c.delta > 0;
@@ -1027,8 +1025,8 @@ const deltaCell = c => {
       title="${esc(why)}">
       <span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px" aria-hidden="true">${worse ? 'arrow_upward' : 'arrow_downward'}</span>
       ${aedSigned(c.delta)}</span>
-    ${c.deltaPct == null ? '' : `<div class="cell-sub">${pct(Math.abs(c.deltaPct))} ${worse ? 'above' : 'below'} theirs</div>`}
-    ${c.unrated ? '<div class="cell-sub t-warm" style="white-space:normal">Match never rated — this comparison predates the 1 Sep provenance fix</div>' : ''}`;
+    ${c.deltaPct == null ? '' : `<div class="ds-cell-sub">${pct(Math.abs(c.deltaPct))} ${worse ? 'above' : 'below'} theirs</div>`}
+    ${c.unrated ? '<div class="ds-cell-sub t-warm" style="white-space:normal">Match never rated — this comparison predates the 1 Sep provenance fix</div>' : ''}`;
 };
 
 /* NX1006, 21 Sep 2026. "Re-run scrape" used to be permanently disabled here:
@@ -1081,16 +1079,27 @@ const sevTone = s => {
 };
 
 SCREENS.competitors = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js
+     and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* The alert strip is appended before the KPI row on purpose. The first thing
      an operator needs from this screen is not a count of undercuts, it is how
      old the prices behind that count are — so the freshness statement is the
      header of the topmost card and cannot be scrolled past. */
-  const alertHost = el('div'); host.appendChild(alertHost);
+  const alertHost = el('div'); root.appendChild(alertHost);
 
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
-  const body = el('div'); body.style.marginTop = '16px'; host.appendChild(body);
+  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const body = el('div'); body.style.marginTop = '16px'; root.appendChild(body);
   body.innerHTML = `<div class="card flush">${stateLoading(8)}</div>`;
-  const below = el('div', 'grid g2 top'); below.style.marginTop = '16px'; host.appendChild(below);
+  const below = el('div', 'grid g2 top'); below.style.marginTop = '16px'; root.appendChild(below);
   const byCompHost = el('div'); const blindHost = el('div');
   below.appendChild(byCompHost); below.appendChild(blindHost);
 
@@ -1189,21 +1198,16 @@ SCREENS.competitors = async host => {
     : !health
       ? `The automation health figures carries no row named "${esc(SCRAPE_WORKFLOW)}", so how the scrape itself is doing is unknown here — the rows below are all this screen can speak for.`
       : `The automation health figures rates the scrape ${esc(hWords.label)} — ${esc(hWords.blurb)}${runs30 ? ` ${num(runs30)} ${plural(runs30, 'run', 'runs')} in 30 days, ${num(success30)} ${plural(success30, 'success', 'successes')}, ${num(noResult30)} producing no usable price.` : ''}`;
-  /* The registry's recorded schedule against the one the workflow is running.
-     They disagreed until 1 Sep 2026, when the registry was corrected: it now
-     reads "Cron 0 5,17 * * * (05:00 and 17:00 Asia/Dubai = 01:00 and 13:00
-     UTC)", which parses to the same two UTC hours as the deployed cron, so this
-     renders empty and nothing on the screen claims a drift.
-
-     The check stays, and stays derived from the deployed cron rather than from
-     the registry, because a registry nobody updates is how "expected daily at
-     05:00 UTC" and a next run at 09:00 GST got onto this screen in the first
-     place. It reports a disagreement; it does not assert one. */
-  const regHours = health ? registryHoursUtc(health.trigger_detail) : null;
-  const scheduleDrift = regHours && regHours.join(',') !== SCRAPE_HOURS_UTC.join(',')
-    ? `The automation register records this job's trigger as "${esc(String(health.trigger_detail))}" — ${num(regHours.length)} ${plural(regHours.length, 'run', 'runs')} a day, where the deployed cron is "${esc(SCRAPE_CRON)}" in Asia/Dubai and the activity log carries runs at both hours. The schedule stated here follows the deployed cron; the registry entry is out of date.`
-    : '';
-
+  /* A schedule-drift sentence used to sit here, comparing the registry's own
+     recorded trigger against the deployed cron. It could not run: its input was
+     `health.trigger_detail`, and `trigger_detail` is a control-plane column that
+     `v_workflow_health` does not select, so the comparison was always skipped
+     and the sentence always empty. The comment above it named a true outcome —
+     nothing on the screen claimed a drift — and gave a false reason for it, the
+     registry having been corrected, when the real reason was that no comparison
+     took place. Removed rather than fed by widening the query: the column is
+     withheld on purpose. `SCRAPE_HOURS_UTC` and `SCRAPE_SCHEDULE` hold the
+     deployed schedule, and it is the only one this screen speaks for. */
   /* One re-issuable inventory read, for the two blind-spot panels below.
      panel()'s Retry calls `load` again, and a loader that closes over an
      already-settled rejection (`if (invErr) throw invErr`) hands back the same
@@ -1476,9 +1480,9 @@ SCREENS.competitors = async host => {
       <span class="material-symbols-outlined t-${esc(a.tone)}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(a.title)}</div>
-        <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${a.detailHtml}</div>
       </div>
-      ${a.act ? `<div class="cell-sub t-muted" style="flex-shrink:0">${esc(a.actLabel || 'Open')}</div>
+      ${a.act ? `<div class="ds-cell-sub t-muted" style="flex-shrink:0">${esc(a.actLabel || 'Open')}</div>
       <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>` : ''}
     </div>`;
 
@@ -1497,7 +1501,7 @@ SCREENS.competitors = async host => {
       <div>${emptyAlerts.map(emptyItem).join('')}</div>
       <div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-        <div class="cell-sub" style="white-space:normal">${attnErr
+        <div class="ds-cell-sub" style="white-space:normal">${attnErr
           ? 'Nothing could be read from the attention list.'
           : `${num((attn || []).length)} ${plural((attn || []).length, 'row', 'rows')} from the attention list where screen = competitors${(attn || []).length ? '' : ' (it returned none for this screen)'}, and ${num(emptyAlerts.length - fromView)} ${plural(emptyAlerts.length - fromView, 'line', 'lines')} written here off ${num(all.length)} scraped ${plural(all.length, 'row', 'rows')} and ${invErr ? 'no inventory rows' : `${num(inv.length)} inventory ${plural(inv.length, 'row', 'rows')}`}.`}
           The checks that run on scraped rows — what each match is matched on, rows the last scrape did not refresh, rows that are not a dealership at all, sources that sent no price — have no rows to run against and are absent from this list rather than sitting in it at zero.</div>
@@ -1515,13 +1519,13 @@ SCREENS.competitors = async host => {
         'price_change')}
       <div style="padding:0 20px 8px;max-width:760px;margin:0 auto">
         <div class="label-caps">${allJunk ? 'What was in this table before' : 'Why it is empty'}</div>
-        <div class="cell-sub" style="white-space:normal;margin-top:8px">The fifteen rows this table held until 24 August were deleted. Twelve were seed prices that contradicted the stock we actually hold — one quoted a Land Cruiser at AED 290,000 against a list price of AED 385,000, and four of them named models that have never been on the lot at all — and the remaining three were scrape failures stored as dealerships. Every undercut this screen reported, including the five it fed to Overview, was computed from those rows, so all of them went when the rows did.</div>
+        <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">The fifteen rows this table held until 24 August were deleted. Twelve were seed prices that contradicted the stock we actually hold — one quoted a Land Cruiser at AED 290,000 against a list price of AED 385,000, and four of them named models that have never been on the lot at all — and the remaining three were scrape failures stored as dealerships. Every undercut this screen reported, including the five it fed to Overview, was computed from those rows, so all of them went when the rows did.</div>
 
         <div class="label-caps" style="margin-top:18px">When it fills</div>
-        <div class="cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market. ${healthLine}${scheduleDrift ? ` ${scheduleDrift}` : ''}</div>
+        <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${nextLine} ${cronLine} A run that collects nothing writes nothing, so if this screen still reads empty after that hour the job is worth checking rather than the market. ${healthLine}</div>
 
         <div class="label-caps" style="margin-top:18px">What the rows will be able to prove</div>
-        <div class="cell-sub" style="white-space:normal;margin-top:8px">More than they used to, and each row will say how much. Since 1 Sep 2026 the scrape records the page's own listing title beside our model string, which offer on the page the price came from and whether that page called it new or used, what kind of site it was read off, and its own rating of how well that price is tied to our unit. Where it rates a match <strong>weak</strong> — nothing on the page ties the price to our car — the row is still written, because a cheap page is worth knowing about, and this screen draws no gap, no percentage and no market position from it. ${esc(NO_MAKE)} So a rated gap says what offer on what page was compared with which of our cars, and a weak one says only that a page quotes a figure for something. The scrape still has no listing contact and no stock number on their side, and when it is blocked it stores the block page — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
+        <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">More than they used to, and each row will say how much. Since 1 Sep 2026 the scrape records the page's own listing title beside our model string, which offer on the page the price came from and whether that page called it new or used, what kind of site it was read off, and its own rating of how well that price is tied to our unit. Where it rates a match <strong>weak</strong> — nothing on the page ties the price to our car — the row is still written, because a cheap page is worth knowing about, and this screen draws no gap, no percentage and no market position from it. ${esc(NO_MAKE)} So a rated gap says what offer on what page was compared with which of our cars, and a weak one says only that a page quotes a figure for something. The scrape still has no listing contact and no stock number on their side, and when it is blocked it stores the block page — rows like that are set aside as the data-quality fault they are and counted in nothing.</div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 24px">
           ${rescrapeBtnHtml(newest)}
@@ -1566,16 +1570,16 @@ SCREENS.competitors = async host => {
           <span class="material-symbols-outlined t-muted" style="font-size:20px" aria-hidden="true">price_check</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}</div>
-            <div class="cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
-            <div class="cell-sub">${esc(String(u.status || 'status unknown'))}${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? ' · <span class="t-hot">CRITICAL</span>' : ''}</div>
+            <div class="ds-cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
+            <div class="ds-cell-sub">${esc(String(u.status || 'status unknown'))}${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? ' · <span class="t-hot">CRITICAL</span>' : ''}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div class="num">${uPrice(u) == null ? '<span class="t-muted">no list price</span>' : aed(uPrice(u))}</div>
-            <div class="cell-sub">${n0(u.days_in_stock) == null ? 'no acquisition date' : `${num(u.days_in_stock)} days in stock`}</div>
+            <div class="ds-cell-sub">${n0(u.days_in_stock) == null ? 'no acquisition date' : `${num(u.days_in_stock)} days in stock`}</div>
           </div></div>`).join('')}
         <div class="list-item" style="cursor:default">
           <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-          <div class="cell-sub" style="white-space:normal">${units.length > BLIND_LIMIT ? `Showing the ${num(BLIND_LIMIT)} longest in stock of ${num(units.length)}. ` : ''}Ordered by how long each unit has been on the lot. Clicking one opens its price form — the only price on this screen that is ours to change. ${total ? `${units.length > BLIND_LIMIT ? 'All' : 'The'} ${num(units.length)} together list at ${esc(aed(total))}.` : ''}${invErr ? ' Inventory failed on the first attempt and this list is the retry; the counts above it were drawn before it landed and still read "—". Reload the screen to bring them into line.' : ''}</div>
+          <div class="ds-cell-sub" style="white-space:normal">${units.length > BLIND_LIMIT ? `Showing the ${num(BLIND_LIMIT)} longest in stock of ${num(units.length)}. ` : ''}Ordered by how long each unit has been on the lot. Clicking one opens its price form — the only price on this screen that is ours to change. ${total ? `${units.length > BLIND_LIMIT ? 'All' : 'The'} ${num(units.length)} together list at ${esc(aed(total))}.` : ''}${invErr ? ' Inventory failed on the first attempt and this list is the retry; the counts above it were drawn before it landed and still read "—". Reload the screen to bring them into line.' : ''}</div>
         </div></div>`
           : stateEmpty('No unsold stock on the lot',
             'Every unit in inventory is marked sold, so there is nothing whose price a competitor could undercut.', 'price_check');
@@ -1846,7 +1850,7 @@ SCREENS.competitors = async host => {
       titleHtml: health && !healthErr
         ? `The scrape itself is rated ${esc(hWords.label)}`
         : 'The scrape\'s own health could not be established',
-      detailHtml: `${healthLine} Every figure on this screen is drawn from the rows it did manage to write; none of them says anything about the runs that wrote nothing.${scheduleDrift ? ` ${scheduleDrift}` : ''}`,
+      detailHtml: `${healthLine} Every figure on this screen is drawn from the rows it did manage to write; none of them says anything about the runs that wrote nothing.`,
       agoHtml: health && health.last_run
         ? `<span title="${esc(dt(health.last_run))}">last run ${esc(ago(health.last_run))}</span>`
         : '<span class="t-muted">no run recorded</span>',
@@ -2262,9 +2266,9 @@ SCREENS.competitors = async host => {
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${a.titleHtml}${pill(a.sev, sevTone(a.sev), { verbatim: a.sevFromRow === true })}${a.source === 'view' ? '<span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
-        <div class="cell-sub" style="white-space:normal">${a.detailHtml}${a.why ? ` <span class="t-muted">${a.why}</span>` : ''}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${a.detailHtml}${a.why ? ` <span class="t-muted">${a.why}</span>` : ''}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0" class="cell-sub">${waited}
+      <div style="text-align:right;flex-shrink:0" class="ds-cell-sub">${waited}
         ${clickable ? `<div class="t-muted">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
       ${a.rescrapeHtml || ''}
       ${clickable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
@@ -2282,7 +2286,7 @@ SCREENS.competitors = async host => {
         <div style="flex:1;min-width:0">
           <div style="font-weight:500">Nothing on this screen needs a human right now</div>
           ${headSub}
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">Checked: what each match is actually matched on, rows the last scrape did not refresh, rows that are not a competitor at all, sources that sent no price, and unsold stock with no market reference. ${notesHtml}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">Checked: what each match is actually matched on, rows the last scrape did not refresh, rows that are not a competitor at all, sources that sent no price, and unsold stock with no market reference. ${notesHtml}</div>
         </div></div></div>`;
   } else {
     alertHost.innerHTML = `<div class="card flush" style="margin-bottom:16px">
@@ -2292,7 +2296,7 @@ SCREENS.competitors = async host => {
       <div>${alerts.map(alertItem).join('')}</div>
       <div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-        <div class="cell-sub" style="white-space:normal">${notesHtml}</div></div></div>`;
+        <div class="ds-cell-sub" style="white-space:normal">${notesHtml}</div></div></div>`;
     const fire = i => { const a = alerts[Number(i)]; if (a && typeof a.act === 'function') a.act(); };
     alertHost.querySelectorAll('[data-alert]').forEach(node => {
       node.addEventListener('click', () => fire(node.dataset.alert));
@@ -2376,9 +2380,9 @@ SCREENS.competitors = async host => {
     return `<span class="chip" title="${esc(b.why)}">${esc(b.chip)}</span>
       ${r ? `<span class="chip ${r.tone ? `t-${r.tone}` : ''}" title="${esc(rWhy)}">${esc(r.chip)}</span>` : ''}
       <span class="chip ${q.tone ? `t-${q.tone}` : ''}" title="${esc(`${q.text} ${c.note ? `The scraper's own note: "${c.note}".` : ''}`)}">${esc(q.chip)}</span>
-      ${c.note ? `<div class="cell-sub" style="white-space:normal">${esc(c.note)}</div>` : ''}
-      ${c.soldOnly ? '<div class="cell-sub">Only a sold unit carries this model name</div>' : ''}
-      ${c.conflictNote ? `<div class="cell-sub t-warm" style="white-space:normal">${esc(c.conflictNote)}</div>` : ''}`;
+      ${c.note ? `<div class="ds-cell-sub" style="white-space:normal">${esc(c.note)}</div>` : ''}
+      ${c.soldOnly ? '<div class="ds-cell-sub">Only a sold unit carries this model name</div>' : ''}
+      ${c.conflictNote ? `<div class="ds-cell-sub t-warm" style="white-space:normal">${esc(c.conflictNote)}</div>` : ''}`;
   };
 
   /* The age of the price is in the first column of every row, coloured. A table
@@ -2392,14 +2396,14 @@ SCREENS.competitors = async host => {
          the row says so, rather than letting a listing scraped this morning
          read as one whose age is simply unknown. */
       return c.viewPickedUndated
-        ? `<div class="cell-sub t-hot" title="${esc(`The log holds ${c.datedSnapshots} dated ${plural(c.datedSnapshots, 'snapshot', 'snapshots')} of this listing, but the newest-first ordering returned an undated one, because a row with no collection date sorts ahead of a dated one. The price beside it may not be the newest one collected.`)}">no scrape date · the view picked an undated row over ${num(c.datedSnapshots)} dated ${plural(c.datedSnapshots, 'one', 'ones')}</div>`
-        : '<div class="cell-sub t-warm" title="This row carries no scrape timestamp, so its age is unknown.">no scrape date</div>';
+        ? `<div class="ds-cell-sub t-hot" title="${esc(`The log holds ${c.datedSnapshots} dated ${plural(c.datedSnapshots, 'snapshot', 'snapshots')} of this listing, but the newest-first ordering returned an undated one, because a row with no collection date sorts ahead of a dated one. The price beside it may not be the newest one collected.`)}">no scrape date · the view picked an undated row over ${num(c.datedSnapshots)} dated ${plural(c.datedSnapshots, 'one', 'ones')}</div>`
+        : '<div class="ds-cell-sub t-warm" title="This row carries no scrape timestamp, so its age is unknown.">no scrape date</div>';
     }
     const cls = staleSet.has(c) ? 't-hot' : stale ? 't-warm' : 't-muted';
     const why = staleSet.has(c)
       ? `Collected ${dt(c.at)}${c.snapshotCount > 1 ? ` — the newest of ${c.snapshotCount} snapshots of this listing` : ''}. That trails the newest row in the table by more than ${REFRESH_LAG_HOURS} h, so the last scrape did not cover this listing.`
       : `Collected ${dt(c.at)}${c.snapshotCount > 1 ? ` — the newest of ${c.snapshotCount} snapshots of this listing` : ''}.`;
-    return `<div class="cell-sub ${cls}" title="${esc(why)}">${esc(ago(c.at))}${staleSet.has(c) ? ' · not refreshed' : ''}</div>`;
+    return `<div class="ds-cell-sub ${cls}" title="${esc(why)}">${esc(ago(c.at))}${staleSet.has(c) ? ' · not refreshed' : ''}</div>`;
   };
 
   const cols = [
@@ -2412,8 +2416,8 @@ SCREENS.competitors = async host => {
     { label: 'Source', strong: true, render: c => {
       const src = sourceWords(c);
       return `${esc(c.host || c.name || 'Unnamed source')}
-        ${src ? `<div class="cell-sub ${src.tone ? `t-${src.tone}` : ''}" style="white-space:normal" title="${esc(`${src.what}: the price beside it is ${src.price}.${src.sure ? '' : ' The scraper did not record what kind of page this is; this is read off the domain.'}`)}">${esc(src.what)}${src.sure ? '' : ' (read off the domain)'}</div>` : ''}
-        ${c.fault ? `<div class="cell-sub t-hot" style="white-space:normal" title="${esc(c.fault.why)}">Not a seller — ${esc(c.fault.kind === 'interstitial' ? 'a bot-detection page the scraper stored as a competitor' : 'a placeholder the scraper wrote instead of a name')}</div>` : ''}
+        ${src ? `<div class="ds-cell-sub ${src.tone ? `t-${src.tone}` : ''}" style="white-space:normal" title="${esc(`${src.what}: the price beside it is ${src.price}.${src.sure ? '' : ' The scraper did not record what kind of page this is; this is read off the domain.'}`)}">${esc(src.what)}${src.sure ? '' : ' (read off the domain)'}</div>` : ''}
+        ${c.fault ? `<div class="ds-cell-sub t-hot" style="white-space:normal" title="${esc(c.fault.why)}">Not a seller — ${esc(c.fault.kind === 'interstitial' ? 'a bot-detection page the scraper stored as a competitor' : 'a placeholder the scraper wrote instead of a name')}</div>` : ''}
         ${ageCell(c)}`;
     } },
     /* Our model string, and under it the page's own words for what IT is
@@ -2421,9 +2425,9 @@ SCREENS.competitors = async host => {
        did not exist and this column showed our string twice without saying so. */
     { label: 'Vehicle', render: c => `${esc(c.label)}
         ${c.title
-          ? `<div class="cell-sub" style="white-space:normal" title="${esc(`The page's own title for what it is selling. Our model string is the line above; this is the field that lets the match fail.`)}">their page: ${esc(c.title)}</div>`
-          : `<div class="cell-sub t-warm" style="white-space:normal" title="${esc(NO_TITLE)}">no listing title recorded</div>`}
-        ${c.units.length > 1 ? `<div class="cell-sub">${num(c.units.length)} comparable units in stock</div>` : ''}` },
+          ? `<div class="ds-cell-sub" style="white-space:normal" title="${esc(`The page's own title for what it is selling. Our model string is the line above; this is the field that lets the match fail.`)}">their page: ${esc(c.title)}</div>`
+          : `<div class="ds-cell-sub t-warm" style="white-space:normal" title="${esc(NO_TITLE)}">no listing title recorded</div>`}
+        ${c.units.length > 1 ? `<div class="ds-cell-sub">${num(c.units.length)} comparable units in stock</div>` : ''}` },
     /* Was "Lowest on their page", which is only what the figure is on a row the
        old scraper wrote. On a rated row it is a named offer, so the header says
        "Their price" and the cell says which offer and in what condition. */
@@ -2431,15 +2435,15 @@ SCREENS.competitors = async host => {
       if (c.price == null) return '<span class="t-muted" title="This row has no competitor price recorded.">—</span>';
       return `${aed(c.price)}
         ${c.offer
-          ? `<div class="cell-sub" style="white-space:normal" title="${esc(PRICE_RANKED)}">${esc(c.offer)}${c.cond && c.cond !== 'unknown' ? ` · ${esc(c.cond)}` : ' · condition not stated'}</div>`
-          : `<div class="cell-sub t-warm" style="white-space:normal" title="${esc(PRICE_UNCONSTRAINED)}">lowest figure on the page — no offer recorded</div>`}`;
+          ? `<div class="ds-cell-sub" style="white-space:normal" title="${esc(PRICE_RANKED)}">${esc(c.offer)}${c.cond && c.cond !== 'unknown' ? ` · ${esc(c.cond)}` : ' · condition not stated'}</div>`
+          : `<div class="ds-cell-sub t-warm" style="white-space:normal" title="${esc(PRICE_UNCONSTRAINED)}">lowest figure on the page — no offer recorded</div>`}`;
     } },
     { label: 'Our list price', align: 'r', render: c => {
       if (invErr) return '<span class="t-muted" title="Inventory did not load.">—</span>';
       if (c.unmatched) return `<span class="t-muted" title="${esc(c.conflictNote || 'No unit on the lot carries this model name. Model name is the only thing either table records, so there is nothing looser to fall back on.')}">not stocked</span>`;
       if (c.ourPrice == null) return '<span class="t-muted" title="The matching unit carries no list price.">no price on record</span>';
       return `${aed(c.ourPrice)}${c.ourHigh !== c.ourPrice
-        ? `<div class="cell-sub">lowest of ${aed(c.ourPrice)}–${aed(c.ourHigh)}</div>` : ''}`;
+        ? `<div class="ds-cell-sub">lowest of ${aed(c.ourPrice)}–${aed(c.ourHigh)}</div>` : ''}`;
     } },
     /* The direction is in the header because the same quantity appears in the
        drawer and in `price_diff_aed` with the opposite sign. */
@@ -2538,7 +2542,7 @@ SCREENS.competitors = async host => {
     openDrawer(`
       <div class="drawer-head">
         <div style="flex:1"><h2 style="font-size:18px">${esc(c.label)}</h2>
-          <div class="cell-sub">${c.fault ? `<span class="t-hot">${esc(c.name)} — not a dealership</span>` : esc(c.host || c.name || 'Unnamed source')} · ${c.at ? `scraped ${esc(ago(c.at))}` : 'no scrape date recorded'}</div></div>
+          <div class="ds-cell-sub">${c.fault ? `<span class="t-hot">${esc(c.name)} — not a dealership</span>` : esc(c.host || c.name || 'Unnamed source')} · ${c.at ? `scraped ${esc(ago(c.at))}` : 'no scrape date recorded'}</div></div>
         <button class="btn ghost sm" id="dClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="drawer-body">
@@ -2593,9 +2597,9 @@ SCREENS.competitors = async host => {
                as not a conclusion — the drawer is the one place both figures
                and the reason they may not be compared can sit together. */
             : c.concludable ? aedSigned(c.delta)
-              : `<span class="t-muted">${esc(aedSigned(c.delta))} <span class="cell-sub">not a comparison</span></span>`}</dd>
+              : `<span class="t-muted">${esc(aedSigned(c.delta))} <span class="ds-cell-sub">not a comparison</span></span>`}</dd>
           <dt>Matched on</dt><dd>${esc(basis.chip)}${risk ? ` · ${esc(risk.chip)}` : ''} · ${esc(quality.chip)}</dd>
-          <dt>Scraped</dt><dd>${c.at ? `${esc(dt(c.at))} <span class="cell-sub">· ${esc(ago(c.at))}</span>` : '—'}</dd>
+          <dt>Scraped</dt><dd>${c.at ? `${esc(dt(c.at))} <span class="ds-cell-sub">· ${esc(ago(c.at))}</span>` : '—'}</dd>
         </dl>
 
         <div style="margin-top:20px"><div class="label-caps">What was compared with what</div>
@@ -2603,28 +2607,28 @@ SCREENS.competitors = async host => {
             <dt>Our model text</dt><dd>${esc(c.model || '—')}</dd>
             <dt>Their listing title</dt><dd>${c.title
               ? esc(c.title)
-              : `<span class="t-warm">not recorded</span> <span class="cell-sub" style="white-space:normal">${esc(NO_TITLE)}</span>`}</dd>
+              : `<span class="t-warm">not recorded</span> <span class="ds-cell-sub" style="white-space:normal">${esc(NO_TITLE)}</span>`}</dd>
             <dt>Priced from</dt><dd>${c.offer
-              ? `${esc(c.offer)}${c.cond ? ` <span class="cell-sub">· the page states this offer is ${esc(c.cond)}</span>` : ' <span class="cell-sub">· the page did not state new or used</span>'}`
-              : `<span class="t-warm">no offer recorded</span> <span class="cell-sub" style="white-space:normal">${esc(PRICE_UNCONSTRAINED)}</span>`}</dd>
+              ? `${esc(c.offer)}${c.cond ? ` <span class="ds-cell-sub">· the page states this offer is ${esc(c.cond)}</span>` : ' <span class="ds-cell-sub">· the page did not state new or used</span>'}`
+              : `<span class="t-warm">no offer recorded</span> <span class="ds-cell-sub" style="white-space:normal">${esc(PRICE_UNCONSTRAINED)}</span>`}</dd>
             <dt>Source</dt><dd>${esc(c.host || c.name || '—')}${(() => {
               const src = sourceWords(c);
               return src
-                ? ` <span class="cell-sub ${src.tone ? `t-${src.tone}` : ''}">· ${esc(src.what)}${src.sure ? '' : ', read off the domain rather than recorded'}</span>`
-                : ' <span class="cell-sub t-warm">· kind not recorded, and the hostname does not name a manufacturer</span>';
+                ? ` <span class="ds-cell-sub ${src.tone ? `t-${src.tone}` : ''}">· ${esc(src.what)}${src.sure ? '' : ', read off the domain rather than recorded'}</span>`
+                : ' <span class="ds-cell-sub t-warm">· kind not recorded, and the hostname does not name a manufacturer</span>';
             })()}</dd>
             <dt>Match quality</dt><dd><span class="${quality.tone ? `t-${quality.tone}` : ''}">${esc(quality.chip)}</span></dd>
           </dl>
-          <div class="cell-sub ${quality.tone ? `t-${quality.tone}` : ''}" style="white-space:normal;margin-top:8px">${esc(quality.text)}</div>
-          ${c.note ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">The scraper's own note on this match: ${esc(c.note)}</div>` : ''}
+          <div class="ds-cell-sub ${quality.tone ? `t-${quality.tone}` : ''}" style="white-space:normal;margin-top:8px">${esc(quality.text)}</div>
+          ${c.note ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">The scraper's own note on this match: ${esc(c.note)}</div>` : ''}
         </div>
 
         <div style="margin-top:16px"><div class="label-caps">What this match is</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(basis.why)}</div>
-          ${risk ? `<div class="cell-sub ${risk.tone ? `t-${risk.tone}` : ''}" style="white-space:normal;margin-top:6px">${esc(riskWhy)}</div>` : ''}
-          ${c.conflictNote ? `<div class="cell-sub t-warm" style="white-space:normal;margin-top:6px">${esc(c.conflictNote)}</div>` : ''}
-          ${c.theirMake || c.ourMakes.length ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">Manufacturer${c.theirMake && c.ourMakes.length ? 's' : ''} read out of the model text${c.theirMake ? ` — theirs names ${esc(titleCase(c.theirMake))}` : ''}${c.ourMakes.length ? `${c.theirMake ? ',' : ' —'} ours names ${esc(c.ourMakes.map(titleCase).join(', '))}` : ''}. Inferred from free text, not from a make column: there is none on either table.${c.echoed ? ' And on this row those are one string read twice — the scraper wrote our own model text back out — so their agreement is not evidence of anything.' : ''}</div>` : ''}
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">${c.title
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(basis.why)}</div>
+          ${risk ? `<div class="ds-cell-sub ${risk.tone ? `t-${risk.tone}` : ''}" style="white-space:normal;margin-top:6px">${esc(riskWhy)}</div>` : ''}
+          ${c.conflictNote ? `<div class="ds-cell-sub t-warm" style="white-space:normal;margin-top:6px">${esc(c.conflictNote)}</div>` : ''}
+          ${c.theirMake || c.ourMakes.length ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">Manufacturer${c.theirMake && c.ourMakes.length ? 's' : ''} read out of the model text${c.theirMake ? ` — theirs names ${esc(titleCase(c.theirMake))}` : ''}${c.ourMakes.length ? `${c.theirMake ? ',' : ' —'} ours names ${esc(c.ourMakes.map(titleCase).join(', '))}` : ''}. Inferred from free text, not from a make column: there is none on either table.${c.echoed ? ' And on this row those are one string read twice — the scraper wrote our own model text back out — so their agreement is not evidence of anything.' : ''}</div>` : ''}
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${c.title
             ? `The scrape stores a hostname, our model string, the page's own listing title, the offer the price came from, a price, a date and its own rating of the match. ${esc(c.host || c.name || 'This source')} is the page that was read`
             : `This row stores a page hostname, a model string, a price and a date, and nothing else — the listing title, the offer and the match rating arrived with the 1 Sep 2026 fix and this row predates it. "${esc(c.host || c.name || 'this source')}" is the hostname of the page that was read`}: there is still no listing contact, no stock number on their side, and no way from here to open the page and see it for yourself.</div>
         </div>
@@ -2635,24 +2639,24 @@ SCREENS.competitors = async host => {
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}</div>
-                <div class="cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
-                <div class="cell-sub">${esc(String(u.status || 'status unknown'))}${n0(u.days_in_stock) == null ? '' : ` · ${num(u.days_in_stock)} days in stock`}</div>
+                <div class="ds-cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
+                <div class="ds-cell-sub">${esc(String(u.status || 'status unknown'))}${n0(u.days_in_stock) == null ? '' : ` · ${num(u.days_in_stock)} days in stock`}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
                 <div class="num">${p == null ? '—' : aed(p)}</div>
-                <div class="cell-sub">${d == null ? 'no gap' : esc(aedSigned(d))}</div>
+                <div class="ds-cell-sub">${d == null ? 'no gap' : esc(aedSigned(d))}</div>
                 ${String(u.aging_alert || '').toUpperCase() === 'CRITICAL' ? pill('CRITICAL', 'hot', { verbatim: false }) : ''}
               </div></div>`;
           }).join('')
-          : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(c.conflictNote || BASIS.none.why)}</div>`}
+          : `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(c.conflictNote || BASIS.none.why)}</div>`}
         </div>
 
         ${c.snapshotCount > 1 ? `<div style="margin-top:20px"><div class="label-caps">Scrape history · ${num(c.snapshotCount)}</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">competitors is an append-only log on purpose — what a price has done over time is worth keeping — so this listing carries one row per run that covered it. The comparison above is the row the competitor listings returns, which is the newest; the rest are counted nowhere else on this screen and are here because history is what this block is for.</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">competitors is an append-only log on purpose — what a price has done over time is worth keeping — so this listing carries one row per run that covered it. The comparison above is the row the competitor listings returns, which is the newest; the rest are counted nowhere else on this screen and are here because history is what this block is for.</div>
           ${c.history.map(h => `<div class="list-item" style="cursor:default">
-            <div style="flex:1;min-width:0" class="cell-sub">${esc(dt(h.at))}</div>
+            <div style="flex:1;min-width:0" class="ds-cell-sub">${esc(dt(h.at))}</div>
             <div style="text-align:right;flex-shrink:0" class="num">${h.price == null ? '<span class="t-muted">no price</span>' : aed(h.price)}</div></div>`).join('')}
-          ${[...new Set(c.history.map(h => h.price))].length === 1 ? `<div class="cell-sub" style="white-space:normal;margin-top:8px">Every snapshot quotes the same figure, so nothing here shows a price moving — it shows the same page being read ${num(c.snapshotCount)} times.</div>` : ''}
+          ${[...new Set(c.history.map(h => h.price))].length === 1 ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:8px">Every snapshot quotes the same figure, so nothing here shows a price moving — it shows the same page being read ${num(c.snapshotCount)} times.</div>` : ''}
         </div>` : ''}
 
         <div style="margin-top:20px"><div class="label-caps">As recorded by the scrape</div>
@@ -2660,13 +2664,13 @@ SCREENS.competitors = async host => {
             <dt>Our price at scrape time</dt><dd class="num">${c.storedOur == null ? '<span class="t-muted">not recorded</span>' : aed(c.storedOur)}</dd>
             <dt>Difference at scrape time (ours − theirs)</dt><dd class="num">${c.storedGap == null ? '<span class="t-muted">not recorded</span>' : aedSigned(c.storedGap)}</dd>
           </dl>
-          ${disagrees ? `<div class="cell-sub" style="white-space:normal;margin-top:8px">The scrape recorded our price as ${esc(aed(c.storedOur))}; inventory currently lists ${esc(aed(c.ourPrice))}. The gap above uses the live list price.</div>` : ''}
-          ${c.storedDiff != null ? `<div class="cell-sub" style="white-space:normal;margin-top:6px">Both figures on this screen are signed the same way — positive means we are asking more — because this drawer used to print the one quantity twice with opposite signs four lines apart. The workflow stores it the other way round, as theirs − ours: the raw value in <span class="mono">price_diff_aed</span> is ${esc(aedSigned(c.storedDiff))}, and it is negated here rather than re-derived.</div>` : ''}
+          ${disagrees ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:8px">The scrape recorded our price as ${esc(aed(c.storedOur))}; inventory currently lists ${esc(aed(c.ourPrice))}. The gap above uses the live list price.</div>` : ''}
+          ${c.storedDiff != null ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">Both figures on this screen are signed the same way — positive means we are asking more — because this drawer used to print the one quantity twice with opposite signs four lines apart. The workflow stores it the other way round, as theirs − ours: the raw value in <span class="mono">price_diff_aed</span> is ${esc(aedSigned(c.storedDiff))}, and it is negated here rather than re-derived.</div>` : ''}
         </div>
 
         ${c.rec ? `<div style="margin-top:20px"><div class="label-caps">AI recommendation</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:8px">${esc(c.rec)}</div>
-          <div class="cell-sub t-muted" style="white-space:normal;margin-top:6px">Written by the scrape when the row was stored, and shown as stored. It calls the source a competitor and its figure a competitor's price; both are qualified above, and it was composed from the same ${esc(aedSigned(c.storedDiff == null ? 0 : c.storedDiff))} the workflow signs the other way round.</div></div>` : ''}
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(c.rec)}</div>
+          <div class="ds-cell-sub t-muted" style="white-space:normal;margin-top:6px">Written by the scrape when the row was stored, and shown as stored. It calls the source a competitor and its figure a competitor's price; both are qualified above, and it was composed from the same ${esc(aedSigned(c.storedDiff == null ? 0 : c.storedDiff))} the workflow signs the other way round.</div></div>` : ''}
       </div>
       <div class="drawer-foot">
         <button class="btn primary" id="dPrice"${best && canEditUnit(best.tenant_id) ? '' : ` disabled title="${esc(!best
@@ -2716,19 +2720,19 @@ SCREENS.competitors = async host => {
         <div class="list-item" role="button" tabindex="0" data-comp="${i}" style="align-items:flex-start">
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${esc(g.name)}${g.src ? ` <span class="chip ${g.src.tone ? `t-${g.src.tone}` : ''}" style="margin-left:8px" title="${esc(`${g.src.what}: the prices under it are ${g.src.price}.${g.src.sure ? '' : ' The scraper did not record what kind of page this is; this is read off the domain.'}`)}">${esc(g.src.what)}${g.src.sure ? '' : ' (from the domain)'}</span>` : ''}</div>
-            <div class="cell-sub">${num(g.rows.length)} listing${g.rows.length === 1 ? '' : 's'} · ${g.priced === 0
+            <div class="ds-cell-sub">${num(g.rows.length)} listing${g.rows.length === 1 ? '' : 's'} · ${g.priced === 0
               ? '<span class="t-warm">no price on any row</span>'
               : g.cmp ? `${num(g.cmp)} comparable` : 'none comparable to our stock'}
               ${g.newest ? ` · scraped ${esc(ago(g.newest))}` : ' · <span class="t-warm">no scrape date</span>'}</div>
-            ${g.untied ? `<div class="cell-sub t-hot">${num(g.untied)} priced off a page that ties nothing to our car — no gap drawn</div>` : ''}
-            ${g.unrated ? `<div class="cell-sub t-warm">${num(g.unrated)} ${plural(g.unrated, 'match', 'matches')} never rated — ${plural(g.unrated, 'it predates', 'they predate')} the 1 Sep provenance fix</div>` : ''}
-            ${g.stale ? `<div class="cell-sub t-hot">${g.rows.length === 1
+            ${g.untied ? `<div class="ds-cell-sub t-hot">${num(g.untied)} priced off a page that ties nothing to our car — no gap drawn</div>` : ''}
+            ${g.unrated ? `<div class="ds-cell-sub t-warm">${num(g.unrated)} ${plural(g.unrated, 'match', 'matches')} never rated — ${plural(g.unrated, 'it predates', 'they predate')} the 1 Sep provenance fix</div>` : ''}
+            ${g.stale ? `<div class="ds-cell-sub t-hot">${g.rows.length === 1
               ? 'Its only listing was'
               : `${num(g.stale)} of its ${num(g.rows.length)} listings ${plural(g.stale, 'was', 'were')}`} not covered by the last scrape</div>` : ''}
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div class="${g.above ? 't-hot' : 't-muted'}" style="font-weight:500">${num(g.above)}</div>
-            <div class="cell-sub">above its page price${g.below ? ` · ${num(g.below)} below` : ''}</div>
+            <div class="ds-cell-sub">above its page price${g.below ? ` · ${num(g.below)} below` : ''}</div>
           </div></div>`).join('')}</div>`
         : stateEmpty('No sources yet', 'No scraped row carries a source hostname.', 'storefront')),
     }).then(c => {
@@ -2762,13 +2766,13 @@ SCREENS.competitors = async host => {
           <span class="material-symbols-outlined t-muted" style="font-size:20px" aria-hidden="true">price_check</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500">${esc(uModel(u) || 'Unnamed unit')}</div>
-            <div class="cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
+            <div class="ds-cell-sub mono">${esc(String(uRef(u) ?? '—'))}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div class="num">${uPrice(u) == null ? '—' : aed(uPrice(u))}</div>
-            <div class="cell-sub">${n0(u.days_in_stock) == null ? 'no acquisition date' : `${num(u.days_in_stock)} days in stock`}</div>
+            <div class="ds-cell-sub">${n0(u.days_in_stock) == null ? 'no acquisition date' : `${num(u.days_in_stock)} days in stock`}</div>
           </div></div>`).join('')}
-        ${units.length > 12 ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(units.length - 12)} more unit${units.length - 12 === 1 ? '' : 's'} have no scraped comparison</div></div>` : ''}</div>`
+        ${units.length > 12 ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(units.length - 12)} more unit${units.length - 12 === 1 ? '' : 's'} have no scraped comparison</div></div>` : ''}</div>`
           : stateEmpty('Every unsold unit has a market reference',
             'Each car on the lot is matched by at least one scraped price.', 'price_check');
       },

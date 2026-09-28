@@ -733,3 +733,122 @@
   background: repeating-linear-gradient(180deg,
     var(--ds-unknown-solid) 0 5px, transparent 5px 9px);
 }
+
+
+/* ============================================================================
+   v1.1 ADDITIONS — 27 September 2026
+
+   These are additive on the same contract the header sets out: every token is
+   `--ds-`, every class `.ds-`, and nothing below changes the rendering of a
+   screen that does not ask for it. Twenty-seven screens are unconverted and
+   none of them can match anything here.
+
+   WHAT THIS IS NOT. A separate `nexus-design-system.css` was written this week
+   against the ChatGPT research brief. It is NOT imported here and must not be.
+   Two token sets in one app is the visual drift the whole exercise exists to
+   stop, and this file got there first and is already carrying two screens. So
+   the additions that file genuinely had and this one did not are ported INTO
+   this naming instead. The standalone file stays a reference page.
+
+   Only what the next screen conversions need is added. Notification, form and
+   wallboard components are deliberately absent until the screens that use them
+   are converted — unused CSS is the bloat this file's header argues against.
+   ========================================================================== */
+
+/* ── Evidence state ────────────────────────────────────────────────────────
+   ESTIMATED, ATTRIBUTED, CONFIRMED and RECOVERED are four different claims and
+   the product rule is that they never share a treatment. This is that rule with
+   a shape, so a screen cannot render an estimate in the colour of money.
+
+   The separation is deliberately NOT carried by colour. `unknown` in this file
+   already proves the point with a hatch: a dashed edge survives greyscale,
+   protanopia and a printed page, and green-vs-amber does not. */
+.ds-evstate {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--ds-fs-2xs); line-height: var(--ds-lh-2xs);
+  font-weight: var(--ds-fw-bold); letter-spacing: .09em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: var(--ds-r-sm);
+  border: 1px dashed var(--ds-border-strong); color: var(--ds-text-tertiary);
+  background: transparent;
+}
+.ds-evstate--attributed { border-style: dashed; color: var(--ds-info-fg);    border-color: var(--ds-info-border);    background: var(--ds-info-bg); }
+.ds-evstate--confirmed  { border-style: solid;  color: var(--ds-success-fg); border-color: var(--ds-success-border); background: var(--ds-success-bg); }
+.ds-evstate--recovered  { border-style: solid;  color: var(--ds-text-inverse); border-color: var(--ds-success-solid); background: var(--ds-success-solid); }
+
+/* Evidence strength. A bar, never a percentage on its own — a bare "82%" reads
+   as a probability of the outcome, which is not what it measures. */
+.ds-evbar { height: 4px; border-radius: 2px; background: var(--ds-surface-sunken); overflow: hidden; }
+.ds-evbar > i { display: block; height: 100%; border-radius: 2px; background: var(--ds-info-solid); }
+
+/* ── Leak card ─────────────────────────────────────────────────────────────
+   WHY → EVIDENCE → ACTION, in that order, with the severity carried on the
+   inline-start edge so it survives RTL. */
+.ds-leak {
+  display: grid; gap: var(--ds-cell-px);
+  padding: var(--ds-cell-px);
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  border-radius: var(--ds-r-lg);
+  border-inline-start: 3px solid var(--ds-border-strong);
+}
+.ds-leak--sev1 { border-inline-start-color: var(--ds-info-solid); }
+.ds-leak--sev2 { border-inline-start-color: var(--ds-warning-solid); }
+.ds-leak--sev3 { border-inline-start-color: #D2691E; }
+.ds-leak--sev4 { border-inline-start-color: var(--ds-danger-solid); }
+.ds-leak-head { display: flex; align-items: flex-start; gap: var(--ds-cell-px); flex-wrap: wrap; }
+.ds-leak-title { flex: 1; min-width: 200px; }
+.ds-leak-impact { text-align: end; }
+.ds-leak-body {
+  display: grid; gap: var(--ds-cell-px); grid-template-columns: 1fr;
+  border-top: 1px solid var(--ds-border-subtle); padding-top: var(--ds-cell-px);
+}
+@media (min-width: 760px) { .ds-leak-body { grid-template-columns: 1.25fr 1fr; } }
+
+/* ── Chart ─────────────────────────────────────────────────────────────────
+   A chart with no takeaway beside it is decoration. `.ds-chart-take` is not
+   optional styling; it is where the sentence goes. */
+.ds-chartbox {
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  border-radius: var(--ds-r-lg); padding: var(--ds-cell-px);
+}
+.ds-chart-head { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--ds-cell-px); flex-wrap: wrap; margin-bottom: var(--ds-cell-px); }
+.ds-chart-take { font-size: var(--ds-fs-md); line-height: var(--ds-lh-md);
+  color: var(--ds-text-secondary); max-width: 52ch; }
+.ds-chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+/* ── RTL ───────────────────────────────────────────────────────────────────
+   The market is the UAE, so Arabic is a when and not an if. Everything above
+   uses logical properties; these are the few places that could not. */
+[dir="rtl"] .ds-note--corner { inset-inline-end: var(--ds-cell-py); inset-inline-start: auto; }
+[dir="rtl"] .ds-icon--chev   { transform: scaleX(-1); }
+
+/* ── Dark, opt-in and inert until asked for ────────────────────────────────
+   The header says "light only, by instruction" and that still holds for every
+   screen: this block is gated on `[data-ds-theme="dark"]`, an attribute nothing
+   in the app sets today. It is NOT a prefers-color-scheme query, deliberately —
+   an OS setting must not repaint a dealership's screens without anyone choosing
+   it. It exists so the command centre and a showroom wallboard have somewhere
+   to go when they are built. */
+[data-ds-theme="dark"] {
+  color-scheme: dark;
+  --ds-canvas:         #0B1220;
+  --ds-surface:        #131B2A;
+  --ds-surface-raised: #182233;
+  --ds-surface-sunken: #0E1624;
+  --ds-surface-hover:  #1B2537;
+  --ds-text-primary:   #F4F7FB;
+  --ds-text-secondary: #AEB8C9;
+  --ds-text-tertiary:  #8B95A8;
+  --ds-text-disabled:  #6A7488;
+  --ds-border-subtle:  #1E2939;
+  --ds-border:         #2A3648;
+  --ds-border-strong:  #3C4A60;
+  --ds-brand:          #4C8DF5;  --ds-brand-hover: #6BA1F7;
+  --ds-brand-soft:     #152238;  --ds-brand-tint:  #1B2C49;
+  --ds-neutral-fg: #AEB8C9;  --ds-neutral-bg: #1A2334;  --ds-neutral-border: #2A3648;
+  --ds-info-fg:    #8CB8F0;  --ds-info-bg:    #10223A;  --ds-info-border:    #1E3E66;
+  --ds-success-fg: #6FD3AC;  --ds-success-bg: #0B2620;  --ds-success-border: #174A3A;
+  --ds-warning-fg: #E0AE63;  --ds-warning-bg: #2A1E08;  --ds-warning-border: #5A4114;
+  --ds-danger-fg:  #F09184;  --ds-danger-bg:  #2A1210;  --ds-danger-border:  #5C241D;
+  --ds-unknown-fg: #9AA4B8;  --ds-unknown-bg-flat: #1A2334;  --ds-unknown-border: #46506480;
+}

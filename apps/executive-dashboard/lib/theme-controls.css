@@ -1,0 +1,282 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-controls.css
+   ---------------------------------------------------------------------------
+   The CONTROL half of the reference design system: buttons, chips, pills,
+   form fields, the toolbar and the segmented control, brought up to
+   /home/claude/nexus-os-ui.html without importing that file's palette.
+
+   COLOUR: not one value is introduced here. Every colour below is a token
+   already declared in styles.css's `:root`, where each text token carries a
+   MEASURED contrast ratio. The one literal is `#64748B` inside the select
+   chevron's data URI — a data URI cannot read a custom property, and that
+   literal IS `--neutral`, byte for byte, not a new colour. Three pairings
+   that styles.css had not previously used are measured in place below.
+
+   HEIGHT: the reference runs a three-step control ladder — 40px base, 36px
+   segmented, 32px small — and the app ran 36 / 36 / 30. Every step here goes
+   UP or stays. Nothing shrinks; a 30px button does not become 26px because it
+   looks tighter.
+
+   SPECIFICITY: design-system.css gates two control rules on `.ds-screen`
+   (`.btn { border-radius }` and `.btn.sm { height }`) and 29 of the app's
+   screens set that class, so a bare `.btn` selector would have restyled
+   almost nothing. Those two are matched selector-for-selector below and win
+   on source order. No `!important` anywhere in this file.
+   =========================================================================== */
+
+/* ── Buttons ──────────────────────────────────────────────────────────────
+   The reference's button is taller (40px), rounder (--r-btn = 10px), set in
+   600 rather than 500, and presses 1px on :active. Hover moves the border as
+   well as the fill, which is what stops a secondary button reading as a flat
+   grey box the moment the cursor lands on it. */
+.btn {
+  height: 40px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-btn);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -.005em;
+  gap: var(--sp-2);
+  transition: background var(--m-micro) var(--ease),
+              border-color var(--m-micro) var(--ease),
+              color var(--m-micro) var(--ease),
+              transform var(--m-micro) var(--ease);
+}
+/* `--border` is the resting hairline; the reference steps to a stronger line on
+   hover. The app has no `--border-strong`, and inventing one would be a new
+   colour value, so hover borrows `--text-disabled` (#8A93A5) — a token
+   styles.css marks decorative-only, which a 1px border is. */
+.btn:hover { background: var(--surface-hover); border-color: var(--text-disabled); }
+.btn:active { transform: translateY(1px); }
+
+/* Primary keeps its own border on hover: --primary-hover on a --border-coloured
+   edge would read as a 1px light seam around a dark button. */
+.btn.primary:hover { border-color: var(--primary-hover); }
+
+/* Ghost is the app's cancel/secondary, used 62 times, and it stays NEUTRAL.
+   The reference's tertiary button is blue-on-transparent, which is right for
+   its "Open control room →" link actions and wrong for a Cancel sitting beside
+   a Save — every dismissal in the app would have started looking like the
+   affirmative one. De-emphasis comes from dropping to --text-2 instead:
+     --text-2 #4A5468 on --surface      #FFFFFF   7.6:1  (styles.css, measured)
+     --text-2 #4A5468 on --surface-hover #F4F6F9  7.0:1  (measured here) */
+.btn.ghost { color: var(--text-2); }
+.btn.ghost:hover { background: var(--surface-hover); border-color: transparent; color: var(--text); }
+
+/* Small: 30px -> 32px, and the tighter radius the reference gives this step so
+   a 32px control does not look like a 40px one that was squashed. */
+.btn.sm {
+  height: 32px;
+  padding: 0 var(--sp-3);
+  font-size: 12.5px;
+  border-radius: var(--r-sm);
+}
+.btn.sm .material-symbols-outlined { font-size: 16px; }
+
+/* Danger stays OUTLINED at rest. styles.css records the reason in its own
+   words — "the delete button should not be one mis-click away from looking
+   like Save" — and two solid buttons side by side is exactly that collision.
+   The reference's solid red arrives on hover instead, where it is emphasis
+   rather than resting hierarchy:
+     #FFFFFF on --hot #C8321F   5.3:1  (measured here; AA for 13.5px/600)
+     --hot-text #C8321F on --surface #FFFFFF  5.3:1  (resting label) */
+.btn.danger { border-color: var(--hot); }
+.btn.danger:hover { background: var(--hot); border-color: var(--hot); color: #FFFFFF; }
+
+/* `.ds-screen` set the radius to --ds-r-md (6px) for all 29 converted screens,
+   and its `.btn.sm` height to --ds-control-h (30px). Matched here so the ladder
+   is one ladder rather than two. */
+.ds-screen .btn { border-radius: var(--r-btn); }
+.ds-screen .btn.sm { height: 32px; font-size: 12.5px; border-radius: var(--r-sm); }
+
+/* ── Disabled ─────────────────────────────────────────────────────────────
+   This replaces `opacity: .5`, which is the one place the app was failing its
+   own rule. Half-opacity --text over white computes to #878B94 — 3.4:1,
+   BELOW the 4.5:1 the file demands of real text, and it faded the border and
+   the fill along with the label so a disabled primary became a pale blue
+   smear. Disabled is now carried by the SURFACE, not by the label:
+
+     --text-2 #4A5468 on --surface-sunken #F1F3F7   6.9:1  (measured here)
+
+   which is legible at 6.9:1 — double what it was — while the flat sunken fill,
+   the vanished border weight, the dead hover and the dead press all say
+   disabled. --text-disabled (3.1:1) is deliberately NOT used for the label.
+   Listed with `:hover` compounds because `:disabled` blocks the click, not the
+   hover rule. */
+.btn:disabled, .btn:disabled:hover,
+.btn.primary:disabled, .btn.primary:disabled:hover,
+.btn.ghost:disabled, .btn.ghost:disabled:hover,
+.btn.danger:disabled, .btn.danger:disabled:hover,
+.btn.sm:disabled, .btn.sm:disabled:hover {
+  background: var(--surface-sunken);
+  border-color: var(--border-subtle);
+  color: var(--text-2);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── The focus ring ───────────────────────────────────────────────────────
+   Unchanged in colour, width and offset from the app's global ring — restated
+   at button specificity only so that nothing above (which sets `color` and
+   `border-color` on hover and disabled) can be read as having removed it. A
+   keyboard user sees exactly what they saw before this file existed. */
+.btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ── Text inputs, selects, textareas ──────────────────────────────────────
+   36px -> 40px, so a field and the button beside it share one height, and the
+   8px field radius the reference uses against the 10px button radius. */
+/* `tel` and `url` are missing from styles.css's base input rule and have been
+   rendering as native OS boxes — the phone field on the manual-lead form
+   (which carries an inline `width:100%` because the author hit this) and the
+   endpoint URL field on Integrations. They are given the base treatment here,
+   copied from that rule rather than re-invented, so every text field in the
+   app is one control. */
+input[type=tel], input[type=url] {
+  padding: 0 12px; border: 1px solid var(--border);
+  background: var(--surface); font: inherit; font-size: 14px;
+  color: var(--text); width: 100%;
+}
+
+input[type=text], input[type=number], input[type=search], input[type=email],
+input[type=password], input[type=date], input[type=tel], input[type=url],
+select, textarea {
+  height: 40px;
+  border-radius: var(--r-sm);
+  transition: border-color var(--m-micro) var(--ease),
+              background var(--m-micro) var(--ease);
+}
+textarea { height: auto; min-height: 76px; }
+
+/* `:not(:focus)` is load-bearing. styles.css sets the focus border with
+   `input:focus`, which has the same specificity as `input:hover`; without the
+   guard, hovering a focused field would repaint its blue focus border grey. */
+input:hover:not(:focus):not(:disabled),
+select:hover:not(:focus):not(:disabled),
+textarea:hover:not(:focus):not(:disabled) {
+  border-color: var(--text-disabled);
+}
+
+/* `background-color`, never the `background` shorthand: the shorthand resets
+   background-image and would strip the chevron off a disabled select. */
+input:disabled, select:disabled, textarea:disabled {
+  background-color: var(--surface-sunken);
+  border-color: var(--border-subtle);
+  color: var(--text-2);          /* 6.9:1 on --surface-sunken, measured above */
+  cursor: not-allowed;
+}
+
+/* The native select arrow is a different shape and weight on every platform,
+   which is why the reference draws its own. The stroke literal `%2364748B` is
+   `--neutral` — a data URI cannot read a custom property. `padding-right` is
+   widened to 32px so a long option never runs under the chevron. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0 32px 0 12px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  cursor: pointer;
+}
+/* A disabled select keeps the chevron but on the sunken fill, so the control
+   still reads as a select rather than as a text box that lost its arrow. */
+select:disabled { background-color: var(--surface-sunken); }
+
+/* Checkboxes were entirely unstyled — native size, native platform blue, and
+   squashable inside the flex labels the app builds them in. `accent-color`
+   is the whole fix, and it brings the app's own --primary rather than the
+   operating system's. The native focus ring and the app's global
+   :focus-visible ring are both untouched. */
+input[type=checkbox], input[type=radio] {
+  accent-color: var(--primary);
+  width: 16px; height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  cursor: pointer;
+}
+input[type=checkbox]:disabled, input[type=radio]:disabled { cursor: not-allowed; }
+
+/* ── Fields ───────────────────────────────────────────────────────────────
+   The label goes to 600 — the reference's field labels are heavier than its
+   body text, which is what makes a stacked form scan as a form. Colour is
+   unchanged (--text-2, 7.6:1). */
+.field { gap: 5px; }
+.field label { font-weight: 600; }
+.field .hint { line-height: 16px; }
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────
+   The reference's `.toolbar` is a vertical stack of a saved-views row and a
+   filters row; the app's is a horizontal bar inside a card head, used 22
+   times. Restructuring it would be a screen change, not a theme change, so
+   what arrives here is the reference's 12px filter gap, on the app's own
+   layout. The 20px horizontal padding is deliberately NOT touched: the
+   toolbar sits directly under `.card-head`, which is also 20px, and widening
+   one and not the other puts a 4px step in the left edge of every screen. */
+.toolbar {
+  gap: var(--sp-3);
+  row-gap: var(--sp-2);
+}
+
+/* ── Segmented control ────────────────────────────────────────────────────
+   The reference's seg has an outer border, which is what separates a sunken
+   track from a sunken card behind it, and a 6px inner radius against the 8px
+   track. Height is unchanged at 30px per segment (36px overall including the
+   track's padding and border) — this is the middle rung of the ladder and it
+   does not move. */
+.seg {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 2px;
+  gap: 2px;
+}
+.seg button {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: background var(--m-micro) var(--ease), color var(--m-micro) var(--ease);
+}
+.seg button:hover:not(.on) { color: var(--text); }
+.seg button.on { box-shadow: var(--shadow-1); }
+/* Inset, and this is the one ring in the file that CHANGED. The outset 2px
+   ring was drawn over the neighbouring segment inside a 2px-padded track, so
+   which segment held focus was ambiguous in a three-up seg. Same colour, same
+   2px width, drawn inside the segment's own 30px box instead. */
+.seg button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* ── Chips and pills ──────────────────────────────────────────────────────
+   The reference's small metadata tag is a pill with a hairline, 22px tall.
+   The app's `.chip` was a 4px rectangle. The hairline is an inset box-shadow
+   rather than a border — the trick styles.css already uses on `.pill.unknown`
+   — so 90 chips gain an edge without any of them changing size and pushing a
+   table column wider. */
+.chip {
+  border-radius: var(--r-pill);
+  padding: 3px 9px;
+  line-height: 16px;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+/* `.chip.nowrap` switches to inline-block for its ellipsis and sets its own
+   line-height; the pill radius needs the vertical padding restated at that
+   specificity or the ellipsis row sits off-centre in the capsule. */
+.chip.nowrap { padding: 2px 9px; }
+
+/* Pills carry measured colour pairs and a solid `won` state, so nothing here
+   touches their fills, their text colours or their casing. What arrives is the
+   reference badge's weight and tracking, and its 22px height stated as
+   padding so the pill matches the chip beside it in a table cell. */
+.pill {
+  padding: 3px 10px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}

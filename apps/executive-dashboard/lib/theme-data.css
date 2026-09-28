@@ -1,0 +1,159 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-data.css
+   ---------------------------------------------------------------------------
+   The DATA DISPLAY surface: `table.data` (the only table shape lib/ui.js
+   renders), the KPI strip, and the four typographic classes that carry values
+   — `.num`, `.mono`, `.label-caps`, `.cell-sub`.
+
+   THREE THINGS THIS FILE DELIBERATELY DOES NOT DO.
+
+   1. It introduces no colour. Every colour below is a token from styles.css's
+      `:root`, where each text value carries a measured contrast ratio. The two
+      places this file CHANGES a colour, it moves it UP the ratio ladder and
+      writes the measured number beside it.
+
+   2. It does not zebra-stripe. Striping was the obvious way to make a long
+      register scannable and it is the wrong one here, measured rather than
+      argued: table cells carry tone classes (`t-hot`, `t-warm`, `t-ok`,
+      `t-muted`) and a row fill sits underneath them. Against #FFFFFF,
+      `--text-muted` (#68718A) is 4.86:1 — the lowest value styles.css calls
+      safe for real text. On `--surface-hover` (#F4F6F9) it is 4.49:1 and on
+      `--surface-sunken` (#F1F3F7) 4.38:1: both BELOW AA. So a stripe on every
+      other row would put half the `.cell-sub` and `.label-caps` text in this
+      product under 4.5:1 permanently. Rows are separated by the hairline they
+      already carry. The reference design separates its rows the same way, and
+      for the same reason it has no stripe either.
+
+   3. It does not deepen the hover fill. The reference hovers a row to its
+      sunken surface; here hover stays on `--surface-hover`, the lighter of the
+      two, because at #F4F6F9 every tone still clears AA — warm 5.29:1, hot
+      4.93:1, ok 4.89:1, cold 5.66:1 — whereas `--surface-sunken` takes muted
+      to 4.38:1. Hover is transient and muted text is not.
+
+   `.ds-cell-sub` (lib/design-system.css, 701 uses) is not touched. `.ds-table`
+   is not touched either: every selector here is scoped to `table.data`, so the
+   one `.ds-table` in the app keeps its own rules.
+   =========================================================================== */
+
+/* ── Density ──────────────────────────────────────────────────────────────
+   Row height and cell padding were fifty literals in two places (44/12px
+   comfortable, 36/8px compact). They are now two tokens, so the next density
+   retune is two numbers rather than a sweep. `--row-h` and `--cell-pad` are
+   declared in lib/theme-tokens.css; COMPACT re-declares them and every rule
+   below follows without restating a figure.
+
+   The compact override must out-specify `.compact table.data td` in styles.css
+   (0,2,2), which sets literals — hence `body.compact table.data td` (0,2,3)
+   further down. Overriding the token alone would have left that rule winning
+   and the density switch half dead. */
+body.compact { --row-h: 40px; --cell-pad: 10px; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+table.data {
+  /* Collapsed borders plus a sticky header is the combination in which the
+     header's own bottom border is dropped by the browser, because a collapsed
+     border belongs to the table's border grid and not to the cell that scrolls.
+     The hairline is re-laid as an inset shadow on the header cell below. */
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.data th {
+  height: 42px;
+  padding: 0 var(--cell-pad);
+  /* #4A5468 on #F1F3F7 is 6.85:1. This header was `--text-muted` (#68718A),
+     which is 4.86:1 on white but only 4.38:1 on the sunken fill it actually
+     sits on — a column heading below AA in the shipped build, at 11px and
+     uppercase, which is the hardest setting to read at low contrast. Moving it
+     to `--text-2` is the one contrast change in this file and it is upward. */
+  color: var(--text-2);
+  letter-spacing: .07em;
+  background: var(--surface-sunken);
+  background-clip: padding-box;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* Sortable headers. screens/team.js decorates a header with `aria-sort` and
+   puts a real button inside it whose inline style is `color:inherit`, so the
+   th's own colour is what the label picks up — styling the th styles the
+   control, and no JS or markup changes. */
+table.data th[aria-sort] { cursor: pointer; }
+table.data th[aria-sort]:hover,
+table.data th[aria-sort="ascending"],
+table.data th[aria-sort="descending"] {
+  /* #0F1729 on #F1F3F7 is 16.09:1. The sorted column is the one the reader is
+     reasoning about, so it is the darkest thing in the header row. */
+  color: var(--text);
+}
+
+table.data td {
+  height: var(--row-h);
+  /* Vertical padding as well as height, so the height acts as a floor for the
+     ordinary one-line row and a cell that carries a `.cell-sub` beneath a name
+     — or a wrapped sentence — grows with breathing room instead of touching the
+     hairline. Truncating the data would be the alternative and is worse. */
+  padding: var(--sp-2) var(--cell-pad);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+}
+body.compact table.data td { height: var(--row-h); padding: var(--sp-2) var(--cell-pad); }
+
+table.data tbody tr { transition: background var(--m-micro) ease-out; }
+table.data tbody tr:last-child td { border-bottom: 0; }
+/* Restated at the value it already had, so that the reasoning in the header of
+   this file sits next to the declaration it is about rather than three files
+   away. Only a clickable row responds: a row that cannot be opened must not
+   light up as though it could. */
+table.data tbody tr.clickable { cursor: pointer; }
+table.data tbody tr.clickable:hover { background: var(--surface-hover); }
+
+/* A figure and its unit are one token. `td.num` already refuses to wrap in
+   styles.css; the right edge is what makes a column of money comparable. */
+table.data th.r, table.data td.r { text-align: right; }
+table.data td.strong { font-weight: 500; color: var(--text); }
+
+/* Secondary line under a cell's primary value. Colour is unchanged — 4.86:1 on
+   the resting surface — and only the rhythm is set, because this class is also
+   used outside tables (the sidebar user chip) where a margin would be wrong. */
+table.data td > .cell-sub { margin-top: 2px; }
+
+/* ── Figures ──────────────────────────────────────────────────────────────
+   Nothing here lightens or thins a number. `.num` and `.mono` carry money and
+   identifiers and the only permitted direction is more legible. */
+.num, td.num, .kpi-value { font-variant-numeric: tabular-nums; }
+.mono {
+  /* Tabular figures plus a slashed zero: a stock number, a wamid or a lead id
+     is read character by character, and 0/O is the confusion that costs. A
+     renderer without the `zero` feature simply keeps the unslashed glyph. */
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* ── Column and section labels ───────────────────────────────────────────── */
+.label-caps { letter-spacing: .07em; }
+
+/* ── KPI strip ────────────────────────────────────────────────────────────
+   Label → value → supporting line, which is the order lib/ui.js `kpi()`
+   emits. */
+.kpi {
+  padding: var(--sp-4);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-rest);
+}
+.kpi-value {
+  /* 700 and tighter tracking: a headline figure at 30px set at 600 reads as a
+     large sentence rather than as a number. Inter 700 is loaded by index.html,
+     so this is a real weight and not a synthesised one. `.kpi-value.long` and
+     `.kpi-value.sm` in styles.css out-specify this and keep their own sizing —
+     the shrink-rather-than-wrap rule for AED 5,455,000 still holds. */
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 36px;
+}
+.kpi-sub {
+  /* The figure and the sentence qualifying it are two different claims, and in
+     this product the qualifying sentence is usually the word ESTIMATED or the
+     derivation. A hairline says so. `--border-subtle` is the almost-invisible
+     one; the divider should be felt, not counted. */
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--sp-3);
+}

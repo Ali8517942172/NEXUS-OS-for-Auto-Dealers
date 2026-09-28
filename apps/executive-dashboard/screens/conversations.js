@@ -883,7 +883,7 @@ const avatarOf = t => t.name ? esc(maskText(initials(t.name))) : '?';
    the name into the list rows, the pane header, the alert strip and the send
    confirmation, instead of living only in the detail view. */
 function phoneHtml(t, cls) {
-  const c = cls == null ? 'cell-sub' : cls;
+  const c = cls == null ? 'ds-cell-sub' : cls;
   const readable = addressPhone(t.phone);
   if (readable) return `<span class="mono ${c}" title="Saved for this contact as ${esc(maskText(t.phone))}">${esc(readable)}</span>`;
   /* Something is stored but it does not read as a number. Show it exactly as
@@ -908,7 +908,7 @@ function phoneHtml(t, cls) {
    address it is going to is printed rather than inferred from the name above it.
    Rendered in mono and never in a name position: a chat id names nobody. */
 function chatHtml(t, cls) {
-  const c = cls == null ? 'cell-sub' : cls;
+  const c = cls == null ? 'ds-cell-sub' : cls;
   if (!t.chat_id) return `<span class="t-warm ${c}">no WhatsApp address stored</span>`;
   return `<span class="mono ${c}" title="${esc('The WhatsApp address a reply to this thread goes to (' + keyKind(t.chat_id) + '). The thread itself is identified by "' + t.key + '", which names the person; it is not an address and nothing is ever sent to it.')}">${esc(t.chat_id)}</span>`;
 }
@@ -1064,6 +1064,17 @@ const sameAsWhy = t =>
   + 'view rows — but the message pane reads the whole person, so opening either row shows the same history.';
 
 SCREENS.conversations = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
+     screens/setup.js and screens/inventory.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* Order on the page is order of urgency. The alert strip is what somebody is
      waiting on right now; the KPIs are the shape of the inbox; the inbox itself
      is where the work happens. */
@@ -1072,9 +1083,9 @@ SCREENS.conversations = async host => {
   const strip = el('div', 'grid g4');
   const wrap  = el('div', 'card flush');
   wrap.style.marginTop = '16px';
-  host.appendChild(alertHost);
-  host.appendChild(strip);
-  host.appendChild(wrap);
+  root.appendChild(alertHost);
+  root.appendChild(strip);
+  root.appendChild(wrap);
 
   let threads = [], dropped = 0, capped = false;
   let attn = [], attnError = null;
@@ -1377,7 +1388,7 @@ SCREENS.conversations = async host => {
               + 'gone unanswered, nor on a silence-escalation marker. A row appears here when one does, stays for the '
               + `${num(CHAT_WINDOW_DAYS)} days the view looks back over, and after that this screen goes on `
               + 'reporting it here on its own.</span>';
-      alertHost.innerHTML = `<div class="cell-sub" style="padding:2px 2px 0;display:flex;gap:8px;align-items:flex-start">
+      alertHost.innerHTML = `<div class="ds-cell-sub" style="padding:2px 2px 0;display:flex;gap:8px;align-items:flex-start">
           <span class="material-symbols-outlined ${cls}" aria-hidden="true" style="font-size:18px">${icon}</span>
           <span style="white-space:normal">${why}</span>
         </div>`;
@@ -1394,7 +1405,7 @@ SCREENS.conversations = async host => {
       const handle = t ? '' : (isHandle(a.title) ? a.title : '');
       const phone = t
         ? phoneHtml(t)
-        : (addressPhone(a.ref) ? `<span class="mono cell-sub" title="From the alert\u2019s ref: ${esc(a.ref)}">${esc(addressPhone(a.ref))}</span>` : '');
+        : (addressPhone(a.ref) ? `<span class="mono ds-cell-sub" title="From the alert\u2019s ref: ${esc(a.ref)}">${esc(addressPhone(a.ref))}</span>` : '');
       /* An alert we cannot resolve to a row is still a real alert, so it is
          listed — but it is not made to look clickable, and it says why it is
          not, rather than silently doing nothing when it is clicked. */
@@ -1455,12 +1466,12 @@ SCREENS.conversations = async host => {
               <span style="font-weight:500${name ? '' : ';font-style:italic'}" class="${name ? '' : 't-muted'}">${esc(maskText(name || 'Unidentified contact'))}</span>
               ${phone}
               ${t ? leadStatusPill(t) : ''}
-              ${handle ? `<span class="mono cell-sub" title="${esc(keyKind(handle))}">${esc(handle)}</span>` : ''}
+              ${handle ? `<span class="mono ds-cell-sub" title="${esc(keyKind(handle))}">${esc(handle)}</span>` : ''}
               <span class="chip">${esc(a.kind)}</span>
             </div>
-            <div class="cell-sub" style="white-space:normal">${esc(a.detail)}${dead}</div>
+            <div class="ds-cell-sub" style="white-space:normal">${esc(a.detail)}${dead}</div>
           </div>
-          <span class="cell-sub" style="flex-shrink:0" title="${esc(stamp(a.at))}">${esc(ago(a.at))}</span>
+          <span class="ds-cell-sub" style="flex-shrink:0" title="${esc(stamp(a.at))}">${esc(ago(a.at))}</span>
         </div>`;
     }).join('');
 
@@ -1510,7 +1521,7 @@ SCREENS.conversations = async host => {
   }
 
   async function boot() {
-    alertHost.innerHTML = `<div class="cell-sub" style="padding:2px">${esc('Checking what needs a human\u2026')}</div>`;
+    alertHost.innerHTML = `<div class="ds-cell-sub" style="padding:2px">${esc('Checking what needs a human\u2026')}</div>`;
     /* The strip chooses its own layout once the rows are counted, so it loads
        and fails as one box rather than as a quarter of a four-up grid. */
     strip.className = 'card flush';
@@ -1794,8 +1805,8 @@ SCREENS.conversations = async host => {
           </div>
           <div style="flex:1 1 260px;min-width:0">
             <div class="label-caps">Where it stands</div>
-            <div class="cell-sub" style="margin-top:8px;white-space:normal">${reply}</div>
-            <div class="cell-sub" style="margin-top:6px;white-space:normal">${send}</div>
+            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${reply}</div>
+            <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${send}</div>
           </div>
         </div>`;
       return;
@@ -1934,7 +1945,7 @@ SCREENS.conversations = async host => {
     ].join('');
     const hl = healthLine();
     strip.innerHTML = `<div class="grid g4">${tiles}</div>`
-      + (hl ? `<div class="cell-sub" style="padding:12px 2px 0;white-space:normal">${hl}</div>` : '');
+      + (hl ? `<div class="ds-cell-sub" style="padding:12px 2px 0;white-space:normal">${hl}</div>` : '');
   }
 
   /* What v_workflow_health can and cannot tell us about the Send button. */
@@ -2165,7 +2176,7 @@ SCREENS.conversations = async host => {
       + 'it is typed: spaces, a leading + and a leading 0 are ignored.');
     const footHtml = `<div class="list-item" style="cursor:default;align-items:flex-start">
         <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-        <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div>
       </div>`;
 
     listHost.innerHTML = (rows.length
@@ -2183,10 +2194,10 @@ SCREENS.conversations = async host => {
                       class="${t.name ? '' : 't-muted'}">${esc(titleOf(t))}</span>
                 <span style="flex:0 0 auto">${phoneHtml(t)}</span>
               </div>
-              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              <div class="ds-cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                 ${subLine(t)}
               </div>
-              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              <div class="ds-cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
                 ${t.lastIsMarker
                   /* The newest row is the detector's marker. Before 1 Sep this
                      line rendered "[SILENCE-ESCALATED] Silent for 12h since …"
@@ -2219,13 +2230,13 @@ SCREENS.conversations = async host => {
               </div>
             </div>
             <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-              <span class="cell-sub" title="${esc(stamp(t.last_at))}">${esc(ago(t.last_at))}</span>
+              <span class="ds-cell-sub" title="${esc(stamp(t.last_at))}">${esc(ago(t.last_at))}</span>
               ${/* "msg" was v_conversations.message_count, which counts every
                     row including the detector's notes — so a thread the badge
                     called 17 msg sat directly under a line saying the newest row
                     was not a message. It is the message-only count now, with the
                     rows it leaves out named in the title. */''}
-              ${t.awaiting ? pill('Reply due', 'hot', { verbatim: false }) : `<span class="cell-sub" title="${esc(figuresAreExact(t)
+              ${t.awaiting ? pill('Reply due', 'hot', { verbatim: false }) : `<span class="ds-cell-sub" title="${esc(figuresAreExact(t)
                   ? `The message-only count — rows NEXUS’s own test for what counts as a message accepts.${t.internalCount ? ` ${t.internalCount} further row${t.internalCount === 1 ? '' : 's'} on this thread ${t.internalCount === 1 ? 'is' : 'are'} an internal note and ${t.internalCount === 1 ? 'is' : 'are'} not counted here.` : ''}`
                   : 'The count of every row filed under a contact. That column counts every row filed under this contact, internal notes included; the message-only count did not come back on this read.')}">${num(realCount(t))} msg</span>`}
               ${t.identified === 'lead' ? '' : `<span class="chip" title="${esc(id.label)} — ${esc(identNote(t))}">${esc(id.short)}</span>`}
@@ -2481,7 +2492,7 @@ SCREENS.conversations = async host => {
                     ? 'No lead record resolves for this thread. '
                     : 'No lead record can be offered for this thread. ') + leadWhy(t))}">Open lead</button>`)}
       </div>
-      <div class="cell-sub" id="cvNote" style="padding:0 20px" aria-live="polite"></div>
+      <div class="ds-cell-sub" id="cvNote" style="padding:0 20px" aria-live="polite"></div>
       ${bannerHtml ? `<div style="padding:16px 20px 0">${bannerHtml}</div>` : ''}
       <div style="flex:1;overflow-y:auto" id="cvBody">${stateLoading(5)}</div>
       <div style="padding:16px 20px;border-top:1px solid var(--border-subtle)">
@@ -2511,7 +2522,7 @@ SCREENS.conversations = async host => {
         <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">
           <button class="btn primary" id="cvSend"${dis}>
             <span class="material-symbols-outlined">send</span>Review and send</button>
-          <span class="cell-sub" id="cvSendMsg" aria-live="polite">${note || ''}</span>
+          <span class="ds-cell-sub" id="cvSendMsg" aria-live="polite">${note || ''}</span>
         </div>
       </div>`;
 
@@ -2811,7 +2822,7 @@ SCREENS.conversations = async host => {
              in the note what the note already says. */
           if (isInternalRow(m)) {
             const note = text.startsWith(SILENCE_MARKER) ? text.replace(SILENCE_MARKER, '').trim() : text;
-            return `${sep}<div class="cell-sub" style="text-align:center;margin:8px 20px;white-space:normal">
+            return `${sep}<div class="ds-cell-sub" style="text-align:center;margin:8px 20px;white-space:normal">
               <span class="material-symbols-outlined t-warm" style="font-size:14px;vertical-align:-2px" aria-hidden="true">notifications_paused</span>
               <span class="t-warm">Internal note</span>
               <span class="t-muted">— ${note ? esc(note) : esc(text.startsWith(SILENCE_MARKER) ? 'the silence detector logged an escalation and recorded no detail' : 'this row carries no text at all')}.
@@ -2848,8 +2859,8 @@ SCREENS.conversations = async host => {
                  NEXUS has marked it as invalid evidence because ${esc(why)}.
                  It is shown here in full because the customer received it and may refer to it.
                  It is withheld from everything NEXUS\u2019s AI reads, so no reply or briefing is built on it.
-                 ${m.evidence_reason ? `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(str(m.evidence_reason))}</div>` : ''}
-                 <div class="cell-sub" style="margin-top:4px">Marked by <span class="mono">${esc(str(m.evidence_actor) || 'not recorded')}</span>${m.evidence_at ? ` \u00b7 ${esc(ago(m.evidence_at))}` : ''}. The message itself has not been altered or deleted.</div>
+                 ${m.evidence_reason ? `<div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(str(m.evidence_reason))}</div>` : ''}
+                 <div class="ds-cell-sub" style="margin-top:4px">Marked by <span class="mono">${esc(str(m.evidence_actor) || 'not recorded')}</span>${m.evidence_at ? ` \u00b7 ${esc(ago(m.evidence_at))}` : ''}. The message itself has not been altered or deleted.</div>
                  </div>
                </div>`
             : '';
@@ -2863,7 +2874,7 @@ SCREENS.conversations = async host => {
           </div>`;
         }).join('')}
       </div>
-      <div class="cell-sub" style="padding:0 20px 16px;text-align:center">
+      <div class="ds-cell-sub" style="padding:0 20px 16px;text-align:center">
         ${num(real.length)} ${plural(real.length, 'message', 'messages')} shown · ${num(inboundReal)} inbound · ${num(outboundReal)} outbound${markers.length ? ` · ${num(markers.length)} internal ${plural(markers.length, 'note', 'notes')}` : ''}
         ${countNote}
         ${flaggedNote}
@@ -2930,7 +2941,7 @@ SCREENS.conversations = async host => {
       </dl>
       <div class="label-caps" style="margin-top:16px">Message as it will be sent</div>
       <div class="bubble out" style="max-width:100%;margin-top:8px">${esc(text)}</div>
-      <p class="cell-sub" style="margin-top:12px">This is sent from the dealership's live WhatsApp number and cannot be recalled or edited afterwards.</p>`,
+      <p class="ds-cell-sub" style="margin-top:12px">This is sent from the dealership's live WhatsApp number and cannot be recalled or edited afterwards.</p>`,
       `<button class="btn primary" id="cvGo"><span class="material-symbols-outlined">send</span>Send on WhatsApp</button>
        <button class="btn" id="cvCancel">Cancel</button>`);
 

@@ -14,8 +14,35 @@ import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { table } from '../lib/ui.js';
 import { openModal, modalError } from '../lib/modal.js';
 import { el } from '../lib/dom.js';
+import { SUPABASE_URL } from '../lib/env.js';
 
-const API_BASE = 'https://dsvuoovivysszdoiorch.supabase.co/functions/v1/api-v1/v1';
+/* This was the literal `https://dsvuoovivysszdoiorch.supabase.co/...` until
+   27 Sep 2026 — the VENDOR's own production project ref, printed on this screen
+   as the reader's API base and pasted into every curl example, every Zapier /
+   Make instruction and the PBX webhook line below. CLAUDE.md: "A fact that is
+   really one dealership's configuration belongs in per-tenant data, never in a
+   constant and never in code." This was a step worse than that: it was not even
+   the reader's own configuration, so a second dealership on its own deployment
+   would have been handed ALBA's endpoint and told it was theirs.
+
+   Derived from SUPABASE_URL instead, which lib/env.js has already trimmed of
+   trailing slashes — the exact defect that turned every path into `//functions`
+   and answered 404. On ALBA's deployment the derived string is byte-identical
+   to the literal it replaces, so nothing a reader sees changes today; on any
+   other deployment it now follows that deployment.
+
+   It cannot render empty: app.js boot() stops at the configuration card before
+   any screen is reached when VITE_SUPABASE_URL is missing, so there is no path
+   on which this screen paints with SUPABASE_URL unset. */
+const API_BASE = `${SUPABASE_URL}/functions/v1/api-v1/v1`;
+/* Checked 27 Sep 2026 rather than assumed: `public/developers/index.html` is on
+   disk (31,564 bytes), Vite copies public/ verbatim so it lands at
+   `dist/developers/index.html`, and the repository-root vercel.json rewrites
+   `/developers`, `/developers/` AND `/developers/index.html` to that file —
+   ahead of the `/(.*)` catch-all, so the link does not fall through to the SPA.
+   The link resolves. What it resolves TO still carries the hardcoded vendor
+   project ref in its own curl blocks; that file is not this screen's and is
+   reported rather than edited here. */
 const DOCS = '/developers/';
 const EVENTS = ['lead.created', 'lead.updated', 'lead.scored', 'appointment.created', 'appointment.updated', 'message.received'];
 const SCOPES = ['leads:read', 'leads:write', 'inventory:read', 'inventory:write', 'calls:write', 'appointments:read'];
@@ -69,23 +96,23 @@ const webhookSteps = [
 ];
 const TILES = [
   { id: 'dms', icon: 'dns', title: 'Your DMS / CRM', sub: 'Any system that can call a REST API or receive a webhook.',
-    body: () => `<div class="cell-sub">NEXUS does not replace your DMS or CRM. Your system pushes leads in through the REST API, and NEXUS pushes events (new lead, score, appointment, inbound message) back out through signed webhooks.</div>
+    body: () => `<div class="ds-cell-sub">NEXUS does not replace your DMS or CRM. Your system pushes leads in through the REST API, and NEXUS pushes events (new lead, score, appointment, inbound message) back out through signed webhooks.</div>
       ${ol(webhookSteps)}
       <div class="label-caps" style="margin-top:16px">Send a lead</div>${code(CURL_LEAD)}
       <div class="label-caps" style="margin-top:12px">Read leads</div>${code(CURL_LIST)}` },
   { id: 'bitrix', icon: 'hub', title: 'Bitrix24', sub: 'Outbound webhooks from Bitrix24, NEXUS webhooks back.',
-    body: () => `<div class="cell-sub">There is no one-click Bitrix24 connection for your own portal on this screen — connect it with the API and webhooks:</div>
+    body: () => `<div class="ds-cell-sub">There is no one-click Bitrix24 connection for your own portal on this screen — connect it with the API and webhooks:</div>
       ${ol([
         'In Bitrix24: <b>Developer resources → Other → Outbound webhook</b>, event <span class="mono">ONCRMLEADADD</span>. Point it at a small relay (or a Zapier/Make scenario) that calls <span class="mono">POST /v1/leads</span> with your NEXUS API key.',
         'In Bitrix24: <b>Developer resources → Other → Inbound webhook</b> with CRM permission. Copy the URL.',
         'Here: add a NEXUS webhook (events <span class="mono">lead.scored</span>, <span class="mono">appointment.created</span>) pointing at a Zapier/Make hook that calls Bitrix24 <span class="mono">crm.lead.update</span> via that inbound URL.',
         'Use “Send test” and check the deliveries log.'])}` },
   { id: 'crms', icon: 'contacts', title: 'Zoho CRM · HubSpot · Salesforce · Odoo', sub: 'Via webhooks + API, or Zapier / Make “Webhooks” apps.',
-    body: () => `<div class="cell-sub">All four can send and receive HTTP webhooks natively (Zoho Workflow Rules → Webhook, HubSpot Workflows → Send webhook, Salesforce Flow → HTTP Callout, Odoo Automated Actions → Send Webhook), or through Zapier / Make.</div>
+    body: () => `<div class="ds-cell-sub">All four can send and receive HTTP webhooks natively (Zoho Workflow Rules → Webhook, HubSpot Workflows → Send webhook, Salesforce Flow → HTTP Callout, Odoo Automated Actions → Send Webhook), or through Zapier / Make.</div>
       ${ol(webhookSteps)}
       <div class="label-caps" style="margin-top:16px">Body your CRM should POST</div>${code(CURL_LEAD)}` },
   { id: 'calls', icon: 'call', title: 'Call system / telephony', sub: '3CX, Aircall, Twilio, or any PBX that can POST call logs.',
-    body: () => `<div class="cell-sub">Every answered or missed call becomes activity on the matching lead (matched by phone number). Configure your PBX’s “call ended” / CDR webhook to POST to <span class="mono">${esc(API_BASE)}/calls</span> with an API key that has the <span class="mono">calls:write</span> scope.</div>
+    body: () => `<div class="ds-cell-sub">Every answered or missed call becomes activity on the matching lead (matched by phone number). Configure your PBX’s “call ended” / CDR webhook to POST to <span class="mono">${esc(API_BASE)}/calls</span> with an API key that has the <span class="mono">calls:write</span> scope.</div>
       ${ol([
         '<b>3CX</b>: Settings → CRM Integration → custom template / call journaling URL.',
         '<b>Aircall</b>: Integrations → Webhooks, event <span class="mono">call.ended</span> (via Zapier/Make to reshape the body).',
@@ -93,9 +120,9 @@ const TILES = [
         'Any other PBX: POST one JSON object per call, as below.'])}
       <div class="label-caps" style="margin-top:16px">Example</div>${code(CURL_CALL)}` },
   { id: 'web', icon: 'language', title: 'Website · Facebook · Google', sub: 'Lead forms and ads.', link: ['leadsources', 'Open Lead Sources'],
-    body: () => `<div class="cell-sub">Website forms, Facebook / Instagram Lead Ads and Google lead forms are set up on the Lead Sources screen. A custom website form can also POST straight to <span class="mono">/v1/leads</span> from your server (never put an API key in browser JavaScript).</div>` },
+    body: () => `<div class="ds-cell-sub">Website forms, Facebook / Instagram Lead Ads and Google lead forms are set up on the Lead Sources screen. A custom website form can also POST straight to <span class="mono">/v1/leads</span> from your server (never put an API key in browser JavaScript).</div>` },
   { id: 'wa', icon: 'chat', title: 'WhatsApp', sub: 'Your own WhatsApp Business number.', link: ['channels', 'Open Channels'],
-    body: () => `<div class="cell-sub">Connect your WhatsApp Business Cloud number on the Channels screen. Inbound messages then fire the <span class="mono">message.received</span> webhook to your systems.</div>` },
+    body: () => `<div class="ds-cell-sub">Connect your WhatsApp Business Cloud number on the Channels screen. Inbound messages then fire the <span class="mono">message.received</span> webhook to your systems.</div>` },
 ];
 const openGuide = t => {
   const m = openModal(t.title, `<div style="font-size:14px">${t.body()}</div>`,
@@ -107,6 +134,17 @@ const openGuide = t => {
 
 /* ── Screen ─────────────────────────────────────────────────────────────── */
 SCREENS.integrations = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const canWrite = canManageAccess();
   const roNote = canWrite ? '' : ' title="Only an owner or admin at this dealership can change integrations."';
 
@@ -116,7 +154,7 @@ SCREENS.integrations = async host => {
       <div class="card-sub">Your DMS, CRM and phone system stay exactly where they are. They send leads and calls to NEXUS through the REST API, and NEXUS sends events back to them through signed webhooks.</div></div>
       <div style="flex:1"></div>
       <a class="btn sm" href="${esc(DOCS)}" target="_blank" rel="noopener">Full API docs →</a></div>`;
-  host.appendChild(head);
+  root.appendChild(head);
 
   /* 1 · Connect your software */
   const tiles = el('div', 'card');
@@ -125,14 +163,14 @@ SCREENS.integrations = async host => {
     <div class="pbody"><div class="grid g3">${TILES.map(t => `
       <button class="card" data-tile="${esc(t.id)}" style="text-align:left;cursor:pointer;display:flex;gap:12px;align-items:flex-start;width:100%;font:inherit;color:inherit">
         <span class="material-symbols-outlined t-muted">${esc(t.icon)}</span>
-        <span><span class="card-title" style="display:block">${esc(t.title)}</span><span class="cell-sub" style="display:block">${esc(t.sub)}</span></span>
+        <span><span class="card-title" style="display:block">${esc(t.title)}</span><span class="ds-cell-sub" style="display:block">${esc(t.sub)}</span></span>
       </button>`).join('')}</div></div>`;
-  host.appendChild(tiles);
+  root.appendChild(tiles);
   tiles.querySelectorAll('[data-tile]').forEach(b => b.addEventListener('click', () => openGuide(TILES.find(t => t.id === b.dataset.tile))));
 
   /* 2 · API keys */
   const keys = el('div', 'card');
-  host.appendChild(keys);
+  root.appendChild(keys);
   const paintKeys = (rows, err) => {
     const hd = `<div class="card-head"><div><div class="card-title">API keys</div>
         <div class="card-sub">Let your own software call NEXUS. A key is shown once, when it is created. ${canWrite ? '' : 'Owner/admin only — read-only for your role.'}</div></div>
@@ -143,7 +181,7 @@ SCREENS.integrations = async host => {
     else if (!rows) body = stateLoading(2);
     else if (!rows.length) body = stateEmpty('No API keys yet', 'Create one to let your DMS, CRM or phone system send data to NEXUS.', 'key');
     else body = table([
-      { label: 'Name', strong: true, render: r => `<b>${esc(str(r.name) || 'Unnamed')}</b><div class="cell-sub mono">${esc(str(r.key_prefix))}…</div>` },
+      { label: 'Name', strong: true, render: r => `<b>${esc(str(r.name) || 'Unnamed')}</b><div class="ds-cell-sub mono">${esc(str(r.key_prefix))}…</div>` },
       { label: 'Scopes', render: r => arr(r.scopes).map(s => `<span class="chip mono">${esc(s)}</span>`).join(' ') || muted('None') },
       { label: 'Created', render: r => when(r.created_at) },
       { label: 'Last used', render: r => when(r.last_used_at) },
@@ -152,7 +190,7 @@ SCREENS.integrations = async host => {
     ], rows);
     keys.innerHTML = hd + `<div class="pbody">${body}
       <div class="label-caps" style="margin-top:16px">Quickstart</div>
-      <div class="cell-sub" style="margin-bottom:6px">Base URL <span class="mono">${esc(API_BASE)}</span>. Replace <span class="mono">${KEY_PH}</span> with your key.</div>
+      <div class="ds-cell-sub" style="margin-bottom:6px">Base URL <span class="mono">${esc(API_BASE)}</span>. Replace <span class="mono">${KEY_PH}</span> with your key.</div>
       ${code(CURL_LEAD)}</div>`;
     const nb = keys.querySelector('#igKeyNew');
     if (nb && canWrite && !err) nb.addEventListener('click', openCreateKey);
@@ -167,7 +205,7 @@ SCREENS.integrations = async host => {
     const m = openModal('Create API key', `
       <div class="field"><label for="igKeyName">Name</label><input id="igKeyName" maxlength="80" placeholder="e.g. DMS production, 3CX phone system" /></div>
       <div class="field"><label>Scopes</label>${checks('igScope', SCOPES)}
-        <div class="cell-sub">Untick anything this system does not need.</div></div>`,
+        <div class="ds-cell-sub">Untick anything this system does not need.</div></div>`,
       `<button class="btn primary" id="igKeyGo">Create key</button><button class="btn" id="igKeyCancel">Cancel</button>`);
     m.wrap.querySelector('#igKeyCancel').addEventListener('click', m.close);
     m.wrap.querySelector('#igKeyGo').addEventListener('click', async () => {
@@ -184,7 +222,7 @@ SCREENS.integrations = async host => {
           <div class="banner warm">Copy this key now. It will not be shown again — NEXUS only keeps a hash of it.</div>
           <div style="margin-top:12px">${code(secret)}</div>
           <div style="margin-top:8px">${copyBtn('key', 'Copy key')}</div>
-          <div class="cell-sub" style="margin-top:12px">Send it as <span class="mono">Authorization: Bearer &lt;key&gt;</span>.</div>`;
+          <div class="ds-cell-sub" style="margin-top:12px">Send it as <span class="mono">Authorization: Bearer &lt;key&gt;</span>.</div>`;
         wireCopy(m.wrap, () => secret);
         btn.remove();
         const c = m.wrap.querySelector('#igKeyCancel');
@@ -195,7 +233,7 @@ SCREENS.integrations = async host => {
     });
   };
   const openRevoke = (id, name) => {
-    const m = openModal('Revoke API key', `<div class="cell-sub">Revoke <b>${esc(name || 'this key')}</b>? Any system using it stops working immediately. This cannot be undone.</div>`,
+    const m = openModal('Revoke API key', `<div class="ds-cell-sub">Revoke <b>${esc(name || 'this key')}</b>? Any system using it stops working immediately. This cannot be undone.</div>`,
       `<button class="btn primary" id="igRevGo">Revoke key</button><button class="btn" id="igRevCancel">Cancel</button>`);
     m.wrap.querySelector('#igRevCancel').addEventListener('click', m.close);
     m.wrap.querySelector('#igRevGo').addEventListener('click', async e => {
@@ -207,7 +245,7 @@ SCREENS.integrations = async host => {
 
   /* 3 · Webhooks */
   const hooks = el('div', 'card');
-  host.appendChild(hooks);
+  root.appendChild(hooks);
   const hookTone = s => ({ active: 'ok', disabled: 'cold' }[str(s).toLowerCase()] || 'cold');  // NX1013: active | disabled
   const paintHooks = (rows, err) => {
     const hd = `<div class="card-head"><div><div class="card-title">Outgoing webhooks</div>
@@ -219,10 +257,10 @@ SCREENS.integrations = async host => {
     else if (!rows) body = stateLoading(2);
     else if (!rows.length) body = stateEmpty('No webhooks yet', 'Add one to have NEXUS notify your CRM or DMS of new leads, scores, appointments and messages.', 'webhook');
     else body = table([
-      { label: 'URL', strong: true, render: r => `<span class="mono" style="word-break:break-all">${esc(str(r.url))}</span><div class="cell-sub">${arr(r.events).map(v => esc(v)).join(', ')}</div>` },
+      { label: 'URL', strong: true, render: r => `<span class="mono" style="word-break:break-all">${esc(str(r.url))}</span><div class="ds-cell-sub">${arr(r.events).map(v => esc(v)).join(', ')}</div>` },
       { label: 'Status', render: r => pill(str(r.status).toUpperCase() || 'UNKNOWN', hookTone(r.status), { verbatim: true })
-          + (Number(r.consecutive_failures) > 0 ? `<div class="cell-sub t-hot">${cnt(r.consecutive_failures)} failures in a row</div>` : '') },
-      { label: 'Last 24h', render: r => `${cnt(r.deliveries_24h)} sent<div class="cell-sub${Number(r.failures_24h) > 0 ? ' t-hot' : ''}">${cnt(r.failures_24h)} failed</div>` },
+          + (Number(r.consecutive_failures) > 0 ? `<div class="ds-cell-sub t-hot">${cnt(r.consecutive_failures)} failures in a row</div>` : '') },
+      { label: 'Last 24h', render: r => `${cnt(r.deliveries_24h)} sent<div class="ds-cell-sub${Number(r.failures_24h) > 0 ? ' t-hot' : ''}">${cnt(r.failures_24h)} failed</div>` },
       { label: 'Last delivery', render: r => when(r.last_delivery_at) },
       { label: '', align: 'r', render: r => `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <button class="btn sm" data-log="${esc(r.webhook_id)}">Deliveries</button>
@@ -231,9 +269,9 @@ SCREENS.integrations = async host => {
     ], rows);
     hooks.innerHTML = hd + `<div class="pbody">${body}
       <div class="label-caps" style="margin-top:16px">Verifying the signature</div>
-      <div class="cell-sub">Every delivery carries <span class="mono">X-Nexus-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</span>, where
+      <div class="ds-cell-sub">Every delivery carries <span class="mono">X-Nexus-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</span>, where
         <span class="mono">v1 = hex(hmac_sha256(signing_secret, t + "." + raw_body))</span>. Recompute it over the raw request body, compare in constant time, and reject if <span class="mono">t</span> is more than 5 minutes old.</div>
-      <div class="cell-sub" style="margin-top:6px">Events: ${EVENTS.map(v => `<span class="mono">${esc(v)}</span>`).join(', ')}.</div></div>`;
+      <div class="ds-cell-sub" style="margin-top:6px">Events: ${EVENTS.map(v => `<span class="mono">${esc(v)}</span>`).join(', ')}.</div></div>`;
     const nb = hooks.querySelector('#igHookNew');
     if (nb && canWrite && !err) nb.addEventListener('click', openAddHook);
     hooks.querySelectorAll('[data-log]').forEach(b => b.addEventListener('click', () => openLog(b.dataset.log)));
@@ -271,7 +309,7 @@ SCREENS.integrations = async host => {
           <div class="banner warm">Copy this signing secret now. It will not be shown again.</div>
           <div style="margin-top:12px">${code(secret)}</div>
           <div style="margin-top:8px">${copyBtn('sec', 'Copy secret')}</div>
-          <div class="cell-sub" style="margin-top:12px">Use it to verify <span class="mono">X-Nexus-Signature: t=&lt;unix&gt;,v1=&lt;hex hmac_sha256(secret, t + "." + body)&gt;</span> on every delivery.</div>`;
+          <div class="ds-cell-sub" style="margin-top:12px">Use it to verify <span class="mono">X-Nexus-Signature: t=&lt;unix&gt;,v1=&lt;hex hmac_sha256(secret, t + "." + body)&gt;</span> on every delivery.</div>`;
         wireCopy(m.wrap, () => secret);
         btn.remove();
         const c = m.wrap.querySelector('#igHookCancel');
@@ -282,7 +320,7 @@ SCREENS.integrations = async host => {
     });
   };
   const openDelete = (id, url) => {
-    const m = openModal('Delete webhook', `<div class="cell-sub">Stop sending events to <span class="mono" style="word-break:break-all">${esc(url)}</span>? This cannot be undone.</div>`,
+    const m = openModal('Delete webhook', `<div class="ds-cell-sub">Stop sending events to <span class="mono" style="word-break:break-all">${esc(url)}</span>? This cannot be undone.</div>`,
       `<button class="btn primary" id="igDelGo">Delete webhook</button><button class="btn" id="igDelCancel">Cancel</button>`);
     m.wrap.querySelector('#igDelCancel').addEventListener('click', m.close);
     m.wrap.querySelector('#igDelGo').addEventListener('click', async e => {
@@ -320,7 +358,7 @@ SCREENS.integrations = async host => {
   foot.innerHTML = `<div class="card-head"><div><div class="card-title">Building something custom?</div>
     <div class="card-sub">Endpoints, payloads, errors, rate limits and signature examples in Node, Python and PHP.</div></div>
     <div style="flex:1"></div><a class="btn primary sm" href="${esc(DOCS)}" target="_blank" rel="noopener">Full API docs →</a></div>`;
-  host.appendChild(foot);
+  root.appendChild(foot);
 
   reloadKeys();
   reloadHooks();

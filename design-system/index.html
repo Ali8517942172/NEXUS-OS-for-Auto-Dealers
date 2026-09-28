@@ -1,0 +1,2531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="NEXUS OS Automotive Design System v1.1 — the locked reference implementation.">
+<meta name="robots" content="noindex, nofollow">
+<style>
+  html{color-scheme:light}
+  :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  body{margin:0} img{max-width:100%} [hidden]{display:none!important}
+</style>
+<title>NEXUS Command Center</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ============================================================
+   NEXUS OS — AUTOMOTIVE DESIGN SYSTEM v1.0
+   Layer 1: TOKENS. Nothing in this file uses a raw hex outside :root.
+   ============================================================ */
+:root{
+  /* Brand */
+  --nx-ink:#0B1220;
+  --nx-blue:#2563EB;
+  --nx-blue-hover:#1D4FD7;
+  --nx-blue-press:#1A45BE;
+  --nx-blue-soft:#EFF4FE;
+  --nx-cyan:#06B6D4;
+
+  /* Surfaces — neutrals biased slightly to blue so they read intentional */
+  --canvas:#F5F7FA;
+  --surface:#FFFFFF;
+  --surface-2:#FAFBFD;
+  --surface-sunken:#F1F4F9;
+  --border:#E2E8F0;
+  --border-strong:#CBD5E1;
+
+  /* Text */
+  --text:#0F172A;
+  --muted:#64748B;
+  --subtle:#94A3B8;
+  --on-accent:#FFFFFF;
+
+  /* Semantic — never used as brand colour */
+  --success:#16A34A;  --success-soft:#ECFDF3; --success-border:#BBF7D0;
+  --warning:#D97706;  --warning-soft:#FFF7ED; --warning-border:#FED7AA;
+  --danger:#DC2626;   --danger-soft:#FEF2F2;  --danger-border:#FECACA;
+  --info:#0EA5E9;     --info-soft:#EFF9FF;    --info-border:#BAE6FD;
+  --neutral-soft:#F1F5F9; --neutral-border:#E2E8F0;
+
+  /* Attention ladder L0–L4 */
+  --att-1:var(--info);
+  --att-2:var(--warning);
+  --att-3:#EA580C;
+  --att-4:var(--danger);
+
+  /* Spacing — 8pt base */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px; --s8:48px; --s9:64px;
+
+  /* Radii */
+  --r-xs:4px; --r-sm:8px; --r-btn:10px; --r-card:12px; --r-panel:16px; --r-surface:20px; --r-pill:999px;
+
+  /* Elevation — precision, not glow */
+  --sh-rest:none;
+  --sh-hover:0 4px 16px rgba(11,18,32,.08);
+  --sh-pop:0 12px 32px rgba(11,18,32,.14);
+  --sh-drawer:-16px 0 48px rgba(11,18,32,.16);
+
+  /* Motion */
+  --m-micro:140ms; --m-comp:200ms; --m-large:280ms;
+  --ease:cubic-bezier(.2,.7,.3,1);
+
+  /* Density (set by data-density on body) */
+  --row-h:52px; --cell-pad:14px;
+
+  --sidebar-w:252px;
+  --sidebar-collapsed:72px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --canvas:#070B12; --surface:#111827; --surface-2:#151F2E; --surface-sunken:#0C1420;
+    --border:#263244; --border-strong:#38455C;
+    --text:#F8FAFC; --muted:#94A3B8; --subtle:#64748B;
+    --nx-blue:#3B82F6; --nx-blue-hover:#60A5FA; --nx-blue-press:#2563EB; --nx-blue-soft:#132038;
+    --success-soft:#0C1F16; --success-border:#1C4532;
+    --warning-soft:#231704; --warning-border:#5A3B0B;
+    --danger-soft:#250E0E;  --danger-border:#5B1D1D;
+    --info-soft:#07202E;    --info-border:#0C4A6E;
+    --neutral-soft:#18212F; --neutral-border:#263244;
+    --sh-hover:0 4px 16px rgba(0,0,0,.5);
+    --sh-pop:0 12px 32px rgba(0,0,0,.6);
+    --sh-drawer:-16px 0 48px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --canvas:#070B12; --surface:#111827; --surface-2:#151F2E; --surface-sunken:#0C1420;
+  --border:#263244; --border-strong:#38455C;
+  --text:#F8FAFC; --muted:#94A3B8; --subtle:#64748B;
+  --nx-blue:#3B82F6; --nx-blue-hover:#60A5FA; --nx-blue-press:#2563EB; --nx-blue-soft:#132038;
+  --success-soft:#0C1F16; --success-border:#1C4532;
+  --warning-soft:#231704; --warning-border:#5A3B0B;
+  --danger-soft:#250E0E;  --danger-border:#5B1D1D;
+  --info-soft:#07202E;    --info-border:#0C4A6E;
+  --neutral-soft:#18212F; --neutral-border:#263244;
+  --sh-hover:0 4px 16px rgba(0,0,0,.5);
+  --sh-pop:0 12px 32px rgba(0,0,0,.6);
+  --sh-drawer:-16px 0 48px rgba(0,0,0,.6);
+}
+body[data-density="compact"]{--row-h:40px; --cell-pad:9px;}
+body[data-density="spacious"]{--row-h:64px; --cell-pad:20px;}
+
+/* ============ BASE ============ */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--canvas); color:var(--text);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+.num{font-variant-numeric:tabular-nums}
+h1,h2,h3,h4{margin:0; text-wrap:balance}
+button{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--nx-blue); outline-offset:2px; border-radius:var(--r-xs)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* ============ SHELL ============ */
+.app{display:flex; height:100%; overflow:hidden}
+
+/* --- Sidebar --- */
+.sidebar{
+  width:var(--sidebar-w); flex:0 0 var(--sidebar-w); background:var(--nx-ink);
+  display:flex; flex-direction:column; overflow:hidden;
+  transition:flex-basis var(--m-comp) var(--ease),width var(--m-comp) var(--ease);
+  padding-top:env(safe-area-inset-top,0px);
+}
+body.nav-collapsed .sidebar{width:var(--sidebar-collapsed); flex-basis:var(--sidebar-collapsed)}
+.brand{display:flex; align-items:center; gap:var(--s3); padding:18px var(--s4); border-bottom:1px solid rgba(255,255,255,.08)}
+.brand-mark{
+  width:32px; height:32px; flex:0 0 32px; border-radius:var(--r-sm);
+  background:linear-gradient(135deg,var(--nx-blue),var(--nx-cyan));
+  display:grid; place-items:center; color:#fff; font-weight:700; font-size:15px; letter-spacing:-.02em;
+}
+.brand-text{min-width:0}
+.brand-name{color:#fff; font-weight:600; font-size:14px; letter-spacing:.06em}
+.brand-sub{color:#64748B; font-size:11px; letter-spacing:.04em}
+body.nav-collapsed .brand-text,body.nav-collapsed .nav-group-label,body.nav-collapsed .nav-label,body.nav-collapsed .nav-badge,body.nav-collapsed .tenant-foot-text{display:none}
+body.nav-collapsed .brand{justify-content:center; padding-inline:0}
+
+.nav{flex:1; overflow-y:auto; padding:var(--s4) var(--s3) var(--s5); scrollbar-width:thin}
+.nav-group{margin-bottom:var(--s5)}
+.nav-group-label{
+  color:#475569; font-size:10px; font-weight:600; letter-spacing:.12em;
+  text-transform:uppercase; padding:0 var(--s3) var(--s2);
+}
+.nav-item{
+  display:flex; align-items:center; gap:var(--s3); width:100%;
+  padding:9px var(--s3); border:0; background:none; cursor:pointer;
+  border-radius:var(--r-sm); color:#94A3B8; font-size:13.5px; font-weight:500;
+  text-align:left; position:relative; transition:background var(--m-micro),color var(--m-micro);
+  min-height:38px;
+}
+body.nav-collapsed .nav-item{justify-content:center; padding-inline:0}
+.nav-item:hover{background:rgba(255,255,255,.06); color:#E2E8F0}
+.nav-item.active{background:rgba(37,99,235,.16); color:#fff}
+.nav-item.active::before{
+  content:""; position:absolute; left:-12px; top:8px; bottom:8px; width:3px;
+  background:var(--nx-blue); border-radius:0 2px 2px 0;
+}
+.nav-item svg{flex:0 0 18px; width:18px; height:18px; stroke-width:1.75}
+.nav-label{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* Badges mean ATTENTION, never record count */
+.nav-badge{
+  font-size:11px; font-weight:600; padding:1px 7px; border-radius:var(--r-pill);
+  background:rgba(220,38,38,.18); color:#FCA5A5; font-variant-numeric:tabular-nums;
+}
+.nav-badge.calm{background:rgba(255,255,255,.1); color:#94A3B8}
+.sidebar-foot{padding:var(--s3); border-top:1px solid rgba(255,255,255,.08)}
+.collapse-btn{
+  display:flex; align-items:center; gap:var(--s3); width:100%; padding:8px var(--s3);
+  background:none; border:0; color:#64748B; font-size:12px; cursor:pointer; border-radius:var(--r-sm);
+}
+.collapse-btn:hover{background:rgba(255,255,255,.06); color:#CBD5E1}
+.collapse-btn svg{width:16px; height:16px; flex:0 0 16px}
+body.nav-collapsed .collapse-btn{justify-content:center}
+body.nav-collapsed .collapse-btn svg{transform:rotate(180deg)}
+
+/* --- Main --- */
+.main{flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden}
+
+.topbar{
+  flex:0 0 auto; background:var(--surface); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:var(--s3); padding:var(--s3) var(--s4);
+}
+.icon-btn{
+  width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center;
+  background:none; border:1px solid transparent; border-radius:var(--r-btn);
+  color:var(--muted); cursor:pointer; transition:background var(--m-micro),color var(--m-micro);
+  position:relative;
+}
+.icon-btn:hover{background:var(--surface-sunken); color:var(--text)}
+.icon-btn svg{width:18px; height:18px; stroke-width:1.75}
+.icon-btn .dot{
+  position:absolute; top:8px; right:9px; width:7px; height:7px; border-radius:50%;
+  background:var(--danger); border:2px solid var(--surface);
+}
+.hamburger{display:none}
+
+.cmd-trigger{
+  flex:1; max-width:520px; display:flex; align-items:center; gap:var(--s3);
+  height:40px; padding:0 var(--s3); background:var(--surface-sunken);
+  border:1px solid var(--border); border-radius:var(--r-btn);
+  color:var(--muted); font-size:13.5px; cursor:pointer; text-align:left;
+  transition:border-color var(--m-micro),background var(--m-micro);
+}
+.cmd-trigger:hover{border-color:var(--border-strong); background:var(--surface)}
+.cmd-trigger svg{width:16px; height:16px; flex:0 0 16px; stroke-width:1.9}
+.cmd-trigger .ph{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+kbd{
+  font-family:Inter,sans-serif; font-size:11px; font-weight:600; color:var(--subtle);
+  border:1px solid var(--border); border-radius:var(--r-xs); padding:2px 5px; background:var(--surface);
+}
+.spacer{flex:1}
+
+/* Tenant context — persistent, never a tiny hidden dropdown */
+.tenant{
+  display:flex; align-items:center; gap:var(--s3); height:40px; padding:0 var(--s3) 0 var(--s2);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-btn);
+  cursor:pointer; transition:border-color var(--m-micro),box-shadow var(--m-micro);
+}
+.tenant:hover{border-color:var(--border-strong)}
+.tenant-avatar{
+  width:26px; height:26px; flex:0 0 26px; border-radius:var(--r-xs); background:var(--nx-ink);
+  color:#fff; display:grid; place-items:center; font-size:10px; font-weight:700; letter-spacing:.02em;
+}
+.tenant-lines{display:flex; flex-direction:column; line-height:1.25; min-width:0}
+.tenant-name{font-size:12.5px; font-weight:600; letter-spacing:.02em; white-space:nowrap}
+.tenant-env{font-size:10.5px; color:var(--muted); display:flex; align-items:center; gap:4px; white-space:nowrap}
+.tenant-env .pip{width:5px; height:5px; border-radius:50%; background:var(--success)}
+.avatar{
+  width:34px; height:34px; flex:0 0 34px; border-radius:50%; background:var(--nx-blue-soft);
+  color:var(--nx-blue); display:grid; place-items:center; font-size:12px; font-weight:700;
+  border:1px solid var(--border); cursor:pointer;
+}
+
+/* Context strip — where am I / which tenant / how fresh */
+.context-strip{
+  flex:0 0 auto; background:var(--surface); border-bottom:1px solid var(--border);
+  padding:var(--s3) var(--s4); display:flex; align-items:center; gap:var(--s4); flex-wrap:wrap;
+}
+.crumbs{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted)}
+.crumbs b{color:var(--text); font-weight:600}
+.crumbs svg{width:13px; height:13px; opacity:.5}
+.freshness{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted)}
+.freshness .live{width:6px; height:6px; border-radius:50%; background:var(--success); box-shadow:0 0 0 3px var(--success-soft)}
+.freshness.stale{color:var(--warning)}
+.freshness.stale .live{background:var(--warning); box-shadow:0 0 0 3px var(--warning-soft)}
+
+.scroll{flex:1; overflow-y:auto; overflow-x:hidden; scroll-behavior:smooth}
+.page{padding:var(--s5) var(--s4) var(--s9); max-width:1520px; margin:0 auto}
+@media (min-width:900px){.page{padding-inline:var(--s6)}}
+
+/* ============ TYPOGRAPHY ============ */
+.page-title{font-size:26px; font-weight:700; letter-spacing:-.022em; line-height:1.2}
+@media (min-width:700px){.page-title{font-size:30px}}
+.page-sub{color:var(--muted); font-size:14.5px; margin-top:6px}
+.section-title{font-size:15px; font-weight:650; letter-spacing:-.01em}
+.overline{
+  font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted);
+}
+.section-head{display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s4); margin-bottom:var(--s3); flex-wrap:wrap}
+.section-note{font-size:12px; color:var(--subtle)}
+
+/* ============ BUTTONS — strict hierarchy, ≥40px ============ */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+  height:40px; padding:0 16px; border-radius:var(--r-btn); border:1px solid transparent;
+  font-size:13.5px; font-weight:600; cursor:pointer; white-space:nowrap;
+  transition:background var(--m-micro),border-color var(--m-micro),transform var(--m-micro),color var(--m-micro);
+}
+.btn:active{transform:translateY(1px)}
+.btn svg{width:16px; height:16px; stroke-width:2; flex:0 0 16px}
+.btn-primary{background:var(--nx-blue); color:var(--on-accent)}
+.btn-primary:hover{background:var(--nx-blue-hover)}
+.btn-secondary{background:var(--surface); color:var(--text); border-color:var(--border-strong)}
+.btn-secondary:hover{background:var(--surface-sunken)}
+.btn-tertiary{background:none; color:var(--nx-blue); padding:0 8px; height:36px}
+.btn-tertiary:hover{background:var(--nx-blue-soft)}
+.btn-danger{background:var(--danger); color:#fff}
+.btn-danger:hover{filter:brightness(1.08)}
+.btn-lg{height:46px; padding:0 22px; font-size:14.5px}
+.btn-sm{height:32px; padding:0 12px; font-size:12.5px; border-radius:var(--r-sm)}
+.btn:disabled{opacity:.5; cursor:not-allowed}
+.btn.is-loading{pointer-events:none; color:transparent; position:relative}
+.btn.is-loading::after{
+  content:""; position:absolute; inset:0; margin:auto; width:16px; height:16px;
+  border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+.btn-secondary.is-loading::after{border-color:var(--border-strong); border-top-color:var(--text)}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ============ BADGES — color + text, never colour alone ============ */
+.badge{
+  display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 9px;
+  border-radius:var(--r-pill); font-size:11px; font-weight:650; letter-spacing:.04em;
+  text-transform:uppercase; border:1px solid; white-space:nowrap;
+}
+.badge .pip{width:6px; height:6px; border-radius:50%; background:currentColor; flex:0 0 6px}
+.b-success{background:var(--success-soft); color:var(--success); border-color:var(--success-border)}
+.b-warning{background:var(--warning-soft); color:var(--warning); border-color:var(--warning-border)}
+.b-danger{background:var(--danger-soft); color:var(--danger); border-color:var(--danger-border)}
+.b-info{background:var(--info-soft); color:var(--info); border-color:var(--info-border)}
+.b-neutral{background:var(--neutral-soft); color:var(--muted); border-color:var(--neutral-border)}
+
+/* ============ CARDS ============ */
+.card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+  box-shadow:var(--sh-rest);
+}
+.card-pad{padding:var(--s4)}
+.grid{display:grid; gap:var(--s3)}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+
+/* KPI: label → value → delta → supporting → action */
+.kpi{
+  display:flex; flex-direction:column; gap:var(--s2); padding:var(--s4);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+  transition:border-color var(--m-micro),box-shadow var(--m-micro);
+}
+.kpi:hover{border-color:var(--border-strong); box-shadow:var(--sh-hover)}
+.kpi-top{display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s2)}
+.kpi-value{font-size:30px; font-weight:700; letter-spacing:-.03em; line-height:1.05; font-variant-numeric:tabular-nums}
+.kpi-period{font-size:11.5px; color:var(--subtle)}
+.kpi-delta{display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:600}
+.kpi-delta.up{color:var(--success)} .kpi-delta.down{color:var(--danger)} .kpi-delta.flat{color:var(--muted)}
+.kpi-delta svg{width:13px; height:13px; stroke-width:2.4}
+.kpi-support{font-size:12.5px; color:var(--muted); display:flex; flex-direction:column; gap:3px; padding-top:2px}
+.kpi-support span{display:flex; align-items:center; gap:6px}
+.kpi-support .mk{width:5px; height:5px; border-radius:50%; flex:0 0 5px}
+.kpi-foot{margin-top:auto; padding-top:var(--s3); border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:var(--s2)}
+/* Evidence-state marker: ESTIMATED and CONFIRMED never look alike */
+.state-tag{
+  font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  padding:2px 6px; border-radius:var(--r-xs); border:1px dashed var(--border-strong); color:var(--muted);
+}
+.state-tag.confirmed{border-style:solid; border-color:var(--success-border); background:var(--success-soft); color:var(--success)}
+.evidence-bar{height:4px; border-radius:2px; background:var(--surface-sunken); overflow:hidden}
+.evidence-bar i{display:block; height:100%; background:var(--nx-cyan); border-radius:2px}
+
+/* Attention banner */
+.attention{
+  display:flex; align-items:center; gap:var(--s4); flex-wrap:wrap;
+  padding:var(--s4) var(--s5); border-radius:var(--r-panel); margin-bottom:var(--s5);
+  background:linear-gradient(120deg,var(--nx-ink),#16233B); color:#fff;
+}
+.attention{border:1px solid rgba(255,255,255,.06)}
+.attention-body{flex:1; min-width:240px}
+.attention h2{font-size:21px; font-weight:650; letter-spacing:-.02em}
+.attention p{margin:6px 0 0; color:#94A3B8; font-size:13.5px}
+.attention p b{color:#E2E8F0; font-weight:600}
+.attention-actions{display:flex; gap:var(--s2); flex-wrap:wrap}
+.btn-onink{background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.18)}
+.btn-onink:hover{background:rgba(255,255,255,.18)}
+
+/* ============ MONEY LEAK CARD — signature component ============ */
+.leak{
+  display:grid; gap:var(--s3); padding:var(--s4);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+  border-left:3px solid var(--border-strong);
+  transition:box-shadow var(--m-micro),border-color var(--m-micro);
+}
+.leak:hover{box-shadow:var(--sh-hover)}
+.leak.sev-4{border-left-color:var(--att-4)}
+.leak.sev-3{border-left-color:var(--att-3)}
+.leak.sev-2{border-left-color:var(--att-2)}
+.leak.sev-1{border-left-color:var(--att-1)}
+.leak-head{display:flex; align-items:flex-start; gap:var(--s3); flex-wrap:wrap}
+.leak-idx{
+  width:24px; height:24px; flex:0 0 24px; border-radius:var(--r-xs); background:var(--surface-sunken);
+  color:var(--muted); font-size:11.5px; font-weight:700; display:grid; place-items:center;
+}
+.leak-title{flex:1; min-width:200px}
+.leak-title h4{font-size:15px; font-weight:650; letter-spacing:-.01em}
+.leak-meta{font-size:12.5px; color:var(--muted); margin-top:3px}
+.leak-impact{text-align:right}
+.leak-impact .amt{font-size:19px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.leak-body{display:grid; gap:var(--s3); grid-template-columns:1fr; border-top:1px solid var(--border); padding-top:var(--s3)}
+@media (min-width:760px){.leak-body{grid-template-columns:1.25fr 1fr}}
+.evidence h5,.recommend h5{font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin-bottom:var(--s2)}
+.evidence ul{list-style:none; margin:0; padding:0; display:grid; gap:5px}
+.evidence li{display:flex; gap:var(--s2); font-size:12.5px; color:var(--text); align-items:flex-start}
+.evidence li .ev-dot{width:5px; height:5px; border-radius:50%; background:var(--nx-cyan); margin-top:6px; flex:0 0 5px}
+.evidence li .mono{color:var(--muted); font-size:11.5px}
+.recommend p{margin:0 0 var(--s3); font-size:13px}
+.leak-actions{display:flex; gap:var(--s2); flex-wrap:wrap}
+
+/* ============ FILTER BAR + SAVED VIEWS ============ */
+.toolbar{display:flex; flex-direction:column; gap:var(--s3); margin-bottom:var(--s3)}
+.views{display:flex; gap:var(--s2); overflow-x:auto; padding-bottom:2px; scrollbar-width:thin}
+.view-chip{
+  height:32px; padding:0 13px; border-radius:var(--r-pill); border:1px solid var(--border);
+  background:var(--surface); color:var(--muted); font-size:12.5px; font-weight:550;
+  cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:6px;
+  transition:all var(--m-micro);
+}
+.view-chip:hover{border-color:var(--border-strong); color:var(--text)}
+.view-chip.active{background:var(--nx-ink); border-color:var(--nx-ink); color:#fff}
+:root[data-theme="dark"] .view-chip.active{background:var(--nx-blue); border-color:var(--nx-blue)}
+.view-chip .n{font-variant-numeric:tabular-nums; opacity:.7}
+.filters{display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center}
+.select{
+  height:36px; padding:0 30px 0 11px; border-radius:var(--r-sm); border:1px solid var(--border);
+  background:var(--surface); color:var(--text); font-size:12.5px; font-weight:500; cursor:pointer;
+  appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat; background-position:right 8px center;
+}
+.select:hover{border-color:var(--border-strong)}
+.select[data-set="1"]{border-color:var(--nx-blue); background-color:var(--nx-blue-soft); color:var(--nx-blue); font-weight:600}
+.filter-count{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:var(--s2)}
+.link-btn{background:none; border:0; color:var(--nx-blue); font-size:12.5px; font-weight:600; cursor:pointer; padding:4px 2px}
+.link-btn:hover{text-decoration:underline}
+.seg{display:inline-flex; background:var(--surface-sunken); border:1px solid var(--border); border-radius:var(--r-sm); padding:2px}
+.seg button{
+  height:30px; padding:0 11px; border:0; background:none; border-radius:6px; cursor:pointer;
+  font-size:12.5px; font-weight:600; color:var(--muted); display:inline-flex; align-items:center; gap:5px;
+}
+.seg button.active{background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(11,18,32,.08)}
+.seg svg{width:14px; height:14px; stroke-width:2}
+
+/* ============ TABLE ============ */
+.table-wrap{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); overflow:hidden}
+.table-scroll{overflow-x:auto}
+table{width:100%; border-collapse:collapse; min-width:860px}
+thead th{
+  position:sticky; top:0; z-index:2; background:var(--surface-2);
+  border-bottom:1px solid var(--border); text-align:left;
+  font-size:11px; font-weight:650; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);
+  padding:0 var(--cell-pad); height:42px; white-space:nowrap; user-select:none;
+}
+thead th.sortable{cursor:pointer}
+thead th.sortable:hover{color:var(--text)}
+thead th .arrow{opacity:0; margin-left:4px; font-size:9px}
+thead th.sorted .arrow{opacity:1}
+tbody tr{border-bottom:1px solid var(--border); cursor:pointer; transition:background var(--m-micro)}
+tbody tr:last-child{border-bottom:0}
+tbody tr:hover{background:var(--surface-sunken)}
+tbody tr.selected{background:var(--nx-blue-soft)}
+tbody tr.is-new{animation:rowIn var(--m-large) var(--ease)}
+@keyframes rowIn{from{background:var(--info-soft)}}
+td{padding:0 var(--cell-pad); height:var(--row-h); font-size:13px; vertical-align:middle; transition:height var(--m-comp) var(--ease)}
+td.tight{width:44px; padding-right:0}
+.cellbox{display:flex; align-items:center; gap:var(--s3); min-width:0}
+.who{min-width:0}
+.who .nm{font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.who .sub{font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.chk{
+  width:17px; height:17px; border-radius:var(--r-xs); border:1.5px solid var(--border-strong);
+  background:var(--surface); cursor:pointer; display:grid; place-items:center; flex:0 0 17px; padding:0;
+}
+.chk[aria-checked="true"]{background:var(--nx-blue); border-color:var(--nx-blue)}
+.chk svg{width:11px; height:11px; stroke:#fff; stroke-width:3.2; opacity:0}
+.chk[aria-checked="true"] svg{opacity:1}
+.score{display:inline-flex; align-items:center; gap:var(--s2)}
+.score-num{font-weight:700; font-variant-numeric:tabular-nums; font-size:13px; width:22px}
+.score-bar{width:44px; height:4px; border-radius:2px; background:var(--surface-sunken); overflow:hidden}
+.score-bar i{display:block; height:100%; border-radius:2px}
+.age.over{color:var(--danger); font-weight:600}
+.row-act{opacity:0; transition:opacity var(--m-micro)}
+tbody tr:hover .row-act,tbody tr:focus-within .row-act{opacity:1}
+.table-foot{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s3);
+  padding:var(--s3) var(--cell-pad); border-top:1px solid var(--border); background:var(--surface-2); flex-wrap:wrap;
+}
+.pager{display:flex; align-items:center; gap:var(--s1)}
+.pager button{
+  min-width:32px; height:32px; padding:0 8px; border:1px solid var(--border); background:var(--surface);
+  border-radius:var(--r-sm); cursor:pointer; font-size:12.5px; font-weight:600; color:var(--muted);
+}
+.pager button.active{background:var(--nx-ink); border-color:var(--nx-ink); color:#fff}
+:root[data-theme="dark"] .pager button.active{background:var(--nx-blue); border-color:var(--nx-blue)}
+.count-note{font-size:12px; color:var(--muted)}
+
+/* Bulk bar */
+.bulk{
+  position:sticky; bottom:var(--s4); z-index:20; margin:var(--s3) auto 0; max-width:720px;
+  display:flex; align-items:center; gap:var(--s3); padding:var(--s2) var(--s2) var(--s2) var(--s4);
+  background:var(--nx-ink); color:#fff; border-radius:var(--r-pill); box-shadow:var(--sh-pop);
+  animation:bulkIn var(--m-comp) var(--ease); flex-wrap:wrap;
+}
+@keyframes bulkIn{from{opacity:0; transform:translateY(8px)}}
+.bulk .n{font-size:13px; font-weight:600; white-space:nowrap}
+.bulk .bulk-acts{display:flex; gap:6px; margin-left:auto; flex-wrap:wrap}
+
+/* ============ DRAWER ============ */
+.scrim{
+  position:fixed; inset:0; background:rgba(11,18,32,.42); z-index:60; opacity:0;
+  transition:opacity var(--m-comp) var(--ease);
+}
+.scrim.open{opacity:1}
+.drawer{
+  position:fixed; top:0; right:0; bottom:0; width:min(480px,100%); z-index:61;
+  background:var(--surface); border-left:1px solid var(--border); box-shadow:var(--sh-drawer);
+  display:flex; flex-direction:column;
+  transform:translateX(100%); transition:transform var(--m-comp) var(--ease);
+  padding-top:env(safe-area-inset-top,0px);
+}
+.drawer.open{transform:none}
+.drawer-head{padding:var(--s4); border-bottom:1px solid var(--border); display:flex; gap:var(--s3); align-items:flex-start}
+.drawer-head .t{flex:1; min-width:0}
+.drawer-head h3{font-size:18px; font-weight:650; letter-spacing:-.015em}
+.drawer-head .m{font-size:12.5px; color:var(--muted); margin-top:4px}
+.drawer-tags{display:flex; gap:6px; margin-top:var(--s2); flex-wrap:wrap}
+.drawer-body{flex:1; overflow-y:auto; padding:var(--s4) var(--s4) var(--s8)}
+.d-sec{padding-block:var(--s4); border-bottom:1px solid var(--border)}
+.d-sec:first-child{padding-top:0}
+.d-sec h5{font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin-bottom:var(--s3)}
+.kv{display:grid; grid-template-columns:104px 1fr; gap:6px var(--s3); font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0; font-weight:550; word-break:break-word}
+/* Journey timeline */
+.journey{list-style:none; margin:0; padding:0; display:grid; gap:0}
+.journey li{display:grid; grid-template-columns:20px 1fr; gap:var(--s3); padding-bottom:var(--s4); position:relative}
+.journey li:last-child{padding-bottom:0}
+.journey li::before{content:""; position:absolute; left:9px; top:20px; bottom:0; width:1.5px; background:var(--border)}
+.journey li:last-child::before{display:none}
+.journey .dot{
+  width:20px; height:20px; border-radius:50%; display:grid; place-items:center; z-index:1;
+  background:var(--surface-sunken); color:var(--subtle); border:1.5px solid var(--border);
+  font-size:9px; font-weight:700;
+}
+.journey li.done .dot{background:var(--success-soft); border-color:var(--success-border); color:var(--success)}
+.journey li.now .dot{background:var(--warning-soft); border-color:var(--warning); color:var(--warning)}
+.journey .lbl{font-size:13px; font-weight:600; line-height:1.35}
+.journey .when{font-size:11.5px; color:var(--muted); margin-top:2px; display:flex; gap:var(--s2); flex-wrap:wrap}
+.why{background:var(--surface-sunken); border:1px solid var(--border); border-radius:var(--r-sm); padding:var(--s3)}
+.why ul{list-style:none; margin:0; padding:0; display:grid; gap:5px}
+.why li{display:flex; gap:var(--s2); font-size:12.5px; align-items:flex-start}
+.why li svg{width:13px; height:13px; margin-top:3px; flex:0 0 13px; stroke-width:2.6}
+.why li.ok svg{color:var(--success)} .why li.warn svg{color:var(--warning)}
+/* Audit — human first */
+.audit{list-style:none; margin:0; padding:0; display:grid; gap:var(--s3)}
+.audit li{display:grid; grid-template-columns:52px 1fr; gap:var(--s3); font-size:12.5px}
+.audit .tm{color:var(--subtle); font-size:11.5px; padding-top:1px}
+.audit b{font-weight:600}
+.audit .src{color:var(--muted); font-size:11.5px}
+.drawer-foot{
+  padding:var(--s3) var(--s4); border-top:1px solid var(--border); background:var(--surface-2);
+  display:flex; gap:var(--s2); padding-bottom:calc(var(--s3) + env(safe-area-inset-bottom,0px));
+}
+.drawer-foot .btn{flex:1}
+
+/* ============ COMMAND PALETTE ============ */
+.cmdk{
+  position:fixed; inset:0; z-index:80; display:none; padding:12vh var(--s4) var(--s4);
+  background:rgba(11,18,32,.45);
+}
+.cmdk.open{display:block}
+.cmdk-panel{
+  max-width:620px; margin:0 auto; background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-panel); box-shadow:var(--sh-pop); overflow:hidden;
+  animation:popIn var(--m-comp) var(--ease);
+}
+@keyframes popIn{from{opacity:0; transform:scale(.98)}}
+.cmdk-input{display:flex; align-items:center; gap:var(--s3); padding:var(--s4); border-bottom:1px solid var(--border)}
+.cmdk-input svg{width:18px; height:18px; color:var(--muted); flex:0 0 18px; stroke-width:2}
+.cmdk-input input{
+  flex:1; border:0; outline:0; background:none; color:var(--text); font-size:16px; font-family:inherit;
+}
+.cmdk-input input::placeholder{color:var(--subtle)}
+.cmdk-results{max-height:min(420px,52vh); overflow-y:auto; padding:var(--s2)}
+.cmdk-group{padding:var(--s2) var(--s3) var(--s1)}
+.cmdk-item{
+  display:flex; align-items:center; gap:var(--s3); width:100%; padding:9px var(--s3); border:0;
+  background:none; border-radius:var(--r-sm); cursor:pointer; text-align:left; color:var(--text);
+}
+.cmdk-item:hover,.cmdk-item.cursor{background:var(--surface-sunken)}
+.cmdk-item .ic{
+  width:28px; height:28px; flex:0 0 28px; border-radius:var(--r-xs); background:var(--nx-blue-soft);
+  color:var(--nx-blue); display:grid; place-items:center;
+}
+.cmdk-item .ic svg{width:15px; height:15px; stroke-width:2}
+.cmdk-item .tx{flex:1; min-width:0}
+.cmdk-item .tt{font-size:13.5px; font-weight:550; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.cmdk-item .ts{font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.cmdk-answer{padding:var(--s4); border-bottom:1px solid var(--border); background:var(--surface-2)}
+.cmdk-answer .a-top{display:flex; align-items:center; justify-content:space-between; gap:var(--s3); margin-bottom:var(--s3)}
+.cmdk-answer .a-n{font-size:20px; font-weight:700; letter-spacing:-.02em}
+.cmdk-foot{
+  padding:var(--s2) var(--s4); border-top:1px solid var(--border); background:var(--surface-2);
+  display:flex; gap:var(--s4); font-size:11px; color:var(--muted); flex-wrap:wrap;
+}
+.cmdk-foot span{display:flex; align-items:center; gap:5px}
+.provenance{font-size:11px; color:var(--subtle); display:flex; align-items:center; gap:5px; margin-top:var(--s2)}
+.provenance svg{width:12px; height:12px}
+
+/* ============ TOASTS ============ */
+.toasts{
+  position:fixed; z-index:90; bottom:var(--s4); left:50%; transform:translateX(-50%);
+  display:grid; gap:var(--s2); width:min(440px,calc(100% - 32px));
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+.toast{
+  display:flex; align-items:center; gap:var(--s3); padding:var(--s3) var(--s3) var(--s3) var(--s4);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-btn);
+  box-shadow:var(--sh-pop); animation:toastIn var(--m-comp) var(--ease); font-size:13px;
+}
+@keyframes toastIn{from{opacity:0; transform:translateY(10px)}}
+.toast.leaving{opacity:0; transform:translateY(6px); transition:all var(--m-comp) var(--ease)}
+.toast svg{width:16px; height:16px; flex:0 0 16px; stroke-width:2.4}
+.toast.ok svg{color:var(--success)} .toast.warn svg{color:var(--warning)} .toast.err svg{color:var(--danger)}
+.toast .tmsg{flex:1}
+.toast .tmsg small{display:block; color:var(--muted); font-size:11.5px; margin-top:1px}
+
+/* ============ VEHICLES ============ */
+.veh-grid{display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(258px,1fr))}
+.veh{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+  overflow:hidden; display:flex; flex-direction:column; transition:box-shadow var(--m-micro),border-color var(--m-micro);
+}
+.veh:hover{box-shadow:var(--sh-hover); border-color:var(--border-strong)}
+.veh-img{aspect-ratio:16/10; max-width:100%; position:relative; display:grid; place-items:center; overflow:hidden}
+.veh-img svg{width:54%; height:54%; opacity:.5; color:#fff}
+.veh-img .stock{
+  position:absolute; left:var(--s3); top:var(--s3); background:rgba(11,18,32,.66); color:#fff;
+  font-size:10.5px; font-weight:600; padding:3px 7px; border-radius:var(--r-xs); backdrop-filter:blur(4px);
+}
+.veh-img .days{
+  position:absolute; right:var(--s3); top:var(--s3); background:var(--surface); color:var(--text);
+  font-size:10.5px; font-weight:650; padding:3px 7px; border-radius:var(--r-xs);
+}
+.veh-img .days.hot{background:var(--danger); color:#fff}
+.veh-b{padding:var(--s3); display:flex; flex-direction:column; gap:var(--s2); flex:1}
+.veh-b h4{font-size:14px; font-weight:650; letter-spacing:-.01em; line-height:1.3}
+.veh-price{font-size:18px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+.veh-ops{border-top:1px solid var(--border); padding-top:var(--s2); display:grid; gap:5px; font-size:12px}
+.veh-ops div{display:flex; justify-content:space-between; gap:var(--s2)}
+.veh-ops span{color:var(--muted)}
+.veh-ops b{font-weight:650}
+.veh-b .btn{margin-top:auto}
+
+/* ============ CHANNEL HEALTH ============ */
+.chan-grid{display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(268px,1fr))}
+.chan{padding:var(--s4); background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); display:grid; gap:var(--s3)}
+.chan-top{display:flex; align-items:center; justify-content:space-between; gap:var(--s2)}
+.chan-top h4{font-size:14px; font-weight:650}
+.checks{display:grid; gap:0; border-top:1px solid var(--border)}
+.check{display:flex; align-items:center; gap:var(--s2); padding:7px 0; font-size:12.5px; border-bottom:1px solid var(--border)}
+.check:last-child{border-bottom:0}
+.check .mk{width:15px; flex:0 0 15px; display:grid; place-items:center; font-weight:700; font-size:11px}
+.check .mk svg{width:13px; height:13px; stroke-width:2.6}
+.check.pass .mk{color:var(--success)} .check.fail .mk{color:var(--danger)}
+.check.notrun{color:var(--muted)} .check.notrun .mk{color:var(--subtle)}
+.check .lbl{flex:1}
+.chan-foot{display:flex; align-items:center; justify-content:space-between; gap:var(--s2); font-size:11.5px; color:var(--muted)}
+
+/* ============ STATES ============ */
+.skel{background:var(--surface-sunken); border-radius:var(--r-xs); animation:shimmer 1.4s ease-in-out infinite}
+@keyframes shimmer{0%,100%{opacity:1}50%{opacity:.55}}
+.state{
+  display:grid; gap:var(--s3); place-items:center; text-align:center; padding:var(--s8) var(--s4);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+}
+.state .ic{
+  width:44px; height:44px; border-radius:var(--r-card); display:grid; place-items:center;
+  background:var(--surface-sunken); color:var(--muted);
+}
+.state .ic svg{width:21px; height:21px; stroke-width:1.9}
+.state.err .ic{background:var(--danger-soft); color:var(--danger)}
+.state h4{font-size:16px; font-weight:650}
+.state p{margin:0; color:var(--muted); font-size:13px; max-width:46ch}
+.state .reviewed{
+  display:flex; gap:var(--s4); font-size:12px; color:var(--muted); flex-wrap:wrap; justify-content:center;
+  padding:var(--s3) 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); width:100%; max-width:420px;
+}
+.state .reviewed b{color:var(--text); font-variant-numeric:tabular-nums}
+.state-actions{display:flex; gap:var(--s2); flex-wrap:wrap; justify-content:center}
+.lock-note{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted)}
+.lock-note svg{width:12px; height:12px}
+
+/* Focus mode */
+.focus-wrap{max-width:640px; margin:0 auto}
+.focus-count{text-align:center; font-size:12.5px; color:var(--muted); margin-bottom:var(--s4)}
+.focus-step{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-panel);
+  padding:var(--s6) var(--s5); text-align:center; display:grid; gap:var(--s4); justify-items:center;
+  animation:popIn var(--m-comp) var(--ease);
+}
+.focus-step .amt{font-size:34px; font-weight:700; letter-spacing:-.03em; font-variant-numeric:tabular-nums}
+.focus-step h3{font-size:20px; font-weight:650; letter-spacing:-.02em}
+.focus-step p{margin:0; color:var(--muted); font-size:13.5px; max-width:44ch}
+
+/* Explain popover */
+.explain{position:relative; display:inline-flex}
+.explain-btn{width:22px; height:22px; border-radius:50%; border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer; display:grid; place-items:center; padding:0; flex:0 0 22px}
+.explain-btn svg{width:12px; height:12px; stroke-width:2.4}
+.explain-btn:hover{border-color:var(--border-strong); color:var(--text)}
+.explain-pop{
+  position:absolute; top:28px; right:0; z-index:30; width:260px; text-align:left;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--r-card);
+  box-shadow:var(--sh-pop); padding:var(--s3); font-size:12.5px; color:var(--text);
+  animation:popIn var(--m-micro) var(--ease);
+}
+.explain-pop h6{margin:0 0 var(--s2); font-size:10.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:650}
+.explain-pop ul{margin:var(--s2) 0 0; padding-left:16px; display:grid; gap:3px; color:var(--muted)}
+
+/* Split conversation view */
+.split{display:grid; grid-template-columns:1fr; gap:var(--s3)}
+@media (min-width:880px){.split{grid-template-columns:280px 1fr}}
+.conv-list{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); overflow:hidden}
+.conv-item{display:flex; gap:var(--s3); padding:var(--s3); border-bottom:1px solid var(--border); cursor:pointer; width:100%; background:none; border-left:0; border-right:0; border-top:0; text-align:left}
+.conv-item:last-child{border-bottom:0}
+.conv-item:hover{background:var(--surface-sunken)}
+.conv-item.active{background:var(--nx-blue-soft)}
+.dot-unread{width:7px; height:7px; border-radius:50%; background:var(--nx-blue); margin-top:6px; flex:0 0 7px}
+
+/* Responsive shell */
+@media (max-width:860px){
+  .sidebar{
+    position:fixed; top:0; bottom:0; left:0; z-index:70; transform:translateX(-100%);
+    transition:transform var(--m-comp) var(--ease); width:var(--sidebar-w); flex-basis:var(--sidebar-w);
+  }
+  body.nav-open .sidebar{transform:none; box-shadow:var(--sh-pop)}
+  body.nav-collapsed .sidebar{width:var(--sidebar-w); flex-basis:var(--sidebar-w)}
+  body.nav-collapsed .brand-text,body.nav-collapsed .nav-group-label,body.nav-collapsed .nav-label,body.nav-collapsed .nav-badge{display:block}
+  body.nav-collapsed .nav-item{justify-content:flex-start; padding-inline:var(--s3)}
+  body.nav-collapsed .brand{justify-content:flex-start; padding-inline:var(--s4)}
+  .hamburger{display:grid}
+  .sidebar-foot{display:none}
+  .tenant-lines{display:none}
+  .cmd-trigger .ph{display:none}
+  .cmd-trigger{max-width:none; flex:0 0 40px; padding:0; justify-content:center}
+  .cmd-trigger kbd{display:none}
+}
+.hide-sm{display:none}
+@media (min-width:620px){.hide-sm{display:inline-flex}}
+
+/* ============================================================
+   v1.1 — the rest of the locked spec
+   ============================================================ */
+
+/* RTL readiness: everything below uses logical properties.
+   UAE market means Arabic eventually; the toggle proves nothing breaks. */
+[dir="rtl"] .nav-item.active::before{left:auto; right:-12px; border-radius:2px 0 0 2px}
+[dir="rtl"] .drawer{left:0; right:auto; border-left:0; border-right:1px solid var(--border); transform:translateX(-100%)}
+[dir="rtl"] .drawer.open{transform:none}
+[dir="rtl"] .leak{border-left:0; border-right:3px solid var(--border-strong)}
+[dir="rtl"] .leak.sev-4{border-right-color:var(--att-4)}
+[dir="rtl"] .leak.sev-3{border-right-color:var(--att-3)}
+[dir="rtl"] .leak.sev-2{border-right-color:var(--att-2)}
+[dir="rtl"] .leak.sev-1{border-right-color:var(--att-1)}
+[dir="rtl"] .crumbs svg,[dir="rtl"] .btn svg.chev{transform:scaleX(-1)}
+[dir="rtl"] .select{background-position:left 8px center; padding:0 11px 0 30px}
+
+/* Mode switcher — same product, different composition */
+.modes{display:inline-flex; background:var(--surface-sunken); border:1px solid var(--border); border-radius:var(--r-btn); padding:3px; gap:2px}
+.modes button{
+  height:32px; padding:0 13px; border:0; background:none; border-radius:7px; cursor:pointer;
+  font-size:12.5px; font-weight:600; color:var(--muted); display:inline-flex; align-items:center; gap:6px;
+}
+.modes button.active{background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(11,18,32,.08)}
+.modes svg{width:14px; height:14px; stroke-width:2}
+
+/* Notification centre — a panel, not a red dot */
+.notif{
+  position:fixed; top:0; right:0; bottom:0; width:min(400px,100%); z-index:62;
+  background:var(--surface); border-left:1px solid var(--border); box-shadow:var(--sh-drawer);
+  display:flex; flex-direction:column; transform:translateX(100%);
+  transition:transform var(--m-comp) var(--ease); padding-top:env(safe-area-inset-top,0px);
+}
+.notif.open{transform:none}
+[dir="rtl"] .notif{left:0; right:auto; border-left:0; border-right:1px solid var(--border); transform:translateX(-100%)}
+[dir="rtl"] .notif.open{transform:none}
+.notif-head{padding:var(--s4); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:var(--s3)}
+.notif-head h3{flex:1; font-size:16px; font-weight:650}
+.notif-tabs{display:flex; gap:6px; padding:var(--s3) var(--s4); border-bottom:1px solid var(--border); overflow-x:auto}
+.notif-body{flex:1; overflow-y:auto; padding:var(--s3) var(--s4) var(--s8)}
+.notif-group{margin-bottom:var(--s5)}
+.notif-group h6{
+  font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+  margin:0 0 var(--s2); display:flex; align-items:center; gap:6px;
+}
+.notif-group.urgent h6{color:var(--danger)}
+.notif-group.action h6{color:var(--warning)}
+.notif-group.info h6{color:var(--muted)}
+.notif-item{
+  display:grid; gap:4px; padding:var(--s3); border:1px solid var(--border); border-radius:var(--r-sm);
+  margin-bottom:var(--s2); background:var(--surface); cursor:pointer;
+}
+.notif-item:hover{border-color:var(--border-strong); background:var(--surface-sunken)}
+.notif-item .t{font-size:13px; font-weight:600}
+.notif-item .m{font-size:11.5px; color:var(--muted)}
+.notif-item .batch{font-size:11px; color:var(--nx-blue); font-weight:600}
+
+/* Automation transparency */
+.auto-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card);
+  padding:var(--s4); display:grid; gap:var(--s3);
+}
+.auto-top{display:flex; align-items:flex-start; gap:var(--s3); flex-wrap:wrap}
+.auto-top h4{flex:1; min-width:160px; font-size:14.5px; font-weight:650}
+.auto-grid{display:grid; gap:var(--s3); grid-template-columns:1fr}
+@media (min-width:700px){.auto-grid{grid-template-columns:1fr 1fr}}
+.auto-block h6{font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+.auto-block .v{font-size:13px}
+.auto-steps{list-style:none; margin:0; padding:0; display:grid; gap:4px}
+.auto-steps li{display:flex; gap:var(--s2); font-size:12.5px; align-items:flex-start}
+.auto-steps li svg{width:13px; height:13px; margin-top:3px; flex:0 0 13px; stroke-width:2.6}
+.auto-steps li.ok svg{color:var(--success)}
+.auto-steps li.fail svg{color:var(--danger)}
+.auto-steps li.notrun{color:var(--muted)}
+.auto-fail{
+  display:flex; align-items:flex-start; gap:var(--s3); padding:var(--s3); border-radius:var(--r-sm);
+  background:var(--warning-soft); border:1px solid var(--warning-border); font-size:12.5px; flex-wrap:wrap;
+}
+.auto-fail svg{width:15px; height:15px; color:var(--warning); flex:0 0 15px; margin-top:1px; stroke-width:2.4}
+
+/* Forms — sections, progressive disclosure, inline validation, autosave */
+.form-wrap{max-width:660px}
+.fsec{border-top:1px solid var(--border); padding-block:var(--s4)}
+.fsec:first-of-type{border-top:0; padding-top:0}
+.fsec > h5{font-size:10.5px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); margin:0 0 4px}
+.fsec > .hint{font-size:12.5px; color:var(--muted); margin:0 0 var(--s3)}
+.frow{display:grid; gap:var(--s3); grid-template-columns:1fr}
+@media (min-width:560px){.frow.two{grid-template-columns:1fr 1fr}}
+.field{display:grid; gap:5px}
+.field label{font-size:12.5px; font-weight:600}
+.field label .opt{font-weight:400; color:var(--subtle)}
+.field input,.field textarea,.field select{
+  height:40px; padding:0 12px; border-radius:var(--r-sm); border:1px solid var(--border);
+  background:var(--surface); color:var(--text); font:inherit; font-size:13.5px; width:100%;
+}
+.field textarea{height:auto; min-height:76px; padding-block:10px; resize:vertical}
+.field input:hover,.field textarea:hover{border-color:var(--border-strong)}
+.field.bad input,.field.bad textarea{border-color:var(--danger); background:var(--danger-soft)}
+.field.good input{border-color:var(--success-border)}
+.field .err{
+  display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--danger); font-weight:550;
+}
+.field .err svg{width:12px; height:12px; flex:0 0 12px; stroke-width:2.6}
+.field .note{font-size:11.5px; color:var(--subtle)}
+.autosave{
+  display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted);
+}
+.autosave .pip{width:6px; height:6px; border-radius:50%; background:var(--success)}
+.autosave.saving .pip{background:var(--warning); animation:shimmer 1s ease-in-out infinite}
+.adv-toggle{
+  background:none; border:0; color:var(--nx-blue); font-size:12.5px; font-weight:600; cursor:pointer;
+  padding:4px 0; display:inline-flex; align-items:center; gap:5px;
+}
+.adv-toggle svg{width:13px; height:13px; stroke-width:2.4; transition:transform var(--m-micro)}
+.adv-toggle[aria-expanded="true"] svg{transform:rotate(90deg)}
+.form-foot{
+  display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap;
+  border-top:1px solid var(--border); padding-top:var(--s4); margin-top:var(--s2);
+}
+
+/* Import result + sync conflict */
+.import-sum{display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin-bottom:var(--s4)}
+.import-stat{padding:var(--s3); border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface)}
+.import-stat .n{font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+.import-stat .l{font-size:11.5px; color:var(--muted); margin-top:2px}
+.import-stat.warn .n{color:var(--warning)} .import-stat.err .n{color:var(--danger)} .import-stat.ok .n{color:var(--success)}
+.conflict{border:1px solid var(--warning-border); background:var(--warning-soft); border-radius:var(--r-card); padding:var(--s4); display:grid; gap:var(--s3)}
+.conflict-rows{display:grid; gap:var(--s2)}
+.conflict-row{
+  display:grid; grid-template-columns:1fr auto auto; gap:var(--s3); align-items:center;
+  padding:var(--s2) var(--s3); background:var(--surface); border:1px solid var(--border); border-radius:var(--r-sm);
+  font-size:13px;
+}
+.conflict-row .src{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; font-weight:650}
+.conflict-row b{font-variant-numeric:tabular-nums}
+
+/* Health score + readiness */
+.health{display:flex; align-items:center; gap:var(--s4); flex-wrap:wrap}
+.health-ring{position:relative; width:86px; height:86px; flex:0 0 86px}
+.health-ring svg{transform:rotate(-90deg)}
+.health-ring .val{
+  position:absolute; inset:0; display:grid; place-items:center; font-size:21px; font-weight:700;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em;
+}
+.health-parts{flex:1; min-width:220px; display:grid; gap:7px}
+.health-part{display:grid; grid-template-columns:150px 1fr 44px; gap:var(--s3); align-items:center; font-size:12.5px}
+.health-part b{text-align:right; font-variant-numeric:tabular-nums}
+
+/* Incident center */
+.incident{
+  display:grid; grid-template-columns:auto 1fr auto; gap:var(--s3); align-items:start;
+  padding:var(--s3) var(--s4); border-bottom:1px solid var(--border);
+}
+.incident:last-child{border-bottom:0}
+.incident .sev{width:8px; height:8px; border-radius:50%; margin-top:6px}
+.incident .sev.crit{background:var(--danger)} .incident .sev.warn{background:var(--warning)} .incident .sev.info{background:var(--info)}
+.incident h5{font-size:13.5px; font-weight:650}
+.incident p{margin:3px 0 0; font-size:12.5px; color:var(--muted)}
+
+/* Wallboard — showroom monitor */
+body.wallboard .sidebar,body.wallboard .topbar,body.wallboard .context-strip{display:none}
+.wall{padding:var(--s6) var(--s5); display:grid; gap:var(--s5); min-height:100%}
+.wall-head{display:flex; align-items:baseline; gap:var(--s4); flex-wrap:wrap}
+.wall-head h1{font-size:clamp(24px,3.4vw,40px); font-weight:700; letter-spacing:-.025em}
+.wall-head .when{color:var(--muted); font-size:14px; margin-left:auto}
+.wall-grid{display:grid; gap:var(--s4); grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+.wall-tile{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-panel);
+  padding:var(--s5); display:grid; gap:var(--s2);
+}
+.wall-tile .l{font-size:12px; font-weight:650; letter-spacing:.11em; text-transform:uppercase; color:var(--muted)}
+.wall-tile .n{font-size:clamp(30px,4.6vw,52px); font-weight:700; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums}
+.wall-tile .s{font-size:13px; color:var(--muted)}
+.wall-tile.alarm{border-color:var(--danger-border); background:var(--danger-soft)}
+
+/* Charts */
+.chartbox{background:var(--surface); border:1px solid var(--border); border-radius:var(--r-card); padding:var(--s4)}
+.chart-head{display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s4); flex-wrap:wrap; margin-bottom:var(--s3)}
+.chart-take{font-size:13px; color:var(--text); max-width:52ch}
+.chart-take b{font-weight:650}
+.chart-svg{width:100%; height:auto; display:block; overflow:visible}
+.chart-legend{display:flex; gap:var(--s4); flex-wrap:wrap; margin-top:var(--s3); font-size:12px; color:var(--muted)}
+.chart-legend span{display:inline-flex; align-items:center; gap:6px}
+.chart-legend i{width:11px; height:11px; border-radius:3px; flex:0 0 11px}
+.chart-legend i.est{background:var(--warning-soft); border:1.5px dashed var(--warning)}
+.chart-legend i.conf{background:var(--success); border:1.5px solid var(--success)}
+
+/* Column picker */
+.colpick{
+  position:absolute; z-index:30; top:38px; right:0; width:210px; background:var(--surface);
+  border:1px solid var(--border-strong); border-radius:var(--r-card); box-shadow:var(--sh-pop); padding:var(--s2);
+}
+.colpick label{
+  display:flex; align-items:center; gap:var(--s2); padding:7px var(--s2); border-radius:var(--r-xs);
+  font-size:12.5px; cursor:pointer;
+}
+.colpick label:hover{background:var(--surface-sunken)}
+.colpick input{accent-color:var(--nx-blue); width:15px; height:15px}
+.rel{position:relative}
+
+/* Shortcut sheet */
+.keys{display:grid; gap:var(--s2); grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.keyrow{display:flex; align-items:center; gap:var(--s3); font-size:12.5px; padding:6px 0}
+.keyrow .k{display:flex; gap:4px}
+.keyrow .d{color:var(--muted)}
+
+/* Teaching affordance */
+.teach{
+  display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--nx-blue);
+  background:none; border:0; cursor:pointer; padding:2px 0; font-weight:600;
+}
+.teach svg{width:12px; height:12px; stroke-width:2.4}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">N</div>
+      <div class="brand-text">
+        <div class="brand-name">NEXUS</div>
+        <div class="brand-sub">Revenue &amp; Action OS</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-foot">
+      <button class="collapse-btn" id="collapseBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+        <span class="tenant-foot-text">Collapse</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn hamburger" id="hamburger" aria-label="Open navigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <button class="cmd-trigger" id="cmdTrigger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <span class="ph">Search or ask NEXUS</span>
+        <kbd>⌘K</kbd>
+      </button>
+      <div class="spacer"></div>
+      <button class="tenant" id="tenantBtn">
+        <span class="tenant-avatar">AC</span>
+        <span class="tenant-lines">
+          <span class="tenant-name">ALBA CARS</span>
+          <span class="tenant-env"><i class="pip"></i> Dubai · Production</span>
+        </span>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <button class="icon-btn" id="rtlBtn" aria-label="Toggle text direction" title="Toggle RTL — Arabic readiness">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4h7M13 4v16M9 4a4 4 0 000 8h1M4 20l3-3-3-3"/></svg>
+      </button>
+      <button class="icon-btn" id="densityBtn" aria-label="Display density" title="Display density">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" aria-label="Toggle theme" title="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
+      </button>
+      <button class="icon-btn" id="bellBtn" aria-label="Notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
+        <span class="dot"></span>
+      </button>
+      <button class="avatar" aria-label="Ali Asgher">AA</button>
+    </header>
+
+    <div class="context-strip">
+      <div class="crumbs" id="crumbs"></div>
+      <div class="spacer"></div>
+      <div class="freshness" id="freshness"><i class="live"></i> Live · updated 14 sec ago · Dubai time</div>
+    </div>
+
+    <div class="scroll" id="scroll"><div class="page" id="page"></div></div>
+  </div>
+</div>
+
+<!-- Drawer -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Record detail" hidden></aside>
+
+<!-- Notification centre -->
+<aside class="notif" id="notif" role="dialog" aria-modal="true" aria-label="Notifications" hidden></aside>
+
+<!-- Command palette -->
+<div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Ask NEXUS">
+  <div class="cmdk-panel">
+    <div class="cmdk-input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="cmdkInput" placeholder="Search records, or ask &quot;hot leads with no reply over 24h&quot;" autocomplete="off" spellcheck="false">
+      <kbd>ESC</kbd>
+    </div>
+    <div id="cmdkAnswer"></div>
+    <div class="cmdk-results" id="cmdkResults"></div>
+    <div class="cmdk-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> Move</span>
+      <span><kbd>↵</kbd> Open</span>
+      <span>Actions always preview before they run</span>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ============================================================
+   NEXUS OS — demo shell. Data is illustrative sample data,
+   shaped exactly like the real engine output.
+   ============================================================ */
+/* Locale and currency are per-dealership settings, never hardcoded strings.
+   Change LOCALE/CURRENCY and every figure, date and time on every screen follows. */
+const LOCALE = 'en-AE', CURRENCY = 'AED', TZ_LABEL = 'Dubai time';
+const _money = new Intl.NumberFormat(LOCALE, {style:'currency', currency:CURRENCY, maximumFractionDigits:0});
+const AED  = n => _money.format(n);
+const AEDk = n => n >= 1000
+  ? _money.format(0).replace(/[\d.,\s]+/,'') + ' ' + (n/1000).toFixed(n>=100000?0:1) + 'K'
+  : AED(n);
+const fmtDate = d => new Intl.DateTimeFormat(LOCALE,{day:'numeric',month:'short',year:'numeric'}).format(d);
+const fmtTime = d => new Intl.DateTimeFormat(LOCALE,{hour:'2-digit',minute:'2-digit',hour12:false}).format(d);
+
+const I = {
+  gauge:'<circle cx="12" cy="12" r="9"/><path d="M12 12l4-3"/>',
+  leak:'<path d="M12 3v6M8 9h8l-1.2 9a2 2 0 01-2 1.8h-1.6a2 2 0 01-2-1.8L8 9z"/>',
+  users:'<path d="M16 19v-1.5a4 4 0 00-4-4H7a4 4 0 00-4 4V19"/><circle cx="9.5" cy="7.5" r="3.5"/><path d="M17 11a3 3 0 100-6M21 19v-1a3.5 3.5 0 00-3-3.4"/>',
+  chat:'<path d="M21 12a8 8 0 01-8 8H8l-5 3 1.2-4.2A8 8 0 1121 12z"/>',
+  car:'<path d="M5 17h14M4 17l1.6-5.2A2 2 0 017.5 10h9a2 2 0 011.9 1.4L20 17M4 17v2h2v-2M18 17v2h2v-2"/><circle cx="8" cy="14.5" r="1"/><circle cx="16" cy="14.5" r="1"/>',
+  bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+  plug:'<path d="M9 3v6M15 3v6M6 9h12v3a6 6 0 01-12 0V9zM12 18v3"/>',
+  wallet:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14h2"/>',
+  shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>',
+  cog:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+  focus:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>',
+  check:'<path d="M5 13l4 4L19 7"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  dash:'<path d="M5 12h14"/>',
+  warn:'<path d="M12 9v4M12 17h.01M10.3 3.9L2.8 17a2 2 0 001.7 3h15a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  list:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  phone:'<path d="M5 3h3l2 5-2.5 1.5a11 11 0 005 5L14 12l5 2v3a2 2 0 01-2.2 2A16 16 0 013 5.2A2 2 0 015 3z"/>',
+  wa:'<path d="M21 12a8 8 0 01-8 8H8l-5 3 1.2-4.2A8 8 0 1121 12z"/><path d="M9 10.5c0 3 2.5 5 4.5 5"/>',
+  up:'<path d="M12 19V5M6 11l6-6 6 6"/>',
+  down:'<path d="M12 5v14M6 13l6 6 6-6"/>',
+  undo:'<path d="M3 10h11a5 5 0 110 10H9M3 10l4-4M3 10l4 4"/>',
+  arrow:'<path d="M5 12h13M13 6l6 6-6 6"/>',
+  refresh:'<path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/>',
+  inbox:'<path d="M3 12h5l2 3h4l2-3h5M3 12l2.5-7h13L21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7z"/>'
+};
+const svg = (p,w=18) => `<svg viewBox="0 0 24 24" width="${w}" height="${w}" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+
+/* ---------- NAV (role-aware: this is the OWNER role) ---------- */
+const NAV = [
+  {items:[{id:'command', label:'Command Center', icon:I.gauge}]},
+  {label:'Revenue', items:[
+    {id:'leaks', label:'Money Leaks', icon:I.leak, badge:9},
+    {id:'recovered', label:'Recovered Revenue', icon:I.wallet},
+    {id:'rescue', label:'Deal Rescue', icon:I.shield, badge:3}
+  ]},
+  {label:'Customers', items:[
+    {id:'leads', label:'Lead Recovery', icon:I.users, badge:4},
+    {id:'conversations', label:'Conversations', icon:I.chat, badge:2}
+  ]},
+  {label:'Inventory', items:[
+    {id:'sentinel', label:'Profit Sentinel', icon:I.car, badge:2}
+  ]},
+  {label:'Operations', items:[
+    {id:'actions', label:'Action Engine', icon:I.bolt, badge:1},
+    {id:'channels', label:'Channels', icon:I.plug, badge:1},
+    {id:'importing', label:'Import &amp; Sync', icon:I.inbox}
+  ]},
+  {label:'Admin', items:[
+    {id:'setup', label:'Setup &amp; Health', icon:I.shield},
+    {id:'team', label:'Team &amp; Roles', icon:I.cog},
+    {id:'finance', label:'Finance', icon:I.wallet, locked:true}
+  ]}
+];
+const TITLES = {
+  command:['Revenue','Command Center'], leaks:['Revenue','Money Leaks'],
+  recovered:['Revenue','Recovered Revenue'], rescue:['Revenue','Deal Rescue'],
+  leads:['Customers','Lead Recovery'], conversations:['Customers','Conversations'],
+  sentinel:['Inventory','Profit Sentinel'], actions:['Operations','Action Engine'],
+  channels:['Operations','Channel Health'], team:['Admin','Team & Roles'], finance:['Admin','Finance'],
+  focus:['Revenue','Focus Mode'], importing:['Operations','Import & Sync'],
+  setup:['Admin','Setup & Health'], addlead:['Customers','Add a lead'],
+  wallboard:['Revenue','Wallboard'], shortcuts:['Admin','Keyboard shortcuts']
+};
+
+/* ---------- SAMPLE DATA ---------- */
+const LEAKS = [
+  {sev:4, title:'Lead unanswered for 26h', who:'Sarah Ahmed', veh:'2024 BMW X5 xDrive40i', amount:8500, conf:0.82,
+   evidence:['Lead created 26h 12m ago · WhatsApp', 'No outbound message recorded on this lead', 'Intent classified PRICE_ENQUIRY (3 signals)'],
+   rec:'Contact the customer now. Response delay past 24h is the largest single drop-off factor in this dealership\'s own closed-lost history.',
+   acts:[['WhatsApp','primary'],['Call','secondary'],['Open lead','tertiary']]},
+  {sev:3, title:'Vehicle 67 days in stock, priced above market', who:'Stock #A1832', veh:'2024 BMW X5 xDrive40i', amount:14200, conf:0.64,
+   evidence:['67 days in stock · 37 days past the 30-day target','Listed 7% above the 4 comparable UAE listings found','12 lead views, 0 enquiries in the last 14 days'],
+   rec:'Review pricing. A 4% reduction is modelled to move the unit inside 18 days and protect more gross than a further 30 days of holding cost.',
+   acts:[['Review pricing','primary'],['Match to leads','secondary']]},
+  {sev:2, title:'Appointment not confirmed for tomorrow 10:00', who:'Omar Khalid', veh:'2023 Toyota Land Cruiser', amount:4200, conf:0.55,
+   evidence:['Appointment created 3 days ago','No confirmation reply received','No-show rate for unconfirmed slots: 41% (19 of 46)'],
+   rec:'Send the confirmation request. Unconfirmed slots no-show at roughly four times the confirmed rate.',
+   acts:[['Confirm appointment','primary'],['Reschedule','secondary']]},
+  {sev:1, title:'Quote sent 8 days ago, never followed up', who:'Reem Al Suwaidi', veh:'2022 Mercedes GLE 450', amount:6800, conf:0.48,
+   evidence:['Quote NX-Q-1174 sent 8d ago','Customer opened the quote twice','No follow-up task was created'],
+   rec:'Open the quote and follow up. Two opens with no reply is the strongest re-engagement signal this engine tracks.',
+   acts:[['Open quote','primary'],['Create task','secondary']]}
+];
+
+const LEADS = [
+  {id:'L-4821', name:'Sarah Ahmed', phone:'+971 50 ••• 4182', veh:'2024 BMW X5 xDrive40i', src:'WhatsApp', score:92, status:'HOT', age:'26h 12m', over:true, owner:'Ali A.', budget:'AED 240–260K'},
+  {id:'L-4818', name:'Omar Khalid', phone:'+971 55 ••• 9073', veh:'2023 Toyota Land Cruiser', src:'Website', score:85, status:'HOT', age:'7h 04m', over:false, owner:'Omar S.', budget:'AED 300–330K'},
+  {id:'L-4815', name:'Reem Al Suwaidi', phone:'+971 52 ••• 2260', veh:'2022 Mercedes GLE 450', src:'Instagram', score:78, status:'WARM', age:'19h 38m', over:false, owner:'—', budget:'Not captured'},
+  {id:'L-4811', name:'David Mensah', phone:'+971 56 ••• 7715', veh:'2021 Nissan Patrol', src:'Facebook', score:74, status:'WARM', age:'1d 04h', over:true, owner:'Sara K.', budget:'AED 150–170K'},
+  {id:'L-4806', name:'Fatima Noor', phone:'+971 50 ••• 3391', veh:'2023 Lexus RX 350', src:'WhatsApp', score:69, status:'WARM', age:'2d 11h', over:true, owner:'Ali A.', budget:'AED 210K'},
+  {id:'L-4802', name:'Rajesh Menon', phone:'+971 55 ••• 1148', veh:'2020 Ford Explorer', src:'Website', score:54, status:'COLD', age:'3d 02h', over:false, owner:'Omar S.', budget:'AED 90–110K'},
+  {id:'L-4799', name:'Aisha Bin Zayed', phone:'+971 54 ••• 6602', veh:'2024 Range Rover Velar', src:'Walk-in', score:88, status:'HOT', age:'4h 21m', over:false, owner:'Sara K.', budget:'AED 380K'},
+  {id:'L-4795', name:'Michael Obi', phone:'+971 58 ••• 8834', veh:'2022 Audi Q7', src:'Instagram', score:61, status:'COLD', age:'4d 06h', over:false, owner:'—', budget:'Not captured'}
+];
+
+const VIEWS = [
+  {id:'attention', label:'Needs attention', n:4},
+  {id:'hot', label:'Hot · no reply > 4h', n:3},
+  {id:'unassigned', label:'Unassigned', n:2},
+  {id:'wa', label:'WhatsApp today', n:2},
+  {id:'all', label:'All leads', n:8}
+];
+
+const VEHICLES = [
+  {stock:'A1832', name:'2024 BMW X5 xDrive40i', price:248000, days:67, risk:'HIGH', pos:'7% above market', hue:210, leads:3},
+  {stock:'A1790', name:'2023 Toyota Land Cruiser VXR', price:319000, days:12, risk:'LOW', pos:'At market', hue:28, leads:5},
+  {stock:'A1774', name:'2022 Mercedes GLE 450', price:212000, days:54, risk:'MEDIUM', pos:'3% above market', hue:265, leads:1},
+  {stock:'A1801', name:'2024 Range Rover Velar', price:376000, days:8, risk:'LOW', pos:'2% below market', hue:150, leads:4},
+  {stock:'A1756', name:'2021 Nissan Patrol Titanium', price:158000, days:71, risk:'HIGH', pos:'9% above market', hue:340, leads:0},
+  {stock:'A1812', name:'2023 Lexus RX 350 F-Sport', price:209000, days:23, risk:'LOW', pos:'At market', hue:195, leads:2}
+];
+
+const CHANNELS = [
+  {name:'WhatsApp Cloud API', state:'RECEIVING', tone:'b-success', last:'2 min ago',
+   checks:[['Authentication','pass'],['Tenant mapping','pass'],['Webhook verification','pass'],['Inbound journey test','pass'],['Outbound delivery test','notrun']], verdict:'PARTIAL', notrun:1},
+  {name:'Website forms', state:'RECEIVING', tone:'b-success', last:'18 min ago',
+   checks:[['Authentication','pass'],['Tenant mapping','pass'],['Webhook verification','pass'],['Inbound journey test','pass'],['Outbound delivery test','pass']], verdict:'VERIFIED', notrun:0},
+  {name:'Facebook Lead Ads', state:'RECEIVING', tone:'b-success', last:'1h 12m ago',
+   checks:[['Authentication','pass'],['Tenant mapping','pass'],['Webhook verification','pass'],['Inbound journey test','notrun'],['Outbound delivery test','notrun']], verdict:'PARTIAL', notrun:2},
+  {name:'Instagram DM', state:'DEGRADED', tone:'b-warning', last:'6h 40m ago',
+   checks:[['Authentication','pass'],['Tenant mapping','pass'],['Webhook verification','fail'],['Inbound journey test','notrun'],['Outbound delivery test','notrun']], verdict:'DEGRADED', notrun:2},
+  {name:'Phone', state:'MANUAL INTAKE', tone:'b-neutral', last:'—',
+   checks:[['Authentication','notrun'],['Tenant mapping','notrun'],['Webhook verification','notrun'],['Inbound journey test','notrun'],['Outbound delivery test','notrun']], verdict:'NOT BUILT', notrun:5},
+  {name:'Dubizzle import', state:'NOT TESTED', tone:'b-neutral', last:'—',
+   checks:[['Authentication','pass'],['Tenant mapping','notrun'],['Webhook verification','notrun'],['Inbound journey test','notrun'],['Outbound delivery test','notrun']], verdict:'NOT TESTED', notrun:4}
+];
+
+/* ---------- STATE ---------- */
+let route = 'command', view = 'attention', selected = new Set(), vehMode = 'grid', page = 1;
+const dens = ['comfortable','compact','spacious'];
+let densIdx = 0;
+
+/* ---------- RENDER: NAV ---------- */
+function renderNav(){
+  document.getElementById('nav').innerHTML = NAV.map(g => `
+    <div class="nav-group">
+      ${g.label ? `<div class="nav-group-label">${g.label}</div>` : ''}
+      ${g.items.map(it => `
+        <button class="nav-item ${route===it.id?'active':''}" data-route="${it.id}">
+          ${svg(it.icon)}
+          <span class="nav-label">${it.label}</span>
+          ${it.badge ? `<span class="nav-badge">${it.badge}</span>` : ''}
+          ${it.locked ? `<span class="nav-badge calm">${svg(I.lock,11)}</span>` : ''}
+        </button>`).join('')}
+    </div>`).join('');
+}
+function renderCrumbs(){
+  const t = TITLES[route] || ['NEXUS',route];
+  document.getElementById('crumbs').innerHTML =
+    `<span>ALBA CARS</span>${svg(I.arrow,13)}<span>${t[0]}</span>${svg(I.arrow,13)}<b>${t[1]}</b>`;
+}
+
+/* ---------- SCREEN: COMMAND CENTER ---------- */
+function kpi(o){
+  return `<div class="kpi">
+    <div class="kpi-top">
+      <div>
+        <div class="overline">${o.label}</div>
+        <div class="kpi-period">${o.period}</div>
+      </div>
+      ${o.explain ? explainBtn(o.explain) : ''}
+    </div>
+    <div class="kpi-value">${o.value}</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="kpi-delta ${o.dir}">${svg(o.dir==='up'?I.up:o.dir==='down'?I.down:I.dash,13)}${o.delta}</span>
+      <span class="state-tag ${o.confirmed?'confirmed':''}">${o.confirmed?'Confirmed':'Estimated'}</span>
+    </div>
+    ${o.evidence!=null?`<div class="evidence-bar" title="Evidence strength ${Math.round(o.evidence*100)}%"><i style="width:${o.evidence*100}%"></i></div>`:''}
+    <div class="kpi-support">${o.support.map(s=>`<span><i class="mk" style="background:var(--${s[1]})"></i>${s[0]}</span>`).join('')}</div>
+    <div class="kpi-foot">
+      <button class="btn btn-tertiary" data-route="${o.to}">${o.cta} ${svg(I.arrow,14)}</button>
+    </div>
+  </div>`;
+}
+let explainSeq = 0;
+function explainBtn(e){
+  const id = 'ex'+(++explainSeq);
+  return `<span class="explain">
+    <button class="explain-btn" data-explain="${id}" aria-label="Explain this number">${svg(I.info,12)}</button>
+    <span class="explain-pop" id="${id}" hidden>
+      <h6>How this is calculated</h6>
+      <div>${e.body}</div>
+      <ul>${e.parts.map(p=>`<li>${p}</li>`).join('')}</ul>
+    </span>
+  </span>`;
+}
+function leakCard(l,i){
+  return `<article class="leak sev-${l.sev}">
+    <div class="leak-head">
+      <span class="leak-idx">${i+1}</span>
+      <div class="leak-title">
+        <h4>${l.title}</h4>
+        <div class="leak-meta">${l.who} · ${l.veh}</div>
+      </div>
+      <div class="leak-impact">
+        <div class="amt">${AED(l.amount)}</div>
+        <span class="state-tag">Estimated impact</span>
+      </div>
+    </div>
+    <div class="leak-body">
+      <div class="evidence">
+        <h5>Evidence · ${l.evidence.length} signals · ${Math.round(l.conf*100)}% strength</h5>
+        <ul>${l.evidence.map(e=>`<li><i class="ev-dot"></i><span>${e}</span></li>`).join('')}</ul>
+      </div>
+      <div class="recommend">
+        <h5>Recommended action</h5>
+        <p>${l.rec}</p>
+        <div class="leak-actions">
+          ${l.acts.map(a=>`<button class="btn btn-${a[1]} btn-sm" data-act="${a[0]}">${a[0]}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+  </article>`;
+}
+/* Recovered revenue over time. One series, so no legend — the title names it.
+   Every chart on this screen carries its takeaway; a chart with no decision attached is decoration. */
+function chartRecovery(){
+  const wks = [[ 'W1',1800],['W2',3100],['W3',2400],['W4',4600],['W5',3900],['W6',5200],['W7',4300],['W8',4200]];
+  const W=680,H=170,PL=54,PR=16,PT=14,PB=26;
+  const max = 6000, iw = W-PL-PR, ih = H-PT-PB;
+  const x = i => PL + (iw*i)/(wks.length-1);
+  const y = v => PT + ih - (ih*v)/max;
+  const pts = wks.map((w,i)=>[x(i),y(w[1])]);
+  const line = pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area = line+` L${x(wks.length-1).toFixed(1)} ${(PT+ih).toFixed(1)} L${PL} ${(PT+ih).toFixed(1)} Z`;
+  const last = pts[pts.length-1];
+  return `
+  <div class="chartbox">
+    <div class="chart-head">
+      <div>
+        <div class="overline">Confirmed recovered revenue</div>
+        <div style="font-size:24px;font-weight:700;letter-spacing:-.025em" class="num">${AED(27500)}</div>
+        <div style="font-size:12px;color:var(--muted)">Last 8 weeks · confirmed only</div>
+      </div>
+      <p class="chart-take"><b>Up 14% on the previous 8 weeks.</b> The rise is almost entirely lead-response recovery —
+        repricing contributed ${AED(9200)} of it and has been flat for three weeks.</p>
+    </div>
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Confirmed recovered revenue by week, rising from AED 1,800 to AED 4,200">
+      <defs><linearGradient id="recFill" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0%" stop-color="var(--nx-blue)" stop-opacity=".22"/>
+        <stop offset="100%" stop-color="var(--nx-blue)" stop-opacity="0"/></linearGradient></defs>
+      ${[0,2000,4000,6000].map(v=>`
+        <line x1="${PL}" x2="${W-PR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
+        <text x="${PL-8}" y="${(y(v)+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--subtle)">${v/1000}K</text>`).join('')}
+      <path d="${area}" fill="url(#recFill)"/>
+      <path d="${line}" fill="none" stroke="var(--nx-blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="var(--surface)" stroke="var(--nx-blue)" stroke-width="2"><title>${wks[i][0]} — ${AED(wks[i][1])}</title></circle>`).join('')}
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="5" fill="var(--nx-blue)" stroke="var(--surface)" stroke-width="2"/>
+      <text x="${(last[0]-6).toFixed(1)}" y="${(last[1]-12).toFixed(1)}" text-anchor="end" font-size="11" font-weight="600" fill="var(--text)">${AED(4200)}</text>
+      ${wks.map((w,i)=>`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--subtle)">${w[0]}</text>`).join('')}
+    </svg>
+  </div>`;
+}
+/* Estimated vs confirmed, side by side. The two never share a treatment:
+   estimated is dashed and hollow, confirmed is solid. Both are direct-labelled,
+   because amber and green are close for protanopia and colour must never be the only cue. */
+function chartEstVsConf(){
+  const rows = [['Lead response',19500,18300],['Stock pricing',52300,9200],['Appointments',12400,0]];
+  const max = 55000, W=680, BH=22, GAP=8, ROWH=64, PL=126, PR=96;
+  const H = rows.length*ROWH + 8;
+  const w = v => Math.max(2,((W-PL-PR)*v)/max);
+  return `
+  <div class="chartbox">
+    <div class="chart-head">
+      <div><div class="overline">Estimated at risk vs confirmed recovered</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">By leak type · last 30 days</div></div>
+      <p class="chart-take"><b>Stock pricing is the widest gap</b> — ${AEDk(52300)} estimated against ${AEDk(9200)} confirmed.
+        Appointments have recovered nothing yet, which is honest: no appointment has been through the loop.</p>
+    </div>
+    <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Estimated at risk versus confirmed recovered, by leak type">
+      ${rows.map(([l,e,c],i)=>{
+        const top = i*ROWH+10;
+        return `
+        <text x="0" y="${top+15}" font-size="12" font-weight="600" fill="var(--text)">${l}</text>
+        <rect x="${PL}" y="${top}" width="${w(e).toFixed(1)}" height="${BH}" rx="4"
+              fill="var(--warning-soft)" stroke="var(--warning)" stroke-width="1.5" stroke-dasharray="5 3"/>
+        <text x="${(PL+w(e)+8).toFixed(1)}" y="${top+15}" font-size="11" font-weight="600" fill="var(--muted)">${AEDk(e)} est.</text>
+        <rect x="${PL}" y="${top+BH+GAP}" width="${w(c).toFixed(1)}" height="${BH}" rx="4" fill="var(--success)"/>
+        <text x="${(PL+w(c)+8).toFixed(1)}" y="${top+BH+GAP+15}" font-size="11" font-weight="600" fill="var(--muted)">${c?AEDk(c)+' conf.':'nothing confirmed'}</text>`;
+      }).join('')}
+    </svg>
+    <div class="chart-legend">
+      <span><i class="est"></i> Estimated at risk — modelled, dashed</span>
+      <span><i class="conf"></i> Confirmed recovered — linked to a deal, solid</span>
+    </div>
+  </div>`;
+}
+
+let mode = 'owner';
+const MODE_LABEL = {owner:'Executive', ops:'Operations'};
+function screenCommand(){
+  if(mode==='ops') return screenOps();
+  return `
+  <div class="attention">
+    <div class="attention-body">
+      <h2>Good morning, Ali</h2>
+      <p><b>12 items need attention today.</b> Estimated exposure ${AEDk(84200)} across 9 open leaks. Nothing is blocked.</p>
+    </div>
+    <div class="attention-actions">
+      <button class="btn btn-lg btn-primary" data-route="leaks">Review priority actions</button>
+      <button class="btn btn-lg btn-onink" data-route="focus">${svg(I.focus,16)} Focus mode</button>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s5)">
+    <div class="modes">
+      <button class="active" data-mode="owner">${svg(I.gauge,14)} Executive</button>
+      <button data-mode="ops">${svg(I.list,14)} Operations</button>
+    </div>
+    <span class="section-note">Same product, different density. Executive gets big signals; Operations gets the queue.</span>
+    <span class="spacer"></span>
+    <button class="btn btn-secondary btn-sm" data-route="wallboard">${svg(I.gauge,14)} Wallboard</button>
+  </div>
+
+  <div class="grid kpis" style="margin-bottom:var(--s6)">
+    ${kpi({label:'Money at risk', period:'Currently open', value:AED(84200), dir:'up', delta:'AED 12,400 vs last week',
+      confirmed:false, evidence:0.78, support:[['9 open revenue leaks','danger'],['3 rated high severity','warning']],
+      cta:'Review leaks', to:'leaks',
+      explain:{body:'Sum of estimated impact across open leaks, each weighted by evidence strength.',
+        parts:['3 lead-response opportunities · AED 19,500','4 inventory pricing signals · AED 52,300','2 appointment risks · AED 12,400']}})}
+    ${kpi({label:'Recovered revenue', period:'Last 30 days', value:AED(27500), dir:'up', delta:'AED 4,200 this week',
+      confirmed:true, support:[['19 confirmed recoveries','success'],['5 linked deal records','success']],
+      cta:'View recoveries', to:'recovered',
+      explain:{body:'Only recoveries linked to a closed deal or recorded payment. Estimates are never counted here.',
+        parts:['14 lead re-engagements → 5 closed deals','5 repriced units sold within 21 days']}})}
+    ${kpi({label:'Hot leads', period:'Currently open', value:'12', dir:'up', delta:'3 today',
+      confirmed:true, support:[['4 need a reply now','danger'],['3 with no reply over 24h','warning'],['5 appointments pending','info']],
+      cta:'Review leads', to:'leads'})}
+    ${kpi({label:'Ageing stock', period:'Over 60 days', value:'7', dir:'flat', delta:'No change this week',
+      confirmed:true, support:[['2 with high margin risk','danger'],['AED 52,300 gross exposed','warning']],
+      cta:'Open Profit Sentinel', to:'sentinel'})}
+  </div>
+
+  <div class="section-head">
+    <div>
+      <h3 class="section-title">Today's money leaks</h3>
+      <div class="section-note">Ordered by evidence strength × estimated impact. Every item shows why, the evidence, and what to do.</div>
+    </div>
+    <button class="btn btn-secondary btn-sm" data-route="leaks">See all 9</button>
+  </div>
+  <div class="grid" style="gap:var(--s3); margin-bottom:var(--s6)">${LEAKS.map(leakCard).join('')}</div>
+
+  <div class="section-head"><div><h3 class="section-title">Where the money went</h3>
+    <div class="section-note">Every chart states its takeaway. A chart with no decision attached does not belong on this screen.</div></div></div>
+  <div class="grid" style="gap:var(--s3);margin-bottom:var(--s6)">
+    ${chartRecovery()}
+    ${chartEstVsConf()}
+  </div>
+
+  <div class="section-head"><h3 class="section-title">Channel health</h3>
+    <button class="btn btn-tertiary" data-route="channels">Open control room ${svg(I.arrow,14)}</button></div>
+  <div class="card card-pad" style="display:flex;gap:var(--s5);flex-wrap:wrap">
+    ${CHANNELS.slice(0,5).map(c=>`
+      <div style="min-width:150px">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">${c.name}</div>
+        <span class="badge ${c.tone}"><i class="pip"></i>${c.state}</span>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:7px">Last event ${c.last}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+/* Operations mode — the BDC view. Dense, queue-first, no charts. */
+function screenOps(){
+  const q = [
+    ['Unanswered', LEADS.filter(l=>l.over).length, 'danger', 'leads'],
+    ['Hot', LEADS.filter(l=>l.status==='HOT').length, 'warning', 'leads'],
+    ['Unassigned', LEADS.filter(l=>l.owner==='—').length, 'warning', 'leads'],
+    ['Callbacks due', 5, 'info', 'leads'],
+    ['Appointments today', 18, 'info', 'leads'],
+    ['Tasks open', 7, 'muted', 'leads']
+  ];
+  return `
+  <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s4)">
+    <div>
+      <h1 class="page-title" style="font-size:22px">Operations queue</h1>
+      <p class="page-sub" style="font-size:13px">Dense by design. Density is a role setting, not a preference — a BDC agent works hundreds of rows a day.</p>
+    </div>
+    <span class="spacer"></span>
+    <div class="modes">
+      <button data-mode="owner">${svg(I.gauge,14)} Executive</button>
+      <button class="active" data-mode="ops">${svg(I.list,14)} Operations</button>
+    </div>
+  </div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:var(--s5)">
+    ${q.map(([l,n,tone,to])=>`
+      <button class="kpi" data-route="${to}" style="cursor:pointer;text-align:left;gap:4px;padding:var(--s3)">
+        <span class="overline">${l}</span>
+        <span class="kpi-value" style="font-size:26px;color:${tone==='muted'?'var(--text)':'var(--'+tone+')'}">${n}</span>
+      </button>`).join('')}
+  </div>
+  <div class="section-head"><h3 class="section-title">Work the queue</h3>
+    <button class="btn btn-primary btn-sm" data-route="addlead">${svg(I.users,14)} Add a lead</button></div>
+  <div class="grid" style="gap:var(--s3)">${LEAKS.slice(0,3).map(leakCard).join('')}</div>`;
+}
+
+/* ---------- SCREEN: FOCUS MODE ---------- */
+let focusStep = 0;
+function screenFocus(){
+  const l = LEAKS[focusStep];
+  if(!l) return `<div class="focus-wrap">
+    <div class="state"><div class="ic" style="background:var(--success-soft);color:var(--success)">${svg(I.check,21)}</div>
+      <h4>Priority queue cleared</h4>
+      <p>All four priority actions have been handled or dismissed. NEXUS will re-rank the queue at the next detection run.</p>
+      <div class="state-actions"><button class="btn btn-primary" data-route="command">Back to Command Center</button></div>
+    </div></div>`;
+  return `<div class="focus-wrap">
+    <div class="focus-count">Action ${focusStep+1} of ${LEAKS.length} · one at a time, nothing else on screen</div>
+    <div class="focus-step">
+      <span class="badge ${l.sev>=4?'b-danger':l.sev>=3?'b-warning':'b-info'}"><i class="pip"></i>Severity ${l.sev}</span>
+      <h3>${l.title}</h3>
+      <div class="amt">${AED(l.amount)}</div>
+      <span class="state-tag">Estimated impact · ${Math.round(l.conf*100)}% evidence strength</span>
+      <p>${l.who} · ${l.veh}</p>
+      <p style="color:var(--text)">${l.rec}</p>
+      <div class="leak-actions" style="justify-content:center">
+        <button class="btn btn-lg btn-primary" data-focus="do">${l.acts[0][0]}</button>
+        <button class="btn btn-lg btn-secondary" data-focus="skip">Skip for now</button>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:var(--s4)">
+      <button class="btn btn-tertiary" data-route="command">Leave focus mode</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- SCREEN: LEADS ---------- */
+function rowsForView(){
+  if(view==='hot') return LEADS.filter(l=>l.status==='HOT');
+  if(view==='unassigned') return LEADS.filter(l=>l.owner==='—');
+  if(view==='wa') return LEADS.filter(l=>l.src==='WhatsApp');
+  if(view==='attention') return LEADS.filter(l=>l.over);
+  return LEADS;
+}
+function scoreColor(s){ return s>=80?'var(--danger)':s>=65?'var(--warning)':'var(--info)'; }
+function statusTone(s){ return s==='HOT'?'b-danger':s==='WARM'?'b-warning':'b-neutral'; }
+const COLUMNS = [
+  {id:'customer', label:'Customer', fixed:true},
+  {id:'vehicle',  label:'Vehicle of interest'},
+  {id:'source',   label:'Source'},
+  {id:'score',    label:'Score'},
+  {id:'status',   label:'Status'},
+  {id:'age',      label:'No reply for'},
+  {id:'owner',    label:'Owner'},
+  {id:'phone',    label:'Phone'}
+];
+let cols = {customer:1, vehicle:1, source:1, score:1, status:1, age:1, owner:1, phone:0};
+let colPickOpen = false;
+const PER_PAGE = 5;
+const allOnPageSelected = rs => rs.length>0 && rs.every(r=>selected.has(r.id));
+function screenLeads(){
+  const rows = rowsForView();
+  const pages = Math.max(1, Math.ceil(rows.length/PER_PAGE));
+  if(page > pages) page = pages;
+  const from = (page-1)*PER_PAGE;
+  const pageRows = rows.slice(from, from+PER_PAGE);
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Lead Recovery</h1>
+    <p class="page-sub">${rows.length} leads in this view · ${rows.filter(r=>r.over).length} past the response threshold · ${AEDk(19500)} estimated exposure</p>
+  </div>
+
+  <div class="toolbar">
+    <div class="views">
+      ${VIEWS.map(v=>`<button class="view-chip ${view===v.id?'active':''}" data-view="${v.id}">${v.label}<span class="n">${v.n}</span></button>`).join('')}
+      <button class="view-chip" data-act="Save current view">+ Save current view</button>
+    </div>
+    <div class="filters">
+      <select class="select" data-set="0"><option>Source · any</option><option>WhatsApp</option><option>Website</option><option>Instagram</option><option>Facebook</option><option>Walk-in</option></select>
+      <select class="select" data-set="0"><option>Status · any</option><option>Hot</option><option>Warm</option><option>Cold</option></select>
+      <select class="select" data-set="1"><option>Age · over 4h</option><option>Any age</option><option>Over 24h</option><option>Over 3 days</option></select>
+      <select class="select" data-set="0"><option>Owner · any</option><option>Unassigned</option><option>Ali A.</option><option>Omar S.</option><option>Sara K.</option></select>
+      <span class="filter-count">1 filter active <button class="link-btn" data-act="Filters cleared">Clear all</button></span>
+      <div class="spacer"></div>
+      <span class="rel">
+        <button class="btn btn-secondary btn-sm" id="colBtn">${svg(I.list,14)} Columns</button>
+        ${colPickOpen?`<span class="colpick" id="colPick">
+          ${COLUMNS.map(c=>`<label><input type="checkbox" data-col="${c.id}" ${cols[c.id]?'checked':''} ${c.fixed?'disabled':''}>${c.label}${c.fixed?' <span style="color:var(--subtle)">always</span>':''}</label>`).join('')}
+        </span>`:''}
+      </span>
+      <button class="btn btn-primary btn-sm" data-route="addlead">${svg(I.users,14)} Add a lead</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th class="tight"><button class="chk" id="chkAll" role="checkbox" aria-checked="${allOnPageSelected(pageRows)}" aria-label="Select all on this page">${svg(I.check,11)}</button></th>
+          ${COLUMNS.filter(c=>cols[c.id]).map(c=>`<th class="sortable ${c.id==='score'?'sorted':''}">${c.label}${c.id==='score'?' <span class="arrow">▼</span>':''}</th>`).join('')}
+          <th style="text-align:right">Action</th>
+        </tr></thead>
+        <tbody id="leadRows">
+          ${pageRows.map(l=>`
+          <tr data-lead="${l.id}" class="${selected.has(l.id)?'selected':''}">
+            <td class="tight"><button class="chk" role="checkbox" aria-checked="${selected.has(l.id)}" data-sel="${l.id}" aria-label="Select ${l.name}">${svg(I.check,11)}</button></td>
+            ${cols.customer?`<td><div class="cellbox"><div class="who"><div class="nm">${l.name}</div><div class="sub mono">${l.id} · ${l.phone}</div></div></div></td>`:''}
+            ${cols.vehicle?`<td><div class="who"><div class="nm" style="font-weight:550">${l.veh}</div><div class="sub">${l.budget}</div></div></td>`:''}
+            ${cols.source?`<td><span class="badge b-neutral">${l.src}</span></td>`:''}
+            ${cols.score?`<td><span class="score"><span class="score-num">${l.score}</span><span class="score-bar"><i style="width:${l.score}%;background:${scoreColor(l.score)}"></i></span></span></td>`:''}
+            ${cols.status?`<td><span class="badge ${statusTone(l.status)}"><i class="pip"></i>${l.status}</span></td>`:''}
+            ${cols.age?`<td class="num age ${l.over?'over':''}">${l.age}</td>`:''}
+            ${cols.owner?`<td>${l.owner==='—'?'<span class="badge b-warning">Unassigned</span>':l.owner}</td>`:''}
+            ${cols.phone?`<td class="mono" style="font-size:12px">${l.phone}</td>`:''}
+            <td style="text-align:right"><span class="row-act"><button class="btn btn-secondary btn-sm" data-quick="${l.id}">${svg(I.wa,14)} WhatsApp</button></span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="table-foot">
+      <span class="count-note">
+        Showing ${pageRows.length ? (from+1)+'–'+(from+pageRows.length) : 0} of ${rows.length}
+        ${selected.size?` · <b>${selected.size} selected, kept across pages</b>`:''}
+        · page, filters and selection survive opening a record
+      </span>
+      <div class="pager">
+        <button aria-label="Previous page" data-page="${Math.max(1,page-1)}" ${page===1?'disabled':''}>‹</button>
+        ${Array.from({length:pages},(_,i)=>`<button class="${page===i+1?'active':''}" data-page="${i+1}">${i+1}</button>`).join('')}
+        <button aria-label="Next page" data-page="${Math.min(pages,page+1)}" ${page===pages?'disabled':''}>›</button>
+      </div>
+    </div>
+  </div>
+  <div id="bulkSlot"></div>`;
+}
+function renderBulk(){
+  const slot = document.getElementById('bulkSlot');
+  if(!slot) return;
+  if(!selected.size){ slot.innerHTML=''; return; }
+  slot.innerHTML = `<div class="bulk">
+    <span class="n">${selected.size} selected</span>
+    <span class="bulk-acts">
+      <button class="btn btn-onink btn-sm" data-bulk="Assigned to BDC">Assign to BDC</button>
+      <button class="btn btn-onink btn-sm" data-bulk="Status changed">Change status</button>
+      <button class="btn btn-onink btn-sm" data-bulk="Tasks created">Create task</button>
+      <button class="btn btn-danger btn-sm" data-bulk-danger="1">Delete</button>
+      <button class="btn btn-onink btn-sm" id="clearSel">Clear</button>
+    </span>
+  </div>`;
+}
+
+/* ---------- SCREEN: PROFIT SENTINEL ---------- */
+function riskTone(r){ return r==='HIGH'?'b-danger':r==='MEDIUM'?'b-warning':'b-success'; }
+function screenSentinel(){
+  const grid = VEHICLES.map(v=>`
+    <article class="veh">
+      <div class="veh-img" style="background:linear-gradient(140deg,hsl(${v.hue} 34% 26%),hsl(${v.hue} 40% 14%))">
+        ${svg(I.car,64)}
+        <span class="stock mono">#${v.stock}</span>
+        <span class="days num ${v.days>60?'hot':''}">${v.days}d in stock</span>
+      </div>
+      <div class="veh-b">
+        <h4>${v.name}</h4>
+        <div class="veh-price">${AED(v.price)}</div>
+        <div class="veh-ops">
+          <div><span>Margin risk</span><span class="badge ${riskTone(v.risk)}"><i class="pip"></i>${v.risk}</span></div>
+          <div><span>Price position</span><b>${v.pos}</b></div>
+          <div><span>Matched leads</span><b class="num">${v.leads}</b></div>
+        </div>
+        <button class="btn btn-${v.risk==='HIGH'?'primary':'secondary'} btn-sm" data-act="Pricing review opened for #${v.stock}">Review pricing</button>
+      </div>
+    </article>`).join('');
+  const list = `<div class="table-wrap"><div class="table-scroll"><table>
+    <thead><tr><th>Stock</th><th>Vehicle</th><th>Price</th><th>Days</th><th>Margin risk</th><th>Price position</th><th>Leads</th><th style="text-align:right">Action</th></tr></thead>
+    <tbody>${VEHICLES.map(v=>`<tr>
+      <td class="mono">#${v.stock}</td><td style="font-weight:550">${v.name}</td>
+      <td class="num">${AED(v.price)}</td>
+      <td class="num ${v.days>60?'age over':''}">${v.days}</td>
+      <td><span class="badge ${riskTone(v.risk)}"><i class="pip"></i>${v.risk}</span></td>
+      <td>${v.pos}</td><td class="num">${v.leads}</td>
+      <td style="text-align:right"><span class="row-act"><button class="btn btn-secondary btn-sm" data-act="Pricing review opened for #${v.stock}">Review pricing</button></span></td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+  return `
+  <div style="margin-bottom:var(--s5);display:flex;align-items:flex-end;gap:var(--s4);flex-wrap:wrap">
+    <div style="flex:1;min-width:240px">
+      <h1 class="page-title">Profit Sentinel</h1>
+      <p class="page-sub">6 units · 2 with high margin risk · ${AEDk(52300)} gross exposed to holding cost</p>
+    </div>
+    <div class="seg">
+      <button class="${vehMode==='grid'?'active':''}" data-veh="grid">${svg(I.grid,14)} Grid</button>
+      <button class="${vehMode==='list'?'active':''}" data-veh="list">${svg(I.list,14)} List</button>
+    </div>
+  </div>
+  ${vehMode==='grid'?`<div class="veh-grid">${grid}</div>`:list}`;
+}
+
+/* ---------- SCREEN: CHANNELS ---------- */
+function screenChannels(){
+  const mark = s => s==='pass'?`<span class="mk">${svg(I.check,13)}</span>`
+    : s==='fail'?`<span class="mk">${svg(I.x,13)}</span>`
+    : `<span class="mk">—</span>`;
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Channel Health</h1>
+    <p class="page-sub">A green tick means a check ran and passed. A dash means it has not been run — NEXUS never reports an untested check as connected.</p>
+  </div>
+  <div class="chan-grid">
+    ${CHANNELS.map(c=>`
+      <article class="chan">
+        <div class="chan-top">
+          <h4>${c.name}</h4>
+          <span class="badge ${c.tone}"><i class="pip"></i>${c.state}</span>
+        </div>
+        <div class="checks">
+          ${c.checks.map(([l,s])=>`<div class="check ${s}">${mark(s)}<span class="lbl">${l}</span><span style="font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase">${s==='pass'?'Passed':s==='fail'?'Failed':'Not run'}</span></div>`).join('')}
+        </div>
+        <div class="chan-foot">
+          <span>Verdict <b style="color:var(--text)">${c.verdict}</b>${c.notrun?` · ${c.notrun} not run`:''}</span>
+          <button class="btn btn-secondary btn-sm" data-act="Test queued for ${c.name}">Run test</button>
+        </div>
+      </article>`).join('')}
+  </div>
+
+  <div class="section-head" style="margin-top:var(--s6)"><h3 class="section-title">Dealership readiness</h3>
+    <div class="section-note">Overall verdict is PARTIAL. It stays PARTIAL until every check has actually run.</div></div>
+  <div class="card card-pad" style="display:grid;gap:var(--s3)">
+    ${[['Core setup',100],['WhatsApp',80],['Website',100],['Facebook',60],['Instagram',40],['Phone',0]].map(([l,p])=>`
+      <div style="display:grid;grid-template-columns:130px 1fr 56px;gap:var(--s3);align-items:center;font-size:12.5px">
+        <span>${l}</span>
+        <span class="evidence-bar" style="height:6px"><i style="width:${p}%;background:${p===100?'var(--success)':p===0?'var(--danger)':'var(--warning)'}"></i></span>
+        <b class="num" style="text-align:right">${p===0?'BLOCKED':p+'%'}</b>
+      </div>`).join('')}
+  </div>`;
+}
+
+/* ---------- SCREEN: STATE SYSTEM DEMOS ---------- */
+function screenRecovered(){
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Recovered Revenue</h1>
+    <p class="page-sub">Confirmed recoveries only. An estimate never appears on this screen.</p>
+  </div>
+  <div class="grid kpis" style="margin-bottom:var(--s5)">
+    ${kpi({label:'Confirmed recovered',period:'Last 30 days',value:AED(27500),dir:'up',delta:'14% vs previous period',
+      confirmed:true,support:[['19 confirmed recoveries','success'],['5 linked deal records','success']],cta:'View linked deals',to:'recovered',
+      explain:{body:'Each recovery is linked to a closed deal or a recorded payment.',parts:['Lead response recovery · AED 18,300','Stock repricing · AED 9,200']}})}
+    ${kpi({label:'Attributed, not yet confirmed',period:'Last 30 days',value:AED(11400),dir:'up',delta:'3 pending confirmation',
+      confirmed:false,evidence:0.61,support:[['3 deals awaiting finance','warning'],['1 awaiting delivery','info']],cta:'Review pending',to:'rescue'})}
+  </div>
+  <div class="section-head"><h3 class="section-title">Empty state, done properly</h3>
+    <div class="section-note">"Nothing happened" is a finding, so it gets explained rather than shown as a zero.</div></div>
+  <div class="state">
+    <div class="ic">${svg(I.check,21)}</div>
+    <h4>No new confirmed recoveries today</h4>
+    <p>NEXUS ran its detection pass at 09:42 Dubai time. No recovery met the confirmation threshold, which requires a linked deal or payment record.</p>
+    <div class="reviewed"><span>Reviewed <b>1,284</b> leads</span><span><b>342</b> conversations</span><span><b>118</b> vehicles</span></div>
+    <div class="state-actions">
+      <button class="btn btn-primary" data-route="leaks">View open opportunities</button>
+      <button class="btn btn-secondary" data-act="Detection rules opened">View detection rules</button>
+    </div>
+  </div>`;
+}
+function screenRescue(){
+  return `
+  <div style="margin-bottom:var(--s5)"><h1 class="page-title">Deal Rescue</h1>
+    <p class="page-sub">Loading and error states, so the screen never jumps and never says "something went wrong".</p></div>
+
+  <div class="section-head"><h3 class="section-title">Loading — skeleton holds the final layout</h3>
+    <div class="section-note">Same dimensions as the loaded card, so there is no layout shift.</div></div>
+  <div class="grid kpis" style="margin-bottom:var(--s6)">
+    ${[1,2,3].map(()=>`<div class="kpi">
+      <div class="skel" style="width:96px;height:11px"></div>
+      <div class="skel" style="width:152px;height:32px;margin-top:6px"></div>
+      <div class="skel" style="width:120px;height:12px"></div>
+      <div class="kpi-support"><div class="skel" style="width:100%;height:11px"></div><div class="skel" style="width:74%;height:11px"></div></div>
+      <div class="kpi-foot"><div class="skel" style="width:104px;height:14px"></div></div>
+    </div>`).join('')}
+  </div>
+
+  <div class="section-head"><h3 class="section-title">Error — says what failed, when it last worked, what to do</h3></div>
+  <div class="state err" style="margin-bottom:var(--s6)">
+    <div class="ic">${svg(I.warn,21)}</div>
+    <h4>Instagram DM channel could not be verified</h4>
+    <p>The webhook verification check failed. Inbound messages are not being received on this channel, so any lead sent through Instagram since the last successful event is not in NEXUS.</p>
+    <div class="reviewed"><span>Last successful event <b>26 Sep 2026, 17:16</b></span><span>Failed attempts <b>4</b></span></div>
+    <div class="state-actions">
+      <button class="btn btn-primary" data-act="Verification retry queued">Retry verification</button>
+      <button class="btn btn-secondary" data-route="channels">Open channel</button>
+    </div>
+  </div>
+
+  <div class="section-head"><h3 class="section-title">Permission — explains instead of hiding</h3></div>
+  <div class="state">
+    <div class="ic">${svg(I.lock,21)}</div>
+    <h4>Finance data is restricted for your role</h4>
+    <p>Deal margins and funding records are visible to Finance and Admin roles. Your Owner role can see recovered revenue and gross exposure without the underlying cost lines.</p>
+    <div class="state-actions">
+      <button class="btn btn-secondary" data-act="Access request sent to administrator">Request access</button>
+      <span class="lock-note">${svg(I.lock,12)} Available to Finance and Admin</span>
+    </div>
+  </div>`;
+}
+function screenConversations(){
+  const convs = LEADS.slice(0,5);
+  return `
+  <div style="margin-bottom:var(--s5)"><h1 class="page-title">Conversations</h1>
+    <p class="page-sub">Split view keeps the operator in context. The conversation and the journey are one screen, not two.</p></div>
+  <div class="split">
+    <div class="conv-list">
+      ${convs.map((c,i)=>`<button class="conv-item ${i===0?'active':''}" data-conv="${c.id}">
+        ${i<2?'<i class="dot-unread"></i>':'<i style="width:7px;flex:0 0 7px"></i>'}
+        <span class="who" style="flex:1">
+          <span class="nm" style="display:block">${c.name}</span>
+          <span class="sub" style="display:block">${c.veh}</span>
+        </span>
+        <span class="sub" style="white-space:nowrap">${c.age}</span>
+      </button>`).join('')}
+    </div>
+    <div class="card card-pad">
+      <div style="display:flex;align-items:flex-start;gap:var(--s3);flex-wrap:wrap;padding-bottom:var(--s4);border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:180px">
+          <h3 class="section-title" style="font-size:17px">Sarah Ahmed</h3>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:3px">2024 BMW X5 xDrive40i · WhatsApp · 26h 12m without a reply</div>
+        </div>
+        <span class="badge b-danger"><i class="pip"></i>Hot 92</span>
+      </div>
+      <div style="padding-block:var(--s4);display:grid;gap:var(--s3)">
+        <div style="max-width:78%;background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--r-card) var(--r-card) var(--r-card) var(--r-xs);padding:var(--s3)">
+          <div style="font-size:13px">Hi, is the white X5 still available? What's the best price you can do on it?</div>
+          <div style="font-size:11px;color:var(--subtle);margin-top:5px">Yesterday 09:12 · Dubai time</div>
+        </div>
+        <div class="why">
+          <h5 style="font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);font-weight:650;margin:0 0 var(--s2)">What NEXUS read from this</h5>
+          <ul>
+            <li class="ok">${svg(I.check,13)}<span>Intent <b>PRICE_ENQUIRY</b> · vehicle matched to stock #A1832</span></li>
+            <li class="ok">${svg(I.check,13)}<span>Score raised to 92 · budget band inferred AED 240–260K</span></li>
+            <li class="warn">${svg(I.warn,13)}<span>No outbound reply recorded · 26h past the 4h threshold</span></li>
+          </ul>
+          <div class="provenance">${svg(I.info,12)} AI summary generated from 14 conversation events. NEXUS suggests, you decide, the system executes.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:var(--s2);flex-wrap:wrap;border-top:1px solid var(--border);padding-top:var(--s4)">
+        <button class="btn btn-primary" data-act="WhatsApp reply drafted for Sarah Ahmed">${svg(I.wa,16)} Reply on WhatsApp</button>
+        <button class="btn btn-secondary" data-act="Call logged">${svg(I.phone,16)} Call</button>
+        <button class="btn btn-tertiary" data-lead="L-4821">Open full record ${svg(I.arrow,14)}</button>
+      </div>
+    </div>
+  </div>`;
+}
+function screenLeaks(){
+  return `
+  <div style="margin-bottom:var(--s5)"><h1 class="page-title">Money Leaks</h1>
+    <p class="page-sub">9 open leaks · ${AEDk(84200)} estimated exposure · ranked by evidence strength × impact</p></div>
+  <div class="toolbar"><div class="filters">
+    <select class="select" data-set="1"><option>Severity · 2 and above</option><option>All severities</option><option>Critical only</option></select>
+    <select class="select" data-set="0"><option>Type · any</option><option>Lead response</option><option>Stock pricing</option><option>Appointment</option><option>Quote follow-up</option></select>
+    <select class="select" data-set="0"><option>Status · open</option><option>Resolved</option><option>Dismissed</option></select>
+    <span class="filter-count">1 filter active <button class="link-btn" data-act="Filters cleared">Clear all</button></span>
+  </div></div>
+  <div class="grid" style="gap:var(--s3)">${LEAKS.concat(LEAKS.slice(0,2)).map(leakCard).join('')}</div>`;
+}
+function screenGeneric(title,body){
+  return `<div style="margin-bottom:var(--s5)"><h1 class="page-title">${title}</h1><p class="page-sub">${body}</p></div>
+  <div class="state"><div class="ic">${svg(I.info,21)}</div>
+    <h4>Screen not part of this design system demo</h4>
+    <p>This shell demonstrates the locked components. ${title} composes the same primitives — tokens, tables, drawers, states — with no screen-specific styling.</p>
+    <div class="state-actions"><button class="btn btn-primary" data-route="command">Back to Command Center</button></div></div>`;
+}
+
+/* ---------- SCREEN: ACTION ENGINE — automation is never a black box ---------- */
+const AUTOMATIONS = [
+  {name:'Lead Escalation', state:'ACTIVE', tone:'b-success',
+   trigger:'Lead unanswered for more than 4 hours', matched:7, last:'09:42',
+   steps:[['Assigned a manager','ok'],['Created a follow-up task','ok'],['Sent the Slack alert','ok']],
+   fail:null},
+  {name:'Stock Ageing Sweep', state:'ACTIVE', tone:'b-success',
+   trigger:'Vehicle passes 60 days in stock', matched:2, last:'06:00',
+   steps:[['Flagged margin risk','ok'],['Matched against open leads','ok'],['Queued a pricing review','ok']],
+   fail:null},
+  {name:'Appointment Confirmation', state:'DEGRADED', tone:'b-warning',
+   trigger:'Appointment created and not confirmed within 24 hours', matched:3, last:'10:05',
+   steps:[['Built the reminder','ok'],['Recorded the audit row','ok'],['Sent on WhatsApp','fail']],
+   fail:{what:'WhatsApp delivery was not confirmed for 1 of 3 appointments.',
+         why:'The channel accepted the message and no delivery receipt came back. Unknown is not the same as failed — the customer may have it.'}},
+  {name:'Service Due Reminder', state:'NOT BUILT', tone:'b-neutral',
+   trigger:'—', matched:0, last:'—',
+   steps:[['Detect service due','notrun'],['Compose reminder','notrun'],['Send','notrun']],
+   fail:null, blocked:'Blocked by a missing capability: there is no service table and no appointment table to read. This is roadmap, not capability.'}
+];
+function screenActions(){
+  const mk = s => s==='ok'?`${svg(I.check,13)}`: s==='fail'?`${svg(I.x,13)}`:`<span style="width:13px;display:inline-block">—</span>`;
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Action Engine</h1>
+    <p class="page-sub">What triggered, what happened, and what did not. An automation that cannot show its own run is a black box.</p>
+  </div>
+  <div class="grid" style="gap:var(--s3)">
+    ${AUTOMATIONS.map(a=>`
+      <article class="auto-card">
+        <div class="auto-top">
+          <h4>${a.name}</h4>
+          <span class="badge ${a.tone}"><i class="pip"></i>${a.state}</span>
+        </div>
+        ${a.blocked?`<div class="auto-fail" style="background:var(--neutral-soft);border-color:var(--neutral-border)">
+            ${svg(I.info,15)}<span>${a.blocked}</span></div>`:''}
+        <div class="auto-grid">
+          <div class="auto-block">
+            <h6>Trigger</h6><div class="v">${a.trigger}</div>
+            <h6 style="margin-top:var(--s3)">Matched</h6>
+            <div class="v"><b class="num">${a.matched}</b> ${a.matched===1?'record':'records'} · last run ${a.last} ${a.last!=='—'?TZ_LABEL:''}</div>
+          </div>
+          <div class="auto-block">
+            <h6>What it did</h6>
+            <ul class="auto-steps">${a.steps.map(([l,s])=>`<li class="${s}">${mk(s)}<span>${l}</span></li>`).join('')}</ul>
+          </div>
+        </div>
+        ${a.fail?`<div class="auto-fail">${svg(I.warn,15)}
+            <div style="flex:1;min-width:180px"><b>${a.fail.what}</b><div style="color:var(--muted);margin-top:3px">${a.fail.why}</div></div>
+            <span style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" data-act="Retry queued for ${a.name}">Retry</button>
+              <button class="btn btn-secondary btn-sm" data-act="Execution opened">View execution</button>
+            </span></div>`:''}
+      </article>`).join('')}
+  </div>`;
+}
+
+/* ---------- SCREEN: SETUP & HEALTH ---------- */
+const READINESS = [['Core setup',100],['WhatsApp',80],['Website',100],['Facebook',60],['Instagram',40],['Phone',0]];
+const HEALTH = [['Data freshness',96],['Integration health',78],['Workflow health',88],['Action completion',91]];
+const INCIDENTS = [
+  {sev:'warn', t:'WhatsApp outbound delivery degraded', p:'1 of 3 appointment reminders has no delivery receipt. Inbound is unaffected.', when:'10:05'},
+  {sev:'crit', t:'Instagram webhook verification failing', p:'No inbound messages received on this channel since 26 Sep 17:16. Any Instagram enquiry since then is not in NEXUS.', when:'Yesterday'},
+  {sev:'info', t:'Inventory sync completed', p:'118 vehicles read, 6 changed, 0 rejected.', when:'06:00'}
+];
+function ring(score){
+  const r=38, c=2*Math.PI*r, off=c*(1-score/100);
+  const col = score>=85?'var(--success)':score>=65?'var(--warning)':'var(--danger)';
+  return `<div class="health-ring">
+    <svg viewBox="0 0 86 86" width="86" height="86">
+      <circle cx="43" cy="43" r="${r}" fill="none" stroke="var(--surface-sunken)" stroke-width="7"/>
+      <circle cx="43" cy="43" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round"
+              stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>
+    </svg><span class="val">${score}</span></div>`;
+}
+function screenSetup(){
+  const overall = Math.round(HEALTH.reduce((a,[,v])=>a+v,0)/HEALTH.length);
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Setup &amp; Health</h1>
+    <p class="page-sub">Overall readiness is <b>PARTIAL</b>, and it stays PARTIAL until every check has actually run.</p>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">NEXUS health</h3>
+    <div class="section-note">Four measured things. Not an invented "AI confidence" score.</div></div></div>
+  <div class="card card-pad" style="margin-bottom:var(--s6)">
+    <div class="health">
+      ${ring(overall)}
+      <div class="health-parts">
+        ${HEALTH.map(([l,v])=>`<div class="health-part">
+          <span>${l}</span>
+          <span class="evidence-bar" style="height:6px"><i style="width:${v}%;background:${v>=85?'var(--success)':v>=65?'var(--warning)':'var(--danger)'}"></i></span>
+          <b>${v}</b></div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">Getting connected</h3>
+    <div class="section-note">First login should not be an empty dashboard. This is the checklist and where it stands.</div></div>
+    <span class="badge b-warning"><i class="pip"></i>4 of 7 done</span></div>
+  <div class="card card-pad" style="display:grid;gap:var(--s3);margin-bottom:var(--s6)">
+    ${READINESS.map(([l,p])=>`
+      <div style="display:grid;grid-template-columns:130px 1fr 72px;gap:var(--s3);align-items:center;font-size:12.5px">
+        <span>${l}</span>
+        <span class="evidence-bar" style="height:6px"><i style="width:${p}%;background:${p===100?'var(--success)':p===0?'var(--danger)':'var(--warning)'}"></i></span>
+        <b class="num" style="text-align:right">${p===0?'BLOCKED':p+'%'}</b></div>`).join('')}
+    <div style="border-top:1px solid var(--border);padding-top:var(--s3);display:flex;gap:var(--s2);flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" data-route="channels">Finish channel setup</button>
+      <button class="btn btn-tertiary" data-act="Guide opened">${svg(I.info,14)} What does each one do?</button>
+    </div>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">Incidents</h3>
+    <div class="section-note">Symptom and impact here. Mechanism and location stay on the vendor's side.</div></div></div>
+  <div class="card">
+    ${INCIDENTS.map(i=>`<div class="incident">
+      <span class="sev ${i.sev}"></span>
+      <div><h5>${i.t}</h5><p>${i.p}</p></div>
+      <span style="font-size:11.5px;color:var(--subtle);white-space:nowrap">${i.when}</span>
+    </div>`).join('')}
+  </div>`;
+}
+
+/* ---------- SCREEN: ADD A LEAD — inline validation, autosave, progressive disclosure ---------- */
+let advOpen = false, formTouched = {}, saveState = 'idle';
+function fieldErr(id, val){
+  if(id==='name')  return val.trim() ? '' : 'Enter the customer’s name.';
+  if(id==='phone'){
+    if(!val.trim()) return 'Enter a phone number, or an email below.';
+    return /^\+?[\d\s()-]{7,}$/.test(val.trim()) ? '' : 'That does not look like a reachable number. Include the country code.';
+  }
+  if(id==='email') return !val.trim() || /^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(val.trim()) ? '' : 'Enter a valid email address, or leave it empty.';
+  return '';
+}
+function screenAddLead(){
+  const f = (id,label,ph,opt,note,type) => {
+    const v = formTouched[id] ?? '';
+    const e = formTouched[id]!==undefined ? fieldErr(id,v) : '';
+    const good = formTouched[id]!==undefined && !e && v.trim();
+    return `<div class="field ${e?'bad':good?'good':''}">
+      <label for="f-${id}">${label}${opt?' <span class="opt">optional</span>':''}</label>
+      <input id="f-${id}" type="${type||'text'}" placeholder="${ph}" value="${v.replace(/"/g,'&quot;')}" data-field="${id}">
+      ${e?`<span class="err">${svg(I.warn,12)}${e}</span>`:note?`<span class="note">${note}</span>`:''}
+    </div>`;
+  };
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Add a lead</h1>
+    <p class="page-sub">A walk-in or a phone call. Recorded as a person’s word, not as an attested delivery — and the record says so.</p>
+  </div>
+  <div class="form-wrap card card-pad">
+    <div class="fsec">
+      <h5>Customer</h5>
+      <p class="hint">A phone number alone is enough. Most UAE walk-ins never give an email.</p>
+      <div class="frow two">${f('name','Full name','Sarah Ahmed')}${f('phone','Phone','+971 50 000 0000',false,'Include the country code.','tel')}</div>
+      <div class="frow" style="margin-top:var(--s3)">${f('email','Email','name@example.com',true,'','email')}</div>
+    </div>
+    <div class="fsec">
+      <h5>Vehicle</h5>
+      <div class="frow two">
+        <div class="field"><label for="f-veh">Vehicle of interest <span class="opt">optional</span></label>
+          <input id="f-veh" placeholder="2024 BMW X5 xDrive40i"></div>
+        <div class="field"><label for="f-stock">Stock number <span class="opt">optional</span></label>
+          <input id="f-stock" placeholder="A1832"></div>
+      </div>
+    </div>
+    <div class="fsec">
+      <h5>Source</h5>
+      <div class="field"><label for="f-src">How did they reach you</label>
+        <select id="f-src" class="field"><option>Walk-in</option><option>Phone call</option></select>
+        <span class="note">Only manual sources appear here. Attributed sources like Facebook cannot be entered by hand — that is what ad spend gets judged against.</span></div>
+    </div>
+    <div class="fsec">
+      <button class="adv-toggle" data-adv="1" aria-expanded="${advOpen}">${svg(I.arrow,13)} ${advOpen?'Hide':'Show'} commercial details</button>
+      ${advOpen?`<div class="frow two" style="margin-top:var(--s3)">
+        <div class="field"><label for="f-budget">Budget <span class="opt">optional</span></label><input id="f-budget" placeholder="240,000 – 260,000"></div>
+        <div class="field"><label for="f-trade">Trade-in <span class="opt">optional</span></label><input id="f-trade" placeholder="2019 Nissan Patrol"></div>
+      </div>
+      <div class="field" style="margin-top:var(--s3)"><label for="f-notes">Notes <span class="opt">optional</span></label>
+        <textarea id="f-notes" placeholder="What did they actually ask for?"></textarea></div>`:''}
+    </div>
+    <div class="fsec">
+      <h5>Consent</h5>
+      <label style="display:flex;gap:var(--s3);align-items:flex-start;font-size:13px;cursor:pointer">
+        <input type="checkbox" style="width:16px;height:16px;margin-top:2px;accent-color:var(--nx-blue)">
+        <span>The customer agreed to be contacted on WhatsApp.
+          <span class="note" style="display:block">Recorded with today’s date and your name. Without it NEXUS will not send marketing, even inside an open window.</span></span>
+      </label>
+    </div>
+    <div class="form-foot">
+      <button class="btn btn-primary" data-submit="1">Record the lead</button>
+      <button class="btn btn-secondary" data-route="leads">Cancel</button>
+      <span class="spacer"></span>
+      <span class="autosave ${saveState==='saving'?'saving':''}" id="autosaveNote">
+        <i class="pip"></i>${saveState==='saving'?'Saving…':saveState==='saved'?'Draft saved just now':'Draft autosaves as you type'}</span>
+    </div>
+  </div>`;
+}
+
+/* ---------- SCREEN: IMPORT & SYNC ---------- */
+function screenImport(){
+  return `
+  <div style="margin-bottom:var(--s5)">
+    <h1 class="page-title">Import &amp; Sync</h1>
+    <p class="page-sub">An import that partly failed is never reported as "Import successful".</p>
+  </div>
+
+  <div class="section-head"><h3 class="section-title">Last vehicle import</h3>
+    <span class="section-note">stock-2026-09-27.csv · ${fmtTime(new Date())} ${TZ_LABEL}</span></div>
+  <div class="card card-pad" style="margin-bottom:var(--s6)">
+    <div class="import-sum">
+      <div class="import-stat"><div class="n">1,284</div><div class="l">Records found</div></div>
+      <div class="import-stat ok"><div class="n">1,251</div><div class="l">Valid</div></div>
+      <div class="import-stat warn"><div class="n">21</div><div class="l">Warnings</div></div>
+      <div class="import-stat err"><div class="n">12</div><div class="l">Errors</div></div>
+    </div>
+    <div style="display:flex;gap:var(--s2);flex-wrap:wrap;border-top:1px solid var(--border);padding-top:var(--s3)">
+      <button class="btn btn-primary btn-sm" data-act="1,251 valid records imported">Import the 1,251 valid records</button>
+      <button class="btn btn-secondary btn-sm" data-act="Error report prepared">Download the error report</button>
+      <button class="btn btn-tertiary" data-act="Warnings listed">Review 21 warnings</button>
+    </div>
+    <div class="provenance" style="margin-top:var(--s3)">${svg(I.info,12)} The 12 errors are not imported and not silently dropped — they stay in the report until someone fixes them.</div>
+  </div>
+
+  <div class="section-head"><div><h3 class="section-title">Sync conflict</h3>
+    <div class="section-note">NEXUS and the DMS disagree. Neither value is picked automatically.</div></div></div>
+  <div class="conflict">
+    <div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap">
+      <span class="badge b-warning"><i class="pip"></i>1 conflict</span>
+      <b style="font-size:13.5px">2024 BMW X5 xDrive40i · <span class="mono">#A1832</span></b>
+    </div>
+    <div class="conflict-rows">
+      <div class="conflict-row"><span class="src">NEXUS</span><b>${AED(220000)}</b><span style="font-size:11.5px;color:var(--muted)">updated 10:41</span></div>
+      <div class="conflict-row"><span class="src">DMS</span><b>${AED(225000)}</b><span style="font-size:11.5px;color:var(--muted)">updated 10:44</span></div>
+    </div>
+    <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" data-act="DMS value applied to #A1832">Use the DMS value</button>
+      <button class="btn btn-secondary btn-sm" data-act="NEXUS value kept for #A1832">Keep the NEXUS value</button>
+      <button class="btn btn-tertiary" data-act="Full history opened">See what changed</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- SCREEN: WALLBOARD ---------- */
+function screenWallboard(){
+  const now = new Date();
+  return `<div class="wall">
+    <div class="wall-head">
+      <h1>ALBA CARS · Today</h1>
+      <span class="when">${fmtDate(now)} · ${fmtTime(now)} ${TZ_LABEL} · refreshes every 60s</span>
+    </div>
+    <div class="wall-grid">
+      <div class="wall-tile alarm"><div class="l">Need a reply now</div><div class="n">4</div><div class="s">Oldest waiting 26h 12m</div></div>
+      <div class="wall-tile"><div class="l">Hot leads</div><div class="n">12</div><div class="s">+3 today</div></div>
+      <div class="wall-tile"><div class="l">Appointments</div><div class="n">18</div><div class="s">3 unconfirmed</div></div>
+      <div class="wall-tile"><div class="l">Money at risk</div><div class="n">${AEDk(84200)}</div><div class="s">Estimated · 9 open leaks</div></div>
+      <div class="wall-tile"><div class="l">Recovered</div><div class="n">${AEDk(27500)}</div><div class="s">Confirmed · last 30 days</div></div>
+      <div class="wall-tile"><div class="l">Channel health</div><div class="n">5/6</div><div class="s">Instagram degraded</div></div>
+    </div>
+    <div style="text-align:center"><button class="btn btn-secondary" data-route="command">Leave wallboard</button></div>
+  </div>`;
+}
+
+/* ---------- SCREEN: KEYBOARD SHORTCUTS ---------- */
+function screenShortcuts(){
+  const rows = [['⌘K','Search or ask NEXUS'],['/','Search or ask NEXUS'],['G then L','Lead Recovery'],
+    ['G then I','Profit Sentinel'],['G then C','Conversations'],['G then M','Money Leaks'],
+    ['G then A','Action Engine'],['G then H','Setup & Health'],['N','Add a lead'],['Esc','Close drawer or panel'],['?','This list']];
+  return `<div style="margin-bottom:var(--s5)"><h1 class="page-title">Keyboard shortcuts</h1>
+    <p class="page-sub">Never required. Once a BDC agent learns four of them the product gets noticeably faster.</p></div>
+  <div class="card card-pad"><div class="keys">
+    ${rows.map(([k,d])=>`<div class="keyrow"><span class="k">${k.split(' then ').map(x=>`<kbd>${x}</kbd>`).join('<span style="color:var(--subtle)">then</span>')}</span><span class="d">${d}</span></div>`).join('')}
+  </div></div>`;
+}
+
+/* ---------- ROUTER ---------- */
+const SCREENS = {
+  command:screenCommand, focus:screenFocus, leaks:screenLeaks, leads:screenLeads,
+  sentinel:screenSentinel, channels:screenChannels, recovered:screenRecovered,
+  rescue:screenRescue, conversations:screenConversations, actions:screenActions,
+  setup:screenSetup, addlead:screenAddLead, importing:screenImport,
+  wallboard:screenWallboard, shortcuts:screenShortcuts
+};
+function render(){
+  document.body.classList.toggle('wallboard', route==='wallboard');
+  const fn = SCREENS[route] || (()=>screenGeneric(TITLES[route]?TITLES[route][1]:'Module','Composed from the same locked component set.'));
+  const pg = document.getElementById('page');
+  pg.innerHTML = fn();
+  if(route==='wallboard'){ pg.style.padding='0'; pg.style.maxWidth='none'; }
+  else { pg.style.padding=''; pg.style.maxWidth=''; }
+  renderNav(); renderCrumbs(); renderBulk();
+  const fresh = document.getElementById('freshness');
+  if(route==='sentinel'){ fresh.className='freshness stale'; fresh.innerHTML='<i class="live"></i> Inventory data may be stale · last sync 3h 14m ago'; }
+  else { fresh.className='freshness'; fresh.innerHTML='<i class="live"></i> Live · updated 14 sec ago · Dubai time'; }
+}
+function go(r){ route=r; page=1; document.getElementById('scroll').scrollTop=0; document.body.classList.remove('nav-open'); render(); }
+
+/* ---------- TOASTS with UNDO ---------- */
+function toast(msg,{tone='ok',sub='',undo=false}={}){
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast '+tone;
+  el.innerHTML = `${svg(tone==='ok'?I.check:tone==='warn'?I.warn:I.x,16)}
+    <span class="tmsg">${msg}${sub?`<small>${sub}</small>`:''}</span>
+    ${undo?`<button class="btn btn-secondary btn-sm">${svg(I.undo,14)} Undo</button>`:''}`;
+  wrap.appendChild(el);
+  const kill = () => { el.classList.add('leaving'); setTimeout(()=>el.remove(),220); };
+  if(undo) el.querySelector('button').onclick = () => { kill(); toast('Change reverted',{sub:'6 leads returned to their previous owner'}); };
+  setTimeout(kill, undo?7000:4000);
+}
+
+/* ---------- DRAWER ---------- */
+let lastFocus = null;
+function openDrawer(id){
+  const l = LEADS.find(x=>x.id===id); if(!l) return;
+  lastFocus = document.activeElement;
+  const d = document.getElementById('drawer'), sc = document.getElementById('scrim');
+  d.innerHTML = `
+  <div class="drawer-head">
+    <div class="t">
+      <h3>${l.name}</h3>
+      <div class="m mono">${l.id} · ${l.phone}</div>
+      <div class="drawer-tags">
+        <span class="badge ${statusTone(l.status)}"><i class="pip"></i>${l.status} ${l.score}</span>
+        <span class="badge b-neutral">${l.src}</span>
+        ${l.over?'<span class="badge b-danger"><i class="pip"></i>Past response threshold</span>':''}
+      </div>
+    </div>
+    <button class="icon-btn" id="drawerClose" aria-label="Close">${svg(I.x,18)}</button>
+  </div>
+  <div class="drawer-body">
+    <div class="d-sec">
+      <h5>Why this lead is ranked ${l.score}</h5>
+      <div class="why"><ul>
+        <li class="ok">${svg(I.check,13)}<span>Vehicle identified · matched to stock #A1832</span></li>
+        <li class="ok">${svg(I.check,13)}<span>Budget band captured · ${l.budget}</span></li>
+        <li class="ok">${svg(I.check,13)}<span>Purchase intent detected · PRICE_ENQUIRY</span></li>
+        <li class="${l.over?'warn':'ok'}">${svg(l.over?I.warn:I.check,13)}<span>No reply for ${l.age}</span></li>
+      </ul>
+      <div class="provenance">${svg(I.info,12)} 4 verified signals · last source event 10:31 Dubai time</div></div>
+    </div>
+    <div class="d-sec">
+      <h5>Customer &amp; vehicle</h5>
+      <dl class="kv">
+        <dt>Phone</dt><dd class="mono">${l.phone}</dd>
+        <dt>Interest</dt><dd>${l.veh}</dd>
+        <dt>Budget</dt><dd>${l.budget}</dd>
+        <dt>Owner</dt><dd>${l.owner==='—'?'Unassigned':l.owner}</dd>
+        <dt>Consent</dt><dd>WhatsApp opted in · 24 Sep 2026</dd>
+      </dl>
+    </div>
+    <div class="d-sec">
+      <h5>Journey</h5>
+      <ul class="journey">
+        <li class="done"><span class="dot">${svg(I.check,11)}</span><div><div class="lbl">Lead received</div><div class="when"><span>Yesterday 09:12</span><span>·</span><span>${l.src}</span></div></div></li>
+        <li class="done"><span class="dot">${svg(I.check,11)}</span><div><div class="lbl">Classified PRICE_ENQUIRY</div><div class="when"><span>09:14</span><span>·</span><span>Action Engine</span></div></div></li>
+        <li class="done"><span class="dot">${svg(I.check,11)}</span><div><div class="lbl">Scored ${l.score} · ${l.status}</div><div class="when"><span>09:14</span><span>·</span><span>4 signals</span></div></div></li>
+        <li class="now"><span class="dot">!</span><div><div class="lbl">Follow-up required</div><div class="when"><span>Overdue by ${l.age}</span></div></div></li>
+        <li><span class="dot">○</span><div><div class="lbl">Appointment</div><div class="when"><span>Not scheduled</span></div></div></li>
+        <li><span class="dot">○</span><div><div class="lbl">Test drive</div><div class="when"><span>Not scheduled</span></div></div></li>
+      </ul>
+    </div>
+    <div class="d-sec">
+      <h5>Recommended action</h5>
+      <p style="margin:0 0 var(--s3);font-size:13px">Contact the customer now. Response delay past 24h is the largest single drop-off factor in this dealership's own closed-lost history.</p>
+      <div class="state-tag">Estimated impact ${AED(8500)} · 82% evidence strength</div>
+    </div>
+    <div class="d-sec" style="border-bottom:0">
+      <h5>Audit trail</h5>
+      <ul class="audit">
+        <li><span class="tm">10:31</span><div><b>NEXUS raised the score</b> to ${l.score} from 74<div class="src">Source: Action Engine · 2 new signals</div></div></li>
+        <li><span class="tm">09:18</span><div><b>Ali assigned the lead</b> to ${l.owner==='—'?'nobody':l.owner}<div class="src">Source: Manual action · dashboard</div></div></li>
+        <li><span class="tm">09:14</span><div><b>NEXUS classified the message</b> as PRICE_ENQUIRY<div class="src">Source: Classification workflow</div></div></li>
+      </ul>
+      <button class="link-btn" style="margin-top:var(--s3)" data-act="Technical audit rows shown">View technical details</button>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn btn-primary" data-act="WhatsApp reply drafted for ${l.name}">${svg(I.wa,16)} WhatsApp</button>
+    <button class="btn btn-secondary" data-act="Call logged for ${l.name}">${svg(I.phone,16)} Call</button>
+    <button class="btn btn-secondary" data-act="Task created">Create task</button>
+  </div>`;
+  d.hidden=false; sc.hidden=false;
+  requestAnimationFrame(()=>{ d.classList.add('open'); sc.classList.add('open'); });
+  d.querySelector('#drawerClose').focus();
+}
+function closeDrawer(){
+  const d=document.getElementById('drawer'), sc=document.getElementById('scrim');
+  d.classList.remove('open'); sc.classList.remove('open');
+  setTimeout(()=>{d.hidden=true; sc.hidden=true;},200);
+  if(lastFocus) lastFocus.focus();
+}
+
+/* ---------- COMMAND PALETTE ---------- */
+const NL = [
+  {q:['hot leads','no reply','unanswered','24','older'], n:'12 leads', label:'Hot leads with no reply for over 24 hours',
+   note:'3 are past 24h · AED 19,500 estimated exposure', to:'leads', v:'hot'},
+  {q:['60','ageing','aging','days','stock','old vehicle'], n:'7 vehicles', label:'Vehicles over 60 days in stock',
+   note:'2 rated high margin risk · AED 52,300 gross exposed', to:'sentinel'},
+  {q:['leak','money','risk','exposure','confirmed'], n:AED(84200), label:'Open revenue leaks, estimated exposure',
+   note:'9 open · 3 high severity · evidence strength 78%', to:'leaks'},
+  {q:['whatsapp','channel','health','receiving','connected'], n:'PARTIAL', label:'Channel health verdict',
+   note:'5 of 6 receiving · 10 checks have not been run', to:'channels'},
+  {q:['recovered','recovery','revenue'], n:AED(27500), label:'Confirmed recovered revenue, last 30 days',
+   note:'19 confirmed recoveries · 5 linked deal records', to:'recovered'}
+];
+const JUMPS = [
+  {icon:I.gauge, t:'Command Center', s:'Today\'s attention queue', to:'command'},
+  {icon:I.leak, t:'Money Leaks', s:'9 open · AED 84,200 estimated', to:'leaks'},
+  {icon:I.users, t:'Lead Recovery', s:'12 hot · 4 need a reply now', to:'leads'},
+  {icon:I.car, t:'Profit Sentinel', s:'6 units · 2 high margin risk', to:'sentinel'},
+  {icon:I.plug, t:'Channel Health', s:'Verdict PARTIAL', to:'channels'},
+  {icon:I.focus, t:'Focus mode', s:'One action at a time', to:'focus'}
+];
+function cmdkRender(q){
+  const ans = document.getElementById('cmdkAnswer'), res = document.getElementById('cmdkResults');
+  const s = q.trim().toLowerCase();
+  const hit = s.length>2 ? NL.find(n=>n.q.some(k=>s.includes(k))) : null;
+  const isAction = /^(assign|send|delete|reprice|confirm)/.test(s);
+
+  if(isAction){
+    ans.innerHTML = `<div class="cmdk-answer">
+      <div class="a-top"><div>
+        <div class="overline">Action preview — nothing has run</div>
+        <div class="a-n">7 leads would be affected</div>
+      </div><span class="badge b-warning"><i class="pip"></i>Needs approval</span></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:var(--s3)">All unowned leads scored 80 or above would be assigned to the BDC queue. This creates 7 audit rows and 7 tasks.</div>
+      <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" data-cmdact="Assigned 7 leads to BDC">Confirm assignment</button>
+        <button class="btn btn-secondary btn-sm" data-cmdclose="1">Cancel</button>
+      </div>
+      <div class="provenance">${svg(I.info,12)} NEXUS never runs a high-impact action from a typed query without this step.</div>
+    </div>`;
+  } else if(hit){
+    ans.innerHTML = `<div class="cmdk-answer">
+      <div class="a-top"><div>
+        <div class="overline">${hit.label}</div>
+        <div class="a-n">${hit.n}</div>
+      </div><button class="btn btn-primary btn-sm" data-cmdgo="${hit.to}" data-cmdview="${hit.v||''}">Review all</button></div>
+      <div style="font-size:12.5px;color:var(--muted)">${hit.note}</div>
+    </div>`;
+  } else ans.innerHTML = '';
+
+  const jumps = s ? JUMPS.filter(j=>(j.t+' '+j.s).toLowerCase().includes(s)) : JUMPS;
+  const records = s ? LEADS.filter(l=>(l.name+' '+l.veh+' '+l.id).toLowerCase().includes(s)).slice(0,4) : [];
+  res.innerHTML =
+    (records.length?`<div class="cmdk-group overline">Records</div>`+records.map(l=>`
+      <button class="cmdk-item" data-cmdlead="${l.id}">
+        <span class="ic">${svg(I.users,15)}</span>
+        <span class="tx"><span class="tt">${l.name}</span><span class="ts">${l.veh} · ${l.src} · score ${l.score}</span></span>
+        ${svg(I.arrow,14)}
+      </button>`).join(''):'')
+    + (jumps.length?`<div class="cmdk-group overline">Jump to</div>`+jumps.map(j=>`
+      <button class="cmdk-item" data-cmdgo="${j.to}">
+        <span class="ic">${svg(j.icon,15)}</span>
+        <span class="tx"><span class="tt">${j.t}</span><span class="ts">${j.s}</span></span>
+        ${svg(I.arrow,14)}
+      </button>`).join(''):'')
+    + (!jumps.length && !records.length && !document.getElementById('cmdkAnswer').innerHTML
+        ? `<div style="padding:var(--s5);text-align:center;color:var(--muted);font-size:13px">
+             Nothing matched. Try “hot leads with no reply over 24h”, “vehicles over 60 days”, or “assign unowned hot leads to BDC”.</div>`:'');
+}
+function cmdkOpen(){
+  document.getElementById('cmdk').classList.add('open');
+  const i = document.getElementById('cmdkInput'); i.value=''; cmdkRender(''); i.focus();
+}
+function cmdkClose(){ document.getElementById('cmdk').classList.remove('open'); }
+
+/* ---------- NOTIFICATION CENTRE ---------- */
+const NOTIFS = {
+  urgent:[
+    {t:'2 hot leads unanswered for over 24h', m:'Sarah Ahmed and Fatima Noor · AED 15,300 estimated', to:'leads'},
+    {t:'Instagram is not receiving', m:'Webhook verification failing since 26 Sep 17:16', to:'channels'}
+  ],
+  action:[
+    {t:'WhatsApp access token expires in 6 days', m:'Renew it before 3 Oct or outbound stops', to:'channels'},
+    {t:'1 sync conflict waiting on a decision', m:'Stock #A1832 price · NEXUS and the DMS disagree', to:'importing'}
+  ],
+  info:[
+    {t:'17 lead updates', m:'Batched from this morning’s automation run', batch:true, to:'leads'},
+    {t:'Inventory sync completed', m:'118 vehicles read, 6 changed, 0 rejected', to:'importing'}
+  ]
+};
+let notifFilter = 'all';
+function renderNotif(){
+  const el = document.getElementById('notif');
+  const groups = [['urgent','Urgent'],['action','Action required'],['info','Information']];
+  const show = g => notifFilter==='all' || notifFilter===g || (notifFilter==='mine' && g!=='info');
+  el.innerHTML = `
+  <div class="notif-head">
+    <h3>Notifications</h3>
+    <button class="btn btn-tertiary" data-act="All marked read">Mark all read</button>
+    <button class="icon-btn" id="notifClose" aria-label="Close">${svg(I.x,18)}</button>
+  </div>
+  <div class="notif-tabs">
+    ${[['all','All'],['urgent','Urgent'],['mine','Assigned to me'],['info','System']].map(([k,l])=>
+      `<button class="view-chip ${notifFilter===k?'active':''}" data-nfilter="${k}">${l}</button>`).join('')}
+  </div>
+  <div class="notif-body">
+    ${groups.filter(([k])=>show(k)).map(([k,label])=>`
+      <div class="notif-group ${k}">
+        <h6>${k==='urgent'?svg(I.warn,12):k==='action'?svg(I.bolt,12):svg(I.info,12)} ${label} · ${NOTIFS[k].length}</h6>
+        ${NOTIFS[k].map(n=>`<button class="notif-item" data-route="${n.to}" data-closenotif="1">
+          <span class="t">${n.t}</span><span class="m">${n.m}</span>
+          ${n.batch?'<span class="batch">Batched — 17 events, one notification</span>':''}
+        </button>`).join('')}
+      </div>`).join('')}
+    <p style="font-size:11.5px;color:var(--subtle);margin:0">Automation runs are batched. NEXUS will never send you 283 notifications for one job.</p>
+  </div>`;
+}
+function openNotif(){
+  const el=document.getElementById('notif'), sc=document.getElementById('scrim');
+  renderNotif(); el.hidden=false; sc.hidden=false;
+  requestAnimationFrame(()=>{el.classList.add('open'); sc.classList.add('open');});
+}
+function closeNotif(){
+  const el=document.getElementById('notif'), sc=document.getElementById('scrim');
+  el.classList.remove('open'); sc.classList.remove('open');
+  setTimeout(()=>{el.hidden=true; if(document.getElementById('drawer').hidden) sc.hidden=true;},200);
+}
+
+/* ---------- EVENTS ---------- */
+document.addEventListener('click', e => {
+  const t = e.target;
+  const near = s => t.closest(s);
+
+  if(near('#cmdTrigger')) return cmdkOpen();
+  if(near('#hamburger')) return document.body.classList.toggle('nav-open');
+  if(near('#collapseBtn')) return document.body.classList.toggle('nav-collapsed');
+  if(near('#themeBtn')){
+    const cur = document.documentElement.getAttribute('data-theme');
+    const dark = cur==='dark' || (!cur && matchMedia('(prefers-color-scheme:dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark?'light':'dark');
+    return toast(dark?'Light theme':'Dark theme',{sub:'Dark suits the command centre and wallboard; light stays the default for tables'});
+  }
+  if(near('#rtlBtn')){
+    const rtl = document.documentElement.getAttribute('dir')==='rtl';
+    document.documentElement.setAttribute('dir', rtl?'ltr':'rtl');
+    return toast(rtl?'Left-to-right':'Right-to-left',{sub:'Built on logical properties, so Arabic will not need a second stylesheet'});
+  }
+  if(near('#densityBtn')){
+    densIdx=(densIdx+1)%3; document.body.dataset.density=dens[densIdx];
+    return toast('Display density: '+dens[densIdx],{sub:'Saved to your user preferences'});
+  }
+  if(near('#bellBtn')) return openNotif();
+  if(near('#notifClose')) return closeNotif();
+  if(near('[data-closenotif]')) closeNotif();
+  const nf = near('[data-nfilter]'); if(nf){ notifFilter = nf.dataset.nfilter; return renderNotif(); }
+
+  const md = near('[data-mode]'); if(md){ mode = md.dataset.mode; return render(); }
+
+  if(near('#colBtn')){ colPickOpen = !colPickOpen; return render(); }
+  const cb = near('[data-col]');
+  if(cb){ e.stopPropagation(); cols[cb.dataset.col] = cb.checked?1:0; colPickOpen = true; render();
+    return toast('Columns updated',{sub:'Saved to your user preferences'}); }
+  if(colPickOpen && !near('.rel')){ colPickOpen=false; render(); }
+
+  const pg = near('[data-page]');
+  if(pg && !pg.disabled){ page = +pg.dataset.page; return render(); }
+
+  const advb = near('[data-adv]'); if(advb){ advOpen = !advOpen; return render(); }
+  if(near('[data-submit]')){
+    ['name','phone'].forEach(k => { if(formTouched[k]===undefined) formTouched[k]=''; });
+    render();
+    const bad = ['name','phone','email'].some(k => fieldErr(k, formTouched[k] ?? ''));
+    if(bad) return toast('Two fields need attention',{tone:'warn',sub:'Errors are shown on the fields themselves, not in a list at the top'});
+    const btn = document.querySelector('[data-submit]');
+    if(btn){ btn.classList.add('is-loading');
+      setTimeout(()=>{ btn.classList.remove('is-loading');
+        toast('Lead recorded',{sub:'Origin walk_in · recorded as a person’s word · audit row written'});
+        formTouched={}; go('leads'); },700); }
+    return;
+  }
+  if(near('#tenantBtn')) return toast('Tenant switching is guarded',{tone:'warn',sub:'Switching clears filters and results so no action lands on the wrong dealership'});
+
+  const ex = near('[data-explain]');
+  if(ex){
+    const pop = document.getElementById(ex.dataset.explain);
+    document.querySelectorAll('.explain-pop').forEach(p=>{ if(p!==pop) p.hidden=true; });
+    pop.hidden = !pop.hidden; return;
+  }
+  if(!near('.explain')) document.querySelectorAll('.explain-pop').forEach(p=>p.hidden=true);
+
+  const nav = near('[data-route]'); if(nav) return go(nav.dataset.route);
+
+  const v = near('[data-view]'); if(v){ view=v.dataset.view; selected.clear(); return render(); }
+  const vm = near('[data-veh]'); if(vm){ vehMode=vm.dataset.veh; return render(); }
+
+  const sel = near('[data-sel]');
+  if(sel){
+    e.stopPropagation();
+    const id = sel.dataset.sel;
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    sel.setAttribute('aria-checked', selected.has(id));
+    sel.closest('tr').classList.toggle('selected', selected.has(id));
+    return renderBulk();
+  }
+  if(near('#chkAll')){
+    const rows = rowsForView(); const all = selected.size===rows.length;
+    selected = all ? new Set() : new Set(rows.map(r=>r.id));
+    return render();
+  }
+  if(near('#clearSel')){ selected.clear(); return render(); }
+
+  const bulk = near('[data-bulk]');
+  if(bulk){
+    const n = selected.size; selected.clear(); render();
+    return toast(`${bulk.dataset.bulk} · ${n} leads`,{sub:'Reversible for 7 seconds, and every row is audited',undo:true});
+  }
+  if(near('[data-bulk-danger]')){
+    const n = selected.size;
+    return toast(`Delete ${n} leads?`,{tone:'err',sub:'Destructive and irreversible — this one asks instead of offering undo'});
+  }
+
+  const quick = near('[data-quick]');
+  if(quick){ e.stopPropagation(); return toast('WhatsApp reply drafted',{sub:'One click from the row — no page navigation'}); }
+
+  const f = near('[data-focus]');
+  if(f){
+    if(f.dataset.focus==='do') toast('Action executed',{sub:'Audit row written · outcome will be attributed when confirmed'});
+    focusStep++; return render();
+  }
+
+  const lead = near('[data-lead]'); if(lead) return openDrawer(lead.dataset.lead);
+  if(near('#scrim')){ if(!document.getElementById('notif').hidden) closeNotif(); return closeDrawer(); }
+  if(near('#drawerClose')) return closeDrawer();
+
+  const cg = near('[data-cmdgo]');
+  if(cg){ if(cg.dataset.cmdview) view=cg.dataset.cmdview; cmdkClose(); return go(cg.dataset.cmdgo); }
+  const cl = near('[data-cmdlead]'); if(cl){ cmdkClose(); return openDrawer(cl.dataset.cmdlead); }
+  const ca = near('[data-cmdact]');
+  if(ca){ cmdkClose(); return toast(ca.dataset.cmdact,{sub:'7 audit rows written · reversible for 7 seconds',undo:true}); }
+  if(near('[data-cmdclose]')) return cmdkClose();
+  if(t.id==='cmdk') return cmdkClose();
+
+  const conv = near('[data-conv]');
+  if(conv){ document.querySelectorAll('[data-conv]').forEach(c=>c.classList.remove('active')); conv.classList.add('active'); return; }
+
+  const act = near('[data-act]');
+  if(act){
+    const btn = act;
+    if(btn.classList.contains('btn')){
+      btn.classList.add('is-loading');
+      setTimeout(()=>{ btn.classList.remove('is-loading'); toast(btn.dataset.act,{sub:'Saved at '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · audit row written'}); },550);
+    } else toast(btn.dataset.act);
+    return;
+  }
+});
+document.getElementById('cmdkInput').addEventListener('input', e => cmdkRender(e.target.value));
+
+/* Inline validation as they type, and an autosaving draft.
+   Validation only fires once a field has been touched — nobody wants an error
+   on a field they have not reached yet. */
+let saveTimer;
+document.addEventListener('input', e => {
+  const f = e.target.closest('[data-field]'); if(!f) return;
+  const id = f.dataset.field;
+  formTouched[id] = f.value;
+  const wrap = f.closest('.field');
+  const err = fieldErr(id, f.value);
+  wrap.classList.toggle('bad', !!err);
+  wrap.classList.toggle('good', !err && !!f.value.trim());
+  let slot = wrap.querySelector('.err, .note');
+  if(err){
+    if(!slot){ slot=document.createElement('span'); wrap.appendChild(slot); }
+    slot.className='err'; slot.innerHTML = svg(I.warn,12)+err;
+  } else if(slot && slot.classList.contains('err')){ slot.remove(); }
+
+  const note = document.getElementById('autosaveNote');
+  if(note){
+    saveState='saving'; note.className='autosave saving';
+    note.innerHTML='<i class="pip"></i>Saving…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{ saveState='saved'; note.className='autosave';
+      note.innerHTML='<i class="pip"></i>Draft saved '+fmtTime(new Date()); }, 650);
+  }
+});
+
+/* Keyboard shortcuts. Never required; they make the product faster once learned. */
+let gPending = false, gTimer;
+const G_MAP = {l:'leads', i:'sentinel', c:'conversations', m:'leaks', a:'actions', h:'setup'};
+document.addEventListener('keydown', e => {
+  const typing = /input|textarea|select/i.test(document.activeElement.tagName);
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); return cmdkOpen(); }
+  if(e.key==='Escape'){
+    if(document.getElementById('cmdk').classList.contains('open')) return cmdkClose();
+    if(!document.getElementById('notif').hidden) return closeNotif();
+    if(!document.getElementById('drawer').hidden) return closeDrawer();
+    if(colPickOpen){ colPickOpen=false; return render(); }
+  }
+  if(typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  if(e.key==='/'){ e.preventDefault(); return cmdkOpen(); }
+  if(e.key==='?'){ e.preventDefault(); return go('shortcuts'); }
+  if(gPending){
+    const to = G_MAP[e.key.toLowerCase()];
+    gPending=false; clearTimeout(gTimer);
+    if(to){ e.preventDefault(); return go(to); }
+    return;
+  }
+  if(e.key.toLowerCase()==='g'){ gPending=true; clearTimeout(gTimer); gTimer=setTimeout(()=>gPending=false,1200); return; }
+  if(e.key.toLowerCase()==='n'){ e.preventDefault(); return go('addlead'); }
+});
+
+render();
+</script>
+
+</body>
+</html>

@@ -160,13 +160,23 @@ function stateFounderOnly() {
    SCREEN
    ========================================================================== */
 export async function renderFounderConsole(host) {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this console
+     appends, and NOT on the host element, because a class set there would
+     outlive this render and restyle whatever is drawn into it next. A wrapper
+     cannot leak — it is removed with the rest of the subtree. Same pattern as
+     screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   resetReads();
 
   /* Usually already resolved -- founder/app.js awaits this at boot, before
      this console is ever rendered -- so this is
      normally a synchronous read of a settled cache, not a second round-trip. */
   await loadPlatformAdmin();
-  if (!isPlatformAdmin()) { host.innerHTML = stateFounderOnly(); return; }
+  if (!isPlatformAdmin()) { root.innerHTML = stateFounderOnly(); return; }
 
   const load = () => readTenants();
 
@@ -181,7 +191,7 @@ export async function renderFounderConsole(host) {
   /* ------------------------------------------------------------------------
      P1 · Every dealership, counted
      ------------------------------------------------------------------------ */
-  panel(host, {
+  panel(root, {
     title: 'Every dealership on NEXUS',
     sub: 'Counted from nexus_founder_list_tenants() -- real and test tenants both, told apart below rather than mixed into one figure.',
     load,
@@ -193,11 +203,11 @@ export async function renderFounderConsole(host) {
       const suspended = real.filter(r => str(r.status) === 'suspended');
 
       const totalTile = kpi('Dealerships', count(real.length),
-        `<div class="cell-sub">${esc(count(test.length))} more ${test.length === 1 ? 'is' : 'are'} test ${test.length === 1 ? 'fixture' : 'fixtures'} (slug starting <span class="mono">test-</span>) and counted separately below.</div>`);
+        `<div class="ds-cell-sub">${esc(count(test.length))} more ${test.length === 1 ? 'is' : 'are'} test ${test.length === 1 ? 'fixture' : 'fixtures'} (slug starting <span class="mono">test-</span>) and counted separately below.</div>`);
       const activeTile = kpi('Active', count(active.length), '', active.length ? 't-ok' : '');
       const suspendedTile = kpi('Suspended', count(suspended.length), '', suspended.length ? 't-hot' : '');
       const testTile = kpi('Test tenants', count(test.length),
-        `<div class="cell-sub">${test.length ? 'Never a real dealership’s activity -- see the labelled list further down.' : 'None on this platform right now.'}</div>`,
+        `<div class="ds-cell-sub">${test.length ? 'Never a real dealership’s activity -- see the labelled list further down.' : 'None on this platform right now.'}</div>`,
         test.length ? 't-warm' : '');
 
       return `<div class="grid g4">${totalTile}${activeTile}${suspendedTile}${testTile}</div>`;
@@ -209,7 +219,7 @@ export async function renderFounderConsole(host) {
      ------------------------------------------------------------------------ */
   const onboard = el('div', 'card');
   onboard.style.marginTop = '16px';
-  host.appendChild(onboard);
+  root.appendChild(onboard);
   {
     let busy = false, msg = '', msgTone = 'ok';
     const draw = () => {
@@ -222,7 +232,7 @@ export async function renderFounderConsole(host) {
           <div class="field"><label for="obEmail">Owner's email</label><input id="obEmail" type="email" placeholder="owner@dealer.com" /></div>
           <div class="field"><label for="obPhone">Owner's phone (optional)</label><input id="obPhone" placeholder="+971 5…" /></div>
         </div>
-        <div class="cell-sub" style="margin-top:10px">The owner's Supabase Auth login is not created by this button. Once the dealership exists it appears in the table below, and you invite the owner from the "Invite someone to a dealership" panel underneath -- that step is what actually sends them a way to sign in.</div>
+        <div class="ds-cell-sub" style="margin-top:10px">The owner's Supabase Auth login is not created by this button. Once the dealership exists it appears in the table below, and you invite the owner from the "Invite someone to a dealership" panel underneath -- that step is what actually sends them a way to sign in.</div>
         <button class="btn primary" id="obGo" style="margin-top:14px"${busy ? ' disabled' : ''}>${busy ? 'Onboarding…' : 'Onboard dealer'}</button>`;
       $('obGo')?.addEventListener('click', submit);
     };
@@ -258,7 +268,7 @@ export async function renderFounderConsole(host) {
      ------------------------------------------------------------------------ */
   const invite = el('div', 'card');
   invite.style.marginTop = '16px';
-  host.appendChild(invite);
+  root.appendChild(invite);
   {
     let busy = false, msg = '', msgTone = 'ok', rows = null, rowsErr = null;
     const draw = () => {
@@ -268,7 +278,7 @@ export async function renderFounderConsole(host) {
       invite.innerHTML = `<div class="card-title">Invite someone to a dealership</div>
         <div class="card-sub" style="margin-bottom:14px">Calls the founder-invite Edge Function -- the one place in NEXUS that holds a service-role key, and it never leaves that function. This sends a real Supabase Auth invite email.</div>
         ${!rows && !rowsErr ? stateLoading(2) : ''}
-        ${rowsErr ? `<div class="cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
+        ${rowsErr ? `<div class="ds-cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
         ${rows ? `
         ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
         <div class="grid g3" style="gap:12px">
@@ -323,7 +333,7 @@ export async function renderFounderConsole(host) {
      ------------------------------------------------------------------------ */
   const tenants = el('div', 'card flush');
   tenants.style.marginTop = '16px';
-  host.appendChild(tenants);
+  root.appendChild(tenants);
   {
     let rows = null, rowsErr = null, saveMsg = '', saveTone = 'hot', savingId = null;
 
@@ -338,7 +348,7 @@ export async function renderFounderConsole(host) {
         body = (saveMsg ? `<div class="banner ${saveTone === 'ok' ? 'info' : 'hot'}" style="margin:12px 16px 0"><span class="material-symbols-outlined" style="font-size:20px">${saveTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(saveMsg)}</div></div>` : '')
           + table(
             [
-              { label: 'Dealership', render: r => `${esc(r.name || r.slug)}${r.is_test ? ' <span class="chip">test</span>' : ''}<div class="cell-sub">${esc(r.slug)}</div>` },
+              { label: 'Dealership', render: r => `${esc(r.name || r.slug)}${r.is_test ? ' <span class="chip">test</span>' : ''}<div class="ds-cell-sub">${esc(r.slug)}</div>` },
               { label: 'Status', render: r => pill(str(r.status) || 'unknown', STATUS_TONE[str(r.status)] || 'unknown') },
               { label: 'Members', render: r => count(r.member_count), align: 'r' },
               { label: 'Leads', render: r => count(r.leads_count), align: 'r' },
@@ -392,7 +402,7 @@ export async function renderFounderConsole(host) {
   /* ------------------------------------------------------------------------
      P5 · Test tenants, named separately
      ------------------------------------------------------------------------ */
-  panel(host, {
+  panel(root, {
     title: 'Test tenants',
     sub: 'Every dealership whose slug starts "test-" -- nexus_founder_list_tenants()’s own is_test flag, not a second guess at the same rule. Fixtures, not customers; never counted in the real-dealership tile above.',
     cols: '1 / -1',
@@ -415,7 +425,7 @@ export async function renderFounderConsole(host) {
   /* ------------------------------------------------------------------------
      P6 · Quarantine census
      ------------------------------------------------------------------------ */
-  panel(host, {
+  panel(root, {
     title: 'Quarantine census',
     sub: 'nexus_founder_quarantine_census(), wrapping nexus_quarantine_census(): rows sitting in the UNATTRIBUTED tenant, by table, because they arrived with no dealership NEXUS could attribute them to.',
     cols: '1 / -1',
@@ -447,19 +457,19 @@ export async function renderFounderConsole(host) {
      ------------------------------------------------------------------------ */
   const payment = el('div', 'card');
   payment.style.marginTop = '16px';
-  host.appendChild(payment);
+  root.appendChild(payment);
   {
     let busy = false, msg = '', msgTone = 'ok', saved = null;
     const draw = () => {
       payment.innerHTML = `<div class="card-title">Pay now link</div>
         <div class="card-sub" style="margin-bottom:14px">What every dealer's Subscription screen shows and opens: "NEXUS by {display name} -- AED 399/month -- Pay now". No card processor integration, no API keys -- the link IS the integration. Stored in platform_payment_details (RLS on, no policies) and read back by dealers only through nexus_payment_instructions().</div>
         ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
-        ${saved ? `<div class="cell-sub" style="margin-bottom:14px">On file now: "${esc(saved.displayName)}", link ending <span class="mono">…${esc(saved.linkTail)}</span>.</div>` : ''}
+        ${saved ? `<div class="ds-cell-sub" style="margin-bottom:14px">On file now: "${esc(saved.displayName)}", link ending <span class="mono">…${esc(saved.linkTail)}</span>.</div>` : ''}
         <div class="grid g2" style="gap:12px">
           <div class="field"><label for="plUrl">Payment link (Ziina)</label><input id="plUrl" placeholder="https://pay.ziina.com/..." class="mono" /></div>
           <div class="field"><label for="plName">Display name</label><input id="plName" value="Adqonic" /></div>
         </div>
-        <div class="cell-sub" style="margin-top:10px">Must be an https:// link on ziina.com, ziina.me, or a subdomain of either -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</div>
+        <div class="ds-cell-sub" style="margin-top:10px">Must be an https:// link on ziina.com, ziina.me, or a subdomain of either -- nexus_founder_set_payment_link() refuses anything else, because this link is shown to every dealer on the platform.</div>
         <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn primary" id="plGo"${busy ? ' disabled' : ''}>${busy ? 'Saving…' : 'Save'}</button>
           <button class="btn ghost" id="plTest" type="button">Test link</button>
@@ -518,7 +528,7 @@ export async function renderFounderConsole(host) {
      ------------------------------------------------------------------------ */
   const paid = el('div', 'card');
   paid.style.marginTop = '16px';
-  host.appendChild(paid);
+  root.appendChild(paid);
   {
     let busy = false, msg = '', msgTone = 'ok', rows = null, rowsErr = null;
     const draw = () => {
@@ -528,7 +538,7 @@ export async function renderFounderConsole(host) {
       paid.innerHTML = `<div class="card-title">Record a payment</div>
         <div class="card-sub" style="margin-bottom:14px">Marks a dealership paid by hand through nexus_founder_mark_paid(). Extends from the current paid-through date if there is time left on it, otherwise starts from today. The reference is kept forever in subscription_event.</div>
         ${!rows && !rowsErr ? stateLoading(2) : ''}
-        ${rowsErr ? `<div class="cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
+        ${rowsErr ? `<div class="ds-cell-sub t-hot">The dealership list could not be read (${esc(errorText(rowsErr))}), so nothing can be chosen here.</div>` : ''}
         ${rows ? `
         ${msg ? `<div class="banner ${msgTone === 'ok' ? 'info' : 'hot'}" style="margin-bottom:14px"><span class="material-symbols-outlined" style="font-size:20px">${msgTone === 'ok' ? 'check_circle' : 'error'}</span><div>${esc(msg)}</div></div>` : ''}
         <div class="grid g3" style="gap:12px">

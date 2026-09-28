@@ -1,0 +1,54 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-tokens.css
+   ---------------------------------------------------------------------------
+   The STRUCTURAL half of the reference design system: spacing, radii,
+   elevation, motion and density. Loaded after styles.css and
+   design-system.css, and consumed by the four lib/theme-*.css files.
+
+   WHAT IS DELIBERATELY NOT HERE: colour. The app's own `:root` in styles.css
+   carries a colour system whose every text token has a MEASURED contrast
+   ratio written beside it, and which names the traps explicitly -- amber text
+   is #96570A and not #B26A00 because #B26A00 is 4.2:1. The reference design
+   system's palette was not measured to that standard. Replacing a
+   contrast-verified token set with an unverified one would have been a
+   regression wearing the clothes of an upgrade, so the colours stay and only
+   the structure arrives.
+
+   Everything below is additive EXCEPT one, named here rather than left for a
+   reader to trip over: `--sidebar-w` at the foot of this file DOES redefine
+   the 240px in styles.css, widening the nav to 252px. That is the only
+   existing token this file touches. (Corrected 28 Sep 2026 -- the sentence
+   used to say "No existing token is redefined here" while this file redefined
+   one, which is this repo's most common defect wearing a comment.)
+   =========================================================================== */
+:root {
+  /* Spacing -- 8pt base. The app had no scale at all; every gap was a literal. */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+  --sp-6: 32px; --sp-7: 40px; --sp-8: 48px; --sp-9: 64px;
+
+  /* Radii -- the app had two (6px control, 10px card). */
+  --r-xs: 4px; --r-sm: 8px; --r-btn: 10px; --r-card: 12px;
+  --r-panel: 16px; --r-surface: 20px; --r-pill: 999px;
+
+  /* Elevation -- a ladder rather than two shadows. `rest: none` is the point:
+     a resting card is separated by its border, not by a glow. */
+  --sh-rest:   none;
+  --sh-hover:  0 4px 16px rgba(15,23,41,.08);
+  --sh-pop:    0 12px 32px rgba(15,23,41,.14);
+  --sh-drawer: -16px 0 48px rgba(15,23,41,.16);
+
+  /* Motion. --ease is already defined in styles.css and is NOT redefined. */
+  --m-micro: 140ms; --m-comp: 200ms; --m-large: 280ms;
+
+  /* Density. Set --row-h / --cell-pad on an ancestor to retune every table. */
+  --row-h: 52px; --cell-pad: 14px;
+}
+
+/* The reference runs a 252px sidebar; the app runs 240. Widening it is the
+   one structural change visible before a single component is restyled. */
+:root { --sidebar-w: 252px; }   /* REDEFINES styles.css:57 (240px). The one
+                                    non-additive line in this file; see header. */
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --m-micro: 0ms; --m-comp: 0ms; --m-large: 0ms; }
+}

@@ -1,0 +1,323 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-auth.css
+   ---------------------------------------------------------------------------
+   THE SIGN-IN SCREEN. `#boot.login-wrap`, filled at runtime by app.js's
+   renderLogin() and by its configuration-refusal branch, and by the same two
+   in founder/app.js, which imports this file in the same order.
+
+   Why this file exists at all: the theme pass restyled the fourteen screens
+   and never touched the one surface that renders BEFORE any of them. Every
+   screen is behind the sign-in card, so for a first-time reader — a dealership
+   evaluating NEXUS — this card IS the product until they are through it.
+   Before this file there were two login rules in styles.css (`min-height` and
+   `max-width`) and none in any theme file.
+
+   WHAT IT INHERITED, AND THE DEFECT IT FIXES FIRST
+   ------------------------------------------------
+   styles.css ends with the navy-sidebar block, and two of its rules are
+   UNSCOPED:
+
+       .brand-name { color: #FFFFFF; }
+       .brand-mark { background: var(--sidebar-rule); color: #0B1A33; }
+
+   Those are correct on #16294F and were never meant to leave it. The login
+   card reuses `.brand-mark` / `.brand-name` on `--surface`, so the wordmark
+   "NEXUS OS" has been rendering WHITE ON WHITE — measured in the browser
+   before this file was written: computed colour `rgb(255,255,255)` on a
+   `rgb(255,255,255)` card. The product's name was invisible on the only
+   screen every buyer sees. Both are repainted below, scoped to the card.
+
+   COLOUR
+   ------
+   No new colour value is introduced. Every colour here is a token already in
+   styles.css's `:root`, whose text tokens each carry a MEASURED ratio there.
+   Nothing that carries text gets a new background: the card stays `--surface`
+   and every label, hint and banner keeps the exact pair styles.css measured,
+   so those ratios are unchanged rather than re-derived.
+
+   Two pairings ARE new and are therefore stated:
+     · the brand mark — #FFFFFF on a `--primary` → `--primary-hover` gradient
+       (#2563C9 → #1D4FA8). styles.css measures --primary at 11.3:1 against
+       white; --primary-hover is darker, so the run is 11.3:1 at its lightest
+       point. It is also a 26px logo glyph, not readable text.
+     · the backdrop — `--sidebar-bg` → `--sidebar-bg-hover` (#16294F → #1E3566),
+       the app's own navy. NOTHING sits on it: the card is the only child of
+       `.login-wrap`, so there is no text-on-navy contrast question to answer.
+       Deliberate: the reference reserves ink for chrome it owns, and this is
+       the same navy the signed-in reader meets one second later in the
+       sidebar, so the product does not change identity at the door.
+
+   Translucency is written with `color-mix(… , transparent)` over existing
+   tokens rather than as new rgba() literals — the same technique
+   lib/theme-surfaces.css already uses for `.banner`'s hairline. A translucent
+   form of a measured token is not a second colour to maintain.
+
+   NO `!important` ANYWHERE. This file is imported last of the theme chain, so
+   a plain selector already wins its tie.
+
+   WHAT COULD NOT BE REACHED FROM HERE
+   -----------------------------------
+   The markup is built by app.js and carries inline styles this file may not
+   override without `!important`: the brand row's `margin-bottom:20px` and
+   `gap:10px`, the form's `gap:14px`, and the footnote's `margin-top:14px`.
+   Those four numbers are the only spacing on this card that is not on the
+   `--sp-*` scale. Everything below is designed around them, not against them.
+   =========================================================================== */
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1 · THE BACKDROP
+   `place-items:center` on a `min-height` (not `height`) grid already handles
+   a card taller than the viewport — the wrap grows and the page scrolls, so
+   nothing is clipped off the top. Only the surface treatment is added.
+   ══════════════════════════════════════════════════════════════════════════ */
+.login-wrap {
+  background:
+    radial-gradient(120% 90% at 50% 0%,
+      color-mix(in srgb, var(--sidebar-rule) 14%, transparent) 0%,
+      transparent 62%),
+    linear-gradient(160deg, var(--sidebar-bg) 0%, var(--sidebar-bg-hover) 100%);
+  padding: var(--sp-5);
+  /* The card is the widest thing here and it is already capped; belt and
+     braces so a long unbreakable error string cannot push the page sideways. */
+  overflow-x: hidden;
+}
+
+/* THE GUTTER BESIDE THE WRAP, and why a rule here touches `body`.
+   styles.css parks the detail drawer off-canvas (`.drawer{right:0;
+   transform:translateX(100%)}`), which overflows the document to the right,
+   so the browser shows a scrollbar gutter on every page of this app — measured
+   on this build: `.login-wrap` is 1430px wide in a 1440px viewport, and the
+   same 10px appears at 380px. It was invisible while the wrap and `<body>`
+   were both `--canvas`. Against ink it is a pale seam down the right edge.
+
+   `<body>`'s background propagates to the canvas, so a colour set on it fills
+   the gutter that no rule on `.login-wrap` can reach. It is scoped with
+   `:has()` to the moment the boot card is the thing on screen, and released
+   the instant app.js adds `.hide` to `#boot` — so the signed-in app's canvas
+   is untouched. `--sidebar-bg-hover` is the gradient's own end colour, which
+   is what that edge of the wrap is already painting. */
+body:has(> #boot.login-wrap:not(.hide)) {
+  background-color: var(--sidebar-bg-hover);
+}
+
+/* 360px. The 24px gutter costs a seventh of the card's width at that size. */
+@media (max-width: 420px) {
+  .login-wrap { padding: var(--sp-4); }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2 · THE CARD
+   A card floating on ink is the one place in this app where `--sh-pop` is the
+   right rung of the elevation ladder: there is no other surface on screen to
+   be separated FROM, so the border does not do the job it does everywhere
+   else. `--r-panel` (16px) rather than the 8px every in-app card carries —
+   this is the only card on its page and reads as a panel, which is the
+   reference's own distinction between `--r-card` and `--r-panel`.
+   ══════════════════════════════════════════════════════════════════════════ */
+.login-wrap .login-card {
+  max-width: 404px;
+  padding: var(--sp-6);
+  border-radius: var(--r-panel);
+  border-color: var(--border-subtle);
+  box-shadow: var(--sh-pop);
+
+  /* THE ACCENT EDGE — a 3px blue→cyan band across the top of the card.
+     Blue→cyan is the reference's brand gradient; here it is `--primary` →
+     `--sidebar-rule`, the two the app already owns. Purely decorative: no
+     text sits on it, no state is carried by it.
+
+     It is a BACKGROUND LAYER, not a pseudo-element, and that is a correction
+     rather than a preference. The first version was an absolutely positioned
+     `::before`, and it looked wrong on screen: a 3px-tall box cannot hold a
+     16px corner radius: the browser scales every radius down
+     by the same factor until it fits, here to ~3px — so the band's ends stood
+     proud of the card's own curve at both top corners. A background layer is
+     clipped by the card's real border-radius, so the band tapers into the
+     corner exactly as the card does.
+
+     `background-origin: border-box` puts the band on the border, not 1px in.
+     `--surface` still comes from `.card`; a background IMAGE paints over the
+     background COLOUR, so no colour is restated here. */
+  background-image: linear-gradient(90deg, var(--primary), var(--sidebar-rule));
+  background-repeat: no-repeat;
+  background-size: 100% 3px;
+  background-position: top left;
+  background-origin: border-box;
+}
+
+@media (max-width: 420px) {
+  .login-wrap .login-card { padding: var(--sp-5); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3 · THE WORDMARK
+   Selected by `:has(> .brand-mark)` rather than by `:first-child` so the rule
+   says what it is looking for: an author who adds a row above the brand does
+   not silently move this styling onto it.
+   ══════════════════════════════════════════════════════════════════════════ */
+.login-card > div:has(> .brand-mark) {
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* The defect named at the top of this file. `--text` is 17.9:1 on --surface
+   (styles.css, measured); the inherited #FFFFFF was 1:1. */
+.login-card .brand-name {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: .01em;
+}
+
+/* 26px → 30px, the reference's heavier logo weight, and off the sidebar's
+   cyan-on-near-black pairing, which was designed for a navy surface and reads
+   as a stray swatch on white. #FFFFFF on this gradient is ≥11.3:1 (see the
+   header). */
+.login-card .brand-mark {
+  width: 30px; height: 30px;
+  flex: 0 0 30px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4 · THE FORM
+   Field and input geometry already arrive correct from lib/theme-controls.css
+   (40px control, 8px radius, 600 label). What is added is the sign-in card's
+   own emphasis: a label a shade smaller and tracked, and the hover the rest of
+   the app's inputs have.
+   ══════════════════════════════════════════════════════════════════════════ */
+.login-card .field label {
+  font-size: 12.5px;
+  line-height: 18px;
+  letter-spacing: .005em;
+}
+
+.login-card .field input {
+  font-size: 14px;
+}
+
+/* ── The focus ring ───────────────────────────────────────────────────────
+   STRICTLY STRONGER than what it replaces, never weaker. styles.css draws
+   `outline: 2px solid var(--primary); outline-offset: -1px` — a ring drawn
+   INSIDE the control, where a 1px border is already sitting. Here the same
+   2px `--primary` ring is pushed to `+2px`, clear of the field, and backed by
+   a soft halo, so the same colour and width now read at a glance.
+
+   Both `:focus` and `:focus-visible` are listed: styles.css styles `:focus`,
+   so covering only `:focus-visible` would have left a mouse-clicked field
+   with the old inside-the-border ring and made this an inconsistency rather
+   than an upgrade. The password field is untouched as a control — this file
+   sets no `type`, no `-webkit-text-security`, and no reveal affordance. */
+.login-card .field input:focus,
+.login-card .field input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.login-card .field input:hover:not(:focus) {
+  border-color: var(--text-disabled);   /* the app's own hover hairline */
+}
+
+/* ── Sign in ──────────────────────────────────────────────────────────────
+   The reference's `--btn-lg` step (46px) for the one button that is the whole
+   purpose of the screen. It is the only child of a one-column grid, so it is
+   already full-width by `stretch` and no width is set here.
+
+   `.btn.primary` is 0,2,0 and this is 0,3,0, so the fill, the hover and the
+   disabled treatment all still come from lib/theme-controls.css — including
+   the disabled state renderLogin() puts it into while the request is in
+   flight, which must keep reading as disabled. Only size changes. */
+.login-card .btn.primary {
+  height: 46px;
+  font-size: 14.5px;
+  border-radius: var(--r-btn);
+}
+
+/* The footnote: who to ask for an account. `--text-muted` (#68718A, 4.9:1 —
+   styles.css's lowest value still rated for real text) is kept exactly;
+   only the measure and the leading change, because two lines set at 18px
+   inside a 32px-padded card read as a caption rather than a sentence. */
+.login-card > .cell-sub {
+  line-height: 19px;
+  max-width: 44ch;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5 · THE TWO FAILURE STATES
+   A failed password (renderLogin(msg)) and a deployment that cannot start
+   (envErrors) render the SAME `.banner.hot`, and they are not the same event:
+   one is the reader's typo, the other is NEXUS's own installation. They are
+   separated below by what the card contains, not by a class, because this
+   file cannot add one.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Both. Colours stay exactly as styles.css set them (--hot-fill / --hot-text);
+   the rail from lib/theme-surfaces.css stays; the hairline is tightened from
+   `currentColor 20%` to 32% so the block holds its own against the ink
+   backdrop showing through the card's corners. */
+.login-card .banner.hot {
+  border-color: color-mix(in srgb, var(--hot) 32%, transparent);
+  /* Restated, because the line above would otherwise repaint it: the 3px
+     severity rail lib/theme-surfaces.css draws is the app's own convention
+     for a banner and setting `border-color` on its own flattens it into the
+     hairline. Caught by looking at the rendered error, not at the rule. */
+  border-inline-start-color: var(--hot);
+}
+
+/* The icon is centred on the sign-in card only. There the message is one
+   short line ("Invalid login credentials") and `flex-start` leaves the icon
+   floating above it; on the refusal card the message runs to two or three
+   lines and the icon belongs on the first, which is what
+   lib/theme-surfaces.css already does. Same component, two shapes, and the
+   card says which it is. */
+.login-card:has(.grid) .banner.hot {
+  align-items: center;
+}
+
+/* ── The refusal ──────────────────────────────────────────────────────────
+   `:has(> .banner.hot):not(:has(.grid))` is the configuration-error card and
+   only that: the sign-in card carries `.grid` whether or not it is also
+   showing an error, and founder/app.js's "Not authorised" card carries a
+   `.state` and no banner. No class was available; this is the honest
+   structural description of the state.
+
+   The intent is the one app.js's own comment states — this screen must not
+   read as "you have broken this". So it is given MORE composure than the form,
+   not less: the same card, deliberately laid out, rather than a form with its
+   fields torn out. */
+.login-card:has(> .banner.hot):not(:has(.grid)) .banner.hot {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-5);
+}
+
+.login-card:has(> .banner.hot):not(:has(.grid)) > .cell-sub {
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--text-2);          /* 7.6:1 — measured in styles.css. This is
+                                    the only text on the screen, so it is the
+                                    body copy, not a caption; --text-muted
+                                    is the right weight under a form and the
+                                    wrong weight when it IS the message. */
+}
+
+/* The last paragraph of the refusal names the one action available. A rule
+   above it closes the card rather than letting two grey paragraphs run on. */
+.login-card:has(> .banner.hot):not(:has(.grid)) > .cell-sub:last-child {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+}

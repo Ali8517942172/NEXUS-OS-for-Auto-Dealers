@@ -1,0 +1,272 @@
+/* ===========================================================================
+   NEXUS OS — lib/theme-shell.css
+   ---------------------------------------------------------------------------
+   The SHELL half of the reference design pass: top bar, content column, page
+   title, right-hand drawer, the modal panel, scrollbars and the page's vertical
+   rhythm. Loaded after styles.css and design-system.css, so a plain selector
+   here already wins a tie and there is no `!important` anywhere in this file.
+
+   WHAT THIS FILE IS NOT ALLOWED TO DO, and does not:
+
+   - It introduces NO colour value. Every colour below is a token already
+     declared in styles.css's `:root`, where each text token carries a MEASURED
+     contrast ratio beside it. The reference design's palette was never measured
+     to that standard, so its hexes stay out and only its proportions arrive.
+   - It does not touch the sidebar. Not `.sidebar`, `.nav`, `.nav-item`,
+     `.nav-group`, `.brand`, `.user-chip` or `.collapse-btn` — that surface is
+     finished and is owned elsewhere.
+   - It invents no class name. Every selector below already exists in
+     index.html, lib/ui.js, lib/modal.js or a screen, with the single, labelled
+     exception of `.skip-link`, which is dormant and says so.
+
+   TWO STRUCTURAL FACTS THE REST OF THE FILE OBEYS:
+
+   1. THE WINDOW SCROLLS, NOT `.content`. lib/design-system.css pins every
+      sticky table header with `top: var(--topbar-h, 56px)` and its own comment
+      records that this only works while `.content` is not a scroll container:
+      `overflow-x: auto` computes `overflow-y` from `visible` to `auto`, the
+      wrapper becomes the nearest scrollport, and the header sticks 56px down
+      from the middle of the table. So nothing here gives `.app`, `.main` or
+      `.content` an `overflow` or a `height`. The reference shell scrolls an
+      inner `.scroll` element; copying that would have broken every sticky
+      header in the product, which is a worse outcome than a slightly different
+      scroll feel.
+
+   2. `--topbar-h` IS DELIBERATELY NOT CHANGED. It is read in two places this
+      file does not own: the sticky-header offset above, and the sidebar's
+      `.brand` height, which is what makes the brand block and the top bar share
+      one baseline. The reference's taller bar (12px padding around 40px
+      controls) would have been a one-line token change with two off-surface
+      consequences, so the bar keeps its 56px and gains its refinement from
+      spacing, weight and the hairline instead.
+   =========================================================================== */
+
+/* ── Global rhythm ────────────────────────────────────────────────────────── */
+
+/* `scroll-padding-top` is the fix for an in-page anchor landing underneath the
+   sticky top bar — the target scrolls to y=0 and the bar covers it. It is the
+   scroll-container-side companion to the sticky offset, and it has to be the
+   same figure. `scrollbar-gutter: stable` reserves the track so a screen that
+   grows past the viewport mid-render does not shift the whole layout sideways
+   by the width of a scrollbar; KPI rows that re-measure on data arrival were
+   the visible case. */
+html {
+  scroll-padding-top: calc(var(--topbar-h) + var(--sp-2));
+  scrollbar-gutter: stable;
+  /* Firefox has no ::-webkit-scrollbar. styles.css styles the WebKit thumb and
+     track; these two declarations are the same intent for everyone else, off
+     the same two tokens. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Smooth in-page scrolling, and only for someone who has not asked for less
+   motion. The token file zeroes the motion durations under that query but
+   `scroll-behavior` is not a duration, so it needs the query itself. */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+/* `100vh` on a phone is measured against the browser chrome being hidden, so a
+   short screen leaves a strip of body background below the shell as the address
+   bar collapses. `dvh` is the same number when there is no chrome and the right
+   one when there is. Guarded, because it is min-height and a fallback of 100vh
+   is correct rather than merely tolerable. */
+@supports (min-height: 100dvh) {
+  .app { min-height: 100dvh; }
+}
+
+/* ── Top bar ──────────────────────────────────────────────────────────────── */
+
+/* The gutter matches `.content`'s below, so the page title sits directly above
+   the left edge of the first card instead of a few pixels off it. Both step to
+   --sp-6 at the same breakpoint for the same reason. The hairline moves from
+   `--border` to `--border-subtle`: the bar is a surface meeting a canvas, not
+   two surfaces meeting each other, and the heavier rule read as a seam. */
+.topbar {
+  gap: var(--sp-3);
+  padding-inline: var(--sp-5);
+  border-bottom-color: var(--border-subtle);
+}
+@media (min-width: 900px) {
+  .topbar { padding-inline: var(--sp-6); }
+}
+
+/* The page title. The reference runs its titles at 700/-.022em; at this size
+   that is too heavy, and 650 with the same tracking is the same voice one step
+   down. `#pageTitle` carries no inline font-size, so this is reachable —
+   unlike the drawer's `<h2 style="font-size:18px">`, which is not. */
+.topbar h1 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The bar holds a privacy toggle, a connection pill and a refresh button, and
+   at narrow widths they were being squeezed rather than allowed to keep their
+   size while the title gave way. The title shrinks (above); these do not. */
+.topbar > .btn,
+.topbar > .pill { flex: 0 0 auto; }
+
+/* ── Content column ───────────────────────────────────────────────────────── */
+
+/* The one change with real weight: the page used to end flush, 24px after its
+   last card, with the canvas simply stopping. The reference pads the bottom of
+   a page to --s9 so the last row of a table is never the last thing on screen
+   with nothing under it. Top and sides are unchanged in the common case; the
+   inline gutter widens once there is room for it.
+
+   `max-width` stays at 1440px. lib/design-system.css's own comment calls that
+   cap "right", and it is not this pass's to relitigate. */
+.content {
+  padding: var(--sp-5) var(--sp-5) var(--sp-9);
+  max-width: 1440px;
+  width: 100%;
+  margin-inline: auto;
+}
+@media (min-width: 900px) {
+  .content { padding-inline: var(--sp-6); }
+}
+
+/* Nothing here sets a gap or a stacking margin on `.content`'s children. Two
+   systems already own that and they would double: `.ds-screen` is a flex column
+   with its own gap, and the unconverted screens set `marginTop = '16px'` inline
+   on each block they append. A `> * + *` rule would have added a third. */
+
+/* ── Drawer ───────────────────────────────────────────────────────────────── */
+
+/* `92vw` becomes `100%`: on a phone a 8vw sliver of dimmed page behind a detail
+   panel is not information, it is a 30px strip that invites a mis-tap on the
+   scrim. The panel gets the elevation ladder's drawer shadow rather than the
+   generic pop shadow, and the transition moves onto `--m-comp` — same 200ms,
+   but that token is zeroed under `prefers-reduced-motion` and `--dur-panel` is
+   not, so the panel now actually stops sliding for someone who asked it to. */
+.drawer {
+  width: min(540px, 100%);
+  max-width: 100%;
+  border-left-color: var(--border-subtle);
+  box-shadow: var(--sh-drawer);
+  transition: transform var(--m-comp) var(--ease);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.drawer-head {
+  padding: var(--sp-5);
+  gap: var(--sp-3);
+  border-bottom-color: var(--border-subtle);
+}
+/* The drawer titles are `<h2 style="font-size:18px">` in five screens, so the
+   size is out of reach. Weight and tracking are not, and they are what makes
+   18px read as a panel title rather than as body copy that grew. */
+.drawer-head h2 {
+  font-weight: 650;
+  letter-spacing: -.015em;
+  line-height: 24px;
+}
+
+/* --sp-8 at the bottom for the same reason `.content` gets --sp-9: the last
+   section of a long drawer needs somewhere to end. */
+.drawer-body {
+  padding: var(--sp-5) var(--sp-5) var(--sp-8);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  overscroll-behavior: contain;
+}
+
+/* The foot is a sunken tray, which is how it stops looking like one more
+   section of the body that happens to hold buttons. The safe-area addition is
+   for a phone whose home indicator would otherwise sit over the buttons. */
+.drawer-foot {
+  padding: var(--sp-4) var(--sp-5);
+  padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  gap: var(--sp-2);
+  background: var(--surface-sunken);
+  border-top-color: var(--border-subtle);
+}
+
+/* ── Scrim ────────────────────────────────────────────────────────────────── */
+
+/* The scrim's colour is left exactly as styles.css declares it. Only the timing
+   changes, onto the reduced-motion-aware token, so the scrim and the panel it
+   belongs to still start and finish together. */
+.scrim { transition: opacity var(--m-comp) var(--ease); }
+
+/* ── Modal ────────────────────────────────────────────────────────────────── */
+
+/* lib/modal.js builds `#modalWrap` with `style.cssText`, so the overlay's own
+   background, padding and z-index are INLINE and unreachable from a stylesheet
+   without `!important`. They are therefore not restyled. What is reachable is
+   the panel inside it, whose inline styles are only `width`, `max-width` and
+   `margin` — everything below is a property the element does not set inline. */
+#modalWrap > .card {
+  border-radius: var(--r-panel);
+  border-color: var(--border-subtle);
+  box-shadow: var(--sh-pop);
+  animation: shell-modal-in var(--m-comp) var(--ease);
+}
+/* Zero duration under reduced motion, because --m-comp is zeroed there: the
+   keyframe still resolves, it just resolves instantly at its end state. */
+@keyframes shell-modal-in {
+  from { opacity: 0; transform: scale(.985); }
+}
+#modalWrap > .card > .card-head {
+  padding-inline: 0;
+  padding-top: 0;
+  border-bottom-color: var(--border-subtle);
+}
+
+/* ── Skip link — DORMANT, and this is the honest part ─────────────────────── */
+
+/* There is NO element carrying this class. index.html opens straight onto
+   `#boot` and `#app`, and this pass owns one CSS file, so the markup could not
+   be added here. The rule is written because it is the whole of the styling
+   half of a skip link and it costs nothing while nothing uses it — but it
+   styles nobody today, and it must not be read as "the dashboard has a skip
+   link". It does not. What is owed is one `<a class="skip-link" href="#screen">`
+   as the first child of `<body>`; `#screen` already exists and already carries
+   `role="main"`, so the target is ready.
+
+   Off-screen rather than `display:none`, which would make it unfocusable and
+   therefore pointless. */
+.skip-link {
+  position: fixed;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 90;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-btn);
+  box-shadow: var(--sh-pop);
+  font-weight: 500;
+  text-decoration: none;
+}
+.skip-link:not(:focus) {
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── Focus, restated rather than assumed ──────────────────────────────────── */
+
+/* styles.css already gives the whole document a 2px `--primary` ring at a 2px
+   offset, and nothing above weakens it. This restates it at higher specificity
+   on the two surfaces this file restyled, so that a later rule on `.topbar` or
+   `.drawer` — in this file or a sibling theme file — cannot quietly take the
+   ring away while looking like a spacing change. `--primary` measures 11.3:1
+   against `--surface`, which is the figure styles.css records for it. */
+.topbar :focus-visible,
+.drawer :focus-visible,
+#modalWrap :focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

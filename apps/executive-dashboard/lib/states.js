@@ -47,7 +47,7 @@ const stateError = (what, err, retry, note) => {
 };
 
 const stateLoading = (rows = 5) =>
-  `<div style="padding:20px">${Array.from({length:rows}, (_,i) =>
+  `<div class="state-loading">${Array.from({length:rows}, (_,i) =>
     `<div class="skeleton" style="height:16px;margin-bottom:12px;width:${95 - i*7}%"></div>`).join('')}</div>`;
 const noSource = msg =>
   `<div class="state"><span class="material-symbols-outlined">link_off</span><h3>No data source yet</h3><p>${esc(msg)}</p></div>`;

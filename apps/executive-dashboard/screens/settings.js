@@ -179,6 +179,17 @@ const sevRank = s => SEV_RANK[up(s)] ?? 3;
 const isPublicPage = w =>
   /nexus\s*public/i.test(String(w?.name || ''))
   || /^\s*[—-]\s*(?:privacy|terms)\s*$/i.test(String(w?.name || ''));
+/* What starts a workflow, and why this screen never says it is unrecorded.
+   `trigger_type` and `trigger_detail` are control-plane columns: the n8n
+   trigger kind, the cron expressions and the webhook paths. A dealership is
+   entitled to know whether its automation is running; where the job lives and
+   how it is reached is the vendor's. So an empty trigger here is never evidence
+   of an empty register — it is a column this session did not ask for and may
+   not have. Worded the same way as screens/automation.js's TRIGGER_NOT_AVAILABLE
+   deliberately: one fact, one sentence, two screens. */
+const TRIGGER_NOT_AVAILABLE =
+  'NEXUS operates the trigger and the schedule for this workflow, and this dashboard is not permitted to read either \u2014 a boundary, not a gap. The cadence is on file, on the vendor\u2019s side of it; nothing here is waiting for you to enter one.';
+
 /* One reason, worded once, so the chip tooltip and the alert cannot drift. */
 const PAGE_WHY =
   'It is a page NEXUS publishes rather than an automation of yours.';
@@ -478,6 +489,17 @@ function expiryText(expiresAt) {
 
 /* ── S14 · Settings ───────────────────────────────────────────────────────── */
 SCREENS.settings = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* ── The system-health strip ────────────────────────────────────────────
      Rendered first and filled last. Its inputs arrive at three different
      times — the database reads, the connectivity probes the tiles run, and the
@@ -493,9 +515,9 @@ SCREENS.settings = async host => {
       <div style="flex:1"></div>
       <div id="setAlertCount"></div>
     </div><div class="pbody" id="setAlertBody">${stateLoading(2)}</div>`;
-  host.appendChild(alertCard);
+  root.appendChild(alertCard);
 
-  const top = el('div', 'grid g2 top'); top.style.marginTop = '16px'; host.appendChild(top);
+  const top = el('div', 'grid g2 top'); top.style.marginTop = '16px'; root.appendChild(top);
 
   /* Screen-scoped state. Each field is null until its read lands and carries
      its own error, because "the health view is down" and "the audit log is
@@ -577,7 +599,7 @@ SCREENS.settings = async host => {
         ? `<span class="${exp.bad ? 't-hot' : ''}">${esc(exp.text)}</span>`
         : '<span class="t-muted">no expiry on the session object</span>'}</dd>
     </dl>
-    <div class="cell-sub" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by the sign-in service, not by this dashboard. Roles are edited on the Team screen.</div>`;
+    <div class="ds-cell-sub" style="margin-top:14px">${mePhone ? '' : esc(phoneWhy) + ' '}Passwords, email changes and account creation are handled by the sign-in service, not by this dashboard. Roles are edited on the Team screen.</div>`;
   top.appendChild(prof);
 
   /* ── Connection ─────────────────────────────────────────────────────────
@@ -651,8 +673,8 @@ SCREENS.settings = async host => {
     ${envBroken.length ? `<div class="banner hot" style="margin-top:14px">
       <span class="material-symbols-outlined" style="font-size:20px">error</span>
       <div><strong>This deployment is missing configuration NEXUS supplies, and ${envBroken.length === 1 ? 'something is' : 'things are'} switched off because of it.</strong>
-      ${envBroken.map(v => `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(v.dead)}</div>`).join('')}
-      <div class="cell-sub" style="margin-top:6px;white-space:normal">Nothing here can be fixed from this screen or by this dealership — it is set when NEXUS deploys the dashboard. Report it and it can be redeployed.</div></div></div>` : ''}
+      ${envBroken.map(v => `<div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(v.dead)}</div>`).join('')}
+      <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">Nothing here can be fixed from this screen or by this dealership — it is set when NEXUS deploys the dashboard. Report it and it can be redeployed.</div></div></div>` : ''}
     <div class="banner info" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">lock</span>
       <div>Keys, credentials and secrets are never displayed or accepted on this screen, masked or otherwise. Neither are the addresses of the services behind it: which host, which project and which build this dashboard points at is NEXUS's operational configuration, and this screen states only whether each one is reachable.</div>
@@ -670,7 +692,7 @@ SCREENS.settings = async host => {
      disagree about what "reachable" means; naming the allow-list at the call
      site is what stops them disagreeing about what may be *called*, since a
      probe added for Automation's benefit would otherwise start firing here. */
-  const conn = el('div', 'card'); conn.id = 'setConn'; conn.style.marginTop = '16px'; host.appendChild(conn);
+  const conn = el('div', 'card'); conn.id = 'setConn'; conn.style.marginTop = '16px'; root.appendChild(conn);
   conn.innerHTML = `<div class="card-head" style="padding:0 0 14px">
       <div><div class="card-title">Connectivity</div>
         <div class="card-sub" id="setConnSub">Live checks, from this browser, against the services this dashboard depends on</div></div>
@@ -686,11 +708,11 @@ SCREENS.settings = async host => {
           capability, which is the half that is the dealership's. */ ''}
     <div style="margin-top:18px">
       <div class="label-caps" style="margin-bottom:8px">Automations this dashboard can start</div>
-      <div class="cell-sub">${N8N_BASE
+      <div class="ds-cell-sub">${N8N_BASE
         ? `${hooks.length} of them: asking a question of your documents, calculating finance, enrolling a customer in a drip, recording a closed deal, auditing an uploaded document, escalating a lead, syncing the ERP and sending a WhatsApp reply.`
         : '<span class="t-hot">None. This deployment is not configured to reach the automation host, so every one of them refuses outright rather than failing halfway.</span>'}</div>
-      <div class="cell-sub" style="margin-top:8px">Their addresses are not shown: where an automation lives is NEXUS's operational configuration, not a fact this dashboard puts in front of you. Nothing on this card calls one, and none of these is probed by this screen — calling one to see whether it answers does real work, and a check that enrols a real customer or bills a real run is not a check. What they actually did is in the workflow table below, which reads what they recorded.</div>
-      <div class="cell-sub" style="margin-top:8px">No key, token or webhook secret is rendered anywhere on this screen, in full or masked.</div>
+      <div class="ds-cell-sub" style="margin-top:8px">Their addresses are not shown: where an automation lives is NEXUS's operational configuration, not a fact this dashboard puts in front of you. Nothing on this card calls one, and none of these is probed by this screen — calling one to see whether it answers does real work, and a check that enrols a real customer or bills a real run is not a check. What they actually did is in the workflow table below, which reads what they recorded.</div>
+      <div class="ds-cell-sub" style="margin-top:8px">No key, token or webhook secret is rendered anywhere on this screen, in full or masked.</div>
     </div>`;
 
   /* The tiles report into their own DOM and return nothing, and this screen may
@@ -715,7 +737,7 @@ SCREENS.settings = async host => {
       if (!name) return;
       const okDot  = tile.querySelector('span[style*="var(--ok)"]');
       const badDot = tile.querySelector('span[style*="var(--hot)"]');
-      const msg = str(tile.querySelector('.cell-sub')?.textContent);
+      const msg = str(tile.querySelector('.ds-cell-sub')?.textContent);
       out.push({
         name,
         state: okDot ? 'up' : badDot ? 'down' : /checking/i.test(msg) ? 'pending' : 'unknown',
@@ -767,12 +789,12 @@ SCREENS.settings = async host => {
      Placeholders now, filled when the batch below lands, so the cards sit in
      their final order instead of appearing underneath the knowledge base. */
   const wfCard = el('div', 'card flush'); wfCard.id = 'setWfCard';
-  wfCard.style.marginTop = '16px'; host.appendChild(wfCard);
+  wfCard.style.marginTop = '16px'; root.appendChild(wfCard);
   wfCard.innerHTML = `<div class="card-head"><div><div class="card-title">Workflows</div>
     <div class="card-sub">Reading the automation health figures…</div></div></div><div class="pbody">${stateLoading(5)}</div>`;
 
   const credCard = el('div', 'card flush'); credCard.id = 'setCredsCard';
-  credCard.style.marginTop = '16px'; host.appendChild(credCard);
+  credCard.style.marginTop = '16px'; root.appendChild(credCard);
   credCard.innerHTML = `<div class="card-head"><div><div class="card-title">Credentials</div>
     <div class="card-sub">Reading the newest failed runs…</div></div></div><div class="pbody">${stateLoading(2)}</div>`;
 
@@ -1174,7 +1196,7 @@ SCREENS.settings = async host => {
         title: stale
           ? `${g.subject} was failing, and nothing since proves it is fixed`
           : `${g.subject} is failing`,
-        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}<div class="cell-sub" style="margin-top:4px">${esc(credEvidence(g))}${
+        detail: `${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}<div class="ds-cell-sub" style="margin-top:4px">${esc(credEvidence(g))}${
           g.viewCount ? `, and the attention list reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.workflows.length ? ` · seen in ${esc(g.workflows.join(', '))}` : ''}.${
           g.named ? '' : ' The text names no credential, so this row is keyed on the workflow it broke rather than merged with every other un-named fault.'}</div>`,
@@ -1252,8 +1274,8 @@ SCREENS.settings = async host => {
             ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
           </div>
-          <div class="cell-sub">${esc(str(it.detail))}</div>
-          <div class="cell-sub t-muted">${it.at
+          <div class="ds-cell-sub">${esc(str(it.detail))}</div>
+          <div class="ds-cell-sub t-muted">${it.at
             ? `Waiting since ${esc(clock(it.at))} — ${esc(ago(it.at))}`
             : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
         </div></div>`;
@@ -1267,8 +1289,8 @@ SCREENS.settings = async host => {
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
           </div>
-          <div class="cell-sub">${a.detail}</div>
-          ${a.foot ? `<div class="cell-sub t-muted">${a.foot}</div>` : ''}
+          <div class="ds-cell-sub">${a.detail}</div>
+          ${a.foot ? `<div class="ds-cell-sub t-muted">${a.foot}</div>` : ''}
         </div>
         <span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>
       </div>`).join('');
@@ -1331,7 +1353,7 @@ SCREENS.settings = async host => {
         <div style="font-weight:500">${attnUnread
           ? 'Nothing this screen could check for itself is wrong'
           : 'Nothing this screen checks is wrong right now'}</div>
-        <div class="cell-sub">${attnUnread
+        <div class="ds-cell-sub">${attnUnread
           ? 'The attention list could not be read, so whether the database has filed anything against this screen is unknown — though it has no settings branch to file from in the first place'
           /* Never "the view returned none today". It has no settings branch;
              its silence about this screen is structural, not a finding. */
@@ -1344,12 +1366,12 @@ SCREENS.settings = async host => {
       <span class="material-symbols-outlined t-muted" style="font-size:20px">hourglass_top</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">Still checking</div>
-        <div class="cell-sub">The attention list, the automation health figures and the newest failed runs have not answered yet, so anything they would report is missing from this list. The configuration findings above do not depend on them.</div>
+        <div class="ds-cell-sub">The attention list, the automation health figures and the newest failed runs have not answered yet, so anything they would report is missing from this list. The configuration findings above do not depend on them.</div>
       </div></div>`;
 
     const notesRow = notes.length ? `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-      <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>` : '';
+      <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>` : '';
 
     bodyHost.innerHTML = viewRows + derivedRows
       + (!s ? stillReading : (alerts.length || mine.length ? '' : nothing))
@@ -1461,7 +1483,7 @@ SCREENS.settings = async host => {
       </div>
       <div id="setWfList"></div>
       <div class="pbody" style="padding-top:0">
-        <div class="cell-sub" style="white-space:normal">${[
+        <div class="ds-cell-sub" style="white-space:normal">${[
           'Active means the workflow is switched on and will run. It does not mean it succeeds — an active workflow with a broken connection runs on every trigger and fails on every trigger, and both of those are true at once.',
           'Success is successes ÷ the runs that counted, computed once by NEXUS rather than by this screen. Runs refused by design and runs escalated to a person on purpose are excluded from the denominator, so an unauthorised caller cannot dilute a real miss rate — which is why “Runs 30 d” can be larger than the number the rate is taken over, and says so where it is.',
           'No output is not Degraded and is not a milder version of it. Those workflows are not failing: the run completes, no error is raised, and every screen that counted only failures called them clean. They simply produce nothing — Competitor Price Scraping held a green “Clean, 30 d · 100.0%” pill for a month while 84 of its 96 runs returned no price.',
@@ -1490,14 +1512,14 @@ SCREENS.settings = async host => {
         { label: 'Workflow', strong: true, render: w => `
           <div>${esc(str(w.name) || 'Unnamed workflow')}${
             isPublicPage(w) ? ` <span class="chip" title="${esc(PAGE_NOTE)}">web page</span>` : ''}</div>
-          <div class="cell-sub">${esc([str(w.category), str(w.trigger_type)].filter(Boolean).join(' · ') || 'no category recorded')}${
+          <div class="ds-cell-sub">${esc(str(w.category) || 'no category recorded')}${
             w.is_active === false
               ? ' · <span class="t-warm">switched off — it will not run</span>'
               : ' · <span class="t-muted" title="This workflow is switched on and will run. That is all it means: it says nothing about whether the run succeeds.">active</span>'}</div>` },
         { label: 'State', render: w => {
           const h = healthOf(w);
           return `<span title="${esc(h.blurb)}">${pill(h.label, h.t, { verbatim: false })}</span>${
-            stateKey(w) === 'UNKNOWN' ? `<div class="cell-sub mono">${esc(str(w.health) || 'null')}</div>` : ''}`;
+            stateKey(w) === 'UNKNOWN' ? `<div class="ds-cell-sub mono">${esc(str(w.health) || 'null')}</div>` : ''}`;
         } },
         { label: 'Runs 30 d', align: 'r', render: w => {
           const r = n0(w.runs_30d);
@@ -1509,7 +1531,7 @@ SCREENS.settings = async host => {
           const eff = n0(w.effective_runs_30d);
           const excluded = eff == null ? 0 : r - eff;
           return `<span title="${esc(runsBreakdown(w))}">${num(r)}</span>${
-            excluded > 0 ? `<div class="cell-sub">${num(eff)} count toward the rate</div>` : ''}`;
+            excluded > 0 ? `<div class="ds-cell-sub">${num(eff)} count toward the rate</div>` : ''}`;
         } },
         /* Was "Failed 30 d", reading straight off failures_30d — a column that
            counted status='FAILED' and nothing else, so a workflow whose every
@@ -1527,7 +1549,7 @@ SCREENS.settings = async host => {
             none ? `${num(none)} produced nothing` : '',
           ].filter(Boolean);
           return total
-            ? `<span class="t-hot">${num(total)}</span><div class="cell-sub">${esc(parts.join(' · '))}</div>`
+            ? `<span class="t-hot">${num(total)}</span><div class="ds-cell-sub">${esc(parts.join(' · '))}</div>`
             : num(0);
         } },
         { label: 'Success 30 d', align: 'r', render: w => {
@@ -1560,7 +1582,19 @@ SCREENS.settings = async host => {
         <div class="drawer-head">
           <div style="flex:1">
             <h2 style="font-size:18px">${esc(str(w.name) || 'Unnamed workflow')}</h2>
-            <div class="cell-sub">${esc([str(w.category), str(w.trigger_type), str(w.trigger_detail)].filter(Boolean).join(' · ') || 'no trigger recorded')}</div>
+            <div class="ds-cell-sub">${esc(str(w.category) || 'no category recorded')}</div>
+            ${/* This line used to join `category`, `trigger_type` and
+                 `trigger_detail` and print “no trigger recorded” when all three
+                 were empty. The last two are control-plane columns — absent from
+                 `nexus_workflow_catalogue()`'s result type, not selected by
+                 `v_workflow_health` (CONTROL-PLANE.md 5.2) — so they were empty
+                 on every row and any workflow with a blank category told this
+                 dealership its own register held no trigger. It holds one; this
+                 login may not read it. screens/automation.js reached the same
+                 verdict and replaced the same wording; this is that fix carried
+                 across, and the line below states the boundary instead of
+                 asserting an absence. */ ''}
+            <div class="ds-cell-sub" style="white-space:normal;margin-top:2px">${esc(TRIGGER_NOT_AVAILABLE)}</div>
           </div>
           <button class="btn ghost sm" id="wfClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
         </div>
@@ -1571,8 +1605,8 @@ SCREENS.settings = async host => {
                 ? '<span class="chip" title="Switched off. Nothing will trigger it.">Inactive</span>'
                 : '<span class="chip" title="Switched on and will run. It is not a statement about whether the run succeeds.">Active</span>'}
               ${w.writes_audit_log ? '' : '<span class="chip" title="No Audit Log node, so nothing it does reaches the activity log.">Writes no audit row</span>'}</div>
-            <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(h.blurb)}</div>
-            ${w.description ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(str(w.description))}</div>` : ''}
+            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(h.blurb)}</div>
+            ${w.description ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(str(w.description))}</div>` : ''}
           </div>
           <div class="section" style="margin-top:20px">
             <div class="label-caps">What the view reports</div>
@@ -1606,15 +1640,15 @@ SCREENS.settings = async host => {
               <dt>Last failure</dt><dd>${w.last_failure ? `<span class="t-hot">${esc(ago(w.last_failure))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
               <dt>Last half-landed</dt><dd>${w.last_partial ? `<span class="t-hot">${esc(ago(w.last_partial))}</span>` : '<span class="t-muted">none recorded</span>'}</dd>
             </dl>
-            <div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(runsBreakdown(w))}</div>
+            <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(runsBreakdown(w))}</div>
             ${own30 != null && viewRate != null && Math.abs(own30 - viewRate) > 0.1
-              ? '<div class="cell-sub" style="margin-top:8px;white-space:normal">The two rates differ, and they are not the same measurement: the first is the 30-day window classified through NEXUS’s own rule for what a run achieved, the second is the view’s own all-time column. Neither is corrected against the other here.</div>'
+              ? '<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">The two rates differ, and they are not the same measurement: the first is the 30-day window classified through NEXUS’s own rule for what a run achieved, the second is the view’s own all-time column. Neither is corrected against the other here.</div>'
               : ''}
           </div>
           <div class="section" style="margin-top:20px">
             <div class="label-caps">Recent incomplete runs</div>
             ${fails == null
-              ? `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`The activity log could not be read (${s.failsErr || 'unknown error'}), so the text of any failure is unavailable. The counts above come from the automation health figures and are unaffected.`)}</div>`
+              ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(`The activity log could not be read (${s.failsErr || 'unknown error'}), so the text of any failure is unavailable. The counts above come from the automation health figures and are unaffected.`)}</div>`
               : shown.length
                 ? shown.map(f => {
                     /* The row is labelled with what it actually was. A FAILED
@@ -1624,12 +1658,12 @@ SCREENS.settings = async host => {
                     const o = outcomeWords(outcomeOf(f));
                     return `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span title="${esc(o.blurb)}">${pill(o.label, o.tone, { verbatim: false })}</span>
-                      <span class="cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</span></div>
-                    <div class="cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The run logged no summary text.')}</div>
+                      <span class="ds-cell-sub mono">${esc(clock(f.logged_at))} · ${esc(ago(f.logged_at))}</span></div>
+                    <div class="ds-cell-sub" style="white-space:pre-wrap">${esc(str(f.summary) || 'The run logged no summary text.')}</div>
                   </div>`;
                   }).join('')
-                : `<div class="cell-sub" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed or half-landed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either nothing of either kind happened inside that window, or it logs under a name the registry does not list. Note that a run which produced nothing usable is neither, and would not appear here — the counters above are where those are counted.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
-            ${fails && fails.length > shown.length ? `<div class="cell-sub" style="margin-top:8px">${esc(`${fails.length - shown.length} older rows in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
+                : `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(`No row among the newest ${FAIL_LIMIT} failed or half-landed runs is attributed to this workflow. ${w.writes_audit_log ? 'Either nothing of either kind happened inside that window, or it logs under a name the registry does not list. Note that a run which produced nothing usable is neither, and would not appear here — the counters above are where those are counted.' : 'It writes no audit row at all, so it could not appear here whatever it did.'}`)}</div>`}
+            ${fails && fails.length > shown.length ? `<div class="ds-cell-sub" style="margin-top:8px">${esc(`${fails.length - shown.length} older rows in this window are not shown. The Automation screen holds the full history.`)}</div>` : ''}
           </div>
         </div>
         <div class="drawer-foot">
@@ -1682,22 +1716,22 @@ SCREENS.settings = async host => {
           <div style="flex:1"></div>
           <button class="btn sm" disabled title="${esc(NO_CRED_FIX)}">Reconnect</button>
         </div>
-        ${g.named ? '' : `<div class="cell-sub t-muted" style="white-space:normal">The text of these runs names no credential — “Forbidden - perhaps check your credentials?” names nothing — so this row is keyed on the workflow that broke rather than pooled with every other un-named fault. Two workflows failing on one shared credential will therefore appear here twice, which is the safer error: it overstates how many things to look at and hides nothing.</div>`}
-        <div class="cell-sub" style="white-space:normal">${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}</div>
-        <div class="cell-sub">${esc(credEvidence(g))}${
+        ${g.named ? '' : `<div class="ds-cell-sub t-muted" style="white-space:normal">The text of these runs names no credential — “Forbidden - perhaps check your credentials?” names nothing — so this row is keyed on the workflow that broke rather than pooled with every other un-named fault. Two workflows failing on one shared credential will therefore appear here twice, which is the safer error: it overstates how many things to look at and hides nothing.</div>`}
+        <div class="ds-cell-sub" style="white-space:normal">${stale ? 'While it was failing: ' : ''}${esc(credImpact(g.channels))}</div>
+        <div class="ds-cell-sub">${esc(credEvidence(g))}${
           g.viewCount ? ` · the attention list reports ${num(g.viewCount)} open ${plural(g.viewCount, 'item', 'items')} about it` : ''}${
           g.newest ? ` · most recent ${esc(ago(g.newest))}` : ''}</div>
-        ${stale ? `<div class="cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
+        ${stale ? `<div class="ds-cell-sub t-muted" style="white-space:normal">${esc(CRED_STALE_LINE)}</div>` : ''}
         ${g.workflows.length
-          ? `<div class="cell-sub">Seen in: ${g.workflows.map(w =>
+          ? `<div class="ds-cell-sub">Seen in: ${g.workflows.map(w =>
               `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-wf-name="${esc(w)}"
                 title="Show this in the workflow table above">${esc(w)}</button>`).join(' ')}</div>`
-          : '<div class="cell-sub t-muted">No run in this window records which workflow it belongs to.</div>'}
+          : '<div class="ds-cell-sub t-muted">No run in this window records which workflow it belongs to.</div>'}
       </div>`;
     }).join('')}
       <div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-        <div class="cell-sub" style="white-space:normal">${esc(NO_CRED_FIX)}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${esc(NO_CRED_FIX)}</div>
       </div></div>`;
   }
 
@@ -1720,7 +1754,7 @@ SCREENS.settings = async host => {
      actually retrieved, so both counts are shown: an operator who sees "6
      documents" and gets a thin answer needs to know whether those six were
      chunked into 400 sections or into 6. */
-  const kb = el('div', 'card flush'); kb.id = 'setKbCard'; kb.style.marginTop = '16px'; host.appendChild(kb);
+  const kb = el('div', 'card flush'); kb.id = 'setKbCard'; kb.style.marginTop = '16px'; root.appendChild(kb);
 
   const kbShell = (sub, body) => {
     kb.innerHTML = `<div class="card-head">
@@ -1846,8 +1880,8 @@ SCREENS.settings = async host => {
         { label: 'Document', strong: true, render: g => `
           <div>${g.title ? esc(g.title) : '<span class="t-muted">Untitled sections</span>'}</div>
           ${g.sources.size
-            ? `<div class="cell-sub">${esc([...g.sources].slice(0, 2).join(', '))}${g.sources.size > 2 ? ` +${g.sources.size - 2} more` : ''}</div>`
-            : hasSrc ? '<div class="cell-sub t-muted">no source file recorded</div>' : ''}` },
+            ? `<div class="ds-cell-sub">${esc([...g.sources].slice(0, 2).join(', '))}${g.sources.size > 2 ? ` +${g.sources.size - 2} more` : ''}</div>`
+            : hasSrc ? '<div class="ds-cell-sub t-muted">no source file recorded</div>' : ''}` },
         { label: 'Sections', align: 'r', render: g => num(g.secs.length) },
       ];
       if (textKey) tcols.push({ label: 'Size', align: 'r', render: g => charText(g.chars) });
@@ -1873,7 +1907,7 @@ SCREENS.settings = async host => {
         <div class="drawer-head">
           <div style="flex:1">
             <h2 style="font-size:18px">${g.title ? esc(g.title) : 'Untitled sections'}</h2>
-            <div class="cell-sub">${num(g.secs.length)} retrievable section${g.secs.length === 1 ? '' : 's'}${
+            <div class="ds-cell-sub">${num(g.secs.length)} retrievable section${g.secs.length === 1 ? '' : 's'}${
               textKey ? ` · ${charText(g.chars)}` : ''}</div>
           </div>
           <button class="btn ghost sm" id="kbClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
@@ -1904,16 +1938,16 @@ SCREENS.settings = async host => {
               ].filter(Boolean);
               return `<div class="list-item" style="cursor:default;align-items:flex-start;flex-direction:column;gap:4px">
                 <div style="font-weight:500">${hasSect && r.section ? esc(r.section) : `Section ${i + 1}`}</div>
-                <div class="cell-sub">${meta.length ? esc(meta.join(' · ')) : '<span class="t-muted">no section metadata</span>'}</div>
+                <div class="ds-cell-sub">${meta.length ? esc(meta.join(' · ')) : '<span class="t-muted">no section metadata</span>'}</div>
                 ${textKey
                   ? (body
-                      ? `<div class="cell-sub" style="white-space:pre-wrap;margin-top:4px">${esc(body.slice(0, PREVIEW_CHARS))}${body.length > PREVIEW_CHARS ? '…' : ''}</div>`
-                      : '<div class="cell-sub t-muted" style="margin-top:4px">This section is stored empty, so retrieving it returns nothing.</div>')
+                      ? `<div class="ds-cell-sub" style="white-space:pre-wrap;margin-top:4px">${esc(body.slice(0, PREVIEW_CHARS))}${body.length > PREVIEW_CHARS ? '…' : ''}</div>`
+                      : '<div class="ds-cell-sub t-muted" style="margin-top:4px">This section is stored empty, so retrieving it returns nothing.</div>')
                   : ''}
               </div>`;
             }).join('')}
           </div>
-          ${!textKey ? `<div class="cell-sub" style="margin-top:14px">Nothing in your documents holds the text of a section, so section contents and sizes cannot be shown. What NEXUS is storing for them is not what this panel needs, and only NEXUS can change that.</div>` : ''}
+          ${!textKey ? `<div class="ds-cell-sub" style="margin-top:14px">Nothing in your documents holds the text of a section, so section contents and sizes cannot be shown. What NEXUS is storing for them is not what this panel needs, and only NEXUS can change that.</div>` : ''}
         </div>
         <div class="drawer-foot">
           <button class="btn ghost" id="kbClose2">Close</button>
@@ -1955,14 +1989,14 @@ SCREENS.settings = async host => {
   ];
   const isOn = id => (id === 'compact') === savedCompact;
 
-  const look = el('div', 'card'); look.style.marginTop = '16px'; host.appendChild(look);
+  const look = el('div', 'card'); look.style.marginTop = '16px'; root.appendChild(look);
   look.innerHTML = `<div class="card-title" style="margin-bottom:4px">Appearance</div>
     <div class="card-sub" style="margin-bottom:14px">How tightly tables are packed</div>
     <div class="seg" id="setDensity" role="group" aria-label="Table density">
       ${DENSITIES.map(d => `<button type="button" data-d="${d.id}" class="${isOn(d.id) ? 'on' : ''}"
         aria-pressed="${isOn(d.id) ? 'true' : 'false'}">${esc(d.label)}</button>`).join('')}
     </div>
-    <div class="cell-sub" id="setDensityHint" style="margin-top:10px">${
+    <div class="ds-cell-sub" id="setDensityHint" style="margin-top:10px">${
       esc(DENSITIES.find(d => isOn(d.id)).hint)}</div>
     <div class="banner info" style="margin-top:16px;margin-bottom:0">
       <span class="material-symbols-outlined" style="font-size:20px">info</span>
@@ -1984,19 +2018,19 @@ SCREENS.settings = async host => {
      also on the top bar; it is repeated here so it can be found. Test records
      are the fixtures NEXUS's own checks write (NEXUS TEST …, Preflight …): hidden
      from every list and count unless this is on. */
-  const priv = el('div', 'card'); priv.style.marginTop = '16px'; host.appendChild(priv);
+  const priv = el('div', 'card'); priv.style.marginTop = '16px'; root.appendChild(priv);
   const hidden = hiddenTestCount();
   priv.innerHTML = `<div class="card-title" style="margin-bottom:4px">Privacy</div>
     <div class="card-sub" style="margin-bottom:14px">For screen sharing, and for what appears in lists</div>
     <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
       <input type="checkbox" id="setPrivacy" ${privacyOn() ? 'checked' : ''} />
-      <span><strong>Privacy mode</strong><div class="cell-sub" style="white-space:normal">Masks customer names, phones and emails, for screen sharing.</div></span>
+      <span><strong>Privacy mode</strong><div class="ds-cell-sub" style="white-space:normal">Masks customer names, phones and emails, for screen sharing.</div></span>
     </label>
     <label style="display:flex;gap:10px;align-items:flex-start">
       <input type="checkbox" id="setShowTests" ${showTestRecords() ? 'checked' : ''} />
-      <span><strong>Show internal test records</strong><div class="cell-sub" style="white-space:normal">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</div></span>
+      <span><strong>Show internal test records</strong><div class="ds-cell-sub" style="white-space:normal">Records created by NEXUS's own system checks. Hidden from lists and counts unless this is on.</div></span>
     </label>
-    ${hidden && !showTestRecords() ? `<div class="cell-sub t-muted" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
+    ${hidden && !showTestRecords() ? `<div class="ds-cell-sub t-muted" style="margin-top:10px">${num(hidden)} test ${hidden === 1 ? 'record' : 'records'} hidden</div>` : ''}`;
   $('setPrivacy').addEventListener('change', e => setPrivacy(e.target.checked));
   $('setShowTests').addEventListener('change', e => setShowTestRecords(e.target.checked));  // app.js re-renders on the change
 
@@ -2013,7 +2047,7 @@ SCREENS.settings = async host => {
   const teamTenantId = teamTenant?.id || null;
   const teamTenantName = teamTenant?.name || teamTenant?.slug || null;
   if (teamTenantId && canInviteTeam(teamTenantId)) {
-    const team = el('div', 'card'); team.style.marginTop = '16px'; host.appendChild(team);
+    const team = el('div', 'card'); team.style.marginTop = '16px'; root.appendChild(team);
     let tBusy = false, tMsg = '', tTone = 'ok';
     /* The same shape screens/founder.js's refusalText() reads, narrowed to
        the one body shape this card can ever receive -- founder-invite's own
@@ -2041,7 +2075,7 @@ SCREENS.settings = async host => {
             ${['admin', 'manager', 'sales', 'technician', 'member'].map(r => `<option value="${esc(r)}"${r === 'sales' ? ' selected' : ''}>${esc(r)}</option>`).join('')}
           </select></div>
         </div>
-        <div class="cell-sub" style="margin-top:8px">The owner role is not offered here -- granting it is a roster action (nexus_team_set_role, on the Team screen), and team_05's own rule restricts setting or removing owner to an existing owner acting on that roster, not to an invite.</div>
+        <div class="ds-cell-sub" style="margin-top:8px">The owner role is not offered here -- granting it is a roster action (nexus_team_set_role, on the Team screen), and team_05's own rule restricts setting or removing owner to an existing owner acting on that roster, not to an invite.</div>
         <button class="btn primary" id="teamGo" style="margin-top:14px"${tBusy ? ' disabled' : ''}>${tBusy ? 'Sending…' : 'Send invite'}</button>`;
       $('teamGo')?.addEventListener('click', teamSend);
     };

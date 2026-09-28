@@ -67,6 +67,7 @@
       UNKNOWN_NO_LINK and the basis says "A figure here would be invented." */
 
 import { db } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { aed, dubaiDate, dubaiStamp, esc, mins, num, pct, pill } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { healthWords } from '../lib/health.js';
@@ -80,8 +81,8 @@ const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="cell-sub">${h}</div>`;
-const hot    = h => `<div class="cell-sub t-hot">${h}</div>`;
+const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const bold   = h => `<div style="font-weight:600">${h}</div>`;
 const wrap   = h => `<div style="white-space:normal">${h}</div>`;
 
@@ -139,6 +140,17 @@ const wireGo = card => {
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.leadrecovery = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto another screen and restyle one nobody converted. A wrapper
+     cannot leak — go() removes it with the rest of the subtree. Same pattern as
+     screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const readLeads = shared(() => db('v_lead_recovery'
     + '?select=lead_id,lead_name,lead_status,lead_is_open,lead_created_at,state,state_basis,'
     + 'response_time_minutes,response_time_state,sla_first_response_minutes,sla_state,response_time_note,'
@@ -193,7 +205,7 @@ SCREENS.leadrecovery = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P1 · The zero, at full size, with its reason
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Is this dealership leaking leads today?',
     sub: 'The engine scores every lead on file and states a risk with a reason for each. The headline counts below are '
        + 'the coverage view&rsquo;s own, not a recount of the rows further down',
@@ -300,7 +312,7 @@ SCREENS.leadrecovery = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P2 · What this engine cannot tell you — verbatim
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'What this engine cannot tell you',
     sub: 'The engine&rsquo;s own account of its blind spots, printed exactly as the database holds it. Read this before '
        + 'quoting anything else on this page',
@@ -340,7 +352,7 @@ SCREENS.leadrecovery = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P3 · Identity coverage — the engine is blind to half the conversation
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'How much of the conversation this engine can actually see',
     sub: 'Every count on this page is computed over messages that resolve to a lead. This is that denominator, stated '
        + 'rather than left to be discovered',
@@ -432,7 +444,7 @@ SCREENS.leadrecovery = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P4 · Every lead, and the reason it is not leaking
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Every lead the engine scored',
     sub: 'One deterministic row per lead. The Why column is the engine&rsquo;s own basis, not a summary of it',
     actions: linkBtn('leads', 'Open Leads'),
@@ -525,7 +537,7 @@ SCREENS.leadrecovery = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P5 · What the engine can say, and what it is saying today
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Every state this engine can reach',
     sub: 'A branch that exists and is empty, and a branch that does not exist, are two different findings. Do not read '
        + 'a zero as evidence a branch is broken, or a branch as evidence of data',
@@ -572,7 +584,7 @@ SCREENS.leadrecovery = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P6 · The recovery desk, and the provenance of this page
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'The recovery desk',
     sub: 'What has been put to a person in this lane, what came back, and the only revenue figure this product is '
        + 'allowed to call recovered',

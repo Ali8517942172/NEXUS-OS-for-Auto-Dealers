@@ -84,6 +84,7 @@
    dealership's rows; this file does not hide them. */
 
 import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { loadSubscription, isReadOnly } from '../lib/subscription.js';
 import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
@@ -96,9 +97,9 @@ import { kpi, panel, table } from '../lib/ui.js';
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="cell-sub">${h}</div>`;
-const hot   = h => `<div class="cell-sub t-hot">${h}</div>`;
-const warm  = h => `<div class="cell-sub t-warm">${h}</div>`;
+const muted = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
+const warm  = h => `<div class="ds-cell-sub t-warm">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 const chip  = t => `<span class="chip">${esc(t)}</span>`;
@@ -235,14 +236,14 @@ async function staffSelectHtml(selectedId) {
 
 function offerDialog(row) {
   const m = openModal(`Offer times \u2014 appointment ${row.appointment_id}`, `
-    <div class="cell-sub" style="margin-bottom:12px">Up to three times to propose. At least one is required. This
+    <div class="ds-cell-sub" style="margin-bottom:12px">Up to three times to propose. At least one is required. This
       replaces any times previously offered on this visit \u2014 nexus_appointment_offer_slots' own rule, not this
       dialog's.</div>
-    <label class="cell-sub" for="apSlot1" style="display:block">Slot 1</label>
+    <label class="ds-cell-sub" for="apSlot1" style="display:block">Slot 1</label>
     <input id="apSlot1" type="datetime-local" style="width:100%">
-    <label class="cell-sub" for="apSlot2" style="display:block;margin-top:8px">Slot 2 (optional)</label>
+    <label class="ds-cell-sub" for="apSlot2" style="display:block;margin-top:8px">Slot 2 (optional)</label>
     <input id="apSlot2" type="datetime-local" style="width:100%">
-    <label class="cell-sub" for="apSlot3" style="display:block;margin-top:8px">Slot 3 (optional)</label>
+    <label class="ds-cell-sub" for="apSlot3" style="display:block;margin-top:8px">Slot 3 (optional)</label>
     <input id="apSlot3" type="datetime-local" style="width:100%">
   `, `<button class="btn primary" id="apGo">Offer</button><button class="btn" id="apCancel">Cancel</button>`);
   const $$ = id => m.wrap.querySelector(id);
@@ -273,28 +274,28 @@ function offerDialog(row) {
 
 function confirmDialog(row) {
   const m = openModal(`Confirm visit \u2014 appointment ${row.appointment_id}`, `
-    <div class="cell-sub" style="margin-bottom:12px">Books this visit for one specific time. The EXCLUDE USING gist
+    <div class="ds-cell-sub" style="margin-bottom:12px">Books this visit for one specific time. The EXCLUDE USING gist
       double-booking constraint still applies: a salesperson or resource already booked over this time is refused,
       in nexus_appointment_confirm's own words, below.</div>
-    <label class="cell-sub" for="apWhen" style="display:block">When</label>
+    <label class="ds-cell-sub" for="apWhen" style="display:block">When</label>
     <input id="apWhen" type="datetime-local" style="width:100%">
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
       <div style="flex:1;min-width:160px">
-        <label class="cell-sub" for="apDuration" style="display:block">Duration (minutes)</label>
+        <label class="ds-cell-sub" for="apDuration" style="display:block">Duration (minutes)</label>
         <input id="apDuration" type="number" min="5" step="5" value="45" style="width:100%">
       </div>
       <div style="flex:1;min-width:220px">
-        <label class="cell-sub" for="apSalesWrap" style="display:block">Salesperson (optional)</label>
-        <div id="apSalesWrap" class="cell-sub">Loading staff\u2026</div>
+        <label class="ds-cell-sub" for="apSalesWrap" style="display:block">Salesperson (optional)</label>
+        <div id="apSalesWrap" class="ds-cell-sub">Loading staff\u2026</div>
       </div>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
       <div style="flex:1;min-width:160px">
-        <label class="cell-sub" for="apLocation" style="display:block">Location (optional)</label>
+        <label class="ds-cell-sub" for="apLocation" style="display:block">Location (optional)</label>
         <input id="apLocation" type="text" maxlength="120" style="width:100%">
       </div>
       <div style="flex:1;min-width:160px">
-        <label class="cell-sub" for="apResource" style="display:block">Resource (optional)</label>
+        <label class="ds-cell-sub" for="apResource" style="display:block">Resource (optional)</label>
         <input id="apResource" type="text" maxlength="120" style="width:100%" placeholder="bay, desk, demo car">
       </div>
     </div>
@@ -331,9 +332,9 @@ function outcomeDialog(kind, row) {
   const label = kind === 'no_show' ? 'No-show' : 'Attended';
   const rpc = kind === 'no_show' ? 'nexus_my_appointment_no_show' : 'nexus_my_appointment_attend';
   const m = openModal(`${label} \u2014 appointment ${row.appointment_id}`, `
-    <div class="cell-sub" style="margin-bottom:12px">Recorded as a human's own account of what happened. NEXUS never
+    <div class="ds-cell-sub" style="margin-bottom:12px">Recorded as a human's own account of what happened. NEXUS never
       infers this from the clock \u2014 see "The clock is not a witness" at the top of this screen.</div>
-    <label class="cell-sub" for="apReason" style="display:block">Reason / note (optional)</label>
+    <label class="ds-cell-sub" for="apReason" style="display:block">Reason / note (optional)</label>
     <input id="apReason" type="text" maxlength="400" style="width:100%">
   `, `<button class="btn primary" id="apGo">${esc(label)}</button><button class="btn" id="apCancel">Cancel</button>`);
   const $$ = id => m.wrap.querySelector(id);
@@ -354,9 +355,9 @@ function outcomeDialog(kind, row) {
 
 function cancelDialog(row) {
   const m = openModal(`Cancel visit \u2014 appointment ${row.appointment_id}`, `
-    <div class="cell-sub" style="margin-bottom:12px">nexus_appointment_cancel refuses a cancel with no reason given,
+    <div class="ds-cell-sub" style="margin-bottom:12px">nexus_appointment_cancel refuses a cancel with no reason given,
       in its own words \u2014 this dialog does not duplicate that check client-side.</div>
-    <label class="cell-sub" for="apReason" style="display:block">Reason</label>
+    <label class="ds-cell-sub" for="apReason" style="display:block">Reason</label>
     <input id="apReason" type="text" maxlength="400" style="width:100%" placeholder="e.g. customer asked to cancel">
   `, `<button class="btn primary" id="apGo">Cancel visit</button><button class="btn" id="apBack">Back</button>`);
   const $$ = id => m.wrap.querySelector(id);
@@ -378,7 +379,7 @@ function cancelDialog(row) {
 function openApptAction(kind, row, mode) {
   if (mode && mode.readOnly) {
     const m = openModal('Read-only subscription',
-      '<div class="cell-sub">This dealership\u2019s subscription is in a read-only state, so nothing on this '
+      '<div class="ds-cell-sub">This dealership\u2019s subscription is in a read-only state, so nothing on this '
       + 'appointment can be written until it is resolved.</div>',
       '<button class="btn" id="apClose">Close</button>');
     m.wrap.querySelector('#apClose').addEventListener('click', () => m.close());
@@ -437,6 +438,17 @@ const whenCell = r => {
    SCREEN
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.appointments = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto another screen and restyle one nobody converted. A wrapper
+     cannot leak — go() removes it with the rest of the subtree. Same pattern as
+     screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   resetReads();
 
   /* Throws on failure, so the panels that report on the diary get the standard
@@ -463,7 +475,7 @@ SCREENS.appointments = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The six words, counted separately
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Every showroom visit, counted by the word it is actually in',
     sub: 'Six separate figures, never added together and never rolled into a booking rate. Somebody who asked a '
        + 'question and somebody who agreed to a time on Saturday are opposite facts, and only one of them is a booking',
@@ -564,7 +576,7 @@ SCREENS.appointments = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P2 · The diary itself
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Every visit on record, and what is actually true of it',
     sub: 'In the order the accessor returns them — by the time they are for, or by the time they were asked for when '
        + 'no time exists yet. Every line carries the database’s own account, in words, of what state it is in, and '
@@ -641,7 +653,7 @@ SCREENS.appointments = async host => {
      confirmed bookings and get counted as though the customer came. They are
      the single most likely source of a fake attendance number in this product,
      which is why they get their own panel and their own words. */
-  panel(host, {
+  panel(root, {
     title: 'Passed, and nobody has said what happened',
     sub: 'Confirmed slots whose end time is behind us with no outcome recorded. NEXUS does not decide this from the '
        + 'clock — a person calls it ATTENDED or NO_SHOW, and until they do, this screen says only that nobody has',
@@ -692,7 +704,7 @@ SCREENS.appointments = async host => {
      Fixed rows. They are true whether or not the read above succeeded, which is
      why this panel takes the soft load: a screen whose job is to state what it
      cannot tell you must not go blank at exactly the moment it knows least. */
-  panel(host, {
+  panel(root, {
     title: 'What this screen cannot tell you',
     sub: 'Six things outside what the database can answer. They are listed because a dashboard that only shows what '
        + 'it knows reads as though it knows everything',

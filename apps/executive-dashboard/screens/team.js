@@ -243,6 +243,15 @@ import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
    and a staff record is not a login. */
 const NO_INVITE =
   'This is a staff record, not a login. Access is granted by the email address the person will sign in with — use "Add a colleague" under Who has access, below.';
+/* The same distinction, for the disabled control on the pending-invite alert.
+   NO_INVITE is about a staff record not being a login and points at this
+   screen's own seat card, which is the right answer there and the wrong one
+   here: the seat already exists, and what is missing is the mail. This button
+   stays disabled because team.js has no send path — nexus_team_invite records a
+   membership and sends nothing — and it names the one that does rather than
+   implying nothing does. */
+const NO_INVITE_FROM_HERE =
+  'This screen records seats; it does not send mail. The invitation email is sent by NEXUS from the Team card on Settings, which an owner opens \u2014 that card, not this button, is the send path.';
 const NO_ROLE_WRITE =
   'This is the job title on the staff record, and it grants nothing. The account role that decides what somebody may do is changed under Who has access, below.';
 const NO_DELETE =
@@ -375,12 +384,23 @@ const statusPill = r => {
 
 /* ── Screen ──────────────────────────────────────────────────────────────── */
 SCREENS.team = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* The alert strip sits above the KPI row on purpose. "How many people are on
      the team" is a fact; "a rep is holding nothing while a HOT lead has no
      owner" is a job, and the job must not be the thing you scroll past. */
-  const alertHost = el('div'); alertHost.style.marginBottom = '16px'; host.appendChild(alertHost);
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
-  const body = el('div'); body.style.marginTop = '16px'; host.appendChild(body);
+  const alertHost = el('div'); alertHost.style.marginBottom = '16px'; root.appendChild(alertHost);
+  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const body = el('div'); body.style.marginTop = '16px'; root.appendChild(body);
 
   /* allSettled, not catch(() => []): a directory that failed to read and a
      directory with nobody in it are opposite answers, and on this screen the
@@ -660,11 +680,19 @@ SCREENS.team = async host => {
              is not happening. It appears when there is something to report. */
           : `${num(withAccount.length)} with an account${pending.length ? ` · ${num(pending.length)} pending invite` : ''}`
             + (roster.length === 1 ? '<div class="t-muted">The whole floor is one person</div>' : '')),
+      /* These two lines said sending an invitation was not built. It is, and it
+         ships in this bundle: the Team card on Settings calls the founder-invite
+         Edge Function, which returns outcome 'invited' after NEXUS sends the
+         mail. What is true of THIS screen is narrower — "Add a colleague" below
+         calls nexus_team_invite, which records the seat and the role and sends
+         nothing — so that is what these say now. Wording the narrow fact as a
+         product limit sent an owner out of the product for a job the product
+         does. */
       kpi('Awaiting an invite', num(pending.length),
         pending.length
-          ? '<span class="t-warm">No account, and nothing here can send one yet</span>'
+          ? '<span class="t-warm">A seat is recorded but no account exists — the invitation mail goes out from the Team card on Settings, which an owner opens</span>'
           : '<span class="t-ok">Nobody is waiting on an invitation</span>'
-            + '<div class="t-muted">Sending one is not built either, so the first hire has to be added outside this dashboard</div>',
+            + '<div class="t-muted">Adding a colleague below records the seat and the role; the invitation mail itself is sent by NEXUS from the Team card on Settings, which an owner opens</div>',
         pending.length ? 't-warm' : ''),
       /* The counts here are within_sla / breached_sla straight off the view, and
          both are count(*) FILTER on response_time_minutes, so their sum is the
@@ -799,10 +827,10 @@ SCREENS.team = async host => {
         + `${plural(pending.length, 'sits', 'sit')} at <span class="mono">pending_invite</span>. They cannot sign in, cannot be alerted when a HOT lead lands and cannot be assigned one, `
         + `so their share of the floor is being carried by whoever else is on it. `
         + (oldest ? `The oldest of these accounts was created ${esc(ago(oldest))}. ` : 'None of these rows carries a creation date, so how long they have been waiting is not knowable. ')
-        + 'Sending the invitation is not built, so this stays outstanding until the endpoint exists.',
+        + 'Adding them here recorded a seat and a role; it sends no mail \u2014 that is all nexus_team_invite does. The invitation itself is sent by NEXUS from the Team card on Settings, which an owner can open, so this stays outstanding until somebody sends it from there rather than until an endpoint is written.',
       act: () => focusRoster('PENDING'),
       actLabel: 'Show them',
-      noHook: { label: `Send invite${plural(pending.length, '', 's')}`, why: NO_INVITE },
+      noHook: { label: `Send invite${plural(pending.length, '', 's')}`, why: NO_INVITE_FROM_HERE },
     });
   }
 
@@ -1057,9 +1085,9 @@ SCREENS.team = async host => {
           ${a.titleHtml}${pill(String(a.sev).replace(/_/g, ' '), tone(a.sev), { verbatim: a.sevFromRow === true })}
           ${a.source === 'view' ? '<span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>' : ''}
         </div>
-        <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${a.detailHtml}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0" class="cell-sub">${waitedHtml(a)}
+      <div style="text-align:right;flex-shrink:0" class="ds-cell-sub">${waitedHtml(a)}
         ${clickable ? `<div class="t-muted">${esc(a.actLabel || 'Open')}</div>` : ''}</div>
       ${a.noHook ? `<button class="btn sm" disabled title="${esc(a.noHook.why)}">${esc(a.noHook.label)}</button>` : ''}
       ${clickable ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
@@ -1098,18 +1126,18 @@ SCREENS.team = async host => {
         <span class="material-symbols-outlined t-warm" style="font-size:20px" aria-hidden="true">help</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500">Nothing could be checked on this screen — this is not an all-clear</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">Every check in this strip is derived from
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">Every check in this strip is derived from
             ${esc(readsFailed.join(', '))}, and ${readsFailed.length === 1 ? 'that read' : 'those reads'} did not come
             back. An empty list here means nothing was looked at, not that nothing was found.</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
         </div></div></div>`
       : `<div class="card">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <span class="material-symbols-outlined t-ok" style="font-size:20px" aria-hidden="true">task_alt</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500">Nothing on the team screen needs a human right now</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(CHECKED)}</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(CHECKED)}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${notesHtml}</div>
         </div></div></div>`;
   } else {
     alertHost.innerHTML = `<div class="card flush">
@@ -1119,7 +1147,7 @@ SCREENS.team = async host => {
       <div>${alerts.map(alertItem).join('')}</div>
       <div class="list-item" style="cursor:default">
         <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-        <div class="cell-sub" style="white-space:normal">${notesHtml}</div></div></div>`;
+        <div class="ds-cell-sub" style="white-space:normal">${notesHtml}</div></div></div>`;
     const fire = i => { const a = alerts[Number(i)]; if (a && typeof a.act === 'function') a.act(); };
     alertHost.querySelectorAll('[data-alert]').forEach(node => {
       node.addEventListener('click', () => fire(node.dataset.alert));
@@ -1222,7 +1250,7 @@ SCREENS.team = async host => {
     { label: 'Name', strong: true, sort: 'name', render: r => `<div style="display:flex;align-items:center;gap:10px">
         <div class="avatar">${esc(initials(r.name))}</div>
         <div><div>${esc(r.name || 'Unnamed')}</div>
-          ${r.unlinked ? '<div class="cell-sub t-warm">Not in the user directory</div>' : ''}
+          ${r.unlinked ? '<div class="ds-cell-sub t-warm">Not in the user directory</div>' : ''}
         </div></div>` },
     /* Contact, spelled out rather than implied. The phone line is the point of
        this column: every other screen shows a person's number beside their name,
@@ -1230,9 +1258,9 @@ SCREENS.team = async host => {
        dash is rendered with the reason on it so nobody reads it as "this rep did
        not give us their number" — the column does not exist to be empty. */
     { label: 'Contact', render: r => `
-        <div class="cell-sub">${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</div>
-        <div class="cell-sub">Phone <span class="t-muted" title="${esc(NO_STAFF_PHONE)}">\u2014 not recorded anywhere</span></div>
-        <div class="cell-sub">${r.slack
+        <div class="ds-cell-sub">${r.email ? esc(r.email) : '<span class="t-muted">No email on file</span>'}</div>
+        <div class="ds-cell-sub">Phone <span class="t-muted" title="${esc(NO_STAFF_PHONE)}">\u2014 not recorded anywhere</span></div>
+        <div class="ds-cell-sub">${r.slack
           ? `Slack <span class="mono">${esc(r.slack)}</span>`
           : r.unlinked
             ? '<span class="t-muted">No directory row, so no Slack id either</span>'
@@ -1245,7 +1273,7 @@ SCREENS.team = async host => {
         const n = leadsAssigned(r);
         if (n == null) return notReported;
         const owned = ownedBy(r).length;
-        return `${num(n)}${owned && owned !== n ? `<div class="cell-sub">${num(owned)} in the leads read</div>` : ''}`;
+        return `${num(n)}${owned && owned !== n ? `<div class="ds-cell-sub">${num(owned)} in the leads read</div>` : ''}`;
       } },
     { label: 'HOT', align: 'r', sort: 'hot', render: r => {
         const n = hotLeads(r);
@@ -1263,7 +1291,7 @@ SCREENS.team = async host => {
         /* An average of one is that one. The figure is real either way; the word
            "average" is what would be doing the lying. */
         return `<span class="${a > 5 ? 't-hot' : 't-ok'}">${mins(a)}</span>`
-          + (measured(r) === 1 ? '<div class="cell-sub">one lead, not an average</div>' : '');
+          + (measured(r) === 1 ? '<div class="ds-cell-sub">one lead, not an average</div>' : '');
       } },
     /* within_sla and breached_sla are both count(*) FILTER on
        response_time_minutes, at <= 5 and > 5, so a lead carrying a null falls
@@ -1277,10 +1305,10 @@ SCREENS.team = async host => {
         const m = measured(r), w = withinSla(r);
         if (!m) return '<span class="t-muted">Nothing measured</span>';
         if (m < MIN_RATE_SAMPLE) {
-          return `${num(w ?? 0)} / ${num(m)}<div class="cell-sub">${w ? 'answered in time' : 'breached'} — one lead, so no rate</div>`;
+          return `${num(w ?? 0)} / ${num(m)}<div class="ds-cell-sub">${w ? 'answered in time' : 'breached'} — one lead, so no rate</div>`;
         }
         const rate = slaRate(r);
-        return `${num(w ?? 0)} / ${num(m)}<div class="cell-sub ${rate != null && rate < 50 ? 't-hot' : ''}">${pct(rate)}</div>`;
+        return `${num(w ?? 0)} / ${num(m)}<div class="ds-cell-sub ${rate != null && rate < 50 ? 't-hot' : ''}">${pct(rate)}</div>`;
       } },
     /* Open pipeline, summed here from the leads read on this screen — not
        v_team_performance.pipeline_aed. That column summed every lead ever
@@ -1295,7 +1323,7 @@ SCREENS.team = async host => {
         if (p != null) return aed(p);
         const open = openLeadsOf(r).length;
         return open
-          ? `<span class="t-muted">No budget on file</span><div class="cell-sub">${num(open)} open ${plural(open, 'lead', 'leads')}, none carrying a budget_aed</div>`
+          ? `<span class="t-muted">No budget on file</span><div class="ds-cell-sub">${num(open)} open ${plural(open, 'lead', 'leads')}, none carrying a budget_aed</div>`
           : '<span class="t-muted">No open lead held</span>';
       } },
     /* The access column exists only while somebody on the STAFF directory is
@@ -1336,7 +1364,7 @@ SCREENS.team = async host => {
          below already says what is missing, and a toolbar above it explaining
          that there is nothing to filter is a second empty box saying the same. */
       ? (roster.length
-          ? `<div class="toolbar"><div class="cell-sub" style="white-space:normal">${esc('One person is on the roster, so there is nothing to filter or search for: every slice would return the same row. The filters come back when there is a second person to tell apart from the first.')}</div></div>`
+          ? `<div class="toolbar"><div class="ds-cell-sub" style="white-space:normal">${esc('One person is on the roster, so there is nothing to filter or search for: every slice would return the same row. The filters come back when there is a second person to tell apart from the first.')}</div></div>`
           : '')
       : `<div class="toolbar">
       <div class="seg" id="tSegView" role="group" aria-label="Filter the roster">
@@ -1469,20 +1497,20 @@ SCREENS.team = async host => {
             <div style="width:120px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name || 'Unnamed')}</div>
             ${spread
               ? `<div class="bar" style="flex:1;height:10px"><i style="width:${(n / top * 100).toFixed(1)}%"></i></div>`
-              : `<div style="flex:1" class="cell-sub">${num(n)} ${plural(n, 'lead', 'leads')} against their name</div>`}
+              : `<div style="flex:1" class="ds-cell-sub">${num(n)} ${plural(n, 'lead', 'leads')} against their name</div>`}
             <div class="num t-muted" style="width:88px;text-align:right">${num(n)}${hot ? ` · <span class="t-hot">${num(hot)} hot</span>` : ''}</div>
           </div>`;
         }).join('')}
       </div>
-      ${spread ? '' : `<div class="cell-sub" style="margin-top:10px;white-space:normal">
+      ${spread ? '' : `<div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
         ${num(carrying.length)} ${plural(carrying.length, 'rep holds', 'reps hold')} any lead at all, so there is no distribution to chart:
         a single bar is the full width of itself by construction and would read as a rep at capacity. The count above is the whole finding.</div>`}
-      <div class="cell-sub" style="margin-top:12px;white-space:normal">
+      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
         ${num(totalAssigned)} assigned lead${totalAssigned === 1 ? '' : 's'} across ${num(carrying.length)} of ${num(roster.length)} on the roster.
         ${leads ? `${num(unassigned.length)} more ${unassigned.length === 1 ? 'is' : 'are'} unassigned${unassignedHot.length ? `, ${num(unassignedHot.length)} of them HOT` : ''}${leadsCapped ? ` within the ${num(LEAD_LIMIT)} most recent leads read` : ''}.` : 'Leads could not be read, so unassigned leads are not counted here.'}
         ${idle.length ? `${nameList(idle)} ${plural(idle.length, 'holds', 'hold')} nothing at all and so ${plural(idle.length, 'has', 'have')} no bar here.` : ''}
       </div>
-      <div class="cell-sub" style="margin-top:8px;white-space:normal">
+      <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">
         ${concentration
           ? `${esc(str(concentration.rep.name) || 'The top rep')} holds ${esc(pct(concentration.share * 100))} of the open pipeline against an even share of ${esc(pct(concentration.even * 100))}. `
           : carriers.length >= MIN_CARRIERS
@@ -1521,11 +1549,11 @@ SCREENS.team = async host => {
         <span class="material-symbols-outlined">timer_off</span>
         <div>
           <div style="font-weight:500">Nobody can be scored against the 5-minute rule yet</div>
-          <div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(timingWhy)}</div>
+          <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(timingWhy)}</div>
         </div>
       </div>
-      <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_TIMING)}</div>
-      <div class="cell-sub" style="margin-top:10px;white-space:normal">
+      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_TIMING)}</div>
+      <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
         The ${num(roster.length)} ${plural(roster.length, 'person', 'people')} on the roster ${plural(roster.length, 'is', 'are')} neither passing nor
         failing this rule here — they are unscored, which is a third state and the only true one while no lead read here has been timed at all.
         An untimed lead is not a slow one and not a fast one, and it is not evidence that nobody answered it: the trigger declines to measure a
@@ -1564,25 +1592,25 @@ SCREENS.team = async host => {
           <span style="width:8px;height:8px;border-radius:50%;background:var(--hot)"></span>
           <span style="font-weight:500">Breached</span><span class="t-muted num">${num(breach)} · ${pct(breach / m * 100)}</span></div>
       </div>
-      ${m <= THIN ? `<div class="cell-sub" style="margin-top:10px;white-space:normal"><span class="t-warm">These proportions are ${num(m)} leads in total — one more reply moves them by ${esc(pct(100 / m))}.</span></div>` : ''}`
+      ${m <= THIN ? `<div class="ds-cell-sub" style="margin-top:10px;white-space:normal"><span class="t-warm">These proportions are ${num(m)} leads in total — one more reply moves them by ${esc(pct(100 / m))}.</span></div>` : ''}`
         : `<div style="margin-top:4px">
              <span class="${breach ? 't-hot' : 't-ok'}" style="font-weight:500">${breach
                ? 'The one lead anyone has been timed on waited longer than five minutes for its first reply.'
                : 'The one lead anyone has been timed on was answered inside five minutes.'}</span>
-             ${only ? `<div class="cell-sub" style="margin-top:6px">${esc(str(only.name) || 'The rep it is assigned to')} — ${esc(avgResponse(only) == null ? 'no response time on their row' : mins(avgResponse(only)) + ' to first reply')}.</div>` : ''}
+             ${only ? `<div class="ds-cell-sub" style="margin-top:6px">${esc(str(only.name) || 'The rep it is assigned to')} — ${esc(avgResponse(only) == null ? 'no response time on their row' : mins(avgResponse(only)) + ' to first reply')}.</div>` : ''}
            </div>
-           <div class="cell-sub" style="margin-top:10px;white-space:normal">No percentage, split bar or breach ranking is drawn from it: over a single lead the only figures that exist are 0% and 100%, and neither says anything the sentence above does not. They come back at ${num(MIN_RATE_SAMPLE)} measured leads.</div>`}
+           <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">No percentage, split bar or breach ranking is drawn from it: over a single lead the only figures that exist are 0% and 100%, and neither says anything the sentence above does not. They come back at ${num(MIN_RATE_SAMPLE)} measured leads.</div>`}
       ${rateable
         ? (worst.length ? `<div class="label-caps" style="margin:16px 0 8px">Most breaches</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${worst.map(r => `<div style="display:flex;align-items:center;gap:12px">
             <div style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name || 'Unnamed')}</div>
-            <div class="cell-sub">${mins(avgResponse(r))} average</div>
+            <div class="ds-cell-sub">${mins(avgResponse(r))} average</div>
             <div class="num t-hot" style="width:64px;text-align:right">${num(breachedSla(r))}</div>
           </div>`).join('')}
-        </div>` : '<div class="cell-sub" style="margin-top:12px">Nobody on the roster has a breach against their name.</div>')
+        </div>` : '<div class="ds-cell-sub" style="margin-top:12px">Nobody on the roster has a breach against their name.</div>')
         : ''}
-      <div class="cell-sub" style="margin-top:12px;white-space:normal">
+      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
         ${num(timed.length)} of ${num(roster.length)} on the roster ${plural(timed.length, 'has', 'have')} been timed on a lead. ${roster.length > timed.length
           ? 'The rest carry no measurement, which is not the same as being fast.'
           : 'Nobody on the roster is unmeasured.'}</div>`;
@@ -1702,7 +1730,7 @@ SCREENS.team = async host => {
   function acRoleCell(r, mayManage, mayOwner) {
     const roleWord = roleChip(r.account_role);
     if (!mayManage) {
-      return `${roleWord}<div class="cell-sub" style="white-space:normal">${esc(ROLE_WHAT[r.account_role] || 'This role is not one this screen has words for; the database is the authority on what it allows.')}</div>`;
+      return `${roleWord}<div class="ds-cell-sub" style="white-space:normal">${esc(ROLE_WHAT[r.account_role] || 'This role is not one this screen has words for; the database is the authority on what it allows.')}</div>`;
     }
     /* An admin may set any role below owner, their own included, and may not
        set or remove owner. That is team_05's NX_TEAM_OWNER_ROLE_IS_OWNER_ONLY,
@@ -1713,16 +1741,16 @@ SCREENS.team = async host => {
       .filter(k => mayOwner || (k !== 'owner' && r.account_role !== 'owner'))
       .map(k => `<option value="${esc(k)}"${k === r.account_role ? ' selected' : ''}>${esc(k)}</option>`).join('');
     if (!opts) {
-      return `${roleWord}<div class="cell-sub" style="white-space:normal">Only an account owner may change an owner’s role.</div>`;
+      return `${roleWord}<div class="ds-cell-sub" style="white-space:normal">Only an account owner may change an owner’s role.</div>`;
     }
     return `<select data-acrole="${esc(r.auth_user_id)}" aria-label="Account role for ${esc(r.email || 'this person')}">${opts}</select>
       <button class="btn sm" data-acsave="${esc(r.auth_user_id)}">Save role</button>
-      ${mayOwner ? '' : '<div class="cell-sub" style="white-space:normal">The owner role is not on this list because only an account owner may grant or remove it.</div>'}`;
+      ${mayOwner ? '' : '<div class="ds-cell-sub" style="white-space:normal">The owner role is not on this list because only an account owner may grant or remove it.</div>'}`;
   }
 
   function acStaffCell(r, mayManage) {
     const linked = r.staff_user_id
-      ? `${esc(r.staff_name || 'a staff record with no name on it')}${r.staff_job_title ? ` <span class="cell-sub">· ${esc(r.staff_job_title)}</span>` : ''}`
+      ? `${esc(r.staff_name || 'a staff record with no name on it')}${r.staff_job_title ? ` <span class="ds-cell-sub">· ${esc(r.staff_job_title)}</span>` : ''}`
       : '<span class="t-warm">Not linked to a staff record</span>';
     /* The unlinked case is rbac open item 4 and it is a working defect, not a
        cosmetic gap: leads.assigned_to_id points at the STAFF id, so a sales
@@ -1730,7 +1758,7 @@ SCREENS.team = async host => {
        as "the product is broken" unless something says otherwise, so something
        does. */
     const why = r.staff_user_id ? '' :
-      `<div class="cell-sub" style="white-space:normal"><span class="t-warm">This account can sign in but is not connected to anybody on the staff directory.</span>
+      `<div class="ds-cell-sub" style="white-space:normal"><span class="t-warm">This account can sign in but is not connected to anybody on the staff directory.</span>
          Leads are filed against a staff record, so ${esc(r.account_role === 'sales' || r.account_role === 'member' ? 'this person can currently edit no leads at all' : 'nothing on this screen can attribute work to them')}.</div>`;
     if (!mayManage) return linked + why;
     const opts = ['<option value="">Not linked</option>'].concat(
@@ -1739,7 +1767,7 @@ SCREENS.team = async host => {
       <div style="margin-top:6px">
         <select data-acstaff="${esc(r.auth_user_id)}" aria-label="Staff record for ${esc(r.email || 'this person')}">${opts}</select>
         <button class="btn sm" data-aclink="${esc(r.auth_user_id)}">Link</button>
-        ${usersErr ? '<div class="cell-sub t-warm" style="white-space:normal">The staff directory could not be read on this page load, so this list is empty rather than short.</div>' : ''}
+        ${usersErr ? '<div class="ds-cell-sub t-warm" style="white-space:normal">The staff directory could not be read on this page load, so this list is empty rather than short.</div>' : ''}
       </div>`;
   }
 
@@ -1779,9 +1807,9 @@ SCREENS.team = async host => {
         return `<div style="padding:14px 20px;border-top:1px solid var(--line)">
           <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
             <div style="flex:2;min-width:220px">
-              <div style="font-weight:500">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="cell-sub">· you</span>' : ''}</div>
-              <div class="cell-sub mono">${esc(r.email || 'no address on the account')}</div>
-              <div class="cell-sub">Added ${esc(dubaiStamp(r.member_since))} · ${r.last_sign_in_at
+              <div style="font-weight:500">${esc(r.staff_name || r.email || 'Unnamed account')}${r.is_self ? ' <span class="ds-cell-sub">· you</span>' : ''}</div>
+              <div class="ds-cell-sub mono">${esc(r.email || 'no address on the account')}</div>
+              <div class="ds-cell-sub">Added ${esc(dubaiStamp(r.member_since))} · ${r.last_sign_in_at
                 ? `last signed in ${esc(ago(r.last_sign_in_at))}`
                 : 'has never signed in'}</div>
             </div>
@@ -1792,23 +1820,23 @@ SCREENS.team = async host => {
                     has STATED who may approve, which is a different answer from
                     "this person may not". */''}
               ${r.is_approver === true
-                ? `${pill('Can approve', 'ok')}<div class="cell-sub">by their account role</div>`
+                ? `${pill('Can approve', 'ok')}<div class="ds-cell-sub">by their account role</div>`
                 : r.is_approver === false
                   ? '<span class="t-muted">Not an approver</span>'
-                  : `<span class="t-muted">Not stated</span><div class="cell-sub" style="white-space:normal">This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.</div>`}
+                  : `<span class="t-muted">Not stated</span><div class="ds-cell-sub" style="white-space:normal">This dealership has no approval policy on file, so who may approve an inventory action has never been decided. That is not the same as nobody being allowed.</div>`}
             </div>
             <div style="flex:0 0 auto">
               ${mayManage && !confirming
                 ? `<button class="btn sm ghost" data-acrevoke="${esc(r.auth_user_id)}">Remove access</button>`
-                : mayManage ? '' : '<span class="cell-sub">—</span>'}
+                : mayManage ? '' : '<span class="ds-cell-sub">—</span>'}
             </div>
           </div>
           ${confirming ? `<div class="banner hot" style="margin-top:10px">
             <span class="material-symbols-outlined">warning</span>
             <div style="white-space:normal">
               <div style="font-weight:500">Remove ${esc(r.email || r.staff_name || 'this account')} from ${esc(r.tenant_name || 'this dealership')}?</div>
-              <div class="cell-sub" style="white-space:normal;margin-top:6px">${esc(REVOKE_MEANS)}</div>
-              <div class="cell-sub" style="white-space:normal;margin-top:6px">${n == null
+              <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${esc(REVOKE_MEANS)}</div>
+              <div class="ds-cell-sub" style="white-space:normal;margin-top:6px">${n == null
                 ? 'They are not linked to a staff record, so no lead on this screen is filed against them.'
                 : `${num(n)} of the ${num((leads || []).length)} leads read on this screen ${n === 1 ? 'is' : 'are'} assigned to their staff record and will stay assigned${leadsCapped ? ', and that read is capped so there may be more' : ''}.`}</div>
               <div style="margin-top:10px">
@@ -1829,12 +1857,12 @@ SCREENS.team = async host => {
       : pend.length
         ? `<div style="border-top:1px solid var(--line)">
             <div style="padding:14px 20px 4px"><div class="label-caps">Waiting for a first sign-in</div>
-              <div class="cell-sub" style="white-space:normal">${esc(NO_CREDENTIAL)}</div></div>
+              <div class="ds-cell-sub" style="white-space:normal">${esc(NO_CREDENTIAL)}</div></div>
             ${pend.map(p => `<div style="padding:10px 20px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">
               <div style="flex:2;min-width:220px"><span class="mono">${esc(p.email)}</span>
-                <div class="cell-sub">Recorded ${esc(ago(p.recorded_at))} as ${roleChip(p.account_role)}${
+                <div class="ds-cell-sub">Recorded ${esc(ago(p.recorded_at))} as ${roleChip(p.account_role)}${
                   p.staff_name ? ` · to be linked to ${esc(p.staff_name)}` : ''}</div>
-                ${p.has_login ? `<div class="cell-sub t-warm" style="white-space:normal">A NEXUS login already exists for this address but the role has not been taken up. That should not happen through this screen; report it rather than re-adding them.</div>` : ''}
+                ${p.has_login ? `<div class="ds-cell-sub t-warm" style="white-space:normal">A NEXUS login already exists for this address but the role has not been taken up. That should not happen through this screen; report it rather than re-adding them.</div>` : ''}
               </div>
               ${mayManage ? `<div><button class="btn sm ghost" data-accancel="${esc(p.email)}">Cancel</button></div>` : ''}
             </div>`).join('')}
@@ -1862,12 +1890,12 @@ SCREENS.team = async host => {
           <div><select id="acAddStaff" aria-label="Staff record">${staffOpts}</select></div>
           <div><button class="btn primary" id="acAdd">Add</button></div>
         </div>
-        <div class="cell-sub" style="white-space:normal;margin-top:12px">
+        <div class="ds-cell-sub" style="white-space:normal;margin-top:12px">
           ${ROLE_ORDER.filter(k => mayOwner || k !== 'owner')
             .map(k => `<div style="margin-bottom:4px">${roleChip(k)} ${esc(ROLE_WHAT[k])}</div>`).join('')}
         </div>
-        ${mayOwner ? '' : '<div class="cell-sub" style="white-space:normal;margin-top:6px">The owner role is not on this list because only an account owner may grant it.</div>'}
-        <div class="cell-sub" style="white-space:normal;margin-top:10px">${esc(NO_CREDENTIAL)}</div>
+        ${mayOwner ? '' : '<div class="ds-cell-sub" style="white-space:normal;margin-top:6px">The owner role is not on this list because only an account owner may grant it.</div>'}
+        <div class="ds-cell-sub" style="white-space:normal;margin-top:10px">${esc(NO_CREDENTIAL)}</div>
       </div>`;
 
     access.innerHTML = head + msg + list + pendBox + addBox;
@@ -1987,9 +2015,9 @@ SCREENS.team = async host => {
     }
 
     const leadList = !leads
-      ? `<div class="cell-sub">Leads could not be read (${esc(leadsErr || 'unknown error')}), so this rep's book cannot be listed.</div>`
+      ? `<div class="ds-cell-sub">Leads could not be read (${esc(leadsErr || 'unknown error')}), so this rep's book cannot be listed.</div>`
       : !r.id
-        ? '<div class="cell-sub">This person has no user id on the roster, so no lead can be matched to them.</div>'
+        ? '<div class="ds-cell-sub">This person has no user id on the roster, so no lead can be matched to them.</div>'
         : !owned.length
           ? stateEmpty('No leads on this rep',
               leadsCapped
@@ -1999,7 +2027,7 @@ SCREENS.team = async host => {
               <div style="flex:1;min-width:0">
                 <div style="font-weight:500;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
                   ${esc(maskText(l.name || 'Unnamed lead'))} ${leadPhone(l)}</div>
-                <div class="cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
+                <div class="ds-cell-sub">${esc(l.vehicle_interest || 'No vehicle noted')} · ${esc(ago(l.created_at))}
                   ${/* A null here is NOT "nobody answered". This printed
                         ' · no reply recorded' in HOT red until 1 Sep 2026 — a
                         claim about a customer, made by a screen that only knows
@@ -2022,17 +2050,17 @@ SCREENS.team = async host => {
                   ${l.escalated_at ? ` · <span class="t-warm">escalated ${esc(ago(l.escalated_at))}</span>` : ''}</div>
               </div>
               ${l.status ? pill(l.status, undefined, { verbatim: true }) : ''}
-              <div class="num cell-sub">${n0(l.budget_aed) == null ? '' : aed(l.budget_aed)}</div>
+              <div class="num ds-cell-sub">${n0(l.budget_aed) == null ? '' : aed(l.budget_aed)}</div>
             </div>`).join('')}
-            ${owned.length > 10 ? `<div class="cell-sub" style="padding:8px 0">and ${num(owned.length - 10)} more.</div>` : ''}</div>`;
+            ${owned.length > 10 ? `<div class="ds-cell-sub" style="padding:8px 0">and ${num(owned.length - 10)} more.</div>` : ''}</div>`;
 
     openDrawer(`
       <div class="drawer-head">
         <div class="avatar">${esc(initials(r.name))}</div>
         <div style="flex:1">
           <h2 style="font-size:18px">${esc(r.name || 'Unnamed')}</h2>
-          <div class="cell-sub">${esc(r.role || 'No role set')} · ${esc(r.email || 'No email on file')}</div>
-          <div class="cell-sub mono">${esc(r.id ?? 'no user id')}</div>
+          <div class="ds-cell-sub">${esc(r.role || 'No role set')} · ${esc(r.email || 'No email on file')}</div>
+          <div class="ds-cell-sub mono">${esc(r.id ?? 'no user id')}</div>
         </div>
         <button class="btn ghost sm" id="tClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
       </div>
@@ -2046,7 +2074,7 @@ SCREENS.team = async host => {
             <dt>User id</dt><dd class="mono">${esc(r.id ?? 'none')}</dd>
             <dt>Account created</dt><dd>${r.created_at ? `${esc(ago(r.created_at))} <span class="t-muted">(${esc(dt(r.created_at))})</span>` : '<span class="t-muted">Not recorded on this row</span>'}</dd>
           </dl>
-          <div class="cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_STAFF_PHONE)}
+          <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(NO_STAFF_PHONE)}
             Their leads below each show their own number, because <span class="mono">The phone number on the lead record</span> does exist.</div>
         </div>
 
@@ -2058,8 +2086,8 @@ SCREENS.team = async host => {
           ${isPending(r) ? `<div class="banner warm" style="margin-top:12px">
             <span class="material-symbols-outlined">mark_email_unread</span>
             <div>This person cannot sign in, cannot be alerted and cannot be assigned a lead until the account exists.
-            Sending the invitation is not built yet.</div></div>` : ''}
-          ${r.unlinked ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">
+            This screen recorded the seat and the role, and sends no mail. The invitation itself is sent by NEXUS from the Team card on Settings.</div></div>` : ''}
+          ${r.unlinked ? `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
             This row came from <span class="mono">The team figures</span> and matched nobody in <span class="mono">users</span> by id,
             email or name. They have activity against their name but no account record.</div>` : ''}
         </div>
@@ -2073,13 +2101,13 @@ SCREENS.team = async host => {
               ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not measurable</span>`
               : avgResponse(r) == null
                 ? '<span class="t-muted">Not measured</span>'
-                : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="cell-sub">· one lead, not an average</span>' : ''}`}</dd>
+                : `<span class="${avgResponse(r) > 5 ? 't-hot' : 't-ok'}">${mins(avgResponse(r))}</span>${m === 1 ? ' <span class="ds-cell-sub">· one lead, not an average</span>' : ''}`}</dd>
             <dt>Within 5 min</dt><dd class="num">${!timingTrusted
               ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`
               : !m
                 ? '<span class="t-muted">Nothing measured</span>'
                 : m < MIN_RATE_SAMPLE
-                  ? `${num(w ?? 0)} / ${num(m)} <span class="cell-sub">· one lead, so no percentage</span>`
+                  ? `${num(w ?? 0)} / ${num(m)} <span class="ds-cell-sub">· one lead, so no percentage</span>`
                   : `${num(w ?? 0)} / ${num(m)} · ${pct(slaRate(r))}`}</dd>
             <dt>Breached</dt><dd class="num">${!timingTrusted
               ? `<span class="t-warm" title="${esc(NO_TIMING)}">Not scored</span>`
@@ -2094,12 +2122,12 @@ SCREENS.team = async host => {
           </dl>
           ${/* Said in the drawer as well as the header, because this is where a
                 manager checks one person's number against what they believe. */''}
-          <div class="cell-sub" style="margin-top:12px;white-space:normal">Open pipeline is <span class="mono">budget_aed</span> summed over the
+          <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">Open pipeline is <span class="mono">budget_aed</span> summed over the
             leads read on this screen that are assigned to this person and are not in a won or dead state${leadsCapped ? `, within the ${num(LEAD_LIMIT)} most recent leads` : ''}.
             the team's own pipeline figure is not shown in its place. Until 2 Sep 2026 it summed every lead ever assigned,
             disqualified and lost ones included; it now counts open leads only, on the same rule as the figure above. It is still not the number shown
             here, because this one can be traced to the leads listed below and says when its read was capped.</div>
-          ${!r.perf ? `<div class="cell-sub" style="margin-top:12px;white-space:normal">
+          ${!r.perf ? `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">
             ${perfErr ? `The performance view could not be read (${esc(perfErr)}).`
                       : 'The performance view has no row for this person, so nothing has been recorded against them yet.'}</div>` : ''}
         </div>
@@ -2111,7 +2139,7 @@ SCREENS.team = async host => {
 
         <div class="section">
           <div class="label-caps">Why there is no delete</div>
-          <div class="cell-sub" style="margin-top:8px;white-space:normal">
+          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">
             ${esc(NO_DELETE)}${strandBits.length
               ? ` They have ${strandBits.join(' and ')} — every one of those would be handed back to the unassigned queue, with nothing on the row to say it had ever had an owner.`
               : ''}

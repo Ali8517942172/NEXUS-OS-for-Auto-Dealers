@@ -61,6 +61,7 @@
       a dash and neither renders as zero. */
 
 import { db } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { aed, dubaiStamp, esc, num, pill } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
@@ -72,8 +73,8 @@ const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="cell-sub">${h}</div>`;
-const hot    = h => `<div class="cell-sub t-hot">${h}</div>`;
+const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const bold   = h => `<div style="font-weight:600">${h}</div>`;
 const wrap   = h => `<div style="white-space:normal">${h}</div>`;
 const mono   = v => `<span class="mono">${esc(str(v))}</span>`;
@@ -112,6 +113,17 @@ const wireGo = card => {
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.dealrescue = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const readDeals = shared(() => db('v_deal_rescue'
     + '?select=deal_evidence,deal_evidence_ref,deal_evidence_source,customer_label,lead_id,identity_state,'
     + 'identity_basis,evidence_tier,admission_basis,deal_evidence_at,last_movement_at,days_since_movement,'
@@ -180,7 +192,7 @@ SCREENS.dealrescue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P1 · There is nothing in flight, and here is why that is a schema fact
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Deals in flight',
     sub: 'A deal this engine can rank is one this database can represent while it is still happening. Today it cannot '
        + 'represent one at all',
@@ -263,7 +275,7 @@ SCREENS.dealrescue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P2 · Everything examined, and why each one is not a deal
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Everything examined, and why it is not a deal',
     sub: 'This is the engine declining to invent a deal lifecycle. Each row was considered as evidence that something '
        + 'is in flight, and each verdict is recorded with its reason',
@@ -327,7 +339,7 @@ SCREENS.dealrescue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P3 · The state vocabulary, and the one state that has no branch
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Every state this engine may return',
     sub: 'A state with no branch behind it and a state with a branch and no rows are two different findings, and this '
        + 'engine records which is which',
@@ -385,7 +397,7 @@ SCREENS.dealrescue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P4 · The purchase order
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'What would have to exist before this engine has anything to rank',
     sub: 'A purchase order, not a wish list. Every row names the live evidence that it is missing, and every '
        + 'measurable one is re-measured on each read so this list cannot quietly go stale',
@@ -461,7 +473,7 @@ SCREENS.dealrescue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P5 · The desk itself, and the provenance of this page
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'The rescue desk',
     sub: 'What this engine would show for an admitted deal, and where this page stands today',
     /* NX1006, 21 Sep 2026. DEAL_RECORD is the readiness panel's own first,

@@ -1,0 +1,157 @@
+/* NEXUS OS — lib/theme-table.css
+   ============================================================================
+   THE LEGACY TABLE WRAPPER, SPLIT THE SAME WAY `.ds-tablewrap` WAS.
+
+   lib/design-system.css:368-390 hit this exact defect on the design-system
+   table, wrote down why, and solved it by splitting `.ds-tablewrap` from
+   `.ds-tablewrap--scroll`. `.table-wrap` — the wrapper lib/ui.js `table()`
+   emits, and therefore the wrapper under all but one table in this app — never
+   got that split. This file is that split, deliberately using the same
+   mechanism rather than a second one.
+
+   The defect, restated because the shape is what matters: styles.css:228 says
+   `.table-wrap { overflow-x: auto }`, and per spec `overflow-y` computes from
+   `visible` to `auto` the moment the other axis is not `visible`. So the
+   wrapper is a scrollport on BOTH axes, the nearest scrollport for a sticky
+   `<th>` becomes the wrapper instead of the window, and the header pins to a
+   box that never scrolls vertically — i.e. it does not stick at all.
+
+   ── WHAT WAS MEASURED, NOT REASONED ABOUT ─────────────────────────────────
+   Chromium 1194, the real DOM chain `.content > .card.flush > .pbody >
+   .table-wrap > table.data`, 1440x900. Ancestor overflow chain, from the `<th>`
+   upwards:
+
+       table.data              visible
+       div.table-wrap          auto / auto     <== scrollport #1
+       div.pbody               visible
+       div.card.flush          hidden/hidden   <== scrollport #2
+       main.content            visible
+       div.main, div#app, body visible
+
+   THERE ARE TWO SCROLLPORTS, NOT ONE. The reported defect named the first.
+   Splitting the wrapper alone is a NO-OP: the nearest scrollport simply becomes
+   `.card.flush`, which is `overflow: hidden` — a scroll container that never
+   scrolls — so the header still does not stick, and an over-wide table is now
+   CLIPPED by the card rather than reachable. That is why the rule on
+   `.card.flush` below is here and is not scope creep: without it nothing in
+   this file has any effect.
+
+   design-system.css already answers the same second scrollport, one line after
+   the one this file follows: `.ds-screen > .card { overflow: visible }`, with
+   the comment "so that a popover, a `<details>` or a sticky header inside a
+   converted panel is not clipped". Unconverted screens never got it. This file
+   supplies it, narrowed to flush cards that actually contain a data table.
+   ========================================================================= */
+
+/* ── 1 · The wrapper is not a scrollport by default ───────────────────────
+   Byte-for-byte the precedent's declaration pair. `max-width: 100%` keeps the
+   wrapper inside its card now that it no longer establishes a scroll box.
+   Specificity ties styles.css:228 (0,1,0) and wins on order — this file is
+   imported last in app.js's theme chain. No `!important` anywhere. */
+.table-wrap { overflow-x: visible; max-width: 100%; }
+
+/* ── 2 · Horizontal scroll is the opt-in, exactly as `--scroll` is ────────
+   A table that genuinely needs horizontal scroll takes its own scrollport back
+   and pins its header to the top of THAT port instead. Both behaviours are
+   real; only one can be true of a given table, which is why the caller chooses
+   — see lib/ui.js `table()` for how the choice is made. */
+.table-wrap--scroll { overflow-x: auto; }
+
+/* ── 3 · The offset, because the window scrolls ───────────────────────────
+   styles.css:235 sets `table.data th { top: 0 }`. With the wrapper no longer a
+   scrollport the nearest scrollport is the WINDOW, and `top: 0` pins the header
+   at viewport y=0 — underneath the 56px `.topbar`, which is itself sticky at
+   `z-index: 20` against the header's `z-index: 1`. Measured: the header settled
+   at y=45 with the bar's bottom edge at y=56, i.e. two thirds hidden. Sticking
+   invisibly is not sticking.
+
+   Same fix and same token as the precedent (`.ds-screen .ds-table th { top:
+   var(--topbar-h, 56px) }`). Scoped to `.content` on purpose: `.drawer`
+   (`.drawer-body { overflow-y: auto }`) and lib/modal.js's root are both
+   OUTSIDE `.content` — index.html:58 vs :63, and modal.js appends to
+   `document.body` — so each is its own scrollport and `top: 0` is already
+   correct there. Widening this selector past `.content` would push a drawer
+   table's header 56px down inside the drawer, which is the mirror-image bug.
+
+   The offset lands the header's top edge exactly on the bar's bottom edge, so
+   the existing z-indexes are left alone: there is nothing to overlap. */
+.content .table-wrap table.data th { top: var(--topbar-h, 56px); }
+
+/* And reset it inside a scrolling wrapper, where the scrollport is the wrapper
+   and not the window. Placed after rule 3 so it wins the tie on order, which is
+   the same construction the precedent uses. */
+.content .table-wrap--scroll table.data th { top: 0; }
+
+/* ── 4 · The second scrollport ────────────────────────────────────────────
+   `.card.flush { overflow: hidden }` (styles.css:171) exists to clip the
+   table's square corners inside the card's radius. It also makes the card a
+   scroll container, which is scrollport #2 above.
+
+   `overflow: clip` was the tempting fix — it clips identically and creates no
+   scrollport — and it is WRONG here, because clipped content cannot be reached
+   by any means. A table wider than its card would be silently cut off, and this
+   repository's own rule is that a missing row must never look like an absent
+   one. `visible` is what the precedent chose: an over-wide table bleeds out of
+   the card and the document gains a horizontal scrollbar, so nothing is lost.
+
+   Guarded by `:has(.table-wrap)` so a flush card holding anything else keeps
+   its clipping untouched. `:has()` is already load-bearing in this theme chain
+   (lib/theme-surfaces.css:167-172), and where it is unsupported this rule is
+   discarded and the header simply does not stick — today's behaviour, not a
+   broken screen. Specificity (0,3,0) beats styles.css:171 (0,2,0) outright.
+
+   The cost, stated rather than glossed: a flush card whose table has no
+   `.card-head` above it now shows the table's square top corners over the
+   card's rounded ones, and an over-wide table overhangs the card wall instead
+   of being cut off at it. Both are cosmetic, both are what a converted screen
+   has looked like since design-system.css shipped, and both are preferable to
+   a header that cannot stick and data that cannot be reached. */
+.card.flush:has(.table-wrap) { overflow: visible; }
+
+/* ── 6 · Below the shell's own desktop breakpoint, every table scrolls ──
+   Not a second mechanism — the same `overflow-x: auto` as rule 2, triggered by
+   width instead of by a class, because at phone widths the trigger genuinely is
+   the width.
+
+   Measured min-content widths (1440x900, Chromium 1194): a 5-column table needs
+   616px and a 12-column one 1216px, because `th { white-space: nowrap }` makes
+   the table as wide as the sum of its labels. So a table does not have to be
+   wide to overflow a narrow viewport — the 5-column case, which is the middle of
+   this app's distribution, overflows below roughly 640px. Rule 4 keeps it
+   reachable there by letting it bleed over the card wall and scroll the whole
+   document sideways, which is correct but is a worse phone experience than the
+   tidy in-card scroll it had before this change.
+
+   So below 900px the wrapper takes its scrollport back and the header stops
+   sticking. Nothing is lost by that: 900px is where styles.css:189 collapses the
+   grids and where lib/theme-shell.css:91 stops laying the shell out as desktop,
+   and a sticky table header is worth very little on a screen this size. The
+   chosen figure is one of the shell's existing breakpoints rather than a new
+   one, and it sits with ~260px of slack over the measured 5-column overflow
+   point so an unusually long set of labels is still covered. */
+@media (max-width: 900px) {
+  .table-wrap { overflow-x: auto; }
+  /* The wrapper is the scrollport again, so the top-bar offset from rule 3 would
+     push the header 56px down inside it. */
+  .content .table-wrap table.data th { top: 0; }
+}
+
+/* ── 5 · The loading skeleton's inline padding ────────────────────────────
+   lib/states.js:50 emits `<div style="padding:20px">` around its skeleton bars.
+   lib/theme-surfaces.css:173-177 documents the consequence — "an inline
+   `padding:20px`, which no stylesheet can reach" — and works around it by
+   standing the panel body's own padding down to 0.
+
+   This class is the reachable version of that figure. It is NOT YET REFERENCED:
+   the element is emitted by lib/states.js, which is outside this change's two
+   owned files, so the one-line swap there is owed to that file's owner and is
+   recorded in this session's report. Adding the class here is the half that can
+   be done without editing another file; nothing breaks in the meantime because
+   the inline style still applies.
+
+   20px is deliberately a literal and not a token. The scale runs 16px
+   (`--sp-4`) then 24px (`--sp-5`), so every token available would MOVE a
+   shipped loading state. Moving a declaration and restyling it are two changes,
+   and this is only the first. `.pbody:has(> div > .skeleton)` in
+   theme-surfaces.css matches on `div`, not on a class, so it keeps working. */
+.state-loading { padding: 20px; }

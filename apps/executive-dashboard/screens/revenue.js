@@ -74,6 +74,7 @@
       gap. */
 
 import { db } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { aed, dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { healthWords } from '../lib/health.js';
@@ -86,8 +87,8 @@ const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="cell-sub">${h}</div>`;
-const hot    = h => `<div class="cell-sub t-hot">${h}</div>`;
+const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
+const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
 const bold   = h => `<div style="font-weight:600">${h}</div>`;
 
 /* One clause out of the engine's own "what I cannot tell you" paragraph, which
@@ -150,10 +151,63 @@ const wireGo = card => {
 const readFailed = (what, err) =>
   hot(`${esc(what)} could not be read (${esc(str(err && err.message) || 'no reason given')}), so nothing is claimed here and nothing is ruled out.`);
 
+/* ── v_attribution_sale_chain, reduced once, for both screens that read it ──
+   EXPORTED, and it is the only definition. Until 27 Sep 2026 this function
+   existed twice — here and in screens/attribution.js — and the two agreed only
+   because the shared half of them was character-for-character the same. Both
+   print `Confirmed revenue` off `revenue`, so one edit to either copy and the
+   same figure had two derivations, which is precisely what
+   NEXUS_INVARIANTS.md's "one figure, one derivation" rule exists to stop. The
+   two screens are a click apart in the nav, so the disagreement would have been
+   visible to the owner before it was visible to us.
+
+   WHY THE DEFINITION LIVES HERE AND NOT IN attribution.js, which is the more
+   natural owner of the view: app.js imports this module with a plain
+   `import './screens/revenue.js'`, so it is unconditionally part of the bundle —
+   its absence is already a build failure. attribution.js is registered through
+   the `import.meta.glob` block instead, precisely because it is one of the five
+   engine screens that "may legitimately not have landed yet"; a static
+   `import './attribution.js'` from here would turn that absence into a build
+   failure that takes every other screen down with it. So the dependency points
+   from the optional module to the guaranteed one, and it must never be inverted.
+   A shared lib/ module would be the tidier home and is outside this pass.
+
+   The returned object is the UNION of what the two screens print, not a base
+   the callers extend: an extension point is a second place a figure can be
+   derived, which is the defect. Every field is reduced from the columns both
+   readers already select, so each screen reads the fields it renders and
+   ignores the rest. Nothing here is a new figure and no rounding changed. */
+export const saleFacts = rows => {
+  const sales = rows || [];
+  const confirmed = sales.filter(s => up(s.revenue_state) === 'CONFIRMED' && n0(s.revenue_aed) != null);
+  const withMargin = sales.filter(s => n0(s.gross_margin_aed) != null);
+  return {
+    sales, confirmed, withMargin,
+    unconfirmed: sales.length - confirmed.length,
+    revenue: confirmed.reduce((a, s) => a + Number(s.revenue_aed), 0),
+    margin: withMargin.reduce((a, s) => a + Number(s.gross_margin_aed), 0),
+    /* Summed over the hop counters the view itself produced, so this page and
+       the per-sale detail below it cannot disagree about the same chain. */
+    hopsTotal: sales.reduce((a, s) => a + (n0(s.hops_total) || 0), 0),
+    hopsEvidenced: sales.reduce((a, s) => a + (n0(s.hops_evidenced) || 0), 0),
+  };
+};
+
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.revenue = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto another screen and restyle one nobody converted. A wrapper
+     cannot leak — go() removes it with the rest of the subtree. Same pattern as
+     screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   /* ── The reads ──────────────────────────────────────────────────────────
      Every path is a literal so that QUALITY_GATE.mjs can extract it and check
      each column name against the live catalogue. Do not move these into a map
@@ -236,23 +290,11 @@ SCREENS.revenue = async host => {
     };
   };
 
-  const saleFacts = rows => {
-    const sales = rows || [];
-    const confirmed = sales.filter(s => up(s.revenue_state) === 'CONFIRMED' && n0(s.revenue_aed) != null);
-    const withMargin = sales.filter(s => n0(s.gross_margin_aed) != null);
-    return {
-      sales, confirmed, withMargin,
-      unconfirmed: sales.length - confirmed.length,
-      revenue: confirmed.reduce((a, s) => a + Number(s.revenue_aed), 0),
-      margin: withMargin.reduce((a, s) => a + Number(s.gross_margin_aed), 0),
-    };
-  };
-
   /* ══════════════════════════════════════════════════════════════════════
      P1 · The ledger. Five findings, then the three words, then the total
           this screen refuses to print.
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Where the money is, and what NEXUS can prove about it',
     sub: 'Five findings from four engines. Each figure is the one its own engine produced, in its own units, '
        + 'beside what it excludes. Nothing on this page is added to anything else on this page.',
@@ -465,7 +507,7 @@ SCREENS.revenue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P2 · Margin exposed on stock — the Sentinel's own figure, itemised
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Margin exposed on stock',
     sub: 'Gross margin — list price minus acquisition cost — sitting inside units that have not sold. '
        + 'Exposure is not loss, not expected loss, not revenue and not recovery',
@@ -482,7 +524,7 @@ SCREENS.revenue = async host => {
       const body = F.exposed.length
         ? table([
             { label: 'Unit', strong: true, render: u =>
-                `<div>${esc(str(u.model) || str(u.id))}</div><div class="cell-sub mono">${esc(str(u.id))}</div>` },
+                `<div>${esc(str(u.model) || str(u.id))}</div><div class="ds-cell-sub mono">${esc(str(u.id))}</div>` },
             { label: 'Ageing', render: u => pill(str(u.aging_band), '', { verbatim: true }) },
             { label: 'Risk', render: u => pill(str(u.overall_risk), '', { verbatim: true }) },
             { label: 'Days in stock', align: 'r', render: u =>
@@ -533,7 +575,7 @@ SCREENS.revenue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P3 · The action lane — what a person has actually been asked
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'What has been put to a person, and what came back',
     sub: 'The inventory action lane. An approval is a decision rather than money, and a rejection is a result rather '
        + 'than a failure',
@@ -579,7 +621,7 @@ SCREENS.revenue = async host => {
         : table([
             { label: 'Unit', strong: true, render: a =>
                 `<div>${esc(str(a.unit_model) || str(a.unit_id))}</div>`
-                + `<div class="cell-sub mono">${esc(str(a.unit_id))}</div>` },
+                + `<div class="ds-cell-sub mono">${esc(str(a.unit_id))}</div>` },
             { label: 'Recommended', render: a => pill(str(a.recommendation), '', { verbatim: true }) },
             { label: 'Status', render: a => pill(str(a.status), '', { verbatim: true }) },
             { label: 'Exposure at stake', align: 'r', render: a => (up(a.engine_impact_kind) === 'NONE'
@@ -614,7 +656,7 @@ SCREENS.revenue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P4 · Lead Recovery — the zero, at full size, with its reason
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Lead Recovery',
     sub: 'Whether a lead is leaking, and what this engine can and cannot see while it answers',
     actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('leads', 'Open Leads'),
@@ -668,7 +710,7 @@ SCREENS.revenue = async host => {
         : table([
             { label: 'Lead', strong: true, render: d =>
                 `<div>${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))}</div>`
-                + `<div class="cell-sub mono">#${esc(str(d.lead_id))} · ${esc(str(d.lead_status) || 'no status')}</div>` },
+                + `<div class="ds-cell-sub mono">#${esc(str(d.lead_id))} · ${esc(str(d.lead_status) || 'no status')}</div>` },
             { label: 'State', render: d => pill(str(d.state), '', { verbatim: true }) },
             { label: 'Risk', render: d => pill(str(d.risk_level), '', { verbatim: true }) },
             { label: 'Why', render: d => muted(esc(str(d.risk_basis)
@@ -718,7 +760,7 @@ SCREENS.revenue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P5 · Deal Rescue — nothing to rescue, and a reason for every candidate
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Deal Rescue',
     sub: 'No in-flight deal is a fact about this database rather than about the sales floor. '
        + 'Everything examined and refused is listed, with the reason it is not a deal',
@@ -759,7 +801,7 @@ SCREENS.revenue = async host => {
         : table([
             { label: 'What it is', strong: true, render: k =>
                 `<div>${esc(str(k.customer_label) || str(k.candidate_ref) || 'unnamed row')}</div>`
-                + `<div class="cell-sub">${esc(str(k.candidate_kind))} · `
+                + `<div class="ds-cell-sub">${esc(str(k.candidate_kind))} · `
                 + `<span class="mono">${esc(str(k.source_table))}</span></div>` },
             { label: 'Verdict', render: k => pill(str(k.verdict), '', { verbatim: true }) },
             { label: 'Why it is not a deal', render: k => muted(esc(str(k.verdict_basis)
@@ -780,7 +822,7 @@ SCREENS.revenue = async host => {
              ${table([
                { label: 'Prerequisite', strong: true, render: p =>
                    `<div style="white-space:normal">${esc(str(p.requirement))}</div>`
-                   + `<div class="cell-sub mono">${esc(str(p.id))} · ${esc(str(p.kind))}</div>` },
+                   + `<div class="ds-cell-sub mono">${esc(str(p.id))} · ${esc(str(p.kind))}</div>` },
                { label: 'Met', render: p => (p.met_now === true
                    ? pill('Met', 'ok', { verbatim: false })
                    : pill('Not met', 'hot', { verbatim: false })) },
@@ -804,7 +846,7 @@ SCREENS.revenue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P6 · The Policy Engine — what every figure above is standing on
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'The rules these engines run on',
     sub: 'Jurisdiction and threshold rules are meant to be data with a source rather than constants in the code. '
        + 'This is how far that has got',
@@ -856,7 +898,7 @@ SCREENS.revenue = async host => {
         : table([
             { label: 'Rule', strong: true, render: k =>
                 `<div class="mono">${esc(str(k.rule_name))}</div>`
-                + `<div class="cell-sub">${esc(str(k.jurisdiction))} · ${esc(str(k.rule_type))} · `
+                + `<div class="ds-cell-sub">${esc(str(k.jurisdiction))} · ${esc(str(k.rule_type))} · `
                 + `v${esc(str(k.version))} · ${esc(str(k.status))}</div>` },
             { label: 'Value', render: k => (str(k.value_display)
                 ? `<span class="mono">${esc(str(k.value_display))}</span>`
@@ -876,7 +918,7 @@ SCREENS.revenue = async host => {
              ${table([
                { label: 'Where', strong: true, render: k =>
                    `<div class="mono" style="white-space:normal">${esc(str(k.location))}</div>`
-                   + `<div class="cell-sub">${esc(str(k.layer))} · ${esc(str(k.kind))}</div>` },
+                   + `<div class="ds-cell-sub">${esc(str(k.layer))} · ${esc(str(k.kind))}</div>` },
                { label: 'Value in force', render: k => `<span class="mono">${esc(str(k.current_value))}</span>` },
                { label: 'Reaches a customer', render: k => (k.reaches_a_customer === true
                    ? pill('Yes', 'hot', { verbatim: false })
@@ -906,7 +948,7 @@ SCREENS.revenue = async host => {
   /* ══════════════════════════════════════════════════════════════════════
      P7 · The confirmed sales, hop by hop
      ══════════════════════════════════════════════════════════════════════ */
-  panel(host, {
+  panel(root, {
     title: 'Confirmed revenue, and what is actually known about it',
     sub: 'Confirmed revenue is money a sale produced. It is not attributed revenue and it is not recovered revenue — '
        + 'this panel is that difference, made visible',

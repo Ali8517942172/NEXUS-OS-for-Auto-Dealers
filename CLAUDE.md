@@ -132,15 +132,49 @@ recovered revenue until a real business outcome occurs.
 
 ## Every production measurement in this repo is a measurement of one tenant
 
-Production holds **one active dealership plus a quarantine tenant**. So a figure
-taken "as the ALBA owner", "on production" or "on ALBA's real data" is a
-one-tenant figure. It says nothing about what a second dealership would see.
+> **This heading was true until 20 September 2026 and is now false. Measured
+> 27 September 2026, re-measured by hand:**
+>
+> ```
+> active_dealerships        3
+> slugs                     alba-cars, test-dealer-b, test-dealer-c
+> nexus_scoped_tenant_id()  NULL
+> nexus_tenancy_readiness() 1 BLOCKER
+> ```
+>
+> `test-dealer-b` and `test-dealer-c` were created **active on production** on
+> 20 September and given real rows — 7 leads, 1 `purchase_history` deal, 20
+> `communication_logs`, 37 `audit_log` between them. Neither holds a lead-ingest
+> endpoint, so those rows did not arrive through the ingestion layer.
+>
+> **So the switch this file spent three weeks warning about has happened, and it
+> happened without the rehearsal this file demands.** Everything below in this
+> section still governs how a figure is read — a production number is still one
+> dealership's number and must still say which — but the premise that there is
+> only one dealership to be scoped to is gone. The tenancy section that follows
+> is the live state; read it before quoting anything here.
+>
+> The heading is left standing, unedited, because it is the sentence most likely
+> to be quoted from this file and a reader who quotes it must meet its
+> correction in the same breath.
 
-That is the deliberate shape of production, not a gap in the testing.
-Cross-tenant behaviour is proven **on staging only**, with two synthetic
-dealerships — and it is proven there because activating a second dealership on
-production silences the five consumers of `nexus_scoped_tenant_id()` tabulated
-in the next section.
+~~Production holds **one active dealership plus a quarantine tenant**.~~
+**Production holds THREE active dealerships plus a quarantine tenant.** A figure
+taken "as the ALBA owner", "on production" or "on ALBA's real data" is still a
+one-tenant figure — it says nothing about what another dealership sees, and it
+now says nothing about the other two that are already there.
+
+~~That is the deliberate shape of production, not a gap in the testing.~~
+It is no longer the deliberate shape of production. ~~Cross-tenant behaviour is
+proven **on staging only**, with two synthetic dealerships~~ — **and as of
+27 September that evidence is unavailable, not merely old: staging
+(`wwspuxrbiyagnrnzgate`) was `INACTIVE` (paused) when the audit ran, so no
+parity claim of any kind could be made and the two-tenant adversarial suite was
+unrunnable.** A restore was started the same day and read `RESTORING` at the
+time of writing — **not `ACTIVE_HEALTHY`, so nothing has been re-proved there
+yet.** Whoever reads this next: check the project's status before citing any
+staging measurement, and say what you found rather than what this line hoped
+for.
 
 **Do not let a reader — or yourself — upgrade "works for ALBA" into "works for
 any dealership".** Those are two claims with two different pieces of evidence.
@@ -203,25 +237,59 @@ the next three agents as "grants: done". Narrowed 3 Sep 2026 (migration
 which are live dashboard write paths, and `processed_messages` plus the three
 sequences, where `authenticated` now holds nothing. `service_role` unchanged.
 
-17 of 21 n8n workflows now resolve a tenant from something real — the WAHA
+17 of ~~21~~ n8n workflows now resolve a tenant from something real — the WAHA
 session for WhatsApp, the authenticated user via `tenant_members` for
 JWT-guarded webhooks, the calling workflow for sub-workflow hops — and stamp it
-explicitly rather than relying on the column default.
+explicitly rather than relying on the column default. **The denominator has
+moved: the box holds 33 workflows as of 27 September 2026 (see "The node count
+is 334, not 250-300", corrected there). Nobody has re-counted the numerator
+against 33, so "17 of 33" is NOT a measurement — treat the tenant-resolution
+coverage of the twelve workflows added since 4 September as UNKNOWN until
+somebody reads them.**
 
-**It is still not safe to onboard a second dealership**, and what remains is
-operational rather than structural:
+~~**It is still not safe to onboard a second dealership**, and what remains is
+operational rather than structural:~~
+
+**It was still not safe, and it was done anyway. Measured 27 September 2026:
+three dealerships are active on production.** The list below was written as a
+set of preconditions for a switch nobody had thrown yet; read it now as a list
+of things that are **live**, and note as you go which ones the switch has
+already broken. Nothing in it was wrong — the prediction held. What is gone is
+the time it was written to buy.
 
 - `NEXUS_TENANT_MAP` is not set on the box. Every resolver falls through to its
   built-in single-tenant map. The moment that env var holds two keys, roughly
   fifteen code paths switch from "the only dealership" to "unresolved" at once.
   **Rehearse that switch on a staging box before it happens in production.**
-- Customer 360 goes *silent* at two dealerships — `nexus_scoped_tenant_id()`
-  returns null for a `service_role` caller once more than one tenant is active,
-  so the nightly batch syncs nobody and writes no audit row. Silent, not wrong,
-  but it must iterate tenants before anyone is onboarded. **Measured, not
+- ~~Customer 360 goes *silent* at two dealerships~~ — **corrected 27 September
+  2026: the five no longer go silent, they RAISE.** `nexus_caller_tenant_scope()`
+  now throws **`NX991`** with a HINT naming the 3-argument forms, so a caller
+  that names no dealership gets an error instead of an empty answer. **That is
+  the better failure and it should not be undone** — but it is a different
+  failure, and it is live: anything still calling a 2-argument form (Customer
+  360's nightly batch, Ask AI's RAG path, WhatsApp identity resolution) **now
+  throws** where it used to return nothing. The remedy is unchanged and is named
+  below: drive the consumers over `nexus_active_dealership_ids()`.
+
+  **And the gate lies about its own fix.** The BLOCKER's detail text still reads
+  *"Nothing raises… goes QUIET"* while the thing it describes now raises — the
+  **ninth** instance of this file's *check captions against the branch they sit
+  in* rule, and this time the caption is **inside the gate that exists to catch
+  exactly this shape.** A gate that misdescribes the state it just detected is
+  how a reader concludes the state is the old one. Fix the text when the
+  consumers are driven over the plural accessor, not before, so the two changes
+  are one story.
+
+  The measurement below stands as the original 6 September evidence for *which*
+  five consumers are affected. Read the **"at 2"** column as "returned zero
+  then; raises `NX991` now" — the consumer list is the durable part, the failure
+  mode is not.
+
+  ~~Silent, not wrong,
+  but it must iterate tenants before anyone is onboarded.~~ **Measured, not
   predicted, on 6 Sep 2026** (staging, two active dealerships, one transaction),
   and **it is not only Customer 360.** Five things read their scope from that
-  function and all five go quiet together:
+  function and all five went quiet together:
 
   | consumer | at 1 dealership | at 2 |
   |---|---|---|
@@ -268,7 +336,13 @@ operational rather than structural:
   ALBA, which is visible and recoverable rather than silent. **Run
   `select * from public.nexus_quarantine_census();` as `service_role` daily until
   it is stable** — that census is the only measurement of which writers are
-  broken, and this is the cheapest moment to take it. Also: disabling
+  broken, and this is the cheapest moment to take it. **It is NOT stable.
+  Measured 27 September 2026: 66 rows, newest 22 September.** So a writer is
+  still omitting `tenant_id`, twenty-two days after this instruction was
+  written, and the census is doing exactly the job it was added for — naming a
+  fault nothing else in this repository can see. Nobody has yet used it to
+  identify the writer, which is the next step and is a repo-and-box reading job,
+  not a database one. Also: disabling
   `Resolve Tenant` in n8n, the documented rollback, no longer falls back to ALBA;
   see `ops/evidence/n8n-quarantine-change-NOT-DEPLOYED.md` (not deployed).
 - ~~**`workflow_registry` is readable by every signed-in user and is not
@@ -602,7 +676,12 @@ Both constraints and all 17 verified back in place afterwards.
 
 Repo↔production parity is **byte-exact over the 288 shared migrations** — see
 `ops/PARITY-2026-09-06.md`, and note its own caveat that a version-keyed rollup
-cannot answer a content question once versions diverge.
+cannot answer a content question once versions diverge. **That rollup is dated
+6 September and production now records 360 migrations (27 Sep 2026), so it covers
+288 of 360 and answers nothing about the 72 applied since.** Treat
+`PARITY-2026-09-06.md` as a historical measurement of a moment, exactly as its
+own caveat asks — not as a standing parity claim. Nobody has re-run it, and while
+staging is unavailable (see the cross-tenant section) nobody can.
 
 ### Door three never looked at `environment` — 7 September 2026
 
@@ -706,7 +785,26 @@ The path was originally `google-ads-lead/:key`. n8n registers a
 path-parameter webhook under an internal `webhookId` prefix, so the clean URL
 404s — measured, not assumed. The key moved to `?k=`.
 
-### The 42 SECURITY DEFINER functions a dealership user can reach — 7 Sep 2026
+### The 42 SECURITY DEFINER functions a dealership user can reach — 7 Sep 2026 — **there are now 88, and they have NOT been re-audited**
+
+> **Measured 27 September 2026: `SECURITY DEFINER` functions reachable by
+> `authenticated` = 88, against the 42 this audit covered.** The RLS-bypassing
+> dealer-facing surface has **more than doubled** in twenty days, and the audit
+> below covers less than half of it. **Do not read this section as current
+> coverage.** 46 functions on the dealer plane, each of which bypasses RLS and is
+> individually responsible for its own tenant scoping, have never been through the
+> pass described here.
+>
+> **This is the security item that deserves the next pass**, and the reason is the
+> shape rather than the number: this audit found exactly one unscoped function out
+> of 42, and that one (`nexus_kyc_object_tenant`) was a cross-tenant oracle over
+> passports and Emirates IDs. A 1-in-42 base rate applied to 46 unaudited
+> functions is not a reassurance; it is an expectation.
+>
+> The standing gate (`nexus_definer_scoping_audit()`, further down) is the partial
+> answer and it is **currently red — 10 REVIEW rows, 6 of them WRITES.** See the
+> corrections under that section: a gate reading is not the human read this
+> section performed, and it says so itself.
 
 `SECURITY DEFINER` runs as the owner and **bypasses RLS**, so every one of these
 is responsible for its own tenant scoping and they are the surface worth auditing
@@ -780,6 +878,36 @@ REVIEW rows are the finding, zero is healthy. Made to go red: a planted function
 reading *and* writing `leads` unscoped returned two REVIEW rows with `is_write`
 correctly set.
 
+> **The gate is red. Measured 27 September 2026: 10 REVIEW rows, 6 of them
+> WRITES**, against the 5-read / 0-write state recorded above. **Every one of the
+> ten carries the stock note "Not yet reviewed."** — so nobody has looked at any of
+> them, and six of them write to tenant-scoped tables.
+>
+> **Read first: `nexus_my_lead_retry_scoring`.** It does
+>
+>     update public.leads … where l.id = p_lead_id
+>
+> — a **caller-supplied lead id**, in a `SECURITY DEFINER` function granted to
+> `authenticated`, **with no tenant predicate in the statement.** That is the exact
+> shape this whole audit exists to find, and it is the shape that is worst when it
+> is real: `SECURITY DEFINER` bypasses RLS, so if nothing upstream in the function
+> body constrains the id, a signed-in user at one dealership can name another
+> dealership's lead and have it written.
+>
+> **It is NOT yet a confirmed defect, and the reason is stated in this section's
+> own limits three paragraphs down: the audit splits on `;`, so a predicate in a
+> neighbouring statement is invisible to it.** That is the `policy_rule` shape —
+> correct there, and identical-looking if it were wrong. So the honest status is
+> **REVIEW, needing a human read of the whole function body**, not "cross-tenant
+> write found" and not "the gate is noisy". Whoever reads it: the question is
+> whether `p_lead_id` is constrained to the caller's dealership *before* that
+> UPDATE, and by a statement, not by a comment.
+>
+> **Do not close these by widening the exemption map.** The exemption mechanism
+> already had one hole found by testing it (next paragraph); ten stock notes are
+> ten unread functions, and an exemption written to quiet a gate you have not read
+> is how the KYC oracle would have survived its own audit.
+
 **And the audit's own exemption mechanism had a hole, found by testing it.** The
 exemption was keyed on the statement hash alone, so any function containing a
 byte-identical statement would inherit it. The planted attempt came back REVIEW
@@ -844,18 +972,31 @@ the reason is structural. `communication_logs` and `audit_log` link to a
 customer by **`lead_email`** — an email address string. Not `lead_id`, not a
 foreign key. Measured on production:
 
-| | |
-|---|---|
-| leads | 4 |
-| **leads with no email at all** | **1 (25%)** |
-| `communication_logs` | 120 |
-| ...whose `lead_email` matches no lead | **95 (79%)** |
-| `audit_log` | 843 |
-| ...carrying no `lead_email` at all | **775 (92%)** |
+| | 7 Sep 2026 | **27 Sep 2026** |
+|---|---|---|
+| leads | 4 | **32** |
+| **leads with no email at all** | **1 (25%)** | not re-measured |
+| `communication_logs` | 120 | **551** |
+| ...whose `lead_email` matches no lead | **95 (79%)** | **58%** (`nexus_trace_linkability_report()`) |
+| `audit_log` | 843 | **2,629** |
+| ...carrying no `lead_email` at all | **775 (92%)** | **78%** (same report) |
+
+**Re-measured 27 September 2026.** Every absolute has grown by roughly a factor
+of three to six; both percentages **fell**, and neither fall is a fix. The
+denominators grew faster than the unlinkable rows did, which is what a
+growing-but-still-broken join key looks like. **58% of messages and 78% of the
+audit trail still attach to nobody**, and the table above is kept with both
+columns so nobody reads "79% → 58%" as progress on the defect. **The real fix is
+still owed** — it is stated below and has not been done.
 
 So a phone-only lead — a walk-in, a WhatsApp enquiry, the ordinary UAE case — is
-**unlinkable**, 92% of the audit trail is attached to nobody, and two enquiries
-from one person collapse into one history.
+**unlinkable**, most of the audit trail is attached to nobody, and two enquiries
+from one person collapse into one history. **And on 21 September this bit a live
+person**: a real WhatsApp enquiry with no email address reached the 7-day drip,
+which refused it — *"a lead arrived but carried no email address"* — and recorded
+a red execution. The refusal is correct; do not email nobody. The commercial
+consequence is that **the ordinary UAE lead gets no nurture sequence at all,
+silently**, and the only trace is a red run nobody is watching.
 
 `nexus_lead_trace(lead_id)` answers what can be answered and says `NOT_LINKABLE`
 where it cannot, because "0 messages" for a customer whose only possible link is
@@ -1135,9 +1276,19 @@ re-implemented or bypassed. It exists for two things a PATCH cannot do:
 `lib/lead-drawer.js` now calls the RPC and takes an optional "why". **The shipped
 bundle contains zero `leads?id=eq` writes**, so the `authenticated` column-level
 UPDATE grant on `leads` — the one kept because "revoking it breaks the screen" —
-**no longer has a screen behind it.** Revoking it is now a real option and a
+**no longer has a screen behind it.** ~~Revoking it is now a real option and a
 separate decision: check n8n first, because `service_role` does not need it but
-something else might.
+something else might.~~
+
+> **It was revoked, and it broke this RPC. Measured 27 September 2026:**
+> `authenticated` holds no UPDATE on `leads` at table or column level, while
+> `nexus_lead_assign_owner` is **still `SECURITY INVOKER`** — so the UPDATE two
+> paragraphs above, the one that "runs as the caller so the same policy still
+> decides", now fails `42501` before any policy is consulted. **Owner assignment
+> does not work on the deployed bundle.** The `SECURITY INVOKER` choice was right
+> for the reasons given above and is wrong for this grant state; one of the two has
+> to move. Full account and the two options in "The dashboard was already
+> deployed, and the flip is done" below.
 
 **No backfill.** Every ownership change before today is unrecorded and is not
 reconstructable. `lead_owner_events` starts empty on both projects and says so.
@@ -1225,13 +1376,33 @@ unauthenticated calls with `WAHA_WEBHOOK_SECRET` unset. Nothing about it is
 wrong; it is a reminder that the open webhook is not theoretical and is carrying
 real people's phone numbers today.
 
-### Cross-tenant, on production, is still NOT PROVEN and should stay that way
+### Cross-tenant, on production, is still NOT PROVEN — and the reason changed on 20 September
 
-Production holds one dealership and a quarantine tenant. Proving a cross-tenant
+~~Production holds one dealership and a quarantine tenant. Proving a cross-tenant
 refusal needs a second **active** tenant, and activating one silences the five
-consumers of `nexus_scoped_tenant_id()` listed at the top of this file. The
-staging pass proved it (a Bravo event citing Alpha's endpoint, `23503`); do not
-re-run it here to feel thorough.
+consumers of `nexus_scoped_tenant_id()` listed at the top of this file.~~
+**Production holds THREE active dealerships as of 20 September 2026**, so the
+precondition this paragraph treated as the thing standing in the way is now
+simply the state of the database. The refusal on production is **still NOT
+PROVEN** — nobody has run the adversarial pass here — but the reason has flipped
+from *"we deliberately will not create the conditions"* to *"the conditions
+exist and the measurement was not taken."* Those are not the same status and the
+second one is worse.
+
+~~The staging pass proved it (a Bravo event citing Alpha's endpoint, `23503`); do
+not re-run it here to feel thorough.~~ **The staging pass is not available to
+cite.** Measured 27 September 2026: staging (`wwspuxrbiyagnrnzgate`) was
+`INACTIVE` — **paused** — when the audit read it, so the two-tenant adversarial
+suite could not be run and **no parity claim of any kind was available.** A
+restore was started the same day; at the time of writing the project reads
+`RESTORING`, **not `ACTIVE_HEALTHY`.** Nothing has been re-proved there.
+
+So the honest position on cross-tenant behaviour today is: **proven on staging
+in September, against a staging database that cannot currently be read, while
+production carries three dealerships the proof was never run against.** Do not
+quote the staging pass without that sentence attached, and do not read a paused
+project as a passing one — an unrunnable check is NOT RUN, which is this file's
+own rule about what a missing measurement means.
 
 ## What is actually proven
 
@@ -1262,18 +1433,47 @@ nearer 7,800) and sent it to a real person, and a separate reply leaked the
 dealership's internal vehicle cost. Both are now gated. The WhatsApp finance
 path should not go live.
 
-## The open webhook — read before touching anything WhatsApp
+## The open webhook — the door is CLOSED, and closing it is why nothing is getting in
 
-Tested live 3 Sep. There are **11 business POST webhooks**, and **not one uses
-n8n's own `authentication` parameter** — every guard is downstream application
-logic, so every endpoint accepts the request and starts an execution before
-refusing. Ten refuse correctly. One does not:
+> **This section's headline finding is superseded. Measured 27 September 2026 on
+> execution `19604`: the request carried no `x-nexus-webhook-secret` and
+> `WAHA Auth Gate` emitted ZERO items. The dormant branch emits one. The gate is
+> ARMED.** (First measured `ENFORCE` with the compare passing on 18 September —
+> `ops/launch/WAHA-GATE-MEASURED-2026-09-18.md`.) The paragraphs below are kept
+> because they are the only written account of what the open door could reach,
+> and because the *tenant*-half of the finding is NOT closed. Do not quote the
+> "accepts unauthenticated calls" sentence as current.
+>
+> **And do not read a closed door as good news on its own.** See "WhatsApp is
+> down" below: the instance actually posting to production sends no header, so
+> the armed gate is dropping what it receives, and the session behind it is
+> logged out anyway. A correctly-armed gate in front of a dead channel is not a
+> working revenue path.
 
-**`POST /webhook/whatsapp-inbound` accepts unauthenticated calls.** Its
+Tested live 3 Sep. There were ~~**11 business POST webhooks**~~ — **14 as of
+27 September 2026** — and **not one uses n8n's own `authentication` parameter**
+— every guard is downstream application logic, so every endpoint accepts the
+request and starts an execution before refusing. **The three receivers added
+since 3 September repeat the pattern**, so this is not a legacy shape somebody
+is growing out of; it is the house style, and the one webhook that does it
+properly is the site-enquiry door recorded further down. Ten of the original
+eleven refuse correctly. One did not:
+
+~~**`POST /webhook/whatsapp-inbound` accepts unauthenticated calls.** Its
 `WAHA Auth Gate` is env-driven and **dormant on this box** — `WAHA_WEBHOOK_SECRET`
-is unset, so the gate's early `return items;` passes everything through. Proven
-by running the published workflow with a payload that dies before any write: the
-gate emitted the item with no `_gate` key, which only the dormant branch does.
+is unset, so the gate's early `return items;` passes everything through.~~
+**Closed. `WAHA_WEBHOOK_SECRET` is set, the gate is in `ENFORCE`, and an item
+with no matching header is dropped.** Proven at the time by running the
+published workflow with a payload that dies before any write: the gate emitted
+the item with no `_gate` key, which only the dormant branch does. **The inverse
+measurement now holds — zero items out — and that is the evidence the door is
+shut.**
+
+**One property of this endpoint did NOT change and must never be described
+otherwise: it answers HTTP 200 before the gate runs** (`responseMode:
+onReceived`). So an unauthorised caller still gets a 200 and the drop is
+**silent**. Never write that this endpoint returns 401, and never read "WAHA
+sees 200" as "the message was accepted."
 
 What an unauthenticated caller gets: keyword-matched AI replies **sent to a
 number they choose** (`Guard Reply` filters content, never the recipient), rows
@@ -1289,14 +1489,20 @@ chooses whose data is written — and n8n writes as `service_role`, `BYPASSRLS`,
 so nothing in the database filters it. **Every tenant control proven this week
 has this in front of it.**
 
-The workflow code is already correct; the hole is configuration, and the fix is
+~~The workflow code is already correct; the hole is configuration, and the fix is
 on the VM, not in n8n: set `WAHA_WEBHOOK_SECRET`, make WAHA send
 `x-nexus-webhook-secret`, confirm in MONITOR mode, then set
-`WAHA_WEBHOOK_ENFORCE=true`. Hardcoding a secret in n8n first would silently
-drop every real customer message, because WAHA is not sending the header yet.
-One trap: that workflow has `saveDataSuccessExecution:"none"`, so MONITOR-mode
-executions are never saved and the monitoring window is unobservable — flip it
-to `"all"` for the rollout or you will enforce blind.
+`WAHA_WEBHOOK_ENFORCE=true`.~~ **That rollout was run and it reached `ENFORCE`.**
+The warning it carried — *hardcoding a secret before WAHA sends the header
+silently drops every real customer message* — turned out to describe the outcome
+rather than avert it: see "WhatsApp is down" below, where the instance posting to
+production carries no header at all. ~~One trap: that workflow has
+`saveDataSuccessExecution:"none"`, so MONITOR-mode executions are never saved and
+the monitoring window is unobservable~~ — already corrected further down to
+`"all"`, and **that is the setting that made the 18 and 27 September gate
+measurements possible at all.** It is also the setting that put a live secret
+into the execution store; both facts are true of the same choice, and the next
+section is about the cost.
 
 ~~Also: `slack-command` is closed by accident, not by design.~~ **Retracted
 6 Sep 2026, measured against the live published definition.**
@@ -1304,6 +1510,77 @@ to `"all"` for the rollout or you will enforce blind.
 emitting one empty item, `Auth Gate` running, and throwing — status `error`, not
 `success`. `slack-command` is closed **by design**. The claim above was read from
 the 30 August repo export, which is stale; the box is the witness.
+
+## WhatsApp is down, and against the governing question the answer moved backwards
+
+27 September 2026, measured. This is the most important fact in this file and it
+belongs above everything else in it.
+
+`NEXUS Infra Health Probe` runs every fifteen minutes and has **errored on every
+single run**, 623 executions retained. Its `WAHA Sessions` node reads, verbatim:
+
+    "name":"default","status":"FAILED","me":null,
+    "engine":{"gows":{"found":true,"connected":false}}
+
+and the inbound side agrees: WAHA is posting `session.status:"SCAN_QR_CODE"`
+about every twenty seconds. **The dealership's WhatsApp account is logged out.
+Nothing can come in and nothing can go out.** It needs a QR re-scan on the
+handset, which is an owner action; `TEMP WAHA Pairing Code` and
+`TEMP WAHA Session Restart` exist on the box for exactly this.
+
+**Say the consequence in the governing question's own terms, because that is
+what the question is for.** *Can a real dealership enquiry enter NEXUS from a
+real source at 11 PM, become the correct customer and opportunity, receive the
+right response, reach the right salesperson, leave an audit trail, and still be
+traceable six months later?* On 21 September the honest answer was **"partly"** —
+a real person entered by WhatsApp, was scored (by the rules fallback, no AI quota
+available), was escalated, and was refused by the drip for having no email.
+Tonight the honest answer is **"no."** The single channel any of it ran on is
+not connected.
+
+**That is a regression, not a gap**, and it is the first time this file has had
+to record the answer going the wrong way. Nothing else in this repository — not
+the three tenants, not the definer audit, not the design system — is worth an
+hour before this is green. Confirm `status: WORKING` with a connected number and
+say which number.
+
+**And re-linking the session alone will not restore intake.** The gate is armed
+(above) and the instance actually posting to production sends no
+`x-nexus-webhook-secret`: measured from `2.50.9.113` on build `2026.7.1` — the
+non-GCP UAE signature this file attributes to the desktop `desktop-l3an0ma`,
+whose `docker update --restart=no` is recorded below as **not done**. **Stated as
+inference: nothing was read off that machine.** So the sequence is session first,
+then settle which WAHA is the sender, then confirm one real 1:1 message arrives —
+not one of those steps on its own.
+
+## A live secret is sitting in n8n execution data
+
+Same measurement, and it is a disclosure rather than an outage. The Infra Health
+Probe's `WAHA Sessions` output includes the WAHA webhook configuration, and that
+configuration carries **`x-nexus-webhook-secret` in plaintext**. The workflow
+saves error executions (`saveDataErrorExecution: "all"`) and it is failing every
+fifteen minutes, so the value is being written into the n8n database roughly
+ninety-six times a day.
+
+**The blast radius is not "the VM".** It is anything that can read n8n
+executions: the n8n UI, the n8n public API, and the n8n MCP connection this
+repository's agents use routinely. **Rotate it**, and when rotating, remember the
+order that matters — the sender's header and the gate's expected value must move
+together or inbound goes silent with WAHA still seeing 200.
+
+**The value is deliberately not written anywhere in this repository, and must not
+be.** Reading it is a one-line check on the box; quoting it into a tracked file,
+a commit message or an agent transcript turns a contained disclosure into a
+published one. The same rule the receiver sections already state for
+`google_key`: redact before writing, not after somebody notices.
+
+**And note what this cost is the price of.** `saveDataSuccessExecution: "all"` is
+what made the gate measurable on 18 and 27 September; it is also what stores the
+secret. That is a real trade and it has not been decided — prune on a retention
+window, drop the save setting and lose the observability, or accept it as an
+internal origin token and rotate on every access change.
+`ops/launch/WAHA-GATE-MEASURED-2026-09-18.md` records the options and that none
+has been applied. **Decision open.**
 
 ## House rules that exist because something broke
 
@@ -1326,9 +1603,25 @@ the 30 August repo export, which is stale; the box is the witness.
   or they do not appear. Without evidence: no number, not even "indicative".
 - **A missing row is not proof the event did not happen.** Unknown ≠ none. This
   codebase has rendered that lie in six separate places.
+- **An empty statistics view is the tracker being off, not zero activity.**
+  Measured 27 September 2026: **`track_functions = none`** on production. So
+  `pg_stat_user_functions` is empty, and an empty `pg_stat_user_functions` means
+  **"which functions have never run" is UNMEASURABLE on this database** — it does
+  not mean 423 unused functions, and it must never be quoted as one. The same trap
+  has a sibling this file already records: `pg_stat_all_tables` *is* populated, and
+  `finance_quotes` at "25 inserts, 15 deletes" is a real measurement, so the two
+  views are not interchangeable evidence. **Before reading a `pg_stat_*` view as a
+  fact about the product, check that the counter feeding it is switched on.**
+  Turning `track_functions` on is a config change with a real cost and is a
+  decision, not a fix to apply in passing.
 - **One figure, one derivation.** See `NEXUS_INVARIANTS.md`.
 - **Check captions against the branch they sit in.** Sentences asserting the
-  opposite of their own code have been found seven times here.
+  opposite of their own code have been found ~~seven~~ **eleven** times here — the
+  ninth inside `nexus_tenancy_readiness()`'s own BLOCKER text (see the tenancy
+  section), and instances 8–11 in the dashboard, where four screens read a
+  deliberately withheld control-plane column and render the resulting silence as a
+  finding about the database. **The count keeps rising because this is the repo's
+  most common defect, not because it is being looked for harder.**
 - **After creating ANY function, table, view or sequence, read its ACL.**
   Supabase's default privileges grant EXECUTE **directly to those roles**, and
   `REVOKE ... FROM PUBLIC` does not touch a direct grant. This exact shape has
@@ -1431,11 +1724,14 @@ the 30 August repo export, which is stale; the box is the witness.
 > never report an `anon` function count as an exposure without saying which gate
 > is holding.
 >
-> Of the 64 of our own functions `authenticated` can genuinely reach, **42 are
-> `SECURITY DEFINER`** — they run as the owner and bypass RLS. That is the
+> Of the 64 of our own functions `authenticated` can genuinely reach, ~~**42 are
+> `SECURITY DEFINER`**~~ — **88 are, measured 27 September 2026** — they run as the
+> owner and bypass RLS. That is the
 > dashboard's intended API and each one is responsible for its own tenant
 > scoping; it is a designed surface, not a defect, and it is the surface worth
-> auditing first.
+> auditing first. **Designed does not mean audited: the 7 September pass covered
+> 42 of the 88 and nobody has extended it.** When quoting this sentence, quote the
+> gap with it.
 
 Supabase ships default privileges that grant **directly to `anon` and
 `authenticated`** on everything created in `public` — `EXECUTE` on every new
@@ -1574,13 +1870,36 @@ select c.relkind, c.relname, g.grantee,
  order by 2, 3;
 ```
 
-It returns exactly one row on each project today: `channel_registry` /
-`authenticated`, seven of eight columns, `credential_ref` withheld — the
-deliberate design. `policy_platform_attestation` no longer appears, because it
+~~It returns exactly one row on each project today~~ — **the baseline is TWO rows
+on production as of 27 September 2026, and both are correct design.** Written
+down here deliberately, because the next reader running this query will compare
+against "exactly one row" and read a legitimate column grant as a regression:
+
+| object | grantee | withheld | verdict |
+|---|---|---|---|
+| `channel_registry` | `authenticated` | `credential_ref` (1 of 8 columns) | deliberate — the credential pointer is mechanism, not symptom |
+| **`lead_event`** | `authenticated` | **`payload_raw`, `endpoint_id`, `hydrated_payload`, `normalized`** | **deliberate, and new** — the dealer reads its own arrivals without the raw provider body, the endpoint identity, or the pre-normalisation payload |
+
+The `lead_event` row is the shape this file argues for everywhere else: a
+**column-level** grant that withholds what is mechanism and hands over what is
+symptom, refusing the rest **by grant rather than by a row filter** — which is
+the distinction the lead-ingest sections say this codebase has paid for three
+times. It is the right answer and it makes the query return two rows. **Two rows
+is the baseline. Three is a finding.**
+
+`policy_platform_attestation` no longer appears, because it
 was revoked on 4 Sep. **A correction while we are here:** this file says staging
 "carries none" of `channel_registry`'s column grants. Re-measured 6 Sep 2026 —
 **staging carries the same seven**, so that particular gap in the rehearsal is
-closed.
+closed. **That staging line cannot be re-checked today** — the project is paused
+/ restoring (see the cross-tenant section) — so the two-row baseline above is a
+**production** baseline only, and nobody should assume staging matches it.
+
+**The write side was also re-run verbatim on 27 September 2026 and is CLEAN —
+three rows, all the deliberate `inventory` dashboard path.** `leads` /
+`authenticated` / `UPDATE` is **gone** from it, which is the closure that broke
+owner assignment; see "The dashboard was already deployed" for why a clean grant
+check and a working product are two different measurements.
 
 Note the write query covers **sequences** too: `authenticated` held `rwU` on
 `leads_id_seq`, and UPDATE on a sequence is `setval()` — rewinding the counter to
@@ -2067,13 +2386,33 @@ are trying to throw away.
 header and expect **403** from n8n, with no execution created. That proves the
 route exists *and* that the guard bites. Only then send a real form.
 
-### And the marketing site is not connected to git
+### ~~And the marketing site is not connected to git~~ — it is, and this paragraph now reads worse than reality
 
-`nexus-for-autodealers` on Vercel reads *"Connect Git Repository"*. Measured on
+> **Corrected 27 September 2026, measured.** `nexus-for-autodealers` **IS
+> git-connected**, tracking `main`, and the **live HTML is byte-identical to
+> `main`**. Both 7 September fixes are live. The paragraph below is struck rather
+> than deleted because it is the exact shape of stale text this file warns about:
+> **a finding left standing after it was fixed invites the next agent to re-fix a
+> fixed thing**, and that is spent time plus a change to a working deploy path.
+> When a defect closes, strike it the same day.
+
+~~`nexus-for-autodealers` on Vercel reads *"Connect Git Repository"*. Measured on
 the live page the same day: it still mints `submission_id` per attempt, so
 **both of the 7 September fixes are on `main` and not live.** A redeploy of that
 project ships whatever was last uploaded by hand, not what the repository says.
-That is the more important finding of the two.
+That is the more important finding of the two.~~
+
+**What is NOT closed, and is the thing actually worth checking**: whether the
+site's enquiry endpoint delivers. A comment dated 16 September in
+`apps/marketing-site/api/lead.js` states the endpoint *"answered 503 to every
+enquiry it has ever received, because `NEXUS_NOTIFY_WEBHOOK_SECRET` was never set
+on the Vercel project — which held no environment variables at all."* **That could
+not be verified on 27 September** — the Vercel token in that session was
+list-only (`filter_project_envs` returns 404) — so its current state is
+**UNKNOWN, not fixed and not broken.** It is one dashboard screen away, it is the
+**vendor's own** revenue-capture path rather than a dealership's, and if it is
+still unset every website enquiry since launch was lost. Check it and write down
+which it was.
 
 ## The evidence lived in a container that gets deleted — 8 September 2026
 
@@ -2125,12 +2464,56 @@ The last row is the one that changes a decision. **The `authenticated`
 column-level UPDATE grant on `leads` no longer has a screen behind it on the
 DEPLOYED bundle**, not just in the repository — so
 `20260908090000_the_grant_that_no_longer_has_a_screen_behind_it.sql`, written and
-held, is now genuinely applicable. Its preflight still refuses while
+held, is now genuinely applicable. ~~Its preflight still refuses while
 `nexus_lead_assign_owner` is `SECURITY INVOKER` (the RPC needs the grant to do
 its UPDATE as the caller), so that refusal is correct and the migration stays
-unapplied until someone decides which of the two shapes to keep. **Check n8n
+unapplied until someone decides which of the two shapes to keep.~~
+
+> **OWNER ASSIGNMENT IS BROKEN BY PRIVILEGE. Measured 27 September 2026,
+> re-measured by hand:**
+>
+> ```
+> has_table_privilege('authenticated','leads','UPDATE')       false
+> has_any_column_privilege('authenticated','leads','UPDATE')  false
+> nexus_lead_assign_owner.prosecdef                           false   (SECURITY INVOKER)
+> ```
+>
+> **An equivalent revoke was applied, and the RPC was not changed.** The grant is
+> gone at table level *and* column level, while `nexus_lead_assign_owner` is still
+> `SECURITY INVOKER` — so its `UPDATE` runs as the caller, and **grants are
+> checked before RLS.** Every owner reassignment from the dashboard must now fail
+> `42501`. This is a live broken feature on the deployed bundle, not a latent one.
+>
+> **`20260908090000` is still sitting in `ops/migrations-held/`, unapplied.** Its
+> preflight exists precisely to refuse in this state — so either it was bypassed,
+> or somebody applied the revoke by hand without it. **Whichever it was, the
+> preflight did its job and was routed around.** That is worth more than the
+> defect: a held migration with a guard is only protection if the guard is the
+> only door, and here a `revoke` statement typed by hand was a second door.
+>
+> The decision this file deferred is now urgent and it is unchanged in shape.
+> **Two options, one has to be picked:**
+>
+> 1. Make `nexus_lead_assign_owner` `SECURITY DEFINER` — which means it carries
+>    its own copy of `leads_role_update`'s authorisation, and this file already
+>    records why that was rejected once: *the copy that drifts is the one that
+>    silently grants too much.* If this is the choice, the copy must be written
+>    deliberately and tested against a `sales` rep taking a lead that is not
+>    theirs, which is the control that caught the original defect.
+> 2. Put the grant back — which restores a write surface on the dealer plane that
+>    was closed for a reason, and re-opens the measured cross-dealership defect:
+>    `leads_role_update`'s WITH CHECK says nothing about `assigned_to_id`, so a
+>    direct PATCH can hand an Alpha lead to a Bravo owner.
+>
+> **Option 2 is not "the safe rollback" merely because it is a revert.** Both
+> options change the authorisation shape; one of them has to be reasoned about,
+> not defaulted into. Do not leave it broken as a third option — a manager who
+> cannot reassign a lead is a dealership that cannot work its own pipeline.
+
+**Check n8n
 before revoking**: `service_role` does not need the grant, but nothing has
-established that no other writer does.
+established that no other writer does. **That check is now owed retroactively**,
+since the revoke happened without it being recorded anywhere.
 
 So `20260907230000` was applied to production. Two manual sources now carry
 `manual_entry_surface`, zero provider-delivered sources do, and as a real ALBA
@@ -2196,24 +2579,58 @@ Same day, reading `apps/marketing-site/`:
 Asked whether the CRM and Slack legs are real, measured rather than inspected —
 node existence is not evidence, and `audit_log` is.
 
-**Bitrix24: proven, in August, and not since.** `wf_108 ERP Sync - Bitrix24`
+> **Both halves of this heading were re-measured on 27 September 2026 and both
+> moved. Bitrix24 is worse than "idle"; Slack is worse than "weak".** Corrections
+> in place below.
+
+~~**Bitrix24: proven, in August, and not since.**~~ **Bitrix24: real traffic
+reached it on 21–22 September 2026 and it created nothing.** 21 executions read
+`success` in n8n. The workflow's own Delivery Report says:
+
+    "status":"FAILED", "Bitrix24 lead creation not attempted:
+     Bitrix duplicate lookup did not answer … 403
+     {"error":"FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN"}"
+
+**Read the 403 carefully, because it answers the open question this section left
+behind.** A 403 proves the URL resolved and the call authenticated, so
+`$env.BITRIX24_WEBHOOK_URL` **is set and reachable** — the thing this section says
+"cannot be read through the n8n API" has been answered by the error text instead.
+**The blocker is the Bitrix24 subscription PLAN, not configuration.** No amount of
+n8n work moves it; somebody has to change what Bitrix24 is paid for, or the ERP
+leg is roadmap.
+
+**And 21 green executions against zero created leads is the level-confusion this
+file exists to prevent, in its purest form.** The n8n status is the workflow
+finishing; the CRM outcome is in the payload. Anyone reading the execution list
+would have reported the ERP sync healthy. **Check the outcome, not the status** —
+the same rule this file already states for KYC's three rows and zero verified.
+
+`wf_108 ERP Sync - Bitrix24`
 wrote SUCCESS rows naming a returned CRM id — *"Bitrix24 lead created (ID 25)"*,
 *"(ID 27)"*, *"lead updated (ID 25)"* — across 16, 17 and 19 August. A returned
-Bitrix id is evidence a real Bitrix24 instance answered, so
-`$env.BITRIX24_WEBHOOK_URL` was set and reachable then. **Nothing has succeeded
-since 19 August.** All six retained executions of that workflow are refusals of
-my own `curl` probes at its `Auth Gate` (`401 no_authorization` from
-`/auth/v1/user`, then `[NEXUS-UNATTRIBUTED] ERP sync rejected`) — the guard
-working, on a path nothing real has entered. There is **no Bitrix24 credential in
-n8n**, by design: every Bitrix call is an `httpRequest` to
-`{{ $env.BITRIX24_WEBHOOK_URL }}`, so whether it is still set cannot be read
-through the n8n API.
+Bitrix id is evidence a real Bitrix24 instance answered. ~~**Nothing has
+succeeded since 19 August.** All six retained executions of that workflow are
+refusals of my own `curl` probes at its `Auth Gate`~~ — that reading was correct
+for its window and is now superseded by the 21–22 September traffic above. There
+is **no Bitrix24 credential in n8n**, by design: every Bitrix call is an
+`httpRequest` to `{{ $env.BITRIX24_WEBHOOK_URL }}`.
 
-**Slack: five SUCCESS rows, all with summary `"Completed"`.** That is the
-workflow finishing, not a message arriving in a channel. A Slack credential
-exists. **Do not quote those five as proof a Slack alert was delivered** — the
-Bitrix rows name an id and these name nothing, and the difference is the whole
-point.
+**One thing unchanged and load-bearing for dealer #2:** that env var is a
+**single shared webhook — ALBA's**. Every tenant's ERP sync would write into the
+same Bitrix24 account, which is why only ALBA may sync (enforced by NX1001). A
+single-tenant sink is a per-tenant configuration problem wearing an integration's
+clothes.
+
+~~**Slack: five SUCCESS rows, all with summary `"Completed"`.**~~ **Slack: ZERO
+retained executions as of 27 September 2026.** The five rows aged out of the
+30-day retention window. That is worse than weak evidence — **it is evidence that
+can no longer be re-checked**, and a claim that cannot be re-measured does not
+hold a rung on this file's ladder. A Slack credential exists. **Slack has still
+never been shown to deliver a message to a channel**, and now there is nothing
+even to misread: the previous warning was *do not quote those five as proof*, and
+the five are gone. Same for the `KYC/AML Document Auditor` (42 nodes) — zero
+retained executions, so its "three rows, zero verified" state is the only thing
+left saying anything about it.
 
 **And the ERP link-back is keyed on an email string.** `Link Back to Supabase`
 PATCHes `leads?email=eq.<email>&tenant_id=eq.<tenant>`, falling back to the
@@ -2234,7 +2651,13 @@ since — `nexus_lead_record_manual`, `nexus_lead_assign_owner`,
 so the offline PostgREST stub answered `404 PGRST202` to screens that are
 correct. Refreshed against production: **156 functions, 110 relations, anchor
 `20260907154626` at count 310**, and the offline lanes now exit 0 with R0..R7 all
-PASS. Migration hygiene, function grants and the secret scan are clean too.
+PASS. **That snapshot is three weeks and fifty migrations stale as of
+27 September 2026 — production reads 423 functions in `public`, 95 tables,
+42 views, 244 policies and 360 recorded migrations.** By this section's own
+account a snapshot older than the newest migration makes the offline stub answer
+`404 PGRST202` for every function added since, which is a P0 red by design and is
+not a waiver. **Re-take the catalogue before trusting a green gate run**; the
+cheap method that needs no database URL is FACT-193 in `AGENTS/FACTS.md`. Migration hygiene, function grants and the secret scan are clean too.
 
 **The correction matters more than the refresh.** `CATALOGUE_SQL` contains a call
 to an aggregate that exists in no Postgres. That was read, correctly identified
@@ -2254,6 +2677,41 @@ that is not the SQL. The dead fragment is deliberately left in place with a
 comment explaining it, and that comment deliberately does **not** name the
 aggregate: a name written into a comment is carried into the emitted SQL and
 would make the grep the comment exists to recommend find it.
+
+### Sixth entry: `grep -c` on one file prints a number, on many it prints `file:number` — 28 September 2026
+
+Found by re-measuring rather than by it biting. A sweep checking whether the
+dashboard's built CSS carried the deep-blue sidebar ran
+
+    grep -ci -e "$m" dist/assets/*.css | awk -F: '{s+=$2} END{print s+0}'
+
+and reported **`--sidebar-bg` = 0, `#16294F` = 0** — i.e. *the navy sidebar is
+not in the build*. It is. Measured directly against the one file:
+`--sidebar-bg` **13**, `--sidebar-bg-active` **3**, `#16294F`, `#24428A` and
+`#38D0E8` one each.
+
+The glob matched exactly **one** file, so `grep -c` printed a bare `1` with no
+filename prefix, and `awk -F: '{s+=$2}'` summed a field that did not exist.
+**The harness reported absence where there was presence, and it did it silently**
+— no error, no empty output, just a confident zero. The same command over two or
+more files would have been right, which is why it reads as correct.
+
+Two rules earned:
+
+1. **A counting harness needs a positive control.** The source had four
+   occurrences of `#16294F`; running the same pipeline against the source would
+   have returned 0 and exposed the harness in one step. Every sweep in this file
+   that reports a zero should be run once against something known to be
+   non-zero.
+2. **Never sum a field you have not seen printed.** `grep -c`, `wc -l` and
+   `grep -o | wc -l` have three different output shapes; the pipeline downstream
+   is written against one of them.
+
+It is the same defect this file records five times over in the database: **the
+wrong witness answers confidently.** Worth noting where it nearly landed — the
+zero was one step from being written up as *"the sidebar work did not reach the
+bundle"*, which would have sent the next agent to re-fix a thing that was
+already correct.
 
 Same day, same shape, caught before it was written down: a check for the T12
 owner-audit trigger on production reported **false** and looked like a missing
@@ -2315,11 +2773,67 @@ text does not match what ran is precisely the lie this file keeps warning about.
 So: **semantic parity, stated as semantic parity.** The same distinction this
 file already draws for `md5(prosrc)`.
 
-### The Supabase GitHub integration was pointed at the production database
+### The Supabase GitHub integration was pointed at the production database — it is DISCONNECTED, and `list_branches` was the wrong witness
+
+> **Corrected 28 September 2026 — and the correction is the more useful half.**
+> Six hours earlier this same section was rewritten to say the integration was
+> **STILL CONNECTED, 19 days later, and the cheapest open item in the
+> repository**. That was wrong, and it was wrong for a reason this file already
+> names in five other places: **it was read off the wrong witness.**
+>
+> `list_branches(dsvuoovivysszdoiorch)` does still return the branch row, byte
+> for byte as recorded on 8 September:
+>
+> ```
+> name: main   git_branch: main   project_ref: dsvuoovivysszdoiorch
+> parent_project_ref: dsvuoovivysszdoiorch   status: MIGRATIONS_FAILED
+> created_at 2026-08-03   updated_at 2026-08-03   (unchanged)
+> ```
+>
+> **A branch row is a record. It is not a trigger.** The question that actually
+> matters — *does a merge to `main` still make Supabase push migrations at the
+> production database?* — is answered on GitHub, by whether the check runs:
+>
+> | witness | says |
+> |---|---|
+> | `list_branches` | a `main` branch row exists, `MIGRATIONS_FAILED` |
+> | Supabase project settings -> Integrations -> GitHub | **"Choose GitHub repository"** — no repository connected |
+> | PR #54 (merged 22 Sep), Checks tab | **Vercel and CI only. No `Supabase Preview`.** |
+> | every merge commit on `main` since | **8/8 green** — on 8 September the same commits carried a red X *because* `Supabase Preview` was failing |
+>
+> Three independent witnesses against one. **The integration was disconnected
+> at some point between 8 and 22 September; the branch row it left behind is an
+> orphan.** Ali's decision WAS carried out. Nobody recorded it, which is how it
+> came to be re-reported as open three weeks later.
+>
+> **The orphan row is deliberately left in place.** Deleting a branch whose
+> `project_ref` is production, to tidy a cosmetic record, is a real action
+> against a live database taken for no operational reason. It is documented here
+> instead, because that costs nothing and the next reader of `list_branches`
+> needs this paragraph more than the row needs deleting.
+>
+> **Two rules earned, and they outlast this incident:**
+>
+> 1. **An integration's state is measured where it fires, not where it is
+>    recorded.** For a GitHub integration that is the Checks tab on a real
+>    merge, not an API listing and not a settings page alone.
+> 2. **When a decision is carried out, write it down the same day.** The entire
+>    cost here — an audit finding, a CLAUDE.md rewrite, and a "cheapest open
+>    item" that was already closed — came from a completed action that nobody
+>    recorded. This file is very good at recording what broke and much worse at
+>    recording what was fixed, and an unrecorded fix reads exactly like an open
+>    defect.
 
 Found on 8 September while chasing a red X on the merge commit. **The X was
-never CI** — all four CI jobs were green (Dashboard builds 14s, Quality gate 1m
-11s, Migration hygiene 6s, Secret scan 5s). The failing check was
+never CI** — all ~~four~~ CI jobs were green (Dashboard builds 14s, Quality gate 1m
+11s, Migration hygiene 6s, Secret scan 5s). **The job count has moved: CI runs
+SIX jobs as of 27 September 2026** — `build` (Dashboard builds), `gate` (Quality
+gate, offline lanes), `migrations` (Migration hygiene), `scoring` (Scoring
+provenance), `receiver` (WhatsApp Cloud gate) and `secrets` (Secret scan), all in
+`.github/workflows/ci.yml`. Anyone reading "four green" as full coverage is two
+jobs short, and the two added are the ones covering the AI scoring parser and the
+Cloud receiver's HMAC — the two newest places a wrong answer reaches a customer.
+The failing check was
 **`Supabase Preview`**, and `list_branches` on the production project answers:
 
 ```
@@ -2621,21 +3135,59 @@ cannot prove the software stopped running, report health, or count active
 dealerships. Any control-plane design that assumes it can see a self-hosted
 installation is designing against a customer who can block it at the firewall.
 
-## The node count is 334, not 250-300
+## The node count is 334, not 250-300 — it is 599, and the heading is kept as a warning
 
-Read from the published definitions on the box, 4 Sep. 21 workflows, 334
-nodes. **19 carry a published version; two have none at all** — Phase 6
-Silence Detector and NEXUS Infra Health Probe, 12 nodes each,
-`activeVersionId: null`.
+~~Read from the published definitions on the box, 4 Sep. 21 workflows, 334
+nodes. **19 carry a published version; two have none at all**~~ — **re-measured
+27 September 2026:**
 
-That second one matters: **nothing is watching the WhatsApp channel.** The
-Infra Health Probe is the schedule trigger, the WAHA session check and the
-alarm that throws into the error workflow, and it has never been published.
-`workflow_registry` reports `is_active = true` for both — the registry and the
-box disagree, and the dashboard reads the registry.
+| | 4 Sep | 27 Sep |
+|---|---|---|
+| workflows | 21 | **33** |
+| nodes | 334 | **599** draft / 450 published |
+| never published | 2 | **9** |
+| business POST webhooks | 11 | **14** |
+
+**The heading is left as written on purpose.** It was correct for one day and has
+been quoted as a current figure ever since; a reader who reaches for "334" must
+meet its replacement in the same line. The lesson is the one this file keeps
+paying for in other forms — **a count of a live box is a measurement with a
+timestamp, not a property of the system**, and three weeks of it went unre-taken
+while the file that carries it governed the repo.
+
+~~Phase 6 Silence Detector and NEXUS Infra Health Probe, 12 nodes each,
+`activeVersionId: null`.~~ **Both statements about those two have inverted, in
+opposite directions:**
+
+- **`NEXUS Infra Health Probe` IS published and active** — and it **errors on
+  every run**, 623 executions retained, because the WhatsApp session behind it is
+  logged out. See "WhatsApp is down" above. So the monitor that was missing now
+  exists, works, and is reporting a real outage; the thing that is broken is what
+  it is watching. **A red monitor is the monitor working.**
+- **`Phase 6 Silence Detector` has been deactivated and unpublished since
+  21 September 2026.** This file treats that 12-hour safety net as live and
+  healthy (166/168 successes in the 21 Sep audit window). It is off, and **Lead
+  Recovery depends on it.** Nothing in this repository records a decision to turn
+  it off, which is the part worth chasing.
+
+~~That second one matters: **nothing is watching the WhatsApp channel.**~~ The
+sentence was right about the risk and is now answered: something is watching, and
+what it reports is that the channel is down. `workflow_registry` reports
+`is_active = true` for both — **the registry and the box still disagree, now in
+the other direction for the Silence Detector, and the dashboard still reads the
+registry.** So the dashboard shows a deactivated safety net as active. That
+disagreement is structural, not incidental: the registry is hand-maintained and
+the box is the witness.
+
+**Two workflows this file quotes as partial evidence now have ZERO retained
+executions** — `Slack Command Center` and the `KYC/AML Document Auditor`
+(42 nodes). They aged out of the 30-day retention. **Even the weak evidence is
+gone**, which is worse than it sounds: a claim resting on "five SUCCESS rows"
+cannot be re-checked, and under this file's ladder an unverifiable level-2 claim
+is not a level-2 claim. Re-run them or stop citing them.
 
 **There is no run-marker column anywhere** — no `journey_id`, `test_run_id` or
-`is_test` on any of the 58 tables. So a journey's test data is marked
+`is_test` on any of the ~~58~~ **95** tables (27 Sep 2026). So a journey's test data is marked
 structurally by `tenant_id` (NOT NULL everywhere, therefore unforgettable) and
 by an RFC 2606 `.invalid` email namespace, with an external primary-key
 manifest and a three-snapshot cleanup proof. Cleanup fails on collateral even
@@ -2858,6 +3410,27 @@ the defect:**
   logged nothing for `create extension`. That is the exact path that produced
   the 8,500-row read. **Operational rule: install extensions into
   `extensions`, never `public`.**
+
+  > **And the rule has been broken again since. Measured 27 September 2026:
+  > `pg_net` is now an extension in `public`**, joining `vector` and `pg_trgm`
+  > there. Supabase's own security advisor flags all three. **This is the one DDL
+  > path this guard provably cannot see**, so an object `pg_net` creates in
+  > `public` is born with the full `anon` grant and nothing in this database will
+  > revoke it — which is the exact mechanism of the 8,500-row read on 4 September,
+  > not an analogy to it.
+  >
+  > **Nothing has been measured to be exposed by it**, and that is the honest
+  > status: what was checked is the extension's schema, not its objects' ACLs.
+  > Somebody has to run the per-object check from the default-grant section against
+  > whatever `pg_net` installed, and record the result. Under the ladder that is
+  > NOT RUN, not PASS.
+  >
+  > **Worth noting who installed it:** nothing in `supabase/migrations/` was read
+  > as the cause, and `pg_net` is a Supabase-managed extension commonly enabled
+  > from the dashboard. So the likely path is an owner or platform action, not a
+  > reviewed migration — **exactly the "no grant-shaped diff to review" shape this
+  > section warns about.** Stated as inference; the installing statement was not
+  > found.
 - **The one lever that would close it — `revoke usage on schema public from
   anon, public` — was not pulled.** Revoking from `anon` alone changes nothing
   (PUBLIC still holds `=U`); revoking from PUBLIC too returns 42501. Eleven
@@ -3045,6 +3618,11 @@ plan. Production holds 15 live `rag_documents` rows.
 and `nexus_tenancy_readiness` to `search_path = public, extensions` *first*.
 
 The rule, written down: **extensions belong in `extensions`, never `public`.**
+**Three extensions currently break it** — `vector`, `pg_trgm` and, since some
+point before 27 September 2026, `pg_net`. The first two are load-bearing for RAG
+and cannot be moved without the `search_path` work above; `pg_net` has not been
+assessed at all. The rule is right and the database does not obey it, and saying
+so is better than restating the rule as though it were the state.
 
 ### What is still open, and it needs Supabase
 

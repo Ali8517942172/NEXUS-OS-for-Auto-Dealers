@@ -521,6 +521,17 @@ const FILTERS = [
 ];
 
 SCREENS.campaigns = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const alertCard  = el('div', 'card flush');
   const strip      = el('div', 'grid g5');
   /* With one drip-eligible lead — 3 leads on 01 Sep 2026, of which only 38 Ali
@@ -545,7 +556,7 @@ SCREENS.campaigns = async host => {
   lowRow.style.marginTop    = '16px';
   midRow.appendChild(rosterCard); midRow.appendChild(mailCard);
   lowRow.appendChild(silenceCard); lowRow.appendChild(activityCard);
-  [alertCard, strip, scopeCard, enrolCard, midRow, lowRow].forEach(n => host.appendChild(n));
+  [alertCard, strip, scopeCard, enrolCard, midRow, lowRow].forEach(n => root.appendChild(n));
 
   await boot();
 
@@ -620,9 +631,9 @@ SCREENS.campaigns = async host => {
        workflow_registry exists for exactly this mapping: `audit_name` plus
        `audit_aliases[]` tie a workflow's n8n name to the string it writes into
        audit_log. Reading it means the roster is not built on a guessed regex.
-       Where the registry cannot be read, or holds no workflow pointing at the
-       lead-trigger webhook, the fallback is a name match and the difference is
-       stated on screen rather than hidden. */
+       Where the registry cannot be read, or holds no workflow this screen can
+       recognise as a drip, the fallback is a name match on audit_log itself and
+       the difference is stated on screen rather than hidden. */
     let registry = null;
     const notes = [];
     try {
@@ -631,10 +642,16 @@ SCREENS.campaigns = async host => {
       notes.push(`The automation register could not be read (${e.message}), so drip runs are matched on the workflow name instead of the registry's audit aliases.`);
     }
 
-    /* The same test on both sources: a workflow is the drip if it triggers on
-       the lead-trigger webhook, or if it is named or categorised as one. */
-    const looksLikeDrip = w => low(w.trigger_detail).includes(HOOK.warmDrip)
-      || /drip|nurture|campaign/i.test(`${w.name || ''} ${w.category || ''}`);
+    /* The same test on both sources: a workflow is the drip if it is named or
+       categorised as one. The webhook path would be the exact test and neither
+       source can carry it — `trigger_detail` is a control-plane column, absent
+       from `nexus_workflow_catalogue()`'s result type and not selected by
+       `v_workflow_health` (CONTROL-PLANE.md 5.2; see `triggerReadable` in
+       screens/automation.js). The clause that tested it sat first here, matched
+       nothing on any row, and the captions downstream reported its failure as a
+       finding about the register. Name and category are what this login may
+       read, so they are the whole test and the captions now say so. */
+    const looksLikeDrip = w => /drip|nurture|campaign/i.test(`${w.name || ''} ${w.category || ''}`);
 
     const dripFlows = (registry || []).filter(looksLikeDrip);
     const dripNames = new Set();
@@ -648,7 +665,7 @@ SCREENS.campaigns = async host => {
       : /drip|nurture/i.test(String(a.workflow || ''));
 
     if (registry && !matchedByRegistry) {
-      notes.push('No the automation register row points at the lead-trigger webhook or is named as a drip, so runs are matched on the workflow name.');
+      notes.push('No row in the automation register is named or categorised as a drip, so runs are matched on the workflow name in the audit trail instead.');
     }
     /* An empty roster has two very different causes and they must not look
        alike: nobody enrolled, or the workflow never writes an audit row. */
@@ -1262,7 +1279,7 @@ SCREENS.campaigns = async host => {
         peopleHtml: previewOf(replied.map(r => personOf(r.key, r.name))),
         /* No button. A disabled control implies the action is the right one and
            merely unavailable; here the action is not wanted. */
-        footHtml: `<span class="cell-sub">${esc(SELF_STOPPING_NOTE)}</span>`,
+        footHtml: `<span class="ds-cell-sub">${esc(SELF_STOPPING_NOTE)}</span>`,
         why: GATE_BLIND_SPOT,
         target: rosterCard,
         keys: new Set(replied.map(r => r.key)),
@@ -1391,7 +1408,7 @@ SCREENS.campaigns = async host => {
         chip: 'workflow off',
         title: 'Every registered drip workflow is switched off',
         detailHtml: (dripHealth.length ? 'v_workflow_health' : 'workflow_registry')
-          + ` reports <span class="mono">is_active = false</span> on every workflow that triggers on <span class="mono">${esc(HOOK.warmDrip)}</span> or is named as a drip. `
+          + ' reports <span class="mono">is_active = false</span> on every workflow named or categorised as a drip. '
           + 'An enrolment posted from this screen would be accepted by the webhook and then picked up by nothing.',
         target: null,
         why: 'This is a workflow state, not a row on this screen. The Automation screen is where a workflow is switched back on.',
@@ -1486,8 +1503,8 @@ SCREENS.campaigns = async host => {
             <span class="chip">${esc(str(it.kind) || 'item')}</span>
             <span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>
           </div>
-          <div class="cell-sub" style="white-space:normal">${esc(str(it.detail) || 'The view recorded no detail for this row.')}</div>
-          <div class="cell-sub t-muted">${esc(str(it.ref) ? `Keyed on ${str(it.ref)} — ` : '')}${it.at
+          <div class="ds-cell-sub" style="white-space:normal">${esc(str(it.detail) || 'The view recorded no detail for this row.')}</div>
+          <div class="ds-cell-sub t-muted">${esc(str(it.ref) ? `Keyed on ${str(it.ref)} — ` : '')}${it.at
             ? `waiting since ${esc(stamp(it.at))}, ${esc(ago(it.at))}`
             : 'the view gave this item no timestamp, so how long it has been waiting is unknown'}</div>
         </div>
@@ -1504,9 +1521,9 @@ SCREENS.campaigns = async host => {
             ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
             ${a.chip ? `<span class="chip">${esc(a.chip)}</span>` : ''}
           </div>
-          <div class="cell-sub" style="white-space:normal">${a.detailHtml}</div>
-          ${a.peopleHtml ? `<div class="cell-sub" style="margin-top:6px">${a.peopleHtml}</div>` : ''}
-          ${a.why ? `<div class="cell-sub t-muted" style="margin-top:4px">${esc(a.why)}</div>` : ''}
+          <div class="ds-cell-sub" style="white-space:normal">${a.detailHtml}</div>
+          ${a.peopleHtml ? `<div class="ds-cell-sub" style="margin-top:6px">${a.peopleHtml}</div>` : ''}
+          ${a.why ? `<div class="ds-cell-sub t-muted" style="margin-top:4px">${esc(a.why)}</div>` : ''}
           ${a.footHtml ? `<div style="margin-top:8px;display:flex;align-items:center;flex-wrap:wrap">${a.footHtml}</div>` : ''}
         </div>
         ${a.target ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
@@ -1545,7 +1562,7 @@ SCREENS.campaigns = async host => {
             : runsButNobody
               ? 'The campaign has run, and none of its runs can be attached to a customer'
               : 'There is no campaign running for this screen to have anything wrong with'}</div>
-        <div class="cell-sub" style="white-space:normal">${attnErr
+        <div class="ds-cell-sub" style="white-space:normal">${attnErr
           ? 'The attention list could not be read, so anything the database itself would have raised — including the mail-credential failure that decides whether this screen can send at all — is unknown right now. '
           : delivery === 'recovered'
             ? 'The attention list returned no row filed against Campaigns. The mail-credential failure it still carries has been superseded by a later successful run on the same mailbox, so it is not raised here as a live fault. '
@@ -1555,7 +1572,7 @@ SCREENS.campaigns = async host => {
 
     const notesHtml = stripNotes.length ? `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-      <div class="cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
+      <div class="ds-cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
     </div>` : '';
 
     /* ── Summary strip ───────────────────────────────────────────────────────
@@ -1675,7 +1692,7 @@ SCREENS.campaigns = async host => {
       <span class="material-symbols-outlined t-${cls}" style="font-size:20px" aria-hidden="true">${icon}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(q)}</div>
-        <div class="cell-sub" style="white-space:normal">${esc(a)}</div>
+        <div class="ds-cell-sub" style="white-space:normal">${esc(a)}</div>
       </div></div>`;
 
     const canAnswer = [
@@ -1774,7 +1791,7 @@ SCREENS.campaigns = async host => {
          "phone them", and a roster that only carries an email address makes the
          operator go and look the number up somewhere else. */
       { label:'Lead', strong:true, render: l => `${nameHtml(l.name)} <span class="t-muted">·</span> ${phoneHtml(l.phone, l)}
-          <div class="cell-sub">${esc(maskText(str(l.email)))}</div>` },
+          <div class="ds-cell-sub">${esc(maskText(str(l.email)))}</div>` },
       { label:'Status', render: l => pill(l.status || 'NEW', undefined, { verbatim: !!l.status }) },
       { label:'Interest', render: l => `<span class="t-2">${esc(l.vehicle_interest || '—')}</span>` },
       /* budget_aed is NULL for router-created leads. A zero here would understate
@@ -1786,14 +1803,14 @@ SCREENS.campaigns = async host => {
           const mine = sent.get(low(l.email));
           const bits = [];
           if (r) {
-            bits.push(`${pill('Enrolled', 'ok', { verbatim: false })} <span class="cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
-            if (r.replies.length) bits.push(`<div class="cell-sub t-warm">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
-            if (r.judgeable && !r.sends.length) bits.push('<div class="cell-sub t-hot">Nothing sent on either channel since enrolment</div>');
-            else if (r.judgeable && !r.mails.length) bits.push(`<div class="cell-sub t-warm">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
-            if (r.failures) bits.push(`<div class="cell-sub t-hot">${num(r.failures)} failed or went out half-done</div>`);
-            if (r.stops) bits.push(`<div class="cell-sub t-muted">${num(r.stops)} stopped on purpose by the reply gate</div>`);
+            bits.push(`${pill('Enrolled', 'ok', { verbatim: false })} <span class="ds-cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
+            if (r.replies.length) bits.push(`<div class="ds-cell-sub t-warm">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
+            if (r.judgeable && !r.sends.length) bits.push('<div class="ds-cell-sub t-hot">Nothing sent on either channel since enrolment</div>');
+            else if (r.judgeable && !r.mails.length) bits.push(`<div class="ds-cell-sub t-warm">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
+            if (r.failures) bits.push(`<div class="ds-cell-sub t-hot">${num(r.failures)} failed or went out half-done</div>`);
+            if (r.stops) bits.push(`<div class="ds-cell-sub t-muted">${num(r.stops)} stopped on purpose by the reply gate</div>`);
           }
-          if (mine) bits.push(`<div class="cell-sub t-ok">Queued ${esc(ago(mine))} · this session, not yet in the audit log</div>`);
+          if (mine) bits.push(`<div class="ds-cell-sub t-ok">Queued ${esc(ago(mine))} · this session, not yet in the audit log</div>`);
           if (!bits.length) bits.push('<span class="t-muted">Not enrolled</span>');
           return bits.join('');
         } },
@@ -1950,9 +1967,9 @@ SCREENS.campaigns = async host => {
                   ${r.stops ? `<span class="chip" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
                   ${r.addressable ? '' : '<span class="chip t-hot" title="The audit row carries this in the email on the lead record, but it is not an address an email sequence can send to.">not an email address</span>'}
                 </div>
-                <div class="cell-sub">${esc(maskText(str(r.email) || 'no email on the audit row'))} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
+                <div class="ds-cell-sub">${esc(maskText(str(r.email) || 'no email on the audit row'))} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
                 ${r.keyExpanded
-                  ? `<div class="cell-sub t-muted" title="the message history files one person under several keys — a real address, a @c.us chat id, a +digits@whatsapp.lead key and a @lid handle. Messages under all of them are counted for this person. NEXUS’s identity rules resolves them: the phone-shaped keys on the last nine digits of the number, the @lid handle through the saved contact details row that ties it to that number, because a LID carries no phone digits of its own.">Messages counted across ${num(r.matchedKeys.size)} keys this person is filed under</div>`
+                  ? `<div class="ds-cell-sub t-muted" title="the message history files one person under several keys — a real address, a @c.us chat id, a +digits@whatsapp.lead key and a @lid handle. Messages under all of them are counted for this person. NEXUS’s identity rules resolves them: the phone-shaped keys on the last nine digits of the number, the @lid handle through the saved contact details row that ties it to that number, because a LID carries no phone digits of its own.">Messages counted across ${num(r.matchedKeys.size)} keys this person is filed under</div>`
                   /* Not "only the enrolment key is searched" any more, which is
                      what this said until 01 Sep 2026 and stopped being true when
                      the private rule went: identity.js searches every canonical
@@ -1961,14 +1978,14 @@ SCREENS.campaigns = async host => {
                      is worth saying here is the narrower true thing — the
                      expansion ran and the database has rows under at most one of
                      the identities it produced. */
-                  : `<div class="cell-sub t-muted" title="${esc(`NEXUS’s identity rules resolved this enrolment to ${r.canon.size} ${plural(r.canon.size, 'identity', 'identities')} — the address, the last nine digits of the phone number, and any @lid handle the saved contact details or NEXUS row ties to that number. The message history holds rows under ${r.matchedKeys.size === 1 ? 'one of them' : 'none of them'}.${r.lead ? '' : ' No lead row matches the key the drip was enrolled on, so no phone number came from that side; whatever was reached came from the conversation view.'}`)}">${r.matchedKeys.size === 1
+                  : `<div class="ds-cell-sub t-muted" title="${esc(`NEXUS’s identity rules resolved this enrolment to ${r.canon.size} ${plural(r.canon.size, 'identity', 'identities')} — the address, the last nine digits of the phone number, and any @lid handle the saved contact details or NEXUS row ties to that number. The message history holds rows under ${r.matchedKeys.size === 1 ? 'one of them' : 'none of them'}.${r.lead ? '' : ' No lead row matches the key the drip was enrolled on, so no phone number came from that side; whatever was reached came from the conversation view.'}`)}">${r.matchedKeys.size === 1
                     ? `Found under one key only, of ${num(r.canon.size)} ${plural(r.canon.size, 'identity', 'identities')} searched`
                     : `No message is filed under any of the ${num(r.canon.size)} ${plural(r.canon.size, 'identity', 'identities')} this person resolves to`}${r.lead ? '' : ' — no lead row matches this enrolment key'}</div>`}
-                ${r.replies.length ? `<div class="cell-sub t-hot">“${esc(String(r.replies[0].message || '').replace(/\s+/g, ' ').trim().slice(0, 140))}”</div>` : ''}
+                ${r.replies.length ? `<div class="ds-cell-sub t-hot">“${esc(String(r.replies[0].message || '').replace(/\s+/g, ' ').trim().slice(0, 140))}”</div>` : ''}
               </div>
               <div style="text-align:right;flex-shrink:0">
                 <div class="num" style="font-weight:500">${num(r.sends.length)}</div>
-                <div class="cell-sub">${r.sends.length
+                <div class="ds-cell-sub">${r.sends.length
                   ? esc(`${channelSummary(r.sends)} since`)
                   : r.judgeable
                     ? '<span class="t-hot">nothing logged on either channel</span>'
@@ -1978,7 +1995,7 @@ SCREENS.campaigns = async host => {
           }).join('')
           + (unkeyedIdx.length ? `<div class="list-item" style="cursor:default">
               <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-              <div class="cell-sub" style="white-space:normal">${num(unkeyedIdx.length)} drip ${plural(unkeyedIdx.length, 'run has', 'runs have')} no email address on the run and cannot be attached to anybody.</div>
+              <div class="ds-cell-sub" style="white-space:normal">${num(unkeyedIdx.length)} drip ${plural(unkeyedIdx.length, 'run has', 'runs have')} no email address on the run and cannot be attached to anybody.</div>
             </div>` : '')
         /* This card said "No drip run has been logged in the 540 audit rows read"
            while the activity card below it listed five. The roster is keyed by
@@ -2011,12 +2028,12 @@ SCREENS.campaigns = async host => {
             <span class="mono t-muted" title="${esc(stamp(msg.created_at))}">${clock(msg.created_at)}</span>
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">No recipient recorded</span>'}</div>
-              <div class="cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(maskText(str(msg.lead_email)))}</div>
-              <div class="cell-sub">${esc(String(msg.message || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="t-muted">No message text recorded</span>'}</div>
+              <div class="ds-cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(maskText(str(msg.lead_email)))}</div>
+              <div class="ds-cell-sub">${esc(String(msg.message || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="t-muted">No message text recorded</span>'}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
               <span class="chip">${esc(String(msg.channel || '').trim() || 'unrecorded channel')}</span>
-              <div class="cell-sub">${ago(msg.created_at)}</div>
+              <div class="ds-cell-sub">${ago(msg.created_at)}</div>
             </div>
           </div>`;
           }).join('')
@@ -2054,10 +2071,10 @@ SCREENS.campaigns = async host => {
             ${marked ? pill('Internal marker', 'warm', { verbatim: false }) : pill('Internal row', 'warm', { verbatim: false })}
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">Unknown contact</span>'}</div>
-              ${detail ? `<div class="cell-sub">${esc(detail)}</div>` : ''}
-              ${marked ? '' : `<div class="cell-sub t-muted">Internal by its channel (<span class="mono">${esc(String(c.channel || 'none recorded'))}</span>) or direction (<span class="mono">${esc(String(c.direction || 'none recorded'))}</span>), not by its text. This screen cannot say what wrote it.</div>`}
+              ${detail ? `<div class="ds-cell-sub">${esc(detail)}</div>` : ''}
+              ${marked ? '' : `<div class="ds-cell-sub t-muted">Internal by its channel (<span class="mono">${esc(String(c.channel || 'none recorded'))}</span>) or direction (<span class="mono">${esc(String(c.direction || 'none recorded'))}</span>), not by its text. This screen cannot say what wrote it.</div>`}
             </div>
-            <div class="cell-sub">${ago(c.created_at)}</div>
+            <div class="ds-cell-sub">${ago(c.created_at)}</div>
           </div>`;
           }).join('')
         : stateEmpty('Nobody has gone silent',
@@ -2100,11 +2117,11 @@ SCREENS.campaigns = async host => {
                 ? personLine(p)
                 : `<span class="t-warm">No lead on this run</span> <span class="chip mono">${esc(str(x.workflow) || 'unnamed workflow')}</span>`}</div>
               ${keyed && !isRealEmail(keyed)
-                ? `<div class="cell-sub t-hot">The email on the lead record is <span class="mono">${esc(maskText(str(x.lead_email)))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
+                ? `<div class="ds-cell-sub t-hot">The email on the lead record is <span class="mono">${esc(maskText(str(x.lead_email)))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
                 : ''}
-              <div class="cell-sub">${esc(dealerText(x.summary).slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
+              <div class="ds-cell-sub">${esc(dealerText(x.summary).slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
             </div>
-            <div class="cell-sub">${ago(x.logged_at)}</div>
+            <div class="ds-cell-sub">${ago(x.logged_at)}</div>
           </div>`;
           }).join('')
         : stateEmpty('No campaign runs logged',

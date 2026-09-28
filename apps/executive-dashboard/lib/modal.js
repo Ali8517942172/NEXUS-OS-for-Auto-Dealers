@@ -4,23 +4,39 @@
 import { el } from './dom.js';
 import { esc } from './format.js';
 
+/* Every `style` attribute and the `style.cssText` line this function used to
+   write now live in lib/theme-modal.css, behind the six class names below.
+   The overlay was the one surface in the product a stylesheet could not reach:
+   inline styles outrank every rule short of `!important`, so the design system
+   had to either shout over it or move it, and moving it is the version that
+   leaves the cascade intact. Nothing about how the dialog BEHAVES changed with
+   it -- `z-index: 60`, `overflow: auto` on the overlay, `align-items:
+   flex-start` paired with `margin: auto` on the panel, and the scrim as a
+   background rather than a pseudo-element are all carried across to the
+   identical value, and theme-modal.css says beside each one why it could not be
+   anything else. The panel keeps `card` and `card-head` alongside its new
+   names, so theme-shell.css's `#modalWrap > .card` radius, elevation and
+   entrance animation still apply.
+
+   What is still owed and is NOT a CSS problem: this dialog has no focus trap
+   and does not restore focus to whatever opened it. Tab walks straight out of
+   it into the page behind. That is a keyboard defect in this function, it was
+   here before this pass, and it is not fixable from a stylesheet. */
 function openModal(title, bodyHtml, footHtml) {
   document.getElementById('modalWrap')?.remove();
-  const wrap = el('div');
+  const wrap = el('div', 'modal-wrap');
   wrap.id = 'modalWrap';
   wrap.setAttribute('role', 'dialog');
   wrap.setAttribute('aria-modal', 'true');
-  wrap.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;'
-    + 'justify-content:center;padding:40px 16px;overflow:auto;background:rgba(15,23,41,.45)';
-  wrap.innerHTML = `<div class="card" style="width:100%;max-width:720px;margin:auto">
-      <div class="card-head" style="margin-bottom:4px">
-        <div class="card-title" style="flex:1">${esc(title)}</div>
+  wrap.innerHTML = `<div class="card modal-panel">
+      <div class="card-head modal-head">
+        <div class="card-title modal-title">${esc(title)}</div>
         <button class="btn ghost sm" id="mClose" aria-label="Close">
           <span class="material-symbols-outlined">close</span></button>
       </div>
       <div id="modalBody">${bodyHtml}</div>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:20px;flex-wrap:wrap">${footHtml || ''}</div>
-      <div class="cell-sub" id="modalMsg" style="margin-top:12px"></div>
+      <div class="modal-foot">${footHtml || ''}</div>
+      <div class="cell-sub modal-msg" id="modalMsg"></div>
     </div>`;
   document.body.appendChild(wrap);
   /* The listener is removed by close(), not by the Escape branch that added it.

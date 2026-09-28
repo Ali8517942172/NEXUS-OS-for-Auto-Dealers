@@ -62,13 +62,14 @@
    membership; payment_link_url is null until Ali sets it, and this screen
    renders that as "online payment is being set up", never as an error. */
 import { db, onIdentityChange } from '../lib/data.js';
+import { el } from '../lib/dom.js';
 import { esc, n0 } from '../lib/format.js';
 import { SCREENS } from '../lib/nav.js';
 import { stateEmpty } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
 
 const str = v => String(v == null ? '' : v).trim();
-const muted = h => `<div class="cell-sub">${h}</div>`;
+const muted = h => `<div class="ds-cell-sub">${h}</div>`;
 const bold  = h => `<div style="font-weight:600">${h}</div>`;
 const wrap  = h => `<div style="white-space:normal">${h}</div>`;
 
@@ -99,12 +100,23 @@ const ACCESS_TONE = { full: 't-ok', grace: 't-warm', read_only: 't-hot' };
 const ACCESS_LABEL = { full: 'Full access', grace: 'Grace period', read_only: 'Read-only' };
 
 SCREENS.subscription = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
+     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   resetReads();
 
   /* ────────────────────────────────────────────────────────────────────────
      P1 · What this dealership is on
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Your subscription',
     sub: 'NEXUS Dealer, AED 399/month, first month free. There is no card on file in this app -- pay online via '
        + 'the Pay now link below, or by bank transfer or cash, and Ali records it by hand once it arrives',
@@ -147,7 +159,7 @@ SCREENS.subscription = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P2 · How to pay
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'How to pay',
     sub: 'Secure card payment by Ziina. Pay now opens the checkout in a new tab.',
     load: () => readPay(),
@@ -200,7 +212,7 @@ SCREENS.subscription = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P4 · Payment history
      ──────────────────────────────────────────────────────────────────────── */
-  panel(host, {
+  panel(root, {
     title: 'Payment history',
     sub: 'Every change to your subscription state, in order, oldest reasoning intact -- subscription_event cannot '
        + 'be edited, only appended to',

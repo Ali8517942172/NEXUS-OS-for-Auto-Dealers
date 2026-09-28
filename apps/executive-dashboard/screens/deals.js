@@ -242,21 +242,32 @@ const SORTS = {
 const PERIODS = [['ALL', 'All time'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['365', 'Last 12 months']];
 
 SCREENS.deals = async host => {
+  /* `.ds-screen` is the class lib/design-system.css gates its handful of
+     upgrades to existing chrome behind. It goes on a wrapper this screen
+     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
+     renders without touching its classes: a class set there would follow the
+     operator onto Leads or Money Leaks and restyle a screen nobody converted.
+     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
+     pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
+     screens/setup.js, screens/inventory.js and screens/conversations.js. */
+  const root = el('div', 'ds-screen');
+  host.appendChild(root);
+
   const attnHost = el('div'); attnHost.style.marginBottom = '16px';
   attnHost.innerHTML = `<div class="card flush">${stateLoading(2)}</div>`;
-  host.appendChild(attnHost);
+  root.appendChild(attnHost);
 
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); host.appendChild(strip);
-  const banners = el('div'); banners.style.marginTop = '16px'; host.appendChild(banners);
+  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const banners = el('div'); banners.style.marginTop = '16px'; root.appendChild(banners);
 
-  const mid = el('div', 'grid g2 top'); mid.style.marginTop = '16px'; host.appendChild(mid);
+  const mid = el('div', 'grid g2 top'); mid.style.marginTop = '16px'; root.appendChild(mid);
   const trendCard = el('div', 'card'); trendCard.innerHTML = stateLoading(5); mid.appendChild(trendCard);
   const repeatCard = el('div', 'card flush'); repeatCard.innerHTML = stateLoading(5); mid.appendChild(repeatCard);
 
   const listCard = el('div', 'card flush'); listCard.style.marginTop = '16px';
-  listCard.innerHTML = stateLoading(8); host.appendChild(listCard);
+  listCard.innerHTML = stateLoading(8); root.appendChild(listCard);
   const vecCard = el('div', 'card flush'); vecCard.style.marginTop = '16px';
-  vecCard.innerHTML = stateLoading(4); host.appendChild(vecCard);
+  vecCard.innerHTML = stateLoading(4); root.appendChild(vecCard);
 
   /* allSettled, not catch(() => []). "The vector store is empty" and "the
      vector store could not be read" are opposite answers on this screen, and a
@@ -1054,15 +1065,15 @@ SCREENS.deals = async host => {
           const v = useRevenue ? (b?.revenue || 0) : (b?.n || 0);
           const w = peak > 0 ? (v / peak * 100) : 0;
           return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-            <div class="cell-sub" style="width:64px;flex-shrink:0">${esc(monthLabel(m))}</div>
+            <div class="ds-cell-sub" style="width:64px;flex-shrink:0">${esc(monthLabel(m))}</div>
             <div class="bar" style="flex:1"><i style="width:${w.toFixed(1)}%"></i></div>
             <div class="num" style="width:120px;text-align:right;flex-shrink:0">${
               b ? (useRevenue ? aed(b.revenue) : num(b.n)) : '<span class="t-muted">—</span>'}</div>
-            <div class="cell-sub num" style="width:64px;text-align:right;flex-shrink:0">${
+            <div class="ds-cell-sub num" style="width:64px;text-align:right;flex-shrink:0">${
               b ? `${num(b.n)} deal${b.n === 1 ? '' : 's'}` : ''}</div>
           </div>`;
         }).join('')}</div>
-        <div class="cell-sub" style="margin-top:10px;white-space:normal">
+        <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
           ${span.length > shown.length ? `Showing the last ${num(shown.length)} of ${num(span.length)} months on record. ` : ''}
           ${undated ? `${num(undated)} deal${undated === 1 ? ' has' : 's have'} no readable close date and ${undated === 1 ? 'is' : 'are'} not on this chart. ` : ''}
           ${useRevenue && deals.some(d => amountOf(d) == null) ? 'Deals with no amount are counted but contribute nothing to the bars. ' : ''}
@@ -1203,7 +1214,7 @@ SCREENS.deals = async host => {
       suffixRefused ? `${num(suffixRefused)} pair${suffixRefused === 1 ? '' : 's'} of deals share the last nine digits of a phone number but carry different email addresses, so ${suffixRefused === 1 ? 'it was' : 'they were'} left apart rather than merged. They may be one person with two addresses or two people whose numbers end alike, and nothing in this database says which.` : '',
     ].filter(Boolean);
     const caveatLine = groupingCaveats.length
-      ? `<div class="list-item" style="cursor:default"><div class="cell-sub" style="white-space:normal">${groupingCaveats.map(esc).join('<br>')}</div></div>`
+      ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub" style="white-space:normal">${groupingCaveats.map(esc).join('<br>')}</div></div>`
       : '';
 
     repeatCard.innerHTML = `<div class="card-head"><div>
@@ -1222,18 +1233,18 @@ SCREENS.deals = async host => {
                      value may stand in for a missing name. */
                   || (keyShape(g.email) === KEY_SHAPE.EMAIL ? g.email : '')
                   || 'Unnamed customer'))}</div>
-                <div class="cell-sub">${contactValue(g.email) || esc(g.byName
+                <div class="ds-cell-sub">${contactValue(g.email) || esc(g.byName
                   ? 'No email, phone or WhatsApp key on these rows — grouped by customer name, which two people can share'
                   : 'No email on these rows — grouped on the phone or WhatsApp key they share')}${
                   g.last != null ? ` · last deal ${esc(ago(g.last))}` : ''}</div>
-                <div class="cell-sub">${phoneLine(g.phoneRow)}</div>
+                <div class="ds-cell-sub">${phoneLine(g.phoneRow)}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
                 <div class="num" style="font-weight:500">${g.withAmount ? aed(g.revenue) : '<span class="t-muted">—</span>'}</div>
-                <div class="cell-sub">${g.withAmount === g.n ? 'total spend' : `${num(g.withAmount)} of ${num(g.n)} priced`}</div>
+                <div class="ds-cell-sub">${g.withAmount === g.n ? 'total spend' : `${num(g.withAmount)} of ${num(g.n)} priced`}</div>
               </div>
             </div>`).join('')}
-            ${repeat.length > 25 ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(repeat.length - 25)} more returning customers not shown</div></div>` : ''}
+            ${repeat.length > 25 ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(repeat.length - 25)} more returning customers not shown</div></div>` : ''}
           </div>`
         /* "Every recorded deal is a different customer" is a sentence about a
            book of business. Over one row it is arithmetically true and
@@ -1435,18 +1446,18 @@ SCREENS.deals = async host => {
          line an operator reads before picking up the handset, and splitting the
          two apart is how a number gets dialled against the wrong customer. */
       { label: 'Customer', strong: true, render: d => `${esc(nameOf(d) || 'Unnamed customer')}
-          <div class="cell-sub">${contactLine(d, 'No email on this row')}</div>
-          <div class="cell-sub">${phoneLine(d)}</div>` },
+          <div class="ds-cell-sub">${contactLine(d, 'No email on this row')}</div>
+          <div class="ds-cell-sub">${phoneLine(d)}</div>` },
       { label: 'Vehicle', render: d => {
           const v = esc(get(d, 'vehicle') || '—');
           if (!col.unit) return v;
           const ref = unitRefOf(d);
-          if (!ref) return `${v}<div class="cell-sub t-warm" title="The ${esc(col.unit)} column is empty on this row, so the sale is not tied to a car in inventory.">No unit linked</div>`;
+          if (!ref) return `${v}<div class="ds-cell-sub t-warm" title="The ${esc(col.unit)} column is empty on this row, so the sale is not tied to a car in inventory.">No unit linked</div>`;
           const u = unitFor(d);
-          if (!inv) return `${v}<div class="cell-sub mono" title="Inventory could not be read, so this reference could not be resolved to a unit.">${esc(ref)}</div>`;
-          if (!u) return `${v}<div class="cell-sub t-warm mono" title="No inventory row has this id, stock number or VIN among the rows read.">${esc(ref)} · not found</div>`;
+          if (!inv) return `${v}<div class="ds-cell-sub mono" title="Inventory could not be read, so this reference could not be resolved to a unit.">${esc(ref)}</div>`;
+          if (!u) return `${v}<div class="ds-cell-sub t-warm mono" title="No inventory row has this id, stock number or VIN among the rows read.">${esc(ref)} · not found</div>`;
           const s = str(u.status);
-          return `${v}<div class="cell-sub mono">${esc(unitLabel(u))}${
+          return `${v}<div class="ds-cell-sub mono">${esc(unitLabel(u))}${
             s ? ` · <span class="${lower(s) === 'available' ? 't-hot' : 't-muted'}">${esc(s)}</span>` : ''}</div>`;
         } },
       { label: 'Amount', align: 'r', render: d => {
@@ -1465,15 +1476,15 @@ SCREENS.deals = async host => {
           ? 'No sale amount on this row, so the margin cannot be expressed as a percentage of one.'
           : 'The sale amount on this row is zero, so there is nothing to take a percentage of.';
         return `<span class="${m < 0 ? 't-hot' : ''}">${aed(m)}</span>${
-          a ? `<div class="cell-sub">${esc(pct(m / a * 100))}</div>`
-            : `<div class="cell-sub t-muted" title="${esc(why)}">no % — ${a == null ? 'no sale amount' : 'sale amount is zero'}</div>`}`;
+          a ? `<div class="ds-cell-sub">${esc(pct(m / a * 100))}</div>`
+            : `<div class="ds-cell-sub t-muted" title="${esc(why)}">no % — ${a == null ? 'no sale amount' : 'sale amount is zero'}</div>`}`;
       } });
     }
     cols.push(
       { label: 'Closed', render: d => {
           const raw = dateOf(d);
           if (!raw) return '<span class="t-muted">No date recorded</span>';
-          return `<div>${esc(day10(raw))}</div><div class="cell-sub">${esc(ago(raw))}</div>`;
+          return `<div>${esc(day10(raw))}</div><div class="ds-cell-sub">${esc(ago(raw))}</div>`;
         } },
       { label: 'Vector memory', render: d => {
           if (vecErr) return `<span class="t-muted" title="the deal history could not be read">Unknown</span>`;
@@ -1536,14 +1547,14 @@ SCREENS.deals = async host => {
       const onlyBar = f.only
         ? `<div class="list-item" style="cursor:default">
              <span class="material-symbols-outlined t-warm" style="font-size:18px" aria-hidden="true">filter_alt</span>
-             <div class="cell-sub" style="white-space:normal;flex:1">Showing only the ${num(f.only.rows.size)} ${plural(f.only.rows.size, 'deal', 'deals')} in the alert &ldquo;${esc(f.only.label)}&rdquo;.</div>
+             <div class="ds-cell-sub" style="white-space:normal;flex:1">Showing only the ${num(f.only.rows.size)} ${plural(f.only.rows.size, 'deal', 'deals')} in the alert &ldquo;${esc(f.only.label)}&rdquo;.</div>
              <button class="btn sm" id="dClearOnly">Show all ${num(deals.length)} deals</button>
            </div>`
         : '';
       noteEl.innerHTML = onlyBar + (notes.length
         ? `<div class="list-item" style="cursor:default">
              <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-             <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
+             <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
         : '');
       noteEl.querySelector('#dClearOnly')?.addEventListener('click', () => { f.only = null; draw(); });
       th.innerHTML = table(cols, rows, {
@@ -1611,16 +1622,16 @@ SCREENS.deals = async host => {
         <div class="list-item" style="cursor:default;align-items:flex-start"${usedVectors.has(x) ? '' : ' data-orphan="1"'}>
           <div style="flex:1;min-width:0">
             <div class="mono" style="font-weight:500;font-size:12px">${esc(x.deal_id || 'no deal_id')}</div>
-            <div class="cell-sub" style="white-space:normal">${esc(String(x.content || '').slice(0, 220))}${
+            <div class="ds-cell-sub" style="white-space:normal">${esc(String(x.content || '').slice(0, 220))}${
               String(x.content || '').length > 220 ? '…' : ''}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="cell-sub">${esc(ago(x.created_at))}</div>
-            ${usedVectors.has(x) ? '' : '<div class="cell-sub t-hot">no row in the recorded sales</div>'}
+            <div class="ds-cell-sub">${esc(ago(x.created_at))}</div>
+            ${usedVectors.has(x) ? '' : '<div class="ds-cell-sub t-hot">no row in the recorded sales</div>'}
           </div>
         </div>`).join('')}
         ${vectors.length > shown.length
-          ? `<div class="list-item" style="cursor:default"><div class="cell-sub">${num(vectors.length - shown.length)} more embedded row${vectors.length - shown.length === 1 ? '' : 's'} not shown</div></div>`
+          ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(vectors.length - shown.length)} more embedded row${vectors.length - shown.length === 1 ? '' : 's'} not shown</div></div>`
           : ''}</div>`;
   }
 
@@ -1664,10 +1675,10 @@ SCREENS.deals = async host => {
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${pill(str(a.severity) || 'ALERT', t, { verbatim: !!str(a.severity) })}<span>${esc(a.title)}</span>
           </div>
-          <div class="cell-sub" style="white-space:normal">${esc(a.detail)}</div>
-          ${a.fix ? `<div class="cell-sub t-muted" style="white-space:normal;margin-top:4px">${esc(a.fix)}</div>` : ''}
+          <div class="ds-cell-sub" style="white-space:normal">${esc(a.detail)}</div>
+          ${a.fix ? `<div class="ds-cell-sub t-muted" style="white-space:normal;margin-top:4px">${esc(a.fix)}</div>` : ''}
         </div>
-        <div class="cell-sub num" style="white-space:nowrap" title="${esc(a.atNote || '')}">${esc(a.at ? ago(a.at) : '—')}</div>
+        <div class="ds-cell-sub num" style="white-space:nowrap" title="${esc(a.atNote || '')}">${esc(a.at ? ago(a.at) : '—')}</div>
         ${idx >= 0 ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
       </div>`;
     };
@@ -1733,7 +1744,7 @@ SCREENS.deals = async host => {
     ].filter(Boolean);
     const foot = `<div class="list-item" style="cursor:default">
       <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-      <div class="cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+      <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
 
     if (!fromView.length && !fromHere.length) {
       /* "Nothing needs you" and "nothing could be checked" are opposite facts
@@ -1773,7 +1784,7 @@ SCREENS.deals = async host => {
         <span class="material-symbols-outlined t-${ranHere && !viewErr ? 'ok' : 'muted'}" aria-hidden="true">${ranHere && !viewErr ? 'task_alt' : 'help'}</span>
         <div style="flex:1">
           <div style="font-weight:500">${esc(head)}</div>
-          <div class="cell-sub" style="white-space:normal">${esc(line)}${notes.length ? '<br>' + notes.map(esc).join('<br>') : ''}</div>
+          <div class="ds-cell-sub" style="white-space:normal">${esc(line)}${notes.length ? '<br>' + notes.map(esc).join('<br>') : ''}</div>
         </div></div>`;
       return;
     }
@@ -1845,7 +1856,7 @@ SCREENS.deals = async host => {
           : !u
             ? `<span class="mono">${esc(ref)}</span> <span class="t-warm">— no inventory row has this id (the stock number) or VIN among the ${num(inv.length)} read${invCapped ? `, and that read was capped at ${num(INV_LIMIT)}` : ''}.</span>`
             : `<span class="mono">${esc(unitLabel(u))}</span> ${pill(str(u.status) || 'No status', lower(u.status) === 'available' ? 'hot' : lower(u.status) === 'sold' ? 'ok' : 'warm', { verbatim: !!str(u.status) })}
-               <div class="cell-sub">${lower(u.status) === 'available'
+               <div class="ds-cell-sub">${lower(u.status) === 'available'
                  ? '<span class="t-hot">Still marked Available — it can be sold again.</span> '
                  : ''}<span class="t-muted">inventory records no sale date, so this car\'s time on the lot cannot be measured against the deal above. ${
                  n0(u.days_in_stock) != null
@@ -1862,8 +1873,8 @@ SCREENS.deals = async host => {
     const quoteBlock = !quotes
       ? `<span class="t-warm">Unknown.</span> <span class="t-muted">The finance quotes could not be read (${esc(quoteErr)}), so whether a quote is on file for this customer could not be checked. This is unknown, not none.</span>`
       : (qs && qs.length)
-        ? `<span class="t-ok">${num(qs.length)} quote${qs.length === 1 ? '' : 's'} on file</span> <span class="cell-sub">${qs.slice(0, 3).map(quoteLine).join(' · ')}${qs.length > 3 ? ` · and ${num(qs.length - 3)} more` : ''}</span>
-           <div class="cell-sub t-muted">Matched to this customer through NEXUS’s identity rules — The recorded sales carries no quote reference, so this is the same PERSON, not a link between the two rows. The figures are on the Finance Desk; this screen does not restate them.</div>`
+        ? `<span class="t-ok">${num(qs.length)} quote${qs.length === 1 ? '' : 's'} on file</span> <span class="ds-cell-sub">${qs.slice(0, 3).map(quoteLine).join(' · ')}${qs.length > 3 ? ` · and ${num(qs.length - 3)} more` : ''}</span>
+           <div class="ds-cell-sub t-muted">Matched to this customer through NEXUS’s identity rules — The recorded sales carries no quote reference, so this is the same PERSON, not a link between the two rows. The figures are on the Finance Desk; this screen does not restate them.</div>`
         : `<span class="t-warm">No record of one.</span> <span class="t-muted">${identityOf(d).ok
             ? `No the finance quotes row is filed under any of the ${num(identityOf(d).keys.length)} key${identityOf(d).keys.length === 1 ? '' : 's'} this customer is recorded under${quotesCapped ? `, within the ${num(QUOTE_LIMIT)} quotes that were read` : ''}.`
             : 'This deal row carries no key that identifies anybody, so it could not be matched against the finance quotes at all.'} That says the RECORD is missing. It does not say the customer was never quoted: the Finance Calculator has logged runs whose own summary is "Quote issued" beside the finance quotes row that did not land, and a quote lost that way is indistinguishable here from one that was never asked for.</span>`;
@@ -1891,9 +1902,9 @@ SCREENS.deals = async host => {
             <dt>Gross margin</dt><dd class="num">${m == null
               ? '<span class="t-muted">No margin column, and no amount and cost to subtract</span>'
               : `${esc(aed(m))}${a
-                  ? ` <span class="cell-sub">(${esc(pct(m / a * 100))})</span>`
-                  : ` <span class="cell-sub t-muted">(no percentage — ${a == null ? 'this row records no sale amount' : 'the sale amount on this row is zero'}, so there is nothing to take a percentage of)</span>`}`}</dd>
-            <dt>Closed on</dt><dd>${dateOf(d) ? esc(day10(dateOf(d))) + ` <span class="cell-sub">${esc(ago(dateOf(d)))}</span>` : '<span class="t-muted">Not recorded</span>'}</dd>
+                  ? ` <span class="ds-cell-sub">(${esc(pct(m / a * 100))})</span>`
+                  : ` <span class="ds-cell-sub t-muted">(no percentage — ${a == null ? 'this row records no sale amount' : 'the sale amount on this row is zero'}, so there is nothing to take a percentage of)</span>`}`}</dd>
+            <dt>Closed on</dt><dd>${dateOf(d) ? esc(day10(dateOf(d))) + ` <span class="ds-cell-sub">${esc(ago(dateOf(d)))}</span>` : '<span class="t-muted">Not recorded</span>'}</dd>
             <dt>Finance quote</dt><dd>${quoteBlock}</dd>
           </dl>
         </div>
@@ -1901,13 +1912,13 @@ SCREENS.deals = async host => {
         <div class="section">
           <div class="label-caps">Vector memory</div>
           ${vecErr
-            ? `<div class="cell-sub" style="margin-top:8px">The deal history could not be read (${esc(vecErr)}), so whether this deal is embedded is unknown.</div>`
+            ? `<div class="ds-cell-sub" style="margin-top:8px">The deal history could not be read (${esc(vecErr)}), so whether this deal is embedded is unknown.</div>`
             : v
               ? `<div style="margin-top:8px">${pill('Embedded', 'ok', { verbatim: false })}</div>
-                 <div class="cell-sub mono" style="margin-top:8px">${esc(v.deal_id || 'no deal_id')}</div>
+                 <div class="ds-cell-sub mono" style="margin-top:8px">${esc(v.deal_id || 'no deal_id')}</div>
                  <div class="quote" style="margin-top:8px;white-space:pre-wrap">${esc(String(v.content || 'The vector row carries no content.'))}</div>
-                 <div class="cell-sub" style="margin-top:8px">Embedded ${esc(ago(v.created_at))}</div>`
-              : `<div class="cell-sub" style="margin-top:8px">${vecCapped
+                 <div class="ds-cell-sub" style="margin-top:8px">Embedded ${esc(ago(v.created_at))}</div>`
+              : `<div class="ds-cell-sub" style="margin-top:8px">${vecCapped
                   ? `No match inside the ${num(VEC_LIMIT)} vector rows that were read. This deal may still be embedded outside that window.`
                   : 'No row in the deal history matches this deal, so Ask AI cannot quote it.'}</div>`}
         </div>
