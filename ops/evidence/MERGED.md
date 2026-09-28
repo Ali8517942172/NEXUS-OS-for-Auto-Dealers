@@ -57,7 +57,7 @@ exposes other URL fields) or an explicit "source not identifiable" state.
 
 ## For the next session
 
-Start repo work from `claude.ai/code` with `autodealer-ai-os` selected. A session started that
+Start repo work from `claude.ai/code` with `NEXUS-OS-for-Auto-Dealers` selected. A session started that
 way can push and open PRs directly. This session was linked to the computer rather than the
 repository, which is the whole reason today's work had to travel as a patch.
 

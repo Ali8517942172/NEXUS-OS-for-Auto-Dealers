@@ -1,7 +1,7 @@
 # Dealer #2 landmines — what breaks for ALBA the moment a second `tenants` row goes active
 
 Read-only census. Production Supabase `dsvuoovivysszdoiorch`, `git` HEAD of
-`autodealer-ai-os` (origin `Ali8517942172/autodealer-ai-os`, branch `main`),
+`NEXUS-OS-for-Auto-Dealers` (origin `Ali8517942172/NEXUS-OS-for-Auto-Dealers`, branch `main`),
 and the live n8n instance (`mcp__n8n__*`), all read via SELECT / GET only.
 Nothing was written to n8n or Supabase. `ops/tenant-precedence/wf.py` does not
 exist in this checkout; live workflow bodies were pulled with

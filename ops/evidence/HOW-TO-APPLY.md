@@ -5,7 +5,7 @@ Overview fix. Applying it now would have reverted `c1ead61` and brought back
 `up is not defined`. This one is rebased onto current `main` and touches only three files.
 
 ```powershell
-cd C:\path\to\autodealer-ai-os
+cd C:\path\to\NEXUS-OS-for-Auto-Dealers
 git checkout main
 git pull
 git checkout -b frontend/identity-resolver
