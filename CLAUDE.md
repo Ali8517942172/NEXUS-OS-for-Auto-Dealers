@@ -2678,6 +2678,41 @@ comment explaining it, and that comment deliberately does **not** name the
 aggregate: a name written into a comment is carried into the emitted SQL and
 would make the grep the comment exists to recommend find it.
 
+### Sixth entry: `grep -c` on one file prints a number, on many it prints `file:number` — 28 September 2026
+
+Found by re-measuring rather than by it biting. A sweep checking whether the
+dashboard's built CSS carried the deep-blue sidebar ran
+
+    grep -ci -e "$m" dist/assets/*.css | awk -F: '{s+=$2} END{print s+0}'
+
+and reported **`--sidebar-bg` = 0, `#16294F` = 0** — i.e. *the navy sidebar is
+not in the build*. It is. Measured directly against the one file:
+`--sidebar-bg` **13**, `--sidebar-bg-active` **3**, `#16294F`, `#24428A` and
+`#38D0E8` one each.
+
+The glob matched exactly **one** file, so `grep -c` printed a bare `1` with no
+filename prefix, and `awk -F: '{s+=$2}'` summed a field that did not exist.
+**The harness reported absence where there was presence, and it did it silently**
+— no error, no empty output, just a confident zero. The same command over two or
+more files would have been right, which is why it reads as correct.
+
+Two rules earned:
+
+1. **A counting harness needs a positive control.** The source had four
+   occurrences of `#16294F`; running the same pipeline against the source would
+   have returned 0 and exposed the harness in one step. Every sweep in this file
+   that reports a zero should be run once against something known to be
+   non-zero.
+2. **Never sum a field you have not seen printed.** `grep -c`, `wc -l` and
+   `grep -o | wc -l` have three different output shapes; the pipeline downstream
+   is written against one of them.
+
+It is the same defect this file records five times over in the database: **the
+wrong witness answers confidently.** Worth noting where it nearly landed — the
+zero was one step from being written up as *"the sidebar work did not reach the
+bundle"*, which would have sent the next agent to re-fix a thing that was
+already correct.
+
 Same day, same shape, caught before it was written down: a check for the T12
 owner-audit trigger on production reported **false** and looked like a missing
 migration. The trigger is called `nexus_leads_owner_change_audit_trg`; the query
