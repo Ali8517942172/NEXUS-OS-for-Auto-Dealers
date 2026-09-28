@@ -498,35 +498,55 @@ details.how-counts .how-counts-body { display: grid; gap: 16px; padding: 0 16px 
   border-right: 1px solid var(--sidebar-border);
   color: var(--sidebar-text);
 }
-.brand { border-bottom-color: var(--sidebar-border); }
-.brand-name { color: #FFFFFF; }
-.brand-mark { background: var(--sidebar-rule); color: #0B1A33; }
+/* EVERY selector below is scoped under `.sidebar`, and that is not tidiness.
+   Written bare, three of them reach components that are NOT in the sidebar and
+   are NOT navy, which is the same defect that put white-on-white on the login
+   card. Measured, 28 Sep 2026:
 
-.nav-group-label {
+     .brand-mark   founder/index.html:28 puts it in <header class="topbar">, on
+                   white. Bare, the chip renders #38D0E8 on #FFFFFF = 1.85:1 --
+                   the product mark dissolves into the bar. Founder has no
+                   sidebar at all.
+     .avatar       used in six places outside the sidebar (lead-drawer:141,
+                   conversations:2189/2438, team:1251/2059, customers:1188/1676).
+                   Bare, every one becomes a solid navy disc on a white card.
+     .brand-name   the login card's own wordmark -- the defect already paid for
+                   once; theme-auth.css still carries a belt-and-braces rescue.
+
+   Scoping also removes an order-dependency: the light-surface accent rules
+   ~50 lines above declare the identical selectors and were being beaten by
+   source order alone. `.sidebar .nav-item ...` beats them on SPECIFICITY, so
+   reordering or extracting this block can no longer silently revert the
+   sidebar icons to light accents (which measure 2.52-3.38:1 on navy). */
+.sidebar .brand { border-bottom-color: var(--sidebar-border); }
+.sidebar .brand-name { color: #FFFFFF; }
+.sidebar .brand-mark { background: var(--sidebar-rule); color: #0B1A33; }
+
+.sidebar .nav-group-label {
   color: var(--sidebar-text-2);
   border-left: 2px solid var(--nav-accent-dark, transparent);
 }
-.nav-item { color: var(--sidebar-text); }
-.nav-item:hover { background: var(--sidebar-bg-hover); }
-.nav-item.active {
+.sidebar .nav-item { color: var(--sidebar-text); }
+.sidebar .nav-item:hover { background: var(--sidebar-bg-hover); }
+.sidebar .nav-item.active {
   background: var(--sidebar-bg-active);
   color: #FFFFFF;
   border-left-color: var(--sidebar-rule);
 }
-.nav-item .material-symbols-outlined { color: var(--nav-accent-dark, var(--sidebar-text-2)); }
-.nav-item:hover .material-symbols-outlined { color: var(--nav-accent-dark, var(--sidebar-text)); }
-.nav-item.active .material-symbols-outlined { color: #FFFFFF; }
+.sidebar .nav-item .material-symbols-outlined { color: var(--nav-accent-dark, var(--sidebar-text-2)); }
+.sidebar .nav-item:hover .material-symbols-outlined { color: var(--nav-accent-dark, var(--sidebar-text)); }
+.sidebar .nav-item.active .material-symbols-outlined { color: #FFFFFF; }
 
-.sidebar-footer { border-top-color: var(--sidebar-border); }
-.user-chip { color: var(--sidebar-text); }
-.user-chip:hover { background: var(--sidebar-bg-hover); }
-.avatar { background: var(--sidebar-bg-active); color: #FFFFFF; }
-.collapse-btn { color: var(--sidebar-text-2); }
-.collapse-btn:hover { color: #FFFFFF; background: var(--sidebar-bg-hover); }
+.sidebar .sidebar-footer { border-top-color: var(--sidebar-border); }
+.sidebar .user-chip { color: var(--sidebar-text); }
+.sidebar .user-chip:hover { background: var(--sidebar-bg-hover); }
+.sidebar .avatar { background: var(--sidebar-bg-active); color: #FFFFFF; }
+.sidebar .collapse-btn { color: var(--sidebar-text-2); }
+.sidebar .collapse-btn:hover { color: #FFFFFF; background: var(--sidebar-bg-hover); }
 
 /* The focus ring is light-on-dark here; the app's default ring is tuned for a
    white surface and disappears against navy. */
-.sidebar :is(.nav-item, .user-chip, .collapse-btn):focus-visible {
+.sidebar :is(.nav-item, .user-chip, .collapse-btn, .btn):focus-visible {
   outline: 2px solid var(--sidebar-rule);
   outline-offset: -2px;
 }

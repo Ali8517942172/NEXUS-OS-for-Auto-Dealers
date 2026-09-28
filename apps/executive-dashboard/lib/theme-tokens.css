@@ -14,7 +14,12 @@
    regression wearing the clothes of an upgrade, so the colours stay and only
    the structure arrives.
 
-   Everything below is additive. No existing token is redefined here.
+   Everything below is additive EXCEPT one, named here rather than left for a
+   reader to trip over: `--sidebar-w` at the foot of this file DOES redefine
+   the 240px in styles.css, widening the nav to 252px. That is the only
+   existing token this file touches. (Corrected 28 Sep 2026 -- the sentence
+   used to say "No existing token is redefined here" while this file redefined
+   one, which is this repo's most common defect wearing a comment.)
    =========================================================================== */
 :root {
   /* Spacing -- 8pt base. The app had no scale at all; every gap was a literal. */
@@ -41,7 +46,8 @@
 
 /* The reference runs a 252px sidebar; the app runs 240. Widening it is the
    one structural change visible before a single component is restyled. */
-:root { --sidebar-w: 252px; }
+:root { --sidebar-w: 252px; }   /* REDEFINES styles.css:57 (240px). The one
+                                    non-additive line in this file; see header. */
 
 @media (prefers-reduced-motion: reduce) {
   :root { --m-micro: 0ms; --m-comp: 0ms; --m-large: 0ms; }
