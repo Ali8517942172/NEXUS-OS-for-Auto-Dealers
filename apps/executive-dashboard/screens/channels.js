@@ -65,7 +65,7 @@
    dealership's rows; this file does not hide them. */
 
 import { db, dbWrite, n8n, HOOK, onIdentityChange, canManageAccess } from '../lib/data.js';
-import { ago, dubaiStamp, esc, n0, pill } from '../lib/format.js';
+import { ago, dubaiDate, dubaiStamp, esc, n0, pill } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { kpi, panel, table } from '../lib/ui.js';
@@ -576,6 +576,86 @@ SCREENS.channels = async host => {
         + stateLine;
     },
   }).then(wireGo);
+
+  /* ────────────────────────────────────────────────────────────────────────
+     P3b · Message templates — v_whatsapp_template_registry
+     ──────────────────────────────────────────────────────────────────────
+     Added 7 Oct 2026. NEXUS's record of a template is a CACHE of what the
+     provider last said, not an approval. So no provider status is printed
+     without the age of the answer behind it, and status_confidence =
+     NEVER_OBSERVED (no provider opinion at all) is said in those words. The
+     view's own `what_this_row_claims` sentence is shown on every row. Read
+     only: templates are registered on the provider side, not here. */
+  panel(root, {
+    title: 'Message templates',
+    sub: 'The WhatsApp templates NEXUS has on record for this dealership, and how old the provider&rsquo;s answer about '
+       + 'each one is. A status with no date behind it is not an approval',
+    load: () => db('v_whatsapp_template_registry?select=template_id,template_name:name,language,category,nexus_state,provider_status,'
+      + 'provider_status_observed_at,status_confidence,provider_rejected_reason,what_this_row_claims'
+      + '&order=name.asc&limit=200'),
+    render: rows => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        return stateEmpty('No message template is on record',
+          'NEXUS holds no WhatsApp template for this dealership. A message outside the 24-hour customer window '
+          + 'needs an approved template, so until one is registered and observed none of those can be sent.', 'article');
+      }
+      return table([
+        { label: 'Template', strong: true, render: t => `<div class="mono">${esc(str(t.template_name))}</div>`
+            + muted(`${esc(str(t.language) || 'no language')} &middot; ${esc(str(t.category) || 'no category')}`) },
+        { label: 'In NEXUS', render: t => pill(str(t.nexus_state) || 'NOT RECORDED', '', { verbatim: true }) },
+        { label: 'Provider said', render: t => (str(t.provider_status)
+            ? pill(str(t.provider_status), '', { verbatim: true })
+              + muted(t.provider_status_observed_at
+                  ? `observed ${esc(ago(t.provider_status_observed_at))}`
+                  : 'no observation time recorded')
+            : '<span class="pill unknown"><span class="dot"></span>NEVER OBSERVED</span>'
+              + muted('NEXUS has no answer from the provider about this template at all.'))
+            + (str(t.provider_rejected_reason) ? warm(esc(str(t.provider_rejected_reason))) : '') },
+        { label: 'Confidence', render: t => pill(str(t.status_confidence) || 'NOT STATED', '', { verbatim: true }) },
+        { label: 'What this row claims', render: t => wrap(muted(esc(str(t.what_this_row_claims))
+            || 'The registry states no claim for this row.')) },
+      ], list);
+    },
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────
+     P3c · Messaging usage — v_whatsapp_messaging_usage_monthly
+     ──────────────────────────────────────────────────────────────────────
+     Added 7 Oct 2026. Counts, never money. NEXUS holds no WhatsApp rate card,
+     so the view has no total column and this panel has no cost figure — the
+     cost column is the view's own `cost_answer` sentence, verbatim. A month with
+     messages awaiting a provider report is NOT a free month and is never shown
+     as zero cost. */
+  panel(root, {
+    title: 'Messaging usage',
+    sub: 'Outbound WhatsApp messages by month and category. These are counts of what NEXUS recorded sending; what '
+       + 'they cost is the provider&rsquo;s to say, and NEXUS does not know it',
+    load: () => db('v_whatsapp_messaging_usage_monthly?select=month,message_category,messages,provider_billable_messages,'
+      + 'provider_not_billable_messages,awaiting_provider_report,reported_without_pricing,template_messages,'
+      + 'failed_messages,no_status_reported,cost_answer&order=month.desc&limit=120'),
+    render: rows => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        return stateEmpty('No outbound WhatsApp message is on the usage ledger',
+          'NEXUS has recorded no outbound WhatsApp message for this dealership through the ledger. That is not a '
+          + 'statement that nothing was ever sent — a send that bypassed the ledger would not be counted here — and '
+          + 'it is not a statement about cost.', 'chat');
+      }
+      return table([
+        { label: 'Month', strong: true, render: u => esc(dubaiDate(u.month)) },
+        { label: 'Category', render: u => pill(str(u.message_category) || 'UNKNOWN', '', { verbatim: true }) },
+        { label: 'Messages', align: 'r', render: u => esc(count(u.messages)) },
+        { label: 'Provider: billable / not', align: 'r', render: u => `${esc(count(u.provider_billable_messages))} / ${esc(count(u.provider_not_billable_messages))}` },
+        { label: 'Awaiting provider report', align: 'r', render: u => esc(count(u.awaiting_provider_report)) },
+        { label: 'Failed / no status', align: 'r', render: u => `${esc(count(u.failed_messages))} / ${esc(count(u.no_status_reported))}` },
+        { label: 'What it cost', render: u => wrap(muted(esc(str(u.cost_answer))
+            || 'Not known. NEXUS holds no rate card, so it states no cost.')) },
+      ], list) + `<div class="section">${muted('No cost figure appears on this screen by design: Meta prices by '
+        + 'country, category and date, and NEXUS holds no rate card. Billable means the provider reported the message '
+        + 'as billable — it is a count, not a charge.')}</div>`;
+    },
+  });
 
   /* ────────────────────────────────────────────────────────────────────────
      P4 · The limits of this screen

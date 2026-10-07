@@ -59,6 +59,7 @@ import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { closeDrawer, kpi, openDrawer, panel, table } from '../lib/ui.js';
 import { openModal, modalError } from '../lib/modal.js';
+import { displayName } from '../lib/privacy.js';
 
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
@@ -524,6 +525,97 @@ function executeDialog(r, after) {
   });
 }
 
+/* ── Outcome dialogs ─────────────────────────────────────────────────────
+   See "Record the outcome" in the screen below for what these may and may not
+   claim. Neither sends an amount. */
+function outcomeDialog(r, after) {
+  const m = openModal('Link a recorded sale to this action',
+    `<div class="banner warm" style="margin-bottom:14px">
+       <span class="material-symbols-outlined" style="font-size:20px">warning</span>
+       <div>Linking a sale ATTRIBUTES it to this action against your name. It does not show that the action caused
+            the sale. The recorded sales carry no reference to a car, so the list below is only sales whose
+            description shares words with this unit — a prompt for you, not evidence.</div></div>
+     <div class="ds-cell-sub" style="margin-bottom:14px"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
+       · <span class="mono">${esc(r.unit_id)}</span> · carried out ${esc(dubaiStamp(r.executed_at))}</div>
+     <div id="ocList">${stateLoading(3)}</div>
+     <div class="field" style="margin-top:14px"><label for="ocNote">How do you know this sale belongs to this action? (required)</label>
+       <textarea id="ocNote" rows="3"></textarea></div>`,
+    `<button class="btn primary" id="acGo" disabled>Link this sale</button><button class="btn ghost" id="acCancel">Cancel</button>`);
+  m.wrap.querySelector('#acCancel').addEventListener('click', m.close);
+  const go_ = m.wrap.querySelector('#acGo');
+  db(`rpc/action_outcome_candidates?p_action_id=${encodeURIComponent(r.id)}`).then(list => {
+    const host = m.wrap.querySelector('#ocList');
+    if (!host) return;
+    const rowsC = Array.isArray(list) ? list : [];
+    if (!rowsC.length) {
+      host.innerHTML = stateEmpty('No recorded sale looks like this unit',
+        'No sale on or after the date this was carried out shares enough of its description with this unit. If none '
+        + 'can be tied to it, close it with “No sale can be tied” instead.');
+      return;
+    }
+    host.innerHTML = `<div class="grid" style="gap:8px">${rowsC.map((c, i) => `
+      <label class="list-item" style="cursor:pointer"><input type="radio" name="ocPick" value="${i}" />
+        <div><div><strong>${esc(str(c.vehicle) || 'No vehicle recorded')}</strong> · ${c.amount_aed == null ? 'amount not recorded' : aed(c.amount_aed)}
+          · ${esc(str(c.purchase_date) || 'no date')}</div>
+          <div class="ds-cell-sub">${esc(displayName(c.customer_name))} · ${esc(num(c.shared_tokens))} shared words · ${esc(str(c.link_evidence))}</div></div>
+      </label>`).join('')}</div>
+      <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(rowsC[0].evidence_note))}</div>`;
+    host.querySelectorAll('input[name=ocPick]').forEach(x => x.addEventListener('change', () => { go_.disabled = false; }));
+    go_.addEventListener('click', async () => {
+      const pick = host.querySelector('input[name=ocPick]:checked');
+      if (!pick) return;
+      const sale = rowsC[Number(pick.value)];
+      go_.disabled = true; go_.textContent = 'Recording…';
+      try {
+        const row = await call('action_record_outcome', {
+          p_action_id: r.id, p_purchase_id: sale.purchase_id,
+          p_note: m.wrap.querySelector('#ocNote').value.trim() || null,
+        });
+        if (!row.ok) {
+          go_.disabled = false; go_.textContent = 'Try again';
+          m.msg(`<span class="t-hot">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
+          return;
+        }
+        m.close();
+        after(row.idempotent
+          ? 'Nothing changed — that sale was already linked to this action.'
+          : 'Linked. The sale is now attributed to this action — attributed, not confirmed as caused. Any figure is the database’s, computed from the recorded sale.');
+      } catch (e) { go_.disabled = false; go_.textContent = 'Try again'; modalError(m, e); }
+    });
+  }).catch(e => {
+    const host = m.wrap.querySelector('#ocList');
+    if (host) host.innerHTML = stateError('the candidate sales', e);
+  });
+}
+
+function notAttributableDialog(r, after) {
+  const m = openModal('No sale can be tied to this action',
+    `<div class="ds-cell-sub" style="margin-bottom:14px;white-space:normal">This closes the action on the record as having
+       no attributable outcome. No figure is written and none is implied. Say what is missing — it is what the next
+       person reads.</div>
+     <div class="ds-cell-sub" style="margin-bottom:14px"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
+       · <span class="mono">${esc(r.unit_id)}</span></div>
+     <div class="field"><label for="naNote">What is missing (required)</label><textarea id="naNote" rows="3"></textarea></div>`,
+    `<button class="btn primary" id="acGo">Close as not attributable</button><button class="btn ghost" id="acCancel">Cancel</button>`);
+  m.wrap.querySelector('#acCancel').addEventListener('click', m.close);
+  m.wrap.querySelector('#acGo').addEventListener('click', async () => {
+    const btn = m.wrap.querySelector('#acGo');
+    btn.disabled = true; btn.textContent = 'Recording…';
+    try {
+      const row = await call('action_mark_not_attributable', {
+        p_action_id: r.id, p_note: m.wrap.querySelector('#naNote').value.trim() || null,
+      });
+      if (!row.ok) {
+        btn.disabled = false; btn.textContent = 'Try again';
+        m.msg(`<span class="t-hot">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
+        return;
+      }
+      m.close();
+      after(row.idempotent ? 'Already closed as not attributable — nothing changed.' : 'Closed. No outcome is attributed to this action and no figure is recorded.');
+    } catch (e) { btn.disabled = false; btn.textContent = 'Try again'; modalError(m, e); }
+  });
+}
+
 /* ── The history drawer ─────────────────────────────────────────────────── */
 async function historyDrawer(r) {
   openDrawer(`<div class="drawer-head">
@@ -718,6 +810,60 @@ SCREENS.actions = async host => {
   if (notDue.length) {
     section('Deferred', 'Answered with “not now”. They come back on the date recorded.', notDue, '');
   }
+
+  /* ── Record the outcome ──────────────────────────────────────────────────
+     Added 7 Oct 2026. The loop stopped at "carried out": action_record_outcome
+     (the ONLY writer of recovered_value_aed), action_outcome_candidates and
+     action_mark_not_attributable existed and nothing called them, so no action
+     could ever end in an attributed sale or in an honest "no evidence".
+
+     An executed action is closed one of two ways, both by an approver, both
+     with a sentence from the person:
+       · link a RECORDED sale to it. The candidates are sales whose free-text
+         vehicle shares two words with this unit's model — a prompt, never
+         evidence — and confirming one records HUMAN_CONFIRMED_LINK against
+         your name. This screen sends the sale's id and your note, never an
+         amount: whatever figure results is computed by the database from the
+         recorded sale, and stays null where an input is missing. It is
+         ATTRIBUTED, not confirmed as caused.
+       · say that no sale can be tied to it. No figure is written or implied.
+     Refusals come back as ok = false with the database's sentence, same as
+     every other write on this screen. */
+  const awaitingOutcome = rows.filter(r => r.status === 'EXECUTED'
+    && !['ATTRIBUTED', 'NOT_ATTRIBUTABLE'].includes(up(r.outcome_state)));
+  const byIdAll = new Map(rows.map(r => [r.id, r]));
+  const outcomeCard = el('div'); outcomeCard.style.marginBottom = '20px'; body.appendChild(outcomeCard);
+  panel(outcomeCard, {
+    title: 'Record the outcome',
+    sub: 'Carried-out actions that nobody has closed yet. Link a recorded sale, or say on the record that none can be '
+       + 'tied to it. Estimated, attributed and confirmed are different words: linking a sale here makes it attributed, '
+       + 'nothing more',
+    load: async () => awaitingOutcome,
+    render: list => table([
+      { label: 'Unit', render: r => `<div>${esc(str(r.unit_model) || r.unit_id)}</div><div class="ds-cell-sub mono">${esc(r.unit_id)}</div>` },
+      { label: 'Recommended', render: r => pill(str(r.recommendation), recTone(r.recommendation), { verbatim: true }) },
+      { label: 'Carried out', render: r => `<div>${esc(dubaiStamp(r.executed_at))}</div><div class="ds-cell-sub">${esc(str(r.executed_by_name) || 'no staff record')}</div>` },
+      { label: 'Outcome so far', render: r => `<div class="ds-cell-sub" style="white-space:normal">${esc(str(r.outcome_sentence) || 'No outcome recorded.')}</div>` },
+      { label: '', align: 'r', render: r => {
+          const may = !!(ctx && ctx.may_decide);
+          const gate = may ? '' : ` disabled title="${esc(str(ctx && ctx.refusal_reason) || 'This account may not record an outcome.')}"`;
+          return `<button class="btn sm primary" data-link="${esc(r.id)}"${gate}>Link a sale</button>
+            <button class="btn sm" data-noattr="${esc(r.id)}"${gate}>No sale can be tied</button>`;
+        } },
+    ], list, {
+      empty: stateEmpty('No carried-out action is waiting for an outcome',
+        'Every action recorded as carried out has already been linked to a sale or closed as not attributable — or none has been carried out yet.'),
+    }),
+  }).then(card => {
+    card.querySelectorAll('[data-link]').forEach(b => b.addEventListener('click', () => {
+      if (b.disabled) return;
+      const r = byIdAll.get(b.dataset.link); if (r) outcomeDialog(r, reload);
+    }));
+    card.querySelectorAll('[data-noattr]').forEach(b => b.addEventListener('click', () => {
+      if (b.disabled) return;
+      const r = byIdAll.get(b.dataset.noattr); if (r) notAttributableDialog(r, reload);
+    }));
+  });
 
   /* Closed actions are a table, not cards: they are read for the record, not
      for a decision, and the reason code is the column that matters. */

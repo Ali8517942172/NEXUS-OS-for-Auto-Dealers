@@ -62,13 +62,14 @@
       rows, the cell says "none" against the version count it was measured over
       — it never implies the value cannot occur. */
 
-import { db } from '../lib/data.js';
-import { el } from '../lib/dom.js';
+import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { $, el } from '../lib/dom.js';
 import { dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
+import { openModal } from '../lib/modal.js';
+import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { closeDrawer, kpi, openDrawer, panel, table } from '../lib/ui.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
@@ -155,6 +156,12 @@ const wireGo = card => {
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
+/* A confirmation that has to survive the re-render a write triggers (go()
+   runs this screen again from scratch). Cleared on a change of signed-in
+   identity, same as screens/actions.js. */
+let NOTICE = null;
+onIdentityChange(() => { NOTICE = null; });
+
 SCREENS.policy = async host => {
   /* `.ds-screen` is the class lib/design-system.css gates its handful of
      upgrades to existing chrome behind. It goes on a wrapper this screen
@@ -166,6 +173,12 @@ SCREENS.policy = async host => {
      screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
   const root = el('div', 'ds-screen');
   host.appendChild(root);
+  if (NOTICE) {
+    const n = el('div');
+    n.innerHTML = `<div class="banner info"><span class="material-symbols-outlined">check_circle</span><div>${NOTICE}</div></div>`;
+    root.appendChild(n);
+    NOTICE = null;
+  }
 
   const readRules = shared(() => db('v_policy_rule'
     + '?select=id,is_global_rule,jurisdiction,rule_type,rule_name,version,value_numeric,value_text,unit,value_kind,'
@@ -490,7 +503,7 @@ SCREENS.policy = async host => {
                 ? muted(`<span class="mono">${esc(str(k.source_document))}</span>`)
                 : muted('No document, file or line is recorded against this rule.'))
             + (str(k.source_url) ? muted(esc(str(k.source_url))) : '')) },
-      ], F.rules);
+      ], F.rules, { onRow: true });
 
       /* The engine's own notes, given room. They carry the reasoning a table
          cell cannot — including which of these the engine itself considers most
@@ -513,9 +526,20 @@ SCREENS.policy = async host => {
         : `<div class="section" style="margin-top:16px">${muted('No rule carries a note. Every rule here is therefore '
             + 'a value and a citation with no account of how it was arrived at.')}</div>`;
 
-      return body + notesBlock;
+      return body + muted('Click a row for every version of that rule, each beside the one it replaced.') + notesBlock;
     },
-  }).then(wireGo);
+  }).then(card => {
+    wireGo(card);
+    /* Every version, global ones included, opens its own history. Wired from
+       the shared read so the row index maps to the same row the table drew. */
+    readRules().then(rs => {
+      const list = rs || [];
+      card.querySelectorAll('tbody tr.clickable').forEach(tr => tr.addEventListener('click', () => {
+        const k = list[Number(tr.dataset.i)];
+        if (k) historyDrawer(str(k.jurisdiction), str(k.rule_name));
+      }));
+    }).catch(() => {});
+  });
 
   /* ══════════════════════════════════════════════════════════════════════
      P4 · The safe read
@@ -652,6 +676,272 @@ SCREENS.policy = async host => {
       return head + facing + hidden + `<div class="section">${foot}</div>`;
     },
   }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P5b · This dealership's own house rules — propose, verify, supersede,
+     withdraw, and the history of each
+     ══════════════════════════════════════════════════════════════════════
+     Added 7 Oct 2026. The four policy_* write functions existed and nothing
+     called them, so every panel above was read-only. Each is SECURITY DEFINER,
+     takes its dealership and its authority from the session
+     (action_approver_context), and REFUSES BY RAISING — SQLSTATE NX001 with the
+     sentence in MESSAGE, the machine code in DETAIL and the next step in HINT.
+     All three are shown, unaltered, because they were written for the person
+     reading them (see lib/data.js, which carries them on `.refusal`).
+
+     Only TENANT_HOUSE is offered as a jurisdiction, and only rows that belong to
+     this dealership get Verify / Supersede / Withdraw. That is a convenience,
+     not the control: a platform or regulator rule is refused by the database
+     with JURISDICTION_NOT_YOURS_TO_LEGISLATE whatever this screen offers.
+     Verifying is what lets a value be quoted to a customer, so every action
+     goes through a confirm dialog that says what it does. */
+  const readTypes = shared(() => db('policy_rule_type?select=code,label&order=code.asc'));
+  const readUnits = shared(() => db('policy_unit?select=code,label,value_kind&order=code.asc'));
+  /* Keyed on jurisdiction AND name: a house rule may share its name with the
+     platform rule it tightens, and the two histories are not one history. */
+  const readHistory = (jur, ruleName) => db('v_policy_rule_history'
+    + '?select=id,rule_name,jurisdiction,version,status,verification_status,value_numeric,value_text,unit,'
+    + 'effective_from,effective_to,source_name,source_document,verification_date,verified_by,added_by,added_at,'
+    + 'previous_value_numeric,previous_value_text,previous_effective_from,previous_source_name'
+    + `&jurisdiction=eq.${encodeURIComponent(jur)}&rule_name=eq.${encodeURIComponent(ruleName)}&order=version.desc&limit=50`);
+
+  panel(root, {
+    title: 'Your dealership’s house rules',
+    sub: 'Rules this dealership states for itself. A house rule may tighten what the platform allows and can never '
+       + 'loosen it. Global and regulator rules are shown above and cannot be changed from here',
+    actions: '<button class="btn sm primary" data-pol="propose">Propose a house rule</button>',
+    load: () => readRules(),
+    render: rows => {
+      const mine = (rows || []).filter(k => k.is_global_rule !== true);
+      const list = table([
+        { label: 'Rule', strong: true, render: k => `<div class="mono">${esc(str(k.rule_name))}</div>`
+            + muted(`${esc(str(k.rule_type))} &middot; v${esc(str(k.version))}`) },
+        { label: 'Value', render: k => (str(k.value_display)
+            ? `<span class="mono">${esc(str(k.value_display))}</span>`
+            : '<span class="pill unknown"><span class="dot"></span>NO VALUE STATED</span>') },
+        { label: 'Checked', render: k => pill(stateLabel(str(k.verification_status) || 'NOT RECORDED', VERIFICATION_LABEL), '',
+            { verbatim: !VERIFICATION_LABEL[str(k.verification_status)] }) },
+        { label: 'In force', render: k => pill(stateLabel(str(k.status) || 'NOT RECORDED', LIFECYCLE_LABEL), '',
+            { verbatim: !LIFECYCLE_LABEL[str(k.status)] }) },
+        { label: '', align: 'r', render: k => {
+            const open = !['SUPERSEDED', 'WITHDRAWN'].includes(up(k.status));
+            const id = esc(str(k.id));
+            return `<button class="btn sm ghost" data-hist="${esc(str(k.rule_name))}" data-jur="${esc(str(k.jurisdiction))}">History</button>`
+              + (open ? ` <button class="btn sm" data-pol="verify" data-id="${id}">Verify</button>`
+                  + ` <button class="btn sm" data-pol="supersede" data-id="${id}">Supersede</button>`
+                  + ` <button class="btn sm danger" data-pol="withdraw" data-id="${id}">Withdraw</button>` : '');
+          } },
+      ], mine, {
+        empty: stateEmpty('This dealership has stated no house rule',
+          'Every rule on record is a platform or regulator rule. Propose one to record a position of your own — it '
+          + 'starts as a draft and nothing reads it as checked until an approver verifies it against a source.', 'gavel'),
+      });
+      return list + `<div class="section">${muted('Who may do what is decided by the database, not this screen: '
+        + 'proposing needs a dealership account, and verifying, superseding or withdrawing needs the same approval '
+        + 'authority as an inventory action. A refusal is shown in the database&rsquo;s own words.')}</div>`;
+    },
+  }).then(card => {
+    wireGo(card);
+    const byId = new Map();
+    readRules().then(rs => (rs || []).forEach(k => byId.set(str(k.id), k))).catch(() => {});
+    card.querySelectorAll('[data-hist]').forEach(b => b.addEventListener('click', () => historyDrawer(b.dataset.jur, b.dataset.hist)));
+    card.querySelectorAll('[data-pol]').forEach(b => b.addEventListener('click', () => {
+      const kind = b.dataset.pol;
+      if (kind === 'propose') { proposeDialog(); return; }
+      const rule = byId.get(str(b.dataset.id));
+      if (rule) ruleDialog(kind, rule);
+    }));
+  });
+
+  /* The refusal, in the database's three parts. A failure that is not an NX001
+     refusal falls back to the user-safe clause lib/errors.js wrote. */
+  const refusalHtml = e => {
+    const r = e && e.refusal;
+    if (!r || !r.message) return `<span class="t-hot">${esc(str(e && e.message) || 'The change did not go through.')}</span>`;
+    return `<div class="t-hot">${esc(r.message)}</div>`
+      + (r.detail ? muted(`Code: <span class="mono">${esc(r.detail)}</span>`) : '')
+      + (r.hint ? muted(esc(r.hint)) : '');
+  };
+  const field = (id, label, input, hint) => `<div class="field"><label for="${id}">${esc(label)}</label>${input}`
+    + (hint ? `<div class="hint">${esc(hint)}</div>` : '') + '</div>';
+  const val = (m, id) => (m.wrap.querySelector('#' + id)?.value || '').trim();
+  const orNull = v => (v === '' ? null : v);
+  const done = (m, text) => { m.close(); NOTICE = text; go('policy'); };
+
+  async function proposeDialog() {
+    const m = openModal('Propose a house rule', `<div class="form-stack">
+        <div class="banner info banner-flush"><span class="material-symbols-outlined">info</span>
+          <div>This records a rule as a draft under this dealership&rsquo;s own name (TENANT_HOUSE). It is not checked
+          and nothing may quote it until an approver verifies it. Leave the value empty to register the rule as a
+          question.</div></div>
+        <div class="frow">
+          ${field('pRt', 'Rule type', '<select id="pRt"><option value="">Loading…</option></select>')}
+          ${field('pName', 'Rule name', '<input id="pName" type="text" maxlength="80" placeholder="e.g. MIN_DEPOSIT_PCT">',
+            'Capital letters, digits and underscores.')}
+        </div>
+        <div class="frow">
+          ${field('pUnit', 'Unit', '<select id="pUnit"><option value="">Loading…</option></select>')}
+          ${field('pVal', 'Value (optional)', '<input id="pVal" type="text" maxlength="200">',
+            'A number for a numeric unit, words otherwise.')}
+        </div>
+        ${field('pSrc', 'Where this comes from (required)', '<input id="pSrc" type="text" maxlength="200">',
+          'Name the source even for an unchecked rule — a person, a document, a policy.')}
+        <div class="frow">
+          ${field('pDoc', 'Document or reference (optional)', '<input id="pDoc" type="text" maxlength="200">')}
+          ${field('pFrom', 'In force from (optional)', '<input id="pFrom" type="date">')}
+        </div>
+        ${field('pNotes', 'Notes (optional)', '<textarea id="pNotes" rows="2"></textarea>')}
+      </div>`,
+      '<button class="btn primary" id="pGo">Propose</button><button class="btn ghost" id="pCancel">Cancel</button>');
+    m.wrap.querySelector('#pCancel').addEventListener('click', m.close);
+    let units = [];
+    Promise.all([readTypes(), readUnits()]).then(([types, us]) => {
+      units = us || [];
+      m.wrap.querySelector('#pRt').innerHTML = (types || []).map(t =>
+        `<option value="${esc(str(t.code))}">${esc(str(t.label) || str(t.code))}</option>`).join('');
+      m.wrap.querySelector('#pUnit').innerHTML = units.map(u =>
+        `<option value="${esc(str(u.code))}">${esc(str(u.label) || str(u.code))}</option>`).join('');
+    }).catch(e => m.msg(`<span class="t-hot">The rule types and units could not be read (${esc(str(e && e.message))}), so a rule cannot be proposed right now.</span>`));
+    m.wrap.querySelector('#pGo').addEventListener('click', async () => {
+      const btn = m.wrap.querySelector('#pGo');
+      const unit = val(m, 'pUnit');
+      const kind = up((units.find(u => str(u.code) === unit) || {}).value_kind);
+      const raw = val(m, 'pVal');
+      if (raw && kind === 'NUMERIC' && Number.isNaN(Number(raw))) {
+        m.msg('<span class="t-hot">That unit is numeric, so the value must be a number. Nothing was written.</span>');
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Proposing…';
+      try {
+        const res = await dbWrite('POST', 'rpc/policy_propose_rule', {
+          p_jurisdiction: 'TENANT_HOUSE',
+          p_rule_type: val(m, 'pRt'),
+          p_rule_name: up(val(m, 'pName')),
+          p_unit: unit,
+          p_source_name: val(m, 'pSrc'),
+          p_value_numeric: raw && kind === 'NUMERIC' ? Number(raw) : null,
+          p_value_text: raw && kind !== 'NUMERIC' ? raw : null,
+          p_source_url: null,
+          p_source_document: orNull(val(m, 'pDoc')),
+          p_effective_from: orNull(val(m, 'pFrom')),
+          p_notes: orNull(val(m, 'pNotes')),
+        });
+        const row = Array.isArray(res) ? res[0] : res;
+        done(m, `Recorded as a draft (version ${esc(str(row && row.version) || '1')}). It is not checked until an approver verifies it.`);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Try again';
+        m.msg(refusalHtml(e));
+      }
+    });
+  }
+
+  const RULE_ACTION = {
+    verify: { title: 'Verify this rule', fn: 'policy_verify_rule', go: 'Verify',
+      what: 'Verifying says a named person read the source, and it is what allows this value to be quoted to a '
+        + 'customer. It is recorded against your account and cannot be undone — a correction later is a new version.' },
+    supersede: { title: 'Replace this rule with a new version', fn: 'policy_supersede_rule', go: 'Record new version',
+      what: 'The current version stays on record as replaced, so a decision taken under it can still be explained. The '
+        + 'new version starts unchecked.' },
+    withdraw: { title: 'Withdraw this rule', fn: 'policy_withdraw_rule', go: 'Withdraw',
+      what: 'Takes this rule out of force with no replacement. It stays on record as withdrawn.' },
+  };
+
+  function ruleDialog(kind, k) {
+    const A = RULE_ACTION[kind];
+    const numeric = up(k.value_kind) === 'NUMERIC';
+    const form = kind === 'verify'
+      ? field('rSrc', 'Source you checked (optional — keeps the recorded one if empty)', '<input id="rSrc" type="text" maxlength="200">')
+        + field('rDoc', 'Document, article or reference', '<input id="rDoc" type="text" maxlength="200">',
+          'A verified rule must name a document or a link.')
+        + field('rUrl', 'Link (optional)', '<input id="rUrl" type="text" maxlength="400">')
+        + `<div class="frow">${field('rFrom', 'In force from', '<input id="rFrom" type="date">',
+            'Only needed if this version has no start date yet.')}
+           ${field('rConf', 'Confidence', '<select id="rConf"><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>')}</div>`
+        + field('rNotes', 'Notes (optional)', '<textarea id="rNotes" rows="2"></textarea>')
+      : kind === 'supersede'
+        ? `<div class="frow">${field('rVal', `New value${numeric ? ' (a number)' : ''}`, '<input id="rVal" type="text" maxlength="200">')}
+             ${field('rFrom', 'In force from (required)', '<input id="rFrom" type="date">',
+               'Must be after the current version’s start date.')}</div>`
+          + field('rSrc', 'Where the new value comes from (required)', '<input id="rSrc" type="text" maxlength="200">')
+          + field('rDoc', 'Document or reference (optional)', '<input id="rDoc" type="text" maxlength="200">')
+          + field('rNotes', 'Notes (optional)', '<textarea id="rNotes" rows="2"></textarea>')
+        : field('rWhy', 'Why (required)', '<textarea id="rWhy" rows="3"></textarea>');
+    const m = openModal(A.title, `<div class="form-stack">
+        <div class="banner ${kind === 'withdraw' ? 'warm' : 'info'} banner-flush"><span class="material-symbols-outlined">${kind === 'withdraw' ? 'warning' : 'info'}</span>
+          <div>${esc(A.what)}</div></div>
+        <div class="cell-sub"><span class="mono">${esc(str(k.rule_name))}</span> &middot; v${esc(str(k.version))} &middot;
+          ${str(k.value_display) ? `value <span class="mono">${esc(str(k.value_display))}</span>` : 'no value stated'}</div>
+        ${form}
+      </div>`,
+      `<button class="btn ${kind === 'withdraw' ? 'danger' : 'primary'}" id="rGo">${esc(A.go)}</button><button class="btn ghost" id="rCancel">Cancel</button>`);
+    m.wrap.querySelector('#rCancel').addEventListener('click', m.close);
+    m.wrap.querySelector('#rGo').addEventListener('click', async () => {
+      const btn = m.wrap.querySelector('#rGo');
+      let body;
+      if (kind === 'verify') {
+        body = { p_rule_id: k.id, p_source_name: orNull(val(m, 'rSrc')), p_source_url: orNull(val(m, 'rUrl')),
+          p_source_document: orNull(val(m, 'rDoc')), p_effective_from: orNull(val(m, 'rFrom')),
+          p_confidence: val(m, 'rConf') || 'HIGH', p_notes: orNull(val(m, 'rNotes')) };
+      } else if (kind === 'supersede') {
+        const raw = val(m, 'rVal');
+        if (raw && numeric && Number.isNaN(Number(raw))) {
+          m.msg('<span class="t-hot">This rule is numeric, so the new value must be a number. Nothing was written.</span>');
+          return;
+        }
+        body = { p_rule_id: k.id, p_effective_from: orNull(val(m, 'rFrom')), p_source_name: val(m, 'rSrc'),
+          p_value_numeric: raw && numeric ? Number(raw) : null, p_value_text: raw && !numeric ? raw : null,
+          p_source_url: null, p_source_document: orNull(val(m, 'rDoc')), p_notes: orNull(val(m, 'rNotes')) };
+      } else {
+        body = { p_rule_id: k.id, p_reason: val(m, 'rWhy') };
+      }
+      btn.disabled = true; btn.textContent = 'Recording…';
+      try {
+        const res = await dbWrite('POST', `rpc/${A.fn}`, body);
+        const row = Array.isArray(res) ? res[0] : res;
+        done(m, `${esc(str(k.rule_name))}: ${esc(str(row && row.outcome) || 'recorded')}`
+          + (row && row.version ? ` (version ${esc(str(row.version))})` : '') + '.');
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Try again';
+        m.msg(refusalHtml(e));
+      }
+    });
+  }
+
+  async function historyDrawer(jur, ruleName) {
+    openDrawer(`<div class="drawer-head">
+        <div class="drawer-head-main"><h2 class="mono">${esc(ruleName)}</h2>
+          <div class="card-sub">Every version of this rule, each beside the one it replaced</div></div>
+        <button class="btn ghost sm" id="polClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
+      </div><div class="drawer-body" id="polHist">${stateLoading(4)}</div>`);
+    $('polClose').addEventListener('click', closeDrawer);
+    const host = $('polHist');
+    let rows;
+    try { rows = await readHistory(jur, ruleName); } catch (e) { if (host) host.innerHTML = stateError('this rule’s history', e); return; }
+    if (!host) return;
+    if (!rows.length) {
+      host.innerHTML = stateEmpty('No version history came back',
+        'The history view returned nothing for this rule name, so no earlier version is claimed and none is ruled out.', 'history');
+      return;
+    }
+    const v = (n, t) => (n != null ? esc(String(n)) : str(t) ? esc(str(t)) : '<span class="t-muted">no value</span>');
+    host.innerHTML = `<div class="timeline">${rows.map(h => `
+      <div class="tl-item"><span class="tl-dot"></span><div class="tl-body">
+        <div class="tl-meta"><span class="chip">v${esc(str(h.version))}</span>
+          ${esc(stateLabel(str(h.status), LIFECYCLE_LABEL))} &middot; ${esc(stateLabel(str(h.verification_status), VERIFICATION_LABEL))}
+          &middot; ${esc(str(h.jurisdiction))}</div>
+        <div class="tl-text">Value ${v(h.value_numeric, h.value_text)} ${esc(str(h.unit))}
+          ${str(h.effective_from) ? `&middot; from ${esc(dubaiDate(h.effective_from))}` : '&middot; no start date'}
+          ${str(h.effective_to) ? ` to ${esc(dubaiDate(h.effective_to))}` : ''}</div>
+        <div class="cell-sub cell-sub-wrap">Source: ${esc(str(h.source_name) || 'none named')}${str(h.source_document) ? ` &middot; ${esc(str(h.source_document))}` : ''}.
+          Added by ${esc(str(h.added_by) || 'nobody named')}${h.added_at ? ` on ${esc(dubaiStamp(h.added_at))}` : ''}.
+          ${str(h.verified_by) ? `Verified by ${esc(str(h.verified_by))}${h.verification_date ? ` on ${esc(dubaiDate(h.verification_date))}` : ''}.` : 'Not verified.'}</div>
+        ${h.previous_value_numeric != null || str(h.previous_value_text) || str(h.previous_source_name)
+          ? `<div class="cell-sub cell-sub-wrap">Replaced: value ${v(h.previous_value_numeric, h.previous_value_text)}`
+            + `${str(h.previous_effective_from) ? `, in force from ${esc(dubaiDate(h.previous_effective_from))}` : ''}`
+            + `${str(h.previous_source_name) ? `, sourced to ${esc(str(h.previous_source_name))}` : ''}.</div>`
+          : '<div class="cell-sub">First version — nothing before it.</div>'}
+      </div></div>`).join('')}</div>`;
+  }
 
   /* ══════════════════════════════════════════════════════════════════════
      P6 · Where this page stands

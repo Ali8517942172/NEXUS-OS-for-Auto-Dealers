@@ -127,7 +127,7 @@ import { renderIntegrations } from '../lib/integrations.js';
 import { modalError, openModal } from '../lib/modal.js';
 import { SCREENS, go } from '../lib/nav.js';
 import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
+import { closeDrawer, kpi, openDrawer, panel, table, wireRows } from '../lib/ui.js';
 
 /* Bounded read. Where the cap is actually hit the screen says so — an activity
    log that looks complete but is a window is the same class of lie this screen
@@ -2231,6 +2231,43 @@ SCREENS.automation = async host => {
      no screen at all. Anything we cannot probe says so. */
   intg.innerHTML = `<div class="label-caps" style="margin-bottom:12px">Integration status</div><div id="intgRow">${stateLoading(1)}</div>`;
   renderIntegrations($('intgRow'));
+
+  /* ── Writers not registered ──────────────────────────────────────────────
+     Added 7 Oct 2026, from v_audit_unregistered_writers. Every health figure
+     above is driven by the automation register, so a workflow that writes to
+     the activity log under a name the register does not know is invisible to
+     all of them — its failures are counted nowhere. This lists those names
+     rather than registering them: a register row must carry a real workflow,
+     and inventing one to make the list empty would put a fabricated row into
+     the one table whose value is that it mirrors what is deployed. The
+     `disposition` column is the view's own account of each and is printed
+     verbatim. Fixing one is NEXUS's job; this panel is how a dealership sees it. */
+  panel(root, {
+    title: 'Writers not registered',
+    sub: 'Names that appear in the activity log but not in the automation register, so no health figure on this '
+       + 'screen counts them',
+    load: () => db('v_audit_unregistered_writers?select=workflow_written_in_audit_log,audit_rows,audit_rows_30d,'
+      + 'first_written_at,last_written_at,statuses_seen,disposition&order=last_written_at.desc&limit=100'),
+    render: rows => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        return stateEmpty('Every writer to the activity log is registered',
+          'Every name in this dealership’s activity log matches a workflow in the automation register, so the health '
+          + 'figures above count all of them.', 'task_alt');
+      }
+      return table([
+        { label: 'Name in the activity log', strong: true, render: w => `<span class="mono">${esc(String(w.workflow_written_in_audit_log || '(empty)'))}</span>` },
+        { label: 'Rows (30 days / all)', align: 'r', render: w => `${esc(num(w.audit_rows_30d))} / ${esc(num(w.audit_rows))}` },
+        { label: 'Last written', render: w => `<span title="first ${esc(String(w.first_written_at || 'not recorded'))}">${esc(ago(w.last_written_at))}</span>` },
+        { label: 'Statuses seen', render: w => (Array.isArray(w.statuses_seen) && w.statuses_seen.length
+            ? w.statuses_seen.map(x => `<span class="chip">${esc(String(x))}</span>`).join(' ')
+            : '<span class="t-muted">none recorded</span>') },
+        { label: 'What this is', render: w => `<div class="ds-cell-sub" style="white-space:normal">${esc(String(w.disposition || 'The view records no disposition for this name.'))}</div>` },
+      ], list) + `<div class="ds-cell-sub" style="padding:12px 16px;white-space:normal">These are not errors on their own.
+        They are runs whose outcome nothing on this screen measures. Quote the name to NEXUS support to have it
+        registered or retired.</div>`;
+    },
+  });
 
   /* ── One logged run, in full ───────────────────────────────────────────── */
   function openRun(a) {

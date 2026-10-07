@@ -210,6 +210,73 @@ SCREENS.subscription = async host => {
   });
 
   /* ────────────────────────────────────────────────────────────────────────
+     P3 · What your plan includes
+     ────────────────────────────────────────────────────────────────────────
+     Added 7 Oct 2026. Two accessors that already existed "for the dashboard"
+     and that nothing called:
+
+       nexus_subscription_status()     entitlement, and whether the stored state
+                                       has gone stale (a lapsed trial still
+                                       stored as TRIAL). It REPORTS entitlement
+                                       and enforces nothing.
+       nexus_my_tenant_capabilities()  one row per capability in the catalogue:
+                                       AVAILABLE only where it is recorded as
+                                       such for this dealership, NOT_AVAILABLE
+                                       otherwise, with the catalogue's own
+                                       `absent_means` sentence — rendered
+                                       verbatim rather than as an empty chart.
+
+     A capability being NOT_AVAILABLE is about what data or integration this
+     dealership has connected, not about what the plan sells: the plan is one
+     flat price and every feature is on it. Both reads are separate so one
+     failing does not blank the other. */
+  panel(root, {
+    title: 'What your plan includes',
+    sub: 'One plan, every feature. What changes from one dealership to the next is what NEXUS has to work with — '
+       + 'below is what is connected for yours, and what each missing piece would unlock',
+    load: async () => {
+      const [s, c] = await Promise.all([
+        db('rpc/nexus_subscription_status').then(v => ({ v, err: null }), e => ({ v: null, err: e })),
+        db('rpc/nexus_my_tenant_capabilities').then(v => ({ v, err: null }), e => ({ v: null, err: e })),
+      ]);
+      if (s.err && c.err) throw s.err;
+      return { s, c };
+    },
+    render: ({ s, c }) => {
+      const st = s.err ? null : (Array.isArray(s.v) ? s.v[0] : null);
+      const entitlement = s.err
+        ? muted('Whether this dealership is entitled to the plan could not be read on this visit, so nothing is said either way.')
+        : !st
+          ? muted('No subscription state came back for this account.')
+          : `<div class="section"><dl class="kv">
+              <dt>Entitled</dt><dd>${st.entitled === true
+                ? '<span class="t-ok">Yes</span>'
+                : '<span class="t-hot">No</span>'}${muted('As the subscription record states it. This is a report, not a switch — nothing turns off on this answer.')}</dd>
+              <dt>State</dt><dd>${esc(str(st.state) || 'not recorded')}${st.state_is_stale === true
+                ? `<div class="ds-cell-sub t-warm">The stored state still reads ${esc(str(st.stored_state))}; the effective state above is what it actually is today.</div>`
+                : ''}</dd>
+              <dt>What that means</dt><dd>${wrap(esc(str(st.evidence) || 'No explanation recorded.'))}</dd>
+            </dl></div>`;
+      const caps = c.err ? null : (Array.isArray(c.v) ? c.v : []);
+      const capBlock = caps == null
+        ? muted('The capability list could not be read on this visit, so no feature is shown as present or missing.')
+        : !caps.length
+          ? stateEmpty('No capability list came back', 'The capability catalogue returned nothing for this account.', 'checklist')
+          : table([
+              { label: 'Capability', strong: true, render: k => `<div>${esc(str(k.label) || str(k.capability_key))}</div>`
+                  + muted(esc(str(k.what_it_unlocks))) },
+              { label: 'For your dealership', render: k => (str(k.state) === 'AVAILABLE'
+                  ? '<span class="pill ok"><span class="dot"></span>Available</span>'
+                    + (str(k.evidence) ? muted(esc(str(k.evidence))) : '')
+                  : '<span class="pill unknown"><span class="dot"></span>Not connected</span>'
+                    + muted(esc(str(k.absent_means)) || 'The catalogue says nothing about what its absence means.')) },
+              { label: 'Needs', render: k => wrap(muted(esc(str(k.requires)) || 'Not stated.')) },
+            ], caps);
+      return entitlement + capBlock;
+    },
+  });
+
+  /* ────────────────────────────────────────────────────────────────────────
      P4 · Payment history
      ──────────────────────────────────────────────────────────────────────── */
   panel(root, {

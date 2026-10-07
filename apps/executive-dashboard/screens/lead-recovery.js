@@ -744,4 +744,91 @@ SCREENS.leadrecovery = async host => {
         + stripHtml;
     },
   }).then(wireGo);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P7 · Recovery settings — read only, and why
+     ══════════════════════════════════════════════════════════════════════
+     Added 7 Oct 2026. public.lead_recovery_settings holds this dealership's
+     thresholds. `authenticated` may SELECT it (tenant-scoped policy) and there
+     is NO write path: no grant and no RPC, measured against the live catalogue
+     the same day. So this panel shows the numbers and says where a change has
+     to go, rather than offering a Save button the database would refuse. An
+     empty table is the engine running on its defaults, which every row of
+     v_lead_recovery already reports as settings_are_defaults. */
+  panel(root, {
+    title: 'Recovery settings',
+    sub: 'The thresholds this engine judges your leads against. Shown here so they can be checked; they are not '
+       + 'editable from this dashboard',
+    load: async () => {
+      const [s, l] = await Promise.all([
+        settle(db('lead_recovery_settings?select=sla_first_response_minutes,silence_hours,stale_silence_hours,'
+          + 'engagement_window_days,detector_max_age_hours,reproposal_cooldown_days,set_by,set_at,note&limit=5')),
+        settle(readLeads()),
+      ]);
+      if (s.err) throw s.err;
+      return { s: s.v || [], l };
+    },
+    render: ({ s, l }) => {
+      const row = s[0] || null;
+      const onDefaults = l.err ? null : (l.v || []).some(d => d.settings_are_defaults === true);
+      const editNote = muted('There is no screen or function a dealership account can change these through. A '
+        + 'change is made by NEXUS on your behalf, and the SLA figure here is a copy of one used elsewhere in the '
+        + 'product, so changing it on its own would make NEXUS quote two different response-time rules.');
+      if (!row) {
+        return stateEmpty('No settings have been stated for this dealership',
+          'The engine is running on its built-in defaults. '
+          + (onDefaults === true
+              ? 'Every lead row says so (settings_are_defaults).'
+              : onDefaults === false
+                ? 'The lead rows read on this visit do not say they are on defaults, which disagrees with this empty table and is worth reporting.'
+                : 'The lead rows could not be read, so that could not be cross-checked.'),
+          'tune') + `<div class="section">${editNote}</div>`;
+      }
+      const v = (n, unit) => (n0(n) == null ? '<span class="t-muted">not stated</span>' : `${esc(num(n))} ${esc(unit)}`);
+      const kv = [
+        ['First reply expected within', v(row.sla_first_response_minutes, 'minutes')],
+        ['Silent after', v(row.silence_hours, 'hours')],
+        ['Stale silence after', v(row.stale_silence_hours, 'hours')],
+        ['Engagement window', v(row.engagement_window_days, 'days')],
+        ['Silence detector counted as stale after', v(row.detector_max_age_hours, 'hours')],
+        ['Wait before re-raising a lead', v(row.reproposal_cooldown_days, 'days')],
+        ['Set by', esc(str(row.set_by) || 'nobody named')
+          + (row.set_at ? ` on ${esc(dubaiStamp(row.set_at))}` : '')],
+      ];
+      return `<dl class="kv">${kv.map(([k, x]) => `<dt>${esc(k)}</dt><dd>${x}</dd>`).join('')}</dl>`
+        + (str(row.note) ? `<div class="section"><div class="quote">${esc(str(row.note))}</div></div>` : '')
+        + `<div class="section">${editNote}</div>`;
+    },
+  });
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P8 · Scoring health — rpc/nexus_scoring_health
+     ══════════════════════════════════════════════════════════════════════
+     Added 7 Oct 2026. Which scorer stands behind the lead scores this engine
+     ranks on. AI_SCORE_FALLBACK is NOT a model verdict and AI_SCORE_UNKNOWN is
+     unrecorded provenance — the function's own note says both, and is printed
+     verbatim, so nobody reads the average beside them as AI accuracy. */
+  panel(root, {
+    title: 'Scoring health',
+    sub: 'How the scores on your leads were produced. An average is only meaningful beside the scorer that produced it',
+    load: () => db('rpc/nexus_scoring_health'),
+    render: rows => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        return stateEmpty('No lead has been scored',
+          'The scoring breakdown returned nothing, which means this dealership has no leads on file yet.', 'insights');
+      }
+      const total = list.reduce((a, r) => a + (n0(r.leads) || 0), 0);
+      return table([
+        { label: 'Scored by', strong: true, render: r => pill(str(r.score_source) || 'NOT RECORDED',
+            up(r.score_source) === 'AI_SCORE_FALLBACK' || up(r.score_source) === 'AI_SCORE_UNKNOWN' ? 'warm' : '',
+            { verbatim: true }) },
+        { label: 'Leads', align: 'r', render: r => esc(num(r.leads)) },
+        { label: 'Average score', align: 'r', render: r => (n0(r.avg_score) == null
+            ? '<span class="t-muted">no score recorded</span>' : esc(String(r.avg_score))) },
+        { label: 'What this means', render: r => wrap(esc(str(r.note) || 'No note recorded for this scorer.')) },
+      ], list) + `<div class="section">${muted(`${esc(num(total))} ${plural(total, 'lead', 'leads')} in total. `
+        + 'A fallback score was produced without a model answer and is not evidence of how accurate AI scoring is.')}</div>`;
+    },
+  });
 };

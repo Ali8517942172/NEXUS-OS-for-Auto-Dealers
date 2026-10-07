@@ -77,7 +77,7 @@ import { canReassignLead, db, dbWrite } from './data.js';
 import { loadSubscription, isReadOnly } from './subscription.js';
 import { dealForm } from './deal-form.js';
 import { $, el } from './dom.js';
-import { aed, ago, esc, initials, mins, n0, pill, tone } from './format.js';
+import { aed, ago, dubaiStamp, esc, initials, mins, n0, pill, tone } from './format.js';
 import { displayName, maskEmail, maskPhone, maskText } from './privacy.js';
 /* audit_log.status is not ours to read literally: lib/health.js mirrors
    public.nexus_outcome_class() and is the only place allowed to say what one
@@ -90,7 +90,7 @@ import { outcomeOf, outcomeWords } from './health.js';
 import { describeKey, expandIdentity, KEY_SHAPE, keyShape, personQuery } from './identity.js';
 import { openModal } from './modal.js';
 import { go } from './nav.js';
-import { stateEmpty, stateLoading } from './states.js';
+import { stateEmpty, stateError, stateLoading } from './states.js';
 import { closeDrawer, openDrawer } from './ui.js';
 
 /* The dealership's 5-minute promise, and the extra condition the database puts
@@ -233,6 +233,14 @@ async function leadDrawer(lead, opts = {}) {
         <div class="label-caps">Activity</div>
         <div id="dTimeline">${stateLoading(3)}</div>
       </div>
+      <div class="section">
+        <div class="label-caps">Timeline · how each step is linked to this lead</div>
+        <div id="dTrace">${stateLoading(3)}</div>
+      </div>
+      <div class="section">
+        <div class="label-caps">Owner history</div>
+        <div id="dOwners">${stateLoading(2)}</div>
+      </div>
     </div>
     <div class="drawer-foot foot-actions">
       <button class="btn" id="dWhats"><span class="material-symbols-outlined">chat</span>Open conversation</button>
@@ -333,6 +341,11 @@ async function leadDrawer(lead, opts = {}) {
      invisible — which is the correct outcome for a superseded load. */
   const vipBox = $('dVip');
   const timelineBox = $('dTimeline');
+  /* Started now and not awaited: neither read depends on the identity work
+     below, and neither must hold up the Activity panel a rep reads first. Same
+     captured-node rule as the two above. */
+  traceSection($('dTrace'), lead);
+  ownerSection($('dOwners'), lead);
 
   /* A real email address, as opposed to whatever `leads.email` happens to hold.
      Live on 1 Sep 2026 lead 34's email column contains
@@ -560,6 +573,110 @@ async function leadDrawer(lead, opts = {}) {
        <div>${esc(ident.ambiguity.map(a => a.message).join(' '))}</div></div>`);
     }
   }
+}
+
+/* ── Timeline: rpc/nexus_lead_trace ──────────────────────────────────────────
+   Added 7 Oct 2026. The database's own hop-by-hop account of one lead, and the
+   reason it sits beside Activity rather than replacing it: Activity matches on
+   every key this lead is filed under (lib/identity.js), while the trace matches
+   ONLY the way the schema can link — the lead row by primary key, its arrival
+   by foreign key, and messages and the audit trail by an EMAIL STRING. The two
+   answer different questions and both are true.
+
+   `link_confidence` is printed on every row because it is the point: a hop
+   linked by FOREIGN_KEY and one linked by EMAIL_STRING_MATCH are not equally
+   strong, and NOT_LINKABLE is the honest answer for a phone-only lead — it is
+   rendered as "cannot be attached", never as "nothing happened". The caveat is
+   the function's own sentence and is shown verbatim. Returns zero rows for a
+   lead outside the caller's dealership, which is said as such. */
+const LINK_TONE = {
+  PRIMARY_KEY: 'ok', FOREIGN_KEY: 'ok', EMAIL_STRING_MATCH: 'warm', NOT_LINKABLE: 'hot', NO_ROWS: 'unknown',
+};
+const LINK_WORDS = {
+  PRIMARY_KEY: 'linked by the lead id',
+  FOREIGN_KEY: 'linked by a key',
+  EMAIL_STRING_MATCH: 'matched on an email string only',
+  NOT_LINKABLE: 'cannot be attached to this lead',
+  NO_ROWS: 'nothing linked',
+};
+const TRACE_SHOWN = 40;
+
+async function traceSection(box, lead) {
+  if (!box) return;
+  let rows;
+  try {
+    rows = await db(`rpc/nexus_lead_trace?p_lead_id=${encodeURIComponent(lead.id)}`) || [];
+  } catch (e) {
+    box.innerHTML = stateError('this lead’s timeline', e);
+    return;
+  }
+  if (!rows.length) {
+    box.innerHTML = stateEmpty('No timeline came back for this lead',
+      'The trace returns nothing for a lead outside your dealership, or one that no longer exists. It is not evidence that nothing happened to this customer.',
+      'timeline');
+    return;
+  }
+  const notLinkable = rows.filter(r => String(r.link_confidence || '').toUpperCase() === 'NOT_LINKABLE');
+  const shown = rows.slice(0, TRACE_SHOWN);
+  box.innerHTML = (notLinkable.length
+    ? `<div class="banner warm banner-flush"><span class="material-symbols-outlined">link_off</span>
+       <div>${notLinkable.length} ${notLinkable.length === 1 ? 'part' : 'parts'} of this lead’s history cannot be attached to it,
+       because the only link those records carry is an email address and this lead has none. That is a limit of how
+       the records are stored, not a sign that nothing was sent or done.</div></div>`
+    : '')
+    + `<div class="timeline">${shown.map(r => {
+      const conf = String(r.link_confidence || '').toUpperCase();
+      const t = LINK_TONE[conf] || 'unknown';
+      return `<div class="tl-item">
+        <span class="tl-dot" style="background:var(--${esc(t)})"></span>
+        <div class="tl-body">
+          <div class="tl-meta"><span class="chip">${esc(String(r.hop || 'step'))}</span>
+            <span class="t-${esc(t)}" title="${esc(String(r.linked_by || ''))}">${esc(LINK_WORDS[conf] || conf || 'link not stated')}</span>
+            ${r.occurred_at ? esc(dubaiStamp(r.occurred_at)) : '<span class="t-muted">no time recorded</span>'}</div>
+          <div class="tl-text">${esc(maskText(String(r.summary || '')))}</div>
+          ${r.caveat ? `<div class="cell-sub cell-sub-wrap">${esc(maskText(String(r.caveat)))}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('')}</div>`
+    + (rows.length > shown.length
+      ? `<div class="cell-sub">Showing the first ${shown.length} of ${rows.length} steps.</div>`
+      : '');
+}
+
+/* ── Owner history: lead_owner_events ────────────────────────────────────────
+   Read only. Written by a trigger on public.leads for every writer, so it is
+   the one place "who reassigned this lead, and why" has an answer — but only
+   from 7 Sep 2026: earlier changes were never recorded and cannot be
+   reconstructed, so an empty list says exactly that rather than "never moved".
+   `authenticated` holds SELECT on it behind a tenant-scoped policy. */
+async function ownerSection(box, lead) {
+  if (!box) return;
+  let rows;
+  try {
+    rows = await db('lead_owner_events?select=at,event,actor_authority,from_name,to_name,reason'
+      + `&lead_id=eq.${encodeURIComponent(lead.id)}&order=at.desc&limit=50`) || [];
+  } catch (e) {
+    box.innerHTML = stateError('this lead’s owner history', e);
+    return;
+  }
+  if (!rows.length) {
+    box.innerHTML = stateEmpty('No ownership change is recorded',
+      'Owner changes are recorded from 7 September 2026 onwards. A lead reassigned before then, or never reassigned, shows nothing here — the two cannot be told apart.',
+      'manage_accounts');
+    return;
+  }
+  box.innerHTML = `<div class="timeline">${rows.map(r => `
+    <div class="tl-item">
+      <span class="tl-dot"></span>
+      <div class="tl-body">
+        <div class="tl-meta"><span class="chip">${esc(String(r.event || 'change'))}</span>
+          ${esc(dubaiStamp(r.at))}${r.actor_authority ? ` · ${esc(String(r.actor_authority))}` : ''}</div>
+        <div class="tl-text">${esc(String(r.from_name || 'Nobody'))} → ${esc(String(r.to_name || 'Nobody'))}</div>
+        <div class="cell-sub cell-sub-wrap">${r.reason
+          ? esc(String(r.reason))
+          : 'No reason was given with this change.'}</div>
+      </div>
+    </div>`).join('')}</div>`;
 }
 
 /* NX1005 -- "Book visit" from the lead drawer ──────────────────────────────

@@ -276,6 +276,19 @@ async function failure(res, label) {
     status: res.status, code,
     technical: `${label} — ${res.status} ${res.statusText}${body ? ' — ' + body.slice(0, 400) : ''}`,
   });
+  /* NX001 is this database's own refusal SQLSTATE: MESSAGE, DETAIL and HINT
+     were written for the person pressing the button (public.policy_refuse() and
+     the functions modelled on it). Carried whole on `.refusal` because
+     `.technical` is cut at 400 characters and the policy refusals are longer
+     than that, so parsing them back out of it fails exactly on the refusals
+     with the most to say. Nothing else from the body is carried, and a screen
+     opts in by reading `.refusal`; `.message` stays the generic clause. */
+  if (code === 'NX001') {
+    try {
+      const j = JSON.parse(body);
+      err.refusal = { message: String(j.message || ''), detail: String(j.details || ''), hint: String(j.hint || '') };
+    } catch { /* an unparseable body carries no refusal to show */ }
+  }
   logError(label, err);
   return err;
 }

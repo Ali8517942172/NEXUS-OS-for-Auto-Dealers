@@ -797,6 +797,9 @@ SCREENS.finance = async host => {
 
   /* ── Screen state ──────────────────────────────────────────────────────── */
   let rows = [], quotesErr = null;      // finance_quotes
+  /* v_fin_gate_quote_evidence, keyed by quote id. null = the read failed, so
+     the gate column says "not read" rather than passing or failing a quote. */
+  let gateById = null, gateErr = null;
   let leads = null, leadsErr = null;    // null = the read failed, not "no leads"
   let leadsCapped = false;              // the read hit LEAD_LIMIT, so "no such lead" is not knowable
   let attn = null, attnErr = null;      // v_needs_attention rows for this screen
@@ -1058,7 +1061,18 @@ SCREENS.finance = async host => {
      side rather than `aed`, for the same reason aedRange gives: "AED" twice in
      one cell reads as two separate prices. */
   const monthlyRange = b => (b.monthlyRanged ? `${aed(b.monthly)} – ${num(b.monthlyHigh)}` : aed(b.monthly));
+  /* The gate's refusal, from v_fin_gate_quote_evidence. Only an explicit
+     is_evidenced = false withholds a figure here; a gate that was not read or
+     returned no row leaves the cell as it was, with the Evidence gate column
+     saying so beside it. */
+  const gateRefuses = q => {
+    const g = gateById && gateById.get(String(q.id));
+    return g && g.is_evidenced === false ? g : null;
+  };
+  const withheldByGate = g => `<span class="t-hot" title="${esc(`${str(g.evidence_note) || 'Not evidenced.'} A figure with no calculation_id and execution_id behind it may not be shown.`)}">not evidenced</span>`;
   const monthlyCell = q => {
+    const gr = gateRefuses(q);
+    if (gr) return withheldByGate(gr);
     const b = basisOf(q);
     const t = instalmentBasis(b);
     if (b.state !== 'priced') return absent(b.state, t);
@@ -1220,6 +1234,8 @@ SCREENS.finance = async host => {
          renamed, so it is read under the old name and shown under the new one. */
       { label: 'Credit band', render: r => (r.finance_tier ? `<span class="chip">${esc(r.finance_tier)}</span>` : '<span class="t-muted">—</span>') },
       { label: 'APR reducing', align: 'r', render: r => {
+        const gr = gateRefuses(r);
+        if (gr) return withheldByGate(gr);
         const rate = aprOf(r);
         /* The rate is the figure every other figure on this row rests on, so
            its absence is named rather than dashed. `indicative_apr_pct` is NOT
@@ -1238,6 +1254,21 @@ SCREENS.finance = async host => {
           : `<span class="t-warm" title="${esc('Lower bound only. The finance quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; this row carries no disclaimer recording the high end, so the range it was quoted at cannot be recovered. Do not read this figure out as the rate.')}">${pct(rate.low)}+</span>`;
       } },
       { label: 'Monthly', align: 'r', render: monthlyCell },
+      /* The database's verdict, read from v_fin_gate_quote_evidence — not a
+         second copy of the rule. Evidenced means the row carries both a
+         calculation_id and an execution_id; anything else is a figure that may
+         not be quoted, and the view's own note says why. */
+      { label: 'Evidence gate', render: r => {
+        if (!gateById) {
+          return `<span class="t-muted" title="${esc(`The evidence gate could not be read (${gateErr && gateErr.message ? gateErr.message : 'no reason given'}), so this quote is neither passed nor failed here.`)}">not read</span>`;
+        }
+        const g = gateById.get(String(r.id));
+        if (!g) return '<span class="t-muted" title="The evidence gate returned no row for this quote, so it is neither passed nor failed here.">no verdict</span>';
+        return g.is_evidenced === true
+          ? `<span class="pill ok" title="${esc(str(g.evidence_note) || 'evidenced')}"><span class="dot"></span>Evidenced</span>`
+          : `<span class="pill hot" title="${esc(str(g.evidence_note) || 'Not evidenced.')}"><span class="dot"></span>Not evidenced</span>`
+            + `<div class="ds-cell-sub" style="white-space:normal">${esc(str(g.evidence_note) || 'The gate gives no reason.')} Do not quote this figure.</div>`;
+      } },
       { label: 'Quoted by', render: r =>
         `${esc(r.quoted_by || '—')}<div class="ds-cell-sub">${esc(r.source || '')}</div>` },
     ], shown, {
@@ -2094,10 +2125,20 @@ SCREENS.finance = async host => {
      not take the quote table down, and a failed attention read must not take
      the checks down — but neither is allowed to look like an answer. */
   async function loadQuotes() {
-    try {
-      rows = await db(`finance_quotes?select=*&order=created_at.desc&limit=${HISTORY_LIMIT}`);
-      quotesErr = null;
-    } catch (e) { rows = []; quotesErr = e; }
+    /* The evidence gate is read from the database's own view, alongside the
+       rows, rather than re-derived here. Added 7 Oct 2026: the view existed
+       with a COMMENT saying screens must render a figure without evidence as
+       unavailable, and this screen re-implemented the rule instead of reading
+       it. A failed gate read does not take the history down. */
+    const [qR, gR] = await Promise.allSettled([
+      db(`finance_quotes?select=*&order=created_at.desc&limit=${HISTORY_LIMIT}`),
+      db(`v_fin_gate_quote_evidence?select=id,is_evidenced,evidence_note,has_instalment&order=created_at.desc&limit=${HISTORY_LIMIT}`),
+    ]);
+    if (qR.status === 'fulfilled') { rows = qR.value; quotesErr = null; } else { rows = []; quotesErr = qR.reason; }
+    if (gR.status === 'fulfilled') {
+      gateById = new Map((gR.value || []).map(g => [String(g.id), g]));
+      gateErr = null;
+    } else { gateById = null; gateErr = gR.reason; }
     cols2 = { valid: pickCol(rows, VALID_COLS) };
     basisCache.clear();
   }
@@ -2388,6 +2429,15 @@ SCREENS.finance = async host => {
           <span class="material-symbols-outlined">close</span></button>
       </div>
       <div class="drawer-body">
+        ${(() => {
+          /* The database's evidence gate for this row (v_fin_gate_quote_evidence). */
+          const g = gateById && gateById.get(String(q.id));
+          if (!gateById) return `<div class="section"><div class="banner warm"><span class="material-symbols-outlined">help</span><div>The evidence gate could not be read, so whether this quote's figures may be repeated to a customer is not stated here.</div></div></div>`;
+          if (!g) return '';
+          return g.is_evidenced === true
+            ? `<div class="section"><div class="banner info"><span class="material-symbols-outlined">verified</span><div>Evidence gate: evidenced — this row carries a calculation and a workflow execution behind its figures.</div></div></div>`
+            : `<div class="section"><div class="banner hot"><span class="material-symbols-outlined">block</span><div><strong>Evidence gate: not evidenced.</strong> ${esc(str(g.evidence_note) || 'The gate gives no reason.')} No rate or payment on this quote may be repeated to a customer.</div></div></div>`;
+        })()}
         <div class="section">
           <div class="label-caps">Quote</div>
           <dl class="kv">
