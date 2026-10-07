@@ -117,14 +117,12 @@
    lead; 0 of 9 Deal Rescue prerequisites met; 0 comparables of accepted match
    quality on any unit. Two leak lines. That is the correct output. */
 
-import { db, dbWrite, onIdentityChange } from '../lib/data.js';
+import { ME, db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
 import { displayName, isHiddenLead } from '../lib/privacy.js';
-import { el } from '../lib/dom.js';
-import { UNKNOWN_WHY, aed, ago, dubaiStamp, esc, n0, num, tone } from '../lib/format.js';
+import { UNKNOWN_WHY, aed, ago, dubaiDate, dubaiStamp, esc, n0, num, tone } from '../lib/format.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { panel } from '../lib/ui.js';
 /* The three words a headline number may be labelled with, and the sentence that
    refuses a nought in place of a measurement. Owned by lib/vocabulary.js for
    the same reason ATTRIBUTION_CONFIDENCE is: a second copy of "confirmed" is a
@@ -133,36 +131,31 @@ import { TILE_PROVENANCE, UNKNOWN_IS_NOT_ZERO } from '../lib/vocabulary.js';
 /* The six setup steps, read by lib/setup.js and never re-derived here. This
    screen renders ONE line about them and owns none of the reasoning. */
 import { readSetup, resetSetupReads } from '../lib/setup.js';
-/* ── The design system, adopted here first ────────────────────────────────
-   6 Sep 2026. This screen is the app's default landing screen, so it is what a
-   buyer sees before anything else, and it is the first one converted to
-   lib/design-system.css + lib/design-system.js.
+/* ── The Google Stitch designs, adopted 7 Oct 2026 ─────────────────────────
+   design/stitch/today-s-money-leaks-landing-command-center--30144a.html is the
+   visual reference (header, filter pills, leak cards, outcome ledger) and
+   --012119 contributes the setup banner, the "Right now" strip, "Waiting on
+   you" and the right-hand rail of registers. This replaced the 6 Sep design-
+   system pass (lib/design-system.js), and the constraint that pass was written
+   against still binds, word for word:
 
-   NOT ONE DATA READ, QUERY, THRESHOLD OR DERIVATION CHANGED IN THAT PASS.
-   buildLeaks(), buildLeadLeaks(), measuredClear(), notMeasured(), makeLeak()
-   and the MONEY_WORD gate are byte-for-byte what they were; the eight reads are
-   the same eight columns lists; the ranking, the totals and every branch that
-   decides what may be said are untouched. What changed is how the result is
-   painted.
+     NOT ONE DATA READ, QUERY, THRESHOLD OR DERIVATION CHANGED. buildLeaks(),
+     buildLeadLeaks(), measuredClear(), notMeasured(), makeLeak() and the
+     MONEY_WORD gate are what they were; what changed is how the result is
+     painted. Three additions, each named where it lives: the outcome ledger
+     (rows the action queues already returned, filtered to today), three
+     decision-time columns on the recovery action read so the ledger can say
+     WHEN, and buildLeadLeaks() now masks the customer name through
+     lib/privacy.js — it used to put lead_name in the line verbatim.
 
-   THE CONSTRAINT THE CONVERSION WAS WRITTEN AGAINST, stated here because it is
-   the thing a later pass is most likely to undo:
-
-     The long sentences on this screen are not filler. "An unread check is not a
-     clear one", "unknown is not zero", "this is not an all-clear" — each one is
-     here because this codebase has shipped the opposite, and the file header
-     above names six places it did. They may be DEMOTED — terse on the surface,
-     one click from the full sentence — and they may NOT be deleted.
-
-     Every one of them is now inside a <details> built by dsNote(), which means
-     it is in the DOM whether it is open or closed: browser find reaches it,
-     copy-paste reaches it, a screen reader reaches it, and Chromium expands the
-     row when find-in-page matches inside it. None of that is true of a
-     `title=` tooltip, which is why nothing on this screen uses one to carry a
-     caveat. If you are about to replace a dsNote with a tooltip, read this
-     paragraph again. */
-import { dsCallout, dsCell, dsChip, dsDetailGrid, dsEmpty, dsEvidence, dsIntent,
-         dsNote, dsRowList, dsStat, dsStatRow, dsTable, icon } from '../lib/design-system.js';
+     The long sentences on this screen are not filler. They may be DEMOTED —
+     terse on the surface, one click from the full sentence — and they may NOT
+     be deleted. Every one of them is inside a <details> built by note() below,
+     which keeps it in the DOM open or closed: browser find, copy-paste and a
+     screen reader all reach it. Nothing on this screen uses a `title=` tooltip
+     to carry a caveat. Stitch's own "How is this computed?" popover is drawn as
+     exactly such a <details>, for that reason. */
+import { BTN, errorState, skeleton, tempChip, trustFooter } from '../lib/stitch-ui.js';
 /* The exposure arithmetic and the sentence that discloses its denominator.
    Imported from screens/overview.js, which owns them, for the same reason
    overview.js imports recoveryEvidence() from screens/actions.js: a second
@@ -176,12 +169,10 @@ import { recoveryEvidence, unsupportedRecoverySentence } from './actions.js';
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot   = h => `<div class="ds-cell-sub ds-t-danger">${h}</div>`;
-const bold  = h => `<strong>${h}</strong>`;
+const muted = h => `<div class="font-body-sm text-[12px] text-on-surface-variant">${h}</div>`;
+const hot   = h => `<div class="font-body-sm text-[12px] text-error font-medium">${h}</div>`;
 const para  = h => `<p>${h}</p>`;
-const mono  = v => `<span class="ds-mono">${esc(str(v))}</span>`;
-const list  = arr => `<ul>${arr.filter(Boolean).map(x => `<li>${x}</li>`).join('')}</ul>`;
+const mono  = v => `<span class="font-label-numeric-sm text-[11px] text-outline">${esc(str(v))}</span>`;
 /* The first sentence of a paragraph, for the surface, with the whole paragraph
    kept for the note. Splitting on the sentence boundary rather than truncating
    at a character count means the terse form is always a complete thought and
@@ -191,15 +182,23 @@ const firstSentence = t => {
   const m = /^[\s\S]*?[.!?](?=\s|$)/.exec(s0);
   return m ? m[0] : s0;
 };
+/* THE demotion affordance. Stitch draws "How is this computed?" as an underlined
+   link opening a popover; here it is a <details>, so the sentence it holds is in
+   the DOM whether open or closed (see the import note above). `body` is HTML,
+   `label` is TEXT. */
+const note = (body, label = 'Why') => (body
+  ? `<details class="mt-1"><summary class="cursor-pointer list-none inline-flex items-center gap-0.5 font-body-sm text-[11px] text-primary font-medium underline">${esc(label)}<span class="material-symbols-outlined text-xs">help</span></summary>`
+    + `<div class="mt-1.5 p-space-sm bg-surface-container-lowest border border-outline-variant/40 rounded-lg font-body-sm text-[12px] text-on-surface-variant leading-relaxed space-y-1.5">${body}</div></details>`
+  : '');
 /* Terse on the surface, the full text one click away. The note is omitted when
    the full text IS the first sentence, because an affordance that opens onto
    the words already on screen teaches the reader that these affordances are
    decoration — and the next one will hold something they needed. */
-const said = (t, a11y = 'Read this in full') => {
+const said = (t, label = 'Read in full') => {
   const full = str(t);
   if (!full) return '';
   const head = firstSentence(full);
-  return dsCell(esc(head), head === full ? '' : para(esc(full)), a11y);
+  return `<span>${esc(head)}</span>${head === full ? '' : note(para(esc(full)), label)}`;
 };
 
 /* A read that failed, said where the figure would have been. Never a bare dash:
@@ -245,15 +244,15 @@ const resetReads = () => { MEMOS.forEach(reset => reset()); };
 onIdentityChange(resetReads);
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
-const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
+/* A route button. A screen the navigation offers and this bundle does not
+   register says so in its own words rather than going nowhere. */
+const LINK = {
+  primary:   'px-4 py-2 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold flex items-center gap-2 shadow-sm transition-all',
+  secondary: 'px-3 py-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary font-body-sm text-body-sm font-semibold flex items-center gap-1.5 transition-all',
 };
+const linkBtn = (id, label, kind = 'secondary') => (SCREENS[id]
+  ? `<button type="button" class="${LINK[kind] || LINK.secondary}" data-go="${esc(id)}"><span class="material-symbols-outlined text-base">open_in_new</span><span>${esc(label)}</span></button>`
+  : `<button type="button" class="${BTN.secondary}" disabled>${esc(label)} — not in this build</button>`);
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE FOUR MONEY WORDS, AND THE GATE ON EACH
@@ -302,34 +301,73 @@ const MONEY_WORD = {
    number the figure slot carries WORDS — "Not computable", "No figure" — set at
    a smaller size than a real figure, so nothing in that column can be misread
    as a quantity the engine produced. */
+/* ── Chips and callouts, from complete class strings ───────────────────────
+   Six intents, one map each, copied from the Stitch exports' own chips (the
+   #FDECEA/#FEF3E2/#E8F1FB/#E6F4EF set the money-leaks and leads exports use).
+   `unknown` is dashed and grey on purpose: a thing nobody measured must never
+   borrow a healthy colour. A tone this file does not know is NEUTRAL. */
+const CHIP_CLS = {
+  danger:  'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#FDECEA] text-[#C8321F]',
+  warning: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#FEF3E2] text-[#96570A]',
+  info:    'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#E8F1FB] text-[#2563A8]',
+  success: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#E6F4EF] text-[#157A5B]',
+  neutral: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-surface-container-high text-on-surface-variant',
+  unknown: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit border border-dashed border-outline text-outline',
+};
+const TONE_INTENT = { hot: 'danger', warm: 'warning', cold: 'info', ok: 'success', won: 'success', open: 'info', dead: 'neutral', unknown: 'unknown' };
+const toIntent = t => TONE_INTENT[str(t).toLowerCase()] || 'neutral';
+const chip = (label, intent = 'neutral', iconName = '') =>
+  `<span class="${CHIP_CLS[intent] || CHIP_CLS.neutral}">${iconName ? `<span class="material-symbols-outlined text-xs">${esc(iconName)}</span>` : ''}${esc(label)}</span>`;
+const CALLOUT_CLS = {
+  danger:  'p-space-md rounded-lg bg-[#FDECEA]/60 border border-red-200 flex items-start gap-space-sm',
+  warning: 'p-space-md rounded-lg bg-[#FEF3E2]/60 border border-[#F3DFBD] flex items-start gap-space-sm',
+  info:    'p-space-md rounded-lg bg-surface-container-high flex items-start gap-space-sm',
+  neutral: 'p-space-md rounded-lg bg-surface-container-low flex items-start gap-space-sm',
+  unknown: 'p-space-md rounded-lg border border-dashed border-outline-variant bg-surface-container-lowest flex items-start gap-space-sm',
+  success: 'p-space-md rounded-lg bg-[#E6F4EF]/60 border border-emerald-200 flex items-start gap-space-sm',
+};
+const CALLOUT_ICON = {
+  danger: 'text-error', warning: 'text-[#96570A]', info: 'text-primary', neutral: 'text-secondary',
+  unknown: 'text-outline', success: 'text-[#157A5B]',
+};
+/* `lede` is TEXT; `body` and `noteHtml` are HTML. */
+const callout = ({ intent = 'info', iconName = 'info', lede = '', body = '', noteHtml = '', noteLabel = 'Read in full' } = {}) =>
+  `<div class="${CALLOUT_CLS[intent] || CALLOUT_CLS.info}"><span class="material-symbols-outlined text-xl mt-0.5 ${CALLOUT_ICON[intent] || CALLOUT_ICON.info}">${esc(iconName)}</span>`
+  + `<div class="flex flex-col space-y-0.5 min-w-0 font-body-sm text-body-sm text-on-surface-variant">`
+  + (lede ? `<span class="font-body-md text-body-md font-bold text-on-surface">${esc(lede)}</span>` : '')
+  + body + note(noteHtml, noteLabel) + '</div></div>';
+
+/* The size of a leak, in three pieces. `figure` is never a bare dash and never
+   a zero: where the gate refuses a number the slot carries WORDS, at a smaller
+   size, so nothing there can be misread as a quantity the engine produced. */
 const sizeParts = size => {
   const w = MONEY_WORD[up(size && size.word)];
   if (!w) {
     return {
-      figure: '<span class="ds-t-danger">Unsized</span>', words: true, chip: '',
+      figure: '<span class="font-headline-md text-headline-md font-semibold text-error">Unsized</span>', words: true, chip: '',
       note: hot(`This line claims a size of "${esc(str(size && size.word)) || 'nothing'}", which is not one of the `
         + 'four money words this screen is allowed to use. No figure is shown.'),
     };
   }
   if (up(size.word) === 'NOT_COMPUTABLE') {
     return {
-      figure: '<span class="ds-t-unknown">Not computable</span>', words: true,
-      chip: dsChip('not computable', 'unknown'),
+      figure: '<span class="font-headline-md text-headline-md font-semibold text-outline">Impact not computable</span>', words: true,
+      chip: chip('not computable', 'unknown'),
       note: muted(esc(str(size.basis)) || 'The engine records no reason, which is itself a gap.'),
     };
   }
   const amount = n0(size.amount);
   if (amount == null) {
     return {
-      figure: '<span class="ds-t-danger">No figure</span>', words: true,
-      chip: dsChip(w.label, dsIntent(w.tone)),
+      figure: '<span class="font-headline-md text-headline-md font-semibold text-error">No figure</span>', words: true,
+      chip: chip(w.label, toIntent(w.tone)),
       note: hot(`Sized as ${esc(w.label)} and no figure came with it, so nothing is shown. A money word without a `
         + 'number is a claim this screen cannot make.'),
     };
   }
   return {
-    figure: aed(amount), words: false,
-    chip: dsChip(w.label, dsIntent(w.tone)),
+    figure: `<span class="font-label-numeric-lg text-label-numeric-lg font-bold text-error">${esc(aed(amount))}</span>`, words: false,
+    chip: chip(w.label, toIntent(w.tone)),
     note: muted(esc(str(size.basis)) || esc(w.gloss)),
   };
 };
@@ -379,11 +417,11 @@ function makeLeak(o) {
    would sit among lines that ARE accounted for and be read as one of them. The
    missing parts are named on the surface — they are the whole point — and the
    instruction to report it is one click away. */
-const leakFault = leak => dsCallout({
-  intent: 'danger', name: 'danger',
+const leakFault = leak => callout({
+  intent: 'danger', iconName: 'report',
   lede: 'A leak line was built without everything a leak line needs.',
   body: `<span>Missing: ${esc(leak.missing.join('; '))}.</span>`,
-  note: para('A leak line was built without everything a leak line needs, and it is shown as a fault rather than as a row.')
+  noteHtml: para('A leak line was built without everything a leak line needs, and it is shown as a fault rather than as a row.')
     + para(`Missing: ${esc(leak.missing.join('; '))}.`)
     + para(`It concerns ${esc(str(leak.what) || 'something this screen could not name')}. Report this — a leak `
       + 'this dashboard cannot fully account for must not be quietly tidied into a table.'),
@@ -463,7 +501,10 @@ const readAllLeads = shared(() => db('leads?select=id,name,status,ai_score,score
 const readActions = shared(() => db('lead_recovery_actions?select=id,lead_id,recommendation,status,engine_state,'
   + 'engine_reason,engine_confidence,engine_confidence_basis,engine_risk_level,engine_risk_basis,proposed_at,'
   + 'proposed_source,outcome_state,outcome_purchase_id,attribution_basis,recovered_value_aed,'
-  + 'recovered_value_basis&order=proposed_at.desc&limit=500'));
+  /* decided_at / executed_at / outcome_recorded_at added 7 Oct 2026 for the
+     outcome ledger, which lists what was recorded TODAY and has to be able to
+     say when. All three are columns of the table (catalogue read that day). */
+  + 'recovered_value_basis,decided_at,executed_at,outcome_recorded_at&order=proposed_at.desc&limit=500'));
 
 /* The ONLY place in this database where a message's direction is recorded
    against a thread. `public.conversation` has no direction column at all and
@@ -492,17 +533,44 @@ const readTrail = shared(() => db('journey_step?select=correlation_id,step,statu
    One way to build an owner tile, for the same reason makeLeak() is the only
    way to build a leak line: the check has to be somewhere a caller cannot
    forget it. */
-const PROV_ICON = { CONFIRMED: 'check', ESTIMATED: 'alert', UNKNOWN: 'question' };
-const provChip = key => {
-  const p = TILE_PROVENANCE[key];
-  return dsChip(p.label, dsIntent(p.tone), { name: PROV_ICON[key], title: p.blurb });
+const PROV_ICON = { CONFIRMED: 'check', ESTIMATED: 'warning', UNKNOWN: 'help' };
+const PROV_INTENT = { CONFIRMED: 'success', ESTIMATED: 'warning', UNKNOWN: 'unknown' };
+const provChip = key => chip(TILE_PROVENANCE[key].label, PROV_INTENT[key] || 'unknown', PROV_ICON[key]);
+
+/* The "Right now" tile of today-s-money-leaks…--012119: uppercase label with a
+   status dot, the figure, one line under it, an icon box on the right. Five
+   intents, each a COMPLETE class set. The provenance chip and the note are the
+   two things this screen adds to the export's tile, and neither is optional. */
+const TILE = {
+  danger:  { head: 'text-[11px] font-table-header uppercase tracking-wider text-error flex items-center gap-1.5', dot: 'w-1.5 h-1.5 rounded-full bg-error', val: 'font-label-numeric-lg text-[28px] font-bold text-error leading-none', box: 'w-10 h-10 rounded-[6px] bg-[#FDECEA] flex items-center justify-center text-error shrink-0' },
+  warning: { head: 'text-[11px] font-table-header uppercase tracking-wider text-[#96570A] flex items-center gap-1.5', dot: 'w-1.5 h-1.5 rounded-full bg-[#96570A]', val: 'font-label-numeric-lg text-[28px] font-bold text-on-surface leading-none', box: 'w-10 h-10 rounded-[6px] bg-[#FEF3E2] flex items-center justify-center text-[#96570A] shrink-0' },
+  success: { head: 'text-[11px] font-table-header uppercase tracking-wider text-secondary flex items-center gap-1.5', dot: 'w-1.5 h-1.5 rounded-full bg-[#157A5B]', val: 'font-label-numeric-lg text-[28px] font-bold text-on-surface leading-none', box: 'w-10 h-10 rounded-[6px] bg-[#E6F4EF] flex items-center justify-center text-[#157A5B] shrink-0' },
+  neutral: { head: 'text-[11px] font-table-header uppercase tracking-wider text-secondary flex items-center gap-1.5', dot: 'w-1.5 h-1.5 rounded-full bg-secondary', val: 'font-label-numeric-lg text-[28px] font-bold text-on-surface leading-none', box: 'w-10 h-10 rounded-[6px] bg-surface-container-low flex items-center justify-center text-secondary shrink-0' },
+  unknown: { head: 'text-[11px] font-table-header uppercase tracking-wider text-secondary flex items-center gap-1.5', dot: 'w-1.5 h-1.5 rounded-full border border-outline', val: 'font-headline-md text-headline-md font-semibold text-outline leading-none', box: 'w-10 h-10 rounded-[6px] border border-dashed border-outline-variant flex items-center justify-center text-outline shrink-0' },
+};
+const WORDS_VAL = {
+  danger: 'font-headline-md text-headline-md font-semibold text-error leading-none',
+  unknown: 'font-headline-md text-headline-md font-semibold text-outline leading-none',
+};
+const statTile = ({ label, value, words = false, intent = 'neutral', iconName = 'info', meta = '', noteHtml = '' }) => {
+  const t = TILE[intent] || TILE.neutral;
+  const valCls = words ? (WORDS_VAL[intent] || WORDS_VAL.unknown) : t.val;
+  return `<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex items-start justify-between gap-3">
+    <div class="space-y-1.5 min-w-0">
+      <div class="${t.head}"><span class="${t.dot}"></span>${esc(label)}</div>
+      <div class="${valCls}">${esc(value)}</div>
+      ${meta ? `<div class="text-[11px] font-body-sm text-secondary flex flex-wrap items-center gap-1.5">${meta}</div>` : ''}
+      ${note(noteHtml, 'How this is counted')}
+    </div>
+    <div class="${t.box}"><span class="material-symbols-outlined text-[22px]">${esc(iconName)}</span></div>
+  </div>`;
 };
 
-function ownerTile({ label, prov, count, phrase = '', meta = '', note = '', intent = '' }) {
+function ownerTile({ label, prov, count, phrase = '', meta = '', note: noteHtml = '', intent = '', iconName = 'info' }) {
   const p = TILE_PROVENANCE[prov];
   if (!p) {
-    return dsStat({ label, value: 'Unlabelled', words: true, intent: 'danger',
-      note: para(`This tile was built claiming a provenance of "${esc(str(prov)) || 'nothing'}", which is not one of `
+    return statTile({ label, value: 'Unlabelled', words: true, intent: 'danger', iconName,
+      noteHtml: para(`This tile was built claiming a provenance of "${esc(str(prov)) || 'nothing'}", which is not one of `
         + 'the three words a tile is allowed to carry. No figure is shown: a number nobody can account for is worse '
         + 'than no number.') });
   }
@@ -511,19 +579,19 @@ function ownerTile({ label, prov, count, phrase = '', meta = '', note = '', inte
      value slot gets WORDS at heading size, exactly as the leak strip does for a
      read that failed, so nothing in it can be misread as a quantity. */
   if (prov === 'UNKNOWN') {
-    return dsStat({ label, value: phrase || 'Not known', words: true, intent: 'unknown',
+    return statTile({ label, value: phrase || 'Not known', words: true, intent: 'unknown', iconName,
       meta: provChip('UNKNOWN') + (meta ? `<span>${meta}</span>` : ''),
-      note: para(esc(UNKNOWN_IS_NOT_ZERO)) + note + para(esc(p.blurb)) });
+      noteHtml: para(esc(UNKNOWN_IS_NOT_ZERO)) + noteHtml + para(esc(p.blurb)) });
   }
   const n = n0(count);
   if (n == null) {
-    return dsStat({ label, value: 'No figure', words: true, intent: 'danger', meta: provChip(prov),
-      note: para(`This tile is labelled ${esc(p.label.toLowerCase())} and no number came with it, so nothing is `
-        + 'shown. A provenance without a figure is a claim this screen cannot make.') + note });
+    return statTile({ label, value: 'No figure', words: true, intent: 'danger', iconName, meta: provChip(prov),
+      noteHtml: para(`This tile is labelled ${esc(p.label.toLowerCase())} and no number came with it, so nothing is `
+        + 'shown. A provenance without a figure is a claim this screen cannot make.') + noteHtml });
   }
-  return dsStat({ label, value: num(n), intent: intent || (n ? 'warning' : 'success'),
+  return statTile({ label, value: num(n), intent: intent || (n ? 'warning' : 'success'), iconName,
     meta: provChip(prov) + (meta ? `<span>${meta}</span>` : ''),
-    note: para(esc(p.blurb)) + note });
+    noteHtml: para(esc(p.blurb)) + noteHtml });
 }
 
 /* ── The Action Center list ────────────────────────────────────────────────
@@ -553,8 +621,10 @@ const recLabel = v => REC_LABEL[up(v)] || null;
    a neutral label, and records nothing. */
 const actionButton = a => {
   const label = recLabel(a.recommendation);
-  return `<button class="btn sm primary" type="button" data-contact="${esc(str(a.id))}" data-lead="${esc(str(a.lead_id))}"`
-    + ` data-rec="${esc(label || '')}" title="${esc(label
+  /* Plain text inside: wireContact() swaps textContent while it works, and an
+     icon ligature in here would come back as the word "check". */
+  return `<button class="px-3.5 py-1.5 rounded-[6px] text-[12px] font-semibold bg-primary-container text-white hover:bg-primary transition-colors shadow-sm" type="button" data-contact="${esc(str(a.id))}" data-lead="${esc(str(a.lead_id))}"`
+    + ` data-rec="${esc(label || '')}" aria-label="${esc(label
       ? 'Records that you are acting on this recommendation, then opens the lead with it highlighted.'
       : 'Opens the lead. This recommendation (' + (str(a.recommendation) || 'none') + ') has no wording on this screen, so no decision is recorded.')}">`
     + `${esc(label || 'Open lead')}</button>`;
@@ -910,7 +980,10 @@ function buildLeadLeaks(leads) {
     .filter(l => l.lead_is_open === true && up(l.recommended_action) && up(l.recommended_action) !== 'NO_ACTION')
     .map(l => makeLeak({
       kind: 'LEAD_AT_RISK',
-      what: `${str(l.lead_name) || `Lead #${str(l.lead_id)}`} needs somebody to act`,
+      /* Masked through lib/privacy.js since 7 Oct 2026. This line used to carry
+         lead_name verbatim, which then reached the screen through esc(x.what) —
+         a customer's name the privacy switch could not hide. */
+      what: `${str(l.lead_name) ? displayName(str(l.lead_name), l.lead_id) : `Lead #${str(l.lead_id)}`} needs somebody to act`,
       badge: str(l.risk_level) || 'At risk',
       tone: 'hot',
       why: str(l.action_reason) || 'The engine recommends an action and recorded no reason, which is itself a gap.',
@@ -946,853 +1019,697 @@ SCREENS.moneyleaks = async host => {
   /* Every visit re-reads. See the note on `shared` above for what this is
      repairing and why a stale register here is worse than a slow one. */
   resetReads();
+  const readAt = new Date().toISOString();
 
-  /* ── The design system is scoped to a container THIS SCREEN OWNS ──────────
-     `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto Leads and Inventory and restyle two screens nobody converted.
-     A wrapper cannot leak — go() removes it with the rest of the subtree. */
-  const root = el('div', 'ds-screen');
+  /* ── The layout, painted before anything is read ───────────────────────────
+     One root carrying `nx-stitch` (the scoped reset the Stitch classes were
+     designed against), appended rather than set on `#screen`, so go() removes it
+     with the rest of the subtree. Every slot starts as a skeleton and is filled
+     once ALL the reads below have settled: the sections share rows, and two
+     sections describing the same rows must describe the same moment. */
+  const root = document.createElement('div');
+  root.className = 'nx-stitch flex flex-col gap-space-md';
   host.appendChild(root);
+  const slot = id => `<div data-slot="${id}">${skeleton({ rows: 2 })}</div>`;
+  root.innerHTML = `
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-space-md bg-surface-container-lowest p-space-lg rounded-xl shadow-sm">
+      <div class="flex flex-col space-y-1 min-w-0">
+        <div class="flex items-center gap-space-sm flex-wrap">
+          <h1 class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight">Today's Money Leaks</h1>
+          <span data-slot="count"></span>
+        </div>
+        <p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">Where money is leaking right now, what is behind each line, and what to do about it. A check that came back clear and a check that could not run are kept apart.</p>
+      </div>
+      <div class="flex items-center gap-space-sm bg-surface-container-low px-space-md py-2.5 rounded-lg self-start md:self-auto">
+        <span class="material-symbols-outlined text-primary text-xl">stream</span>
+        <div class="flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-primary"></span>
+            <span class="font-label-numeric-sm text-label-numeric-sm text-on-surface font-semibold">Read on this visit</span>
+            <span class="text-outline text-xs">•</span>
+            <span class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">${esc(dubaiStamp(readAt))}</span>
+          </div>
+          <span class="font-label-numeric-sm text-[11px] text-outline">Re-read every time this screen opens — nothing here is remembered from an earlier visit</span>
+        </div>
+      </div>
+    </div>
+    <div data-slot="setup"></div>
+    ${slot('now')}
+    ${slot('waiting')}
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-space-md items-start">
+      <div class="lg:col-span-8 flex flex-col gap-space-md min-w-0">${slot('leaks')}</div>
+      <div class="lg:col-span-4 flex flex-col gap-space-md min-w-0">${slot('clear')}${slot('notrun')}${slot('alerts')}${slot('words')}</div>
+    </div>
+    ${slot('ledger')}
+    <div data-slot="footer"></div>`;
+  const put = (id, html) => {
+    const n = root.querySelector(`[data-slot="${id}"]`);
+    if (!n) return null;
+    n.innerHTML = html;
+    n.querySelectorAll('[data-go]').forEach(b => { if (!b.disabled) b.addEventListener('click', () => go(b.dataset.go)); });
+    n.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', () => go('moneyleaks')));
+    return n;
+  };
+  /* A section whose renderer throws reports itself and takes nothing else down:
+     a partial read degrades, it does not blank. */
+  const paint = (id, what, fn) => {
+    try { return put(id, fn()); } catch (e) { return put(id, errorState({ what, err: e, retry: 'moneyleaks' })); }
+  };
 
-  /* ────────────────────────────────────────────────────────────────────────
-     The setup banner — above P0, and not one of the numbered registers
-
-     ONE LINE, AT THE TOP, AND ONLY WHILE IT IS TRUE.
-
+  /* ── The setup banner — ONE LINE, AT THE TOP, AND ONLY WHILE IT IS TRUE ──────
      A dealership whose WhatsApp is not connected has no leaks to read, because
      nothing is arriving for anything to leak from — and this screen would
-     report that as a clean morning. So the banner has to be here, above the
-     figures it qualifies.
-
-     What it must NOT be is a takeover. An owner who is mid-setup knows they are
-     mid-setup; what they need is one sentence and a way through to the detail,
-     not a wall in front of the screen they opened. So: one callout, no stat
-     tiles, no step list, and nothing at all once every step is done.
-
-     It is appended BEFORE the panels below so that it holds its place at the
-     top while its own read is in flight, and it removes itself if there is
-     nothing to say — an empty holder would otherwise leave a gap the width of
-     one flex gap and no explanation for it. Nothing here is awaited: the four
-     panels underneath must not wait on a setup check to start reading. */
-  const setupHolder = el('div');
-  root.appendChild(setupHolder);
+     report that as a clean morning. So the banner sits above the figures it
+     qualifies, it is not a takeover, and it is gone once every step is done.
+     Nothing waits on it; a failed setup read paints nothing (lib/setup.js does
+     not reject in any case). Drawn as --012119's "Setup Progress" strip. */
   resetSetupReads();
   readSetup().then(s => {
-    if (!s.prompt) { setupHolder.remove(); return; }
+    if (!s.prompt) return;
     const left = s.steps.filter(x => x.state === 'INCOMPLETE');
     const unmeasured = s.steps.filter(x => x.state === 'UNKNOWN');
-    const names = left.map(x => x.title).join(', ');
-    setupHolder.innerHTML = dsCallout({
-      intent: left.length ? 'warning' : 'unknown',
-      lede: `Setup: ${num(s.done)} of ${num(s.denominator)} steps done.`,
-      body: (left.length
-              ? `Still to do: ${esc(names)}.`
-              : 'Nothing is outstanding that could be checked.')
-          + (unmeasured.length
-              ? ` ${num(unmeasured.length)} ${plural(unmeasured.length, 'step', 'steps')} could not be checked at all.`
-              : '')
-          + ` ${linkBtn('setup', 'Open Setup')}`,
-      note: para('The figure is steps confirmed done divided by six, and a step nobody could measure is not counted '
-              + 'as done — so this line is not a claim that the rest of the setup is unfinished, only that six '
-              + 'checks did not all come back done.')
-        + para('It matters on this screen in particular: an unfinished setup means nothing is arriving, and a '
-              + 'morning with no arrivals reads exactly like a morning with no leaks.'),
-      noteLabel: 'How this line is counted' });
-    wireGo(setupHolder);
-  }).catch(() => {
-    /* A setup check that fails is not news an owner opened this screen for, and
-       lib/setup.js does not reject in any case. Nothing is painted rather than
-       a banner about a banner. */
-    setupHolder.remove();
+    const done = n0(s.done), of = n0(s.denominator);
+    const pctDone = done != null && of ? Math.round((done / of) * 100) : null;
+    put('setup', `<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex items-start md:items-center gap-3.5 min-w-0">
+        <div class="w-9 h-9 rounded-[6px] bg-secondary-container/40 flex items-center justify-center shrink-0 text-primary"><span class="material-symbols-outlined text-[20px]">hub</span></div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-headline-md text-on-surface text-[14px] font-semibold tracking-tight">Setup progress</span>
+            <span class="font-label-numeric-sm text-secondary text-[11px]">${esc(num(done))} of ${esc(num(of))} steps done</span>
+          </div>
+          <p class="font-body-sm text-on-surface-variant text-[13px] mt-0.5">${left.length ? `Still to do: ${esc(left.map(x => x.title).join(', '))}.` : 'Nothing is outstanding that could be checked.'}${unmeasured.length ? ` ${esc(num(unmeasured.length))} ${plural(unmeasured.length, 'step', 'steps')} could not be checked at all.` : ''}</p>
+          ${note(para('The figure is steps confirmed done divided by six, and a step nobody could measure is not counted as done — so this line is not a claim that the rest of the setup is unfinished, only that six checks did not all come back done.')
+            + para('It matters on this screen in particular: an unfinished setup means nothing is arriving, and a morning with no arrivals reads exactly like a morning with no leaks.'), 'How this line is counted')}
+        </div>
+      </div>
+      <div class="flex items-center gap-4 shrink-0">
+        ${pctDone == null ? '' : `<div class="w-40 sm:w-56 flex flex-col gap-1">
+          <div class="flex justify-between items-center text-[11px] font-label-numeric-sm text-secondary"><span>STEPS DONE</span><span class="font-semibold text-primary">${esc(String(pctDone))}%</span></div>
+          <div class="h-2 w-full bg-surface-container rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full" style="width:${esc(String(pctDone))}%"></div></div>
+        </div>`}
+        ${SCREENS.setup ? `<button type="button" data-go="setup" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-surface text-primary border border-[#E8EAEF] hover:bg-surface-container-low text-[13px] font-medium transition-colors"><span>Complete setup</span><span class="material-symbols-outlined text-[16px]">arrow_forward</span></button>` : ''}
+      </div>
+    </div>`);
+  }).catch(() => {});
+
+  /* ── Every read this screen makes, settled together ─────────────────────── */
+  const [ld, ac, th, cv, tr, e, q, l, c, w, r, at] = await Promise.all([
+    settle(readAllLeads()), settle(readActions()), settle(readThreads()), settle(readConvRows()), settle(readTrail()),
+    settle(readEngine()), settle(readQueue()), settle(readLeads()), settle(readCoverage()), settle(readWorkflows()),
+    settle(readReadiness()), settle(readAttention()),
+  ]);
+  if (!root.isConnected) return;
+
+  const leadsAll = ld.err ? null : (ld.v || []);
+  const actions  = ac.err ? null : (ac.v || []);
+  const threads  = th.err ? null : (th.v || []);
+  const convs    = cv.err ? null : (cv.v || []);
+  const trail    = tr.err ? null : (tr.v || []);
+  const engine   = e.err ? null : (e.v || []);
+  const queue    = q.err ? null : (q.v || []);
+  const leads    = l.err ? null : (l.v || []);
+  const cov      = c.err ? null : one(c.v);
+  const flows    = w.err ? null : (w.v || []);
+  const ready    = r.err ? null : (r.v || []);
+
+  const leaks = (engine && queue) ? buildLeaks(engine, queue) : null;
+  const leadLeaks = leads ? buildLeadLeaks(leads) : null;
+  const allLeaks = leaks ? leaks.concat(leadLeaks || []) : null;
+
+  /* ────────────────────────────────────────────────────────────────────────
+     P0 · Right now — the four things an owner walks in asking
+     Above the leak register on purpose: a leak register is the argument, and
+     this is the order of work. Every tile carries how its number was arrived
+     at, and ownerTile() will not print a figure under NOT KNOWN.
+     ──────────────────────────────────────────────────────────────────────── */
+  paint('now', 'the Right now strip', () => {
+    /* HOT LEADS. leads.status is the column the rest of this product routes on,
+       so this is the count itself and not a proxy for it. CONFIRMED. */
+    const hotLeads = leadsAll ? leadsAll.filter(x => up(x.status) === 'HOT') : null;
+    const hotTile = leadsAll == null
+      ? ownerTile({ label: 'Hot leads', prov: 'UNKNOWN', phrase: 'Not read', iconName: 'local_fire_department', note: readFailed('The leads table', ld.err) })
+      : ownerTile({ label: 'Hot leads', prov: 'CONFIRMED', count: hotLeads.length, iconName: 'local_fire_department',
+          intent: hotLeads.length ? 'danger' : 'success',
+          meta: `of ${esc(num(leadsAll.length))} ${plural(leadsAll.length, 'lead', 'leads')} on file`,
+          note: para('Counted on <code>leads.status</code>, which is the same column the router and every other screen '
+            + 'in NEXUS routes on. It is not a re-scoring of anything.') });
+
+    /* URGENT ACTIONS. PROPOSED is the one status that means a person has not
+       answered yet. Counted over the same rows "Waiting on you" renders. */
+    const proposed = actions ? actions.filter(a => up(a.status) === 'PROPOSED') : null;
+    const actionTile = actions == null
+      ? ownerTile({ label: 'Urgent actions', prov: 'UNKNOWN', phrase: 'Not read', iconName: 'bolt', note: readFailed('The recovery action queue', ac.err) })
+      : ownerTile({ label: 'Urgent actions', prov: 'CONFIRMED', count: proposed.length, iconName: 'bolt',
+          intent: proposed.length ? 'warning' : 'success',
+          meta: `of ${esc(num(actions.length))} action ${plural(actions.length, 'record', 'records')}`,
+          note: para('Every recovery action whose status is still PROPOSED — raised by the engine and not yet answered '
+            + 'by a person. "Waiting on you" underneath is these same rows, so the two cannot disagree.') });
+
+    /* UNANSWERED. ESTIMATED, and the reason is the whole tile: `conversation`
+       records no message direction, so it cannot be asked whether anybody
+       replied. The only place direction IS recorded against a thread is the
+       communication ledger, and those threads are a DIFFERENT population — and
+       a thread is not known to be a waiting customer. */
+    const waiting = threads ? threads.filter(t => t.awaiting_reply === true) : null;
+    const convLine = convs == null
+      ? 'The conversation table could not be read on this load, so its size is not stated here.'
+      : `The conversation table holds ${num(convs.length)} ${plural(convs.length, 'row', 'rows')}, and not one of them can be asked this question.`;
+    const unansweredTile = threads == null
+      ? ownerTile({ label: 'Unanswered', prov: 'UNKNOWN', phrase: 'Not read', iconName: 'timer_off', note: readFailed('The message ledger', th.err) })
+      : ownerTile({ label: 'Unanswered', prov: 'ESTIMATED', count: waiting.length, iconName: 'timer_off',
+          intent: waiting.length ? 'warning' : 'success',
+          meta: `of ${esc(num(threads.length))} message ${plural(threads.length, 'thread', 'threads')} — not from <code>conversation</code>`,
+          note: para('Counted as threads whose LAST message came from the customer, in the communication ledger, which is '
+              + 'the only place in this database where a message direction is recorded against a thread.')
+            + para('It is labelled estimated and not confirmed because it is not the population the tile names. '
+              + '<code>conversation</code> carries no direction column, and no message event resolves to a '
+              + 'conversation row, so "has this conversation been replied to" cannot be asked of it. ' + esc(convLine))
+            + para('A thread is also not known to be a customer: these threads do not all resolve to a lead, so this is a '
+              + 'count of conversations awaiting a reply and NOT a count of buyers left waiting.') });
+
+    /* RECOVERED. Through recoveryEvidence() — the four-column test imported
+       from screens/actions.js and never re-implemented here. A nought under
+       this label is only allowed BECAUSE the test ran on every action record. */
+    const evs = actions ? actions.map(a => ({ a, ev: recoveryEvidence(a) })) : null;
+    const attributed = evs ? evs.filter(x => x.ev.state === 'ATTRIBUTED') : null;
+    const unsupported = evs ? evs.filter(x => x.ev.state === 'UNSUPPORTED') : [];
+    const recoveredTile = actions == null
+      ? ownerTile({ label: 'Recovered', prov: 'UNKNOWN', phrase: 'Not read', iconName: 'verified', note: readFailed('The recovery evidence behind this count', ac.err) })
+      : ownerTile({ label: 'Recovered', prov: 'CONFIRMED', count: attributed.length, iconName: 'verified',
+          intent: attributed.length ? 'success' : 'neutral',
+          meta: `${esc(num(actions.length))} ${plural(actions.length, 'action', 'actions')} tested on four columns`,
+          note: para('An action counts as recovered only when all four of these are on the row: the outcome is ATTRIBUTED, a '
+              + 'recorded sale is linked to it, somebody recorded on what basis, and somebody recorded how the figure was '
+              + 'arrived at. The test is the one in the Action Center and is imported, not repeated.')
+            + para(attributed.length
+              ? 'The figure is a count of actions, not an amount of money. No currency total is offered here.'
+              : 'Nought here is a finding and not a blank: the test ran on every action record above and none of them '
+                + 'carried all four columns.')
+            + (unsupported.length ? para(esc(unsupportedRecoverySentence(unsupported[0].ev))) : '') });
+
+    return `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">${hotTile}${actionTile}${unansweredTile}${recoveredTile}</div>`;
   });
 
   /* ────────────────────────────────────────────────────────────────────────
-     P0 · The four things an owner walks in asking
-
-     Above the leak register on purpose — see THE OWNER STRIP block near the
-     reads for why, and for the one rule these four tiles add to this screen.
-     ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Right now',
-    sub: 'Hot leads, decisions waiting, unanswered chats and sales that came back. Each tile shows how it was '
-       + 'counted; what cannot be measured shows as NOT KNOWN',
-    actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('conversations', 'Open Conversations'),
-    load: async () => {
-      const [ld, ac, th, cv] = await Promise.all([settle(readAllLeads()), settle(readActions()),
-                                                  settle(readThreads()), settle(readConvRows())]);
-      if (ld.err && ac.err && th.err && cv.err) throw ld.err;
-      return { ld, ac, th, cv };
-    },
-    render: ({ ld, ac, th, cv }) => {
-      const leads   = ld.err ? null : (ld.v || []);
-      const actions = ac.err ? null : (ac.v || []);
-      const threads = th.err ? null : (th.v || []);
-      const convs   = cv.err ? null : (cv.v || []);
-
-      /* ── HOT LEADS ─────────────────────────────────────────────────────
-         leads.status is the column the rest of this product routes on, so
-         this is the count itself and not a proxy for it. CONFIRMED. */
-      const hot = leads ? leads.filter(l => up(l.status) === 'HOT') : null;
-      const hotTile = leads == null
-        ? ownerTile({ label: 'Hot leads', prov: 'UNKNOWN', phrase: 'Not read',
-            note: readFailed('The leads table', ld.err) })
-        : ownerTile({ label: 'Hot leads', prov: 'CONFIRMED', count: hot.length,
-            intent: hot.length ? 'danger' : 'success',
-            meta: `<span>of ${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} on file</span>`,
-            note: para('Counted on <span class="ds-mono">leads.status</span>, which is the same column the router '
-              + 'and every other screen in NEXUS routes on. It is not a re-scoring of anything.') });
-
-      /* ── URGENT ACTIONS ────────────────────────────────────────────────
-         PROPOSED is the one status that means a person has not answered yet.
-         Counted over the same rows the list below renders. CONFIRMED. */
-      const proposed = actions ? actions.filter(a => up(a.status) === 'PROPOSED') : null;
-      const actionTile = actions == null
-        ? ownerTile({ label: 'Urgent actions', prov: 'UNKNOWN', phrase: 'Not read',
-            note: readFailed('The recovery action queue', ac.err) })
-        : ownerTile({ label: 'Urgent actions', prov: 'CONFIRMED', count: proposed.length,
-            intent: proposed.length ? 'warning' : 'success',
-            meta: `<span>of ${num(actions.length)} action ${plural(actions.length, 'record', 'records')}</span>`,
-            note: para('Every recovery action whose status is still PROPOSED — raised by the engine and not yet '
-              + 'answered by a person. The list underneath is these same rows, so the two cannot disagree.') });
-
-      /* ── UNANSWERED ────────────────────────────────────────────────────
-         ESTIMATED, and the reason is the whole tile. `public.conversation`
-         records no message direction, so a conversation cannot be asked
-         whether anybody replied to it. The only place direction IS recorded
-         against a thread is the communication ledger, and those threads are a
-         DIFFERENT population — the file header above states the rule this
-         obeys: a thread is not known to be a waiting customer. So the number
-         is real, the substitution is named on the surface, and the word on
-         the tile is ESTIMATED rather than CONFIRMED. */
-      const waiting = threads ? threads.filter(t => t.awaiting_reply === true) : null;
-      const convLine = convs == null
-        ? 'The conversation table could not be read on this load, so its size is not stated here.'
-        : `The conversation table holds ${num(convs.length)} ${plural(convs.length, 'row', 'rows')}, and not one of `
-          + 'them can be asked this question.';
-      const unansweredTile = threads == null
-        ? ownerTile({ label: 'Unanswered', prov: 'UNKNOWN', phrase: 'Not read',
-            note: readFailed('The message ledger', th.err) })
-        : ownerTile({ label: 'Unanswered', prov: 'ESTIMATED', count: waiting.length,
-            intent: waiting.length ? 'warning' : 'success',
-            meta: `<span>of ${num(threads.length)} message ${plural(threads.length, 'thread', 'threads')} — not from `
-                + '<span class="ds-mono">conversation</span></span>',
-            note: para('Counted as threads whose LAST message came from the customer, in the communication ledger, '
-                + 'which is the only place in this database where a message direction is recorded against a thread.')
-              + para('It is labelled estimated and not confirmed because it is not the population the tile names. '
-                + `<span class="ds-mono">conversation</span> carries no direction column, and no message event `
-                + 'resolves to a conversation row, so "has this conversation been replied to" cannot be asked of it. '
-                + esc(convLine))
-              + para('A thread is also not known to be a customer: these threads do not all resolve to a lead, so '
-                + 'this is a count of conversations awaiting a reply and NOT a count of buyers left waiting.') });
-
-      /* ── RECOVERED ─────────────────────────────────────────────────────
-         Through recoveryEvidence() — the four-column test imported from
-         screens/actions.js and never re-implemented here. A nought under this
-         label is only allowed BECAUSE the test ran on every action record and
-         the denominator is printed beside it. */
-      const evs = actions ? actions.map(a => ({ a, ev: recoveryEvidence(a) })) : null;
-      const attributed = evs ? evs.filter(x => x.ev.state === 'ATTRIBUTED') : null;
-      const unsupported = evs ? evs.filter(x => x.ev.state === 'UNSUPPORTED') : [];
-      const recoveredTile = actions == null
-        ? ownerTile({ label: 'Recovered', prov: 'UNKNOWN', phrase: 'Not read',
-            note: readFailed('The recovery evidence behind this count', ac.err) })
-        : ownerTile({ label: 'Recovered', prov: 'CONFIRMED', count: attributed.length,
-            intent: attributed.length ? 'success' : 'neutral',
-            meta: `<span>${num(actions.length)} ${plural(actions.length, 'action', 'actions')} tested on four `
-                + 'columns</span>',
-            note: para('An action counts as recovered only when all four of these are on the row: the outcome is '
-                + 'ATTRIBUTED, a recorded sale is linked to it, somebody recorded on what basis, and somebody '
-                + 'recorded how the figure was arrived at. The test is the one in the Action Center and is imported, '
-                + 'not repeated.')
-              + para(attributed.length
-                  ? 'The figure is a count of actions, not an amount of money. No currency total is offered here.'
-                  : 'Nought here is a finding and not a blank: the test ran on every action record above and none '
-                    + 'of them carried all four columns.')
-              + (unsupported.length
-                  ? para(esc(unsupportedRecoverySentence(unsupported[0].ev)))
-                  : '') });
-
-      return `<div style="padding:16px">${dsStatRow(hotTile + actionTile + unansweredTile + recoveredTile)}</div>`;
-    },
-  }).then(wireGo);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P0b · The Action Center — what is waiting on a person
-
-     The same PROPOSED rows the tile above counts, with the lead they are about
-     joined on in this file rather than in a view, because the columns this
-     list needs (the enquiry text, the score and the score's provenance) are on
-     `leads` and the columns it needs about the decision are on
-     `lead_recovery_actions`. A missing lead row is SAID, not blanked.
+     P0b · Waiting on you — the same PROPOSED rows the tile above counts, with
+     the lead they are about joined here, because the enquiry text and the score
+     are on `leads` and the decision columns are on `lead_recovery_actions`. A
+     missing lead row is SAID, not blanked. Drawn as --012119's decision cards.
      ──────────────────────────────────────────────────────────────────────── */
   const reasons = new Map();
-  panel(root, {
-    title: 'Waiting on you',
-    sub: 'Recovery actions the engine raised that still need a decision. Press the next step to act on it',
-    actions: linkBtn('leadrecovery', 'Open Lead Recovery') + ' ' + linkBtn('actions', 'Open the Action Center'),
-    load: async () => {
-      const [ac, ld, tr] = await Promise.all([settle(readActions()), settle(readAllLeads()), settle(readTrail())]);
-      if (ac.err) throw ac.err;
-      return { ac, ld, tr };
-    },
-    render: ({ ac, ld, tr }) => {
-      const actions = ac.v || [];
-      const leads = ld.err ? null : (ld.v || []);
-      const trail = tr.err ? null : (tr.v || []);
-      const proposed = actions.filter(a => up(a.status) === 'PROPOSED' && !isHiddenLead(a.lead_id));
+  const waitingNode = paint('waiting', 'the decisions waiting on you', () => {
+    if (ac.err) return errorState({ what: 'the decisions waiting on you', err: ac.err, retry: 'moneyleaks' });
+    const proposed = actions.filter(a => up(a.status) === 'PROPOSED' && !isHiddenLead(a.lead_id));
+    const head = (n, chipHtml) => `<div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="flex items-center gap-2.5">
+        <h2 class="font-headline-md text-on-surface text-[15px] font-semibold tracking-tight">Waiting on you</h2>${chipHtml}
+      </div>
+      <div class="flex items-center gap-2">${linkBtn('leadrecovery', 'Open Lead Recovery')}${linkBtn('actions', 'Open the Action Center')}</div>
+    </div>`;
+    if (!proposed.length) {
+      return `<div class="space-y-3">${head(0, chip('nothing waiting', 'success', 'check'))}
+        ${callout({ intent: 'success', iconName: 'task_alt', lede: 'Nothing is waiting on a decision',
+          body: `<span>The queue was read and holds ${esc(num(actions.length))} action ${plural(actions.length, 'record', 'records')}, none of them still PROPOSED. That is a measured clear, not an empty screen.</span>` })}</div>`;
+    }
+    const rows = proposed.map(a => {
+      const lead = leadsAll ? (leadsAll.find(x => str(x.id) === str(a.lead_id)) || null) : null;
+      return { a, lead, leadUnread: leadsAll == null, reason: actionReason(a, lead, trail) };
+    });
+    reasons.clear();
+    rows.forEach(x => { if (x.reason) reasons.set(str(x.a.id), firstSentence(x.reason.text)); });
 
-      if (!proposed.length) {
-        return dsEmpty({ title: 'Nothing is waiting on a decision', name: 'check', intent: 'success',
-          body: `The queue was read and holds ${num(actions.length)} action `
-            + `${plural(actions.length, 'record', 'records')}, none of them still PROPOSED. That is a measured `
-            + 'clear, not an empty screen.' });
-      }
-
-      const rows = proposed.map(a => {
-        const lead = leads ? (leads.find(l => str(l.id) === str(a.lead_id)) || null) : null;
-        return { a, lead, leadUnread: leads == null, reason: actionReason(a, lead, trail) };
-      });
-
-      const leadCell = r => {
-        if (r.lead) return `${bold(esc(str(r.lead.name) ? displayName(str(r.lead.name), r.lead.id) : 'Unnamed'))}${muted('Lead ' + mono(r.a.lead_id))}`;
-        return `${bold('Lead ' + esc(str(r.a.lead_id)))}`
-          + (r.leadUnread
-              ? hot('The leads table could not be read on this load, so nothing about this customer is shown. '
-                  + 'It is not a lead that is missing.')
-              : hot('No lead row came back for this id. The action exists and the customer it is about does not '
-                  + 'read back, which is a fault to report rather than a row to tidy away.'));
-      };
-
-      const askCell = r => {
-        if (!r.lead) return muted('Not shown — see the lead column.');
-        const txt = str(r.lead.vehicle_interest);
-        return txt ? said(txt, 'The enquiry in full')
-          : muted('Nothing was recorded as the enquiry on this lead.');
-      };
-
-      const scoreCell = r => {
-        if (!r.lead) return muted('—');
-        const n = n0(r.lead.ai_score);
-        const src = up(r.lead.score_source);
+    const cardFor = x => {
+      const who = x.lead
+        ? esc(str(x.lead.name) ? displayName(str(x.lead.name), x.lead.id) : 'Unnamed')
+        : `Lead ${esc(str(x.a.lead_id))}`;
+      const statusHtml = x.lead ? (str(x.lead.status) ? tempChip(x.lead.status) : chip('no status recorded', 'unknown')) : '';
+      const leadNote = x.lead ? '' : (x.leadUnread
+        ? hot('The leads table could not be read on this load, so nothing about this customer is shown. It is not a lead that is missing.')
+        : hot('No lead row came back for this id. The action exists and the customer it is about does not read back, which is a fault to report rather than a row to tidy away.'));
+      /* The score's provenance, verbatim off leads.score_source. A provenance is
+         not a severity, so only "we do not know how this was scored" gets a
+         colour, and it is the unknown one. */
+      let scoreHtml = '';
+      if (x.lead) {
+        const n = n0(x.lead.ai_score);
+        const src = up(x.lead.score_source);
         const meaning = SCORE_SOURCE_MEANING[src];
-        const chip = src
-          ? dsChip(str(r.lead.score_source), scoreSourceIntent(src),
-              { verbatim: true, title: meaning || 'This screen has no meaning recorded for that value. It is shown '
-                + 'exactly as the database holds it rather than folded into a word it might mean.' })
-          : dsChip('no source recorded', 'unknown');
-        return `${bold(n == null ? 'No score' : num(n))}<div class="ds-cell-sub">${chip}</div>`;
-      };
-
-      /* Verbatim, and toned through lib/format.js's own table so a status word
-         means the same colour here as it does on Leads. A word that table has
-         never been taught carries the same hover sentence it carries there,
-         rather than a silent grey chip. */
-      const statusCell = r => {
-        if (!r.lead) return muted('—');
-        const v = str(r.lead.status);
-        const t = tone(v);
-        return dsChip(v || 'no status recorded', dsIntent(t),
-          { verbatim: !!v, title: t === 'unknown' && v ? UNKNOWN_WHY : '' });
-      };
-
-      const reasonCell = r => (r.reason
-        ? dsCell(esc(firstSentence(r.reason.text)),
-            para(esc(r.reason.text)) + muted('Read from ' + mono(r.reason.from)), 'The reason in full')
-        : dsCell('<span class="ds-t-unknown">No reason recorded</span>', para(esc(NO_REASON)), 'Why this is blank'));
-
-      const table = dsTable([
-        { label: 'Lead', prose: true, render: leadCell },
-        { label: 'What they asked for', prose: true, render: askCell },
-        { label: 'Score', align: 'r', render: scoreCell },
-        { label: 'Status', mid: true, render: statusCell },
-        { label: 'Why it was raised', prose: true, render: reasonCell },
-        { label: 'Next step', mid: true, render: r => actionButton(r.a) },
-      ], rows, { caption: 'Recovery actions awaiting a decision' });
-
-      reasons.clear();
-      rows.forEach(r => { if (r.reason) reasons.set(str(r.a.id), firstSentence(r.reason.text)); });
-      return table;
-    },
-  }).then(card => { wireGo(card); wireContact(card, reasons); });
+        scoreHtml = `<span class="font-label-numeric-sm text-[12px] text-on-surface font-semibold">Score ${esc(n == null ? '—' : num(n))}</span>`
+          + (src ? chip(str(x.lead.score_source), scoreSourceIntent(src) === 'unknown' ? 'unknown' : 'neutral') : chip('no source recorded', 'unknown'))
+          + note(para(esc(meaning || 'This screen has no meaning recorded for that value. It is shown exactly as the database holds it rather than folded into a word it might mean.'))
+            + (str(x.lead.status) && tone(x.lead.status) === 'unknown' ? para(esc(UNKNOWN_WHY)) : ''), 'What the score is');
+      }
+      const ask = x.lead ? str(x.lead.vehicle_interest) : '';
+      const reasonHtml = x.reason
+        ? `<p class="font-body-sm text-[13px] text-on-surface-variant leading-relaxed">${esc(firstSentence(x.reason.text))}</p>`
+          + note(para(esc(x.reason.text)) + muted('Read from ' + mono(x.reason.from)), 'The reason in full')
+        : `<p class="font-body-sm text-[13px] text-outline italic">No reason recorded</p>${note(para(esc(NO_REASON)), 'Why this is blank')}`;
+      return `<div class="bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 flex flex-col justify-between space-y-4">
+        <div class="space-y-2.5">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-2 flex-wrap">${statusHtml}
+              <span class="font-label-numeric-sm text-[12px] font-semibold text-primary">#${esc(str(x.a.lead_id))}</span>
+              <span class="text-secondary text-[12px]">•</span>
+              <span class="font-body-sm font-semibold text-on-surface text-[13px]">${who}</span>
+            </div>
+            <span class="text-[11px] font-label-numeric-sm text-secondary shrink-0">Raised ${esc(ago(x.a.proposed_at))}</span>
+          </div>
+          ${leadNote}
+          ${reasonHtml}
+          <div class="flex items-center gap-2 text-[12px] font-label-numeric-sm text-secondary bg-surface-container-low px-2.5 py-1.5 rounded-[6px] flex-wrap">
+            <span class="material-symbols-outlined text-[16px] text-secondary">directions_car</span>
+            ${x.lead ? (ask ? `<span class="text-on-surface">${esc(firstSentence(ask))}</span>${firstSentence(ask) === ask ? '' : note(para(esc(ask)), 'The enquiry in full')}` : '<span>Nothing was recorded as the enquiry on this lead.</span>') : '<span>Not shown — see above.</span>'}
+          </div>
+          ${scoreHtml ? `<div class="flex items-center gap-2 flex-wrap">${scoreHtml}</div>` : ''}
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#E8EAEF]">${actionButton(x.a)}</div>
+      </div>`;
+    };
+    return `<div class="space-y-3">${head(proposed.length, chip(`${num(proposed.length)} ${plural(proposed.length, 'decision', 'decisions')} waiting`, 'warning'))}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${rows.map(cardFor).join('')}</div></div>`;
+  });
+  if (waitingNode) wireContact(waitingNode, reasons);
 
   /* ────────────────────────────────────────────────────────────────────────
-     P1 · The answer, in four numbers
+     P1 · The register: filter pills, the headline exposure, and one Stitch
+     leak card per line, worst first.
+
+     THE HEADLINE is the sum of `engine_impact_aed` over the action records in
+     the register, sized rows only, one kind only, through expose() imported
+     from screens/overview.js — and its denominator stays on the SURFACE. It is
+     EXPOSED, not estimated: --30144a labels it "estimated exposure", and that
+     word is refused here because no engine produces an estimate (MONEY_WORD).
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: "Today's money leaks",
-    sub: 'Where money is leaking right now, and what to do about it',
-    actions: linkBtn('actions', 'Open the Action Center') + ' ' + linkBtn('revenue', 'Open Revenue Recovery'),
-    load: async () => {
-      /* Every read the four registers below use, so the tiles are computed from
-         exactly the rows those registers render. An earlier draft left the
-         readiness read out of this strip and it counted one check fewer than the
-         panel underneath it — two numbers for one fact, which is the defect
-         NEXUS_INVARIANTS.md calls one figure, one derivation. */
-      const [e, q, l, c, w, r] = await Promise.all([settle(readEngine()), settle(readQueue()), settle(readLeads()),
-                                                    settle(readCoverage()), settle(readWorkflows()),
-                                                    settle(readReadiness())]);
-      if (e.err && q.err && l.err && c.err && w.err && r.err) throw q.err;
-      return { e, q, l, c, w, r };
-    },
-    render: ({ e, q, l, c, w, r }) => {
-      const engine = e.err ? null : (e.v || []);
-      const queue  = q.err ? null : (q.v || []);
-      const leads  = l.err ? null : (l.v || []);
-      const cov    = c.err ? null : one(c.v);
-      const flows  = w.err ? null : (w.v || []);
+  const sized = leaks ? leaks.filter(x => up(x.size.word) === 'EXPOSED') : [];
+  const t = expose(sized, x => x.size.amount, x => x.size.kind);
+  put('count', allLeaks == null
+    ? chip('not read', 'unknown', 'help')
+    : `<span class="px-2.5 py-0.5 rounded text-[10px] font-label-numeric-sm font-semibold ${allLeaks.length ? 'bg-error-container text-on-error-container' : 'bg-[#E6F4EF] text-[#157A5B]'} uppercase tracking-wider">${esc(num(allLeaks.length))} ${plural(allLeaks.length, 'leak', 'leaks')} today</span>`);
 
-      const leaks = (engine && queue) ? buildLeaks(engine, queue) : null;
-      const leadLeaks = leads ? buildLeadLeaks(leads) : null;
-      const allLeaks = (leaks && leadLeaks) ? leaks.concat(leadLeaks) : null;
+  const ledgerRows = buildLedger(queue, actions, leadsAll);
 
-      /* THE HEADLINE. Sized rows only, one kind only, through the shared
-         derivation, with its own denominator printed. See the file header. */
-      const sized = leaks ? leaks.filter(x => up(x.size.word) === 'EXPOSED') : [];
-      const t = expose(sized, x => x.size.amount, x => x.size.kind);
+  const leaksNode = paint('leaks', 'the leak register', () => {
+    if (q.err || e.err) {
+      /* "Couldn't load" is kept: QUALITY_GATE.mjs detects an errored screen by
+         those words. The register is unread, not empty. */
+      return errorState({ what: 'the leak register', err: q.err || e.err, retry: 'moneyleaks' });
+    }
+    const leadNote = l.err
+      ? callout({ intent: 'warning', iconName: 'warning', lede: 'The customer side of this register is missing, not clear.',
+          body: '<span>Lead Recovery could not be read.</span>',
+          noteHtml: para(`Lead Recovery could not be read (${esc(str(l.err.message) || 'no reason given')}), so any enquiry that needs chasing is absent from the list above rather than absent from the dealership.`),
+          noteLabel: 'What that means' })
+      : '';
+    const all = allLeaks || [];
+    const faults = all.filter(x => x.missing.length);
+    const good = all.filter(x => !x.missing.length);
+    const hotN = good.filter(x => x.tone === 'hot').length;
+    const warmN = good.filter(x => x.tone !== 'hot').length;
 
-      /* ── The one rendering decision in this strip that is not a like-for-like
-            move, and why it is the safer of the two ──────────────────────────
-         A tile whose read FAILED used to print `num(null)`, which is an em
-         dash. readFailed()'s own comment forty lines up says why that is wrong:
-         "a dash beside 'Leaks today' reads as zero, and zero is a finding this
-         screen makes on purpose and must be able to make credibly." The dash
-         was left in place because there was nowhere else for the words to go.
-         There is now — the tile carries a state rail and a note — so the figure
-         slot says "Not read" in words, at heading size rather than figure size,
-         with the unknown rail beside it and the full sentence one click away.
-         Nothing about WHAT is read or computed changed; the null still comes
-         from the same failed promise. */
-      const unread = dsChip('unread', 'unknown');
+    const PILL = {
+      on:  'px-3 py-1.5 rounded-lg bg-primary text-on-primary font-body-sm text-body-sm font-semibold shadow-sm transition-all flex items-center gap-1.5',
+      off: 'px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm transition-all flex items-center gap-1.5',
+    };
+    const COUNT = {
+      on: 'px-1.5 rounded bg-surface-container-lowest text-primary text-[11px] font-label-numeric-sm',
+      off: 'px-1.5 rounded bg-surface-container-high text-on-surface text-[11px] font-label-numeric-sm',
+    };
+    const pill = (key, label, n, dotCls, on) => `<button type="button" data-filter="${key}" class="${on ? PILL.on : PILL.off}">`
+      + (dotCls ? `<span class="${dotCls}"></span>` : '') + `<span>${esc(label)}</span><span data-count class="${on ? COUNT.on : COUNT.off}">${esc(num(n))}</span></button>`;
 
-      const leakTile = allLeaks == null
-        ? dsStat({ label: 'Leaks today', value: 'Not read', words: true, intent: 'unknown', meta: unread,
-            note: readFailed('The engines behind this count', q.err || e.err || l.err) })
-        : dsStat({ label: 'Leaks today', value: num(allLeaks.length),
-            intent: allLeaks.length ? 'danger' : 'success',
-            meta: allLeaks.length ? 'ranked below, worst first' : 'every check that could run came back clear',
-            note: para(allLeaks.length
-              ? 'Each one below carries what is leaking, the rows behind it, the size in one of four named money '
-                + 'words, how confident and why, and one thing to do.'
-              : 'Every check that could run came back clear. That is a finding, not an empty screen — the checks that '
-                + 'could NOT run are counted separately, to the right.') });
+    const exposureHtml = leaks == null ? '' : `<div class="flex flex-col items-end ml-auto">
+      <div class="flex items-center gap-space-sm text-on-surface-variant font-label-numeric-sm text-label-numeric-sm">
+        <span>GROSS MARGIN EXPOSED:</span>
+        <span class="font-bold text-headline-md ${t.total == null ? 'text-outline' : 'text-error'}">${esc(t.total == null ? 'Not computable' : aed(t.total))}</span>
+      </div>
+      <div class="flex items-center gap-2 font-label-numeric-sm text-[11px] text-outline">
+        <span>${esc(num(t.n))} of ${esc(num(t.of))} ${plural(t.of, 'line carries', 'lines carry')} a figure</span>
+        ${note(para(esc(exposureLine(t, plural(sized.length, 'that leak', 'those leaks')))) + para(esc(EXPOSURE_CAVEAT))
+          + para('This is the only figure on this screen that adds anything up. Nothing on this page adds a customer figure to a unit figure: no enquiry in this database carries a value at all, so the customer half of a true "revenue at risk" does not exist at any confidence and is not filled in.'), 'What this figure is')}
+      </div></div>`;
 
-      const moneyTile = leaks == null
-        ? dsStat({ label: 'Gross margin behind them', value: 'Not read', words: true, intent: 'unknown', meta: unread,
-            note: readFailed('The exposure figure', q.err || e.err) })
-        : dsStat({ label: 'Gross margin behind them',
-            value: t.total == null ? 'Not computable' : aed(t.total),
-            words: t.total == null,
-            intent: t.total == null ? 'unknown' : 'warning',
-            /* The denominator stays on the SURFACE, not behind the note. A
-               total whose denominator is one click away is a total presented
-               without one, and that is the aggregate-shaped lie this screen
-               exists to refuse. The prose around it is what got demoted. */
-            meta: `${num(t.n)} of ${num(t.of)} carry a figure`,
-            note: para(esc(exposureLine(t, plural(sized.length, 'that leak', 'those leaks'))))
-              + para('This is the only figure on this screen that adds anything up.') });
+    const filters = `<div class="flex items-center justify-between flex-wrap gap-space-sm">
+      <div class="flex items-center gap-2 overflow-x-auto pb-1">
+        ${pill('all', 'All leaks', good.length, '', true)}
+        ${pill('hot', 'Hot', hotN, 'w-2 h-2 rounded-full bg-error', false)}
+        ${pill('warm', 'Warm', warmN, 'w-2 h-2 rounded-full bg-tertiary', false)}
+        <button type="button" data-jump="ledger" class="${PILL.off}"><span class="material-symbols-outlined text-sm text-primary">check_circle</span><span>Recorded today</span><span class="${COUNT.off}">${esc(ledgerRows == null ? '—' : num(ledgerRows.length))}</span></button>
+      </div>
+      ${exposureHtml}
+    </div>`;
 
-      /* Measured-clear and not-measured are counted from the same reads the
-         registers below render, so the tiles cannot disagree with the panels. */
-      const ready = r.err ? null : (r.v || []);
-      /* Both counts come from the same two functions the registers below call,
-         with the same arguments, so a tile can never report a different number
-         from the table it introduces. */
-      const clear = (engine || queue || leads) ? measuredClear(engine, queue, leads).length : null;
-      const unmeasured = notMeasured(engine, cov, leads, flows, ready).length;
+    if (!all.length) {
+      return filters + callout({ intent: 'success', iconName: 'task_alt',
+        lede: 'Nothing is leaking that this product can evidence today',
+        body: '<span>Every engine that holds real data was asked and each came back clear. That is the correct answer, not an empty screen.</span>',
+        noteHtml: para('The checks are listed to the right with the number of rows each one looked at, and separately the checks that could not run at all — because a question nobody could ask is not a question that came back clean.') }) + leadNote;
+    }
 
-      /* A source that failed contributes no CLEAR checks — an unread check is
-         not a clear one — so the count is real but incomplete, and the tile says
-         which sources were unread rather than letting the number stand alone. */
-      const unreadSources = [e.err && 'the inventory engine', q.err && 'the action lane', l.err && 'Lead Recovery']
-        .filter(Boolean);
-      const clearTile = clear == null
-        ? dsStat({ label: 'Checks that came back clear', value: 'Not read', words: true, intent: 'unknown', meta: unread,
-            note: readFailed('The clear register', q.err || e.err || l.err) })
-        : dsStat({ label: 'Checks that came back clear', value: num(clear),
-            intent: unreadSources.length ? 'warning' : 'success',
-            meta: unreadSources.length
-              ? dsChip('incomplete', 'warning') + '<span>some sources unread</span>'
-              : 'each names its denominator',
-            note: para('Each one names how many rows it looked at. A zero with a denominator is a finding; a zero '
-              + 'without one is a guess.')
-              + (unreadSources.length
-                  ? para(`Incomplete: ${esc(unreadSources.join(', '))} could not be read, so any check that rests on `
-                    + plural(unreadSources.length, 'it', 'them') + ' is missing here rather than clear.')
-                  : '') });
+    /* Rank 0 is not rank zero: buildLeadLeaks() appends lines that carry no
+       figure to rank by, so they render as UNRANKED and the card says why. */
+    const card = x => {
+      const sz = sizeParts(x.size);
+      const badgeIntent = x.tone === 'hot' ? 'danger' : 'warning';
+      const engineName = x.kind === 'LEAD_AT_RISK' ? 'Lead Recovery engine' : 'Inventory Profit Sentinel';
+      return `<div data-tone="${x.tone === 'hot' ? 'hot' : 'warm'}" class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-md">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-sm bg-surface-container-low p-space-md rounded-lg">
+          <div class="flex items-center gap-space-sm flex-wrap min-w-0">
+            <span class="px-2 py-0.5 rounded bg-surface-container-highest font-label-numeric-sm text-[11px] font-bold text-on-surface">${x.rank ? `#${esc(String(x.rank))}` : 'UNRANKED'}</span>
+            ${chip(x.badge, badgeIntent, x.tone === 'hot' ? 'emergency_home' : 'schedule')}
+            <span class="font-headline-md text-headline-md font-bold text-on-surface">${esc(x.what)}</span>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="px-2.5 py-1 rounded text-xs font-medium bg-surface-container-highest text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-sm text-secondary">hub</span>${esc(engineName)}</span>
+            ${x.heldDays != null ? `<span class="font-label-numeric-sm text-[11px] text-outline">Open ${esc(num(x.heldDays))} ${plural(x.heldDays, 'day', 'days')}</span>` : ''}
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-space-md bg-surface-container p-space-md rounded-lg">
+          <div class="flex flex-col space-y-1 min-w-0">
+            <span class="font-table-header text-table-header uppercase text-outline">Why this is a leak</span>
+            <span class="font-body-sm text-body-sm text-on-surface">${said(x.why, 'Why, in full')}</span>
+          </div>
+          <div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high min-w-0">
+            <span class="font-table-header text-table-header uppercase text-outline">Capital exposure</span>
+            <div class="flex items-baseline gap-2 flex-wrap">${sz.figure}${sz.chip}</div>
+            ${note(sz.note + (up(x.size.word) === 'EXPOSED' ? para(esc(EXPOSURE_CAVEAT)) : ''), 'How is this computed?')}
+          </div>
+          <div class="flex flex-col space-y-1 md:border-l md:pl-space-md border-surface-container-high min-w-0">
+            <span class="font-table-header text-table-header uppercase text-outline">Confidence</span>
+            <div>${chip(str(x.confidence.level), confIntent(x.confidence.level))}</div>
+            ${note(para(esc(str(x.confidence.why))), 'Why this confidence')}
+          </div>
+        </div>
+        <div class="flex flex-col gap-2 bg-surface-container-low p-space-md rounded-lg">
+          <span class="font-table-header text-table-header uppercase text-outline font-semibold">Evidence — the rows behind this line</span>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-space-md gap-y-1.5 font-body-sm text-body-sm">
+            ${x.evidence.map(ev => `<div class="flex items-start gap-2 text-on-surface"><span class="material-symbols-outlined text-base text-primary">check_circle</span><span>${esc(str(ev.fact))}${ev.source ? `<span class="block font-label-numeric-sm text-[11px] text-outline">${esc(str(ev.source))}</span>` : ''}</span></div>`).join('')}
+          </div>
+        </div>
+        ${x.note ? `<div class="flex items-start gap-2 font-label-numeric-sm text-label-numeric-sm text-outline"><span class="material-symbols-outlined text-sm">history_toggle_off</span><span><span class="text-on-surface font-semibold">The engine’s own words:</span> ${esc(str(x.note))}</span></div>` : ''}
+        <div class="p-space-md rounded-lg bg-surface-container-high flex items-start gap-space-sm">
+          <span class="material-symbols-outlined text-primary text-xl mt-0.5">crisis_alert</span>
+          <div class="flex flex-col space-y-0.5"><span class="font-body-md text-body-md font-bold text-on-surface">Recommended action:</span>
+            <p class="font-body-md text-body-md text-on-surface-variant">${esc(str(x.action.ask))}</p></div>
+        </div>
+        <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md">
+          <div class="flex items-center gap-2 flex-wrap">${linkBtn(x.action.screen, x.action.label, 'primary')}</div>
+          ${x.rank ? '' : `<div class="font-body-sm text-[11px] text-outline max-w-sm">Unranked. The order is by the money behind each line, and this one is not sized — a statement about what the database holds, not about how urgent it is.</div>`}
+        </div>
+      </div>`;
+    };
 
-      const unmeasuredTile = dsStat({ label: 'Checks that could not run', value: num(unmeasured),
-        intent: unmeasured ? 'warning' : 'neutral',
-        meta: 'unknown is not zero',
-        note: para('Unknown is not zero. Each one says since when, why, and the single thing that would light it '
-          + 'up.') });
-
-      /* The definitional caveat. The first sentence of EXPOSURE_CAVEAT is on the
-         surface VERBATIM rather than paraphrased: a shortened restatement of a
-         money definition is a second copy of a business fact, which is the thing
-         this screen imports expose() from overview.js to avoid. */
-      const caveat = dsCallout({
-        intent: 'info', name: 'info',
-        lede: 'What the money figure is, and what it is not.',
-        body: `<span>${esc(firstSentence(EXPOSURE_CAVEAT))}</span>`,
-        noteLabel: 'in full',
-        note: para(esc(EXPOSURE_CAVEAT))
-          + para('Nothing on this page adds a customer figure to a unit figure. No enquiry in this database '
-            + 'carries a value at all, so the customer half of a true "revenue at risk" does not exist at any '
-            + 'confidence and is not filled in.'),
+    return `<div class="flex flex-col gap-space-md">${filters}${faults.map(leakFault).join('')}
+      <div class="flex flex-col gap-space-lg" data-cards>${good.map(card).join('')}</div>${leadNote}</div>`;
+  });
+  if (leaksNode) {
+    const PILL_ON = 'px-3 py-1.5 rounded-lg bg-primary text-on-primary font-body-sm text-body-sm font-semibold shadow-sm transition-all flex items-center gap-1.5';
+    const PILL_OFF = 'px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-on-surface font-body-sm text-body-sm transition-all flex items-center gap-1.5';
+    leaksNode.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => {
+      const f = b.dataset.filter;
+      leaksNode.querySelectorAll('[data-filter]').forEach(x => { x.className = x === b ? PILL_ON : PILL_OFF; });
+      leaksNode.querySelectorAll('[data-cards] > [data-tone]').forEach(n => {
+        n.classList.toggle('hidden', f !== 'all' && n.dataset.tone !== f);
       });
+    }));
+    leaksNode.querySelector('[data-jump="ledger"]')?.addEventListener('click', () => {
+      root.querySelector('[data-slot="ledger"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
-      return `<div style="padding:16px">${dsStatRow(leakTile + moneyTile + clearTile + unmeasuredTile)}`
-        + `<div style="margin-top:12px">${caveat}</div></div>`;
-    },
-  }).then(wireGo);
+  /* ── The right-hand rail, drawn as --012119's four cards ──────────────────── */
+  const RAIL = 'bg-surface-container-lowest border border-[#E8EAEF] rounded-[10px] p-4 space-y-3';
+  const railHead = (iconCls, iconName, title, rightHtml) => `<div class="flex items-center justify-between gap-2">
+    <h3 class="font-headline-md text-on-surface text-[13px] font-semibold flex items-center gap-1.5"><span class="material-symbols-outlined ${iconCls} text-[18px]">${esc(iconName)}</span>${esc(title)}</h3>${rightHtml}</div>`;
 
-  /* ────────────────────────────────────────────────────────────────────────
-     P2 · Register 1 — what is leaking
+  /* P3 · Register 2 — checks that came back clear. A source that could not be
+     read contributes no CLEAR checks — an unread check is not a clear one. */
+  paint('clear', 'the checks that came back clear', () => {
+    const rows = measuredClear(engine, queue, leads);
+    const notRun = [e.err && 'the inventory engine', q.err && 'the action lane', l.err && 'Lead Recovery'].filter(Boolean);
+    const warn = notRun.length
+      ? callout({ intent: 'warning', iconName: 'warning', lede: 'Some checks are absent because they could not be run.',
+          body: `<span>Could not be read: ${esc(notRun.join(', '))}.</span>`,
+          noteHtml: para(`Could not be read: ${esc(notRun.join(', '))}. Those checks are neither clear nor failing — they are unread, and they are not counted anywhere on this screen as clear.`) })
+      : '';
+    /* A row measuredClear() words as FAULT is not painted green: the screen no
+       longer knows what the engine is saying, so it can claim neither clear nor
+       dirty. The rule is read off that function's own wording, here. */
+    const item = x => {
+      const fault = /^FAULT\b/.test(str(x.what));
+      return `<div class="p-2.5 rounded-[6px] ${fault ? 'border border-dashed border-outline-variant' : 'bg-[#E6F4EF]/50'} flex items-start justify-between gap-2">
+        <div class="min-w-0"><div class="font-medium text-on-surface text-[12px]">${said(x.what, 'This check in full')}</div>
+          <div class="text-[11px] text-secondary">${said(x.over, 'The denominator in full')}</div></div>
+        <span class="font-label-numeric-sm text-[10px] font-bold ${fault ? 'text-outline' : 'text-[#157A5B]'} shrink-0">${fault ? 'FAULT' : 'CLEAR'}</span></div>`;
+    };
+    return `<div class="${RAIL}">${railHead('text-[#157A5B]', 'verified', 'Checks that came back clear',
+        `<span class="text-[10px] font-label-numeric-sm ${notRun.length ? 'text-[#96570A]' : 'text-[#157A5B]'} font-semibold">${esc(num(rows.length))} ${notRun.length ? 'CLEAR · INCOMPLETE' : 'CLEAR'}</span>`)}
+      <p class="text-[11px] text-on-surface-variant">Each names how many rows it looked at. A zero with a denominator is a finding; a zero without one is a guess.</p>
+      ${warn}
+      <div class="space-y-2 text-[12px]">${rows.length ? rows.map(item).join('')
+        : `<div class="p-2.5 rounded-[6px] bg-surface text-[11px] text-on-surface-variant">No check came back clear. Either every check found something, or none of them could run — the registers beside this one say which.</div>`}</div></div>`;
+  });
 
-     Was a stack of `.list-item` blocks, each of which set out WHY, the
-     EVIDENCE, the CONFIDENCE and the ACTION as paragraphs — around 200px per
-     leak, so the second one was already below the fold on a 1440×900 screen and
-     the third was two scrolls away. It is a table now, one 38px row per leak,
-     ranked exactly as before, with all four of those parts inside the row's own
-     disclosure. Nothing was dropped; the worst leak's row is opened by default
-     so the evidence is on screen without a click.
-     ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'What is leaking, worst first',
-    sub: 'Ranked by the money behind each line, with the evidence, the confidence and the next step',
-    actions: linkBtn('actions', 'Open the Action Center'),
-    load: async () => {
-      const [e, q, l] = await Promise.all([settle(readEngine()), settle(readQueue()), settle(readLeads())]);
-      if (e.err && q.err && l.err) throw q.err;
-      return { e, q, l };
-    },
-    render: ({ e, q, l }) => {
-      if (q.err || e.err) {
-        /* The heading keeps its exact wording. QUALITY_GATE.mjs's render lane
-           detects a screen in the error state by matching /Couldn.t load/ on the
-           rendered HTML, so rephrasing it would silently switch that check off
-           for this screen. */
-        return dsEmpty({
-          intent: 'danger', name: 'danger',
-          title: "Couldn't load the leak register",
-          body: 'The action lane or the inventory engine could not be read, so this register is not empty — it is '
-              + 'unread. Nothing is being claimed about whether anything is leaking.',
-        });
-      }
-      const leaks = buildLeaks(e.v || [], q.v || []);
-      const leadLeaks = l.err ? [] : buildLeadLeaks(l.v || []);
-      const all = leaks.concat(leadLeaks);
+  /* P4 · Register 3 — checks that could not run. Not measured yet, so not
+     counted as zero; each says since when, why, and what would switch it on. */
+  paint('notrun', 'the checks that could not run', () => {
+    const rows = notMeasured(engine, cov, leads, flows, ready);
+    const KIND_INTENT = { OPERATIONAL: 'warning' };
+    const item = x => `<div class="p-2.5 rounded-[6px] bg-[#FEF3E2]/50 border border-[#F3DFBD]/50 space-y-1">
+      <div class="font-medium text-on-surface text-[12px] flex items-start justify-between gap-2"><span>${said(x.what, 'What is not measured, in full')}</span>${chip(x.kind, KIND_INTENT[x.kind] || 'unknown')}</div>
+      <p class="text-[11px] text-secondary leading-tight">${said(x.since, 'Since when, in full')}</p>
+      ${note(para('<strong>Why.</strong> ' + esc(str(x.why))) + para('<strong>What would light it up.</strong> ' + esc(str(x.unlock))), 'Why, and what would switch it on')}
+    </div>`;
+    return `<div class="${RAIL}">${railHead('text-[#96570A]', 'warning', 'Checks that could not run',
+        `<span class="text-[10px] font-label-numeric-sm text-[#96570A] font-semibold">${esc(num(rows.length))} NOT MEASURED</span>`)}
+      <p class="text-[11px] text-on-surface-variant">Unknown is not zero. These are not counted anywhere on this screen as clear.</p>
+      <div class="space-y-2 text-[12px]">${rows.length ? rows.map(item).join('')
+        : `<div class="p-2.5 rounded-[6px] bg-surface text-[11px] text-on-surface-variant">Every check this screen makes could be run. That has not been true of this database before, so if you are reading it, check that the reads above actually returned rows.</div>`}</div>
+      <div class="flex items-center gap-2 flex-wrap">${linkBtn('inventory', 'Open Inventory')}${linkBtn('dealrescue', 'Open Deal Rescue')}</div></div>`;
+  });
 
-      const leadNote = l.err
-        ? dsCallout({
-            intent: 'warning', name: 'alert',
-            lede: 'The customer side of this register is missing, not clear.',
-            body: '<span>Lead Recovery could not be read.</span>',
-            noteLabel: 'what that means',
-            note: para('The customer side of this register is missing, not clear.')
-              + para(`Lead Recovery could not be read (${esc(str(l.err.message) || 'no reason given')}), so any `
-                + 'enquiry that needs chasing is absent from the list above rather than absent from the '
-                + 'dealership.'),
-          })
-        : '';
-
-      if (!all.length) {
-        return dsEmpty({
-          intent: 'success', name: 'check',
-          title: 'Nothing is leaking that this product can evidence today',
-          body: 'Every engine that holds real data was asked and each came back clear. That is the correct answer, '
-              + 'not an empty screen: the checks are listed below with the number of rows each one looked at, and '
-              + 'separately the checks that could not run at all — because a question nobody could ask is not a '
-              + 'question that came back clean.',
-        }) + leadNote;
-      }
-
-      const faults = all.filter(x => x.missing.length);
-      const good = all.filter(x => !x.missing.length);
-
-      const HEAD = [{ label: '#', align: 'r' }, 'What is leaking', { label: 'Size', align: 'r' },
-                    'Money word', 'Confidence', ''];
-      const TEMPLATE = '28px minmax(0,1fr) 128px 132px 104px 16px';
-
-      /* Every row starts CLOSED, including the worst one, and that is a
-         deliberate reversal of the first draft of this conversion.
-
-         Opening rank 1 by default put its evidence on screen without a click,
-         which reads well — and measured at 1440x900 it filled the entire fold
-         with one leak, so the operator saw exactly as many rows as the old
-         paragraph layout did. The whole argument for a table is that the
-         morning question is an ORDER OF WORK: how many, which is worst, how
-         much. Three closed rows answer that at a glance; one open row answers
-         it for one leak and hides the other two. The evidence is one click
-         away, and the panel's own action sits in its head where it is reachable
-         without opening anything. */
-      const items = good.map(x => {
-        const sz = sizeParts(x.size);
-        return {
-          cells: [
-            /* Rank 0 is not rank zero. buildLeaks() numbers its lines 1..n by
-               exposure; buildLeadLeaks() appends lines that carry no figure to
-               rank by and leaves makeLeak()'s default of 0 on them. Painting
-               that 0 in the rank column — which the old layout did — put a
-               "0" above a "1" and a "2" in a list whose whole promise is
-               "worst first". It is rendered as unranked, and the row's own
-               disclosure says why. */
-            `<span class="ds-row__rank${x.rank ? '' : ' ds-t-tertiary'}">${x.rank ? esc(String(x.rank)) : '–'}</span>`,
-            `<span class="ds-row__title"><span>${esc(x.what)}</span>${dsChip(x.badge, dsIntent(x.tone))}`
-              + (x.heldDays != null
-                  ? dsChip(`${num(x.heldDays)} ${plural(x.heldDays, 'day', 'days')}`, 'neutral', { dot: false, name: 'clock' })
-                  : '')
-              + '</span>',
-            `<span class="ds-row__num${sz.words ? ' ds-row__num--words' : ''}">${sz.figure}</span>`,
-            `<span>${sz.chip}</span>`,
-            `<span>${dsChip(str(x.confidence.level), confIntent(x.confidence.level), { verbatim: true })}</span>`,
-            `<span class="ds-row__chev">${icon('chevron')}</span>`,
-          ],
-          detail: dsDetailGrid([
-            ['Why this is a leak', esc(x.why)],
-            ['The engine’s own words', x.note ? esc(str(x.note)) : ''],
-            ['Evidence', dsEvidence(x.evidence.map(ev => ({ fact: esc(str(ev.fact)), source: str(ev.source) })))],
-            [`Confidence — ${str(x.confidence.level)}`, esc(str(x.confidence.why))],
-            ['What the size means', sz.note],
-            ['What to do', esc(str(x.action.ask))
-              + `<div style="margin-top:8px">${linkBtn(x.action.screen, x.action.label)}</div>`],
-            ['Open for', x.heldDays != null ? `${num(x.heldDays)} ${plural(x.heldDays, 'day', 'days')}` : ''],
-            ['Rank', x.rank ? '' : 'Unranked. The order above is by the money behind each line, and this one is '
-              + 'not sized — which is a statement about what the database holds, not about how urgent it is.'],
-          ]),
-        };
+  /* P5 · Register 4 — alerts that are not leaks. The alert feed audited
+     against the engines, one verdict per KIND, because the reason is a
+     property of the kind and not of the row. Each verdict is a statement about
+     evidence, not about the customer or the car. */
+  paint('alerts', 'the alerts that are not leaks', () => {
+    if (at.err) return errorState({ what: 'the alert feed', err: at.err, retry: 'moneyleaks' });
+    const items = at.v || [];
+    /* Measured, not asserted. An unreadable engine is not evidence that every
+       unit is UNKNOWN. */
+    function engineMarketNote(units) {
+      if (!Array.isArray(units) || !units.length)
+        return 'The inventory engine could not be read on this pass, so nothing is claimed about market position. '
+             + 'A price difference is only a finding once a competitor row meets the match quality this dealership '
+             + 'accepts, and that has not been checked here.';
+      const known = units.filter(u => {
+        const m = up(u.market_position);
+        return m && m !== 'UNKNOWN' && m !== 'NOT_COMPUTABLE' && m !== 'UNKNOWN_NO_COMPARABLES';
       });
+      if (!known.length)
+        return `The inventory engine grades market position UNKNOWN on all ${num(units.length)} `
+             + `${plural(units.length, 'unit', 'units')}, because no competitor row meets the match quality this `
+             + 'dealership accepts. A price difference measured against a listing nobody can tie to our car is '
+             + 'arithmetic, not a finding — and the competitor rows say so themselves.';
+      return `The inventory engine grades market position on ${num(known.length)} of ${num(units.length)} `
+           + `${plural(units.length, 'unit', 'units')}, so some of these differences may be real. They are still `
+           + 'refused HERE, because this alert compares a listing price rather than the engine’s graded '
+           + 'position — the engine’s own REPRICE recommendation is the finding, and it is in the register '
+           + 'with its evidence.';
+    }
+    const ranked = (engine && queue) ? new Set(buildLeaks(engine, queue).map(x => str(x.what))) : null;
+    /* `unanswered_chat` used to assert a database-wide fact from inside this
+       static map ("not one thread resolves to a lead"), which was true of one
+       dealership and false of another. v_needs_attention carries no resolution
+       field, so the reason now says only what is true of ANY unanswered thread.
+       `undercut` has its evidence to hand, so it is measured. */
+    const VERDICT = {
+      unanswered_chat: { verdict: 'REFUSED',
+        why: 'This alert names a conversation thread, not a customer with a value. Putting money against it needs a lead '
+           + 'the thread resolves to AND an opportunity value on that lead, and this screen does not have the second one '
+           + 'for any lead on file. The threads are real and are listed on Conversations; calling them a money leak would '
+           + 'be inventing the amount, and possibly the customer.' },
+      undercut: { verdict: 'REFUSED', why: engineMarketNote(engine) },
+      inventory_aging: { verdict: 'ALREADY RANKED',
+        why: 'This is the same unit the inventory engine flags, and it is in the leak register with its evidence and its '
+           + 'exposure. It is named here so the two lists can be reconciled, not counted twice.' },
+      workflow_failure: { verdict: 'NOT A MONEY LEAK',
+        why: 'A workflow that is failing is a reason a check could not run, which is the register above this one. It is '
+           + 'not itself money going missing, and reporting it as money would be this dashboard inventing an amount for '
+           + 'its own broken plumbing.' },
+    };
+    const kinds = new Map();
+    items.forEach(i => { const k = str(i.kind) || 'untyped'; if (!kinds.has(k)) kinds.set(k, []); kinds.get(k).push(i); });
+    const rows = [...kinds.entries()].map(([k, list_]) => {
+      const v = VERDICT[k];
+      return { kind: k, n: list_.length, verdict: v ? v.verdict : 'NO RULE',
+        why: v ? v.why : 'This screen has no rule for that alert kind, so it is neither counted as a leak nor cleared. It is '
+          + 'shown exactly as the alert feed holds it and somebody should decide which it is.' };
+    });
+    const VERDICT_INTENT = { 'ALREADY RANKED': 'info', 'NO RULE': 'unknown' };
+    const item = x => `<div class="p-2.5 rounded-[6px] bg-surface flex items-start gap-2.5 border border-[#E8EAEF]">
+      <span class="material-symbols-outlined text-[16px] text-secondary shrink-0 mt-0.5">policy</span>
+      <div class="min-w-0 space-y-1"><div class="flex items-center gap-2 flex-wrap">${mono(x.kind)}<span class="text-[11px] text-on-surface font-semibold">${esc(num(x.n))} ${plural(x.n, 'item', 'items')}</span>${chip(x.verdict, VERDICT_INTENT[x.verdict] || 'success')}</div>
+        <p class="text-[11px] text-on-surface-variant leading-snug">${said(x.why, 'Why this is not a leak')}</p></div></div>`;
+    /* The alert text itself (title / detail) is deliberately not printed: the
+       lead-shaped kinds carry a customer's name in `title`, and this panel's
+       job is the verdict per kind, not the rows — Conversations and Leads list
+       those, through the privacy helper. */
+    const reconciled = ranked
+      ? `<p class="text-[11px] text-on-surface-variant">Reconciled against the ${esc(num(ranked.size))} ${plural(ranked.size, 'line', 'lines')} in the leak register: an alert marked ALREADY RANKED appears there with its evidence and is not counted twice.</p>`
+      : `<p class="text-[11px] text-outline">The leak register could not be read on this pass, so these alerts have not been reconciled against it. Nothing is claimed about which of them is also there.</p>`;
+    const confirmedNote = callout({ intent: 'neutral', iconName: 'payments', lede: 'The money that is on file is not a leak either.',
+      body: '<span>Confirmed sale revenue exists here and nothing on this screen takes credit for it.</span>',
+      noteHtml: para('There is confirmed sale revenue in this database. It is not shown on this screen as a leak, as a recovery or as anything NEXUS did: the attribution chain grades its campaign hop UNKNOWN and its margin NOT COMPUTABLE, so nothing here may take credit for it. Attribution is the screen that says so, hop by hop.')
+        + `<div class="pt-1">${linkBtn('attribution', 'Open Attribution')}</div>`, noteLabel: 'Why not' });
+    return `<div class="${RAIL}">${railHead('text-primary', 'info', 'Alerts that are not leaks', `<span class="text-[10px] font-label-numeric-sm text-secondary font-semibold">${esc(num(items.length))} ALERTS</span>`)}
+      <div class="space-y-2 text-[12px]">${rows.length ? rows.map(item).join('')
+        : '<div class="p-2.5 rounded-[6px] bg-surface text-[11px] text-on-surface-variant">The alert feed is empty, so there is nothing to audit. That is a statement about the alert feed, not about the dealership.</div>'}</div>
+      ${rows.length ? reconciled : ''}${confirmedNote}
+      <div class="flex items-center gap-2 flex-wrap">${linkBtn('conversations', 'Open Conversations')}${linkBtn('competitors', 'Open Competitors')}</div></div>`;
+  });
 
-      return faults.map(leakFault).join('')
-        + dsRowList(HEAD, items, { template: TEMPLATE, caption: 'What is leaking, ranked by the money behind it' })
-        + (leadNote ? `<div style="padding:12px 16px">${leadNote}</div>` : '');
-    },
-  }).then(wireGo);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P3 · Register 2 — checks that came back clear
-     ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Checks that came back clear',
-    sub: 'What was checked and found clear, and how much was checked',
-    load: async () => {
-      const [e, q, l] = await Promise.all([settle(readEngine()), settle(readQueue()), settle(readLeads())]);
-      if (e.err && q.err && l.err) throw q.err;
-      return { e, q, l };
-    },
-    render: ({ e, q, l }) => {
-      const rows = measuredClear(e.err ? null : e.v, q.err ? null : q.v, l.err ? null : l.v);
-      const notRun = [];
-      if (e.err) notRun.push('the inventory engine');
-      if (q.err) notRun.push('the action lane');
-      if (l.err) notRun.push('Lead Recovery');
-      const warn = notRun.length
-        ? `<div style="padding:12px 16px 0">${dsCallout({
-            intent: 'warning', name: 'alert',
-            lede: 'Some checks are absent from this list because they could not be run at all.',
-            body: `<span>Could not be read: ${esc(notRun.join(', '))}.</span>`,
-            noteLabel: 'what that means',
-            note: para('Some checks are absent from this list because they could not be run at all.')
-              + para(`Could not be read: ${esc(notRun.join(', '))}. Those checks are neither clear nor failing — `
-                + 'they are unread, and they are not counted anywhere on this screen as clear.'),
-          })}</div>`
-        : '';
-      if (!rows.length) return warn + dsEmpty({ name: 'scan',
-        title: 'No check came back clear',
-        body: 'Either every check found something, or none of them could run. The two registers either side of this '
-            + 'one say which.' });
-      return warn + dsTable([
-        { label: 'What was checked', strong: true, render: r => said(r.what, 'The full wording of this check') },
-        { label: 'Over how many rows', prose: true, render: r => said(r.over, 'The denominator, in full') },
-        /* ── The one place this conversion refused to keep a colour ──────────
-           This column was `pill('Clear', 'ok')` for every row, unconditionally.
-           measuredClear() can emit a row whose subject begins "FAULT — the
-           first-response target is reporting a state this screen does not
-           know", and that row was painted the same green as a measured clear —
-           a check that BROKE, reported in the colour reserved for a check that
-           looked and found nothing.
-
-           Nothing in measuredClear() changed to fix it: the rule is read off
-           the wording that function already writes, in the renderer, which is
-           where a colour decision belongs. A fault is UNKNOWN, because that is
-           what it is — the screen no longer knows what the engine is saying, so
-           it cannot claim the check came back clear and must not claim it came
-           back dirty either. */
-        { label: 'Result', mid: true, render: r => (/^FAULT\b/.test(str(r.what))
-            ? dsChip('Fault', 'unknown', { name: 'question' })
-            : dsChip('Clear', 'success', { name: 'check' })) },
-      ], rows, { caption: 'Checks that came back clear, each with its denominator' });
-    },
-  }).then(wireGo);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P4 · Register 3 — checks that could not run
-     ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Checks that could not run',
-    sub: 'Not measured yet, so not counted as zero. Each line says why, and what would switch it on',
-    actions: linkBtn('inventory', 'Open Inventory') + ' ' + linkBtn('dealrescue', 'Open Deal Rescue'),
-    load: async () => {
-      const [e, c, l, w, r] = await Promise.all([settle(readEngine()), settle(readCoverage()), settle(readLeads()),
-                                                 settle(readWorkflows()), settle(readReadiness())]);
-      if (e.err && c.err && l.err && w.err && r.err) throw c.err;
-      return { e, c, l, w, r };
-    },
-    render: ({ e, c, l, w, r }) => {
-      const rows = notMeasured(e.err ? null : e.v, c.err ? null : one(c.v), l.err ? null : l.v,
-                               w.err ? null : w.v, r.err ? null : r.v);
-      if (!rows.length) {
-        return dsEmpty({ name: 'shield',
-          title: 'Every check this screen makes could be run',
-          body: 'Nothing is being withheld for want of data. That has not been true of this database before, so if '
-              + 'you are reading it, check that the reads above actually returned rows.' });
-      }
-      return dsTable([
-        { label: 'What is not measured', strong: true, render: x => said(x.what, 'What is not measured, in full') },
-        { label: 'Since / how much', prose: true, render: x => said(x.since, 'Since when, in full') },
-        { label: 'Why', prose: true, render: x => said(x.why, 'Why this cannot be measured, in full') },
-        { label: 'What would light it up', prose: true,
-          render: x => `<div class="ds-t-warning">${said(x.unlock, 'What would light this up, in full')}</div>` },
-        { label: 'Kind', mid: true,
-          render: x => dsChip(x.kind, x.kind === 'OPERATIONAL' ? 'warning' : 'unknown', { verbatim: true }) },
-      ], rows, { caption: 'Checks that could not run, and what would light each one up' });
-    },
-  }).then(wireGo);
-
-  /* ────────────────────────────────────────────────────────────────────────
-     P5 · Register 4 — what this screen refuses to call a leak
-     ──────────────────────────────────────────────────────────────────────── */
-  /* The two explanatory registers live behind one disclosure: the honesty
-     model is unchanged, and it no longer stands between an owner and the work. */
-  const howCounts = el('details', 'card how-counts');
-  howCounts.innerHTML = '<summary><span class="material-symbols-outlined">info</span>How NEXUS counts money</summary>';
-  const howBody = el('div', 'how-counts-body');
-  howCounts.appendChild(howBody);
-  root.appendChild(howCounts);
-
-  panel(howBody, {
-    title: 'Alerts that are not leaks',
-    sub: 'Alerts checked against the engines, and why each one is not counted as a leak',
-    actions: linkBtn('conversations', 'Open Conversations') + ' ' + linkBtn('competitors', 'Open Competitors'),
-    load: async () => {
-      const [a, e, q] = await Promise.all([settle(readAttention()), settle(readEngine()), settle(readQueue())]);
-      if (a.err) throw a.err;
-      return { a, e, q };
-    },
-    render: ({ a, e, q }) => {
-      const items = a.v || [];
-      const engine = e.err ? null : (e.v || []);
-      const queue  = q.err ? null : (q.v || []);
-
-      /* Measured, not asserted. If the engine could not be read, the sentence
-         says that rather than standing in for it — an unreadable engine is not
-         evidence that every unit is UNKNOWN. */
-      function engineMarketNote(units) {
-        if (!Array.isArray(units) || !units.length)
-          return 'The inventory engine could not be read on this pass, so nothing is claimed about market position. '
-               + 'A price difference is only a finding once a competitor row meets the match quality this dealership '
-               + 'accepts, and that has not been checked here.';
-        const known = units.filter(u => {
-          const m = up(u.market_position);
-          return m && m !== 'UNKNOWN' && m !== 'NOT_COMPUTABLE' && m !== 'UNKNOWN_NO_COMPARABLES';
-        });
-        if (!known.length)
-          return `The inventory engine grades market position UNKNOWN on all ${num(units.length)} `
-               + `${plural(units.length, 'unit', 'units')}, because no competitor row meets the match quality this `
-               + 'dealership accepts. A price difference measured against a listing nobody can tie to our car is '
-               + 'arithmetic, not a finding — and the competitor rows say so themselves.';
-        return `The inventory engine grades market position on ${num(known.length)} of ${num(units.length)} `
-             + `${plural(units.length, 'unit', 'units')}, so some of these differences may be real. They are still `
-             + 'refused HERE, because this alert compares a listing price rather than the engine’s graded '
-             + 'position — the engine’s own REPRICE recommendation is the finding, and it is in the register '
-             + 'above with its evidence.';
-      }
-      const ranked = (engine && queue) ? new Set(buildLeaks(engine, queue).map(x => str(x.what))) : null;
-
-      /* One verdict per alert KIND, because the reason is a property of the
-         kind and not of the row. Each verdict is a statement about evidence, not
-         about the customer or the car. */
-      const VERDICT = {
-        /* ── Two of these were asserted, and one of them was false ──────────
-           `unanswered_chat` said "Not one WhatsApp thread in this database
-           resolves to a lead record". That is true of Tenant A today and false
-           of a dataset where fourteen of seventeen resolve — a caption asserting
-           a database-wide fact from inside a static map, which is the thing
-           CLAUDE.md's "check captions against the branch they sit in" rule
-           exists to catch, found seven times here before this one.
-
-           `v_needs_attention` carries only kind, severity, ref, title, detail,
-           at and screen — no resolution field — so this panel cannot measure
-           that claim and must not make it. The rewritten reason says only what
-           is true of any unanswered thread: the alert names a THREAD, and a
-           money figure needs a linked lead carrying an opportunity value. That
-           holds whatever the resolution rate is.
-
-           `undercut` DOES have its evidence to hand — the engine rows are
-           loaded on this panel — so it is measured rather than asserted. */
-        unanswered_chat: {
-          verdict: 'REFUSED',
-          why: 'This alert names a conversation thread, not a customer with a value. Putting money against it needs '
-             + 'a lead the thread resolves to AND an opportunity value on that lead, and this screen does not have '
-             + 'the second one for any lead on file. The threads are real and are listed on Conversations; calling '
-             + 'them a money leak would be inventing the amount, and possibly the customer.',
-        },
-        undercut: {
-          verdict: 'REFUSED',
-          why: engineMarketNote(engine),
-        },
-        inventory_aging: {
-          verdict: 'ALREADY RANKED',
-          why: 'This is the same unit the inventory engine flags, and it is in the leak register above with its '
-             + 'evidence and its exposure. It is named here so the two lists can be reconciled, not counted twice.',
-        },
-        workflow_failure: {
-          verdict: 'NOT A MONEY LEAK',
-          why: 'A workflow that is failing is a reason a check could not run, which is the register above this one. '
-             + 'It is not itself money going missing, and reporting it as money would be this dashboard inventing an '
-             + 'amount for its own broken plumbing.',
-        },
-      };
-
-      const kinds = new Map();
-      items.forEach(i => {
-        const k = str(i.kind) || 'untyped';
-        if (!kinds.has(k)) kinds.set(k, []);
-        kinds.get(k).push(i);
-      });
-
-      const rows = [...kinds.entries()].map(([k, list_]) => {
-        const v = VERDICT[k];
-        return {
-          kind: k,
-          n: list_.length,
-          verdict: v ? v.verdict : 'NO RULE',
-          why: v ? v.why
-            : 'This screen has no rule for that alert kind, so it is neither counted as a leak nor cleared. It is '
-            + 'shown exactly as the alert feed holds it and somebody should decide which it is.',
-          example: str(list_[0].title) || str(list_[0].ref),
-          detail: str(list_[0].detail),
-        };
-      });
-
-      const confirmedNote = `<div style="padding:12px 16px 0">${dsCallout({
-        intent: 'info', name: 'coins',
-        lede: 'And the money that is on file is not a leak either.',
-        body: '<span>Confirmed sale revenue exists here and nothing on this screen takes credit for it.</span>'
-          + `<div style="margin-top:8px">${linkBtn('attribution', 'Open Attribution')}</div>`,
-        noteLabel: 'why not',
-        note: para('There is confirmed sale revenue in this database. It is not shown on this screen as a leak, as '
-          + 'a recovery or as anything NEXUS did: the attribution chain grades its campaign hop UNKNOWN and its '
-          + 'margin NOT COMPUTABLE, so nothing here may take credit for it. Attribution is the screen that says '
-          + 'so, hop by hop.'),
-      })}</div>`;
-
-      const reconciled = ranked
-        ? dsCallout({ intent: 'neutral', name: 'info',
-            lede: `Reconciled against ${num(ranked.size)} ${plural(ranked.size, 'line', 'lines')} above.`,
-            body: '<span>An alert marked ALREADY RANKED is not counted a second time here.</span>',
-            note: para(`Reconciled against the ${num(ranked.size)} ${plural(ranked.size, 'line', 'lines')} in the `
-              + 'leak register above: an alert marked ALREADY RANKED appears there with its evidence, and is not '
-              + 'counted a second time here.') })
-        : dsCallout({ intent: 'unknown', name: 'question',
-            lede: 'These alerts have not been reconciled against the leak register.',
-            body: '<span>The leak register could not be read on this pass.</span>',
-            note: para('The leak register could not be read on this pass, so these alerts have not been reconciled '
-              + 'against it. Nothing is being claimed about which of them is also above.') });
-
-      if (!items.length) {
-        return dsEmpty({ name: 'bellOff',
-          title: 'The alert feed is empty',
-          body: 'There is nothing to audit. That is a statement about the alert feed, not about the dealership.',
-        }) + confirmedNote;
-      }
-
-      return dsTable([
-        { label: 'Alert kind', strong: true, mid: true, render: x => mono(x.kind) },
-        { label: 'Items', align: 'r', mid: true, render: x => num(x.n) },
-        { label: 'Verdict', mid: true, render: x => dsChip(x.verdict, x.verdict === 'ALREADY RANKED' ? 'info'
-            : x.verdict === 'NO RULE' ? 'unknown' : 'success') },
-        { label: 'Why', prose: true, render: x => said(x.why, 'Why this is refused, in full') },
-        { label: 'For example', prose: true,
-          render: x => said(x.example + (x.detail ? ` · ${x.detail}` : ''), 'The example, in full') },
-      ], rows, { caption: 'The alert feed, audited against the engines' })
-        + `<div style="padding:12px 16px 0">${reconciled}</div>` + confirmedNote;
-    },
-  }).then(wireGo);
+  /* P6 · The four money words, and what NEXUS has actually earned. The
+     recovered figure goes through the four-column test in screens/actions.js
+     and nothing else; a row carrying the amount without the evidence is a
+     fault to report, never an amount to read. */
+  paint('words', 'the four money words', () => {
+    const rec = queue ? queue.map(a => ({ a, ev: recoveryEvidence(a) })) : null;
+    const attributed = rec ? rec.filter(x => x.ev.state === 'ATTRIBUTED') : null;
+    const unsupported = rec ? rec.filter(x => x.ev.state === 'UNSUPPORTED') : null;
+    const attTotal = attributed ? expose(attributed, x => x.ev.amount, () => 'ATTRIBUTED_MARGIN') : null;
+    const exposedN = queue ? queue.filter(a => up(a.engine_impact_kind) === 'MARGIN_EXPOSED').length : null;
+    const rows = [
+      { word: 'EXPOSED', dot: 'w-1.5 h-1.5 rounded-full bg-[#96570A]', txt: 'text-[#96570A]',
+        held: exposedN == null ? 'Unknown — the action lane could not be read'
+          : `${num(exposedN)} action ${plural(exposedN, 'record carries', 'records carry')} this kind`,
+        why: 'The only word the inventory engine emits, and the only one this screen totals.' },
+      { word: 'ESTIMATED', dot: 'w-1.5 h-1.5 rounded-full border border-outline', txt: 'text-outline',
+        held: 'No engine in NEXUS produces an estimate, so nothing carries this word',
+        why: 'Listed because a vocabulary with no empty slots is a vocabulary nobody checks.' },
+      { word: 'ATTRIBUTED', dot: 'w-1.5 h-1.5 rounded-full bg-[#2563A8]', txt: 'text-[#2563A8]',
+        held: attributed == null ? 'Unknown — the action lane could not be read'
+          : (attributed.length
+              ? `${num(attributed.length)} ${plural(attributed.length, 'action carries', 'actions carry')} a figure that passes all four evidence columns${attTotal && attTotal.total != null ? ` — ${aed(attTotal.total)}` : ''}`
+              : 'Nothing has passed the four-column evidence test, so nothing carries this word'),
+        why: 'The four columns are an ATTRIBUTED outcome, a linked sale, a basis for tying them together, and a basis for the figure itself. The database refuses to store the amount without all four; this screen refuses to show it without all four.' },
+      { word: 'CONFIRMED', dot: 'w-1.5 h-1.5 rounded-full bg-[#157A5B]', txt: 'text-[#157A5B]',
+        held: cov
+          ? (n0(cov.leads_with_a_confirmed_sale) ? `${num(cov.leads_with_a_confirmed_sale)} recorded ${plural(cov.leads_with_a_confirmed_sale, 'sale', 'sales')} on file, and ${num(cov.sales_attributed_to_a_recovery_action)} of them attributed to anything NEXUS did`
+              : 'No recorded sale is on file')
+          : (c.err ? 'Unknown — the coverage read failed' : 'Unknown — the coverage view returned no row for this dealership'),
+        why: 'Confirmed revenue exists in this database and none of it is credited to NEXUS. That distinction is the product, not a shortcoming of it.' },
+    ];
+    const fault = (unsupported && unsupported.length)
+      ? callout({ intent: 'danger', iconName: 'report',
+          lede: `${num(unsupported.length)} ${plural(unsupported.length, 'action record claims', 'action records claim')} money with nothing behind it.`,
+          noteHtml: para(esc(unsupportedRecoverySentence(unsupported[0].ev))), noteLabel: 'What is missing' })
+      : '';
+    return `<div class="${RAIL}">
+      <div class="flex items-center justify-between border-b border-[#E8EAEF] pb-2">
+        <h3 class="font-headline-md text-[13px] font-bold uppercase tracking-wider text-secondary">The four money words</h3>
+        <span class="material-symbols-outlined text-[16px] text-secondary">menu_book</span>
+      </div>
+      ${fault}
+      <p class="text-[11px] text-on-surface-variant">Each money word has one rule. A figure that has not met its rule is not shown.</p>
+      <div class="space-y-2.5 text-[12px]">${rows.map(x => `<div>
+        <div class="font-label-numeric-sm text-[11px] font-bold ${x.txt} flex items-center gap-1.5"><span class="${x.dot}"></span>${esc(MONEY_WORD[x.word].label.toUpperCase())}</div>
+        <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">${said(MONEY_WORD[x.word].gloss, 'The full definition')}</p>
+        <p class="text-[11px] text-on-surface mt-0.5 leading-snug"><span class="text-outline">Today:</span> ${esc(x.held)}</p>
+        ${note(para(esc(x.why)), 'Why it is listed')}
+      </div>`).join('')}
+      <div><div class="font-label-numeric-sm text-[11px] font-bold text-outline flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full border border-outline"></span>NOT COMPUTABLE</div>
+        <p class="text-[11px] text-on-surface-variant mt-0.5 leading-snug">${said(MONEY_WORD.NOT_COMPUTABLE.gloss, 'The full definition')}</p></div>
+      </div></div>`;
+  });
 
   /* ────────────────────────────────────────────────────────────────────────
-     P6 · The four money words, and what NEXUS has actually earned
+     P7 · The outcome ledger: what was recorded TODAY. --30144a's last
+     section, and the one Stitch region that needed a filter rather than a new
+     read: the rows are the action queues this screen already holds, kept when a
+     decision, an execution or an outcome is dated today in Dubai. "Recovered"
+     goes through recoveryEvidence() and nothing else, so an amount without its
+     four columns is withheld here exactly as it is everywhere.
      ──────────────────────────────────────────────────────────────────────── */
-  panel(howBody, {
-    title: 'The four money words',
-    sub: 'Each money word has one rule. A figure that has not met its rule is not shown',
-    load: async () => {
-      const [q, c] = await Promise.all([settle(readQueue()), settle(readCoverage())]);
-      if (q.err && c.err) throw q.err;
-      return { q, c };
-    },
-    render: ({ q, c }) => {
-      const queue = q.err ? null : (q.v || []);
-      const cov = c.err ? null : one(c.v);
+  paint('ledger', 'the outcome ledger', () => {
+    const headHtml = n => `<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-sm">
+      <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-xl">fact_check</span>
+        <h2 class="font-headline-md text-headline-md font-bold text-on-surface">Outcome ledger: recorded today</h2>
+        <span class="px-2 py-0.5 rounded text-[11px] font-label-numeric-sm font-semibold bg-surface-container-high text-on-surface">${esc(n)}</span></div>
+      <span class="font-label-numeric-sm text-xs text-outline">Decisions, executions and outcomes dated ${esc(dubaiDate(readAt))}</span></div>`;
+    if (ledgerRows == null) {
+      return `<div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg">${headHtml('not read')}
+        ${errorState({ what: 'the outcome ledger', err: q.err || ac.err, retry: 'moneyleaks' })}</div>`;
+    }
+    const partial = (q.err || ac.err)
+      ? `<p class="font-body-sm text-[12px] text-[#96570A] pb-2">${q.err ? 'The inventory action queue' : 'The recovery action queue'} could not be read, so its decisions are missing from this list — not absent from the day.</p>` : '';
+    const OUT_INTENT = { APPROVED: 'info', EXECUTED: 'success', EXECUTION_FAILED: 'danger', REJECTED: 'neutral', DEFERRED: 'warning', CANCELLED: 'neutral', ESCALATED: 'warning' };
+    const body = ledgerRows.length ? `<div class="overflow-x-auto"><table class="w-full text-left border-collapse">
+      <thead><tr class="bg-surface-container-low text-outline font-table-header text-table-header uppercase">
+        <th class="py-2.5 px-3 rounded-l-lg">Time</th><th class="py-2.5 px-3">Subject</th><th class="py-2.5 px-3">What was recorded</th>
+        <th class="py-2.5 px-3 text-right">Recovered</th><th class="py-2.5 px-3 text-right rounded-r-lg">Recorded by</th></tr></thead>
+      <tbody class="divide-y divide-surface-container-high font-body-md text-body-md">${ledgerRows.map(x => {
+        const ev = recoveryEvidence(x.row);
+        const money = ev.state === 'ATTRIBUTED'
+          ? `<span class="font-label-numeric-md text-label-numeric-md font-bold text-primary">${esc(aed(ev.amount))}</span><div class="font-label-numeric-sm text-[10px] text-outline">attributed, four columns on file</div>`
+          : ev.state === 'UNSUPPORTED'
+            ? `<span class="font-label-numeric-sm text-[11px] text-error font-semibold">Withheld</span>${note(para(esc(unsupportedRecoverySentence(ev))), 'Why')}`
+            : '<span class="font-label-numeric-md text-label-numeric-md text-outline">—</span><div class="font-label-numeric-sm text-[10px] text-outline">no recovery recorded</div>';
+        return `<tr class="hover:bg-surface-container-low transition-colors">
+          <td class="py-3 px-3 font-label-numeric-sm text-label-numeric-sm text-outline whitespace-nowrap">${esc(dubaiStamp(x.at))}</td>
+          <td class="py-3 px-3"><div class="flex flex-col"><span class="font-semibold text-on-surface">${esc(x.subject)}</span><span class="font-label-numeric-sm text-[11px] text-outline">${esc(x.ref)}</span></div></td>
+          <td class="py-3 px-3"><div class="flex flex-col gap-0.5">${chip(`${x.what} · ${x.status || 'no status'}`, OUT_INTENT[up(x.status)] || 'neutral')}${x.detail ? `<span class="font-body-sm text-[11px] text-outline">${esc(x.detail)}</span>` : ''}</div></td>
+          <td class="py-3 px-3 text-right">${money}</td>
+          <td class="py-3 px-3 text-right font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">${esc(x.by || 'Not recorded')}</td></tr>`;
+      }).join('')}</tbody></table></div>`
+      : `<div class="p-space-md rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface-variant">Nothing was decided, carried out or given an outcome today in the ${esc(num((queue || []).length + (actions || []).length))} action records read. That is a statement about today's records, not about the work done on the floor — only what somebody recorded in NEXUS can appear here.</div>`;
+    return `<div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-lg flex flex-col gap-space-md">${headHtml(`${num(ledgerRows.length)} ${plural(ledgerRows.length, 'entry', 'entries')}`)}${partial}${body}</div>`;
+  });
 
-      /* The recovered figure, through the four-column test in
-         screens/actions.js and nothing else. A row carrying the amount without
-         the evidence is a fault to report, never an amount to read. */
-      const rec = queue ? queue.map(a => ({ a, ev: recoveryEvidence(a) })) : null;
-      const attributed = rec ? rec.filter(x => x.ev.state === 'ATTRIBUTED') : null;
-      const unsupported = rec ? rec.filter(x => x.ev.state === 'UNSUPPORTED') : null;
-      const attTotal = attributed ? expose(attributed, x => x.ev.amount, () => 'ATTRIBUTED_MARGIN') : null;
-
-      const rows = [
-        { word: 'EXPOSED',
-          held: queue ? `${num(queue.filter(a => up(a.engine_impact_kind) === 'MARGIN_EXPOSED').length)} action `
-            + `${plural(queue.filter(a => up(a.engine_impact_kind) === 'MARGIN_EXPOSED').length, 'record carries', 'records carry')} this kind`
-            : 'unknown — the action lane could not be read',
-          note: 'The only word the inventory engine emits, and the only one this screen totals.' },
-        { word: 'ESTIMATED',
-          held: 'No engine in NEXUS produces an estimate, so nothing carries this word',
-          note: 'Listed because a vocabulary with no empty slots is a vocabulary nobody checks.' },
-        { word: 'ATTRIBUTED',
-          held: attributed == null
-            ? 'unknown — the action lane could not be read'
-            : (attributed.length
-                ? `${num(attributed.length)} ${plural(attributed.length, 'action carries', 'actions carry')} a figure that passes all four evidence columns${attTotal && attTotal.total != null ? ` — ${aed(attTotal.total)}` : ''}`
-                : 'Nothing has passed the four-column evidence test, so nothing carries this word'),
-          note: 'The four columns are an ATTRIBUTED outcome, a linked sale, a basis for tying them together, and a '
-              + 'basis for the figure itself. The database refuses to store the amount without all four; this screen '
-              + 'refuses to show it without all four.' },
-        { word: 'CONFIRMED',
-          held: cov
-            ? (n0(cov.leads_with_a_confirmed_sale) ? `${num(cov.leads_with_a_confirmed_sale)} recorded ${plural(cov.leads_with_a_confirmed_sale, 'sale', 'sales')} on file, and ${num(cov.sales_attributed_to_a_recovery_action)} of them attributed to anything NEXUS did`
-                : 'No recorded sale is on file')
-            : 'unknown — the coverage read failed',
-          note: 'Confirmed revenue exists in this database and none of it is credited to NEXUS. That distinction is '
-              + 'the product, not a shortcoming of it.' },
-      ];
-
-      const faultBanner = (unsupported && unsupported.length)
-        ? `<div style="padding:12px 16px 0">${dsCallout({
-            intent: 'danger', name: 'danger',
-            lede: `${num(unsupported.length)} ${plural(unsupported.length, 'action record claims', 'action records claim')} money with nothing behind it.`,
-            body: '',
-            noteLabel: 'what is missing',
-            note: para(esc(unsupportedRecoverySentence(unsupported[0].ev))),
-          })}</div>`
-        : '';
-
-      return faultBanner + dsTable([
-        { label: 'Word', mid: true, strong: true,
-          render: r => dsChip(MONEY_WORD[r.word].label, dsIntent(MONEY_WORD[r.word].tone), { lg: true }) },
-        { label: 'What it means', prose: true, render: r => said(MONEY_WORD[r.word].gloss, 'The full definition') },
-        { label: 'What holds it today', render: r => said(r.held, 'What holds this word today, in full') },
-        { label: 'Why it is listed', prose: true, render: r => said(r.note, 'Why this word is listed, in full') },
-      ], rows, { caption: 'The four money words and the gate on each' });
-    },
-  }).then(wireGo);
+  put('footer', trustFooter({
+    source: 'rpc/sentinel_inventory_actions · v_inventory_action_queue · v_lead_recovery · lead_recovery_actions · v_needs_attention',
+    asOf: dubaiStamp(readAt),
+    evidence: allLeaks == null ? 'The register could not be read'
+      : `${num(allLeaks.length)} leak ${plural(allLeaks.length, 'line', 'lines')} from ${num((queue || []).length)} inventory and ${num((actions || []).length)} recovery action records`,
+    actor: ME && ME.name ? ME.name : '',
+  }));
 };
+
+/* The outcome ledger's rows: every decision, execution or recorded outcome on
+   either action queue whose timestamp falls on today's Dubai date. Returns null
+   when NEITHER queue was read — an unread ledger is not an empty day. Leads are
+   named through lib/privacy.js; a unit by its model. */
+function buildLedger(queue, actions, leadsAll) {
+  if (!queue && !actions) return null;
+  const today = dubaiDate(Date.now());
+  const isToday = ts => !!ts && dubaiDate(ts) === today;
+  const out = [];
+  const stampOf = r => [['outcome', r.outcome_recorded_at], ['executed', r.executed_at], ['decided', r.decided_at]]
+    .find(([, ts]) => isToday(ts)) || null;
+  (queue || []).forEach(r => {
+    const hit = stampOf(r);
+    if (!hit) return;
+    out.push({ row: r, at: hit[1], what: hit[0] === 'outcome' ? 'Outcome' : hit[0] === 'executed' ? 'Execution' : 'Decision',
+      status: hit[0] === 'outcome' ? str(r.outcome_state) : str(r.status),
+      detail: str(r.outcome_sentence) || str(r.decision_reason_label) || str(r.execution_failure),
+      subject: str(r.unit_model) || `Unit ${str(r.unit_id)}`, ref: `Unit ${str(r.unit_id)} · inventory action ${str(r.id)}`,
+      by: hit[0] === 'outcome' ? str(r.outcome_recorded_by_name) : hit[0] === 'executed' ? str(r.executed_by_name) : str(r.decided_by_name) });
+  });
+  (actions || []).forEach(r => {
+    const hit = stampOf(r);
+    if (!hit || isHiddenLead(r.lead_id)) return;
+    const lead = leadsAll ? leadsAll.find(x => str(x.id) === str(r.lead_id)) : null;
+    out.push({ row: r, at: hit[1], what: hit[0] === 'outcome' ? 'Outcome' : hit[0] === 'executed' ? 'Execution' : 'Decision',
+      status: hit[0] === 'outcome' ? str(r.outcome_state) : str(r.status),
+      detail: str(r.recommendation) ? `Recommendation ${str(r.recommendation)}` : '',
+      subject: lead && str(lead.name) ? displayName(str(lead.name), lead.id) : `Lead ${str(r.lead_id)}`,
+      ref: `Lead ${str(r.lead_id)} · recovery action ${str(r.id)}`,
+      /* lead_recovery_actions stores a staff id, not a name; the name is on the
+         Lead Recovery queue view. Said rather than guessed. */
+      by: 'See Lead Recovery' });
+  });
+  return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    REGISTER 2 — the checks that came back clear
@@ -2065,3 +1982,9 @@ function notMeasured(engine, cov, leads, flows, readiness) {
 
   return out;
 }
+
+/* Exported 7 Oct 2026 for screens/owner-brief.js, whose "Top risks" block is the
+   top of THIS register and must not be a second derivation of it. The reads are
+   exported with their reset so a second screen shares the same per-render
+   memo rules rather than inventing its own. */
+export { buildLeaks, buildLeadLeaks, MONEY_WORD, resetReads, readEngine, readQueue, readLeads, readAllLeads, readActions };

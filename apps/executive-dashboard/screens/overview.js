@@ -229,17 +229,23 @@ import { COUNTS as BADGE_SEVERITIES, LAST as BADGE_SNAPSHOT } from '../lib/badge
    `public.nexus_is_message(direction, channel, message)`, which tests all
    three. */
 import { isInternalRow, isReply } from '../lib/comm-events.js';
-import { db } from '../lib/data.js';
+import { ME, db } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { UNKNOWN_WHY, aed, ago, clock, dubaiStamp, esc, mins, n0, num, pct, tone } from '../lib/format.js';
 import { displayName, maskText } from '../lib/privacy.js';
-/* The design-system component layer. Converted onto it 27 Sep 2026, on the
-   same footing as screens/setup.js and screens/money-leaks.js: this screen no
-   longer calls lib/ui.js's kpi()/table() or lib/format.js's pill(), and its
-   text renders no `.kpi`, `.pill` or `.table.data` markup — see the note by
-   `const root` below for why the wrapper this buys its restyling from is a div
-   the screen appends, never `#screen` itself. */
-import { dsChip, dsEmpty, dsIntent, dsStat, dsStatRow, dsTable } from '../lib/design-system.js';
+/* ── The Google Stitch designs, 7 Oct 2026 ──────────────────────────────────
+   design/stitch/overview-revenue-command-center--af6246.html is the visual
+   reference; --99a45c (where money is leaking, revenue recovery, no reply sent,
+   KYC archive gaps, needs attention, latest leads, pipeline by stage) and
+   --74e5c2 (the KPI row, today's leaks, the audit feed) contribute sections.
+   This replaced the 27 Sep design-system pass (lib/design-system.js) and, like
+   that pass, it changed HOW the panels paint and nothing about what they read,
+   count or refuse to say: every read, every derivation and every caveat below
+   is the one that was here. The design-system helpers this file used —
+   dsChip, dsStat, dsTable, dsEmpty and lib/ui.js's panel() — are re-declared
+   just below with the same signatures and Stitch markup, so not one call site
+   changed its arguments. A long caveat may be DEMOTED behind a <details> (in
+   the DOM open or closed); it may not be deleted. */
 /* The only place in this app allowed to decide what a run outcome means. This
    screen reads the columns v_workflow_health already computed from the same
    rule and does not classify anything itself. */
@@ -251,7 +257,7 @@ import { healthWords, successRate } from '../lib/health.js';
    and what it was measured at. */
 import { expandIdentity, isHandle, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
-import { SCREENS, go } from '../lib/nav.js';
+import { SCREENS, flatNav, go } from '../lib/nav.js';
 /* Open pipeline, defined once. TERMINAL_TONES/isOpenLead and the read ceiling
    used to be declared here AND verbatim in screens/team.js with a different
    LEAD_LIMIT (2000 here, 1000 there), so the same rule could report two totals.
@@ -261,8 +267,7 @@ import { SCREENS, go } from '../lib/nav.js';
    because these are the ones this screen can attribute row by row and disclose a
    truncation on. */
 import { CAP_NOTE, LEAD_LIMIT, isOpenLead, openPipeline } from '../lib/pipeline.js';
-import { stateError, stateLoading } from '../lib/states.js';
-import { panel } from '../lib/ui.js';
+import { BTN, comingSoonPanel, errorState, moneyTile, skeleton, trustFooter } from '../lib/stitch-ui.js';
 
 /* The reply-gap analysis is windowed so it is provably complete rather than
    merely likely: a reply to a lead can only be logged at or after that lead was
@@ -357,8 +362,8 @@ const SLA_WINDOW_DAYS = 30;
 const THIN = 5;
 
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
-const warn = msg => `<span class="ds-t-warning">${esc(msg)}</span>`;
-const muted = msg => `<span class="ds-t-tertiary">${esc(msg)}</span>`;
+const warn = msg => `<span class="text-[#96570A]">${esc(msg)}</span>`;
+const muted = msg => `<span class="text-outline">${esc(msg)}</span>`;
 /* A chip for a raw database value whose colour is DERIVED rather than given —
    the design-system equivalent of calling lib/format.js's pill() with no
    explicit tone. `verbatim` is the caller's claim, never a guess: true says
@@ -393,6 +398,114 @@ const bridgeWhy = (err, capped) => (err
    to print a machine handle where a person's name goes.
    A LID contains no phone digits at all, so it identifies nobody. */
 const str = v => String(v == null ? '' : v).trim();
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The Stitch component layer for this screen
+   ══════════════════════════════════════════════════════════════════════════
+   Same names and signatures as the lib/design-system.js helpers they replace,
+   so the panels below are untouched; Stitch markup out. Every variant is a
+   COMPLETE class string picked from a map (scripts/stitch-classes.mjs fails the
+   build on a class glued to an interpolation). */
+const TONE_TO_INTENT = { hot: 'danger', warm: 'warning', cold: 'info', ok: 'success', unknown: 'unknown', won: 'success', dead: 'neutral', open: 'info', '': 'neutral' };
+const dsIntent = t => TONE_TO_INTENT[String(t || '').toLowerCase()] || 'neutral';
+/* Text colour per intent, for an icon or a figure that must agree with the chip
+   beside it. `tertiary` is the quiet grey a recovered row is allowed. */
+const TXT = { danger: 'text-error', warning: 'text-[#96570A]', info: 'text-[#2563A8]', success: 'text-[#157A5B]', neutral: 'text-secondary', unknown: 'text-outline', tertiary: 'text-outline' };
+const CHIP_CLS = {
+  danger:  'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#FDECEA] text-[#C8321F]',
+  warning: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#FEF3E2] text-[#96570A]',
+  info:    'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#E8F1FB] text-[#2563A8]',
+  success: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-[#E6F4EF] text-[#157A5B]',
+  neutral: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit bg-surface-container-high text-on-surface-variant',
+  unknown: 'inline-flex items-center gap-1 px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider w-fit border border-dashed border-outline text-outline',
+};
+/* `title` is kept as an attribute ONLY where the old chip carried one, and it
+   never holds the only copy of a caveat: every such sentence is also in a
+   panel note. */
+const dsChip = (label, intent = 'neutral', { title = '' } = {}) =>
+  `<span class="${CHIP_CLS[intent] || CHIP_CLS.neutral}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</span>`;
+/* The demotion affordance: in the DOM open or closed, never a tooltip. */
+const note = (body, label = 'More') => (body
+  ? `<details class="mt-1"><summary class="cursor-pointer list-none inline-flex items-center gap-0.5 font-body-sm text-[11px] text-primary font-medium underline">${esc(label)}<span class="material-symbols-outlined text-xs">expand_more</span></summary>`
+    + `<div class="mt-1.5 font-body-sm text-[12px] text-on-surface-variant leading-relaxed space-y-1">${body}</div></details>`
+  : '');
+/* KPI tile — states-components §3 / overview--af6246's KPI row. `meta` is the
+   old tile's sub-line HTML: its first line stays on the surface and the rest
+   is demoted, never dropped. */
+const STAT_VAL = {
+  danger:  'font-label-numeric-lg text-[1.75rem] leading-none font-bold text-error tracking-tight',
+  warning: 'font-label-numeric-lg text-[1.75rem] leading-none font-bold text-[#96570A] tracking-tight',
+  '':      'font-label-numeric-lg text-[1.75rem] leading-none font-bold text-on-surface tracking-tight',
+};
+const dsStat = ({ label, value, valueHtml, meta = '', intent = '' }) => {
+  const painted = valueHtml != null ? valueHtml : esc(String(value == null ? '—' : value));
+  const parts = String(meta || '').split('<br>');
+  return `<div class="bg-surface-container-lowest p-space-md rounded-xl border border-outline-variant/40 shadow-sm flex flex-col gap-space-sm min-w-0">
+    <span class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">${esc(label)}</span>
+    <div class="${STAT_VAL[intent] || STAT_VAL['']}">${painted}</div>
+    ${parts[0] ? `<div class="font-body-sm text-[12px] text-on-surface-variant">${parts[0]}</div>` : ''}
+    ${parts.length > 1 ? note(parts.slice(1).map(x => `<div>${x}</div>`).join(''), 'How this is counted') : ''}
+  </div>`;
+};
+const dsStatRow = html => `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md">${html}</div>`;
+/* Table — states-components §4/§6, 44px rows. A clickable row keeps the
+   `ds-row--clickable` marker the feed panel wires on. */
+const dsTable = (cols, rows, opts = {}) => {
+  if (!rows || !rows.length) return opts.empty || '';
+  const th = c => `<th class="${c.align === 'r' ? 'py-3 px-4 text-right' : 'py-3 px-4 text-left'}">${esc(c.label)}</th>`;
+  const td = c => (c.align === 'r' ? 'px-4 py-2 text-right font-label-numeric-sm text-label-numeric-sm'
+    : c.strong ? 'px-4 py-2 text-left font-semibold' : 'px-4 py-2 text-left');
+  return `<div class="overflow-x-auto"><table class="w-full text-left border-collapse">
+    <thead><tr class="bg-surface-container-low border-b border-outline-variant/30 text-outline font-table-header text-table-header uppercase">${cols.map(th).join('')}</tr></thead>
+    <tbody class="divide-y divide-outline-variant/20 font-body-sm text-body-sm text-on-surface">${rows.map((r, i) =>
+      `<tr class="${opts.onRow ? 'ds-row--clickable h-11 hover:bg-surface-container-low transition-colors cursor-pointer' : 'h-11'}" data-i="${i}">${cols.map(c => `<td class="${td(c)}">${c.render(r, i)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+};
+/* The design-system icon names this file passed, mapped to Material Symbols. */
+const EMPTY_ICON = { coins: 'payments', check: 'task_alt', gauge: 'speed', shield: 'shield', scan: 'search' };
+const dsEmpty = ({ title, body = '', name: iconKey = 'scan' } = {}) =>
+  `<div class="p-space-lg flex flex-col items-center text-center justify-center min-h-[180px] space-y-3">
+    <div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-outline"><span class="material-symbols-outlined text-[24px]">${esc(EMPTY_ICON[iconKey] || iconKey)}</span></div>
+    <div class="space-y-1"><h3 class="font-headline-md text-body-lg font-semibold text-on-surface">${esc(title)}</h3>
+    ${body ? `<p class="font-body-sm text-body-sm text-on-surface-variant max-w-md">${esc(body)}</p>` : ''}</div></div>`;
+/* lib/ui.js's panel(), same contract — load/render, a working Retry that
+   calls `load` again, and a thenable that replays its wirings after a retry —
+   in overview--af6246's card anatomy ("Priority actions": header strip on
+   surface-container-low, title, right-hand actions). The long sub-line is the
+   panel's own definition of what it counts: its first sentence stays visible,
+   the rest is one click away. */
+const firstSentence = t => { const m = /^[\s\S]*?[.!?](?=\s|$)/.exec(String(t || '')); return m ? m[0] : String(t || ''); };
+function panel(host, { title, sub, actions, load, render }) {
+  const card = document.createElement('section');
+  card.className = 'rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm';
+  host.appendChild(card);
+  const wirings = [];
+  const rewire = () => { for (const fn of wirings) { try { fn(card); } catch (e) { console.error('panel: re-wiring failed after retry', e); } } };
+  const head = sub && firstSentence(sub) !== sub
+    ? `<p class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${firstSentence(sub)}</p>${note(`<p>${sub}</p>`, 'What this panel counts')}`
+    : (sub ? `<p class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${sub}</p>` : '');
+  const attempt = async () => {
+    card.innerHTML = `${title ? `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex flex-wrap items-start justify-between gap-space-sm">
+        <div class="min-w-0 flex-1 basis-48"><h2 class="font-headline-md text-headline-md text-on-surface">${esc(title)}</h2>${head}</div>
+        ${actions ? `<div class="flex items-center gap-space-sm shrink-0">${actions}</div>` : ''}</div>` : ''}<div data-pbody>${skeleton({ rows: 3 })}</div>`;
+    const body = card.querySelector('[data-pbody]');
+    try {
+      const data = await load();
+      body.innerHTML = render(data, card);
+    } catch (e) {
+      body.innerHTML = `<div class="p-space-md">${errorState({ what: title || 'this panel', err: e, retry: 'x' })}</div>`;
+      body.querySelector('[data-retry]')?.addEventListener('click', () => { attempt().then(rewire); });
+    }
+  };
+  const first = attempt().then(() => card);
+  return {
+    then(onOk, onErr) { if (typeof onOk === 'function') wirings.push(onOk); return first.then(onOk, onErr); },
+    catch(onErr) { return first.catch(onErr); },
+    finally(onDone) { return first.finally(onDone); },
+  };
+}
+/* A row inside a panel (was the legacy `.list-item`). */
+const ROW = 'flex items-start gap-3 px-space-md py-3 border-b border-outline-variant/20 hover:bg-surface-container-low transition-colors cursor-pointer';
+const ROW_STILL = 'flex items-start gap-3 px-space-md py-3 bg-surface-container-low/40';
 
 /* ── Adding up money the engine emitted ─────────────────────────────────────
    The single most expensive habit this screen has ever had is
@@ -527,7 +640,7 @@ const IDENT = {
 
    This function never guesses upward: an alert wrongly softened is worse than
    one left loud. */
-const failureState = w => {
+export const failureState = w => {
   const health = String((w && w.health) || '').toUpperCase();
   const incompleteAt = Date.parse(w && w.last_incomplete);
   const partialAt = Date.parse(w && w.last_partial);
@@ -536,7 +649,7 @@ const failureState = w => {
   const hasIncomplete = !Number.isNaN(incompleteAt);
   if (health === 'PRODUCING_NOTHING') {
     return { key: 'failing',
-      text: `<span class="ds-t-danger">most of what it runs produces nothing usable, so a newer run is not evidence of recovery${
+      text: `<span class="text-error">most of what it runs produces nothing usable, so a newer run is not evidence of recovery${
         Number.isNaN(successAt) ? ' — nothing it has run in the window succeeded outright' : `; its last outright success was ${esc(ago(w.last_success))}`}</span>` };
   }
   /* Which kind of not-clean the newest one was. last_incomplete is the newer of
@@ -546,33 +659,33 @@ const failureState = w => {
   if (Number.isNaN(successAt)) {
     if (hasIncomplete) {
       return { key: 'failing',
-        text: `<span class="ds-t-danger">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
+        text: `<span class="text-error">nothing it has run in the window succeeded outright, and its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}</span>` };
     }
     if (Number.isNaN(ranAt)) {
       return { key: 'unknown',
-        text: '<span class="ds-t-tertiary">the view records no time for any run, so whether anything has succeeded cannot be told from here</span>' };
+        text: '<span class="text-outline">the view records no time for any run, so whether anything has succeeded cannot be told from here</span>' };
     }
     return { key: 'failing',
-      text: `<span class="ds-t-danger">nothing it has run in the window succeeded outright; its newest run was ${esc(ago(w.last_run))} and it was not one</span>` };
+      text: `<span class="text-error">nothing it has run in the window succeeded outright; its newest run was ${esc(ago(w.last_run))} and it was not one</span>` };
   }
   if (hasIncomplete && successAt <= incompleteAt) {
     return { key: 'failing',
-      text: `<span class="ds-t-danger">its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}, and nothing has succeeded outright since</span>` };
+      text: `<span class="text-error">its newest run that was not clean ${wording} ${esc(ago(w.last_incomplete))}, and nothing has succeeded outright since</span>` };
   }
   if (!Number.isNaN(ranAt) && ranAt > successAt) {
     return { key: 'stale',
-      text: `<span class="ds-t-warning">its newest run is not a success — something ran ${esc(ago(w.last_run))} that did not succeed, and its last outright success was ${esc(ago(w.last_success))}</span>` };
+      text: `<span class="text-[#96570A]">its newest run is not a success — something ran ${esc(ago(w.last_run))} that did not succeed, and its last outright success was ${esc(ago(w.last_success))}</span>` };
   }
   return { key: 'recovered',
-    text: `<span class="ds-t-success">its newest run is a success, ${esc(ago(w.last_success))}</span>` };
+    text: `<span class="text-[#157A5B]">its newest run is a success, ${esc(ago(w.last_success))}</span>` };
 };
 /* Said wherever a row above claims to have recovered. The audit log holds one
    row per run that COMPLETED, so "it has succeeded since" is evidence about the
    last run that finished — not proof of health, and a workflow hung right now
    writes no row at all and is indistinguishable from an idle one from here. */
-const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from the automation health figures: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never read off last_run: that column is the newest row of ANY status, and a run that produced nothing is not a recovery.';
+export const RECOVERY_CAVEAT = 'A workflow marked as having succeeded since is read from the automation health figures: last_success later than last_incomplete, and last_success being the newest run of any kind. That is evidence the most recent completed run did the job, not a clean bill of health — the audit log records only runs that finish, so a run hung right now leaves no row and cannot be seen from this screen. Recovery is never read off last_run: that column is the newest row of ANY status, and a run that produced nothing is not a recovery.';
 /* Said wherever a row is amber rather than green. */
-const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newest run is stating arithmetic, not a diagnosis: last_success is the newest success by construction, so a later last_run is a run that was not one. What it was instead — half-done, no result, refused by design or escalated to a person — is in the counts beside it and in full on Automation.';
+export const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newest run is stating arithmetic, not a diagnosis: last_success is the newest success by construction, so a later last_run is a run that was not one. What it was instead — half-done, no result, refused by design or escalated to a person — is in the counts beside it and in full on Automation.';
 
 /* The two numbers every workflow row on this screen is rated on, derived once
    so the triage card and the Needs-attention enrichment cannot print different
@@ -589,7 +702,7 @@ const STALE_CAVEAT = 'A workflow marked as having succeeded but not on its newes
    different things. `effective_runs_30d` excludes runs refused by design and
    runs escalated to a person on purpose; neither is the workflow failing to
    deliver, and leaving them in dilutes a real miss rate. */
-const runCounts = w => {
+export const runCounts = w => {
   const eff = n0(w && w.effective_runs_30d);
   const succ = n0(w && w.successes_30d);
   return { eff, succ, notClean: (eff != null && succ != null) ? eff - succ : null };
@@ -654,38 +767,72 @@ const collapseSnapshots = rows => {
    to be spelled out here and again, word for word, in screens/team.js. The
    paragraph that explained it now lives with the rule. */
 SCREENS.overview = async host => {
-  /* ── The design system is scoped to a container THIS SCREEN OWNS ──────────
-     `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto Leads and Inventory and restyle two screens nobody converted.
-     A wrapper cannot leak — go() removes it with the rest of the subtree.
-     Same pattern as screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* ── The layout: overview-revenue-command-center--af6246 ───────────────────
+     One root carrying `nx-stitch` (the scoped reset the Stitch classes were
+     designed against), appended rather than set on `#screen`, so go() removes
+     it with the rest of the subtree.
+
+     The ORDER is the export's, and the export's order is the same argument the
+     old order made: what needs a human and what is costing money come before
+     what happened. Top to bottom — the header; the attention banner; the two
+     money cards (exposed margin, attributed recovery); Priority actions (the
+     Needs-attention list); the KPI row; then two columns — where money is
+     leaking and the latest leads on the left, Revenue Recovery, visits, no
+     reply sent, workflows degraded and KYC archive gaps on the right; then the
+     two analysis cards (pipeline by stage, margin against days in stock); then
+     the roadmap row and the trust footer. */
+  const readAtScreen = new Date().toISOString();
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  const box = cls => { const n = el('div', cls || ''); return n; };
+  const headHost = box(); root.appendChild(headHost);
+  headHost.innerHTML = `<div class="flex flex-col md:flex-row md:items-center justify-between gap-space-sm">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="w-2 h-2 rounded-full bg-primary"></span>
+        <span class="font-table-header text-table-header uppercase tracking-wider text-secondary">Revenue command center</span>
+        <span class="text-outline-variant">•</span>
+        <span class="font-label-numeric-sm text-[11px] text-outline">Read ${esc(dubaiStamp(readAtScreen))} — once, when this screen opened</span>
+      </div>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface">Overview</h1>
+    </div>
+    <div class="flex items-center gap-space-sm self-start md:self-auto">
+      <button type="button" data-ov-refresh class="${BTN.secondary}"><span class="material-symbols-outlined text-[16px]">refresh</span><span>Read again</span></button>
+      ${SCREENS.actions ? `<button type="button" data-ov-go="actions" class="${BTN.primary}"><span class="material-symbols-outlined text-[16px]">task_alt</span><span>Open Action Center</span></button>` : ''}
+    </div></div>`;
+  headHost.querySelector('[data-ov-refresh]').addEventListener('click', () => go('overview'));
+  headHost.querySelector('[data-ov-go]')?.addEventListener('click', () => go('actions'));
 
-  /* First on the page, above the activity strip, because the order of a screen
-     is an argument about what matters. Leads, messages and pipeline are what
-     happened; this is what is costing money and who has to answer for it. */
-  const leakHost = el('div'); root.appendChild(leakHost);
-  /* Directly under the leak panel, because it answers the question that panel
+  const bannerHost = box(); root.appendChild(bannerHost);
+  const moneyHost = box('grid grid-cols-1 md:grid-cols-2 gap-space-md'); root.appendChild(moneyHost);
+  moneyHost.innerHTML = skeleton({ rows: 2 }) + skeleton({ rows: 2 });
+  /* Priority actions — the Needs-attention list, full width as the export
+     draws it. */
+  const attnHost = box(); root.appendChild(attnHost);
+
+  const strip = box(); strip.innerHTML = skeleton({ rows: 2 }); root.appendChild(strip);
+
+  const cols = box('grid grid-cols-1 lg:grid-cols-3 gap-space-md items-start'); root.appendChild(cols);
+  const leftCol = box('lg:col-span-2 flex flex-col gap-space-md min-w-0'); cols.appendChild(leftCol);
+  const rightCol = box('flex flex-col gap-space-md min-w-0'); cols.appendChild(rightCol);
+  /* First in the left column, because it is what is costing money and who has
+     to answer for it. */
+  const leakHost = box(); leftCol.appendChild(leakHost);
+  const feedHost = box(); leftCol.appendChild(feedHost);
+  /* Directly beside the leak panel, because it answers the question that panel
      raises and cannot close: what about the customers and the sales? */
-  const recoveryHost = el('div'); recoveryHost.style.marginTop = '16px'; root.appendChild(recoveryHost);
+  const recoveryHost = box(); rightCol.appendChild(recoveryHost);
+  const apptHost = box(); rightCol.appendChild(apptHost);
+  const replyHost = box(); rightCol.appendChild(replyHost);
+  const flowHost = box(); rightCol.appendChild(flowHost);
+  const kycHost = box(); rightCol.appendChild(kycHost);
 
-  const strip = el('div'); strip.style.marginTop = '16px';
-  strip.innerHTML = stateLoading(2); root.appendChild(strip);
-
-  const triage = el('div', 'grid g3 top'); triage.style.marginTop = '16px'; root.appendChild(triage);
-  const replyHost = el('div'); const flowHost = el('div'); const kycHost = el('div');
-  triage.appendChild(replyHost); triage.appendChild(flowHost); triage.appendChild(kycHost);
-
-  const mid = el('div', 'grid g2 top'); mid.style.marginTop = '16px'; root.appendChild(mid);
-  const attnHost = el('div'); const feedHost = el('div');
-  mid.appendChild(attnHost); mid.appendChild(feedHost);
-
-  const pipeCard = el('div', 'card'); pipeCard.style.marginTop = '16px'; root.appendChild(pipeCard);
-  pipeCard.innerHTML = stateLoading(2);
+  const analysis = box('grid grid-cols-1 md:grid-cols-2 gap-space-md items-start'); root.appendChild(analysis);
+  const pipeCard = box('rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-lg'); analysis.appendChild(pipeCard);
+  pipeCard.innerHTML = skeleton({ rows: 2 });
+  const marginHost = box(); analysis.appendChild(marginHost);
+  const roadmapHost = box(); root.appendChild(roadmapHost);
+  const footHost = box(); root.appendChild(footHost);
 
   /* ── Reads more than one panel depends on ───────────────────────────────
      Shared so that two panels describing the same rows cannot describe two
@@ -1361,8 +1508,8 @@ SCREENS.overview = async host => {
   const requireCore = () => { if (coreErr) throw coreErr; return core; };
 
   if (coreErr) {
-    strip.innerHTML = stateError('the overview', coreErr);
-    pipeCard.innerHTML = stateError('pipeline by stage', coreErr);
+    strip.innerHTML = errorState({ what: 'the overview', err: coreErr });
+    pipeCard.innerHTML = errorState({ what: 'pipeline by stage', err: coreErr });
   } else {
     const { leads, sentinel, hot, warm, cold, avgResp, withResp, withBudget, pipeline,
             openCount, terminalCount, terminalNames,
@@ -1387,11 +1534,11 @@ SCREENS.overview = async host => {
          has changed since yesterday. daily_metrics is the one table on this
          screen whose columns were never probed, so this is a real possibility
          and not a defensive flourish. */
-      if (before == null) return `<span class="ds-t-tertiary">${when.charAt(0).toUpperCase() + when.slice(1)} records no comparable figure, so no change is shown</span>`;
+      if (before == null) return `<span class="text-outline">${when.charAt(0).toUpperCase() + when.slice(1)} records no comparable figure, so no change is shown</span>`;
       const d = Number(now) - Number(before);
-      if (!d) return `<span class="ds-t-tertiary">No change against ${when}</span>`;
+      if (!d) return `<span class="text-outline">No change against ${when}</span>`;
       const good = lowerIsBetter ? d < 0 : d > 0;
-      return `<span class="${good ? 'ds-t-success' : 'ds-t-danger'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}</span> <span class="ds-t-tertiary">against ${when}</span>`;
+      return `<span class="${good ? 'text-[#157A5B]' : 'text-error'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}</span> <span class="text-outline">against ${when}</span>`;
     };
 
     /* A snapshot that counted more open leads than the table now holds in total
@@ -1453,11 +1600,11 @@ SCREENS.overview = async host => {
     const waitSub = !bridgeOk
       ? warn(`This check did not run. ${bridgeWhy(contactsErr, contactsCapped)} No lead is being claimed as answered or unanswered.`)
       : waiting.length
-      ? `<span class="ds-t-danger">Oldest arrived ${esc(ago(waiting[0].created_at))}, still unanswered</span>`
+      ? `<span class="text-error">Oldest arrived ${esc(ago(waiting[0].created_at))}, still unanswered</span>`
         + `<br>${muted(`Out of ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked`)}`
         + untestedNote
       : testedCount
-        ? `<span class="ds-t-success">All ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(testedCount, 'has', 'have')} an outbound message sent after ${plural(testedCount, 'it arrived', 'they arrived')}</span>`
+        ? `<span class="text-[#157A5B]">All ${num(testedCount)} open ${plural(testedCount, 'lead', 'leads')} created in the last ${WINDOW_DAYS} days that could be checked ${plural(testedCount, 'has', 'have')} an outbound message sent after ${plural(testedCount, 'it arrived', 'they arrived')}</span>`
           + (testedCount <= THIN ? `<br>${warn(`On ${num(testedCount)} ${plural(testedCount, 'lead', 'leads')} this says almost nothing about the reply habit.`)}` : '')
           + untestedNote
         : recentCount
@@ -1507,8 +1654,8 @@ SCREENS.overview = async host => {
             ? 'The only lead on file has no response time recorded, so there is no average to report'
             : `None of the ${num(leads.length)} leads on file has a response time recorded, so there is no average to report`)
       : (avgResp > 5
-          ? `<span class="ds-t-danger">Breaches the 5-minute rule</span><br>${respBasis}`
-          : `<span class="ds-t-success">Inside the 5-minute rule</span><br>${respBasis}`)
+          ? `<span class="text-error">Breaches the 5-minute rule</span><br>${respBasis}`
+          : `<span class="text-[#157A5B]">Inside the 5-minute rule</span><br>${respBasis}`)
         + (oneMeasure
             ? `<br>${warn('This is one lead’s recorded response time, not an average of anything. It says how fast that enquiry was answered and nothing about how the dealership performs.')}`
             : withResp.length <= THIN
@@ -1623,7 +1770,7 @@ SCREENS.overview = async host => {
            this tile is not allowed to do. */
         ? warn(`The Profit Sentinel could not be read (${sentinelErr.message}), so nothing is claimed about stock, margin or ageing. No figure is shown rather than a zero — this is a question that went unanswered, not a lot with nothing wrong with it.`)
       : needsDecision.length
-        ? `<span class="${worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 'ds-t-danger' : 'ds-t-warning'}">${esc(riskWords)}</span>`
+        ? `<span class="${worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 'text-error' : 'text-[#96570A]'}">${esc(riskWords)}</span>`
           + `<br>${muted(exposureLine(exposed, plural(needsDecision.length, 'that unit', 'those units')))}`
         : sentinel.length
           ? muted(`The engine recommends HOLD on every one of the ${num(sentinel.length)} ${plural(sentinel.length, 'unit', 'units')} it scored, so it is not asking for a decision on any of them`)
@@ -1667,7 +1814,7 @@ SCREENS.overview = async host => {
                  : (worstRisk === 'SEVERE' || worstRisk === 'HIGH' ? 'danger' : 'warning') }),
     ].join(''));
 
-    const seg = [['HOT', hot, 'var(--hot)'], ['WARM', warm, 'var(--warm)'], ['COLD', cold, 'var(--cold)']];
+    const seg = [['HOT', hot, '#C8321F'], ['WARM', warm, '#96570A'], ['COLD', cold, '#2563A8']];
     const graded = hot + warm + cold;
     /* "Everything that is not HOT, WARM or COLD has not been scored" was a
        false statement, and it was printed under the bar in plain words. The
@@ -1691,7 +1838,7 @@ SCREENS.overview = async host => {
         : '',
     ].filter(Boolean);
     const stageRestHtml = stageRest.length
-      ? `<div class="ds-cell-sub" style="margin-top:6px">${stageRest.map(muted).join('<br>')}</div>`
+      ? `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5" style="margin-top:6px">${stageRest.map(muted).join('<br>')}</div>`
       : '';
     /* One scored lead paints a full-width bar in one colour, and a full-width
        bar is read as a share before any caption under it is. A caption cannot
@@ -1701,26 +1848,26 @@ SCREENS.overview = async host => {
     const single = graded === 1;
     const onlyStage = single ? (seg.find(([, v]) => v === 1) || [null])[0] : null;
     pipeCard.innerHTML = single
-      ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
+      ? `<div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:12px">Pipeline by stage</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           ${onlyStage ? dsChip(onlyStage, dsIntent(tone(onlyStage))) : ''}
           <span>Exactly one lead has been scored${onlyStage ? `, and it is ${esc(onlyStage)}` : ''}.</span>
         </div>
-        <div class="ds-cell-sub" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
+        <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5" style="margin-top:10px">${muted('No bar is drawn: one row has no distribution, and a full-width band of one colour would read as a market share of the pipeline. The stage mix reappears here as soon as a second lead is scored.')}</div>
         ${stageRestHtml}`
       : graded
-      ? `<div class="label-caps" style="margin-bottom:12px">Pipeline by stage</div>
-        <div class="stackbar">${seg.map(([, v, c]) => `<i style="width:${(v / graded * 100).toFixed(1)}%;background:${c}"></i>`).join('')}</div>
+      ? `<div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:12px">Pipeline by stage</div>
+        <div class="flex h-3 w-full rounded-full overflow-hidden bg-surface-container">${seg.map(([, v, c]) => `<i class="block h-full" style="width:${(v / graded * 100).toFixed(1)}%;background:${c}"></i>`).join('')}</div>
         <div style="display:flex;gap:20px;margin-top:12px;flex-wrap:wrap">
           ${seg.map(([k, v, c]) => `<div style="display:flex;align-items:center;gap:8px">
             <span style="width:8px;height:8px;border-radius:50%;background:${c}"></span>
-            <span style="font-weight:500">${esc(k)}</span><span class="ds-t-tertiary num">${num(v)} ${plural(v, 'lead', 'leads')}</span></div>`).join('')}
+            <span style="font-weight:500">${esc(k)}</span><span class="text-outline font-label-numeric-sm">${num(v)} ${plural(v, 'lead', 'leads')}</span></div>`).join('')}
         </div>
         ${stageRestHtml}
         ${graded <= THIN
           /* A full-width bar drawn from one row looks like a market share. It
              is one row, and the caption says so directly under it. */
-          ? `<div class="ds-cell-sub" style="margin-top:10px">${warn(`This bar is ${num(graded)} scored ${plural(graded, 'lead', 'leads')} in total. The proportions are shapes, not shares.`)}</div>`
+          ? `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5" style="margin-top:10px">${warn(`This bar is ${num(graded)} scored ${plural(graded, 'lead', 'leads')} in total. The proportions are shapes, not shares.`)}</div>`
           : ''}`
       : dsEmpty({ title: 'Nothing to chart yet', name: 'gauge', body:
           leads.length
@@ -1746,15 +1893,15 @@ SCREENS.overview = async host => {
   const openLead = async (id, msg) => {
     const say = html => { if (msg) msg.innerHTML = html; };
     try {
-      say('<span class="ds-t-tertiary">Opening…</span>');
+      say('<span class="text-outline">Opening…</span>');
       const rows = await db(`leads?select=*,users(id,name)&id=eq.${encodeURIComponent(id)}&limit=1`);
       /* Awaited, not fired: the drawer does its own reads, and an unawaited
          rejection would land in the console instead of in the row that was
          clicked. */
       if (rows.length) { say(''); await leadDrawer(rows[0]); }
-      else say(`<span class="ds-t-warning">${esc('That lead is no longer in your leads, so there is nothing to open.')}</span>`);
+      else say(`<span class="text-[#96570A]">${esc('That lead is no longer in your leads, so there is nothing to open.')}</span>`);
     } catch (e) {
-      say(`<span class="ds-t-danger">${esc(`Could not open this lead — ${e.message}`)}</span>`);
+      say(`<span class="text-error">${esc(`Could not open this lead — ${e.message}`)}</span>`);
     }
   };
   /* Keyboard-operable for the same reason the attention rows are: this is the
@@ -1833,7 +1980,7 @@ SCREENS.overview = async host => {
     title: 'Where money is leaking',
     sub: 'Every figure here is one the engine produced, next to the screen that can act on it. '
        + 'Exposure is margin at risk in a car that has not sold — never loss, revenue, savings or recovery',
-    actions: `<button class="btn sm" data-act="actions">Open Action Center</button>`,
+    actions: `<button type="button" class="${BTN.secondary}" data-act="actions">Open Action Center</button>`,
     load: async () => {
       const readAt = new Date().toISOString();
       /* Settled, not awaited together: each of these answers a different
@@ -1864,18 +2011,18 @@ SCREENS.overview = async host => {
            colour vocabulary. */
         const iconIntent = dsIntent(iconTone);
         return `
-        <div class="list-item" role="button" tabindex="0" data-goto="${esc(target)}"
+        <div class="${ROW}" role="button" tabindex="0" data-goto="${esc(target)}"
              title="Open ${esc(target)}" style="align-items:flex-start">
-          <span class="material-symbols-outlined ds-t-${iconIntent}" style="font-size:20px">${esc(icon)}</span>
+          <span class="material-symbols-outlined ${TXT[iconIntent] || TXT.neutral}" style="font-size:20px">${esc(icon)}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${badge || ''}</div>
-            ${lines.filter(Boolean).map(l => `<div class="ds-cell-sub">${l}</div>`).join('')}
+            ${lines.filter(Boolean).map(l => `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${l}</div>`).join('')}
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="num ds-t-${iconIntent}" style="font-weight:600;font-size:18px">${right}</div>
-            ${rightNote ? `<div class="ds-cell-sub">${esc(rightNote)}</div>` : ''}
+            <div class="font-label-numeric-md ${TXT[iconIntent] || TXT.neutral}" style="font-weight:600;font-size:18px">${right}</div>
+            ${rightNote ? `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(rightNote)}</div>` : ''}
           </div>
-          <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">chevron_right</span>
+          <span class="material-symbols-outlined text-outline" style="font-size:18px">chevron_right</span>
         </div>`;
       };
 
@@ -2226,15 +2373,15 @@ SCREENS.overview = async host => {
       notes.push('There is no single "total leaking" figure on this panel and there will not be one. Margin exposed in a car, an approval nobody has acted on and an enquiry nobody owns are three different quantities; adding them would produce a number that is nowhere in the database.');
 
       const clearLine = clear.length
-        ? `<div class="list-item" style="cursor:default;align-items:flex-start">
-             <span class="material-symbols-outlined ds-t-success" style="font-size:20px">check_circle</span>
-             <div class="ds-cell-sub" style="white-space:normal">${esc(`Checked and clear right now: ${clear.join('; ')}.`)} ${
+        ? `<div class="${ROW_STILL}">
+             <span class="material-symbols-outlined text-[#157A5B]" style="font-size:20px">check_circle</span>
+             <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5" style="white-space:normal">${esc(`Checked and clear right now: ${clear.join('; ')}.`)} ${
                esc('Each of these ran and found nothing — that is not the same as a check this panel does not make.')}</div>
            </div>`
         : '';
-      const foot = `<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+      const foot = `<div class="${ROW_STILL}">
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+        <div class="min-w-0 flex-1">${note(notes.map(x => `<p>${esc(x)}</p>`).join(''), `How to read this panel — ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`)}</div></div>`;
 
       if (!rows.length) {
         /* 'savings' is not in the design system's small icon set (lib/icons.js)
@@ -2271,7 +2418,7 @@ SCREENS.overview = async host => {
     title: 'Revenue Recovery',
     sub: 'The three questions the panel above does not ask, because they belong to the lead, deal and '
        + 'attribution engines rather than to inventory',
-    actions: `<button class="btn sm" data-act="revenue">Open Revenue Recovery</button>`,
+    actions: `<button type="button" class="${BTN.secondary}" data-act="revenue">Open Revenue Recovery</button>`,
     load: async () => {
       const [cov, inFlight] = await Promise.all([
         db('v_lead_recovery_coverage?select=*'),
@@ -2288,22 +2435,22 @@ SCREENS.overview = async host => {
       /* Each caption states the denominator its figure came out of, and each is
          written for the branch it sits in — the zero wording and the non-zero
          wording are separate strings, not one sentence with a number in it. */
-      return dsStatRow([
+      return `<div class="grid grid-cols-1 gap-space-sm p-space-md">${[
         dsStat({ label: 'Leads at risk', value: num(c.leads_at_risk),
-          meta: `<div class="ds-cell-sub">${esc(n0(c.leads_at_risk)
+          meta: `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(n0(c.leads_at_risk)
             ? `Of ${num(c.leads_total)} scored. Each one is listed on Revenue Recovery with its evidence.`
             : `Of ${num(c.leads_total)} scored, and ${num(c.leads_risk_unknown)} whose risk could not be determined. `
               + 'No measurable recovery opportunity is currently detected: the engine scored every lead and flagged '
               + 'none. Its reason for each is on Revenue Recovery.')}</div>`,
           intent: n0(c.leads_at_risk) ? 'danger' : '' }),
         dsStat({ label: 'Deals in flight', value: num(inFlight.length),
-          meta: `<div class="ds-cell-sub">${esc(inFlight.length
+          meta: `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(inFlight.length
             ? 'Deals the rescue engine is tracking. Each is ranked by what it is stuck on.'
             : 'No deal record exists while a deal is in progress — the sale record is written at the moment of sale — '
               + 'so this engine has nothing to rank. A gap in the schema, not a quiet sales floor.')}</div>`,
           intent: inFlight.length ? 'danger' : '' }),
         dsStat({ label: 'Sales linked to a recovery action', value: num(c.sales_attributed_to_a_recovery_action),
-          meta: `<div class="ds-cell-sub">${esc(n0(c.sales_attributed_to_a_recovery_action)
+          meta: `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(n0(c.sales_attributed_to_a_recovery_action)
             ? `Of ${num(c.leads_with_a_confirmed_sale)} confirmed on file.`
             /* Scoped to what this panel actually read — the lead recovery lane.
                Whether ANY lane has attributed an outcome is a wider claim than
@@ -2312,7 +2459,7 @@ SCREENS.overview = async host => {
             : `${num(c.leads_with_a_confirmed_sale)} confirmed ${Number(c.leads_with_a_confirmed_sale) === 1 ? 'sale is' : 'sales are'} `
               + `on file (${aed(c.confirmed_revenue_aed)}), and none is linked to a recovery action. `
               + 'Confirmed is not attributed.')}</div>` }),
-      ].join(''));
+      ].join('')}</div>`;
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('revenue'));
@@ -2322,7 +2469,7 @@ SCREENS.overview = async host => {
   panels.push(panel(replyHost, {
     title: 'No reply sent',
     sub: `Open leads created in the last ${WINDOW_DAYS} days with no outbound message in the message history sent after they arrived. A message counts for a lead when it is filed under any key that lead resolves to — NEXUS’s identity rules, the same last-nine-digit rule the workflows used to write those keys. Internal markers do not count as a reply, and closed leads are not listed`,
-    actions: `<button class="btn sm" data-act="leads">Open Leads</button>`,
+    actions: `<button type="button" class="${BTN.secondary}" data-act="leads">Open Leads</button>`,
     load: async () => requireCore(),
     render: d => {
       const noPhone = d.waiting.filter(l => !str(l.phone)).length;
@@ -2359,8 +2506,8 @@ SCREENS.overview = async host => {
         d.waiting.length ? NO_STAFF_PHONE : '',
       ].filter(Boolean);
       const foot = notes.length
-        ? `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-             <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
+        ? `<div class="${ROW_STILL}"><span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+             <div class="min-w-0 flex-1">${note(notes.map(x => `<p>${esc(x)}</p>`).join(''), `How to read this panel — ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`)}</div></div>`
         : '';
       if (!d.waiting.length) {
         /* The headline names the cohort it is about. "Every lead has been
@@ -2387,28 +2534,28 @@ SCREENS.overview = async host => {
       }
       const shown = d.waiting.slice(0, 8);
       return `<div>${shown.map(l => `
-        <div class="list-item" role="button" tabindex="0" data-lead="${esc(l.id)}"
+        <div class="${ROW}" role="button" tabindex="0" data-lead="${esc(l.id)}"
              title="Open this lead" style="align-items:flex-start">
           ${rawChip(l.status || 'Unscored', !!l.status)}
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
               <span>${esc(str(l.name) ? displayName(str(l.name), l.id) : 'Unnamed lead')}</span>
               ${str(l.phone)
-                ? `<span class="mono ds-cell-sub">${esc(maskText(str(l.phone)))}</span>`
-                : `<span class="ds-cell-sub ds-t-warning" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
+                ? `<span class="font-label-numeric-sm text-[12px] text-on-surface-variant">${esc(maskText(str(l.phone)))}</span>`
+                : `<span class="font-body-sm text-[12px] text-[#96570A] mt-0.5" title="The router captured no phone number for this lead. The phone number on the lead record is empty on this row.">No phone on the lead</span>`}
             </div>
-            <div class="ds-cell-sub">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
-            <div class="ds-cell-sub" aria-live="polite" data-leadmsg></div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(str(l.vehicle_interest) || 'No vehicle recorded')}${str(l.source) ? ' · ' + esc(str(l.source)) : ''}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5" aria-live="polite" data-leadmsg></div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="ds-t-danger">${esc(ago(l.created_at))}</div>
-            <div class="ds-cell-sub">${str(l.assigned_to)
+            <div class="text-error">${esc(ago(l.created_at))}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${str(l.assigned_to)
               ? esc(str(l.assigned_to))
-              : l.assigned_to_id ? 'assigned' : '<span class="ds-t-warning">unassigned</span>'}</div>
+              : l.assigned_to_id ? 'assigned' : '<span class="text-[#96570A]">unassigned</span>'}</div>
           </div>
         </div>`).join('')}
         ${d.waiting.length > shown.length
-          ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(d.waiting.length - shown.length)} more waiting — see Leads</div></div>`
+          ? `<div class="${ROW_STILL}"><div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${num(d.waiting.length - shown.length)} more waiting — see Leads</div></div>`
           : ''}${foot}</div>`;
     },
   }).then(card => {
@@ -2424,7 +2571,7 @@ SCREENS.overview = async host => {
   panels.push(panel(flowHost, {
     title: 'Workflows degraded',
     sub: 'Any workflow that failed, went out half-done or produced nothing usable in the last 30 days, and whether it has succeeded since',
-    actions: `<button class="btn sm" data-act="automation">Open Automation</button>`,
+    actions: `<button type="button" class="${BTN.secondary}" data-act="automation">Open Automation</button>`,
     load: () => readHealth(),
     render: rows => {
       if (!rows.length) {
@@ -2487,13 +2634,13 @@ SCREENS.overview = async host => {
            it — that is the view's judgement and this panel does not overrule
            it, only spells it out. */
         const ICONS = {
-          failing:   { name: 'error',   cls: 'ds-t-danger' },
-          stale:     { name: 'history', cls: 'ds-t-warning' },
-          recovered: { name: 'history', cls: 'ds-t-tertiary' },
-          unknown:   { name: 'help',    cls: 'ds-t-tertiary' },
+          failing:   { name: 'error',   cls: 'text-error' },
+          stale:     { name: 'history', cls: 'text-[#96570A]' },
+          recovered: { name: 'history', cls: 'text-outline' },
+          unknown:   { name: 'help',    cls: 'text-outline' },
         };
         const icon = ICONS[st.key] || ICONS.unknown;
-        const NUM_CLS = { failing: 'ds-t-danger', stale: 'ds-t-warning', recovered: 'ds-t-tertiary', unknown: 'ds-t-tertiary' };
+        const NUM_CLS = { failing: 'text-error', stale: 'text-[#96570A]', recovered: 'text-outline', unknown: 'text-outline' };
         const outcomes = eff == null || eff <= 0
           ? muted('No run in this window counted toward a rate: every one of them was refused by design or handed to a person on purpose.')
           : muted(`${num(succ)} of ${num(eff)} qualifying ${plural(eff, 'run', 'runs')} succeeded outright (${pct(rate)})`
@@ -2502,7 +2649,7 @@ SCREENS.overview = async host => {
               + (unk ? ` · ${num(unk)} carry a status this system does not define` : '')
               + (rej ? ` · ${num(rej)} refused by design, not counted` : '')
               + (esc30 ? ` · ${num(esc30)} escalated to a person, not counted` : ''));
-        return `<div class="list-item" role="button" tabindex="0" data-goto="automation"
+        return `<div class="${ROW}" role="button" tabindex="0" data-goto="automation"
              title="Open Automation, where this workflow's runs and failures are" style="align-items:flex-start">
           <span class="material-symbols-outlined ${icon.cls}" style="font-size:20px">${icon.name}</span>
           <div style="flex:1;min-width:0">
@@ -2511,20 +2658,20 @@ SCREENS.overview = async host => {
               <span title="${esc(hw.blurb)}">${dsChip(hw.label, dsIntent(hw.tone))}</span>
               ${w.is_active === false ? dsChip('Inactive', dsIntent('cold')) : ''}
             </div>
-            <div class="ds-cell-sub">${esc(w.category || 'Uncategorised')}${w.last_incomplete ? ' · last bad run ' + esc(ago(w.last_incomplete)) : ''}${
-              scarce ? ' · <span class="ds-t-warning">too few runs in 30 days to rate</span>' : ''}</div>
-            <div class="ds-cell-sub">${st.text}</div>
-            <div class="ds-cell-sub">${outcomes}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(w.category || 'Uncategorised')}${w.last_incomplete ? ' · last bad run ' + esc(ago(w.last_incomplete)) : ''}${
+              scarce ? ' · <span class="text-[#96570A]">too few runs in 30 days to rate</span>' : ''}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${st.text}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${outcomes}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="num ${NUM_CLS[st.key] || 'ds-t-tertiary'}" style="font-weight:500"
+            <div class="font-label-numeric-md ${NUM_CLS[st.key] || 'text-outline'}" style="font-weight:500"
                  title="Runs in the last 30 days that did not succeed outright: failures, half-done runs, runs that produced nothing usable, and any status this system does not define. Runs refused by design and runs escalated to a person are excluded from both halves.">${num(notClean)}</div>
-            <div class="ds-cell-sub">${eff == null ? 'did not succeed' : `of ${num(eff)} that counted`}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${eff == null ? 'did not succeed' : `of ${num(eff)} that counted`}</div>
           </div>
         </div>`;
-      }).join('')}<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div></div>`;
+      }).join('')}<div class="${ROW_STILL}">
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+        <div class="min-w-0 flex-1">${note(notes.map(x => `<p>${esc(x)}</p>`).join(''), `How to read this panel — ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`)}</div></div></div>`;
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('automation'));
@@ -2545,7 +2692,7 @@ SCREENS.overview = async host => {
   panels.push(panel(kycHost, {
     title: 'KYC archive gaps',
     sub: 'Genuine submissions whose file was never stored, and which were not purged on schedule',
-    actions: `<button class="btn sm" data-act="compliance">Open Compliance</button>`,
+    actions: `<button type="button" class="${BTN.secondary}" data-act="compliance">Open Compliance</button>`,
     load: async () => {
       /* One read, partitioned in the browser, so the voided count and the live
          count cannot come from two different moments in time. */
@@ -2617,9 +2764,9 @@ SCREENS.overview = async host => {
         live.length ? 'The ID documents stores no phone number, so these contacts are shown by the address the submission was filed under. Their number, if there is one, is on the lead record in Leads.' : '',
       ].filter(Boolean);
 
-      const foot = `<div class="list-item" style="cursor:default">
-          <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-          <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}${notes.length ? '<br>' : ''}${esc('Repairing these is NEXUS’s to do. There is also nothing here to open: this dashboard can open a stored document, but no archived file was ever recorded for any row in this list — the missing file is the gap.')}</div>
+      const foot = `<div class="${ROW_STILL}">
+          <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+          <div class="min-w-0 flex-1">${note(notes.map(x => `<p>${esc(x)}</p>`).join('') + `<p>${esc('Repairing these is NEXUS’s to do. There is also nothing here to open: this dashboard can open a stored document, but no archived file was ever recorded for any row in this list — the missing file is the gap.')}</p>`, `How to read this panel — ${notes.length + 1} notes`)}</div>
         </div>`;
 
       if (!live.length) {
@@ -2644,26 +2791,26 @@ SCREENS.overview = async host => {
       return `<div>${shown.map(d => {
         const attempt = n0(d.attempt_number), maxAttempt = n0(d.max_attempts);
         return `
-        <div class="list-item" role="button" tabindex="0" data-goto="compliance"
+        <div class="${ROW}" role="button" tabindex="0" data-goto="compliance"
              title="Open Compliance, where this document's audit trail is" style="align-items:flex-start">
-          <span class="material-symbols-outlined ds-t-warning" style="font-size:20px">folder_off</span>
+          <span class="material-symbols-outlined text-[#96570A]" style="font-size:20px">folder_off</span>
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               <span style="font-weight:500">${esc(maskText(str(d.lead_name) || str(d.full_name) || str(d.lead_email) || 'Unknown contact'))}</span>
               ${d.verdict ? rawChip(d.verdict, true) : ''}
             </div>
-            <div class="ds-cell-sub">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(str(d.document_type) || 'No document type recorded')} · audited ${esc(ago(d.created_at))}${
               attempt != null ? ' · attempt ' + esc(num(attempt)) + (maxAttempt != null ? ' of ' + esc(num(maxAttempt)) : '') : ''}${
               d.retain_until ? ' · retain until ' + esc(d.retain_until) : ''}</div>
-            <div class="ds-cell-sub">${str(d.lead_email)
-              ? `<span class="mono">${esc(maskText(str(d.lead_email)))}</span>`
-              : '<span class="ds-t-warning">No address on the submission</span>'}</div>
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${str(d.lead_email)
+              ? `<span class="font-label-numeric-sm text-[12px]">${esc(maskText(str(d.lead_email)))}</span>`
+              : '<span class="text-[#96570A]">No address on the submission</span>'}</div>
           </div>
-          <button class="btn sm" disabled
+          <button type="button" class="${BTN.secondary}" disabled
             title="Re-archiving is not something this dashboard can start. The documents and the store they live in are NEXUS’s to write, and there is nothing here that can re-run the archive step. Ask NEXUS support.">Re-archive</button>
         </div>`;
       }).join('')}${rest > 0
-        ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${esc(`${num(rest)} older ${plural(rest, 'gap is', 'gaps are')} not listed here — all ${num(live.length)} are counted above and every one of them is in Compliance.`)}</div></div>`
+        ? `<div class="${ROW_STILL}"><div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${esc(`${num(rest)} older ${plural(rest, 'gap is', 'gaps are')} not listed here — all ${num(live.length)} are counted above and every one of them is in Compliance.`)}</div></div>`
         : ''}${foot}</div>`;
     },
   }).then(card => {
@@ -2858,9 +3005,9 @@ SCREENS.overview = async host => {
         const phone = t ? str(t.phone) : '';
         const chips = [];
         if (!t) {
-          chips.push(`<span class="chip" title="NEXUS did not load, so this thread's identity could not be resolved. The label shown is the view's display_name, which falls back to the raw chat handle.">Identity unresolved</span>`);
+          chips.push(`<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant" title="NEXUS did not load, so this thread's identity could not be resolved. The label shown is the view's display_name, which falls back to the raw chat handle.">Identity unresolved</span>`);
         } else if (meta) {
-          chips.push(`<span class="chip" title="${esc(meta.note)}">${esc(meta.short)}</span>`);
+          chips.push(`<span class="inline-flex items-center px-2 py-0.5 rounded font-label-numeric-sm text-[10px] font-bold uppercase tracking-wider bg-surface-container-high text-on-surface-variant" title="${esc(meta.note)}">${esc(meta.short)}</span>`);
         }
         return { ref, named, name: named ? shown : '', phone, chips };
       };
@@ -2895,25 +3042,25 @@ SCREENS.overview = async host => {
            gets the neutral wording and claims nothing. */
         const meaning = AT_WORDS[it.kind] || AT_WORDS._default;
         const waited = meaning.none
-          ? `<span class="ds-t-tertiary">${esc(meaning.blank)}</span>`
+          ? `<span class="text-outline">${esc(meaning.blank)}</span>`
           : it.at
-            ? `<span class="ds-t-tertiary">${esc(meaning.verb)} ${esc(ago(it.at))}</span>`
-            : '<span class="ds-t-tertiary">no timestamp on this item, so when it arrived is unknown</span>';
+            ? `<span class="text-outline">${esc(meaning.verb)} ${esc(ago(it.at))}</span>`
+            : '<span class="text-outline">no timestamp on this item, so when it arrived is unknown</span>';
         const lead = leadFor(it);
         if (LEAD_KINDS.has(it.kind)) { if (lead) matchedLeads += 1; else unmatchedLeadRefs += 1; }
         let head, sub;
         if (it.kind === 'unanswered_chat') {
           const c = chatRow(it);
-          head = `${c.named ? esc(displayName(c.name)) : '<span class="ds-t-warning">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
-          sub = `${esc(it.detail)} · ${waited}<div class="ds-cell-sub">${
-            c.phone ? `<span class="mono">${esc(maskText(c.phone))}</span>` : '<span class="ds-t-tertiary">No phone number stored for this thread</span>'
-          } · <span class="mono" title="WhatsApp chat handle — a LID contains no phone digits and identifies nobody on its own">${esc(c.ref)}</span></div>`;
+          head = `${c.named ? esc(displayName(c.name)) : '<span class="text-[#96570A]">Unidentified WhatsApp contact</span>'} ${c.chips.join(' ')}`;
+          sub = `${esc(it.detail)} · ${waited}<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${
+            c.phone ? `<span class="font-label-numeric-sm text-[12px]">${esc(maskText(c.phone))}</span>` : '<span class="text-outline">No phone number stored for this thread</span>'
+          } · <span class="font-label-numeric-sm text-[12px]" title="WhatsApp chat handle — a LID contains no phone digits and identifies nobody on its own">${esc(c.ref)}</span></div>`;
         } else if (lead) {
           head = esc(it.title);
-          sub = `${esc(it.detail)} · ${waited}<div class="ds-cell-sub">${
-            str(lead.phone) ? `<span class="mono">${esc(maskText(str(lead.phone)))}</span>`
-              : '<span class="ds-t-warning">No phone number on this lead record</span>'
-          }${str(lead.email) ? ` · <span class="mono">${esc(maskText(str(lead.email)))}</span>` : ''}</div>`;
+          sub = `${esc(it.detail)} · ${waited}<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${
+            str(lead.phone) ? `<span class="font-label-numeric-sm text-[12px]">${esc(maskText(str(lead.phone)))}</span>`
+              : '<span class="text-[#96570A]">No phone number on this lead record</span>'
+          }${str(lead.email) ? ` · <span class="font-label-numeric-sm text-[12px]">${esc(maskText(str(lead.email)))}</span>` : ''}</div>`;
         } else if (it.kind === 'workflow_failure') {
           head = esc(it.title);
           /* The second line is the whole point of the enrichment: "failed 6
@@ -2921,11 +3068,11 @@ SCREENS.overview = async host => {
              says which. Where v_workflow_health had no row to match, that is
              said too — an unmatched item is not evidence of anything. */
           const fc = flow ? runCounts(flow) : null;
-          sub = `${esc(it.detail)} · ${waited}<div class="ds-cell-sub">${
+          sub = `${esc(it.detail)} · ${waited}<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${
             flowState ? flowState.text
-              : '<span class="ds-t-tertiary">no row in the automation health figures matched this item, so whether it has succeeded since cannot be told from here</span>'
+              : '<span class="text-outline">no row in the automation health figures matched this item, so whether it has succeeded since cannot be told from here</span>'
           }${fc && fc.notClean != null
-            ? ` <span class="ds-t-tertiary">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
+            ? ` <span class="text-outline">· ${esc(num(fc.notClean))} of ${esc(num(fc.eff))} ${plural(fc.eff, 'run', 'runs')} in 30 days that counted did not succeed outright</span>`
             : ''}</div>`;
         } else if (it.kind === 'inventory_aging') {
           /* The view's detail for this kind is
@@ -2952,16 +3099,16 @@ SCREENS.overview = async host => {
             const days = n0(unit.days_in_stock);
             sub = `${esc(days == null ? 'Days in stock are not recorded for this unit' : `${num(days)} days in stock`)}`
               + `${str(unit.aging_band) ? ` · ${rawChip(str(unit.aging_band), true)}` : ''} · ${waited}`
-              + `<div class="ds-cell-sub">${muted('The view could not build a sentence for this item: it prints the unit’s accrued holding cost, and there is none on record. The age beside the name is the Profit Sentinel’s, read from the same unit.')}</div>`;
+              + `<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${muted('The view could not build a sentence for this item: it prints the unit’s accrued holding cost, and there is none on record. The age beside the name is the Profit Sentinel’s, read from the same unit.')}</div>`;
           } else {
             unmatchedUnits += 1;
-            sub = `<span class="ds-t-warning">${esc(core?.sentinelErr
+            sub = `<span class="text-[#96570A]">${esc(core?.sentinelErr
               ? 'This item arrived with no detail and the Profit Sentinel could not be read, so nothing is claimed about how old this unit is.'
               : 'This item arrived with no detail and its unit is not in the Sentinel read, so nothing is claimed about how old it is.')}</span> · ${waited}`;
           }
         } else {
           head = esc(it.title);
-          sub = `${str(it.detail) ? `${esc(str(it.detail))} · ` : `<span class="ds-t-tertiary">${esc('The view recorded no detail for this item.')}</span> · `}${waited}`;
+          sub = `${str(it.detail) ? `${esc(str(it.detail))} · ` : `<span class="text-outline">${esc('The view recorded no detail for this item.')}</span> · `}${waited}`;
         }
         /* A matched lead opens that lead. Everything else goes to the screen the
            view named, which is as close to the row as this app can get from
@@ -2975,15 +3122,15 @@ SCREENS.overview = async host => {
            believes the colour. The severity pill is untouched: that is the
            view's rating and it stays visible. */
         const iconIntent = flowState && flowState.key === 'recovered' ? 'tertiary' : dsIntent(tone(it.severity));
-        return `<div class="list-item" role="button" tabindex="0" ${jump}>
-          <span class="material-symbols-outlined ds-t-${iconIntent}" style="font-size:20px">${icon}</span>
+        return `<div class="${ROW}" role="button" tabindex="0" ${jump}>
+          <span class="material-symbols-outlined ${TXT[iconIntent] || TXT.neutral}" style="font-size:20px">${icon}</span>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${head}${
               rawChip(str(it.severity) || 'Unrated', !!str(it.severity))}</div>
-            <div class="ds-cell-sub">${sub}</div>
-            ${lead ? '<div class="ds-cell-sub" aria-live="polite" data-leadmsg></div>' : ''}
+            <div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">${sub}</div>
+            ${lead ? '<div class="font-body-sm text-[12px] text-on-surface-variant mt-0.5" aria-live="polite" data-leadmsg></div>' : ''}
           </div>
-          <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">chevron_right</span>
+          <span class="material-symbols-outlined text-outline" style="font-size:18px">chevron_right</span>
         </div>`;
       }).join('');
 
@@ -3076,9 +3223,9 @@ SCREENS.overview = async host => {
               }, plus ${num(need.kycExtra)} KYC archive ${plural(need.kycExtra, 'gap', 'gaps')} from the KYC archive-gaps panel above, which the view does not list at all. badges.js repaints the ${num(need.floor)} on its own next poll; the gaps are added back the next time this screen renders, and the KYC panel above lists them either way.`
             : `Nothing here is missing from that count, so the Overview badge is left exactly as badges.js painted it${need.floor == null ? '' : ` — ${num(need.floor)}`}.`,
       ].filter(Boolean);
-      const foot = `<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-        <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+      const foot = `<div class="${ROW_STILL}">
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+        <div class="min-w-0 flex-1">${note(notes.map(x => `<p>${esc(x)}</p>`).join(''), `How to read this panel — ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`)}</div></div>`;
 
       if (!items.length) {
         /* 'task_alt' is not in the design system's icon set; 'check' is nearest. */
@@ -3106,7 +3253,7 @@ SCREENS.overview = async host => {
        time is printed under the table. */
     title: 'Latest leads',
     sub: 'Newest first — a snapshot, read once when this screen opened',
-    actions: `<button class="btn sm" data-act="leads">View all</button>`,
+    actions: `<button type="button" class="${BTN.secondary}" data-act="leads">View all</button>`,
     /* `phone` is on the lead row, so the newest enquiry can be rung from the
        first screen an owner opens. `ai_score` is the router's score — there is
        no `lead_score` column on this table, whatever older code called it. */
@@ -3131,19 +3278,19 @@ SCREENS.overview = async host => {
           : '',
         'A row opens that lead. Leads has no last-modified timestamp, so this is ordered by when each one arrived, which is the only time the table records.',
       ].filter(Boolean);
-      const note = `<div class="list-item" style="cursor:default"><span class="material-symbols-outlined ds-t-tertiary" style="font-size:18px">info</span>
-             <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}
-               <div aria-live="polite" data-feedmsg></div></div></div>`;
+      const feedNote = `<div class="${ROW_STILL}"><span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+             <div class="min-w-0 flex-1">${note(notes.map(x => `<p>${esc(x)}</p>`).join(''), `How to read this table — ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`)}
+               <div class="font-body-sm text-[12px] text-on-surface-variant" aria-live="polite" data-feedmsg></div></div></div>`;
       return dsTable([
-        { label:'When', render: r => `<div class="ds-t-tertiary">${esc(ago(r.created_at))}</div><div class="ds-cell-sub mono">${esc(clock(r.created_at))}</div>` },
+        { label:'When', render: r => `<div class="text-outline">${esc(ago(r.created_at))}</div><div class="font-label-numeric-sm text-[12px] text-on-surface-variant mt-0.5">${esc(clock(r.created_at))}</div>` },
         { label:'Status',  render: r => rawChip(str(r.status) || 'Unscored', !!str(r.status)) },
         { label:'Name',    strong: true, render: r => esc(maskText(str(r.name) || 'Unnamed lead')) },
         { label:'Phone',   render: r => str(r.phone)
-            ? `<span class="mono">${esc(maskText(str(r.phone)))}</span>`
-            : `<span class="ds-cell-sub ds-t-warning">Not captured</span>` },
-        { label:'Interest',render: r => `<span class="ds-t-secondary">${str(r.vehicle_interest) ? esc(str(r.vehicle_interest)) : '<span class="ds-cell-sub">Not recorded</span>'}</span>` },
+            ? `<span class="font-label-numeric-sm text-[12px]">${esc(maskText(str(r.phone)))}</span>`
+            : `<span class="font-body-sm text-[12px] text-[#96570A] mt-0.5">Not captured</span>` },
+        { label:'Interest',render: r => `<span class="text-on-surface-variant">${str(r.vehicle_interest) ? esc(str(r.vehicle_interest)) : '<span class="font-body-sm text-[12px] text-on-surface-variant mt-0.5">Not recorded</span>'}</span>` },
         { label:'Score', align:'r', render: r => num(r.ai_score) },
-      ], rows, { onRow: true }) + note;
+      ], rows, { onRow: true }) + feedNote;
     },
   }).then(card => {
     card.querySelector('[data-act]')?.addEventListener('click', () => go('leads'));
@@ -3161,6 +3308,164 @@ SCREENS.overview = async host => {
       tr.addEventListener('click', () => openLead(rows[Number(tr.dataset.i)]?.id, card.querySelector('[data-feedmsg]')));
     });
   }));
+
+  /* ════════════════════════════════════════════════════════════════════════
+     The sections the Stitch export adds around the panels. Each is built from a
+     read this screen already makes (or, for visits, the read Appointments
+     makes) and none of them computes a figure the panels do not.
+     ════════════════════════════════════════════════════════════════════════ */
+
+  /* ── The attention banner (af6246: "N things need your attention today") ──
+     Counted on exactly the rule the nav badge uses — HOT and WARM rows of the
+     attention list, snapshot duplicates collapsed — so the banner, the badge and
+     the Priority actions list below cannot disagree about one moment. */
+  readAttention().then(({ items }) => {
+    const distinct = collapseSnapshots(items || []).rows;
+    const urgent = distinct.filter(i => BADGE_SEVERITIES.has(str(i.severity).toUpperCase()));
+    if (!urgent.length) {
+      bannerHost.innerHTML = `<div class="p-space-md rounded-xl bg-[#E6F4EF]/60 border border-emerald-200 flex items-center gap-space-md">
+        <span class="material-symbols-outlined text-[#157A5B] text-2xl">task_alt</span>
+        <div><div class="font-headline-md text-headline-md text-on-surface">Nothing on the attention list is marked HOT or WARM</div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant">${esc(`${num(distinct.length)} ${plural(distinct.length, 'item is', 'items are')} listed below in all. That is the attention list as read just now — not a statement about anything it does not cover.`)}</p></div></div>`;
+      return;
+    }
+    const byKind = new Map();
+    urgent.forEach(i => byKind.set(i.kind, (byKind.get(i.kind) || 0) + 1));
+    const KIND_WORDS = { unanswered_chat: ['WhatsApp thread waiting on a reply', 'WhatsApp threads waiting on a reply'],
+      lead_unassigned: ['HOT lead with no owner', 'HOT leads with no owner'], sla_breach: ['slow first reply', 'slow first replies'],
+      kyc_archive_gap: ['KYC file never archived', 'KYC files never archived'], workflow_failure: ['automation that did not deliver', 'automations that did not deliver'],
+      undercut: ['competitor undercut', 'competitor undercuts'], inventory_aging: ['unit past the critical age', 'units past the critical age'] };
+    const summary = [...byKind.entries()].map(([k, n]) => `${num(n)} ${KIND_WORDS[k] ? plural(n, KIND_WORDS[k][0], KIND_WORDS[k][1]) : k}`).join(', ');
+    bannerHost.innerHTML = `<div class="p-space-md rounded-xl bg-error-container/40 border border-red-200 flex flex-col md:flex-row md:items-center justify-between gap-space-md">
+      <div class="flex items-start gap-space-md min-w-0">
+        <div class="w-11 h-11 rounded-lg bg-error text-on-error flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-2xl">notifications_active</span></div>
+        <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md text-on-surface">${esc(num(urgent.length))} ${plural(urgent.length, 'thing needs', 'things need')} your attention</span>
+          <span class="px-2 py-0.5 rounded bg-error text-on-error font-label-numeric-sm text-[10px] font-bold uppercase">HOT or WARM</span></div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">${esc(summary)}.</p></div>
+      </div>
+      <button type="button" data-ov-jump class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-error text-on-error font-body-sm text-body-sm font-semibold shrink-0"><span>See them below</span><span class="material-symbols-outlined text-[16px]">arrow_downward</span></button>
+    </div>`;
+    bannerHost.querySelector('[data-ov-jump]')?.addEventListener('click', () => attnHost.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }).catch(() => { bannerHost.innerHTML = ''; });
+
+  /* ── The two money cards (af6246) ──────────────────────────────────────────
+     LEFT: the export says "Estimated revenue at risk". No engine estimates
+     revenue at risk; what exists is gross margin EXPOSED in unsold stock, from
+     the Sentinel, through expose() — so the card carries the export's dashed
+     amber anatomy and the word EXPOSED, never "estimated".
+     RIGHT: the export says "Confirmed revenue recovered". What the database can
+     support is ATTRIBUTED recovery — the four-column test in screens/actions.js
+     — beside the count of confirmed sales on file, which are confirmed and
+     credited to nothing. moneyTile() prints the word on the tile. */
+  readQueue().then(q => q, () => null).then(queue => {
+    const exposedTile = (() => {
+      if (coreErr || core.sentinelErr) {
+        return `<div class="border-2 border-dashed border-amber-300 bg-amber-50/50 p-space-md rounded-lg flex flex-col gap-2 min-h-[11rem]">
+          <div class="flex items-center justify-between"><span class="font-table-header text-table-header uppercase tracking-wider font-bold text-amber-900/80">Gross margin exposed</span><span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded font-semibold uppercase bg-amber-200/50 text-amber-900">Exposed</span></div>
+          <div class="font-label-numeric-lg text-headline-lg font-bold text-amber-950">—</div>
+          <p class="font-body-sm text-body-sm text-amber-900">The Profit Sentinel could not be read, so no exposure is stated — not a nil one.</p></div>`;
+      }
+      const t = core.exposed;
+      return `<div class="border-2 border-dashed border-amber-300 bg-amber-50/50 p-space-md rounded-lg flex flex-col justify-between min-h-[11rem] gap-2">
+        <div class="flex items-center justify-between gap-2"><span class="font-table-header text-table-header uppercase tracking-wider font-bold text-amber-900/80">Gross margin exposed in unsold stock</span><span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded font-semibold uppercase bg-amber-200/50 text-amber-900">Exposed</span></div>
+        <div class="my-auto space-y-1">
+          <div class="flex items-baseline gap-1.5">${t.total == null ? '<span class="font-label-numeric-lg text-headline-lg font-bold tracking-tight text-amber-950">—</span>'
+            : `<span class="font-label-numeric-sm text-label-numeric-sm text-amber-800/70">AED</span><span class="font-label-numeric-lg text-headline-lg font-bold tracking-tight text-amber-950">${esc(num(t.total))}</span>`}</div>
+          <p class="font-body-sm text-body-sm font-medium text-amber-900">${esc(t.total == null ? 'No unit the engine is asking about carries an impact figure.' : `Across ${num(core.needsDecision.length)} ${plural(core.needsDecision.length, 'unit', 'units')} the engine is asking a person about`)}</p>
+          ${note(`<p>${esc(exposureLine(t, plural(core.needsDecision.length, 'that unit', 'those units')))}</p><p>${esc(EXPOSURE_CAVEAT)}</p><p>${esc('No engine in NEXUS produces an estimate of revenue at risk, so this card does not carry that word.')}</p>`, 'What this figure is')}
+        </div>
+        <div class="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px] font-label-numeric-sm text-amber-800">
+          <span>${esc(`${num(t.n)} of ${num(t.of)} carry a figure`)}</span>
+          ${SCREENS.moneyleaks ? '<button type="button" data-ov-go="moneyleaks" class="inline-flex items-center gap-1 font-semibold text-primary">View breakdown<span class="material-symbols-outlined text-[14px]">arrow_forward</span></button>' : ''}
+        </div></div>`;
+    })();
+    let recTile;
+    if (!queue) {
+      recTile = moneyTile({ kind: 'attributed', label: 'Recovered — attributed to an action', amount: null,
+        unknownWhy: 'The action queue could not be read, so nothing is claimed either way.' });
+    } else {
+      const ev = queue.map(a => recoveryEvidence(a));
+      const ok = ev.filter(x => x.state === 'ATTRIBUTED');
+      const t = expose(ok, x => x.amount, () => 'ATTRIBUTED_MARGIN');
+      recTile = moneyTile({ kind: 'attributed', label: 'Recovered — attributed to an action', amount: t.total,
+        sub: `${num(ok.length)} ${plural(ok.length, 'action passes', 'actions pass')} the four-column evidence test`,
+        unknownWhy: `No action carries a recovered figure with all four evidence columns — ${num(queue.length)} tested. Not zero: not recorded.`,
+        footLeft: 'Attributed is not confirmed', footRight: 'Action lane' });
+    }
+    moneyHost.innerHTML = exposedTile + recTile;
+    moneyHost.querySelectorAll('[data-ov-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.ovGo)));
+  });
+
+  /* ── Visits & drives (af6246), from the read Appointments makes ──────────── */
+  const APPT_DAYS = 7;
+  db(`rpc/nexus_appointment_status?p_days=${APPT_DAYS}`).then(rows => {
+    const list = Array.isArray(rows) ? rows : [];
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+    const dayOf = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+    const todays = list.filter(r => r.starts_at && dayOf(r.starts_at) === today);
+    const booked = todays.filter(r => r.counts_as_booked === true).length;
+    const attended = todays.filter(r => r.counts_as_attended === true).length;
+    const waitingOutcome = todays.filter(r => r.awaiting_outcome === true).length;
+    const next = list.filter(r => r.starts_at && Date.parse(r.starts_at) >= Date.now()).sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)).slice(0, 3);
+    const stat = (n, label, cls) => `<div class="rounded-lg p-2.5 text-center ${cls}"><div class="font-label-numeric-lg text-headline-md font-bold">${esc(num(n))}</div><div class="font-body-sm text-[11px]">${esc(label)}</div></div>`;
+    apptHost.innerHTML = `<section class="rounded-xl bg-surface-container-lowest border border-outline-variant overflow-hidden shadow-sm">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-xl">directions_car</span><h2 class="font-headline-md text-headline-md text-on-surface">Visits &amp; drives</h2></div>
+        <span class="font-label-numeric-sm text-[11px] text-outline">Today (${esc(num(todays.length))} total)</span></div>
+      <div class="p-space-md space-y-space-sm">
+        <div class="grid grid-cols-3 gap-2">${stat(booked, 'Booked', 'bg-[#E8F1FB] text-[#2563A8]')}${stat(attended, 'Attended', 'bg-[#E6F4EF] text-[#157A5B]')}${stat(waitingOutcome, 'Awaiting outcome', 'bg-[#FEF3E2] text-[#96570A]')}</div>
+        ${next.length ? next.map(r => `<div class="p-2.5 rounded-lg border border-outline-variant/40 flex items-start gap-2">
+            <span class="material-symbols-outlined text-[18px] text-primary">schedule</span>
+            <div class="min-w-0"><div class="font-body-sm text-body-sm font-semibold text-on-surface">${esc(clock(r.starts_at))} · ${esc(str(r.vehicle_model) || 'No vehicle recorded')}</div>
+            <div class="font-body-sm text-[11px] text-on-surface-variant">${esc(str(r.customer_name) ? displayName(str(r.customer_name)) : 'No customer named')} · ${esc(str(r.state) || 'no state')}</div></div></div>`).join('')
+          : '<p class="font-body-sm text-[12px] text-on-surface-variant">No visit is booked from now on in the window read.</p>'}
+        ${SCREENS.appointments ? '<button type="button" data-ov-go="appointments" class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary">Open Appointments<span class="material-symbols-outlined text-[16px]">arrow_forward</span></button>' : ''}
+      </div></section>`;
+    apptHost.querySelectorAll('[data-ov-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.ovGo)));
+  }).catch(e => { apptHost.innerHTML = errorState({ what: 'visits and drives', err: e }); });
+
+  /* ── Margin against days in stock (af6246's second analysis card) ──────────
+     The export draws margin decaying with age. That curve needs a holding cost
+     per day, and the Sentinel says how many units have one. Where none do, the
+     card says so and draws nothing — a decay curve drawn from a list price and
+     no cost of carrying it would be a shape with no evidence behind it. */
+  if (coreErr || core.sentinelErr) {
+    marginHost.innerHTML = errorState({ what: 'margin against days in stock', err: coreErr || core.sentinelErr });
+  } else {
+    const computed = core.sentinel.length - core.noHolding;
+    marginHost.innerHTML = computed
+      ? `<section class="rounded-xl bg-surface-container-lowest border border-outline-variant shadow-sm p-space-lg space-y-2">
+          <h2 class="font-headline-md text-headline-md text-on-surface">Margin against days in stock</h2>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">${esc(`${num(computed)} of ${num(core.sentinel.length)} units carry a computed holding cost. The per-unit net margin is on Inventory; no curve is drawn here from a partial set.`)}</p>
+        </section>`
+      : comingSoonPanel({ kind: 'coming-soon', icon: 'show_chart', title: 'Margin against days in stock',
+          body: `How fast margin is being eaten cannot be drawn: holding cost is NOT COMPUTABLE on all ${num(core.sentinel.length)} ${plural(core.sentinel.length, 'unit', 'units')} the Profit Sentinel scored, because this dealership has not recorded what a day on the lot costs. Unknown, not nil.`,
+          prerequisite: 'One number — the daily holding cost per unit — entered on Inventory.' });
+  }
+
+  /* ── The roadmap row (af6246 "Upcoming intelligence automations") ─────────
+     Taken from the navigation's own roadmap entries rather than from the
+     export's three invented product names, so the row can only ever name
+     something the product already lists as COMING SOON or PLANNED. */
+  const upcoming = flatNav().filter(i => i.roadmap === 'soon').concat(flatNav().filter(i => i.roadmap === 'planned')).slice(0, 3);
+  if (upcoming.length) {
+    roadmapHost.innerHTML = `<div class="flex items-center justify-between gap-2 pb-space-sm">
+        <div class="flex items-center gap-2"><span class="material-symbols-outlined text-secondary text-xl">science</span><h2 class="font-headline-md text-headline-md text-on-surface">Upcoming</h2></div>
+        ${SCREENS.whatscoming ? '<button type="button" data-ov-go="whatscoming" class="inline-flex items-center gap-1 font-body-sm text-body-sm font-semibold text-primary">What’s coming<span class="material-symbols-outlined text-[16px]">arrow_forward</span></button>' : ''}
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-space-md">${upcoming.map(i => comingSoonPanel({
+        kind: i.roadmap === 'soon' ? 'coming-soon' : 'planned', icon: i.icon, title: i.title,
+        body: 'On the roadmap and not part of this build. Nothing on it reads your data yet.',
+        actionsHtml: SCREENS[i.id] ? `<button type="button" data-ov-go="${esc(i.id)}" class="${BTN.secondary}">Preview</button>` : '' })).join('')}</div>`;
+    roadmapHost.querySelectorAll('[data-ov-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.ovGo)));
+  }
+
+  footHost.innerHTML = trustFooter({
+    source: 'leads · rpc/sentinel_inventory_actions · v_inventory_action_queue · v_needs_attention · v_workflow_health · communication_logs',
+    asOf: dubaiStamp(readAtScreen),
+    evidence: coreErr ? 'The core read failed' : `${num(core.leads.length)} leads, ${num(core.sentinel.length)} units scored`,
+    actor: ME && ME.name ? ME.name : '',
+  });
 
   await Promise.all(panels);
 };
