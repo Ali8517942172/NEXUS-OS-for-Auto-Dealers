@@ -65,23 +65,24 @@
    dealership's rows; this file does not hide them. */
 
 import { db, dbWrite, n8n, HOOK, onIdentityChange, canManageAccess } from '../lib/data.js';
-import { ago, dubaiDate, dubaiStamp, esc, n0, pill } from '../lib/format.js';
+import { ago, dubaiDate, dubaiStamp, esc, n0 } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
-import { openModal, modalError } from '../lib/modal.js';
 import { $, el } from '../lib/dom.js';
+import { closeDrawer } from '../lib/ui.js';
+/* The Stitch migration (7 Oct 2026, design/stitch/MAP.md: primary
+   channels-readiness-status-engine--54b35c, also --dec649). kpi, table, panel,
+   pill, the state panels and openModal keep their signatures and answer in the
+   Stitch anatomy — lib/ops-kit.js says why the logic was left where it was. */
+import {
+  actor, B, C, DRAWER, banner, bold, chip, hot, kpi, modalError, muted, openDrawer, openModal, panel, pill,
+  readinessChecklist, readinessVerdict, stateEmpty, stateError, stateLoading, table, warm, wrap,
+} from '../lib/ops-kit.js';
+import { sectionHeader, statusChip, trustFooter } from '../lib/stitch-ui.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot   = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const warm  = h => `<div class="ds-cell-sub t-warm">${h}</div>`;
-const bold  = h => `<div style="font-weight:600">${h}</div>`;
-const wrap  = h => `<div style="white-space:normal">${h}</div>`;
-const chip  = t => `<span class="chip">${esc(t)}</span>`;
 
 /* Counts are small integers straight out of a bigint column. A null is not a
    zero and is never printed as one — "no figure was returned" and "nothing
@@ -128,8 +129,8 @@ onIdentityChange(resetReads);
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
 const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
+  ? `<button class="${B.secondary}" data-go="${esc(id)}">${esc(label)}</button>`
+  : `<button class="${B.ghost}" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
 const wireGo = card => {
   card.querySelectorAll('[data-go]').forEach(b => {
     if (b.disabled) return;
@@ -167,6 +168,123 @@ const orderRows = rows => (Array.isArray(rows) ? rows.slice() : []).sort((a, b) 
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
+   The readiness drawer — channels-readiness-status-engine--54b35c
+   ══════════════════════════════════════════════════════════════════════════
+   Five gates, each PASSED / FAILED / NOT TESTED from a fact the register or the
+   owner's WhatsApp Cloud registry holds. Nothing here is computed beyond reading
+   those facts: `registered`, `connected`, `received_count`, `origin_attested`
+   from nexus_channel_status(), and the WhatsApp Cloud number's own status from
+   nexus_channel_registry_for_owner() (ACTIVE is set on the server only after
+   Meta accepted a real test send — see P1.5). One NOT TESTED keeps the verdict
+   at PARTIAL; configuration alone never passes a gate that asks whether
+   something works. */
+const readOwnerRegistry = shared(() => db('rpc/nexus_channel_registry_for_owner'));
+
+const CHANNEL_ICON = {
+  whatsapp_cloud: 'chat', whatsapp: 'chat', walk_in: 'storefront', phone_call: 'phone_in_talk', sms: 'sms',
+  email: 'mail', website_form: 'language', meta_lead_ads_facebook: 'campaign', meta_lead_ads_instagram: 'photo_camera',
+  google_ads_lead_form: 'ads_click',
+};
+const channelIcon = r => CHANNEL_ICON[str(r && r.channel_key)] || 'hub';
+/* A channel a person types in has no wire, so a webhook gate does not apply to
+   it. The register says so through its family or plane; nothing else is read. */
+const isManualChannel = r => /manual|floor|walk|phone_call/i.test(`${str(r.family)} ${str(r.plane)} ${str(r.channel_key)}`);
+
+function channelGates(r, cloud, regErr) {
+  const c = n0(r.received_count) || 0;
+  const isCloud = str(r.channel_key) === WHATSAPP_CLOUD;
+  const numbers = isCloud && Array.isArray(cloud) ? cloud : [];
+  const active = numbers.filter(x => up(x.status) === 'ACTIVE');
+  const gates = [];
+
+  if (str(r.origin_attested) && c) {
+    gates.push({ gate: 'Authentication', state: 'passed', detail: esc(`${count(c)} ${plural(c, 'arrival was', 'arrivals were')} attested: ${str(r.origin_attested)}.`) });
+  } else if (active.length) {
+    gates.push({ gate: 'Authentication', state: 'passed', detail: esc('Meta accepted a test send made with the stored token, so the token works.') });
+  } else {
+    gates.push({ gate: 'Authentication', state: 'not-tested', detail: esc('Nothing has arrived or been sent through this channel, so no credential has been exercised.') });
+  }
+
+  if (r.registered === true) {
+    gates.push({ gate: 'Dealership mapping', state: 'passed', detail: esc(str(r.registered_detail) || 'An endpoint is registered to this dealership.') });
+  } else {
+    gates.push({ gate: 'Dealership mapping', state: 'not-tested', detail: esc(r.registered === false
+      ? 'No endpoint is registered for this dealership, so there is nothing to map yet.'
+      : 'Nothing is recorded about whether an endpoint exists for this channel.') });
+  }
+
+  if (isManualChannel(r)) {
+    gates.push({ gate: 'Webhook', state: 'n/a', detail: esc('No webhook by design: a person records these, so there is no wire to fire.') });
+  } else if (r.connected === false) {
+    gates.push({ gate: 'Webhook', state: 'failed', detail: esc(str(r.connected_detail) || 'Switched off — a delivery today would be refused at the door.') });
+  } else if (r.connected === true && c) {
+    gates.push({ gate: 'Webhook', state: 'passed', detail: esc(`Switched on, and it accepted ${count(c)} ${plural(c, 'delivery', 'deliveries')}.`) });
+  } else if (r.connected === true) {
+    gates.push({ gate: 'Webhook', state: 'not-tested', detail: esc('Switched on, so a delivery would be accepted — but none has been made, so it is not proven.') });
+  } else {
+    gates.push({ gate: 'Webhook', state: 'not-tested', detail: esc('Nothing is recorded about whether this channel would accept a delivery today.') });
+  }
+
+  gates.push(c
+    ? { gate: 'Inbound test', state: 'passed', detail: esc(`${count(c)} ${plural(c, 'arrival', 'arrivals')} reached this database${r.last_received_at ? `, the newest ${ago(r.last_received_at)}` : ''}.`) }
+    : { gate: 'Inbound test', state: 'not-tested', detail: esc('Nothing has arrived through this channel that this database recorded.') });
+
+  if (isCloud && regErr) {
+    gates.push({ gate: 'Outbound test', state: 'not-tested', detail: esc('The WhatsApp Cloud number register could not be read, so whether a test send succeeded is unknown.') });
+  } else if (active.length) {
+    gates.push({ gate: 'Outbound test', state: 'passed', detail: esc(`${count(active.length)} ${plural(active.length, 'number is', 'numbers are')} ACTIVE — set on the server only after Meta accepted a real test send.`) });
+  } else if (numbers.length) {
+    gates.push({ gate: 'Outbound test', state: 'not-tested', detail: esc('A number is connected and still PENDING_VERIFY: no test send has succeeded. Use “Send test message”.') });
+  } else {
+    gates.push({ gate: 'Outbound test', state: 'not-tested', detail: esc('NEXUS records no outbound test for this channel.') });
+  }
+  return gates;
+}
+
+function openChannelDrawer(r, cloud, regErr) {
+  const gates = channelGates(r, cloud, regErr);
+  const s = stateOf(r);
+  const metric = (k, v, sub) => `<div class="p-3 rounded-lg border border-outline-variant/40 bg-surface-container-lowest">
+      <div class="${C.caps}">${esc(k)}</div><div class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface mt-1">${v}</div>
+      ${sub ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${sub}</div>` : ''}</div>`;
+  const isCloud = str(r.channel_key) === WHATSAPP_CLOUD;
+  const pending = isCloud && Array.isArray(cloud) ? cloud.filter(x => up(x.status) === 'PENDING') : [];
+  openDrawer(`<div class="${DRAWER.head}">
+      <div class="flex items-start gap-3 min-w-0">
+        <span class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined">${esc(channelIcon(r))}</span></span>
+        <div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><h2 class="font-headline-md text-headline-md font-bold text-on-surface">${esc(str(r.display_name) || str(r.channel_key))}</h2>${pill(str(r.state) || 'NO STATE RECORDED', s.tone)}</div>
+          <div class="font-label-numeric-sm text-label-numeric-sm text-outline">${esc(str(r.channel_key))}${str(r.family) ? ` · ${esc(str(r.family))}` : ''}</div></div>
+      </div>
+      <button type="button" aria-label="Close" data-ch-close class="${B.icon}"><span class="material-symbols-outlined text-[20px]">close</span></button>
+    </div>
+    <div class="${DRAWER.body}">
+      ${readinessChecklist(gates)}
+      <div class="mt-space-md"><div class="${C.caps} mb-2">Recorded so far</div>
+        <div class="grid grid-cols-2 gap-2">
+          ${metric('Newest arrival', r.last_received_at ? esc(ago(r.last_received_at)) : '—', r.last_received_at ? esc(dubaiStamp(r.last_received_at)) : 'Nothing recorded')}
+          ${metric('Arrivals recorded', esc(count(r.received_count)), 'What reached this database, not what a customer sent')}
+        </div></div>
+      <div class="mt-space-md"><div class="${C.caps} mb-2">What the register says</div>
+        ${muted(esc(str(r.evidence) || 'The database recorded no explanation for this channel’s state.'))}</div>
+    </div>
+    <div class="${DRAWER.foot}">
+      ${pending.length ? `<button class="${B.primary}" data-ch-test><span class="material-symbols-outlined text-[18px]">send</span>Send test message</button>` : ''}
+      ${SCREENS.conversations ? `<button class="${B.secondary}" data-ch-go="conversations">Open Conversations</button>` : ''}
+    </div>`);
+  const d = document.getElementById('drawer');
+  if (!d) return;
+  d.querySelector('[data-ch-close]')?.addEventListener('click', closeDrawer);
+  d.querySelector('[data-ch-go]')?.addEventListener('click', () => { closeDrawer(); go('conversations'); });
+  /* The test send itself lives in the WhatsApp Cloud card; the drawer takes the
+     operator there rather than carrying a second copy of that flow. */
+  d.querySelector('[data-ch-test]')?.addEventListener('click', () => {
+    closeDrawer();
+    const btn = document.querySelector('#cwCard [data-test]');
+    if (btn) btn.click(); else document.getElementById('cwCard')?.scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    SCREEN
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.channels = async host => {
@@ -178,8 +296,26 @@ SCREENS.channels = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* Since 7 Oct 2026 the wrapper is the Stitch root (`nx-stitch` turns on the
+     scoped reset), still a wrapper this screen appends for the reason above. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
+  /* The page order is the Stitch order — c3ca1e's header, state tiles and
+     touchpoint register, then --dec649's WhatsApp Cloud card, number setup,
+     templates, usage and limits — with one slot per region so the panels can
+     stay declared in the order they always were. */
+  const slot = () => { const d = el('div', 'flex flex-col gap-space-md'); root.appendChild(d); return d; };
+  const headSlot = slot(), kpiSlot = slot(), regSlot = slot(), waSlot = slot(), cloudSlot = slot(), restSlot = slot(), footSlot = slot();
+  headSlot.innerHTML = sectionHeader({
+    eyebrow: 'Operations / Channels',
+    title: 'Channels — readiness & customer touchpoints',
+    sub: 'Every door a customer could come through, and which of registered, switched on or actually receiving is true '
+       + 'of it today. Inspect a channel for its five-gate readiness check.',
+    actionsHtml: linkBtn('leadsources', 'Lead Sources') + linkBtn('conversations', 'Conversations')
+      + (canManageAccess() ? `<button class="${B.primary}" data-cw-jump><span class="material-symbols-outlined text-[18px]">add_circle</span>Add channel</button>` : ''),
+  });
+  wireGo(headSlot);
+  headSlot.querySelector('[data-cw-jump]')?.addEventListener('click', () => document.getElementById('cwCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 
   /* Every visit re-reads. See the note on `shared` above for what this repairs
      and why a stale channel register is worse than a slow one. */
@@ -198,8 +334,8 @@ SCREENS.channels = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P1 · The answer, in four numbers
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Every channel, counted by what is actually true of it',
+  panel(kpiSlot, {
+    title: 'Every channel, counted by what is actually true of it', icon: 'sensors',
     sub: 'Four separate figures, never added together and never rolled into a score. A channel that is switched off '
        + 'and a channel that is carrying customers are opposite facts, and only one of these four columns has ever '
        + 'carried a real one',
@@ -251,25 +387,21 @@ SCREENS.channels = async host => {
           : 'Every channel in the register has at least an endpoint recorded against this dealership.'));
 
       const odd = unrecognised.length
-        ? `<div class="banner hot" style="margin-top:12px">
-             <span class="material-symbols-outlined" style="font-size:20px">report</span>
-             <div>${bold('Some channels came back in a state this screen does not recognise.')}
+        ? `<div class="mt-space-md">${banner('hot', 'report', `${bold('Some channels came back in a state this screen does not recognise.')}
                ${muted(esc(count(unrecognised.length)) + ' of ' + esc(count(all.length))
                  + ` ${plural(all.length, 'entry', 'entries')} carries a state that is none of the four this screen `
                  + 'knows how to read. They are listed below at face value and are counted in none of the four figures '
                  + 'above. They are reported rather than dropped: a channel nobody can account for is exactly the one '
-                 + 'worth naming.')}</div></div>`
+                 + 'worth naming.')}`)}</div>`
         : '';
 
-      const rule = `<div class="banner info" style="margin-top:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">info</span>
-          <div>${bold('Registered, connected and receiving are three different things.')}
+      const rule = `<div class="mt-space-md">${banner('info', 'info', `${bold('Registered, connected and receiving are three different things.')}
             ${muted('Registered means somebody wrote down where a delivery would arrive and then switched it off, so a '
               + 'delivery today would be refused. Connected means it would be accepted. Receiving means something '
               + 'actually arrived and this database recorded it — and only that first column has ever carried a real '
-              + 'customer.')}</div></div>`;
+              + 'customer.')}`)}</div>`;
 
-      return `<div class="grid g4">${receivingTile}${connectedTile}${registeredTile}${notBuiltTile}</div>` + odd + rule;
+      return `<div class="${C.grid4}">${receivingTile}${connectedTile}${registeredTile}${notBuiltTile}</div>` + odd + rule;
     },
   }).then(wireGo);
 
@@ -299,24 +431,44 @@ SCREENS.channels = async host => {
                  PENDING_VERIFY indefinitely, which is the correct state for
                  an unverified claim. */
   {
-    const card = el('div', 'card');
-    root.appendChild(card);
+    const card = el('section', C.card);
+    card.id = 'cwCard';
+    cloudSlot.appendChild(card);
     let rows = null;
     let loadErr = null;
 
     const canConnect = canManageAccess();
+    const cwHead = actionsHtml => `<div class="${C.head}">
+        <div class="flex items-start gap-2.5 min-w-0 flex-1"><span class="material-symbols-outlined text-primary text-xl mt-0.5">chat</span>
+          <div class="min-w-0"><h2 class="${C.title}">Connect a WhatsApp Cloud number</h2>
+            <p class="${C.sub}">Owner/admin only. The access token is stored in Vault and this screen never reads it back —
+            only a fingerprint the database already printed to the audit log. “Send test message” is the only way a number
+            becomes ACTIVE, and it is decided on the server after Meta accepts a real send.</p></div></div>
+        ${actionsHtml ? `<div class="flex items-center gap-space-sm shrink-0">${actionsHtml}</div>` : ''}</div>`;
+    /* The test send calls the channel-test-send automation. When that automation
+       is not switched on, the webhook answers 404 and NOTHING was sent — Meta was
+       not contacted and the channel did not fail a test, it was never given one.
+       Said in those words, because "WhatsApp rejected it" would be false. */
+    const testSendFailed = (m, e) => {
+      const status = e && e.status;
+      const line = status === 404
+        ? 'The test-send automation is not switched on, so no message was sent and Meta was not contacted. '
+          + 'The channel stays PENDING_VERIFY — it has not failed a test, it has not been given one.'
+        : `${esc((e && e.message) || 'The test could not be sent.')} No message is known to have been sent; the channel stays PENDING_VERIFY.`;
+      m.msg(`<span class="${C.hot}">${line}</span>`);
+    };
 
     const rowActions = r => {
       const s = up(r.status);
       if (s === 'ACTIVE') return muted('Verified and sending from this number.');
       if (s !== 'PENDING') return muted(`Status is ${esc(str(r.status) || 'unknown')}.`);
-      return `<button class="btn sm" data-test="${esc(r.integration_id)}">Send test message</button>`;
+      return `<button class="${B.primary}" data-test="${esc(r.integration_id)}"><span class="material-symbols-outlined text-[18px]">send</span>Send test message</button>`;
     };
 
     const paint = () => {
       if (loadErr) {
-        card.innerHTML = `<div class="card-head"><div><div class="card-title">Connect a WhatsApp Cloud number</div></div></div>`
-          + `<div class="pbody">${stateError('this dealership’s WhatsApp Cloud channels', loadErr, null,
+        card.innerHTML = cwHead('')
+          + `<div class="${C.body}">${stateError('this dealership’s WhatsApp Cloud channels', loadErr, null,
               'Connecting a new number is disabled until this can be read.')}</div>`;
         return;
       }
@@ -334,21 +486,15 @@ SCREENS.channels = async host => {
             'Use “Connect WhatsApp Cloud number” below to register one. It starts PENDING_VERIFY — nothing sends '
             + 'from it until a test message actually goes through Meta’s API.', 'link_off');
 
-      card.innerHTML = `<div class="card-head">
-          <div><div class="card-title">Connect a WhatsApp Cloud number</div>
-            <div class="card-sub">Owner/admin only. The access token is stored in Vault and this screen never reads
-            it back — only a fingerprint the database already printed to the audit log.</div></div>
-          <div style="flex:1"></div>
-          <button class="btn primary sm" id="cwConnect"${canConnect ? '' : ' disabled title="Connecting a WhatsApp Cloud number is an owner/admin decision at this dealership."'}>Connect WhatsApp Cloud number</button>
-        </div><div class="pbody">${body}</div>`;
+      card.innerHTML = cwHead(`<button class="${B.secondary}" id="cwConnect"${canConnect ? '' : ' disabled title="Connecting a WhatsApp Cloud number is an owner/admin decision at this dealership."'}><span class="material-symbols-outlined text-[18px]">add_link</span>Connect WhatsApp Cloud number</button>`)
+        + `<div class="${C.body}">${body}</div>`;
 
       card.querySelector('#cwConnect')?.addEventListener('click', openConnectModal);
       card.querySelectorAll('[data-test]').forEach(b => b.addEventListener('click', () => openTestModal(b.dataset.test)));
     };
 
     const reload = async () => {
-      card.innerHTML = `<div class="card-head"><div><div class="card-title">Connect a WhatsApp Cloud number</div></div></div>`
-        + `<div class="pbody">${stateLoading(2)}</div>`;
+      card.innerHTML = cwHead('') + `<div class="${C.body}">${stateLoading(2)}</div>`;
       try { rows = await db('rpc/nexus_channel_registry_for_owner'); loadErr = null; }
       catch (e) { rows = null; loadErr = e; }
       paint();
@@ -356,29 +502,29 @@ SCREENS.channels = async host => {
 
     const openConnectModal = () => {
       const m = openModal('Connect WhatsApp Cloud number', `
-        <div class="ds-cell-sub" style="margin-bottom:12px">These come from your own Meta Business Manager — WhatsApp
+        <div class="${C.hint} mb-3">These come from your own Meta Business Manager — WhatsApp
           Business API settings for the app you registered. NEXUS never holds a WhatsApp asset of its own; every
           dealership brings its own number.</div>
-        <div class="field"><label for="cwDisplay">Display number (optional)</label>
-          <input id="cwDisplay" placeholder="+971 4 xxx xxxx" /></div>
-        <div class="field"><label for="cwPnid">Phone number ID</label>
-          <input id="cwPnid" placeholder="1306545252542419" />
-          <div class="ds-cell-sub">The numeric id from WhatsApp Business API settings — not the phone number itself.</div></div>
-        <div class="field"><label for="cwWaba">WABA id (optional)</label>
-          <input id="cwWaba" placeholder="Numeric WhatsApp Business Account id" /></div>
-        <div class="field"><label for="cwToken">System user access token</label>
-          <textarea id="cwToken" rows="3" placeholder="Scope: whatsapp_business_messaging"></textarea>
-          <div class="ds-cell-sub">Stored in Vault. This screen will never display it again — only a short fingerprint
+        <div class="${C.field}"><label class="${C.label}" for="cwDisplay">Display number (optional)</label>
+          <input class="${C.input}" id="cwDisplay" placeholder="+971 4 xxx xxxx" /></div>
+        <div class="${C.field}"><label class="${C.label}" for="cwPnid">Phone number ID</label>
+          <input class="${C.input}" id="cwPnid" placeholder="1306545252542419" />
+          <div class="${C.hint}">The numeric id from WhatsApp Business API settings — not the phone number itself.</div></div>
+        <div class="${C.field}"><label class="${C.label}" for="cwWaba">WABA id (optional)</label>
+          <input class="${C.input}" id="cwWaba" placeholder="Numeric WhatsApp Business Account id" /></div>
+        <div class="${C.field}"><label class="${C.label}" for="cwToken">System user access token</label>
+          <textarea class="${C.input}" id="cwToken" rows="3" placeholder="Scope: whatsapp_business_messaging"></textarea>
+          <div class="${C.hint}">Stored in Vault. This screen will never display it again — only a short fingerprint
             so you can confirm which token is installed.</div></div>`,
-        `<button class="btn primary" id="cwSave">Connect</button><button class="btn" id="cwCancel">Cancel</button>`);
+        `<button class="${B.secondary}" id="cwCancel">Cancel</button><button class="${B.primary}" id="cwSave"><span class="material-symbols-outlined text-[18px]">link</span>Connect</button>`);
       m.wrap.querySelector('#cwCancel').addEventListener('click', m.close);
       m.wrap.querySelector('#cwSave').addEventListener('click', async () => {
         const display = $('cwDisplay').value.trim();
         const pnid = $('cwPnid').value.trim();
         const waba = $('cwWaba').value.trim();
         const token = $('cwToken').value.trim();
-        if (!pnid) return m.msg('<span class="t-hot">Phone number ID is required.</span>');
-        if (!token || token.length < 8) return m.msg('<span class="t-hot">A real access token is required — that is too short to be one.</span>');
+        if (!pnid) return m.msg(`<span class="${C.hot}">Phone number ID is required.</span>`);
+        if (!token || token.length < 8) return m.msg(`<span class="${C.hot}">A real access token is required — that is too short to be one.</span>`);
         const btn = m.wrap.querySelector('#cwSave');
         btn.disabled = true; btn.textContent = 'Connecting…';
         try {
@@ -387,7 +533,7 @@ SCREENS.channels = async host => {
             p_waba_id: waba || null, p_access_token: token,
           });
           const row = Array.isArray(res) ? res[0] : res;
-          m.msg(`<span class="t-ok">Connected — status PENDING_VERIFY. Token fingerprint ${esc(str(row && row.fingerprint))}. `
+          m.msg(`<span class="${C.ok}">Connected — status PENDING_VERIFY. Token fingerprint ${esc(str(row && row.fingerprint))}. `
             + 'Click “Send test message” below once this closes to go live.</span>');
           setTimeout(() => { m.close(); reload(); }, 1400);
         } catch (e) {
@@ -399,30 +545,30 @@ SCREENS.channels = async host => {
 
     const openTestModal = integrationId => {
       const m = openModal('Send a test message', `
-        <div class="ds-cell-sub" style="margin-bottom:12px">One real WhatsApp message is sent through Meta’s API to the
+        <div class="${C.hint} mb-3">One real WhatsApp message is sent through Meta’s API to the
           number below. If it is accepted, this channel is marked ACTIVE immediately — that happens on the server,
           only after a real send succeeds, never on this form alone.</div>
-        <div class="field"><label for="cwRecipient">Send the test to (WhatsApp number)</label>
-          <input id="cwRecipient" placeholder="9715xxxxxxxx" /></div>`,
-        `<button class="btn primary" id="cwSend">Send test message</button><button class="btn" id="cwTestCancel">Cancel</button>`);
+        <div class="${C.field}"><label class="${C.label}" for="cwRecipient">Send the test to (WhatsApp number)</label>
+          <input class="${C.input}" id="cwRecipient" placeholder="9715xxxxxxxx" /></div>`,
+        `<button class="${B.secondary}" id="cwTestCancel">Cancel</button><button class="${B.primary}" id="cwSend"><span class="material-symbols-outlined text-[18px]">send</span>Send test message</button>`);
       m.wrap.querySelector('#cwTestCancel').addEventListener('click', m.close);
       m.wrap.querySelector('#cwSend').addEventListener('click', async () => {
         const recipient = $('cwRecipient').value.replace(/[^0-9]/g, '');
-        if (recipient.length < 8) return m.msg('<span class="t-hot">A WhatsApp number to send the test to is required.</span>');
+        if (recipient.length < 8) return m.msg(`<span class="${C.hot}">A WhatsApp number to send the test to is required.</span>`);
         const btn = m.wrap.querySelector('#cwSend');
         btn.disabled = true; btn.textContent = 'Sending…';
         try {
           const res = await n8n(HOOK.channelTestSend, { integration_id: integrationId, recipient_phone: recipient });
           if (res && res.status === 'active') {
-            m.msg(`<span class="t-ok">${esc(str(res.message) || 'Accepted — the channel is now ACTIVE.')}</span>`);
+            m.msg(`<span class="${C.ok}">${esc(str(res.message) || 'Accepted — the channel is now ACTIVE.')}</span>`);
             setTimeout(() => { m.close(); reload(); }, 1400);
           } else {
-            m.msg(`<span class="t-hot">${esc(str(res && res.error) || 'WhatsApp did not accept the test message. The channel stays PENDING_VERIFY.')}</span>`);
+            m.msg(`<span class="${C.hot}">${esc(str(res && res.error) || 'WhatsApp did not accept the test message. The channel stays PENDING_VERIFY.')}</span>`);
             btn.disabled = false; btn.textContent = 'Send test message';
           }
         } catch (e) {
           btn.disabled = false; btn.textContent = 'Send test message';
-          modalError(m, e);
+          testSendFailed(m, e);
         }
       });
     };
@@ -434,12 +580,16 @@ SCREENS.channels = async host => {
   /* ────────────────────────────────────────────────────────────────────────
      P2 · The register itself
      ──────────────────────────────────────────────────────────────────────── */
-  panel(root, {
-    title: 'Every channel, and what is actually true of it',
+  panel(regSlot, {
+    title: 'Configured touchpoints — every channel, and what is actually true of it', icon: 'router',
     sub: 'Receiving first, then switched on, then switched off, then not built. Within a state, the most recent '
        + 'arrival first. Every line carries the database’s own account of why it is in the state it is in',
-    load,
-    render: rows => {
+    load: async () => {
+      const rows = await readChannels();
+      const reg = await settle(readOwnerRegistry());
+      return { rows, reg };
+    },
+    render: ({ rows, reg }, card) => {
       const ordered = orderRows(rows);
       if (!ordered.length) {
         return stateEmpty('No channel is registered for this dealership at all',
@@ -448,11 +598,14 @@ SCREENS.channels = async host => {
           + 'be switched off. Nothing is being ruled out about enquiries arriving by other means.',
           'inbox');
       }
+      const cloud = reg.err || !Array.isArray(reg.v) ? null : reg.v;
+      card.__rows = ordered.map(r => ({ r, cloud, regErr: reg.err }));
       return table([
-        { label: 'Channel', strong: true, render: r => wrap(
-            bold(esc(str(r.display_name) || str(r.channel_key) || 'A channel with no name recorded'))
-            + muted([str(r.family), str(r.plane)].filter(Boolean).map(chip).join(' ')
-                || 'No family or plane recorded against this channel.')) },
+        { label: 'Channel', strong: true, render: r => `<div class="flex items-start gap-3 min-w-[220px]">
+            <span class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined text-[20px]">${esc(channelIcon(r))}</span></span>
+            <div class="min-w-0">${bold(esc(str(r.display_name) || str(r.channel_key) || 'A channel with no name recorded'))}
+            <div class="mt-0.5 flex flex-wrap gap-1">${[str(r.family), str(r.plane)].filter(Boolean).map(x => chip(x)).join('')
+                || muted('No family or plane recorded against this channel.')}</div></div></div>` },
         { label: 'State', render: r => {
             const s = stateOf(r);
             const label = str(r.state) || 'NO STATE RECORDED';
@@ -460,33 +613,43 @@ SCREENS.channels = async host => {
               + (STATE[up(r.state)] ? '' : muted('This screen does not recognise that state, so it is shown exactly as '
                   + 'the database returned it and is counted in none of the figures above.'));
           } },
-        { label: 'Registered', render: r => wrap(str(r.registered_detail)
-            ? esc(str(r.registered_detail))
-            : muted('Nothing is recorded about whether an endpoint exists for this channel.')) },
-        { label: 'Switched on', render: r => wrap(str(r.connected_detail)
-            ? esc(str(r.connected_detail))
-            : muted('Nothing is recorded about whether this channel would accept a delivery today.')) },
-        { label: 'Arrived', align: 'r', render: r => {
+        { label: 'Last activity', render: r => {
             const c = n0(r.received_count);
             const when = r.last_received_at;
-            return `<div>${esc(count(c))}</div>`
-              + (when
-                  ? muted(`<span title="${esc(dubaiStamp(when))}">${esc(ago(when))}</span>`)
-                  : muted(c === 0
-                      ? 'Nothing yet'
-                      : 'No time is recorded against the most recent arrival.'));
+            return (when
+                ? `<div class="font-label-numeric-sm" title="${esc(dubaiStamp(when))}">${esc(ago(when))}</div>${muted(esc(dubaiStamp(when)))}`
+                : muted(c === 0 ? 'Nothing yet' : 'No time is recorded against the most recent arrival.'));
           } },
-        { label: 'How the origin was attested', render: r => wrap(str(r.origin_attested)
+        { label: 'Arrived', align: 'r', render: r => esc(count(r.received_count)) },
+        { label: 'Registered · switched on', render: r => wrap((str(r.registered_detail)
+            ? esc(str(r.registered_detail))
+            : muted('Nothing is recorded about whether an endpoint exists for this channel.'))
+          + (str(r.connected_detail)
+            ? muted(esc(str(r.connected_detail)))
+            : muted('Nothing is recorded about whether this channel would accept a delivery today.'))) },
+        { label: 'Attested · what this means', render: r => wrap((str(r.origin_attested)
             ? esc(str(r.origin_attested))
             : muted('Nothing has arrived through this channel, so nothing has been attested. This is not a weak '
-                + 'attestation — it is the absence of anything to attest.')) },
-        { label: 'What this means', render: r => wrap(str(r.evidence)
-            ? esc(str(r.evidence))
+                + 'attestation — it is the absence of anything to attest.'))
+          + (str(r.evidence)
+            ? muted(esc(str(r.evidence)))
             : warm('The database recorded no explanation for this channel’s state, so none is being invented '
-                + 'here.')) },
+                + 'here.'))) },
+        { label: 'Readiness', render: r => {
+            const v = readinessVerdict(channelGates(r, cloud, reg.err));
+            const k = v.key === 'failed' ? 'failed' : v.key === 'partial' ? 'partial' : 'live';
+            return `<div class="flex items-center gap-2 whitespace-nowrap">${statusChip(k, `${v.passed}/${v.applicable}`)}`
+              + `<button type="button" class="${B.ghost}" data-ch-inspect="${esc(str(r.channel_key))}">Inspect<span class="material-symbols-outlined text-[16px]">chevron_right</span></button></div>`;
+          } },
       ], ordered);
     },
-  }).then(wireGo);
+  }).then(card => {
+    wireGo(card);
+    card.querySelectorAll('[data-ch-inspect]').forEach(b => b.addEventListener('click', () => {
+      const hit = (card.__rows || []).find(x => str(x.r.channel_key) === b.dataset.chInspect);
+      if (hit) openChannelDrawer(hit.r, hit.cloud, hit.regErr);
+    }));
+  });
 
   /* ────────────────────────────────────────────────────────────────────────
      P3 · WhatsApp Business Cloud, on its own
@@ -496,8 +659,8 @@ SCREENS.channels = async host => {
      that. What this panel must NOT do is dress it up: if the state is anything
      other than RECEIVING, it says plainly that nothing has arrived, in the same
      place and the same size it would have said the opposite. */
-  panel(root, {
-    title: 'WhatsApp Business Cloud',
+  panel(waSlot, {
+    title: 'WhatsApp Business Cloud', icon: 'chat',
     sub: 'The official WhatsApp Cloud API channel, shown on its own because it is the one channel that has actually '
        + 'carried a customer into this database rather than merely being configured to',
     actions: linkBtn('conversations', 'Open Conversations'),
@@ -557,25 +720,36 @@ SCREENS.channels = async host => {
         str(w.origin_attested) ? 't-ok' : '');
 
       const stateLine = receiving
-        ? `<div class="banner info" style="margin-top:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">check_circle</span>
-             <div>${bold('This channel is receiving.')}
+        ? `<div class="mt-space-md">${banner('info', 'check_circle', `${bold('This channel is receiving.')}
                ${muted(str(w.evidence) ? esc(str(w.evidence)) : 'The database recorded no further explanation.')}
                ${muted('What that covers is arrival and recording. It says nothing about whether anybody replied, and '
-                 + 'nothing about whether a reply would be delivered.')}</div></div>`
-        : `<div class="banner warm" style="margin-top:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('Nothing has arrived through WhatsApp Business Cloud yet.')}
+                 + 'nothing about whether a reply would be delivered.')}`)}</div>`
+        : `<div class="mt-space-md">${banner('warm', 'warning', `${bold('Nothing has arrived through WhatsApp Business Cloud yet.')}
                ${muted('Its state is ' + esc(str(w.state) || 'not recorded') + '. '
                  + (str(w.evidence) ? esc(str(w.evidence)) : 'The database recorded no further explanation.'))}
                ${muted('It is being said plainly rather than shown as a configured channel with a zero beside it: a '
-                 + 'zero next to a green tick is how a dashboard tells a dealership it is covered when it is not.')}</div></div>`;
+                 + 'zero next to a green tick is how a dashboard tells a dealership it is covered when it is not.')}`)}</div>`;
 
-      return `<div class="grid g3">${idTile}${onTile}${inboundTile}</div>`
-        + `<div class="grid g2" style="margin-top:12px">${newestTile}${attestTile}</div>`
-        + stateLine;
+      return `<div class="${C.grid3}">${idTile}${onTile}${inboundTile}</div>`
+        + `<div class="${C.grid2} mt-space-md">${newestTile}${attestTile}</div>`
+        + stateLine
+        /* channels-omnichannel-whatsapp-cloud--dec649 prints the 24-hour customer
+           service window on this card. It is Meta's rule, stated as Meta's rule;
+           whether a particular send is allowed is decided by the message policy
+           engine per conversation, never by this card. */
+        + `<div class="mt-space-md">${banner('info', 'schedule', `${bold('The 24-hour customer service window is Meta’s rule.')}`
+          + muted('A free-form reply is allowed only within 24 hours of the customer’s last message; outside that window '
+            + 'only an approved template may be sent. Whether a given send is allowed is decided per conversation by '
+            + 'NEXUS’s message policy — this card does not decide it and does not show it as decided.'))}</div>`
+        + `<div class="mt-space-md flex flex-wrap gap-space-sm"><button class="${B.secondary}" data-cw-scroll><span class="material-symbols-outlined text-[18px]">send</span>Send test message</button></div>`;
     },
-  }).then(wireGo);
+  }).then(card => {
+    wireGo(card);
+    card.querySelector('[data-cw-scroll]')?.addEventListener('click', () => {
+      const btn = document.querySelector('#cwCard [data-test]');
+      if (btn) btn.click(); else document.getElementById('cwCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 
   /* ────────────────────────────────────────────────────────────────────────
      P3b · Message templates — v_whatsapp_template_registry
@@ -586,8 +760,8 @@ SCREENS.channels = async host => {
      NEVER_OBSERVED (no provider opinion at all) is said in those words. The
      view's own `what_this_row_claims` sentence is shown on every row. Read
      only: templates are registered on the provider side, not here. */
-  panel(root, {
-    title: 'Message templates',
+  panel(restSlot, {
+    title: 'Message templates', icon: 'drafts',
     sub: 'The WhatsApp templates NEXUS has on record for this dealership, and how old the provider&rsquo;s answer about '
        + 'each one is. A status with no date behind it is not an approval',
     load: () => db('v_whatsapp_template_registry?select=template_id,template_name:name,language,category,nexus_state,provider_status,'
@@ -601,7 +775,7 @@ SCREENS.channels = async host => {
           + 'needs an approved template, so until one is registered and observed none of those can be sent.', 'article');
       }
       return table([
-        { label: 'Template', strong: true, render: t => `<div class="mono">${esc(str(t.template_name))}</div>`
+        { label: 'Template', strong: true, render: t => `<div class="${C.mono}">${esc(str(t.template_name))}</div>`
             + muted(`${esc(str(t.language) || 'no language')} &middot; ${esc(str(t.category) || 'no category')}`) },
         { label: 'In NEXUS', render: t => pill(str(t.nexus_state) || 'NOT RECORDED', '', { verbatim: true }) },
         { label: 'Provider said', render: t => (str(t.provider_status)
@@ -609,7 +783,7 @@ SCREENS.channels = async host => {
               + muted(t.provider_status_observed_at
                   ? `observed ${esc(ago(t.provider_status_observed_at))}`
                   : 'no observation time recorded')
-            : '<span class="pill unknown"><span class="dot"></span>NEVER OBSERVED</span>'
+            : pill('NEVER OBSERVED', 'unknown', { verbatim: false })
               + muted('NEXUS has no answer from the provider about this template at all.'))
             + (str(t.provider_rejected_reason) ? warm(esc(str(t.provider_rejected_reason))) : '') },
         { label: 'Confidence', render: t => pill(str(t.status_confidence) || 'NOT STATED', '', { verbatim: true }) },
@@ -627,8 +801,8 @@ SCREENS.channels = async host => {
      cost column is the view's own `cost_answer` sentence, verbatim. A month with
      messages awaiting a provider report is NOT a free month and is never shown
      as zero cost. */
-  panel(root, {
-    title: 'Messaging usage',
+  panel(restSlot, {
+    title: 'Messaging usage', icon: 'analytics',
     sub: 'Outbound WhatsApp messages by month and category. These are counts of what NEXUS recorded sending; what '
        + 'they cost is the provider&rsquo;s to say, and NEXUS does not know it',
     load: () => db('v_whatsapp_messaging_usage_monthly?select=month,message_category,messages,provider_billable_messages,'
@@ -651,7 +825,7 @@ SCREENS.channels = async host => {
         { label: 'Failed / no status', align: 'r', render: u => `${esc(count(u.failed_messages))} / ${esc(count(u.no_status_reported))}` },
         { label: 'What it cost', render: u => wrap(muted(esc(str(u.cost_answer))
             || 'Not known. NEXUS holds no rate card, so it states no cost.')) },
-      ], list) + `<div class="section">${muted('No cost figure appears on this screen by design: Meta prices by '
+      ], list) + `<div class="${C.section}">${muted('No cost figure appears on this screen by design: Meta prices by '
         + 'country, category and date, and NEXUS holds no rate card. Billable means the provider reported the message '
         + 'as billable — it is a count, not a charge.')}</div>`;
     },
@@ -663,8 +837,8 @@ SCREENS.channels = async host => {
      Fixed rows. They are true whether or not the read above succeeded, which is
      why this panel takes the soft load: a screen whose job is to state what it
      cannot tell you must not go blank at exactly the moment it knows least. */
-  panel(root, {
-    title: 'What this screen cannot tell you',
+  panel(restSlot, {
+    title: 'What this screen cannot tell you', icon: 'privacy_tip',
     sub: 'Four things that are outside what the database can answer. They are listed because a dashboard that only '
        + 'shows what it knows reads as though it knows everything',
     load: loadSoft,
@@ -697,12 +871,10 @@ SCREENS.channels = async host => {
       ];
 
       const head = err
-        ? `<div class="banner warm">
-             <span class="material-symbols-outlined" style="font-size:20px">warning</span>
-             <div>${bold('The channel register could not be read on this visit.')}
+        ? `<div class="mt-space-md">${banner('warm', 'warning', `${bold('The channel register could not be read on this visit.')}
                ${muted(esc(str(err.message) || 'No reason was given.')
                  + ' The four limits below are true regardless, so they are still shown. The panels above are unread '
-                 + 'rather than empty — no channel is being cleared and none is being blamed.')}</div></div>`
+                 + 'rather than empty — no channel is being cleared and none is being blamed.')}`)}</div>`
         : '';
 
       return head + table([
@@ -711,4 +883,14 @@ SCREENS.channels = async host => {
       ], rows);
     },
   }).then(wireGo);
+
+  /* Trust footer (states-components §7). */
+  settle(readChannels()).then(({ v, err }) => {
+    footSlot.innerHTML = trustFooter({
+      source: 'Channel register for this dealership',
+      asOf: dubaiStamp(new Date()),
+      evidence: err ? 'The register could not be read' : `${count(Array.isArray(v) ? v.length : 0)} channels read`,
+      actor: actor(),
+    });
+  });
 };
