@@ -10,7 +10,9 @@ import { maskText } from './privacy.js';
    pickableLeads() below. Nothing about identity is decided here; the three
    imports are the whole of it. */
 import { KEY_SHAPE, expandIdentity, keyShape } from './identity.js';
-import { modalError, openModal } from './modal.js';
+import { modalError } from './modal.js';
+import { BTN, openStitchModal } from './stitch-ui.js';
+import { FIELD } from './desk-kit.js';
 
 /* ── Who the picker may offer, and under what key ──────────────────────────
    1 Sep 2026. The list was built as `leads.filter(l => l.email)`.
@@ -64,8 +66,15 @@ function pickableLeads(leads) {
 function dealForm(leads, onDone) {
   const today = new Date();
   const iso = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-  const f = (id, label, input, hint) => `<div class="field"><label for="${id}">${label}</label>${input}
-    ${hint ? `<div class="cell-sub">${hint}</div>` : ''}</div>`;
+  /* The Stitch "Record a New Deal" modal (deals-pipeline-deal-intake--fd31c9),
+     with the closed-won wording of deals-pipeline-closed-won-desk--5c884c.
+     Fields, ids and every rule below are unchanged. Not drawn from the export:
+     the payment-structure, consultant, trade-in and notes fields and the
+     "escrow secured" badge — the closed-won workflow takes none of them, and a
+     field nothing saves is a field that silently loses what was typed. */
+  const f = (id, label, input, hint) => `<div class="flex flex-col"><label class="${FIELD.label}" for="${id}">${label}</label>${input}
+    ${hint ? `<p class="${FIELD.hint}">${hint}</p>` : ''}</div>`;
+  const I = FIELD.input;
 
   const { offered, refused } = pickableLeads(leads);
   const pickerHint = [
@@ -81,28 +90,36 @@ function dealForm(leads, onDone) {
     'Picking a lead links the deal to that lead’s row. Editing the Email field afterwards drops the link — the deal is then recorded against the contact key alone.',
   ].filter(Boolean).join(' ');
 
-  const m = openModal('Record a closed-won deal', `
-    ${f('dLead', 'Lead', `<select id="dLead">
+  const m = openStitchModal({ wide: true, title: 'Record a closed-won deal', bodyHtml: `
+    <div class="flex flex-col gap-space-md">
+    <div class="-mx-space-lg -mt-space-lg mb-1 px-space-lg py-2.5 bg-[#EEF3FD] border-b border-[#D4E2FB] flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[16px]">lock_reset</span>
+        <span class="font-body-sm text-body-sm text-primary font-medium">Safe to submit twice</span></div>
+      <span class="font-body-sm text-[11px] text-on-surface-variant">The deal id is derived from the email and close date, so a repeat updates the same deal.</span>
+    </div>
+    ${f('dLead', 'Lead', `<select id="dLead" class="${FIELD.select}">
         <option value="">— pick a lead, or type the details below —</option>
         ${offered.map(({ lead: l, anchor }) =>
           `<option value="${esc(anchor)}" data-lead-id="${esc(l.id)}" data-name="${esc(maskText(l.name || ''))}" data-veh="${esc(l.vehicle_interest || '')}"
             data-budget="${esc(l.budget_aed || '')}">${esc(maskText(l.name || anchor))} — ${esc(l.vehicle_interest || 'no vehicle noted')}</option>`).join('')}
       </select>`, pickerHint)}
-    <div class="grid g2">
-      ${f('dName', 'Customer name', `<input id="dName" placeholder="Vikram Malhotra" />`)}
-      ${f('dEmail', 'Email', `<input type="email" id="dEmail" placeholder="name@example.com" />`,
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
+      ${f('dName', 'Customer name *', `<input id="dName" class="${I}" placeholder="Vikram Malhotra" />`)}
+      ${f('dEmail', 'Email *', `<input type="email" id="dEmail" class="${I}" placeholder="name@example.com" />`,
           'Used with the close date to build a stable deal id, so re-recording the same deal updates its vector instead of duplicating it.')}
     </div>
-    <div class="grid g2">
-      ${f('dVeh', 'Vehicle', `<input id="dVeh" placeholder="Toyota Land Cruiser 2024" />`)}
-      ${f('dPhone', 'Phone (optional)', `<input id="dPhone" placeholder="+971…" />`)}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
+      ${f('dVeh', 'Vehicle *', `<input id="dVeh" class="${I}" placeholder="Toyota Land Cruiser 2024" />`)}
+      ${f('dPhone', 'Phone (optional)', `<input id="dPhone" class="${I} font-label-numeric-sm" placeholder="+971…" />`)}
     </div>
-    <div class="grid g2">
-      ${f('dPrice', 'Sale price (AED)', `<input type="number" min="1" id="dPrice" placeholder="290000" />`)}
-      ${f('dDate', 'Closed on', `<input type="date" id="dDate" value="${iso}" max="${iso}" />`)}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm">
+      ${f('dPrice', 'Sale price (AED) *', `<input type="number" min="1" id="dPrice" class="${I} text-right font-label-numeric-md font-bold" placeholder="290000" />`)}
+      ${f('dDate', 'Closed on *', `<input type="date" id="dDate" class="${I}" value="${iso}" max="${iso}" />`)}
+    </div>
     </div>`,
-    `<button class="btn primary" id="dSave">Record deal</button>
-     <button class="btn" id="dCancel">Cancel</button>`);
+    footHtml: `<span class="mr-auto flex items-center gap-1.5 text-on-surface-variant text-[11px] font-label-numeric-sm"><span class="material-symbols-outlined text-[15px] text-[#157A5B]">verified</span>Recorded through the closed-won workflow</span>
+     <button type="button" class="${BTN.secondary}" id="dCancel">Cancel</button>
+     <button type="button" class="${BTN.primary}" id="dSave">Record deal</button>` });
 
   /* The lead the form was filled from, and the anchor it was filled with. Not
      read off the <select> at save time: the operator may retype the Email box
@@ -172,12 +189,12 @@ function dealForm(leads, onDone) {
       sale_price_aed: $('dPrice').value,
       closed_at: $('dDate').value,
     };
-    if (!v.lead_email) return m.msg('<span class="t-hot">An email address is required — the deal id is derived from it.</span>');
-    if (!v.lead_name)  return m.msg('<span class="t-hot">A customer name is required.</span>');
-    if (!v.vehicle)    return m.msg('<span class="t-hot">A vehicle is required — it is most of what gets embedded.</span>');
+    if (!v.lead_email) return m.msg('<span class="text-red-700">An email address is required — the deal id is derived from it.</span>');
+    if (!v.lead_name)  return m.msg('<span class="text-red-700">A customer name is required.</span>');
+    if (!v.vehicle)    return m.msg('<span class="text-red-700">A vehicle is required — it is most of what gets embedded.</span>');
     if (!v.sale_price_aed || Number(v.sale_price_aed) <= 0)
-      return m.msg('<span class="t-hot">A sale price above zero is required.</span>');
-    if (!v.closed_at)  return m.msg('<span class="t-hot">A close date is required.</span>');
+      return m.msg('<span class="text-red-700">A sale price above zero is required.</span>');
+    if (!v.closed_at)  return m.msg('<span class="text-red-700">A close date is required.</span>');
 
     const btn = m.wrap.querySelector('#dSave');
     const reset = () => { btn.disabled = false; btn.textContent = 'Record deal'; };
@@ -248,7 +265,7 @@ function dealForm(leads, onDone) {
     const dropped = (delivery && Array.isArray(delivery.dropped))
       ? delivery.dropped.map(d => String(d)).filter(Boolean) : [];
     const reasons = dropped.length
-      ? `<ul style="margin:6px 0 0;padding-left:18px">${dropped.map(d => `<li>${esc(d)}</li>`).join('')}</ul>`
+      ? `<ul class="mt-1.5 pl-5 list-disc">${dropped.map(d => `<li>${esc(d)}</li>`).join('')}</ul>`
       : '';
 
     if (status === 'SUCCESS') {
@@ -261,9 +278,9 @@ function dealForm(leads, onDone) {
          stays open so the figures the operator typed are still on screen and the
          deal is not silently lost between a closed dialog and an empty table. */
       reset();
-      m.msg(`<span class="t-hot">The deal was NOT recorded${status === 'PARTIAL' ? ' in full' : ''} — the closed-won workflow reported `
-        + `<span class="mono">${esc(status)}</span>.</span>${reasons}`
-        + `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(
+      m.msg(`<span class="text-red-700">The deal was NOT recorded${status === 'PARTIAL' ? ' in full' : ''} — the closed-won workflow reported `
+        + `<span class="font-label-numeric-sm">${esc(status)}</span>.</span>${reasons}`
+        + `<div class="font-body-sm text-body-sm text-on-surface-variant mt-1.5">${esc(
           (delivery && delivery.note ? delivery.note + '. ' : '')
           + 'Nothing here is retried automatically. Recording the same deal again is safe — the deal id is derived from the email and close date, so a repeat updates that deal rather than adding a second one.')}</div>`);
       return;
@@ -276,12 +293,12 @@ function dealForm(leads, onDone) {
     const ack = body && typeof body === 'object' && /workflow was started/i.test(String(body.message || ''));
     let raw;
     try { raw = JSON.stringify(res); } catch { raw = String(res); }
-    m.msg(`<span class="t-warm">${esc(ack
+    m.msg(`<span class="text-amber-700">${esc(ack
       ? 'The workflow accepted the request and answered before doing any of the work, so whether the deal was recorded cannot be told from here.'
       : 'The closed-won workflow answered without a delivery status, so whether the deal was recorded cannot be told from here.')}</span>`
-      + `<div class="cell-sub" style="margin-top:6px;white-space:normal">${esc(
+      + `<div class="font-body-sm text-body-sm text-on-surface-variant mt-1.5">${esc(
         'Check the Deals screen — the deal is recorded only if it appears there. Recording it again is safe: the deal id is derived from the email and close date, so a repeat updates that deal rather than adding a second one.')}`
-      + ` It answered: <span class="mono">${esc(String(raw).slice(0, 200))}</span></div>`);
+      + ` It answered: <span class="font-label-numeric-sm">${esc(String(raw).slice(0, 200))}</span></div>`);
   });
 }
 

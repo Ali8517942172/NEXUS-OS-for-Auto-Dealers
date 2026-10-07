@@ -156,11 +156,11 @@
    figure. The library is a line-for-line mirror of
    `public.nexus_is_message(direction, channel, message)`. */
 import { MARKER_PREFIXES, isInboundMessage, isMarkerText, isOutboundMessage, silenceCount, splitEvents } from '../lib/comm-events.js';
-import { HOOK, db, n8n } from '../lib/data.js';
+import { HOOK, db, myRole, n8n } from '../lib/data.js';
 import { el } from '../lib/dom.js';
 import { dealerText as vocabDealerText } from '../lib/vocabulary.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, clock, dubaiStamp, esc, n0, num, pill, tone } from '../lib/format.js';
+import { aed, ago, clock, dubaiStamp, esc, n0, num, tone } from '../lib/format.js';
 import { displayName, maskText } from '../lib/privacy.js';
 /* The only place allowed to decide what an audit_log status means. This screen
    used to carry its own definition — `['FAILED', 'REJECTED'].includes(status)`
@@ -172,10 +172,10 @@ import { OUTCOME, isIncomplete, isRefusal, isSuccess, outcomeOf, outcomeWords } 
    `personCanon` for what the copy could not see. */
 import { expandIdentity, normalizeKey } from '../lib/identity.js';
 import { leadDrawer } from '../lib/lead-drawer.js';
-import { openModal } from '../lib/modal.js';
+import { BTN, openStitchModal, sectionHeader, statusChip, trustFooter } from '../lib/stitch-ui.js';
+import { BANNER, SEG, segPaint, kpi, pill, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/desk-kit.js';
 import { SCREENS } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { kpi, table, wireRows } from '../lib/ui.js';
+import { wireRows } from '../lib/ui.js';
 
 /* Bounded reads. An unbounded select is how a screen starts timing out once the
    dealership has a year of history behind it; where a cap is actually hit it is
@@ -229,8 +229,8 @@ const ts  = v => { const t = Date.parse(v); return Number.isNaN(t) ? 0 : t; };
    Day-1/Day-3/Day-7 cadence reads as if it fired at the wrong time of day. */
 const stamp = v => dubaiStamp(v, 'no timestamp recorded');
 const plural = (n, one, many) => (Number(n) === 1 ? one : many);
-const muted = t => `<span class="t-muted">${esc(t)}</span>`;
-const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
+const muted = t => `<span class="text-outline">${esc(t)}</span>`;
+const warn  = t => `<span class="text-amber-700">${esc(t)}</span>`;
 
 /* A workflow run that proves the mailbox works. The bar is a MACHINE-WRITTEN
    step result naming the mailbox — the evidence that mattered on 24 Aug was a
@@ -529,43 +529,46 @@ SCREENS.campaigns = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
      screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
-  const alertCard  = el('div', 'card flush');
-  const strip      = el('div', 'grid g5');
+  /* ── The Stitch layout (7 Oct 2026) ─────────────────────────────────────
+     design/stitch/campaigns-7-day-drip-outbound-telemetry--947632.html: needs
+     attention, what this screen can answer, enrol a lead, who is enrolled,
+     outbound mail (two columns) beside the silence detector (one column), and
+     the activity stream. The summary strip under the alerts is this screen's
+     own and is kept. The export's "Pause all active drips" and "New campaign
+     rule" buttons are not drawn: no path exists to pause a workflow or to
+     write a campaign rule from this dashboard, and a button that does nothing
+     is worse than none. */
+  const headHost = el('div');
+  headHost.innerHTML = sectionHeader({ eyebrow: 'Work · Campaigns', title: 'Campaigns & Automated Drips',
+    sub: 'The 7-day nurture sequence, what it has sent, and who has gone quiet.' });
+  const alertCard  = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const strip      = el('div', 'grid grid-cols-2 lg:grid-cols-5 gap-space-md');
   /* With one drip-eligible lead — 3 leads on 01 Sep 2026, of which only 38 Ali
      is WARM — the list of questions this screen refuses to answer is more useful
      than anything it can answer, and each "no" is a specification: the column
-     that is missing, and what would fill it. ("one lead and one person's
-     messages" until today; there are three leads and eleven conversation
-     threads now, and only the first half of that sentence was ever the point.) */
-  const scopeCard  = el('div', 'card flush');
-  const enrolCard  = el('div', 'card flush');
-  const midRow     = el('div', 'grid g2 top');
-  const rosterCard = el('div', 'card flush');
-  const mailCard   = el('div', 'card flush');
-  const lowRow     = el('div', 'grid g2 top');
-  const silenceCard  = el('div', 'card flush');
-  const activityCard = el('div', 'card flush');
-
-  strip.style.marginTop     = '16px';
-  scopeCard.style.marginTop = '16px';
-  enrolCard.style.marginTop = '16px';
-  midRow.style.marginTop    = '16px';
-  lowRow.style.marginTop    = '16px';
-  midRow.appendChild(rosterCard); midRow.appendChild(mailCard);
-  lowRow.appendChild(silenceCard); lowRow.appendChild(activityCard);
-  [alertCard, strip, scopeCard, enrolCard, midRow, lowRow].forEach(n => root.appendChild(n));
+     that is missing, and what would fill it. */
+  const scopeCard  = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const enrolCard  = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const rosterCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const bento      = el('div', 'grid grid-cols-1 lg:grid-cols-3 gap-space-md items-start');
+  const mailCard   = el('div', 'lg:col-span-2 rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const silenceCard  = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const activityCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  const footHost = el('div');
+  bento.appendChild(mailCard); bento.appendChild(silenceCard);
+  [headHost, alertCard, strip, scopeCard, enrolCard, rosterCard, bento, activityCard, footHost].forEach(n => root.appendChild(n));
 
   await boot();
 
   async function boot() {
     /* ── Loading ─────────────────────────────────────────────────────────── */
-    alertCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Needs attention</div>
-      <div class="card-sub">The attention list for this screen, plus the checks this screen runs on the rows it just read</div>
-    </div></div><div class="pbody">${stateLoading(3)}</div>`;
+    alertCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Needs attention</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">The attention list for this screen, plus the checks this screen runs on the rows it just read</div>
+    </div></div><div class="p-space-md" data-pbody>${stateLoading(3)}</div>`;
     strip.innerHTML = stateLoading(2);
     [scopeCard, enrolCard, rosterCard, mailCard, silenceCard, activityCard]
       .forEach(c => { c.innerHTML = stateLoading(5); });
@@ -612,7 +615,7 @@ SCREENS.campaigns = async host => {
         db(`audit_log?select=workflow,status,lead_name,lead_email,summary,logged_at&order=logged_at.desc&limit=${AUDIT_LIMIT}`),
       ]);
     } catch (e) {
-      alertCard.querySelector('.pbody').innerHTML = stateError('the alert strip', e);
+      alertCard.querySelector('[data-pbody]').innerHTML = stateError('the alert strip', e);
       strip.innerHTML = stateError('the campaign summary', e);
       [['what this screen can answer', scopeCard], ['the enrolment list', enrolCard], ['the enrolment roster', rosterCard],
        ['the mail log', mailCard], ['the silence detector', silenceCard],
@@ -974,18 +977,18 @@ SCREENS.campaigns = async host => {
        tooltip rather than leaving a blank that could mean either. */
     function nameHtml(name) {
       const n = str(name);
-      if (!n) return '<span class="t-warm">Unnamed contact</span>';
+      if (!n) return '<span class="text-amber-700">Unnamed contact</span>';
       if (HANDLE.test(n)) {
-        return '<span class="t-warm">Unnamed contact</span> '
-          + `<span class="chip mono" title="This is a WhatsApp chat handle stored as a name, not a person's name. A LID contains no phone digits and identifies nobody.">${esc(n)}</span>`;
+        return '<span class="text-amber-700">Unnamed contact</span> '
+          + `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap font-label-numeric-sm" title="This is a WhatsApp chat handle stored as a name, not a person's name. A LID contains no phone digits and identifies nobody.">${esc(n)}</span>`;
       }
       return esc(n);
     }
     const phoneHtml = (phone, lead) => str(phone)
-      ? `<span class="mono">${esc(maskText(str(phone)))}</span>`
+      ? `<span class="font-label-numeric-sm">${esc(maskText(str(phone)))}</span>`
       : lead
-        ? '<span class="t-muted" title="The lead row for this address carries no phone number">—</span>'
-        : '<span class="t-muted" title="No lead row matches this address, so there is no phone number to look up">—</span>';
+        ? '<span class="text-outline" title="The lead row for this address carries no phone number">—</span>'
+        : '<span class="text-outline" title="No lead row matches this address, so there is no phone number to look up">—</span>';
 
     function personOf(email, fallbackName) {
       const k = low(email);
@@ -998,17 +1001,17 @@ SCREENS.campaigns = async host => {
       };
     }
     /* Name and number on one line, for the places that have no second line. */
-    const personLine = p => `${nameHtml(p.name)} <span class="t-muted">·</span> ${phoneHtml(p.phone, p.lead)}`;
+    const personLine = p => `${nameHtml(p.name)} <span class="text-outline">·</span> ${phoneHtml(p.phone, p.lead)}`;
 
     const chipFor = p => p.lead
-      ? `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-lead="${esc(p.lead.id)}"
+      ? `<button type="button" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" style="border:0;cursor:pointer;font-family:inherit" data-lead="${esc(p.lead.id)}"
           title="Open this lead">${personLine(p)}</button>`
-      : `<span class="chip" title="No lead row matches ${esc(maskText(p.email || 'this contact'))}, so there is nothing to open">${personLine(p)}</span>`;
+      : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="No lead row matches ${esc(maskText(p.email || 'this contact'))}, so there is nothing to open">${personLine(p)}</span>`;
 
     const previewOf = people => {
       const shown = people.slice(0, PREVIEW).map(chipFor).join(' ');
       const rest = people.length - Math.min(people.length, PREVIEW);
-      return `${shown}${rest ? ` <span class="t-muted">+${num(rest)} more</span>` : ''}`;
+      return `${shown}${rest ? ` <span class="text-outline">+${num(rest)} more</span>` : ''}`;
     };
 
     /* ── Is email actually able to leave? ────────────────────────────────────
@@ -1149,7 +1152,7 @@ SCREENS.campaigns = async host => {
       ? `The automation health figures could not be read (${esc(healthErr.message)}), so nothing here can say how the drip workflow itself is behaving.`
       : dripHealth.length
         ? `The automation health figures lists ${num(dripHealth.length)} drip ${plural(dripHealth.length, 'workflow', 'workflows')} `
-          + `(${dripHealth.map(w => `<span class="mono">${esc(str(w.name) || 'unnamed')}</span> — ${esc(str(w.health) || 'no health state')}`).join(', ')}), `
+          + `(${dripHealth.map(w => `<span class="font-label-numeric-sm">${esc(str(w.name) || 'unnamed')}</span> — ${esc(str(w.health) || 'no health state')}`).join(', ')}), `
           + `${num(dripRun30)} ${plural(dripRun30, 'run', 'runs')} and ${num(dripFail30)} ${plural(dripFail30, 'failure', 'failures')} in the last 30 days`
           + `${dripLastFailure ? `, most recent failure ${esc(ago(dripLastFailure))}` : ''}.`
           /* The same distinction overview.js draws: last_run is the newest run
@@ -1199,13 +1202,13 @@ SCREENS.campaigns = async host => {
           /* Where the row is filed matters, and getting it wrong in either
              direction is a lie: claiming an automation row was raised about
              campaigns, or claiming a campaigns row belongs to somebody else. */
-          + `Raised ${esc(ago(top.at))} by <span class="mono">${esc(top.workflow || 'an unnamed workflow')}</span>${top.live
+          + `Raised ${esc(ago(top.at))} by <span class="font-label-numeric-sm">${esc(top.workflow || 'an unnamed workflow')}</span>${top.live
             ? (!str(top.screen)
                 ? ' and carried by the attention list'
                 : low(top.screen) === SCREEN_ID
                   ? ' and filed by the attention list against this screen — it is listed above as well'
-                  : ` and filed by the attention list against the <span class="mono">${esc(str(top.screen))}</span> screen, not this one; it is repeated here because every send step of the drip goes out through that same mailbox`)
-            : '. The attention list no longer carries it — that view keeps a workflow_failure for 24 hours — so this is read from <span class="mono">The activity log</span>, which this screen had already loaded'}. `
+                  : ` and filed by the attention list against the <span class="font-label-numeric-sm">${esc(str(top.screen))}</span> screen, not this one; it is repeated here because every send step of the drip goes out through that same mailbox`)
+            : '. The attention list no longer carries it — that view keeps a workflow_failure for 24 hours — so this is read from <span class="font-label-numeric-sm">The activity log</span>, which this screen had already loaded'}. `
           + `${credEvidence.length > 1
             ? `${num(credEvidence.length)} mail-credential ${plural(credEvidence.length, 'failure is', 'failures are')} recorded across the two sources, the oldest ${esc(ago(credEvidence[credEvidence.length - 1].at))}. `
             : ''}`
@@ -1259,9 +1262,9 @@ SCREENS.campaigns = async host => {
         chip: 'waiting on a person',
         title: `${num(replied.length)} enrolled ${plural(replied.length, 'lead has', 'leads have')} replied and ${plural(replied.length, 'is', 'are')} waiting for an answer`,
         detailHtml: 'Each of these has at least one inbound row in the message history dated at or after their first drip run. '
-          + 'The sequence is not going to talk over them: <span class="mono">7_day_warm_lead_drip_campaign.json</span> puts a '
-          + '<span class="mono">Replies Since Enrol (Day N)</span> read and a <span class="mono">Still Enrolled? (Day N)</span> gate in front of '
-          + `every one of its five sends, and the false branch of each gate goes to <span class="mono">Stopped Report</span>. `
+          + 'The sequence is not going to talk over them: <span class="font-label-numeric-sm">7_day_warm_lead_drip_campaign.json</span> puts a '
+          + '<span class="font-label-numeric-sm">Replies Since Enrol (Day N)</span> read and a <span class="font-label-numeric-sm">Still Enrolled? (Day N)</span> gate in front of '
+          + `every one of its five sends, and the false branch of each gate goes to <span class="font-label-numeric-sm">Stopped Report</span>. `
           + (repliedMid.length
             ? `${num(repliedMid.length)} ${plural(repliedMid.length, 'was', 'were')} enrolled within the last ${SEQUENCE_DAYS} days, so ${plural(repliedMid.length, 'that sequence is', 'those sequences are')}" still running — `
               + `${nextGate
@@ -1279,7 +1282,7 @@ SCREENS.campaigns = async host => {
         peopleHtml: previewOf(replied.map(r => personOf(r.key, r.name))),
         /* No button. A disabled control implies the action is the right one and
            merely unavailable; here the action is not wanted. */
-        footHtml: `<span class="ds-cell-sub">${esc(SELF_STOPPING_NOTE)}</span>`,
+        footHtml: `<span class="font-body-sm text-body-sm text-on-surface-variant">${esc(SELF_STOPPING_NOTE)}</span>`,
         why: GATE_BLIND_SPOT,
         target: rosterCard,
         keys: new Set(replied.map(r => r.key)),
@@ -1308,7 +1311,7 @@ SCREENS.campaigns = async host => {
           + `The oldest has been enrolled since ${esc(ago(zeroSend[0].first.logged_at))} (${esc(stamp(zeroSend[0].first.logged_at))}). `
           + 'The drip sends five steps across two channels — day 1, 3 and 7 by email and day 1 and 5 by WhatsApp — and both are counted. '
           + 'The message history records no workflow id, so <em>any</em> outbound row on either channel, filed under any key this person is known by, counts as a send here. '
-          + 'Rows on any other channel are excluded — <span class="mono">system</span> is the one in this table — because by <span class="mono">NEXUS’s own test for what counts as a message</span> a message to a customer is on whatsapp, email or sms, and anything else is the dealership writing about a conversation rather than inside it. '
+          + 'Rows on any other channel are excluded — <span class="font-label-numeric-sm">system</span> is the one in this table — because by <span class="font-label-numeric-sm">NEXUS’s own test for what counts as a message</span> a message to a customer is on whatsapp, email or sms, and anything else is the dealership writing about a conversation rather than inside it. '
           + (delivery === 'broken'
             ? 'That is consistent with the credential failure above: the sequence is queueing and the mailbox is dead.'
             : delivery === 'recovered'
@@ -1338,9 +1341,9 @@ SCREENS.campaigns = async host => {
         icon: 'alternate_email',
         chip: 'not an address',
         title: `${num(bad)} drip ${plural(bad, 'run carries', 'runs carry')} a chat key in the email on the lead record rather than an email address`,
-        detailHtml: `${num(nonEmailIdx.length)} ${plural(nonEmailIdx.length, 'run carries', 'runs carry')} a <span class="mono">The email on the lead record</span> that an email sequence cannot send to `
-          + `(${unaddressable.slice(0, PREVIEW).map(r => `<span class="mono">${esc(maskText(r.email || r.key))}</span>`).join(', ')}${unaddressable.length > PREVIEW ? `, +${num(unaddressable.length - PREVIEW)} more` : ''}). `
-          + 'A <span class="mono">+digits@whatsapp.lead</span> or <span class="mono">@lid</span> value parses like an address and is not one. '
+        detailHtml: `${num(nonEmailIdx.length)} ${plural(nonEmailIdx.length, 'run carries', 'runs carry')} a <span class="font-label-numeric-sm">The email on the lead record</span> that an email sequence cannot send to `
+          + `(${unaddressable.slice(0, PREVIEW).map(r => `<span class="font-label-numeric-sm">${esc(maskText(r.email || r.key))}</span>`).join(', ')}${unaddressable.length > PREVIEW ? `, +${num(unaddressable.length - PREVIEW)} more` : ''}). `
+          + 'A <span class="font-label-numeric-sm">+digits@whatsapp.lead</span> or <span class="font-label-numeric-sm">@lid</span> value parses like an address and is not one. '
           + 'Those runs cannot have delivered an email, and something upstream enrolled a lead without checking it had a real address.',
         target: activityCard,
         keys: new Set(nonEmailIdx.map(i => `run-${i}`)),
@@ -1387,11 +1390,11 @@ SCREENS.campaigns = async host => {
           ? `${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run is', 'runs are')} logged, and not one carries a lead this screen can attribute it to`
           : `${num(unkeyedIdx.length)} of ${num(dripRuns.length)} drip runs carry no lead, so ${plural(unkeyedIdx.length, 'it is', 'they are')} in no per-person figure on this screen`,
         detailHtml: `${runsButNobody
-            ? `Every one of them has <span class="mono">The email on the lead record</span> NULL on the audit row, so the roster below is empty while campaign activity lists ${num(dripRuns.length)}. `
+            ? `Every one of them has <span class="font-label-numeric-sm">The email on the lead record</span> NULL on the audit row, so the roster below is empty while campaign activity lists ${num(dripRuns.length)}. `
               + 'That is not "the campaign has never run" — it has run and nobody can be told who for. '
-            : `${num(unkeyedIdx.length)} ${plural(unkeyedIdx.length, 'run has', 'runs have')} <span class="mono">The email on the lead record</span> NULL on the audit row. The roster below lists ${num(roster.size)} ${plural(roster.size, 'person', 'people')} and campaign activity lists ${num(dripRuns.length)} runs; the difference is these. `}`
+            : `${num(unkeyedIdx.length)} ${plural(unkeyedIdx.length, 'run has', 'runs have')} <span class="font-label-numeric-sm">The email on the lead record</span> NULL on the audit row. The roster below lists ${num(roster.size)} ${plural(roster.size, 'person', 'people')} and campaign activity lists ${num(dripRuns.length)} runs; the difference is these. `}`
           + `${dripRuns.filter(a => /error handler/i.test(str(a.workflow)) || /failed at node/i.test(str(a.summary))).length
-            ? 'These rows were written by the error handler rather than by the drip\u2019s own <span class="mono">Audit: Enrolled</span> and <span class="mono">Audit Log</span> nodes, which do carry the lead — so a run that crashes before those nodes leaves an anonymous record. '
+            ? 'These rows were written by the error handler rather than by the drip\u2019s own <span class="font-label-numeric-sm">Audit: Enrolled</span> and <span class="font-label-numeric-sm">Audit Log</span> nodes, which do carry the lead — so a run that crashes before those nodes leaves an anonymous record. '
             : ''}`
           + 'The roster, the enrolment KPI and the activity panel below all say this the same way rather than three different ways.',
         target: activityCard,
@@ -1408,7 +1411,7 @@ SCREENS.campaigns = async host => {
         chip: 'workflow off',
         title: 'Every registered drip workflow is switched off',
         detailHtml: (dripHealth.length ? 'v_workflow_health' : 'workflow_registry')
-          + ' reports <span class="mono">is_active = false</span> on every workflow named or categorised as a drip. '
+          + ' reports <span class="font-label-numeric-sm">is_active = false</span> on every workflow named or categorised as a drip. '
           + 'An enrolment posted from this screen would be accepted by the webhook and then picked up by nothing.',
         target: null,
         why: 'This is a workflow state, not a row on this screen. The Automation screen is where a workflow is switched back on.',
@@ -1430,8 +1433,8 @@ SCREENS.campaigns = async host => {
              an address. These leads were offered in the enrolment table with a
              live Enrol button, and the Gmail node would have attempted a send. */
           + (synthEmailLeads.length
-            ? `${num(synthEmailLeads.length)} ${plural(synthEmailLeads.length, 'carries', 'carry')} a WhatsApp key in <span class="mono">The email on the lead record</span> rather than an address `
-              + `(${synthEmailLeads.slice(0, PREVIEW).map(l => `<span class="mono">${esc(maskText(str(l.email)))}</span>`).join(', ')}${synthEmailLeads.length > PREVIEW ? `, +${num(synthEmailLeads.length - PREVIEW)} more` : ''}) — `
+            ? `${num(synthEmailLeads.length)} ${plural(synthEmailLeads.length, 'carries', 'carry')} a WhatsApp key in <span class="font-label-numeric-sm">The email on the lead record</span> rather than an address `
+              + `(${synthEmailLeads.slice(0, PREVIEW).map(l => `<span class="font-label-numeric-sm">${esc(maskText(str(l.email)))}</span>`).join(', ')}${synthEmailLeads.length > PREVIEW ? `, +${num(synthEmailLeads.length - PREVIEW)} more` : ''}) — `
               + 'the Master Router synthesises those when a WhatsApp lead has no email, and they parse as addresses because the domain contains a dot. '
               + 'Until 31 Aug 2026 such a lead appeared in the table below with the Enrol button live, and the sequence would have tried to mail it. '
             : '')
@@ -1496,15 +1499,15 @@ SCREENS.campaigns = async host => {
     const viewRowsHtml = forThisScreen.map(it => {
       const sev = str(it.severity);
       return `<div class="list-item" style="cursor:default">
-        <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px" aria-hidden="true">${esc(KIND_ICON[low(it.kind)] || 'warning')}</span>
+        <span class="material-symbols-outlined ${toneText(sevTone(sev))}" style="font-size:20px" aria-hidden="true">${esc(KIND_ICON[low(it.kind)] || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
-            <span class="chip">${esc(str(it.kind) || 'item')}</span>
-            <span class="chip" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(str(it.kind) || 'item')}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="Raised by the attention list, the shared cross-screen alert view, not computed on this screen.">shared</span>
           </div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(str(it.detail) || 'The view recorded no detail for this row.')}</div>
-          <div class="ds-cell-sub t-muted">${esc(str(it.ref) ? `Keyed on ${str(it.ref)} — ` : '')}${it.at
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(str(it.detail) || 'The view recorded no detail for this row.')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant text-outline">${esc(str(it.ref) ? `Keyed on ${str(it.ref)} — ` : '')}${it.at
             ? `waiting since ${esc(stamp(it.at))}, ${esc(ago(it.at))}`
             : 'the view gave this item no timestamp, so how long it has been waiting is unknown'}</div>
         </div>
@@ -1515,18 +1518,18 @@ SCREENS.campaigns = async host => {
       <div class="list-item"${a.target
           ? ` role="button" tabindex="0" data-alert="${esc(a.key)}" title="${esc(a.hint || 'Show the rows this is about')}"`
           : ' style="cursor:default"'}>
-        <span class="material-symbols-outlined t-${esc(sevTone(a.sev) || 'muted')}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
+        <span class="material-symbols-outlined ${toneText(sevTone(a.sev))}" style="font-size:20px" aria-hidden="true">${esc(a.icon)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${pill(a.sev, sevTone(a.sev), { verbatim: false })}${esc(a.title)}
-            ${a.chip ? `<span class="chip">${esc(a.chip)}</span>` : ''}
+            ${a.chip ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(a.chip)}</span>` : ''}
           </div>
-          <div class="ds-cell-sub" style="white-space:normal">${a.detailHtml}</div>
-          ${a.peopleHtml ? `<div class="ds-cell-sub" style="margin-top:6px">${a.peopleHtml}</div>` : ''}
-          ${a.why ? `<div class="ds-cell-sub t-muted" style="margin-top:4px">${esc(a.why)}</div>` : ''}
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${a.detailHtml}</div>
+          ${a.peopleHtml ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px">${a.peopleHtml}</div>` : ''}
+          ${a.why ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline" style="margin-top:4px">${esc(a.why)}</div>` : ''}
           ${a.footHtml ? `<div style="margin-top:8px;display:flex;align-items:center;flex-wrap:wrap">${a.footHtml}</div>` : ''}
         </div>
-        ${a.target ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+        ${a.target ? '<span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
       </div>`).join('');
 
     /* The honest empty case. Not a box with nothing in it: a sentence naming
@@ -1553,7 +1556,7 @@ SCREENS.campaigns = async host => {
             : 'No lead is eligible to enrol either, so there is nothing on this screen to start.');
 
     const nothingHtml = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-${attnErr ? 'warm' : roster.size ? 'ok' : 'muted'}" style="font-size:20px" aria-hidden="true">${attnErr ? 'help' : roster.size ? 'task_alt' : 'inbox'}</span>
+      <span class="material-symbols-outlined ${attnErr ? 'text-amber-700' : roster.size ? 'text-emerald-700' : 'text-outline'}" style="font-size:20px" aria-hidden="true">${attnErr ? 'help' : roster.size ? 'task_alt' : 'inbox'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${attnErr
           ? 'Nothing this screen can check is wrong — but the shared alert view did not load'
@@ -1562,7 +1565,7 @@ SCREENS.campaigns = async host => {
             : runsButNobody
               ? 'The campaign has run, and none of its runs can be attached to a customer'
               : 'There is no campaign running for this screen to have anything wrong with'}</div>
-        <div class="ds-cell-sub" style="white-space:normal">${attnErr
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${attnErr
           ? 'The attention list could not be read, so anything the database itself would have raised — including the mail-credential failure that decides whether this screen can send at all — is unknown right now. '
           : delivery === 'recovered'
             ? 'The attention list returned no row filed against Campaigns. The mail-credential failure it still carries has been superseded by a later successful run on the same mailbox, so it is not raised here as a live fault. '
@@ -1571,8 +1574,8 @@ SCREENS.campaigns = async host => {
     </div>`;
 
     const notesHtml = stripNotes.length ? `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
+      <span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${stripNotes.map(esc).join('<br>')}</div>
     </div>` : '';
 
     /* ── Summary strip ───────────────────────────────────────────────────────
@@ -1587,7 +1590,7 @@ SCREENS.campaigns = async host => {
        isSuccess licenses the word "succeeded"; a deliberate stop is reported as
        what it is; anything left is named as neither rather than counted as one. */
     const runOutcomeLine = [
-      failedRuns ? `<span class="t-hot">${num(failedRuns)} ${plural(failedRuns, 'run', 'runs')} failed or went out half-done</span>` : '',
+      failedRuns ? `<span class="text-red-700">${num(failedRuns)} ${plural(failedRuns, 'run', 'runs')} failed or went out half-done</span>` : '',
       stoppedIdx.length ? muted(`${num(stoppedIdx.length)} ${plural(stoppedIdx.length, 'run', 'runs')} stopped deliberately — the customer replied or the lead went terminal`) : '',
       !failedRuns && successRuns === dripRuns.length && dripRuns.length
         ? muted('Every logged drip run succeeded')
@@ -1628,7 +1631,7 @@ SCREENS.campaigns = async host => {
               ? `<br>${warn(`Only ${num(attributableRuns)} of them carry the email on the lead record; the other ${num(dripRuns.length - attributableRuns)} cannot be attached to anybody and are in no per-person figure here`)}`
               : '')
             + `<br>${runOutcomeLine}`
-            + (zeroSend.length ? `<br><span class="t-hot">${num(zeroSend.length)} with nothing sent on either channel since enrolment</span>` : '')
+            + (zeroSend.length ? `<br><span class="text-red-700">${num(zeroSend.length)} with nothing sent on either channel since enrolment</span>` : '')
           : instrumented === false
             ? warn('The drip workflow does not write to the audit log, so enrolments cannot be counted')
             : runsButNobody
@@ -1689,10 +1692,10 @@ SCREENS.campaigns = async host => {
 
        Every number in it is a count of rows read on this paint. */
     const scopeRow = (icon, cls, q, a) => `<div class="list-item" style="cursor:default;align-items:flex-start">
-      <span class="material-symbols-outlined t-${cls}" style="font-size:20px" aria-hidden="true">${icon}</span>
+      <span class="material-symbols-outlined ${toneText(cls)}" style="font-size:20px" aria-hidden="true">${icon}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(q)}</div>
-        <div class="ds-cell-sub" style="white-space:normal">${esc(a)}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(a)}</div>
       </div></div>`;
 
     const canAnswer = [
@@ -1736,17 +1739,17 @@ SCREENS.campaigns = async host => {
         + `The audience is ${num(eligible.length)} ${plural(eligible.length, 'person', 'people')}. A percentage over one audience member is that audience member, so no rate is printed anywhere on this screen — the counts above are counts.`],
     ];
 
-    scopeCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">What this screen can answer</div>
-        <div class="card-sub">And what it cannot, with the column that is missing and what would fill it</div>
+    scopeCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">What this screen can answer</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">And what it cannot, with the column that is missing and what would fill it</div>
       </div></div>
-      <div class="grid g2 top" style="gap:0">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-md items-start" style="gap:0">
         <div>
-          <div class="label-caps" style="padding:14px 16px 6px">Answered from the data</div>
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="padding:14px 16px 6px">Answered from the data</div>
           ${canAnswer.map(([q, a]) => scopeRow('check_circle', 'ok', q, a)).join('')}
         </div>
         <div>
-          <div class="label-caps" style="padding:14px 16px 6px">Not answerable here</div>
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="padding:14px 16px 6px">Not answerable here</div>
           ${cannotAnswer.map(([q, a]) => scopeRow('do_not_disturb_on', 'muted', q, a)).join('')}
         </div>
       </div>`;
@@ -1757,27 +1760,27 @@ SCREENS.campaigns = async host => {
       : null;
 
     enrolCard.innerHTML = `
-      <div class="card-head">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm">
         <div>
-          <div class="card-title">Enrol a lead in the 7-day drip</div>
-          <div class="card-sub">Four waits — day 1, day 3, day 5 and day 7 — held open inside one run across the following week, never sent by this browser.
+          <div class="font-headline-md text-headline-md text-on-surface">Enrol a lead in the 7-day drip</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Four waits — day 1, day 3, day 5 and day 7 — held open inside one run across the following week, never sent by this browser.
             Warm and cold leads that have an email address. Any other lead can be enrolled from the Leads screen.</div>
         </div>
       </div>
-      <div class="banner info" style="margin:14px 20px 0">
+      <div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-sky-200 bg-sky-50/60 text-sky-950 font-body-sm text-body-sm" style="margin:14px 20px 0">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">timer_off</span>
         <div>${esc(NO_TIMEOUT_NOTE)}</div>
       </div>
-      <div class="toolbar">
-        <div class="seg" id="cpSeg" role="group" aria-label="Filter leads by enrolment">
-          ${FILTERS.map(([k, label], i) => `<button type="button" data-f="${k}" class="${i === 0 ? 'on' : ''}"
+      <div class="flex flex-wrap items-center gap-space-sm px-space-md py-3 border-b border-outline-variant/30">
+        <div class="flex flex-wrap items-center gap-1.5" id="cpSeg" role="group" aria-label="Filter leads by enrolment">
+          ${FILTERS.map(([k, label], i) => `<button type="button" data-f="${k}" class="${i === 0 ? SEG.on : SEG.off}"
             aria-pressed="${i === 0 ? 'true' : 'false'}">${esc(label)}</button>`).join('')}
         </div>
-        <div class="grow">
+        <div class="flex-1 min-w-[200px]">
           <label class="sr-only" for="cpQ">Search leads</label>
-          <input type="search" id="cpQ" placeholder="Search name, email, phone or vehicle" />
+          <input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="search" id="cpQ" placeholder="Search name, email, phone or vehicle" />
         </div>
-        <div class="t-muted num" id="cpCount"></div>
+        <div class="text-outline tabular-nums" id="cpCount"></div>
       </div>
       <div id="cpTable"></div>`;
 
@@ -1790,33 +1793,33 @@ SCREENS.campaigns = async host => {
       /* Name and number together: almost every alert on this screen resolves to
          "phone them", and a roster that only carries an email address makes the
          operator go and look the number up somewhere else. */
-      { label:'Lead', strong:true, render: l => `${nameHtml(l.name)} <span class="t-muted">·</span> ${phoneHtml(l.phone, l)}
-          <div class="ds-cell-sub">${esc(maskText(str(l.email)))}</div>` },
+      { label:'Lead', strong:true, render: l => `${nameHtml(l.name)} <span class="text-outline">·</span> ${phoneHtml(l.phone, l)}
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(maskText(str(l.email)))}</div>` },
       { label:'Status', render: l => pill(l.status || 'NEW', undefined, { verbatim: !!l.status }) },
-      { label:'Interest', render: l => `<span class="t-2">${esc(l.vehicle_interest || '—')}</span>` },
+      { label:'Interest', render: l => `<span class="text-on-surface-variant">${esc(l.vehicle_interest || '—')}</span>` },
       /* budget_aed is NULL for router-created leads. A zero here would understate
          the value of the people being nurtured, so it stays a dash. */
-      { label:'Budget', align:'r', render: l => n0(l.budget_aed) == null ? '<span class="t-muted">—</span>' : aed(l.budget_aed) },
-      { label:'Score', align:'r', render: l => n0(l.ai_score) == null ? '<span class="t-muted">—</span>' : num(l.ai_score) },
+      { label:'Budget', align:'r', render: l => n0(l.budget_aed) == null ? '<span class="text-outline">—</span>' : aed(l.budget_aed) },
+      { label:'Score', align:'r', render: l => n0(l.ai_score) == null ? '<span class="text-outline">—</span>' : num(l.ai_score) },
       { label:'Enrolment', render: l => {
           const r = roster.get(low(l.email));
           const mine = sent.get(low(l.email));
           const bits = [];
           if (r) {
-            bits.push(`${pill('Enrolled', 'ok', { verbatim: false })} <span class="ds-cell-sub">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
-            if (r.replies.length) bits.push(`<div class="ds-cell-sub t-warm">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
-            if (r.judgeable && !r.sends.length) bits.push('<div class="ds-cell-sub t-hot">Nothing sent on either channel since enrolment</div>');
-            else if (r.judgeable && !r.mails.length) bits.push(`<div class="ds-cell-sub t-warm">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
-            if (r.failures) bits.push(`<div class="ds-cell-sub t-hot">${num(r.failures)} failed or went out half-done</div>`);
-            if (r.stops) bits.push(`<div class="ds-cell-sub t-muted">${num(r.stops)} stopped on purpose by the reply gate</div>`);
+            bits.push(`${pill('Enrolled', 'ok', { verbatim: false })} <span class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</span>`);
+            if (r.replies.length) bits.push(`<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700">Replied ${esc(ago(r.replies[0].created_at))} — ${r.midSequence ? 'the next gate stops the sequence; the reply is waiting for a person' : 'after the sequence had finished'}</div>`);
+            if (r.judgeable && !r.sends.length) bits.push('<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700">Nothing sent on either channel since enrolment</div>');
+            else if (r.judgeable && !r.mails.length) bits.push(`<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700">${esc(channelSummary(r.sends))} since enrolment, no email among them</div>`);
+            if (r.failures) bits.push(`<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700">${num(r.failures)} failed or went out half-done</div>`);
+            if (r.stops) bits.push(`<div class="font-body-sm text-body-sm text-on-surface-variant text-outline">${num(r.stops)} stopped on purpose by the reply gate</div>`);
           }
-          if (mine) bits.push(`<div class="ds-cell-sub t-ok">Queued ${esc(ago(mine))} · this session, not yet in the audit log</div>`);
-          if (!bits.length) bits.push('<span class="t-muted">Not enrolled</span>');
+          if (mine) bits.push(`<div class="font-body-sm text-body-sm text-on-surface-variant text-emerald-700">Queued ${esc(ago(mine))} · this session, not yet in the audit log</div>`);
+          if (!bits.length) bits.push('<span class="text-outline">Not enrolled</span>');
           return bits.join('');
         } },
       { label:'', align:'r', render: l => {
           const title = blockedGlobal || deliveryTitle;
-          return `<button class="btn sm" data-enrol="${esc(l.id)}"
+          return `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold disabled:text-outline disabled:cursor-not-allowed" data-enrol="${esc(l.id)}"
             aria-label="Enrol ${esc(displayName(str(l.name) || str(l.email), l.id))} in the 7-day drip"
             title="${esc(title)}"${blockedGlobal ? ' disabled' : ''}>Enrol</button>`;
         } },
@@ -1867,8 +1870,7 @@ SCREENS.campaigns = async host => {
       filter = b.dataset.f;
       enrolCard.querySelectorAll('#cpSeg button').forEach(x => {
         const on = x === b;
-        x.classList.toggle('on', on);
-        x.setAttribute('aria-pressed', on ? 'true' : 'false');
+        segPaint(x, on);
       });
       drawTable();
     }));
@@ -1884,29 +1886,29 @@ SCREENS.campaigns = async host => {
        than a sentence that was true when the file was written. */
     function confirmEnrol(lead) {
       const existing = roster.get(low(lead.email));
-      const m = openModal('Enrol in the 7-day drip', `
-        <div class="banner ${delivery === 'broken' ? 'hot' : delivery === 'recovered' ? 'info' : 'warm'}">
+      const m = openStitchModal({ title: 'Enrol in the 7-day drip', wide: true, bodyHtml: `<div class="flex flex-col gap-space-sm">
+        <div class="${BANNER[delivery === 'broken' ? 'hot' : delivery === 'recovered' ? 'info' : 'warm']}">
           <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">unsubscribe</span>
           <div>${esc(deliveryTitle)}</div>
         </div>
-        ${existing ? `<div class="banner warm">
+        ${existing ? `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm">
           <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">repeat</span>
           <div>This lead is already enrolled — first run logged ${esc(ago(existing.first.logged_at))}, ${num(existing.runs)} ${plural(existing.runs, 'run', 'runs')} in total.
             Enrolling again starts a second sequence; the workflow does not de-duplicate.
             ${existing.replies.length ? `They replied ${esc(ago(existing.replies[0].created_at))} — enrolling them again means answering that reply with an automated welcome message.` : ''}</div>
         </div>` : ''}
-        <p class="t-2" style="margin:0 0 16px">The sequence waits at day 1, day 3, day 5 and day 7, held open by NEXUS across
+        <p class="font-body-sm text-body-sm text-on-surface-variant my-space-sm">The sequence waits at day 1, day 3, day 5 and day 7, held open by NEXUS across
           the following week — this browser sends nothing and records nothing itself.</p>
-        <dl class="kv">
+        <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface">
           <dt>Lead</dt><dd>${nameHtml(lead.name)}</dd>
           <dt>Phone</dt><dd>${phoneHtml(lead.phone, lead)}</dd>
           <dt>Email</dt><dd>${esc(maskText(str(lead.email)))}</dd>
           <dt>Vehicle</dt><dd>${esc(lead.vehicle_interest || '—')}</dd>
           <dt>Status</dt><dd>${pill(lead.status || 'NEW', undefined, { verbatim: !!lead.status })}</dd>
-          <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="t-muted">Not scored</span>' : num(lead.ai_score)}</dd>
-        </dl>`,
-        `<button class="btn primary" id="cpGo">${existing ? 'Enrol again' : 'Enrol this lead'}</button>
-         <button class="btn" id="cpCancel">Cancel</button>`);
+          <dt>AI score</dt><dd>${n0(lead.ai_score) == null ? '<span class="text-outline">Not scored</span>' : num(lead.ai_score)}</dd>
+        </dl></div>`,
+        footHtml: `<button type="button" class="${BTN.secondary}" id="cpCancel">Cancel</button>
+         <button type="button" class="${BTN.primary}" id="cpGo">${existing ? 'Enrol again' : 'Enrol this lead'}</button>` });
 
       const goBtn = m.wrap.querySelector('#cpGo');
       const cancel = m.wrap.querySelector('#cpCancel');
@@ -1915,7 +1917,7 @@ SCREENS.campaigns = async host => {
       goBtn.addEventListener('click', async () => {
         const label = goBtn.textContent;
         goBtn.disabled = true; cancel.disabled = true; goBtn.textContent = 'Enrolling…';
-        m.msg('<span class="t-muted">Calling the lead-trigger workflow…</span>');
+        m.msg('<span class="text-outline">Calling the lead-trigger workflow…</span>');
         try {
           /* These three field names are not a free choice. Normalize Lead Input
              inside the workflow reads exactly these, and a dashboard/workflow
@@ -1930,12 +1932,12 @@ SCREENS.campaigns = async host => {
           sent.set(low(lead.email), new Date().toISOString());
           goBtn.textContent = 'Enrolled';
           cancel.disabled = false; cancel.textContent = 'Close';
-          m.msg('<span class="t-ok">The workflow accepted the enrolment.</span> '
-              + `<span class="${delivery === 'broken' ? 't-hot' : 't-warm'}">${esc(deliveryTitle)}</span>`);
+          m.msg('<span class="text-emerald-700">The workflow accepted the enrolment.</span> '
+              + `<span class="${delivery === 'broken' ? 'text-red-700' : 'text-amber-700'}">${esc(deliveryTitle)}</span>`);
           drawTable();
         } catch (e) {
           goBtn.disabled = false; cancel.disabled = false; goBtn.textContent = label;
-          m.msg(`<span class="t-hot">Nothing was enrolled — ${esc(e.message)}</span>`);
+          m.msg(`<span class="text-red-700">Nothing was enrolled — ${esc(e.message)}</span>`);
         }
       });
     }
@@ -1944,11 +1946,11 @@ SCREENS.campaigns = async host => {
     const rosterRows = rosterAll.slice().sort((a, b) => ts(b.last.logged_at) - ts(a.last.logged_at));
 
     rosterCard.innerHTML = `
-      <div class="card-head"><div>
-        <div class="card-title">Who is enrolled</div>
-        <div class="card-sub">Built from drip runs in <span class="mono">The activity log</span>, newest activity first.
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Who is enrolled</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Built from drip runs in <span class="font-label-numeric-sm">The activity log</span>, newest activity first.
           Counted per lead is every outbound row on a mail <em>or</em> WhatsApp channel logged at or after that lead's first run — the drip sends on both —
-          gathered across every key that person is filed under in <span class="mono">The message history</span>, not just the address they were enrolled on.</div>
+          gathered across every key that person is filed under in <span class="font-label-numeric-sm">The message history</span>, not just the address they were enrolled on.</div>
       </div></div>
       <div style="max-height:46vh;overflow-y:auto">${rosterRows.length
         ? rosterRows.map(r => {
@@ -1962,14 +1964,14 @@ SCREENS.campaigns = async host => {
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                   <span style="font-weight:500">${personLine(p)}</span>
                   ${pill(r.last.status || 'Unknown', undefined, { verbatim: !!r.last.status })}
-                  ${r.replies.length ? `<span class="chip t-warm" title="This contact wrote back after being enrolled. The workflow's day-1/3/5/7 gates stop the sequence at its next step; what is outstanding is a reply from a person.">replied ${esc(ago(r.replies[0].created_at))}</span>` : ''}
-                  ${r.failures ? `<span class="chip t-hot" title="Runs that failed outright or went out half-done, classified by NEXUS. Sequences that stopped because the customer replied are excluded.">${num(r.failures)} failed</span>` : ''}
-                  ${r.stops ? `<span class="chip" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
-                  ${r.addressable ? '' : '<span class="chip t-hot" title="The audit row carries this in the email on the lead record, but it is not an address an email sequence can send to.">not an email address</span>'}
+                  ${r.replies.length ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap text-amber-700" title="This contact wrote back after being enrolled. The workflow's day-1/3/5/7 gates stop the sequence at its next step; what is outstanding is a reply from a person.">replied ${esc(ago(r.replies[0].created_at))}</span>` : ''}
+                  ${r.failures ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap text-red-700" title="Runs that failed outright or went out half-done, classified by NEXUS. Sequences that stopped because the customer replied are excluded.">${num(r.failures)} failed</span>` : ''}
+                  ${r.stops ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" title="The reply gate ended the sequence early — the customer answered, or the lead went terminal. This is the workflow working, not a fault.">${num(r.stops)} stopped on purpose</span>` : ''}
+                  ${r.addressable ? '' : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap text-red-700" title="The audit row carries this in the email on the lead record, but it is not an address an email sequence can send to.">not an email address</span>'}
                 </div>
-                <div class="ds-cell-sub">${esc(maskText(str(r.email) || 'no email on the audit row'))} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
+                <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(maskText(str(r.email) || 'no email on the audit row'))} · enrolled ${esc(ago(r.first.logged_at))} · ${num(r.runs)} ${plural(r.runs, 'run', 'runs')}</div>
                 ${r.keyExpanded
-                  ? `<div class="ds-cell-sub t-muted" title="the message history files one person under several keys — a real address, a @c.us chat id, a +digits@whatsapp.lead key and a @lid handle. Messages under all of them are counted for this person. NEXUS’s identity rules resolves them: the phone-shaped keys on the last nine digits of the number, the @lid handle through the saved contact details row that ties it to that number, because a LID carries no phone digits of its own.">Messages counted across ${num(r.matchedKeys.size)} keys this person is filed under</div>`
+                  ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline" title="the message history files one person under several keys — a real address, a @c.us chat id, a +digits@whatsapp.lead key and a @lid handle. Messages under all of them are counted for this person. NEXUS’s identity rules resolves them: the phone-shaped keys on the last nine digits of the number, the @lid handle through the saved contact details row that ties it to that number, because a LID carries no phone digits of its own.">Messages counted across ${num(r.matchedKeys.size)} keys this person is filed under</div>`
                   /* Not "only the enrolment key is searched" any more, which is
                      what this said until 01 Sep 2026 and stopped being true when
                      the private rule went: identity.js searches every canonical
@@ -1978,24 +1980,24 @@ SCREENS.campaigns = async host => {
                      is worth saying here is the narrower true thing — the
                      expansion ran and the database has rows under at most one of
                      the identities it produced. */
-                  : `<div class="ds-cell-sub t-muted" title="${esc(`NEXUS’s identity rules resolved this enrolment to ${r.canon.size} ${plural(r.canon.size, 'identity', 'identities')} — the address, the last nine digits of the phone number, and any @lid handle the saved contact details or NEXUS row ties to that number. The message history holds rows under ${r.matchedKeys.size === 1 ? 'one of them' : 'none of them'}.${r.lead ? '' : ' No lead row matches the key the drip was enrolled on, so no phone number came from that side; whatever was reached came from the conversation view.'}`)}">${r.matchedKeys.size === 1
+                  : `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline" title="${esc(`NEXUS’s identity rules resolved this enrolment to ${r.canon.size} ${plural(r.canon.size, 'identity', 'identities')} — the address, the last nine digits of the phone number, and any @lid handle the saved contact details or NEXUS row ties to that number. The message history holds rows under ${r.matchedKeys.size === 1 ? 'one of them' : 'none of them'}.${r.lead ? '' : ' No lead row matches the key the drip was enrolled on, so no phone number came from that side; whatever was reached came from the conversation view.'}`)}">${r.matchedKeys.size === 1
                     ? `Found under one key only, of ${num(r.canon.size)} ${plural(r.canon.size, 'identity', 'identities')} searched`
                     : `No message is filed under any of the ${num(r.canon.size)} ${plural(r.canon.size, 'identity', 'identities')} this person resolves to`}${r.lead ? '' : ' — no lead row matches this enrolment key'}</div>`}
-                ${r.replies.length ? `<div class="ds-cell-sub t-hot">“${esc(String(r.replies[0].message || '').replace(/\s+/g, ' ').trim().slice(0, 140))}”</div>` : ''}
+                ${r.replies.length ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700">“${esc(String(r.replies[0].message || '').replace(/\s+/g, ' ').trim().slice(0, 140))}”</div>` : ''}
               </div>
               <div style="text-align:right;flex-shrink:0">
-                <div class="num" style="font-weight:500">${num(r.sends.length)}</div>
-                <div class="ds-cell-sub">${r.sends.length
+                <div class="tabular-nums" style="font-weight:500">${num(r.sends.length)}</div>
+                <div class="font-body-sm text-body-sm text-on-surface-variant">${r.sends.length
                   ? esc(`${channelSummary(r.sends)} since`)
                   : r.judgeable
-                    ? '<span class="t-hot">nothing logged on either channel</span>'
-                    : '<span class="t-warm" title="This enrolment is older than the oldest message read, so a send to them could sit outside the window. It is not counted as a zero.">not judged</span>'}</div>
+                    ? '<span class="text-red-700">nothing logged on either channel</span>'
+                    : '<span class="text-amber-700" title="This enrolment is older than the oldest message read, so a send to them could sit outside the window. It is not counted as a zero.">not judged</span>'}</div>
               </div>
             </div>`;
           }).join('')
           + (unkeyedIdx.length ? `<div class="list-item" style="cursor:default">
-              <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-              <div class="ds-cell-sub" style="white-space:normal">${num(unkeyedIdx.length)} drip ${plural(unkeyedIdx.length, 'run has', 'runs have')} no email address on the run and cannot be attached to anybody.</div>
+              <span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">info</span>
+              <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${num(unkeyedIdx.length)} drip ${plural(unkeyedIdx.length, 'run has', 'runs have')} no email address on the run and cannot be attached to anybody.</div>
             </div>` : '')
         /* This card said "No drip run has been logged in the 540 audit rows read"
            while the activity card below it listed five. The roster is keyed by
@@ -2015,9 +2017,9 @@ SCREENS.campaigns = async host => {
 
     /* ── What has actually been sent ─────────────────────────────────────── */
     mailCard.innerHTML = `
-      <div class="card-head"><div>
-        <div class="card-title">Outbound mail logged</div>
-        <div class="card-sub">Every outbound message sent by mail, newest first.
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Outbound mail logged</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Every outbound message sent by mail, newest first.
           The drip's two WhatsApp legs are counted in the roster and the summary strip but are not listed here — this card is the mail log specifically, because mail is the leg the Gmail credential can kill.
           The table records no workflow id, so drip mail cannot be separated from other outbound mail.</div>
       </div></div>
@@ -2025,15 +2027,15 @@ SCREENS.campaigns = async host => {
         ? mail.map(msg => {
             const p = personOf(msg.lead_email, null);
             return `<div class="list-item" style="cursor:default;align-items:flex-start">
-            <span class="mono t-muted" title="${esc(stamp(msg.created_at))}">${clock(msg.created_at)}</span>
+            <span class="font-label-numeric-sm text-outline" title="${esc(stamp(msg.created_at))}">${clock(msg.created_at)}</span>
             <div style="flex:1;min-width:0">
-              <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">No recipient recorded</span>'}</div>
-              <div class="ds-cell-sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(maskText(str(msg.lead_email)))}</div>
-              <div class="ds-cell-sub">${esc(String(msg.message || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="t-muted">No message text recorded</span>'}</div>
+              <div style="font-weight:500">${p.email ? personLine(p) : '<span class="text-amber-700">No recipient recorded</span>'}</div>
+              <div class="font-body-sm text-body-sm text-on-surface-variant" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(maskText(str(msg.lead_email)))}</div>
+              <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(String(msg.message || '').replace(/\s+/g, ' ').trim().slice(0, 160)) || '<span class="text-outline">No message text recorded</span>'}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
-              <span class="chip">${esc(String(msg.channel || '').trim() || 'unrecorded channel')}</span>
-              <div class="ds-cell-sub">${ago(msg.created_at)}</div>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(String(msg.channel || '').trim() || 'unrecorded channel')}</span>
+              <div class="font-body-sm text-body-sm text-on-surface-variant">${ago(msg.created_at)}</div>
             </div>
           </div>`;
           }).join('')
@@ -2048,10 +2050,32 @@ SCREENS.campaigns = async host => {
             'unsubscribe')}</div>`;
 
     /* ── Silence detector ─────────────────────────────────────────────────── */
+    /* Whether the detector is switched on, in the words of the two sources
+       this login may read: the automation register (nexus_workflow_catalogue)
+       and v_workflow_health. Both are hand-maintained mirrors of the n8n box and
+       have disagreed with it before — CLAUDE.md records the register calling the
+       detector active while it was deactivated on the box — so this states what
+       the register SAYS, names it as the source, and never upgrades it into
+       "running". If either source says it is off, the card says off. */
+    const isSilenceFlow = w => /silence/i.test(`${w.name || ''} ${w.audit_name || ''} ${w.category || ''}`);
+    const silHealth = (health || []).filter(isSilenceFlow);
+    const silReg = (registry || []).filter(isSilenceFlow);
+    const silKnown = silHealth.length || silReg.length;
+    const silOff = [...silHealth, ...silReg].some(w => w.is_active === false);
+    const silLastRun = silHealth.map(w => w.last_run).filter(Boolean).sort((x, y) => ts(y) - ts(x))[0] || null;
+    const silWords = !silKnown
+      ? (healthErr && !registry
+        ? 'Neither the workflow health view nor the automation register could be read, so whether the detector is switched on is unknown here.'
+        : 'No workflow named as a silence detector appears in the automation register or the health view, so whether one is running is unknown here — not "running".')
+      : silOff
+        ? 'The automation register reports the silence detector as SWITCHED OFF. While it is off, no lead is escalated for going quiet, and Lead Recovery loses the signal it reads.'
+        : `The automation register reports the silence detector as switched on${silLastRun ? `; its last recorded run was ${ago(silLastRun)}` : ', with no run recorded in the health view'}. The register is maintained by hand and has disagreed with the automation box before, so this is its word, not a measurement of the box.`;
+    const silChip = !silKnown ? statusChip('not-tested', 'Unknown') : silOff ? statusChip('blocked', 'Switched off') : statusChip('connected', 'On, per the register');
     silenceCard.innerHTML = `
-      <div class="card-head"><div>
-        <div class="card-title">Silence detector</div>
-        <div class="card-sub">A lead that has not replied for twelve hours is escalated once, then never again${
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="flex items-center gap-2 flex-wrap"><span class="font-headline-md text-headline-md text-on-surface">Silence detector</span>${silChip}</div>
+        <p class="font-body-sm text-body-sm ${silOff ? 'text-red-700' : 'text-on-surface-variant'} mt-1">${esc(silWords)}</p>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">A lead that has not replied for twelve hours is escalated once, then never again${
           unnamedInternal
             ? ` · every internal row in this read is listed, and ${num(unnamedInternal)} of ${num(internalRows.length)} ${plural(unnamedInternal, 'is', 'are')} not an escalation`
             : ''}</div>
@@ -2066,15 +2090,15 @@ SCREENS.campaigns = async host => {
                library's test, not a second one written here. */
             const marked = isMarkerText(c.message);
             const detail = stripMarker(c.message);
-            return `<div class="list-item" style="cursor:default;align-items:flex-start">
-            <span class="mono t-muted" title="${esc(stamp(c.created_at))}">${clock(c.created_at)}</span>
+            return `<div class="list-item flex-wrap" style="cursor:default;align-items:flex-start">
+            <span class="font-label-numeric-sm text-outline" title="${esc(stamp(c.created_at))}">${clock(c.created_at)}</span>
             ${marked ? pill('Internal marker', 'warm', { verbatim: false }) : pill('Internal row', 'warm', { verbatim: false })}
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:500">${p.email ? personLine(p) : '<span class="t-warm">Unknown contact</span>'}</div>
-              ${detail ? `<div class="ds-cell-sub">${esc(detail)}</div>` : ''}
-              ${marked ? '' : `<div class="ds-cell-sub t-muted">Internal by its channel (<span class="mono">${esc(String(c.channel || 'none recorded'))}</span>) or direction (<span class="mono">${esc(String(c.direction || 'none recorded'))}</span>), not by its text. This screen cannot say what wrote it.</div>`}
+            <div class="basis-full" style="flex:1;min-width:0">
+              <div style="font-weight:500">${p.email ? personLine(p) : '<span class="text-amber-700">Unknown contact</span>'}</div>
+              ${detail ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(detail)}</div>` : ''}
+              ${marked ? '' : `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline">Internal by its channel (<span class="font-label-numeric-sm">${esc(String(c.channel || 'none recorded'))}</span>) or direction (<span class="font-label-numeric-sm">${esc(String(c.direction || 'none recorded'))}</span>), not by its text. This screen cannot say what wrote it.</div>`}
             </div>
-            <div class="ds-cell-sub">${ago(c.created_at)}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant">${ago(c.created_at)}</div>
           </div>`;
           }).join('')
         : stateEmpty('Nobody has gone silent',
@@ -2085,16 +2109,16 @@ SCREENS.campaigns = async host => {
 
     /* ── Campaign activity ────────────────────────────────────────────────── */
     activityCard.innerHTML = `
-      <div class="card-head"><div>
-        <div class="card-title">Campaign activity</div>
-        <div class="card-sub">Every drip run in the audit log, newest first${matchedByRegistry ? ' · matched through the automation register' : ' · matched on workflow name'}</div>
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Campaign activity</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Every drip run in the audit log, newest first${matchedByRegistry ? ' · matched through the automation register' : ' · matched on workflow name'}</div>
       </div></div>
       <div style="max-height:40vh;overflow-y:auto">${dripRuns.length
         ? dripRuns.map((x, i) => {
             const p = personOf(x.lead_email, x.lead_name);
             const keyed = low(x.lead_email);
             return `<div class="list-item" data-key="run-${i}" style="cursor:default;align-items:flex-start">
-            <span class="mono t-muted" title="${esc(stamp(x.logged_at))}">${clock(x.logged_at)}</span>
+            <span class="font-label-numeric-sm text-outline" title="${esc(stamp(x.logged_at))}">${clock(x.logged_at)}</span>
             ${pill(x.status || 'Unknown', undefined, { verbatim: !!x.status })}
             ${(() => {
               /* The raw status stays, because it is what the row literally says.
@@ -2110,18 +2134,18 @@ SCREENS.campaigns = async host => {
                 : w.blurb;
               return up(x.status) === up(label)
                 ? ''
-                : `<span class="chip t-${esc(stop ? 'muted' : w.tone)}" title="${esc(blurb)}">${esc(label)}</span>`;
+                : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap ${stop ? 'text-outline' : toneText(w.tone)}" title="${esc(blurb)}">${esc(label)}</span>`;
             })()}
             <div style="flex:1;min-width:0">
               <div style="font-weight:500">${keyed || str(x.lead_name)
                 ? personLine(p)
-                : `<span class="t-warm">No lead on this run</span> <span class="chip mono">${esc(str(x.workflow) || 'unnamed workflow')}</span>`}</div>
+                : `<span class="text-amber-700">No lead on this run</span> <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap font-label-numeric-sm">${esc(str(x.workflow) || 'unnamed workflow')}</span>`}</div>
               ${keyed && !isRealEmail(keyed)
-                ? `<div class="ds-cell-sub t-hot">The email on the lead record is <span class="mono">${esc(maskText(str(x.lead_email)))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
+                ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700">The email on the lead record is <span class="font-label-numeric-sm">${esc(maskText(str(x.lead_email)))}</span>, which is a chat key rather than an address — an email sequence has nowhere to send.</div>`
                 : ''}
-              <div class="ds-cell-sub">${esc(dealerText(x.summary).slice(0, 160)) || '<span class="t-muted">No summary recorded</span>'}</div>
+              <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(dealerText(x.summary).slice(0, 160)) || '<span class="text-outline">No summary recorded</span>'}</div>
             </div>
-            <div class="ds-cell-sub">${ago(x.logged_at)}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant">${ago(x.logged_at)}</div>
           </div>`;
           }).join('')
         : stateEmpty('No campaign runs logged',
@@ -2136,7 +2160,7 @@ SCREENS.campaigns = async host => {
        somewhere to go scrolls to that card and highlights exactly the rows it
        is about; the ones with nowhere to go say so in their own text instead of
        being a click that appears to do nothing. */
-    alertCard.querySelector('.pbody').innerHTML =
+    alertCard.querySelector('[data-pbody]').innerHTML =
       (forThisScreen.length || alerts.length ? viewRowsHtml + alertRowsHtml : nothingHtml) + notesHtml;
 
     const focusable = [rosterCard, mailCard, silenceCard, activityCard];
@@ -2185,6 +2209,13 @@ SCREENS.campaigns = async host => {
       n.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); run(); }
       });
+    });
+
+    footHost.innerHTML = trustFooter({
+      source: 'leads · communication_logs · audit_log · v_workflow_health',
+      asOf: dubaiStamp(new Date().toISOString()),
+      evidence: `${num(leads.length)} ${plural(leads.length, 'lead', 'leads')} · ${num(comms.length)} ${plural(comms.length, 'message', 'messages')} · ${num(dripRuns.length)} drip ${plural(dripRuns.length, 'run', 'runs')}`,
+      actor: myRole() || '—',
     });
   }
 };

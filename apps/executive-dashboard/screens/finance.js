@@ -242,15 +242,16 @@
    Where a row has no such prefix its one figure is shown as a lower bound and
    labelled as one. Both legacy column names are still read, and every place
    they are read says why. */
-import { HOOK, ME, SESSION, db, n8n } from '../lib/data.js';
+import { HOOK, ME, SESSION, db, myRole, n8n } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
 import { N8N_BASE } from '../lib/env.js';
-import { aed, ago, dubaiStamp, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, n0, num, pct, tone } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { OUTCOME, isQualifying, isRefusal, outcomeOf, outcomeWords } from '../lib/health.js';
 import { SCREENS } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
+import { closeDrawer, wireRows } from '../lib/ui.js';
+import { sectionHeader, trustFooter } from '../lib/stitch-ui.js';
+import { kpi, openDeskDrawer, pill, SEG, segPaint, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/desk-kit.js';
 import { INV, deriveUnit } from '../lib/unit-form.js';
 
 const MIN_VEHICLE_VALUE = 5000;              // workflow: vehicleValue >= 5000
@@ -420,8 +421,8 @@ const eqClass = s => (lower(s) === 'negative' ? 't-hot' : lower(s) === 'positive
    manager in London, with nothing on screen to say which clock it was. Pinned
    and labelled by dubaiStamp(); the '—' placeholder is its default. */
 const stamp = ts2 => dubaiStamp(ts2);
-const muted = t => `<span class="t-muted">${esc(t)}</span>`;
-const warn  = t => `<span class="t-warm">${esc(t)}</span>`;
+const muted = t => `<span class="text-outline">${esc(t)}</span>`;
+const warn  = t => `<span class="text-amber-700">${esc(t)}</span>`;
 /* Two dirham figures side by side overflow a KPI tile, and "AED" twice in one
    value reads as two prices rather than as the ends of one span. */
 const aedRange = (lo, hi) => (lo === hi ? aed(lo) : `${aed(lo)} – ${num(hi)}`);
@@ -574,21 +575,30 @@ SCREENS.finance = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/inventory.js, screens/leads.js, screens/overview.js
      and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
-  /* ── Layout ────────────────────────────────────────────────────────────── */
-  const alertCard = el('div', 'card flush');
-  alertCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Needs attention</div>
-      <div class="card-sub">The attention list for this screen, plus five checks this screen runs on the quotes and leads it just read</div>
+  /* ── Layout ────────────────────────────────────────────────────────────────
+     The Stitch layout (7 Oct 2026): design/stitch/finance-desk-underwriting-
+     quotations--331d24.html — header with desk metrics, needs attention, what
+     this screen can answer, the quote form (5 of 12 columns) beside the quote
+     result, commission card and failed-run log (7 of 12), then the verified
+     quotation ledger and its drawer. Every figure on it is still the
+     calculator's: nothing below works out an APR, an EMI or a loan-to-value. */
+  const headHost = el('div');
+  headHost.innerHTML = sectionHeader({ eyebrow: 'Intelligence · Finance', title: 'Finance Desk — Underwriting & Evidence-Gated Quotations',
+    sub: 'Every APR and instalment here comes from the Finance Calc workflow with its calculation id behind it, or it does not appear.' });
+  root.appendChild(headHost);
+  const alertCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  alertCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Needs attention</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">The attention list for this screen, plus five checks this screen runs on the quotes and leads it just read</div>
     </div><div style="flex:1"></div>
-    <button class="btn sm" id="fqRecheck"><span class="material-symbols-outlined">refresh</span> Re-check</button></div>
-    <div class="pbody">${stateLoading(2)}</div>`;
+    <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold disabled:text-outline disabled:cursor-not-allowed" id="fqRecheck"><span class="material-symbols-outlined">refresh</span> Re-check</button></div>
+    <div class="p-space-md" data-pbody>${stateLoading(2)}</div>`;
   root.appendChild(alertCard);
 
-  const strip = el('div', 'grid g4');
-  strip.style.marginTop = '16px';
+  const strip = el('div', 'grid grid-cols-2 lg:grid-cols-4 gap-space-md');
   strip.innerHTML = stateLoading(2);
   root.appendChild(strip);
 
@@ -597,89 +607,88 @@ SCREENS.finance = async host => {
      refuses to answer — and an unanswerable question stated with its reason and
      with what would fill it is worth more to the dealership than a percentage
      computed over one negotiation. */
-  const scopeCard = el('div', 'card flush');
-  scopeCard.style.marginTop = '16px';
-  scopeCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">What this screen can answer</div>
-      <div class="card-sub">And what it cannot, with the column that is missing and what would fill it</div>
-    </div></div><div class="pbody" id="fScope">${stateLoading(3)}</div>`;
+  const scopeCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  scopeCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">What this screen can answer</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">And what it cannot, with the column that is missing and what would fill it</div>
+    </div></div><div class="p-space-md" id="fScope">${stateLoading(3)}</div>`;
   root.appendChild(scopeCard);
 
-  const cols = el('div', 'grid g2 top');
-  cols.style.marginTop = '16px';
+  const cols = el('div', 'grid grid-cols-1 xl:grid-cols-12 gap-space-md items-start');
   root.appendChild(cols);
 
-  const leftCol = el('div');
-  const rightCol = el('div');
+  const leftCol = el('div', 'xl:col-span-5 flex flex-col gap-space-md min-w-0');
+  const rightCol = el('div', 'xl:col-span-7 flex flex-col gap-space-md min-w-0');
   cols.appendChild(leftCol);
   cols.appendChild(rightCol);
 
-  const histCard = el('div', 'card flush');
-  histCard.style.marginTop = '16px';
+  const histCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
   root.appendChild(histCard);
+  const footHost = el('div');
+  root.appendChild(footHost);
 
   /* ── The quote form ────────────────────────────────────────────────────── */
-  const formCard = el('div', 'card');
+  const formCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm p-space-md');
   leftCol.appendChild(formCard);
 
   const field = (id, label, input, hint) => `
-    <div class="field">
-      <label for="${id}">${label}</label>
+    <div class="flex flex-col gap-1">
+      <label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1" for="${id}">${label}</label>
       ${input}
-      ${hint ? `<div class="hint">${hint}</div>` : ''}
-      <div class="hint t-hot" id="err-${id}" role="alert"></div>
+      ${hint ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${hint}</div>` : ''}
+      <div class="font-body-sm text-body-sm text-red-700" id="err-${id}" role="alert"></div>
     </div>`;
 
   formCard.innerHTML = `
-    <div class="card-title" style="margin-bottom:4px">Quote a trade-in</div>
-    <div class="card-sub" style="margin-bottom:16px">
+    <div class="font-headline-md text-headline-md text-on-surface" style="margin-bottom:4px">Quote a trade-in</div>
+    <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:16px">
       Runs the live Finance Calc workflow, which returns the equity, the credit band and a
       range of indicative APRs, and is <em>supposed</em> to record the quote in
-      <span class="mono">The finance quotes</span>. Whether it did is checked before any figure is shown here,
+      <span class="font-label-numeric-sm">The finance quotes</span>. Whether it did is checked before any figure is shown here,
       because on five live runs it did not and said it had.
       A trade-in is optional — a customer with nothing to trade still gets a rate off their credit score.
       No monthly instalment can be produced from this desk: the calculator needs the price of the car being
       bought and this form has no field for one.</div>
     <div class="grid" style="gap:14px">
       ${field('fLead', 'Lead',
-        `<select id="fLead" disabled><option value="">Loading leads…</option></select>`,
+        `<select class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer" id="fLead" disabled><option value="">Loading leads…</option></select>`,
         'Picking a lead fills in the customer. You can still type the details by hand.')}
       <div id="fLeadCtx"></div>
-      <div class="grid g2" style="gap:14px">
-        ${field('fVal', 'Trade-in vehicle value (AED) <span class="t-muted">— optional</span>',
-          `<input type="number" id="fVal" min="${MIN_VEHICLE_VALUE}" step="1000" inputmode="numeric" placeholder="185000" />`,
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-md" style="gap:14px">
+        ${field('fVal', 'Trade-in vehicle value (AED) <span class="text-outline">— optional</span>',
+          `<input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="number" id="fVal" min="${MIN_VEHICLE_VALUE}" step="1000" inputmode="numeric" placeholder="185000" />`,
           `Leave blank if there is no trade-in — the customer still gets a rate. If there is one it must be at least
            ${aed(MIN_VEHICLE_VALUE)}; the workflow rejects anything lower as not a real vehicle.`)}
-        ${field('fPay', 'Outstanding loan payoff (AED) <span class="t-muted">— optional</span>',
-          `<input type="number" id="fPay" min="0" step="1000" inputmode="numeric" placeholder="60000" />`,
+        ${field('fPay', 'Outstanding loan payoff (AED) <span class="text-outline">— optional</span>',
+          `<input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="number" id="fPay" min="0" step="1000" inputmode="numeric" placeholder="60000" />`,
           'Enter 0 if the customer owns the trade-in outright. Leave blank when there is no trade-in — the workflow takes a payoff with no vehicle value as an error, not as a cash buyer.')}
       </div>
       ${field('fScore', 'AECB credit score',
-        `<input type="number" id="fScore" min="${SCORE_MIN}" max="${SCORE_MAX}" step="1" inputmode="numeric" placeholder="720" />`,
+        `<input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="number" id="fScore" min="${SCORE_MIN}" max="${SCORE_MAX}" step="1" inputmode="numeric" placeholder="720" />`,
         `${SCORE_MIN}–${SCORE_MAX}. Entered by hand from the customer's AECB report — real-time bureau
          lookups need a licensed financial-institution agreement in the UAE.`)}
-      <div class="grid g2" style="gap:14px">
-        ${field('fName', 'Customer name', `<input type="text" id="fName" placeholder="Full name" />`)}
-        ${field('fEmail', 'Customer email', `<input type="email" id="fEmail" placeholder="name@example.com" />`,
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-md" style="gap:14px">
+        ${field('fName', 'Customer name', `<input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="text" id="fName" placeholder="Full name" />`)}
+        ${field('fEmail', 'Customer email', `<input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="email" id="fEmail" placeholder="name@example.com" />`,
           'Required by the workflow. Without it the quote is stored attached to nobody.')}
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn primary" id="fGo"${N8N_BASE ? '' : ` disabled title="${esc(NO_N8N)}"`}>
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed disabled:shadow-none" id="fGo"${N8N_BASE ? '' : ` disabled title="${esc(NO_N8N)}"`}>
           <span class="material-symbols-outlined">calculate</span> Calculate quote</button>
-        <button class="btn ghost" id="fClear">Clear</button>
+        <button class="inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg hover:bg-surface-container-low text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm font-semibold transition-colors" id="fClear">Clear</button>
         <div style="flex:1"></div>
-        <span class="ds-cell-sub">Quoted by ${esc(ME?.name || SESSION?.user?.email || 'the signed-in user')}</span>
+        <span class="font-body-sm text-body-sm text-on-surface-variant">Quoted by ${esc(ME?.name || SESSION?.user?.email || 'the signed-in user')}</span>
       </div>
-      ${N8N_BASE ? '' : `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
+      ${N8N_BASE ? '' : `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
         <div>${esc(NO_N8N)}</div></div>`}
     </div>`;
 
   /* ── The result card ───────────────────────────────────────────────────── */
-  const resultCard = el('div', 'card flush');
-  resultCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Quote result</div>
-      <div class="card-sub">Straight from the workflow response. No figure on this card is worked out in this browser — the line that used to say one was, said it about the one figure that was wrong</div>
-    </div></div><div class="pbody" id="fOut"></div>`;
+  const resultCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  resultCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Quote result</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Straight from the workflow response. No figure on this card is worked out in this browser — the line that used to say one was, said it about the one figure that was wrong</div>
+    </div></div><div class="p-space-md" id="fOut"></div>`;
   rightCol.appendChild(resultCard);
 
   const out = () => $('fOut');
@@ -687,13 +696,12 @@ SCREENS.finance = async host => {
     'Fill in the trade-in value, the payoff, the credit score and the customer, then calculate.', 'calculate');
 
   /* ── The commission card ───────────────────────────────────────────────── */
-  const commCard = el('div', 'card flush');
-  commCard.style.marginTop = '16px';
-  commCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Commission on a unit</div>
-      <div class="card-sub">Recomputed live from acquisition date, list price and cost, the same way Inventory does it</div>
+  const commCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  commCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Commission on a unit</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Recomputed live from acquisition date, list price and cost, the same way Inventory does it</div>
     </div></div>
-    <div class="pbody" id="cBody">${stateLoading(3)}</div>`;
+    <div class="p-space-md" id="cBody">${stateLoading(3)}</div>`;
   rightCol.appendChild(commCard);
 
   /* ── What the workflow has refused ─────────────────────────────────────────
@@ -701,14 +709,13 @@ SCREENS.finance = async host => {
      just been declined can see that the refusal is a normal, recorded outcome
      of a working validator rather than something that went wrong on this page,
      and can read what the workflow said to somebody else in the same position. */
-  const refuseCard = el('div', 'card flush');
-  refuseCard.style.marginTop = '16px';
-  refuseCard.innerHTML = `<div class="card-head"><div>
-      <div class="card-title">Runs that produced no quote</div>
-      <div class="card-sub">What Finance Calc recorded in <span class="mono">The activity log</span> on the runs that priced nothing,
-        split the way <span class="mono">NEXUS</span> splits them: a figure the workflow declined by design, and a run that
+  const refuseCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm');
+  refuseCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Runs that produced no quote</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">What Finance Calc recorded in <span class="font-label-numeric-sm">The activity log</span> on the runs that priced nothing,
+        split the way <span class="font-label-numeric-sm">NEXUS</span> splits them: a figure the workflow declined by design, and a run that
         went through and produced nothing usable. They are not the same event and are not counted the same way</div>
-    </div></div><div class="pbody" id="fxBody">${stateLoading(3)}</div>`;
+    </div></div><div class="p-space-md" id="fxBody">${stateLoading(3)}</div>`;
   leftCol.appendChild(refuseCard);
 
   /* ── Form plumbing ─────────────────────────────────────────────────────── */
@@ -779,7 +786,8 @@ SCREENS.finance = async host => {
        is a trap for the next person to edit this block. */
     const warnBox = $('err-fPay');
     const showWarn = !e.fPay && val != null && pay != null && pay > val;
-    warnBox.classList.toggle('t-hot', !showWarn);
+    warnBox.classList.toggle('text-red-700', !showWarn);
+    warnBox.classList.toggle('text-amber-700', showWarn);
     if (showWarn) warnBox.textContent = 'Payoff is above the vehicle value, so expect a negative-equity result.';
   }
 
@@ -870,9 +878,9 @@ SCREENS.finance = async host => {
      an em dash that reads like "this customer has no phone". */
   const personName = (name, fallback) => {
     const n = str(name);
-    if (!n) return fallback || '<span class="t-muted">Unnamed customer</span>';
+    if (!n) return fallback || '<span class="text-outline">Unnamed customer</span>';
     if (HANDLE.test(n)) {
-      return `<span class="mono" title="This is a WhatsApp chat handle, not a name. A LID contains no phone digits and identifies nobody on its own.">${esc(n)}</span>`;
+      return `<span class="font-label-numeric-sm" title="This is a WhatsApp chat handle, not a name. A LID contains no phone digits and identifies nobody on its own.">${esc(n)}</span>`;
     }
     return esc(n);
   };
@@ -883,24 +891,24 @@ SCREENS.finance = async host => {
   function nameVariantChip(q) {
     const p = personFor(q);
     if (!p || p.names.size < 2) return '';
-    return ` <span class="chip t-warm" title="${esc(maskText(`${p.email} is recorded under ${p.names.size} different names across its ${p.quotes.length} quotes: ${namesList(p)}. The finance quotes stores the name typed at quote time; the email is the identity, and this is one person, not ${p.names.size}.`))}">1 of ${p.names.size} names</span>`;
+    return ` <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap text-amber-700" title="${esc(maskText(`${p.email} is recorded under ${p.names.size} different names across its ${p.quotes.length} quotes: ${namesList(p)}. The finance quotes stores the name typed at quote time; the email is the identity, and this is one person, not ${p.names.size}.`))}">1 of ${p.names.size} names</span>`;
   }
 
   function phoneCell(q) {
     if (!leads) {
-      return `<span class="t-muted" title="${esc('The leads read failed' + (leadsErr ? ` (${leadsErr.message})` : '')
+      return `<span class="text-outline" title="${esc('The leads read failed' + (leadsErr ? ` (${leadsErr.message})` : '')
         + ', so no phone number could be looked up for any quote on this screen.')}">phone unavailable</span>`;
     }
     const lead = leadFor(q);
     if (!lead) {
       return leadsCapped
-        ? `<span class="t-muted" title="${esc(`The leads read stopped at its ${LEAD_LIMIT}-row ceiling, so whether a lead carries this email is not known — only that none of the ${LEAD_LIMIT} newest does. No phone number is shown and none is claimed absent.`)}">not looked up</span>`
-        : `<span class="t-muted" title="No lead on this dealership's books carries this email address, so there is no phone number to show. The finance quotes stores no phone of its own. Leads belonging to another dealership are refused by the database and are not what this is reading.">—</span>`;
+        ? `<span class="text-outline" title="${esc(`The leads read stopped at its ${LEAD_LIMIT}-row ceiling, so whether a lead carries this email is not known — only that none of the ${LEAD_LIMIT} newest does. No phone number is shown and none is claimed absent.`)}">not looked up</span>`
+        : `<span class="text-outline" title="No lead on this dealership's books carries this email address, so there is no phone number to show. The finance quotes stores no phone of its own. Leads belonging to another dealership are refused by the database and are not what this is reading.">—</span>`;
     }
     if (!str(lead.phone)) {
-      return '<span class="t-muted" title="This lead has no phone number on file.">—</span>';
+      return '<span class="text-outline" title="This lead has no phone number on file.">—</span>';
     }
-    return `<span class="mono">${esc(maskText(str(lead.phone)))}</span>`;
+    return `<span class="font-label-numeric-sm">${esc(maskText(str(lead.phone)))}</span>`;
   }
 
   /* ── Three ways for a figure to be missing ───────────────────────────────
@@ -1069,7 +1077,7 @@ SCREENS.finance = async host => {
     const g = gateById && gateById.get(String(q.id));
     return g && g.is_evidenced === false ? g : null;
   };
-  const withheldByGate = g => `<span class="t-hot" title="${esc(`${str(g.evidence_note) || 'Not evidenced.'} A figure with no calculation_id and execution_id behind it may not be shown.`)}">not evidenced</span>`;
+  const withheldByGate = g => `<span class="text-red-700" title="${esc(`${str(g.evidence_note) || 'Not evidenced.'} A figure with no calculation_id and execution_id behind it may not be shown.`)}">not evidenced</span>`;
   const monthlyCell = q => {
     const gr = gateRefuses(q);
     if (gr) return withheldByGate(gr);
@@ -1077,28 +1085,28 @@ SCREENS.finance = async host => {
     const t = instalmentBasis(b);
     if (b.state !== 'priced') return absent(b.state, t);
     return `<span title="${esc(t)}">${monthlyRange(b)}</span>`
-      + (b.monthlyRanged ? '' : ' <span class="t-warm" title="One figure, not a span. Only monthly_payment_low_aed is stored on this row, so this is the cheapest payment inside the quoted rate range and not the payment.">↓</span>')
-      + (b.downAssumed ? ' <span class="t-warm" title="The deposit behind this payment was assumed by the calculator, not stated by the customer (down_payment_assumed is true on this row). A different deposit is a different payment.">≈</span>' : '');
+      + (b.monthlyRanged ? '' : ' <span class="text-amber-700" title="One figure, not a span. Only monthly_payment_low_aed is stored on this row, so this is the cheapest payment inside the quoted rate range and not the payment.">↓</span>')
+      + (b.downAssumed ? ' <span class="text-amber-700" title="The deposit behind this payment was assumed by the calculator, not stated by the customer (down_payment_assumed is true on this row). A different deposit is a different payment.">≈</span>' : '');
   };
 
   /* ── Quote history ─────────────────────────────────────────────────────── */
   histCard.innerHTML = `
-    <div class="card-head"><div>
-      <div class="card-title">Quote history</div>
-      <div class="card-sub">Every calculation is recorded, newest first, with the customer, their number and the rep it belongs to</div>
+    <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+      <div class="font-headline-md text-headline-md text-on-surface">Quote history</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Every calculation is recorded, newest first, with the customer, their number and the rep it belongs to</div>
     </div><div style="flex:1"></div>
-    <button class="btn sm" id="fqRefresh"><span class="material-symbols-outlined">refresh</span> Refresh</button></div>
-    <div class="toolbar">
-      <input class="grow" type="search" id="fqSearch" placeholder="Search customer, phone, credit band or rep"
+    <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold disabled:text-outline disabled:cursor-not-allowed" id="fqRefresh"><span class="material-symbols-outlined">refresh</span> Refresh</button></div>
+    <div class="flex flex-wrap items-center gap-space-sm px-space-md py-3 border-b border-outline-variant/30">
+      <input class="flex-1 min-w-[200px] px-3 py-1.5 bg-surface-container-low border border-outline-variant/60 rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none" type="search" id="fqSearch" placeholder="Search customer, phone, credit band or rep"
              aria-label="Search quote history" />
-      <div class="seg" role="group" aria-label="Filter by equity">
-        <button data-f="all" class="on">All</button>
-        <button data-f="Positive">Positive equity</button>
-        <button data-f="Negative">Negative equity</button>
+      <div class="flex flex-wrap items-center gap-1.5" data-seg role="group" aria-label="Filter by equity">
+        <button type="button" data-f="all" class="${SEG.on}">All</button>
+        <button type="button" data-f="Positive" class="${SEG.off}">Positive equity</button>
+        <button type="button" data-f="Negative" class="${SEG.off}">Negative equity</button>
         <!-- The third value equity_status actually has. Without this tab a
              no-trade-in quote matched neither of the two above and vanished
              from every filtered view while still being counted above them. -->
-        <button data-f="${esc(NO_TRADE_IN)}">No trade-in</button>
+        <button type="button" data-f="${esc(NO_TRADE_IN)}" class="${SEG.off}">No trade-in</button>
       </div>
     </div>
     <div id="fqBody">${stateLoading(4)}</div>`;
@@ -1142,8 +1150,8 @@ SCREENS.finance = async host => {
       'Where one customer appears more than once, these are repeat quotes to the same person and not separate pieces of business. The Customer column marks a row whose customer is filed under more than one name.',
     ];
     return `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${bits.map(esc).join('<br>')}</div>
+      <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${bits.map(esc).join('<br>')}</div>
     </div>`;
   }
 
@@ -1185,18 +1193,18 @@ SCREENS.finance = async host => {
     const shown = rows.filter(matches);
     const focus = focusKey ? checkByKey.get(focusKey) : null;
     const focusNote = focus ? `<div style="padding:14px 20px 0">
-        <div class="banner info"><span class="material-symbols-outlined">filter_alt</span>
+        <div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-sky-200 bg-sky-50/60 text-sky-950 font-body-sm text-body-sm"><span class="material-symbols-outlined">filter_alt</span>
         <div style="flex:1">Showing only the ${num(focus.quotes.length)} ${plural(focus.quotes.length, 'quote', 'quotes')} behind
           “${esc(focus.title)}”. The search and equity filters were cleared so that set is not hidden by them.</div>
-        <button class="btn sm" id="fqFocusClear">Show all quotes</button></div></div>` : '';
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold disabled:text-outline disabled:cursor-not-allowed" id="fqFocusClear">Show all quotes</button></div></div>` : '';
 
     body.innerHTML = focusNote + table([
       { label: 'When', render: r => `<span title="${esc(stamp(r.created_at))}">${ago(r.created_at)}</span>` },
       { label: 'Customer', strong: true, render: r =>
-        `${personName(r.lead_name, personName(leadFor(r)?.name, '<span class="t-muted">Unnamed</span>'))}${nameVariantChip(r)}
-         <div class="ds-cell-sub">${phoneCell(r)} · ${r.lead_email
+        `${personName(r.lead_name, personName(leadFor(r)?.name, '<span class="text-outline">Unnamed</span>'))}${nameVariantChip(r)}
+         <div class="font-body-sm text-body-sm text-on-surface-variant">${phoneCell(r)} · ${r.lead_email
            ? esc(maskText(str(r.lead_email)))
-           : '<span class="t-hot" title="This quote has no email address on it, so it can never be matched back to a person.">no email recorded</span>'}</div>` },
+           : '<span class="text-red-700" title="This quote has no email address on it, so it can never be matched back to a person.">no email recorded</span>'}</div>` },
       { label: 'Score', align: 'r', render: r => num(r.credit_score) },
       /* Both are what the rep TYPED, not what the calculator returned, and both
          are legitimately empty for a cash buyer. So a blank here is either "no
@@ -1206,15 +1214,15 @@ SCREENS.finance = async host => {
       { label: 'Value', align: 'r', render: r => (n0(r.vehicle_value_aed) != null
         ? `<span title="As entered by the rep at quote time — no rate, term or down payment applied.">${aed(r.vehicle_value_aed)}</span>`
         : isNoTradeIn(r.equity_status)
-          ? '<span class="t-muted" title="This customer had no trade-in, so there is no vehicle to value. The blank is the answer.">no trade-in</span>'
+          ? '<span class="text-outline" title="This customer had no trade-in, so there is no vehicle to value. The blank is the answer.">no trade-in</span>'
           : absent('unpriced', 'This quote records no trade-in value and is not marked as a no-trade-in quote either. The rep entered none, or the row was written without one.')) },
       { label: 'Payoff', align: 'r', render: r => (n0(r.loan_payoff_aed) != null
         ? `<span title="As entered by the rep at quote time — the loan outstanding on the trade-in.">${aed(r.loan_payoff_aed)}</span>`
         : isNoTradeIn(r.equity_status)
-          ? '<span class="t-muted" title="This customer had no trade-in, so there is no loan on one to settle. The blank is the answer.">no trade-in</span>'
+          ? '<span class="text-outline" title="This customer had no trade-in, so there is no loan on one to settle. The blank is the answer.">no trade-in</span>'
           : absent('unpriced', 'This quote records no payoff. A trade-in owned outright is written as 0 by the workflow, so an empty column here is an absent figure and not a settled loan.')) },
       { label: 'Equity', align: 'r', render: r => (isNoTradeIn(r.equity_status)
-        ? '<span class="t-muted" title="This customer had no trade-in, so there is no equity to have. The blank is the answer, not a missing figure.">no trade-in</span>'
+        ? '<span class="text-outline" title="This customer had no trade-in, so there is no equity to have. The blank is the answer, not a missing figure.">no trade-in</span>'
         : `<span class="${eqClass(r.equity_status)}" title="Vehicle value less the outstanding payoff, as the workflow returned it.">${aed(r.equity_aed)}</span>`) },
       /* Headed for what the column IS, not for what its name suggests. The
          workflow computes loan_to_value_pct as loanPayoffAmount ÷ vehicleValue
@@ -1232,7 +1240,7 @@ SCREENS.finance = async host => {
       /* `finance_tier` is the legacy column name — the workflow has written the
          AECB credit band into it since 30 Aug 2026 and the column was never
          renamed, so it is read under the old name and shown under the new one. */
-      { label: 'Credit band', render: r => (r.finance_tier ? `<span class="chip">${esc(r.finance_tier)}</span>` : '<span class="t-muted">—</span>') },
+      { label: 'Credit band', render: r => (r.finance_tier ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(r.finance_tier)}</span>` : '<span class="text-outline">—</span>') },
       { label: 'APR reducing', align: 'r', render: r => {
         const gr = gateRefuses(r);
         if (gr) return withheldByGate(gr);
@@ -1251,7 +1259,7 @@ SCREENS.finance = async host => {
            the cheapest rate the bank might offer being read out as the rate. */
         return rate.ranged
           ? `<span title="${esc(`Reducing-balance APR including fees, as quoted. The bank sets the final rate on approval; ${RATE_BASIS} is the basis this range is on.`)}">${aprRange(rate.low, rate.high)}</span>`
-          : `<span class="t-warm" title="${esc('Lower bound only. The finance quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; this row carries no disclaimer recording the high end, so the range it was quoted at cannot be recovered. Do not read this figure out as the rate.')}">${pct(rate.low)}+</span>`;
+          : `<span class="text-amber-700" title="${esc('Lower bound only. The finance quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; this row carries no disclaimer recording the high end, so the range it was quoted at cannot be recovered. Do not read this figure out as the rate.')}">${pct(rate.low)}+</span>`;
       } },
       { label: 'Monthly', align: 'r', render: monthlyCell },
       /* The database's verdict, read from v_fin_gate_quote_evidence — not a
@@ -1260,17 +1268,17 @@ SCREENS.finance = async host => {
          not be quoted, and the view's own note says why. */
       { label: 'Evidence gate', render: r => {
         if (!gateById) {
-          return `<span class="t-muted" title="${esc(`The evidence gate could not be read (${gateErr && gateErr.message ? gateErr.message : 'no reason given'}), so this quote is neither passed nor failed here.`)}">not read</span>`;
+          return `<span class="text-outline" title="${esc(`The evidence gate could not be read (${gateErr && gateErr.message ? gateErr.message : 'no reason given'}), so this quote is neither passed nor failed here.`)}">not read</span>`;
         }
         const g = gateById.get(String(r.id));
-        if (!g) return '<span class="t-muted" title="The evidence gate returned no row for this quote, so it is neither passed nor failed here.">no verdict</span>';
+        if (!g) return '<span class="text-outline" title="The evidence gate returned no row for this quote, so it is neither passed nor failed here.">no verdict</span>';
         return g.is_evidenced === true
-          ? `<span class="pill ok" title="${esc(str(g.evidence_note) || 'evidenced')}"><span class="dot"></span>Evidenced</span>`
-          : `<span class="pill hot" title="${esc(str(g.evidence_note) || 'Not evidenced.')}"><span class="dot"></span>Not evidenced</span>`
-            + `<div class="ds-cell-sub" style="white-space:normal">${esc(str(g.evidence_note) || 'The gate gives no reason.')} Do not quote this figure.</div>`;
+          ? `<span title="${esc(str(g.evidence_note) || 'evidenced')}">${pill('Evidenced', 'ok', { verbatim: false })}</span>`
+          : `<span title="${esc(str(g.evidence_note) || 'Not evidenced.')}">${pill('Not evidenced', 'hot', { verbatim: false })}</span>`
+            + `<div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(str(g.evidence_note) || 'The gate gives no reason.')} Do not quote this figure.</div>`;
       } },
       { label: 'Quoted by', render: r =>
-        `${esc(r.quoted_by || '—')}<div class="ds-cell-sub">${esc(r.source || '')}</div>` },
+        `${esc(r.quoted_by || '—')}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(r.source || '')}</div>` },
     ], shown, {
       empty: stateEmpty('Nothing matches that filter',
         'No recorded quote matches the current search or equity filter.', 'filter_alt_off'),
@@ -1442,7 +1450,7 @@ SCREENS.finance = async host => {
       kpi('Negative equity', num(negative),
         (priced
           ? (enough
-              ? `<span class="${negative ? 't-hot' : 't-ok'}">${pct(negative / priced * 100)} of ${num(priced)} trade-ins</span>`
+              ? `<span class="${negative ? 'text-red-700' : 'text-emerald-700'}">${pct(negative / priced * 100)} of ${num(priced)} trade-ins</span>`
               /* A share of three quotes to one person is that person, expressed
                  as a percentage. The count is real and stays; the rate does not
                  exist and is not printed. */
@@ -1549,19 +1557,19 @@ SCREENS.finance = async host => {
     ].filter(([, a]) => a);
 
     const row = (icon, cls, q, a) => `<div class="list-item" style="cursor:default;align-items:flex-start">
-      <span class="material-symbols-outlined t-${cls}" style="font-size:20px" aria-hidden="true">${icon}</span>
+      <span class="material-symbols-outlined ${toneText(cls)}" style="font-size:20px" aria-hidden="true">${icon}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${esc(q)}</div>
-        <div class="ds-cell-sub" style="white-space:normal">${esc(a)}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(a)}</div>
       </div></div>`;
 
-    body.innerHTML = `<div class="grid g2 top" style="gap:0">
+    body.innerHTML = `<div class="grid grid-cols-1 lg:grid-cols-2 gap-space-md items-start" style="gap:0">
       <div>
-        <div class="label-caps" style="padding:14px 16px 6px">Answered from the data</div>
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="padding:14px 16px 6px">Answered from the data</div>
         ${can.map(([q, a]) => row('check_circle', 'ok', q, a)).join('')}
       </div>
       <div>
-        <div class="label-caps" style="padding:14px 16px 6px">Not answerable here</div>
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="padding:14px 16px 6px">Not answerable here</div>
         ${cannot.length
           ? cannot.map(([q, a]) => row('do_not_disturb_on', 'muted', q, a)).join('')
           : `<div class="list-item" style="cursor:default">${muted(`Every question this screen sets aside at small n is back: ${num(nP)} customers is at or above the ${num(STAT_MIN_CUSTOMERS)} it needs.`)}</div>`}
@@ -1755,7 +1763,7 @@ SCREENS.finance = async host => {
 
   /* ── The alert strip ───────────────────────────────────────────────────── */
   function drawAlerts() {
-    const body = alertCard.querySelector('.pbody');
+    const body = alertCard.querySelector('[data-pbody]');
     if (!body) return;
     basisCache.clear();
     const built = buildChecks();
@@ -1779,48 +1787,48 @@ SCREENS.finance = async host => {
       const q = matchRef(it.ref);
       const sev = str(it.severity);
       const idLine = q
-        ? `<div class="ds-cell-sub">${personName(q.lead_name, '<span class="t-muted">Unnamed customer</span>')} <span class="t-muted">·</span> ${phoneCell(q)}</div>`
-        : `<div class="ds-cell-sub t-muted">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} loaded here, so it cannot be opened from this screen.</div>`;
+        ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${personName(q.lead_name, '<span class="text-outline">Unnamed customer</span>')} <span class="text-outline">·</span> ${phoneCell(q)}</div>`
+        : `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline">Refers to ${esc(str(it.ref) || 'no ref')}, which is not among the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} loaded here, so it cannot be opened from this screen.</div>`;
       return `<div class="list-item"${q
           ? ` role="button" tabindex="0" data-quote="${esc(keyOf(q))}" title="Open this quote"`
           : ' style="cursor:default"'}>
-        <span class="material-symbols-outlined t-${esc(sevTone(sev) || 'muted')}" style="font-size:20px">warning</span>
+        <span class="material-symbols-outlined ${toneText(sevTone(sev))}" style="font-size:20px">warning</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${sev ? pill(sev, sevTone(sev), { verbatim: true }) : ''}${esc(str(it.title) || str(it.kind) || 'Attention item')}
-            <span class="chip">${esc(str(it.kind) || 'item')}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(str(it.kind) || 'item')}</span>
           </div>
-          <div class="ds-cell-sub">${esc(str(it.detail))}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(str(it.detail))}</div>
           ${idLine}
-          <div class="ds-cell-sub t-muted">${it.at
+          <div class="font-body-sm text-body-sm text-on-surface-variant text-outline">${it.at
             ? `Waiting since ${esc(stamp(it.at))} — ${esc(ago(it.at))}`
             : 'The view gave this item no timestamp, so how long it has been waiting is unknown.'}</div>
         </div>
-        ${q ? '<span class="material-symbols-outlined t-muted" style="font-size:18px">chevron_right</span>' : ''}
+        ${q ? '<span class="material-symbols-outlined text-outline" style="font-size:18px">chevron_right</span>' : ''}
       </div>`;
     }).join('');
 
     const previewOf = qs => {
       const shown = qs.slice(0, PREVIEW).map(q =>
-        `<button type="button" class="chip" style="border:0;cursor:pointer;font-family:inherit" data-open="${esc(keyOf(q))}"
-          title="Open this quote">${personName(q.lead_name, personName(leadFor(q)?.name, '<span class="t-muted">Unnamed</span>'))}
-          <span class="t-muted">·</span> ${phoneCell(q)}</button>`).join(' ');
+        `<button type="button" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap" style="border:0;cursor:pointer;font-family:inherit" data-open="${esc(keyOf(q))}"
+          title="Open this quote">${personName(q.lead_name, personName(leadFor(q)?.name, '<span class="text-outline">Unnamed</span>'))}
+          <span class="text-outline">·</span> ${phoneCell(q)}</button>`).join(' ');
       const rest = qs.length - Math.min(qs.length, PREVIEW);
-      return `${shown}${rest ? ` <span class="t-muted">+${num(rest)} more</span>` : ''}`;
+      return `${shown}${rest ? ` <span class="text-outline">+${num(rest)} more</span>` : ''}`;
     };
 
     const checkRows = checks.map(c => `
       <div class="list-item" role="button" tabindex="0" data-focus="${esc(c.key)}"
         title="Show these ${esc(String(c.quotes.length))} quotes in the history below">
-        <span class="material-symbols-outlined t-${esc(sevTone(c.sev))}" style="font-size:20px">${c.icon}</span>
+        <span class="material-symbols-outlined ${toneText(sevTone(c.sev))}" style="font-size:20px">${c.icon}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${pill(c.sev, sevTone(c.sev), { verbatim: false })}${esc(c.title)}
           </div>
-          <div class="ds-cell-sub">${esc(c.detail)}</div>
-          <div class="ds-cell-sub" style="margin-top:4px">${previewOf(c.quotes)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(c.detail)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:4px">${previewOf(c.quotes)}</div>
         </div>
-        <span class="material-symbols-outlined t-muted" style="font-size:18px">filter_alt</span>
+        <span class="material-symbols-outlined text-outline" style="font-size:18px">filter_alt</span>
       </div>`).join('');
 
     /* ── Quoted, and nothing on this desk to show for it ───────────────────
@@ -1949,13 +1957,13 @@ SCREENS.finance = async host => {
       lostPeople.push(...by.values());
     }
     const lostRow = (lost && lost.length) ? `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-hot" style="font-size:20px">report</span>
+      <span class="material-symbols-outlined text-red-700" style="font-size:20px">report</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${pill('CRITICAL', sevTone('CRITICAL'), { verbatim: false })}${esc(`${num(lost.length)} ${plural(lost.length, 'quote was', 'quotes were')} issued and never recorded, to ${
             lostPeople.length === 1 ? 'one customer' : `${num(lostPeople.length)} customers`}`)}
         </div>
-        <div class="ds-cell-sub">${esc(
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(
           `Finance Calc logged ${plural(lost.length, 'this run', 'these runs')} as having quoted the customer while the finance quotes row it claimed to write did not land. `
           + `The ${plural(lost.length, 'quote is', 'quotes are')} therefore NOT in the history below and cannot be — that absence is the fault itself, not a filter. `
           + `A rate was said out loud to the ${plural(lostPeople.length, 'person', 'people')} named here and this desk has no record of what it was. `
@@ -1963,12 +1971,12 @@ SCREENS.finance = async host => {
             ? `All ${num(lost.length)} belong to the same customer, so this is one conversation that has been re-priced ${num(lost.length)} times with nothing kept — not ${num(lost.length)} customers each missing one. `
             : '')
           + 'Read the conversation before quoting them again: a second, different figure is how one lost row becomes a dispute.')}</div>
-        <div class="ds-cell-sub" style="margin-top:4px">${lostPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:4px">${lostPeople.slice(0, PREVIEW).map(p => `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${
           personName(p.name, esc(maskText(p.email || 'Unnamed customer')))}${
-          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(maskText(p.email))}` : ''} <span class="t-muted">·</span> ${
-          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
-          lostPeople.length > PREVIEW ? ` <span class="t-muted">+${num(lostPeople.length - PREVIEW)} more</span>` : ''}</div>
-        <div class="ds-cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
+          p.email && p.name ? ` <span class="text-outline">·</span> ${esc(maskText(p.email))}` : ''} <span class="text-outline">·</span> ${
+          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="text-outline">·</span> ${esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
+          lostPeople.length > PREVIEW ? ` <span class="text-outline">+${num(lostPeople.length - PREVIEW)} more</span>` : ''}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant text-outline" style="margin-top:4px;white-space:normal">${esc(
           /* This sentence used to state what the status on these rows is. It no
              longer does, and not for tidiness: the row spelling is the writers’
              to change, health.js already reads PARTIAL and FAILED-with-the-phrase
@@ -1983,13 +1991,13 @@ SCREENS.finance = async host => {
     </div>` : '';
 
     const orphanRow = orphanRuns ? `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-hot" style="font-size:20px">receipt_long</span>
+      <span class="material-symbols-outlined text-red-700" style="font-size:20px">receipt_long</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${pill('HIGH', sevTone('HIGH'), { verbatim: false })}${esc(`${num(orphanRuns)} ${plural(orphanRuns, 'quote was', 'quotes were')} issued that this desk holds no record of, to ${
             orphanPeople.length === 1 ? 'one customer' : `${num(orphanPeople.length)} customers`}`)}
         </div>
-        <div class="ds-cell-sub">${esc(
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(
           `Finance Calc's own summary on ${plural(orphanRuns, 'this run', 'these runs')} says a quote was issued, and the run reported every step it claimed as landed — `
           + `it is not among the ${plural((lost || []).length, 'loss', 'losses')} named above, where the workflow itself reported the record failing to save. `
           + `The finance quotes carries no quote for ${plural(orphanPeople.length, 'this person', 'these people')} at all.`
@@ -1999,13 +2007,13 @@ SCREENS.finance = async host => {
                 : `${num(sharedWithLost)} of ${plural(orphanPeople.length, 'this person', 'these people')} also ${plural(sharedWithLost, 'appears', 'appear')} in the row above`} — `
               + `add the two counts for a total of quotes, never for a count of customers.`
             : ''))}</div>
-        <div class="ds-cell-sub" style="margin-top:4px">${orphanPeople.slice(0, PREVIEW).map(p => `<span class="chip">${
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:4px">${orphanPeople.slice(0, PREVIEW).map(p => `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${
           personName(p.name, esc(maskText(p.email || 'Unnamed customer')))}${
-          p.email && p.name ? ` <span class="t-muted">·</span> ${esc(maskText(p.email))}` : ''} <span class="t-muted">·</span> ${
-          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="t-muted">·</span> ${
+          p.email && p.name ? ` <span class="text-outline">·</span> ${esc(maskText(p.email))}` : ''} <span class="text-outline">·</span> ${
+          esc(`${num(p.n)} ${plural(p.n, 'quote', 'quotes')}`)} <span class="text-outline">·</span> ${
           esc(`last ${ago(p.last)}`)}</span>`).join(' ')}${
-          orphanPeople.length > PREVIEW ? ` <span class="t-muted">+${num(orphanPeople.length - PREVIEW)} more</span>` : ''}</div>
-        <div class="ds-cell-sub t-muted" style="margin-top:4px;white-space:normal">${esc(
+          orphanPeople.length > PREVIEW ? ` <span class="text-outline">+${num(orphanPeople.length - PREVIEW)} more</span>` : ''}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant text-outline" style="margin-top:4px;white-space:normal">${esc(
           'Two readings fit this equally and this screen cannot choose between them, so it states both: the row never landed and nothing noticed, or it landed and was deleted afterwards. '
           + 'The record of the attempt and the record of the quote have nothing in common to match them on, so there is no way to settle it from this dashboard. '
           + 'The run itself holds the answer, and NEXUS can trace it from the time logged here; that is currently the only route to it. '
@@ -2043,12 +2051,12 @@ SCREENS.finance = async host => {
           : `The activity log could not be read (${auditErr?.message}), so whether any quote was issued to a customer without a finance quote row landing is unknown. `
             + 'Everything else this screen checks did run; that is not the same as nothing being wrong.';
     const nothing = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-${clear ? 'ok' : 'warm'}" style="font-size:20px">${clear ? 'task_alt' : 'help'}</span>
+      <span class="material-symbols-outlined ${clear ? 'text-emerald-700' : 'text-amber-700'}" style="font-size:20px">${clear ? 'task_alt' : 'help'}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${clear
           ? 'Nothing on the finance desk needs attention right now'
           : 'Whether anything needs attention here is not known right now'}</div>
-        <div class="ds-cell-sub">${clear
+        <div class="font-body-sm text-body-sm text-on-surface-variant">${clear
           ? (rows.length
             ? `The attention list returned no row for this screen, and across the ${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')} read here ${checkedText}.`
             /* Zero quotes is not five checks passing — it is five checks with
@@ -2071,8 +2079,8 @@ SCREENS.finance = async host => {
     </div>`;
 
     const notesRow = built.notes.length ? `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${built.notes.map(esc).join('<br>')}</div>
+      <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${built.notes.map(esc).join('<br>')}</div>
     </div>` : '';
 
     /* `lostRow` and `orphanRow` each count as an item, so a strip carrying
@@ -2114,7 +2122,7 @@ SCREENS.finance = async host => {
     query = '';
     const search = $('fqSearch');
     if (search) search.value = '';
-    histCard.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x.dataset.f === 'all'));
+    histCard.querySelectorAll('[data-seg] button').forEach(x => segPaint(x, x.dataset.f === 'all'));
     drawHistory();
     histCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -2272,8 +2280,8 @@ SCREENS.finance = async host => {
     if (!refusals || !noResult) { body.innerHTML = stateLoading(3); return; }
 
     const foot = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${[
+      <span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${[
         'Every verdict and every colour above comes from NEXUS, which mirrors NEXUS’s own rule for what a run achieved in the database. Neither is taken from the status the row carries.',
         `Matched on the workflow name, not through the automation register, so a run logged under a name mentioning none of finance, quote, trade-in or calc would not be listed here. Rejections belonging to other workflows are not read at all, so no count of them is offered.`,
         auditCapped ? `The read stopped at ${num(AUDIT_LIMIT)} rows, so older runs are not counted.` : '',
@@ -2293,21 +2301,21 @@ SCREENS.finance = async host => {
       (why ? `<span title="${esc(why)}">${pill(label, tone, { verbatim: false })}</span>`
            : pill(label, tone, { verbatim: false }));
 
-    const head = (title, blurb) => `<div class="toolbar" style="background:var(--surface-sunken)">
-      <div class="ds-cell-sub" style="white-space:normal;flex:1"><strong>${esc(title)}</strong> ${esc(blurb)}</div></div>`;
+    const head = (title, blurb) => `<div class="flex flex-wrap items-center gap-space-sm px-space-md py-3 border-b border-outline-variant/30" style="background:#f1f3f8">
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;flex:1"><strong>${esc(title)}</strong> ${esc(blurb)}</div></div>`;
 
     const row = a => {
       const w = outcomeWords(outcomeOf(a));
       const who = str(a.lead_name) || str(a.lead_email);
       return `<div class="list-item" style="cursor:default;align-items:flex-start">
-        <span class="material-symbols-outlined t-muted" style="font-size:20px" aria-hidden="true">${isRefusal(a) ? 'gpp_maybe' : 'do_not_disturb_on'}</span>
+        <span class="material-symbols-outlined text-outline" style="font-size:20px" aria-hidden="true">${isRefusal(a) ? 'gpp_maybe' : 'do_not_disturb_on'}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            ${wordPill(w.label, w.tone, w.blurb)}<span class="chip mono">${esc(str(a.workflow) || 'unnamed workflow')}</span>
-            ${who ? `<span class="ds-cell-sub">${personName(who, '')}</span>` : ''}
+            ${wordPill(w.label, w.tone, w.blurb)}<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap font-label-numeric-sm">${esc(str(a.workflow) || 'unnamed workflow')}</span>
+            ${who ? `<span class="font-body-sm text-body-sm text-on-surface-variant">${personName(who, '')}</span>` : ''}
           </div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(str(a.summary) || 'The workflow recorded no reason on this row.')}</div>
-          <div class="ds-cell-sub t-muted">${esc(stamp(a.logged_at))} — ${esc(ago(a.logged_at))}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(str(a.summary) || 'The workflow recorded no reason on this row.')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant text-outline">${esc(stamp(a.logged_at))} — ${esc(ago(a.logged_at))}</div>
         </div>
       </div>`;
     };
@@ -2375,6 +2383,12 @@ SCREENS.finance = async host => {
     drawHistory();
     drawAlerts();
     drawRefusals();
+    footHost.innerHTML = trustFooter({
+      source: 'finance_quotes · v_fin_gate_quote_evidence · audit_log',
+      asOf: dubaiStamp(new Date().toISOString()),
+      evidence: quotesErr ? 'quote read failed' : `${num(rows.length)} ${plural(rows.length, 'quote', 'quotes')}${gateById ? ` · ${num([...gateById.values()].filter(g => g.is_evidenced === true).length)} evidenced` : ' · evidence gate unread'}`,
+      actor: myRole() || '—',
+    });
   }
 
   $('fqRefresh').addEventListener('click', async () => {
@@ -2386,7 +2400,7 @@ SCREENS.finance = async host => {
     renderAll();
   });
   $('fqRecheck').addEventListener('click', async () => {
-    alertCard.querySelector('.pbody').innerHTML = stateLoading(2);
+    alertCard.querySelector('[data-pbody]').innerHTML = stateLoading(2);
     $('fxBody').innerHTML = stateLoading(3);
     await Promise.all([loadAttention(), loadQuotes(), loadLeads(), loadAudit()]);
     focusKey = null;
@@ -2400,10 +2414,10 @@ SCREENS.finance = async host => {
     if (query) focusKey = null;
     drawHistory();
   });
-  histCard.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  histCard.querySelectorAll('[data-seg] button').forEach(b => b.addEventListener('click', () => {
     filter = b.dataset.f;
     focusKey = null;
-    histCard.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
+    histCard.querySelectorAll('[data-seg] button').forEach(x => segPaint(x, x === b));
     drawHistory();
   }));
 
@@ -2412,47 +2426,47 @@ SCREENS.finance = async host => {
     const b = basisOf(q);
     const qRate = aprOf(q);
     const lead = leadFor(q);
-    openDrawer(`
-      <div class="drawer-head">
+    openDeskDrawer(`
+      <div class="h-16 px-space-lg flex items-center justify-between gap-space-sm bg-surface-container-low shrink-0">
         <div style="flex:1;min-width:0">
           <h2 style="font-size:18px">${personName(q.lead_name, personName(lead?.name, 'Unnamed customer'))}</h2>
-          <div class="ds-cell-sub" style="margin-top:4px">${phoneCell(q)}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:4px">${phoneCell(q)}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
             ${q.equity_status ? pill(q.equity_status, eqTone(q.equity_status), { verbatim: true }) : ''}
             <!-- legacy column name; the workflow writes the credit band into it -->
-            ${q.finance_tier ? `<span class="chip">${esc(q.finance_tier)}</span>` : ''}
-            ${q.source ? `<span class="chip">${esc(q.source)}</span>` : ''}
+            ${q.finance_tier ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(q.finance_tier)}</span>` : ''}
+            ${q.source ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(q.source)}</span>` : ''}
             ${lead?.status ? pill(lead.status, undefined, { verbatim: true }) : ''}
           </div>
         </div>
-        <button class="btn ghost sm" id="fqClose" aria-label="Close quote">
+        <button class="w-8 h-8 rounded-lg hover:bg-surface-container-low text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors disabled:text-outline disabled:cursor-not-allowed" id="fqClose" aria-label="Close quote">
           <span class="material-symbols-outlined">close</span></button>
       </div>
-      <div class="drawer-body">
+      <div class="flex-1 overflow-y-auto p-space-md space-y-space-sm bg-surface-container-low/40">
         ${(() => {
           /* The database's evidence gate for this row (v_fin_gate_quote_evidence). */
           const g = gateById && gateById.get(String(q.id));
-          if (!gateById) return `<div class="section"><div class="banner warm"><span class="material-symbols-outlined">help</span><div>The evidence gate could not be read, so whether this quote's figures may be repeated to a customer is not stated here.</div></div></div>`;
+          if (!gateById) return `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2"><div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm"><span class="material-symbols-outlined">help</span><div>The evidence gate could not be read, so whether this quote's figures may be repeated to a customer is not stated here.</div></div></div>`;
           if (!g) return '';
           return g.is_evidenced === true
-            ? `<div class="section"><div class="banner info"><span class="material-symbols-outlined">verified</span><div>Evidence gate: evidenced — this row carries a calculation and a workflow execution behind its figures.</div></div></div>`
-            : `<div class="section"><div class="banner hot"><span class="material-symbols-outlined">block</span><div><strong>Evidence gate: not evidenced.</strong> ${esc(str(g.evidence_note) || 'The gate gives no reason.')} No rate or payment on this quote may be repeated to a customer.</div></div></div>`;
+            ? `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2"><div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-sky-200 bg-sky-50/60 text-sky-950 font-body-sm text-body-sm"><span class="material-symbols-outlined">verified</span><div>Evidence gate: evidenced — this row carries a calculation and a workflow execution behind its figures.</div></div></div>`
+            : `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2"><div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm"><span class="material-symbols-outlined">block</span><div><strong>Evidence gate: not evidenced.</strong> ${esc(str(g.evidence_note) || 'The gate gives no reason.')} No rate or payment on this quote may be repeated to a customer.</div></div></div>`;
         })()}
-        <div class="section">
-          <div class="label-caps">Quote</div>
-          <dl class="kv">
-            <dt>Equity</dt><dd class="num ${eqClass(q.equity_status)}">${isNoTradeIn(q.equity_status)
-              ? '<span class="t-muted">No trade-in — there is no equity on this quote</span>'
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2">
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Quote</div>
+          <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface">
+            <dt>Equity</dt><dd class="tabular-nums ${eqClass(q.equity_status)}">${isNoTradeIn(q.equity_status)
+              ? '<span class="text-outline">No trade-in — there is no equity on this quote</span>'
               : `<strong>${aed(q.equity_aed)}</strong>`}</dd>
-            <dt>Indicative APR</dt><dd class="num">${qRate.ranged
-              ? `${aprRange(qRate.low, qRate.high)}<div class="ds-cell-sub">${esc(RATE_BASIS)}</div>`
+            <dt>Indicative APR</dt><dd class="tabular-nums">${qRate.ranged
+              ? `${aprRange(qRate.low, qRate.high)}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(RATE_BASIS)}</div>`
               : qRate.low == null
                 /* Was a bare em dash, which read the same as every other blank
                    in this drawer. indicative_apr_pct is NOT NULL, so a row with
                    no recoverable rate did not come from the calculator. */
                 ? `${absent('unpriced', 'This quote records no APR in the column, in the disclaimer prefix, or anywhere else on the row. indicative_apr_pct is NOT NULL on the finance quotes, so this row was not written by the calculator.')}`
-                  + `<div class="ds-cell-sub">${esc('Every other figure in this drawer rests on a rate. There is none on this row to rest on.')}</div>`
-                : `<span class="t-warm">${pct(qRate.low)}+</span><div class="ds-cell-sub t-warm">${esc('Lower bound only — this is the low end of the range and the high end is not recorded on the row. Not the rate.')}</div>`}</dd>
+                  + `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc('Every other figure in this drawer rests on a rate. There is none on this row to rest on.')}</div>`
+                : `<span class="text-amber-700">${pct(qRate.low)}+</span><div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700">${esc('Lower bound only — this is the low end of the range and the high end is not recorded on the row. Not the rate.')}</div>`}</dd>
             <!-- finance_tier is the legacy column name. The workflow has
                  written the AECB credit band into it since 30 Aug 2026 and the
                  column was never renamed. -->
@@ -2463,11 +2477,11 @@ SCREENS.finance = async host => {
                  on the car being bought. It was headed "Loan to value" here and
                  "LTV" in the table, which is the one reading of it a rep could
                  repeat to a customer as a lending ratio. -->
-            <dt>Payoff ÷ trade-in value</dt><dd class="num">${n0(q.loan_to_value_pct) == null
+            <dt>Payoff ÷ trade-in value</dt><dd class="tabular-nums">${n0(q.loan_to_value_pct) == null
               ? absent('unpriced', 'The workflow recorded no ratio on this quote. With no trade-in there is no payoff and no value to divide.')
-              : `${pct(q.loan_to_value_pct)}<div class="ds-cell-sub">${esc('How much of the old car’s value is still owed on it. Not a loan to value on the purchase — no column anywhere records one.')}</div>`}</dd>
+              : `${pct(q.loan_to_value_pct)}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc('How much of the old car’s value is still owed on it. Not a loan to value on the purchase — no column anywhere records one.')}</div>`}</dd>
           </dl>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(
             `These four are what the Finance Calc workflow returned on ${stamp(q.created_at)} and are not recomputed here. `
             + `The finance quotes stores one APR figure and the workflow writes the LOW end of the quoted range into it; `
             + `the range above is read back out of the disclaimer, which carries both ends.`)}</div>
@@ -2483,76 +2497,76 @@ SCREENS.finance = async host => {
              on whether a monthly figure existed, so a missing rate blanked the
              term and a missing vehicle value blanked the deposit, and nothing
              on screen said which input was the absent one. -->
-        <div class="section">
-          <div class="label-caps">Monthly instalment · as the calculator stored it</div>
-          <dl class="kv">
-            <dt>Monthly</dt><dd class="num">${b.state === 'priced'
-              ? `<strong>${monthlyRange(b)}</strong>${b.monthlyRanged ? '' : '<div class="ds-cell-sub t-warm">One figure, not a span — only monthly_payment_low_aed is stored on this row.</div>'}`
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2">
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Monthly instalment · as the calculator stored it</div>
+          <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface">
+            <dt>Monthly</dt><dd class="tabular-nums">${b.state === 'priced'
+              ? `<strong>${monthlyRange(b)}</strong>${b.monthlyRanged ? '' : '<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700">One figure, not a span — only monthly_payment_low_aed is stored on this row.</div>'}`
               : absent(b.state, b.why)}</dd>
-            <dt>Rate</dt><dd class="num">${b.apr == null
+            <dt>Rate</dt><dd class="tabular-nums">${b.apr == null
               ? absent(b.state === 'declined' ? 'declined' : 'unpriced', b.state === 'declined'
                 ? b.why
                 : 'This quote records no indicative APR at all, under either the column or the disclaimer prefix.')
               : b.aprRanged
-                ? `${aprRange(b.apr, b.aprHigh)}<div class="ds-cell-sub">${esc(RATE_BASIS + ', from this quote' + (b.aprSource ? ` · ${b.aprSource}` : ''))}</div>`
-                : `${pct(b.apr)}<div class="ds-cell-sub t-warm">${esc('the LOW end of this quote’s range, ' + RATE_BASIS)}</div>`}</dd>
+                ? `${aprRange(b.apr, b.aprHigh)}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(RATE_BASIS + ', from this quote' + (b.aprSource ? ` · ${b.aprSource}` : ''))}</div>`
+                : `${pct(b.apr)}<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700">${esc('the LOW end of this quote’s range, ' + RATE_BASIS)}</div>`}</dd>
             <dt>Tenure</dt><dd>${b.tenure == null
               ? absent(b.state === 'declined' ? 'declined' : 'unpriced', 'tenure_months is empty on this row. No term is assumed in its place — a tenure assumed at the legal maximum flatters every monthly figure behind it.')
               : `${num(b.tenure)} months, from tenure_months on the quote`}</dd>
-            <dt>Down payment</dt><dd class="num">${b.down == null
+            <dt>Down payment</dt><dd class="tabular-nums">${b.down == null
               ? absent(b.state === 'declined' ? 'declined' : 'unpriced', 'down_payment_aed is empty on this row. The deposit is the calculator’s to decide and this screen applies no default to anything.')
-              : `${aed(b.down)}${b.downPct == null ? '' : ` · ${pct(b.downPct)} of the price`}<div class="ds-cell-sub${b.downAssumed ? ' t-warm' : ''}">${esc(b.downAssumed
+              : `${aed(b.down)}${b.downPct == null ? '' : ` · ${pct(b.downPct)} of the price`}<div class="ds-cell-sub${b.downAssumed ? 'text-amber-700' : ''}">${esc(b.downAssumed
                   ? 'ASSUMED by the calculator — the customer did not state a deposit. Confirm it before the payment above is repeated.'
                   : 'As stated by the customer (down_payment_assumed is false).')}</div>`}</dd>
-            <dt>Amount financed</dt><dd class="num">${b.financed == null
+            <dt>Amount financed</dt><dd class="tabular-nums">${b.financed == null
               ? absent(b.state === 'declined' ? 'declined' : 'unpriced', 'financed_aed is empty on this row. It is the loan on the car being BOUGHT and nothing on this screen can stand in for it.')
               : aed(b.financed)}</dd>
             <!-- The distinction the old "Down payment" row destroyed. Equity is
                  what the trade-in is worth net of its payoff; this is how much
                  of that equity the calculator actually put toward the new car.
                  They are different numbers and neither of them is the deposit. -->
-            ${b.equityApplied == null ? '' : `<dt>Trade-in equity applied</dt><dd class="num">${aed(b.equityApplied)}<div class="ds-cell-sub">${esc(
+            ${b.equityApplied == null ? '' : `<dt>Trade-in equity applied</dt><dd class="tabular-nums">${aed(b.equityApplied)}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(
               'Part of the deposit above, not a separate payment. The Equity figure at the top of this drawer is what the trade-in is worth net of its payoff; this is how much of it went into this purchase.')}</div></dd>`}
-            ${b.creditLow == null ? '' : `<dt>Total cost of credit</dt><dd class="num">${
+            ${b.creditLow == null ? '' : `<dt>Total cost of credit</dt><dd class="tabular-nums">${
               b.creditHigh == null || b.creditHigh === b.creditLow ? aed(b.creditLow) : aedRange(b.creditLow, b.creditHigh)}</dd>`}
-            ${b.price == null ? '' : `<dt>Price of the car bought</dt><dd class="num">${aed(b.price)}</dd>`}
-            ${b.minDown == null ? '' : `<dt>Minimum deposit allowed</dt><dd class="num">${aed(b.minDown)}<div class="ds-cell-sub">${esc(
+            ${b.price == null ? '' : `<dt>Price of the car bought</dt><dd class="tabular-nums">${aed(b.price)}</dd>`}
+            ${b.minDown == null ? '' : `<dt>Minimum deposit allowed</dt><dd class="tabular-nums">${aed(b.minDown)}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(
               (b.maxLtv == null ? '' : `${pct(b.maxLtv)} maximum LTV. `) + (b.ltvSource || 'The calculator recorded no source for this ceiling.'))}</div></dd>`}
           </dl>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(instalmentBasis(b))}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(instalmentBasis(b))}</div>
         </div>
-        <div class="section">
-          <div class="label-caps">Inputs</div>
-          <dl class="kv">
-            <dt>Vehicle value</dt><dd class="num">${isNoTradeIn(q.equity_status) ? '<span class="t-muted">none</span>' : aed(q.vehicle_value_aed)}</dd>
-            <dt>Loan payoff</dt><dd class="num">${isNoTradeIn(q.equity_status) ? '<span class="t-muted">none</span>' : aed(q.loan_payoff_aed)}</dd>
-            <dt>Credit score</dt><dd class="num">${num(q.credit_score)}</dd>
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2">
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Inputs</div>
+          <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface">
+            <dt>Vehicle value</dt><dd class="tabular-nums">${isNoTradeIn(q.equity_status) ? '<span class="text-outline">none</span>' : aed(q.vehicle_value_aed)}</dd>
+            <dt>Loan payoff</dt><dd class="tabular-nums">${isNoTradeIn(q.equity_status) ? '<span class="text-outline">none</span>' : aed(q.loan_payoff_aed)}</dd>
+            <dt>Credit score</dt><dd class="tabular-nums">${num(q.credit_score)}</dd>
           </dl>
-          <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(isNoTradeIn(q.equity_status)
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(isNoTradeIn(q.equity_status)
             ? 'This customer had no trade-in, so the workflow stored nothing in either field and priced the rate off the credit score alone. The blanks are the answer, not missing data.'
             : 'As entered by the rep at quote time. No rate, term or down payment is applied to these two figures.')}</div>
         </div>
-        <div class="section">
-          <div class="label-caps">Attribution</div>
-          <dl class="kv">
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2">
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Attribution</div>
+          <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface">
             <dt>Customer</dt><dd>${personName(q.lead_name, '—')}</dd>
             <dt>Phone</dt><dd>${phoneCell(q)}</dd>
-            <dt>Email</dt><dd>${q.lead_email ? esc(maskText(str(q.lead_email))) : '<span class="t-hot">— no email, so this quote matches no person</span>'}</dd>
+            <dt>Email</dt><dd>${q.lead_email ? esc(maskText(str(q.lead_email))) : '<span class="text-red-700">— no email, so this quote matches no person</span>'}</dd>
             <dt>Lead record</dt><dd>${leads
               ? (lead
-                ? `${personName(lead.name, '<span class="t-muted">Unnamed lead</span>')}${lead.status ? ' · ' + esc(str(lead.status)) : ''}`
-                : '<span class="t-warm" title="Checked against this dealership&#39;s leads. Another dealership&#39;s rows are refused by the database, so they are neither checked nor claimed absent.">No lead on this dealership&#39;s books carries this email</span>')
-              : '<span class="t-muted">Leads could not be read, so this was not checked</span>'}</dd>
+                ? `${personName(lead.name, '<span class="text-outline">Unnamed lead</span>')}${lead.status ? ' · ' + esc(str(lead.status)) : ''}`
+                : '<span class="text-amber-700" title="Checked against this dealership&#39;s leads. Another dealership&#39;s rows are refused by the database, so they are neither checked nor claimed absent.">No lead on this dealership&#39;s books carries this email</span>')
+              : '<span class="text-outline">Leads could not be read, so this was not checked</span>'}</dd>
             <dt>Quoted by</dt><dd>${esc(q.quoted_by || '—')}</dd>
             <dt>Recorded</dt><dd>${esc(stamp(q.created_at))}</dd>
           </dl>
         </div>
-        ${q.disclaimer ? `<div class="section">
-          <div class="label-caps">Disclaimer given</div>
-          <div class="quote">${esc(q.disclaimer)}</div></div>` : ''}
+        ${q.disclaimer ? `<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-space-md flex flex-col gap-2">
+          <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Disclaimer given</div>
+          <div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic">${esc(q.disclaimer)}</div></div>` : ''}
       </div>
-      <div class="drawer-foot">
-        <button class="btn" id="fqReuse">
+      <div class="p-space-md bg-surface-container-lowest shrink-0 shadow-[0_-2px_6px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-space-sm">
+        <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold disabled:text-outline disabled:cursor-not-allowed" id="fqReuse">
           <span class="material-symbols-outlined">edit_note</span> Load into the calculator</button>
       </div>`);
     $('fqClose').addEventListener('click', closeDrawer);
@@ -2577,7 +2591,7 @@ SCREENS.finance = async host => {
     paintErrors(errs);
     const bad = Object.keys(errs);
     if (bad.length) {
-      out().innerHTML = `<div class="banner warm">
+      out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm">
         <span class="material-symbols-outlined" style="font-size:20px">edit</span>
         <div>${bad.length === 1 ? 'One field needs fixing' : `${esc(String(bad.length))} fields need fixing`}
         before this can be sent — see the messages on the form.</div></div>`;
@@ -2625,7 +2639,7 @@ SCREENS.finance = async host => {
          refusal stays an error, because that is what it is. */
       const declined = declineFromError(msg);
       if (/VITE_N8N_BASE_URL/.test(msg)) {
-        out().innerHTML = `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
+        out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm"><span class="material-symbols-outlined" style="font-size:20px">link_off</span>
              <div>${esc(NO_N8N)}</div></div>`;
       } else if (declined.length) {
         renderDecline(declined, 'http');
@@ -2656,11 +2670,11 @@ SCREENS.finance = async host => {
       : reasons.length
         ? `<ul style="margin:0;padding-left:18px">${reasons.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`
         : 'It declined the request without saying why, which is unusual. NEXUS can read the reason off the run itself.';
-    out().innerHTML = `<div class="banner warm">
+    out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm">
       <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">gpp_maybe</span>
       <div><strong>The Finance Calc workflow declined these figures.</strong>
         <div style="margin-top:6px">${body}</div>
-        <div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(
           `This is the workflow checking its inputs before it prices anything — a trade-in valued under ${aed(MIN_VEHICLE_VALUE)} or a quote with no customer email is refused rather than stored. `
           + 'Nothing was written to the finance quotes, so the history below is unchanged, and the workflow keeps its own record of the refusal in the activity log — it is listed under the form as soon as this screen is re-checked. '
           + 'Correct the field the message names and calculate again. '
@@ -2853,7 +2867,7 @@ SCREENS.finance = async host => {
        WHICH row, and telling a rep the quote was lost would send them to
        re-quote a customer who is already on record. */
     const isAmbiguous = ev.state === 'ambiguous';
-    out().innerHTML = `<div class="banner hot">
+    out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-red-200 bg-red-50/60 text-red-950 font-body-sm text-body-sm">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">gpp_bad</span>
         <div style="flex:1;min-width:0"><strong>${esc(isOurs
           ? 'This quote cannot be verified, so no figure is shown.'
@@ -2862,7 +2876,7 @@ SCREENS.finance = async host => {
             : 'This quote was not recorded, so no figure is shown.')}</strong>
           <div style="margin-top:6px">${esc(ev.why)}</div>
         </div></div>
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">${esc(
         isAmbiguous
           ? 'The Finance Calculator did return a rate for this customer. It is deliberately not printed here. More than one quote for this customer landed around this moment, '
             + 'and this screen cannot say which row records THIS one — so it would have to print a rate beside another calculation’s reference. A figure carrying the wrong '
@@ -2870,17 +2884,17 @@ SCREENS.finance = async host => {
           : 'The Finance Calculator did return a rate for this customer. It is deliberately not printed here. A figure with no row behind it cannot be '
             + 'produced again by this dealership — not for the customer, not for the bank, and not for a regulator — so it is not a figure this desk may read out. '
             + 'That is not a display fault; it is the one rule this screen exists to enforce.')}</div>
-      <dl class="kv" style="margin-top:16px">
-        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="ds-cell-sub">${esc(maskText(str(sent.lead_email)))}</div></dd>
-        <dt>Trade-in value entered</dt><dd class="num">${sent.vehicleValue ? aed(sent.vehicleValue) : '<span class="t-muted">no trade-in</span>'}</dd>
-        <dt>Payoff entered</dt><dd class="num">${sent.loanPayoffAmount === '' || sent.loanPayoffAmount == null ? '<span class="t-muted">none</span>' : aed(sent.loanPayoffAmount)}</dd>
-        <dt>Credit score entered</dt><dd class="num">${num(sent.creditScore)}</dd>
+      <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface" style="margin-top:16px">
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(maskText(str(sent.lead_email)))}</div></dd>
+        <dt>Trade-in value entered</dt><dd class="tabular-nums">${sent.vehicleValue ? aed(sent.vehicleValue) : '<span class="text-outline">no trade-in</span>'}</dd>
+        <dt>Payoff entered</dt><dd class="tabular-nums">${sent.loanPayoffAmount === '' || sent.loanPayoffAmount == null ? '<span class="text-outline">none</span>' : aed(sent.loanPayoffAmount)}</dd>
+        <dt>Credit score entered</dt><dd class="tabular-nums">${num(sent.creditScore)}</dd>
       </dl>
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">${esc(
         'The four figures above are what the rep typed into this form, not anything the calculator returned, and they are shown so the attempt can be repeated exactly.')}</div>
       <div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">What to do</div>
-        <div class="quote">${esc(isOurs
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:6px">What to do</div>
+        <div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic">${esc(isOurs
           ? 'Say nothing about a rate to the customer yet. Refresh the quote history below; if the row appears, the figures are on file and the quote can be given from the history. If it does not, treat it as unrecorded and escalate before quoting.'
           : isAmbiguous
             ? 'Do not read out anything from this card. Open the quote history below, find the row for this customer with the right value, payoff and score on it, and quote from that row — it carries its own execution id. If two rows both match, whoever quoted the other one has to say which is current before either is given to the customer.'
@@ -2902,7 +2916,7 @@ SCREENS.finance = async host => {
     const band = str(res.credit_band);
     const instruction = str(res.instruction);
     const equity = isNoTradeIn(res.equity_status) || res.has_trade_in === false ? null : n0(res.equity_aed);
-    out().innerHTML = `<div class="banner warm">
+    out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">support_agent</span>
         <div style="flex:1;min-width:0"><strong>No rate is quoted for this customer — refer them to the bank.</strong>
           <div style="margin-top:6px">${esc(
@@ -2910,15 +2924,15 @@ SCREENS.finance = async host => {
             + 'every rate this dealership can honestly offer sits inside a published band, and there is no published UAE band this low.')}</div>
         </div></div>
       ${instruction ? `<div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">What the workflow says to do</div>
-        <div class="quote">${esc(instruction)}</div></div>` : ''}
-      <dl class="kv" style="margin-top:16px">
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:6px">What the workflow says to do</div>
+        <div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic">${esc(instruction)}</div></div>` : ''}
+      <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface" style="margin-top:16px">
         <dt>Credit band</dt><dd>${band ? esc(band) : '—'}</dd>
-        <dt>Credit score</dt><dd class="num">${num(res.credit_score ?? sent.creditScore)}</dd>
-        ${equity == null ? '' : `<dt>Equity on the trade-in</dt><dd class="num ${eqClass(res.equity_status)}">${aed(equity)}</dd>`}
-        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="ds-cell-sub">${esc(maskText(sent.lead_email))}</div></dd>
+        <dt>Credit score</dt><dd class="tabular-nums">${num(res.credit_score ?? sent.creditScore)}</dd>
+        ${equity == null ? '' : `<dt>Equity on the trade-in</dt><dd class="tabular-nums ${eqClass(res.equity_status)}">${aed(equity)}</dd>`}
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(maskText(sent.lead_email))}</div></dd>
       </dl>
-      ${res.disclaimer ? `<div class="quote" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
+      ${res.disclaimer ? `<div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
       <div id="fRefRecord"></div>`;
 
     /* Painted, THEN checked. A referral shows no rate at all, so nothing on the
@@ -2974,18 +2988,18 @@ SCREENS.finance = async host => {
       const slot = $('fRefRecord');
       if (!slot) return;
       if (ev.state === 'recorded') {
-        slot.innerHTML = `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(
+        slot.innerHTML = `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">${esc(
             'Recorded. The finance quotes row ' + str(ev.row.id) + ', from Finance Calc execution ' + str(ev.row.execution_id)
           + (ev.match === 'exact' ? ', matched on this calculation’s own timestamp' : ', matched on customer and timing only')
           + '. This referral is on file, so the decision not to quote can be shown later.')}</div>`;
         return;
       }
       if (ev.state === 'unverified') {
-        slot.innerHTML = `<div class="ds-cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
+        slot.innerHTML = `<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700" style="margin-top:12px;white-space:normal">${esc(
           ev.why + ' No rate was quoted either way, so nothing was said to the customer that needs a record — but this desk cannot confirm the referral was filed.')}</div>`;
         return;
       }
-      slot.innerHTML = `<div class="ds-cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
+      slot.innerHTML = `<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700" style="margin-top:12px;white-space:normal">${esc(
           'NOT recorded, and on the workflow as published none can be: a file the calculator declines to price is routed around the step that writes the row, so no record is even attempted. '
           + 'The dealership keeps no record that this customer was assessed and referred. '
         + 'Nothing incorrect was said to them — no rate was given — but if the referral needs to be evidenced later, log it by hand.')}</div>`;
@@ -3020,7 +3034,7 @@ SCREENS.finance = async host => {
     const rate = aprOf(res);
     const hasQuote = rate.low != null || str(res.credit_band) || n0(res.equity_aed) != null;
     if (!hasQuote) {
-      out().innerHTML = `<div class="banner warm">
+      out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm">
           <span class="material-symbols-outlined" style="font-size:20px">help</span>
           <div><strong>The workflow replied, but with no quote in it.</strong>
             <div style="margin-top:6px">Nothing is shown here rather than a figure that was not returned.
@@ -3057,18 +3071,18 @@ SCREENS.finance = async host => {
        held behind the evidence gate at the foot of this function: the figures
        are drawn only once a finance_quotes row for them has been found. */
     const pricedHtml = `
-      <div class="grid g2">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-md">
         ${kpi('Equity', noTradeIn
-            ? '<span class="t-muted">No trade-in</span>'
+            ? '<span class="text-outline">No trade-in</span>'
             : `<span class="${eqClass(res.equity_status)}">${aed(res.equity_aed)}</span>`,
           noTradeIn
             ? muted('This customer has nothing to trade in, so there is no equity to have. The rate below is priced off the credit score alone.')
             : (res.equity_status ? pill(res.equity_status, eqTone(res.equity_status), { verbatim: true }) : ''))}
         ${kpi('Indicative APR', aprRange(res.indicative_apr_low_pct, res.indicative_apr_high_pct),
-          `${res.credit_band ? `<span class="chip">${esc(str(res.credit_band))}</span> ` : ''}`
+          `${res.credit_band ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(str(res.credit_band))}</span> ` : ''}`
           + muted(str(res.rate_basis) || RATE_BASIS))}
       </div>
-      ${str(res.equivalent_flat_rate_range_pct) ? `<div class="ds-cell-sub" style="margin-top:8px;white-space:normal">${esc(
+      ${str(res.equivalent_flat_rate_range_pct) ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:8px;white-space:normal">${esc(
         `The same rate quoted the way UAE banks advertise it is ${str(res.equivalent_flat_rate_range_pct)}% flat. `
         + 'Never say the flat figure on its own — it is roughly half the reducing-balance rate over 60 months and the customer will hear it as the cost.')}</div>` : ''}
       <!-- Headed "Loan to value" with a bar that turned red above 80 and read
@@ -3083,32 +3097,32 @@ SCREENS.finance = async host => {
            ceiling, per quote, is max_ltv_pct with ltv_policy_source naming the
            regulation; it is shown in the drawer where the row carries it. -->
       ${ltv == null ? '' : `<div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">Payoff against trade-in value · ${pct(ltv)}</div>
-        <div class="bar"><i style="width:${Math.min(100, Math.max(0, ltv))}%;background:var(--${lower(res.equity_status) === 'negative' ? 'hot' : 'primary'})"></i></div>
-        <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:6px">Payoff against trade-in value · ${pct(ltv)}</div>
+        <div class="h-2 rounded-full bg-surface-container overflow-hidden"><div class="${lower(res.equity_status) === 'negative' ? 'h-full rounded-full bg-red-600' : 'h-full rounded-full bg-primary'}" style="width:${Math.min(100, Math.max(0, ltv))}%"></div></div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(
           'How much of the trade-in’s value is still owed on it, as the workflow returned it. This is not a loan to value on the car being bought — '
           + 'nothing in this quote records that car’s price. Above 100% the customer is underwater, which is what the Equity tile above says in dirhams.')}</div>
       </div>`}
       <div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">Monthly instalment</div>
-        <div class="kpi-value sm">${b.state === 'priced' ? monthlyRange(b) : absent(b.state, b.why)}</div>
-        <div class="ds-cell-sub" style="margin-top:6px;white-space:normal">${esc(instalmentBasis(b))}
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:6px">Monthly instalment</div>
+        <div class="font-label-numeric-lg text-label-numeric-lg font-semibold text-on-surface">${b.state === 'priced' ? monthlyRange(b) : absent(b.state, b.why)}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:6px;white-space:normal">${esc(instalmentBasis(b))}
           ${b.state === 'priced' ? esc(' Say it as a span, with the rate, the tenure and the deposit attached, or do not say it.') : ''}</div>
       </div>
-      <dl class="kv" style="margin-top:16px">
-        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="ds-cell-sub">${esc(maskText(sent.lead_email))}</div></dd>
-        <dt>On a value of</dt><dd class="num">${noTradeIn ? '<span class="t-muted">no trade-in</span>' : aed(sent.vehicleValue)}</dd>
-        <dt>Payoff</dt><dd class="num">${noTradeIn ? '<span class="t-muted">none</span>' : aed(sent.loanPayoffAmount)}</dd>
-        <dt>Credit score</dt><dd class="num">${num(sent.creditScore)}</dd>
+      <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface" style="margin-top:16px">
+        <dt>Quoted for</dt><dd>${personName(sent.lead_name, '—')}<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(maskText(sent.lead_email))}</div></dd>
+        <dt>On a value of</dt><dd class="tabular-nums">${noTradeIn ? '<span class="text-outline">no trade-in</span>' : aed(sent.vehicleValue)}</dd>
+        <dt>Payoff</dt><dd class="tabular-nums">${noTradeIn ? '<span class="text-outline">none</span>' : aed(sent.loanPayoffAmount)}</dd>
+        <dt>Credit score</dt><dd class="tabular-nums">${num(sent.creditScore)}</dd>
       </dl>
-      ${str(res.assumes) ? `<div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(
+      ${str(res.assumes) ? `<div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">${esc(
         `The workflow priced this on ${str(res.assumes)}.`
         + (str(res.without_salary_transfer_note) ? ` ${str(res.without_salary_transfer_note)}` : ''))}</div>` : ''}
       ${str(res.instruction) ? `<div style="margin-top:16px">
-        <div class="label-caps" style="margin-bottom:6px">How to say this</div>
-        <div class="quote">${esc(str(res.instruction))}</div></div>` : ''}
-      ${res.disclaimer ? `<div class="quote" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
-      ${res.email_from_model ? `<div class="ds-cell-sub t-warm" style="margin-top:12px;white-space:normal">${esc(
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold" style="margin-bottom:6px">How to say this</div>
+        <div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic">${esc(str(res.instruction))}</div></div>` : ''}
+      ${res.disclaimer ? `<div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic" style="margin-top:16px">${esc(res.disclaimer)}</div>` : ''}
+      ${res.email_from_model ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700" style="margin-top:12px;white-space:normal">${esc(
         'The workflow flagged that the customer email on this quote did not come from the caller — it was recovered from what the model sent. '
         + 'The identity behind this promise was not established by the workflow; check it before the figure is repeated.')}</div>` : ''}
 `;
@@ -3125,7 +3139,7 @@ SCREENS.finance = async host => {
        So the card is held. `verifying` is painted, the row is looked for, and
        only a row that is actually there and actually traceable releases the
        figures. Everything the withheld branch prints is in renderWithheld. */
-    out().innerHTML = `<div class="banner">
+    out().innerHTML = `<div class="flex items-start gap-2.5 p-space-sm rounded-lg border border-outline-variant/60 bg-surface-container-low text-on-surface font-body-sm text-body-sm">
         <span class="material-symbols-outlined" style="font-size:20px" aria-hidden="true">hourglass_top</span>
         <div><strong>Checking this quote was recorded before showing it.</strong>
           <div style="margin-top:6px">${esc(
@@ -3160,7 +3174,7 @@ SCREENS.finance = async host => {
     const shownLow = n0(res.indicative_apr_low_pct);
     const aprDiffers = rowRate.low != null && shownLow != null && Number(rowRate.low) !== Number(shownLow);
     out().innerHTML = pricedHtml + `
-      <div class="ds-cell-sub" style="margin-top:12px;white-space:normal">${esc(
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:12px;white-space:normal">${esc(
         'Recorded. The finance quotes row ' + str(ev.row.id) + ', calculation ' + str(ev.row.calculation_id)
         + ', from Finance Calc execution ' + str(ev.row.execution_id) + '. '
         + (ev.match === 'exact'
@@ -3168,7 +3182,7 @@ SCREENS.finance = async host => {
             : 'The row was matched on the customer and the time this request was sent — this response carried no calculation timestamp to match on — and it was the only candidate. '
               + 'That is weaker than an identity match: read the row in the history below before this figure is put in writing. ')
         + 'That is what makes this figure quotable: it can be produced again, tied to the run that computed it, if the customer or the bank ever asks.')}</div>`
-      + (aprDiffers ? `<div class="ds-cell-sub t-hot" style="margin-top:8px;white-space:normal">${esc(
+      + (aprDiffers ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700" style="margin-top:8px;white-space:normal">${esc(
         'The rate shown above and the rate stored on the row do not match — the response says ' + shownLow + '% at the low end and the stored row says '
         + rowRate.low + '%. Do not quote either until that is explained; one of them is wrong and this screen cannot tell which.')}</div>` : '');
 
@@ -3183,7 +3197,7 @@ SCREENS.finance = async host => {
       sel.innerHTML = '<option value="">Lead list unavailable</option>';
       sel.disabled = true;
       sel.title = `Leads could not be loaded (${leadsErr ? leadsErr.message : 'unknown error'}). Type the customer name and email in by hand.`;
-      $('fLeadCtx').innerHTML = `<div class="hint t-hot">Lead list unavailable — ${esc(leadsErr ? leadsErr.message : 'unknown error')}. Type the customer in by hand.</div>`;
+      $('fLeadCtx').innerHTML = `<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700">Lead list unavailable — ${esc(leadsErr ? leadsErr.message : 'unknown error')}. Type the customer in by hand.</div>`;
       return;
     }
     const usable = leads.filter(l => l.email);
@@ -3212,14 +3226,14 @@ SCREENS.finance = async host => {
       /* Context only. The lead's budget is what they intend to spend on the
          next car — it is not the trade-in's value, so it is never written
          into the value field. */
-      ctx.innerHTML = `<div class="quote">
+      ctx.innerHTML = `<div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic">
           ${o.dataset.status ? pill(o.dataset.status, undefined, { verbatim: true }) + ' ' : ''}
           ${o.dataset.phone
-            ? `<span class="mono">${esc(maskText(o.dataset.phone))}</span>. `
-            : '<span class="t-muted">No phone number on this lead.</span> '}
+            ? `<span class="font-label-numeric-sm">${esc(maskText(o.dataset.phone))}</span>. `
+            : '<span class="text-outline">No phone number on this lead.</span> '}
           ${o.dataset.veh ? `Interested in ${esc(o.dataset.veh)}. ` : ''}
           ${o.dataset.budget ? `Budget on file ${aed(o.dataset.budget)}` : 'No budget captured by the router'}
-          <div class="ds-cell-sub" style="margin-top:4px">Shown for context — the trade-in value below is a different number.</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:4px">Shown for context — the trade-in value below is a different number.</div>
         </div>`;
     };
   }
@@ -3238,8 +3252,8 @@ SCREENS.finance = async host => {
       }
       const units = inv.map(deriveUnit);
       body.innerHTML = `
-        <div class="field"><label for="cVeh">Vehicle</label>
-          <select id="cVeh">${units.map((u, i) =>
+        <div class="flex flex-col gap-1"><label class="block font-table-header text-table-header uppercase text-on-surface-variant mb-1" for="cVeh">Vehicle</label>
+          <select class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer" id="cVeh">${units.map((u, i) =>
             `<option value="${esc(String(i))}">${esc(u.model || u.id || 'Unnamed unit')}${u.status ? ' · ' + esc(u.status) : ''}</option>`).join('')}
           </select></div>
         <div id="cOut" style="margin-top:16px"></div>`;
@@ -3249,19 +3263,19 @@ SCREENS.finance = async host => {
         $('cOut').innerHTML = `
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
             ${u.aging_alert ? pill(u.aging_alert, undefined, { verbatim: true }) : ''}
-            <span class="chip">${esc(u.id || '—')}</span>
-            <span class="chip">${num(u.days_in_stock)} days in stock</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${esc(u.id || '—')}</span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-numeric-sm text-[11px] font-semibold whitespace-nowrap">${num(u.days_in_stock)} days in stock</span>
           </div>
-          <dl class="kv">
-            <dt>List price</dt><dd class="num">${aed(u.price_aed)}</dd>
-            <dt>Cost</dt><dd class="num">${aed(u.cost_aed)}</dd>
-            <dt>Gross margin</dt><dd class="num ${(n0(u.gross_margin) || 0) < 0 ? 't-hot' : ''}">${aed(u.gross_margin)}</dd>
-            <dt>Holding cost</dt><dd class="num ${n0(u.holding_cost_accrued) == null ? 't-warm' : (n0(u.holding_cost_accrued) > 5000 ? 't-hot' : 't-muted')}">${n0(u.holding_cost_accrued) == null ? 'Not computable' : aed(u.holding_cost_accrued)}</dd>
-            <dt>Net margin</dt><dd class="num">${n0(u.net_margin) == null ? '<span class="t-warm">Not computable</span>' : `<strong class="${n0(u.net_margin) < 0 ? 't-hot' : ''}">${aed(u.net_margin)}</strong>`}</dd>
-            <dt>VAT</dt><dd class="num">${aed(u.vat_amount)}</dd>
-            <dt>Commission</dt><dd class="num" style="font-size:18px;font-weight:600">${aed(u.recommended_commission)}</dd>
+          <dl class="grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-1.5 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface">
+            <dt>List price</dt><dd class="tabular-nums">${aed(u.price_aed)}</dd>
+            <dt>Cost</dt><dd class="tabular-nums">${aed(u.cost_aed)}</dd>
+            <dt>Gross margin</dt><dd class="tabular-nums ${(n0(u.gross_margin) || 0) < 0 ? 'text-red-700' : ''}">${aed(u.gross_margin)}</dd>
+            <dt>Holding cost</dt><dd class="tabular-nums ${n0(u.holding_cost_accrued) == null ? 'text-amber-700' : (n0(u.holding_cost_accrued) > 5000 ? 'text-red-700' : 'text-outline')}">${n0(u.holding_cost_accrued) == null ? 'Not computable' : aed(u.holding_cost_accrued)}</dd>
+            <dt>Net margin</dt><dd class="tabular-nums">${n0(u.net_margin) == null ? '<span class="text-amber-700">Not computable</span>' : `<strong class="${n0(u.net_margin) < 0 ? 'text-red-700' : ''}">${aed(u.net_margin)}</strong>`}</dd>
+            <dt>VAT</dt><dd class="tabular-nums">${aed(u.vat_amount)}</dd>
+            <dt>Commission</dt><dd class="tabular-nums" style="font-size:18px;font-weight:600">${aed(u.recommended_commission)}</dd>
           </dl>
-          <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:10px;white-space:normal">
             ${esc(`List price and cost are the figures on the unit. VAT is ${INV.VAT_RATE * 100}% of the list price and commission is `
               + `${INV.COMMISSION_RATE * 100}% of net margin — both stated rates, not read off the row.`
               + (n0(u.holding_cost_accrued) == null

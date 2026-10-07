@@ -114,10 +114,10 @@
    totalled, and a margin only where purchase_history carries the columns to
    subtract (it carries neither today). Finance figures belong to the Finance
    Calculator workflow and to finance_quotes, and are read on the Finance Desk. */
-import { db } from '../lib/data.js';
+import { db, myRole } from '../lib/data.js';
 import { dealForm } from '../lib/deal-form.js';
 import { $, el } from '../lib/dom.js';
-import { aed, ago, esc, n0, num, pct, pill, tone } from '../lib/format.js';
+import { aed, ago, dubaiStamp, esc, n0, num, pct, tone } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 /* One contact-matching rule for the whole product, new on 31 Aug 2026. This
    screen used to key a deal to a lead on lower(email) and nothing else, which
@@ -128,8 +128,9 @@ import { maskText } from '../lib/privacy.js';
    written by a workflow must be read back the same way. */
 import { KEY_SHAPE, describeKey, expandIdentity, isHandle, keyShape, normalizeKey } from '../lib/identity.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, table, wireRows } from '../lib/ui.js';
+import { closeDrawer, wireRows } from '../lib/ui.js';
+import { BTN, comingSoonPanel, emptyState, sectionHeader, trustFooter } from '../lib/stitch-ui.js';
+import { kpi, openDeskDrawer, pill, stateEmpty, stateError, stateLoading, table, toneText } from '../lib/desk-kit.js';
 
 /* Every read is capped, and every cap is disclosed when it is hit. A capped
    deal list that quietly claims to be lifetime revenue is the worst possible
@@ -250,24 +251,48 @@ SCREENS.deals = async host => {
      A wrapper cannot leak — go() removes it with the rest of the subtree. Same
      pattern as screens/leads.js, screens/overview.js, screens/money-leaks.js,
      screens/setup.js, screens/inventory.js and screens/conversations.js. */
-  const root = el('div', 'ds-screen');
+  const root = el('div', 'nx-stitch flex flex-col gap-space-md');
   host.appendChild(root);
 
-  const attnHost = el('div'); attnHost.style.marginBottom = '16px';
-  attnHost.innerHTML = `<div class="card flush">${stateLoading(2)}</div>`;
+  /* ── The Stitch layout (7 Oct 2026) ─────────────────────────────────────
+     design/stitch/deals-pipeline-deal-360-desk--80d495.html is the visual
+     reference, with the sections of --5c884c (KPIs, needs attention, revenue
+     trend, vector memory, closed-won ledger, returning customers) and --fd31c9
+     (the registry and the record-a-deal modal, which is lib/deal-form.js).
+     Two sections are drawn with what this database can actually answer:
+
+       Revenue pace .... actual month-to-date and the prior month are totals of
+                         recorded amounts; the monthly TARGET reads "Not set"
+                         because no table in this database holds a target
+                         (checked 7 Oct 2026), so pace and projected finish say
+                         what they would need rather than inventing a baseline.
+       Pipeline stages . NEXUS records a deal only once it is closed-won —
+                         purchase_history is the only deal table — so the three
+                         earlier stages are drawn empty with that sentence, and
+                         the closed-won column holds the real rows. */
+  const headHost = el('div'); root.appendChild(headHost);
+  headHost.innerHTML = sectionHeader({ eyebrow: 'Revenue', title: 'Deals — Pipeline & Deal Execution Desk',
+    sub: 'Closed-won revenue, and the vector memory Ask AI quotes it from.',
+    actionsHtml: `<button type="button" class="${BTN.primary}" id="newDealTop"><span class="material-symbols-outlined text-[18px]">add</span>Record a deal</button>` });
+  const paceHost = el('div'); paceHost.innerHTML = stateLoading(2); root.appendChild(paceHost);
+  const pipeHost = el('div'); pipeHost.innerHTML = stateLoading(3); root.appendChild(pipeHost);
+  const attnHost = el('div');
+  attnHost.innerHTML = `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm">${stateLoading(2)}</div>`;
   root.appendChild(attnHost);
 
-  const strip = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
-  const banners = el('div'); banners.style.marginTop = '16px'; root.appendChild(banners);
+  const strip = el('div', 'grid grid-cols-2 lg:grid-cols-5 gap-space-md'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
+  const banners = el('div'); root.appendChild(banners);
 
-  const mid = el('div', 'grid g2 top'); mid.style.marginTop = '16px'; root.appendChild(mid);
-  const trendCard = el('div', 'card'); trendCard.innerHTML = stateLoading(5); mid.appendChild(trendCard);
-  const repeatCard = el('div', 'card flush'); repeatCard.innerHTML = stateLoading(5); mid.appendChild(repeatCard);
+  const mid = el('div', 'grid grid-cols-1 lg:grid-cols-2 gap-space-md items-start'); root.appendChild(mid);
+  const trendCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm p-space-md'); trendCard.innerHTML = stateLoading(5); mid.appendChild(trendCard);
+  const repeatCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm'); repeatCard.innerHTML = stateLoading(5); mid.appendChild(repeatCard);
 
-  const listCard = el('div', 'card flush'); listCard.style.marginTop = '16px';
+  const listCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm'); 
   listCard.innerHTML = stateLoading(8); root.appendChild(listCard);
-  const vecCard = el('div', 'card flush'); vecCard.style.marginTop = '16px';
+  const vecCard = el('div', 'rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm'); 
   vecCard.innerHTML = stateLoading(4); root.appendChild(vecCard);
+
+  const footHost = el('div'); root.appendChild(footHost);
 
   /* allSettled, not catch(() => []). "The vector store is empty" and "the
      vector store could not be read" are opposite answers on this screen, and a
@@ -446,16 +471,16 @@ SCREENS.deals = async host => {
   };
   const phoneLine = row => {
     const p = phoneInfo(row);
-    if (!p) return `<span class="t-muted" title="${esc(noPhoneWhy(row))}">—</span>`;
-    if (p.ambiguous) return `<span class="t-warm" title="${esc(noPhoneWhy(row))}">Two candidates — not shown</span>`;
+    if (!p) return `<span class="text-outline" title="${esc(noPhoneWhy(row))}">—</span>`;
+    if (p.ambiguous) return `<span class="text-amber-700" title="${esc(noPhoneWhy(row))}">Two candidates — not shown</span>`;
     if (p.handle) {
       /* A LID handle has no phone digits in it. It is not a number and must
          never be dialled or read as one. The wording comes from identity.js so
          that the same handle is described identically on every screen. */
-      return `<span class="mono" title="${esc(describeKey(p.value))}">${esc(p.value)}</span> <span class="t-warm">handle, not a number</span>`;
+      return `<span class="font-label-numeric-sm" title="${esc(describeKey(p.value))}">${esc(p.value)}</span> <span class="text-amber-700">handle, not a number</span>`;
     }
-    return `<span class="mono">${esc(p.value)}</span>${
-      p.from === 'lead' ? ` <span class="t-muted" title="${esc(`The recorded sales has no phone for this deal. This number comes from a leads row matched on ${p.basis || 'a shared key'}.`)}">from the lead record</span>` : ''}`;
+    return `<span class="font-label-numeric-sm">${esc(p.value)}</span>${
+      p.from === 'lead' ? ` <span class="text-outline" title="${esc(`The recorded sales has no phone for this deal. This number comes from a leads row matched on ${p.basis || 'a shared key'}.`)}">from the lead record</span>` : ''}`;
   };
 
   /* The EMAIL column, told apart from a WhatsApp address — the same problem as
@@ -479,11 +504,11 @@ SCREENS.deals = async host => {
     const raw = str(v);
     if (!raw) return '';
     if (keyShape(raw) === KEY_SHAPE.EMAIL) return esc(raw);
-    return `<span class="mono" title="${esc(describeKey(raw))}">${esc(raw)}</span>`
-      + ' <span class="t-warm">contact handle, not an email address</span>';
+    return `<span class="font-label-numeric-sm" title="${esc(describeKey(raw))}">${esc(raw)}</span>`
+      + ' <span class="text-amber-700">contact handle, not an email address</span>';
   };
   const contactLine = (row, empty) => contactValue(emailOf(row))
-    || `<span class="t-muted">${esc(empty)}</span>`;
+    || `<span class="text-outline">${esc(empty)}</span>`;
 
   /* Margin is taken from a margin column when the table has one. Otherwise it
      is amount − cost, and only when BOTH sides are present on that row —
@@ -497,9 +522,9 @@ SCREENS.deals = async host => {
     return null;
   };
   const marginSource = col.margin
-    ? `<span class="mono">${esc(col.margin)}</span>`
+    ? `<span class="font-label-numeric-sm">${esc(col.margin)}</span>`
     : (col.amount && col.cost)
-      ? `<span class="mono">${esc(col.amount)}</span> − <span class="mono">${esc(col.cost)}</span>`
+      ? `<span class="font-label-numeric-sm">${esc(col.amount)}</span> − <span class="font-label-numeric-sm">${esc(col.cost)}</span>`
       : null;
 
   const dealsCapped = !!deals && deals.length >= DEAL_LIMIT;
@@ -896,9 +921,96 @@ SCREENS.deals = async host => {
     return { alerts, notes };
   }
 
+  /* ── Revenue pace ──────────────────────────────────────────────────────
+     Totals of the amounts recorded on purchase_history, bucketed by the close
+     date's calendar month in Dubai — the same slice the trend chart uses. No
+     projection is made: a run-rate extrapolated from a handful of days is an
+     estimate wearing a revenue label, and with no target there is nothing to
+     pace against. */
+  {
+    const nowMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dubai', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+    const [ny, nm] = nowMonth.split('-').map(Number);
+    const prevMonth = `${nm === 1 ? ny - 1 : ny}-${String(nm === 1 ? 12 : nm - 1).padStart(2, '0')}`;
+    const monthTotal = m => {
+      const rows = (deals || []).filter(d => monthOf(dateOf(d)) === m);
+      const priced = rows.map(amountOf).filter(x => x != null);
+      return { n: rows.length, priced: priced.length, total: priced.length ? priced.reduce((a, b) => a + b, 0) : null };
+    };
+    const cur = monthTotal(nowMonth), prev = monthTotal(prevMonth);
+    const TILE = 'p-space-md bg-surface rounded-lg border border-outline-variant/30 flex flex-col justify-between gap-2 min-w-0';
+    const TILE_DASH = 'p-space-md bg-surface-container-low rounded-lg border border-dashed border-outline-variant flex flex-col justify-between gap-2 min-w-0';
+    const head = (label, icon) => `<div class="flex items-center justify-between text-outline"><span class="font-table-header text-table-header uppercase tracking-wider">${esc(label)}</span><span class="material-symbols-outlined text-[18px]">${icon}</span></div>`;
+    const big = v => `<div class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight font-label-numeric-lg">${v}</div>`;
+    const sub = t => `<div class="font-body-sm text-body-sm text-on-surface-variant">${t}</div>`;
+    paceHost.innerHTML = !deals
+      ? stateError('the revenue pace', dealsErr)
+      : `<section class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 shadow-sm p-space-lg flex flex-col gap-space-md">
+        <div class="flex flex-wrap items-center justify-between gap-space-sm pb-space-sm border-b border-outline-variant/30">
+          <div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-primary-container text-[22px]">trending_up</span>
+            <div class="flex flex-col"><h2 class="font-headline-md text-headline-md text-on-surface">Revenue pace &amp; monthly target</h2>
+              <span class="font-body-sm text-body-sm text-on-surface-variant">Closed-won amounts recorded this calendar month (Dubai), against the month before.</span></div></div>
+          <span class="font-label-numeric-sm text-label-numeric-sm text-secondary bg-surface-container px-2 py-1 rounded">${esc(monthLabel(nowMonth))}</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">
+          <div class="${TILE}">${head('Actual revenue (MTD)', 'account_balance_wallet')}
+            ${big(cur.total == null ? '—' : esc(aed(cur.total)))}
+            ${sub(cur.n ? `${num(cur.n)} closed-won ${plural(cur.n, 'deal', 'deals')} this month${cur.priced < cur.n ? ` · ${num(cur.n - cur.priced)} carry no amount and are not in the total` : ''}` : 'No closed-won deal recorded this month.')}</div>
+          <div class="${TILE_DASH}">${head('Monthly target', 'flag')}
+            <div class="flex items-baseline gap-2"><span class="font-headline-md text-headline-md text-outline font-medium italic">Not set</span></div>
+            ${sub('No table in NEXUS holds a revenue target yet, so there is nothing to set it in — it is not zero.')}</div>
+          <div class="${TILE}">${head('Pace & projected finish', 'speed')}
+            <div class="flex items-center gap-1.5"><span class="material-symbols-outlined text-outline text-[18px]">info</span><span class="font-headline-md text-headline-md text-on-surface-variant font-semibold">Needs a target</span></div>
+            ${sub('Pace is measured against a target, and no projection is drawn from a part-month of deals.')}</div>
+          <div class="${TILE}">${head('Prior month', 'query_stats')}
+            ${big(prev.total == null ? '—' : esc(aed(prev.total)))}
+            ${sub(prev.n ? `${num(prev.n)} closed-won ${plural(prev.n, 'deal', 'deals')} in ${esc(monthLabel(prevMonth))}. A variance between a part-month and a whole one is not printed.` : `No closed-won deal recorded in ${esc(monthLabel(prevMonth))}.`)}</div>
+        </div>
+        ${dealsCapped ? `<div class="font-body-sm text-body-sm text-amber-700">The deal read is capped at ${esc(CAP_WORDS)}, so a month outside that window is not complete here.</div>` : ''}
+      </section>`;
+
+    /* ── Live pipeline stages ──────────────────────────────────────────── */
+    const STAGES = [
+      { title: 'Qualification', why: 'NEXUS does not record a deal stage before closed-won. Open enquiries are worked on the Leads screen.' },
+      { title: 'Test drive / appraisal', why: 'No test-drive or appraisal stage is recorded against a deal. Test drives are booked on Appointments.' },
+      { title: 'Financing & KYC', why: 'Finance quotes and KYC documents are filed per customer, not per deal stage, so no deal can be placed here.' },
+    ];
+    const won = (deals || []).slice().sort((a, b) => (stamp(dateOf(b)) ?? -Infinity) - (stamp(dateOf(a)) ?? -Infinity));
+    const COL = 'flex flex-col bg-surface-container-low rounded-xl border border-outline-variant/40 p-space-sm min-w-0';
+    const COL_HEAD = 'flex items-center justify-between px-space-sm py-2 border-b border-outline-variant/30 mb-2';
+    const card = (d, i) => `<button type="button" data-won="${i}" class="w-full text-left p-space-sm bg-surface-container-lowest rounded-lg border border-outline-variant/40 hover:border-primary-container transition-all">
+        <div class="flex items-center justify-between text-xs text-outline mb-1"><span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface truncate">${dateOf(d) ? esc(day10(dateOf(d))) : 'No close date'}</span>
+          <span class="font-label-numeric-sm text-label-numeric-sm text-outline">${dateOf(d) ? esc(ago(dateOf(d))) : ''}</span></div>
+        <div class="font-body-sm text-body-sm font-semibold text-on-surface truncate">${esc(maskText(nameOf(d) || 'Unnamed customer'))}</div>
+        <div class="text-xs text-on-surface-variant truncate">${esc(get(d, 'vehicle') || 'No vehicle recorded')}</div>
+        <div class="flex items-center justify-between mt-2 pt-1.5 border-t border-outline-variant/20">
+          <span class="font-label-numeric-sm text-label-numeric-sm font-semibold text-on-surface">${amountOf(d) == null ? '—' : esc(aed(amountOf(d)))}</span>
+          <span class="font-label-numeric-sm text-[10px] px-1 rounded bg-surface-container-high text-tertiary font-bold">WON</span></div>
+      </button>`;
+    pipeHost.innerHTML = `<section class="flex flex-col gap-space-md">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="flex items-center gap-space-sm"><h3 class="font-headline-md text-headline-md text-on-surface">Live pipeline stages</h3>
+          <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-surface-container text-secondary font-semibold">${deals ? `${num(deals.length)} CLOSED-WON` : 'DEALS UNREAD'}</span></div>
+        <span class="font-body-sm text-body-sm text-on-surface-variant">Only the closed-won stage is recorded in NEXUS today.</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">
+        ${STAGES.map(st => `<div class="${COL}"><div class="${COL_HEAD}"><span class="font-headline-md text-body-md font-semibold text-on-surface">${esc(st.title)}</span>
+            <span class="font-label-numeric-sm text-label-numeric-sm px-1.5 rounded bg-surface-container-highest text-secondary font-semibold">—</span></div>
+          <p class="px-space-sm pb-space-sm font-body-sm text-body-sm text-on-surface-variant">${esc(st.why)}</p></div>`).join('')}
+        <div class="${COL}"><div class="${COL_HEAD}"><span class="font-headline-md text-body-md font-semibold text-on-surface">Closed-won</span>
+            <span class="font-label-numeric-sm text-label-numeric-sm px-1.5 rounded bg-tertiary text-on-tertiary font-bold">${deals ? num(deals.length) : '—'}</span></div>
+          <div class="space-y-space-sm">${!deals
+            ? `<p class="px-space-sm pb-space-sm font-body-sm text-body-sm text-red-700">The deal read failed, so this column is unknown rather than empty.</p>`
+            : won.length
+              ? won.slice(0, 5).map(card).join('') + (won.length > 5 ? `<p class="px-space-sm font-body-sm text-body-sm text-outline">${num(won.length - 5)} more in the ledger below.</p>` : '')
+              : '<p class="px-space-sm pb-space-sm font-body-sm text-body-sm text-on-surface-variant">No closed-won deal recorded yet.</p>'}</div></div>
+      </div>
+    </section>`;
+    pipeHost.querySelectorAll('[data-won]').forEach(b => b.addEventListener('click', () => openDeal(won[Number(b.dataset.won)])));
+  }
+
   /* ── KPI strip ─────────────────────────────────────────────────────────── */
   if (!deals) {
-    strip.classList.remove('grid', 'g5');
+    strip.className = '';
     strip.innerHTML = stateError('closed-won deals', dealsErr);
   } else {
     const amounts = deals.map(amountOf).filter(x => x != null);
@@ -918,10 +1030,10 @@ SCREENS.deals = async host => {
               /* One deal has no oldest and newest. Printing the same relative
                  time twice under two labels reads as a range. */
               ? (stamps.length === 1
-                  ? `<span class="t-muted">Closed ${esc(ago(stamps[0]))} · the only dated row in the table</span>`
-                  : `<span class="t-muted">Oldest ${esc(ago(stamps[0]))} · newest ${esc(ago(stamps[stamps.length - 1]))}</span>`)
-              : '<span class="t-muted">No readable close date on any row</span>')
-            + (dealsCapped ? `<br><span class="t-warm">Capped at ${CAP_WORDS} — older deals are not counted here${dealsOrdered ? '' : ', and "older" is a guess: the ordered read was rejected'}</span>` : '')
+                  ? `<span class="text-outline">Closed ${esc(ago(stamps[0]))} · the only dated row in the table</span>`
+                  : `<span class="text-outline">Oldest ${esc(ago(stamps[0]))} · newest ${esc(ago(stamps[stamps.length - 1]))}</span>`)
+              : '<span class="text-outline">No readable close date on any row</span>')
+            + (dealsCapped ? `<br><span class="text-amber-700">Capped at ${CAP_WORDS} — older deals are not counted here${dealsOrdered ? '' : ', and "older" is a guess: the ordered read was rejected'}</span>` : '')
           : 'Nothing recorded in the recorded sales yet'),
 
       /* An empty table returns no keys, so no column can be resolved from it.
@@ -930,13 +1042,13 @@ SCREENS.deals = async host => {
          gets reported as a broken one. */
       kpi('Revenue', col.amount ? aed(revenue) : '—',
         !deals.length
-          ? '<span class="t-muted">Nothing recorded, so there is no revenue to total and no row to read a column from</span>'
+          ? '<span class="text-outline">Nothing recorded, so there is no revenue to total and no row to read a column from</span>'
           : col.amount
-            ? `<span class="t-muted">From ${num(amounts.length)} of ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} · the amount recorded on each</span>`
+            ? `<span class="text-outline">From ${num(amounts.length)} of ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} · the amount recorded on each</span>`
               + (deals.length <= THIN
-                  ? `<br><span class="t-warm">That is the whole of the recorded sales — ${num(deals.length)} ${plural(deals.length, 'row', 'rows')}, not a period's takings.</span>`
+                  ? `<br><span class="text-amber-700">That is the whole of the recorded sales — ${num(deals.length)} ${plural(deals.length, 'row', 'rows')}, not a period's takings.</span>`
                   : '')
-            : `<span class="t-warm">The recorded sales has no amount column (looked for ${CANDIDATES.amount.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')})</span>`),
+            : `<span class="text-amber-700">The recorded sales has no amount column (looked for ${CANDIDATES.amount.map(c => `<span class="font-label-numeric-sm">${esc(c)}</span>`).join(', ')})</span>`),
 
       /* Withdrawn at one priced deal rather than printed. The mean of a single
          number is that number, so this tile would repeat the Revenue tile
@@ -945,14 +1057,14 @@ SCREENS.deals = async host => {
          reader's idea of what a typical sale looks like. */
       kpi('Average deal', amounts.length > 1 ? aed(revenue / amounts.length) : '—',
         amounts.length > 1
-          ? `<span class="t-muted">Mean over the ${num(amounts.length)} deals that carry an amount</span>`
+          ? `<span class="text-outline">Mean over the ${num(amounts.length)} deals that carry an amount</span>`
             + (amounts.length <= THIN
-                ? `<br><span class="t-warm">A mean of ${num(amounts.length)} deals is a description of those ${num(amounts.length)}, not a typical sale.</span>`
+                ? `<br><span class="text-amber-700">A mean of ${num(amounts.length)} deals is a description of those ${num(amounts.length)}, not a typical sale.</span>`
                 : '')
           : amounts.length === 1
-            ? `<span class="t-warm">Withdrawn: one priced deal is not an average</span>`
-              + `<br><span class="t-muted">The single recorded sale is ${esc(aed(revenue))}, which is the Revenue figure beside this one. There is nothing to average it against, so no mean is shown.</span>`
-            : `<span class="t-muted">${deals.length
+            ? `<span class="text-amber-700">Withdrawn: one priced deal is not an average</span>`
+              + `<br><span class="text-outline">The single recorded sale is ${esc(aed(revenue))}, which is the Revenue figure beside this one. There is nothing to average it against, so no mean is shown.</span>`
+            : `<span class="text-outline">${deals.length
                 ? 'No deal carries a readable amount, so there is no average to take'
                 : 'No deal has been recorded, so there is no average to take'}</span>`),
 
@@ -964,23 +1076,23 @@ SCREENS.deals = async host => {
              which is the same rule health.js applies to a success rate with no
              qualifying runs, and the reason successRate() there returns null
              rather than a number. */
-          ? `<span class="t-muted">${marginSource} · from ${num(withMargin.length)} of ${num(deals.length)} deals${
+          ? `<span class="text-outline">${marginSource} · from ${num(withMargin.length)} of ${num(deals.length)} deals${
               marginBase > 0
                 ? ` · ${esc(pct(marginTotal / marginBase * 100))} of their revenue`
-                : ` · <span class="t-warm">no percentage: ${col.amount
+                : ` · <span class="text-amber-700">no percentage: ${col.amount
                     ? `${plural(withMargin.length, 'the row', 'the rows')} carrying a margin ${plural(withMargin.length, 'has', 'have')} no sale amount to measure it against`
                     : 'The recorded sales has no amount column to measure it against'}</span>`}</span>`
           : !deals.length
-            ? '<span class="t-muted">Nothing recorded, so there is no margin to total</span>'
+            ? '<span class="text-outline">Nothing recorded, so there is no margin to total</span>'
             /* Not "not recorded" — unsourceable. purchase_history stores what
                the car sold for and nothing about what it cost, and there is no
                unit reference to fetch a cost from inventory with, so no margin
                on this screen can be derived from anything. inventory does carry
                cost_aed, and reaching for it would mean guessing which unit this
                deal was, which is the one thing this screen refuses to do. */
-            : `<span class="t-muted">Not recorded and not derivable. The recorded sales carries no margin column (${
-                CANDIDATES.margin.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) and no cost column (${
-                CANDIDATES.cost.map(c => `<span class="mono">${esc(c)}</span>`).join(', ')}) to subtract from the sale price. inventory holds a <span class="mono">cost_aed</span>, but no column ties a deal to a unit, so taking one from there would mean guessing which car this was. No margin is estimated here.</span>`),
+            : `<span class="text-outline">Not recorded and not derivable. The recorded sales carries no margin column (${
+                CANDIDATES.margin.map(c => `<span class="font-label-numeric-sm">${esc(c)}</span>`).join(', ')}) and no cost column (${
+                CANDIDATES.cost.map(c => `<span class="font-label-numeric-sm">${esc(c)}</span>`).join(', ')}) to subtract from the sale price. inventory holds a <span class="font-label-numeric-sm">cost_aed</span>, but no column ties a deal to a unit, so taking one from there would mean guessing which car this was. No margin is estimated here.</span>`),
 
       /* The reconciliation, stated in both directions and in both outcomes.
          "1 of 1 matched, no unmatched vectors" is the guard reporting that it
@@ -988,17 +1100,17 @@ SCREENS.deals = async host => {
          Closed-Won workflow stops writing one of the two tables. */
       kpi('In vector memory', vecErr ? '—' : num(vectors.length),
         vecErr
-          ? `<span class="t-hot">The deal history could not be read — ${esc(vecErr)}. Whether the two closed-won tables agree is unknown, not fine.</span>`
+          ? `<span class="text-red-700">The deal history could not be read — ${esc(vecErr)}. Whether the two closed-won tables agree is unknown, not fine.</span>`
           : vectors.length
-            ? `<span class="t-muted">${num(embeddedCount)} of ${num(deals.length)} recorded deal${deals.length === 1 ? '' : 's'} matched to a vector row</span>`
+            ? `<span class="text-outline">${num(embeddedCount)} of ${num(deals.length)} recorded deal${deals.length === 1 ? '' : 's'} matched to a vector row</span>`
               + (orphanVectors.length
-                  ? `<br><span class="t-hot">${num(orphanVectors.length)} vector row${orphanVectors.length === 1 ? '' : 's'} with no deal in the recorded sales</span>`
+                  ? `<br><span class="text-red-700">${num(orphanVectors.length)} vector row${orphanVectors.length === 1 ? '' : 's'} with no deal in the recorded sales</span>`
                   : (embeddedCount === deals.length && deals.length === vectors.length
-                      ? '<br><span class="t-ok">Both closed-won tables agree</span>'
+                      ? '<br><span class="text-emerald-700">Both closed-won tables agree</span>'
                       : ''))
             : deals.length
-              ? '<span class="t-hot">The deal history has no rows — Ask AI cannot cite a single recorded deal</span>'
-              : '<span class="t-muted">Nothing recorded and nothing embedded — the two agree, with nothing in them</span>',
+              ? '<span class="text-red-700">The deal history has no rows — Ask AI cannot cite a single recorded deal</span>'
+              : '<span class="text-outline">Nothing recorded and nothing embedded — the two agree, with nothing in them</span>',
         vecErr || orphanVectors.length || (!vecErr && !vectors.length && deals.length) ? 't-hot' : ''),
     ].join('');
   }
@@ -1011,7 +1123,7 @@ SCREENS.deals = async host => {
   let focusList = () => {};
 
   if (leadsErr) {
-    const b = el('div', 'banner warm'); b.style.marginBottom = '12px';
+    const b = el('div', 'flex items-start gap-2.5 p-space-sm rounded-lg border border-amber-200 bg-amber-50/60 text-amber-950 font-body-sm text-body-sm');
     b.innerHTML = `<span class="material-symbols-outlined" style="font-size:20px">person_off</span>
       <div>Leads could not be read (${esc(leadsErr)}), so the deal form cannot offer a lead to pick from and no deal row can fall back to a lead's phone number. Every field can still be typed in by hand.</div>`;
     banners.appendChild(b);
@@ -1035,7 +1147,7 @@ SCREENS.deals = async host => {
 
     const months = [...buckets.keys()].sort();
     if (!months.length) {
-      trendCard.innerHTML = `<div class="label-caps">Deals over time</div>${stateEmpty(
+      trendCard.innerHTML = `<div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Deals over time</div>${stateEmpty(
         deals.length ? 'No deal carries a readable close date' : 'No deals to chart yet',
         deals.length
           ? `${col.date ? `The ${col.date} column is empty or unparseable on every row read.` : 'The recorded sales has no close-date column, so the deals cannot be placed on a timeline.'}`
@@ -1056,24 +1168,24 @@ SCREENS.deals = async host => {
       const peak = Math.max(...shown.map(m => (useRevenue ? (buckets.get(m)?.revenue || 0) : (buckets.get(m)?.n || 0))), 0);
 
       trendCard.innerHTML = `
-        <div class="label-caps">Deals over time</div>
-        <div class="card-sub" style="margin-bottom:12px">${useRevenue
+        <div class="font-table-header text-table-header uppercase text-outline tracking-wider font-semibold">Deals over time</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5" style="margin-bottom:12px">${useRevenue
           ? 'Revenue per calendar month, taken from the recorded amount and dated on the purchase date'
-          : `Deals per calendar month, dated on <span class="mono">${esc(col.date)}</span>. The recorded sales has no amount column, so this counts deals rather than money.`}</div>
+          : `Deals per calendar month, dated on <span class="font-label-numeric-sm">${esc(col.date)}</span>. The recorded sales has no amount column, so this counts deals rather than money.`}</div>
         <div>${shown.map(m => {
           const b = buckets.get(m);
           const v = useRevenue ? (b?.revenue || 0) : (b?.n || 0);
           const w = peak > 0 ? (v / peak * 100) : 0;
           return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-            <div class="ds-cell-sub" style="width:64px;flex-shrink:0">${esc(monthLabel(m))}</div>
-            <div class="bar" style="flex:1"><i style="width:${w.toFixed(1)}%"></i></div>
-            <div class="num" style="width:120px;text-align:right;flex-shrink:0">${
-              b ? (useRevenue ? aed(b.revenue) : num(b.n)) : '<span class="t-muted">—</span>'}</div>
-            <div class="ds-cell-sub num" style="width:64px;text-align:right;flex-shrink:0">${
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="width:64px;flex-shrink:0">${esc(monthLabel(m))}</div>
+            <div class="flex-1 h-2 rounded-full bg-surface-container overflow-hidden"><div class="h-full rounded-full bg-primary" style="width:${w.toFixed(1)}%"></div></div>
+            <div class="tabular-nums" style="width:120px;text-align:right;flex-shrink:0">${
+              b ? (useRevenue ? aed(b.revenue) : num(b.n)) : '<span class="text-outline">—</span>'}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant tabular-nums" style="width:64px;text-align:right;flex-shrink:0">${
               b ? `${num(b.n)} deal${b.n === 1 ? '' : 's'}` : ''}</div>
           </div>`;
         }).join('')}</div>
-        <div class="ds-cell-sub" style="margin-top:10px;white-space:normal">
+        <div class="font-body-sm text-body-sm text-on-surface-variant" style="margin-top:10px;white-space:normal">
           ${span.length > shown.length ? `Showing the last ${num(shown.length)} of ${num(span.length)} months on record. ` : ''}
           ${undated ? `${num(undated)} deal${undated === 1 ? ' has' : 's have'} no readable close date and ${undated === 1 ? 'is' : 'are'} not on this chart. ` : ''}
           ${useRevenue && deals.some(d => amountOf(d) == null) ? 'Deals with no amount are counted but contribute nothing to the bars. ' : ''}
@@ -1082,7 +1194,7 @@ SCREENS.deals = async host => {
                 plainly: this is one value, and a chart of one value is a
                 reading of it rather than a direction of travel. */
             deals.length <= THIN || months.length === 1
-              ? `<span class="t-warm">${esc(months.length === 1
+              ? `<span class="text-amber-700">${esc(months.length === 1
                   ? `This is ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} in a single month. Each bar is scaled against the largest month on the chart, so with one month that bar is full width by construction — it is a value, not a trend, and there is no earlier month to compare it with.`
                   : `${num(deals.length)} deals across ${num(months.length)} months is too little to read a direction from. These bars are the deals themselves, not a trend.`)}</span>`
               : ''}
@@ -1092,7 +1204,7 @@ SCREENS.deals = async host => {
 
   /* ── Returning customers ───────────────────────────────────────────────── */
   if (!deals) {
-    repeatCard.innerHTML = `<div class="card-head"><div><div class="card-title">Returning customers</div></div></div>${stateError('returning customers', dealsErr)}`;
+    repeatCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Returning customers</div></div></div>${stateError('returning customers', dealsErr)}`;
   } else {
     /* Grouped on IDENTITY, not on lower(email).
 
@@ -1214,12 +1326,12 @@ SCREENS.deals = async host => {
       suffixRefused ? `${num(suffixRefused)} pair${suffixRefused === 1 ? '' : 's'} of deals share the last nine digits of a phone number but carry different email addresses, so ${suffixRefused === 1 ? 'it was' : 'they were'} left apart rather than merged. They may be one person with two addresses or two people whose numbers end alike, and nothing in this database says which.` : '',
     ].filter(Boolean);
     const caveatLine = groupingCaveats.length
-      ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub" style="white-space:normal">${groupingCaveats.map(esc).join('<br>')}</div></div>`
+      ? `<div class="list-item" style="cursor:default"><div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${groupingCaveats.map(esc).join('<br>')}</div></div>`
       : '';
 
-    repeatCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Returning customers</div>
-        <div class="card-sub">Contacts with more than one recorded deal, ranked by total spend. Deals are matched to each other on every key each row is recorded under — email, phone and WhatsApp address — using the same rule the workflows join on.</div>
+    repeatCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Returning customers</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Contacts with more than one recorded deal, ranked by total spend. Deals are matched to each other on every key each row is recorded under — email, phone and WhatsApp address — using the same rule the workflows join on.</div>
       </div></div>
       ${repeat.length
         ? `<div style="max-height:340px;overflow-y:auto">${repeat.slice(0, 25).map(g => `
@@ -1233,18 +1345,18 @@ SCREENS.deals = async host => {
                      value may stand in for a missing name. */
                   || (keyShape(g.email) === KEY_SHAPE.EMAIL ? g.email : '')
                   || 'Unnamed customer'))}</div>
-                <div class="ds-cell-sub">${contactValue(g.email) || esc(g.byName
+                <div class="font-body-sm text-body-sm text-on-surface-variant">${contactValue(g.email) || esc(g.byName
                   ? 'No email, phone or WhatsApp key on these rows — grouped by customer name, which two people can share'
                   : 'No email on these rows — grouped on the phone or WhatsApp key they share')}${
                   g.last != null ? ` · last deal ${esc(ago(g.last))}` : ''}</div>
-                <div class="ds-cell-sub">${phoneLine(g.phoneRow)}</div>
+                <div class="font-body-sm text-body-sm text-on-surface-variant">${phoneLine(g.phoneRow)}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
-                <div class="num" style="font-weight:500">${g.withAmount ? aed(g.revenue) : '<span class="t-muted">—</span>'}</div>
-                <div class="ds-cell-sub">${g.withAmount === g.n ? 'total spend' : `${num(g.withAmount)} of ${num(g.n)} priced`}</div>
+                <div class="tabular-nums" style="font-weight:500">${g.withAmount ? aed(g.revenue) : '<span class="text-outline">—</span>'}</div>
+                <div class="font-body-sm text-body-sm text-on-surface-variant">${g.withAmount === g.n ? 'total spend' : `${num(g.withAmount)} of ${num(g.n)} priced`}</div>
               </div>
             </div>`).join('')}
-            ${repeat.length > 25 ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(repeat.length - 25)} more returning customers not shown</div></div>` : ''}
+            ${repeat.length > 25 ? `<div class="list-item" style="cursor:default"><div class="font-body-sm text-body-sm text-on-surface-variant">${num(repeat.length - 25)} more returning customers not shown</div></div>` : ''}
           </div>`
         /* "Every recorded deal is a different customer" is a sentence about a
            book of business. Over one row it is arithmetically true and
@@ -1276,7 +1388,7 @@ SCREENS.deals = async host => {
 
      ONE — the picker was a truthy test on a text column.
 
-     lib/deal-form.js builds its <select> from `leads.filter(l => l.email)`.
+     lib/deal-form.js builds its <select class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer"> from `leads.filter(l => l.email)`.
      That asks whether a column is non-empty, which is not the same question as
      whether we know who somebody is. Counted live today:
 
@@ -1374,16 +1486,16 @@ SCREENS.deals = async host => {
   const pickerDropped = (leads || []).filter(l => l.email && !offeredIds.has(l.id)).length;
 
   const pickerNote = leadsErr
-    ? `<span class="t-warm">The leads read failed (${esc(leadsErr)}), so the picker on that form has no lead to offer and every field has to be typed by hand. That is a failed read, not an empty lead table.</span>`
+    ? `<span class="text-amber-700">The leads read failed (${esc(leadsErr)}), so the picker on that form has no lead to offer and every field has to be typed by hand. That is a failed read, not an empty lead table.</span>`
     : !leads.length
       ? 'There are no leads to offer, so every field on that form has to be typed by hand.'
       : [
-        `Its lead picker offers ${num(pickerLeads.length)} of ${num(leads.length)} lead${plural(leads.length, '', 's')}, chosen by whether <span class="mono">NEXUS’s identity rules</span> can identify the row rather than by whether the email column happens to be non-empty.`,
+        `Its lead picker offers ${num(pickerLeads.length)} of ${num(leads.length)} lead${plural(leads.length, '', 's')}, chosen by whether <span class="font-label-numeric-sm">NEXUS’s identity rules</span> can identify the row rather than by whether the email column happens to be non-empty.`,
         pickerRecovered
           ? `A truthy test on that column — which is what this picker used until today — offered ${num(pickerWasOffering)}: ${num(pickerRecovered)} lead${plural(pickerRecovered, ' whose email column holds the empty string was', 's whose email column holds the empty string were')} dropped from it silently, though identity.js identifies ${plural(pickerRecovered, 'that lead', 'those leads')} from the phone number.`
           : '',
         pickerDropped
-          ? `<span class="t-warm">${num(pickerDropped)} lead${plural(pickerDropped, ' carries a non-empty email column that identifies nobody and is', 's carry a non-empty email column that identifies nobody and are')} not offered.</span>`
+          ? `<span class="text-amber-700">${num(pickerDropped)} lead${plural(pickerDropped, ' carries a non-empty email column that identifies nobody and is', 's carry a non-empty email column that identifies nobody and are')} not offered.</span>`
           : '',
         pickerRefused.length
           ? `${num(pickerRefused.length)} lead${plural(pickerRefused.length, ' carries', 's carry')} no email, phone or WhatsApp key at all, so ${plural(pickerRefused.length, 'it is', 'they are')} not offered — there would be nothing to file the deal under.`
@@ -1395,33 +1507,33 @@ SCREENS.deals = async host => {
       ].filter(Boolean).join(' ');
 
   /* ── The deal list ─────────────────────────────────────────────────────── */
-  const actions = `<button class="btn primary" id="newDeal">
+  const actions = `<button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-container text-on-primary font-body-sm text-body-sm font-semibold transition-colors shadow-sm disabled:bg-outline-variant/40 disabled:text-outline disabled:cursor-not-allowed disabled:shadow-none" id="newDeal">
     <span class="material-symbols-outlined">add</span> Record a deal</button>`;
 
   if (!deals) {
-    listCard.innerHTML = `<div class="card-head"><div><div class="card-title">Closed-won deals</div>
-        <div class="card-sub">${pickerNote}</div></div>
+    listCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Closed-won deals</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${pickerNote}</div></div>
       <div style="flex:1"></div>${actions}</div>${stateError('closed-won deals', dealsErr)}`;
   } else {
     const f = { q: '', memory: 'ALL', period: 'ALL', sort: 'new', only: null };
     const dated = deals.filter(d => stamp(dateOf(d)) != null).length;
 
-    listCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Closed-won deals</div>
-        <div class="card-sub">Straight from <span class="mono">The recorded sales</span>. Recording a deal here posts to the Closed-Won workflow, which is what writes the pgvector memory — nothing on this screen writes the table directly. Click a row for the full record.${
-          dealsCapped ? ` <span class="t-warm">Showing ${CAP_WORDS} — this read is capped.${esc(CAP_WHY)}</span>` : ''}${
+    listCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Closed-won deals</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Straight from <span class="font-label-numeric-sm">The recorded sales</span>. Recording a deal here posts to the Closed-Won workflow, which is what writes the pgvector memory — nothing on this screen writes the table directly. Click a row for the full record.${
+          dealsCapped ? ` <span class="text-amber-700">Showing ${CAP_WORDS} — this read is capped.${esc(CAP_WHY)}</span>` : ''}${
           /* Said once, under the column it is about, rather than as a repeated
              sub-line on every row: it is one fact about the table. */
-          col.unit ? '' : ' <span class="t-muted">The vehicle column is free text captured on the deal form, not a reference to a unit — The recorded sales has no inventory column, so no row here can say which car was sold.</span>'}</div>
-        <div class="card-sub">${pickerNote}</div>
+          col.unit ? '' : ' <span class="text-outline">The vehicle column is free text captured on the deal form, not a reference to a unit — The recorded sales has no inventory column, so no row here can say which car was sold.</span>'}</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${pickerNote}</div>
       </div><div style="flex:1"></div>${actions}</div>
-      <div class="toolbar">
-        <div class="grow"><input type="search" id="dq" aria-label="Search closed-won deals"
+      <div class="flex flex-wrap items-center gap-space-sm px-space-md py-3 border-b border-outline-variant/30">
+        <div class="flex-1 min-w-[200px]"><input class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary focus:border-primary outline-none shadow-sm disabled:bg-surface-container-low disabled:text-outline" type="search" id="dq" aria-label="Search closed-won deals"
           placeholder="Search customer, email, phone or vehicle" /></div>
-        <select id="dPeriod" aria-label="Filter by close date" style="width:auto">
+        <select class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer" id="dPeriod" aria-label="Filter by close date" style="width:auto">
           ${PERIODS.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}
         </select>
-        <select id="dMem" aria-label="Filter by vector memory state" style="width:auto"
+        <select class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer" id="dMem" aria-label="Filter by vector memory state" style="width:auto"
           ${vecErr ? `disabled title="the deal history could not be read (${esc(vecErr)}), so this screen does not know which deals are embedded."` : ''}>
           <option value="ALL">All memory states</option>
           ${/* The counts come off the vector read, so they are only printed
@@ -1433,10 +1545,10 @@ SCREENS.deals = async host => {
           <option value="IN">In vector memory${vecErr ? '' : ` · ${num(embeddedCount)}`}</option>
           <option value="OUT">Not embedded${vecErr ? '' : ` · ${num(deals.length - embeddedCount)}`}</option>
         </select>
-        <select id="dSort" aria-label="Sort deals" style="width:auto">
+        <select class="w-full px-3 py-2 bg-surface-container-lowest border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:ring-1 focus:ring-primary outline-none shadow-sm cursor-pointer" id="dSort" aria-label="Sort deals" style="width:auto">
           ${Object.entries(SORTS).map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}
         </select>
-        <div class="t-muted num" id="dCount"></div>
+        <div class="text-outline tabular-nums" id="dCount"></div>
       </div>
       <div id="dNote"></div>
       <div id="dTable"></div>`;
@@ -1446,50 +1558,50 @@ SCREENS.deals = async host => {
          line an operator reads before picking up the handset, and splitting the
          two apart is how a number gets dialled against the wrong customer. */
       { label: 'Customer', strong: true, render: d => `${esc(nameOf(d) || 'Unnamed customer')}
-          <div class="ds-cell-sub">${contactLine(d, 'No email on this row')}</div>
-          <div class="ds-cell-sub">${phoneLine(d)}</div>` },
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${contactLine(d, 'No email on this row')}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant">${phoneLine(d)}</div>` },
       { label: 'Vehicle', render: d => {
           const v = esc(get(d, 'vehicle') || '—');
           if (!col.unit) return v;
           const ref = unitRefOf(d);
-          if (!ref) return `${v}<div class="ds-cell-sub t-warm" title="The ${esc(col.unit)} column is empty on this row, so the sale is not tied to a car in inventory.">No unit linked</div>`;
+          if (!ref) return `${v}<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700" title="The ${esc(col.unit)} column is empty on this row, so the sale is not tied to a car in inventory.">No unit linked</div>`;
           const u = unitFor(d);
-          if (!inv) return `${v}<div class="ds-cell-sub mono" title="Inventory could not be read, so this reference could not be resolved to a unit.">${esc(ref)}</div>`;
-          if (!u) return `${v}<div class="ds-cell-sub t-warm mono" title="No inventory row has this id, stock number or VIN among the rows read.">${esc(ref)} · not found</div>`;
+          if (!inv) return `${v}<div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm" title="Inventory could not be read, so this reference could not be resolved to a unit.">${esc(ref)}</div>`;
+          if (!u) return `${v}<div class="font-body-sm text-body-sm text-on-surface-variant text-amber-700 font-label-numeric-sm" title="No inventory row has this id, stock number or VIN among the rows read.">${esc(ref)} · not found</div>`;
           const s = str(u.status);
-          return `${v}<div class="ds-cell-sub mono">${esc(unitLabel(u))}${
-            s ? ` · <span class="${lower(s) === 'available' ? 't-hot' : 't-muted'}">${esc(s)}</span>` : ''}</div>`;
+          return `${v}<div class="font-body-sm text-body-sm text-on-surface-variant font-label-numeric-sm">${esc(unitLabel(u))}${
+            s ? ` · <span class="${lower(s) === 'available' ? 'text-red-700' : 'text-outline'}">${esc(s)}</span>` : ''}</div>`;
         } },
       { label: 'Amount', align: 'r', render: d => {
           const a = amountOf(d);
-          return a == null ? '<span class="t-muted">—</span>' : aed(a);
+          return a == null ? '<span class="text-outline">—</span>' : aed(a);
         } },
     ];
     if (col.margin || (col.amount && col.cost)) {
       cols.push({ label: 'Gross margin', align: 'r', render: d => {
         const m = marginOf(d), a = amountOf(d);
-        if (m == null) return '<span class="t-muted">—</span>';
+        if (m == null) return '<span class="text-outline">—</span>';
         /* A margin over a sale price of nothing is not 0% and not 100%. The two
            reasons it can happen are different facts and neither is a number, so
            the cell says which one it is. */
         const why = a == null
           ? 'No sale amount on this row, so the margin cannot be expressed as a percentage of one.'
           : 'The sale amount on this row is zero, so there is nothing to take a percentage of.';
-        return `<span class="${m < 0 ? 't-hot' : ''}">${aed(m)}</span>${
-          a ? `<div class="ds-cell-sub">${esc(pct(m / a * 100))}</div>`
-            : `<div class="ds-cell-sub t-muted" title="${esc(why)}">no % — ${a == null ? 'no sale amount' : 'sale amount is zero'}</div>`}`;
+        return `<span class="${m < 0 ? 'text-red-700' : ''}">${aed(m)}</span>${
+          a ? `<div class="font-body-sm text-body-sm text-on-surface-variant">${esc(pct(m / a * 100))}</div>`
+            : `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline" title="${esc(why)}">no % — ${a == null ? 'no sale amount' : 'sale amount is zero'}</div>`}`;
       } });
     }
     cols.push(
       { label: 'Closed', render: d => {
           const raw = dateOf(d);
-          if (!raw) return '<span class="t-muted">No date recorded</span>';
-          return `<div>${esc(day10(raw))}</div><div class="ds-cell-sub">${esc(ago(raw))}</div>`;
+          if (!raw) return '<span class="text-outline">No date recorded</span>';
+          return `<div>${esc(day10(raw))}</div><div class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(raw))}</div>`;
         } },
       { label: 'Vector memory', render: d => {
-          if (vecErr) return `<span class="t-muted" title="the deal history could not be read">Unknown</span>`;
+          if (vecErr) return `<span class="text-outline" title="the deal history could not be read">Unknown</span>`;
           if (vectorFor(d)) return pill('Embedded', 'ok', { verbatim: false });
-          return `<span class="t-muted">${vecCapped ? 'Not in the rows read' : 'Not embedded'}</span>`;
+          return `<span class="text-outline">${vecCapped ? 'Not in the rows read' : 'Not embedded'}</span>`;
         } },
     );
 
@@ -1546,15 +1658,15 @@ SCREENS.deals = async host => {
          how a screen ends up accused of losing rows. */
       const onlyBar = f.only
         ? `<div class="list-item" style="cursor:default">
-             <span class="material-symbols-outlined t-warm" style="font-size:18px" aria-hidden="true">filter_alt</span>
-             <div class="ds-cell-sub" style="white-space:normal;flex:1">Showing only the ${num(f.only.rows.size)} ${plural(f.only.rows.size, 'deal', 'deals')} in the alert &ldquo;${esc(f.only.label)}&rdquo;.</div>
-             <button class="btn sm" id="dClearOnly">Show all ${num(deals.length)} deals</button>
+             <span class="material-symbols-outlined text-amber-700" style="font-size:18px" aria-hidden="true">filter_alt</span>
+             <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal;flex:1">Showing only the ${num(f.only.rows.size)} ${plural(f.only.rows.size, 'deal', 'deals')} in the alert &ldquo;${esc(f.only.label)}&rdquo;.</div>
+             <button class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant hover:bg-surface-container transition-colors font-body-sm text-body-sm text-on-surface font-semibold disabled:text-outline disabled:cursor-not-allowed" id="dClearOnly">Show all ${num(deals.length)} deals</button>
            </div>`
         : '';
       noteEl.innerHTML = onlyBar + (notes.length
         ? `<div class="list-item" style="cursor:default">
-             <span class="material-symbols-outlined t-muted" style="font-size:18px">info</span>
-             <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
+             <span class="material-symbols-outlined text-outline" style="font-size:18px">info</span>
+             <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`
         : '');
       noteEl.querySelector('#dClearOnly')?.addEventListener('click', () => { f.only = null; draw(); });
       th.innerHTML = table(cols, rows, {
@@ -1598,40 +1710,41 @@ SCREENS.deals = async host => {
      for the phone fallback and leadsByKey, which need what the database
      actually returned. */
   $('newDeal')?.addEventListener('click', () => dealForm(pickerLeads, () => go('deals')));
+  $('newDealTop')?.addEventListener('click', () => dealForm(pickerLeads, () => go('deals')));
 
   /* ── Vector memory ─────────────────────────────────────────────────────── */
   if (vecErr) {
-    vecCard.innerHTML = `<div class="card-head"><div><div class="card-title">Vector memory</div>
-      <div class="card-sub">What the Closed-Won workflow has embedded into pgvector</div></div></div>
+    vecCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Vector memory</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">What the Closed-Won workflow has embedded into pgvector</div></div></div>
       ${stateError('the vector memory', vecErr)}`;
   } else if (!vectors.length) {
-    vecCard.innerHTML = `<div class="card-head"><div><div class="card-title">Vector memory</div>
-      <div class="card-sub">What the Closed-Won workflow has embedded into pgvector</div></div></div>
+    vecCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div><div class="font-headline-md text-headline-md text-on-surface">Vector memory</div>
+      <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">What the Closed-Won workflow has embedded into pgvector</div></div></div>
       ${stateEmpty('The deal history has no rows at all',
         deals && deals.length
           ? `The table is empty, not merely behind: none of the ${deals.length} recorded deals has been embedded, so Ask AI has no closed-deal memory to search. Only the Closed-Won workflow writes here.`
           : 'Nothing has been embedded yet. Recording a closed-won deal sends it to the workflow that writes this table.', 'database')}`;
   } else {
     const shown = vectors.slice(0, VEC_SHOWN);
-    vecCard.innerHTML = `<div class="card-head"><div>
-        <div class="card-title">Vector memory</div>
-        <div class="card-sub">${num(vectors.length)} row${vectors.length === 1 ? '' : 's'} the Closed-Won workflow has embedded into pgvector${
-          vecCapped ? ` · <span class="t-warm">capped at ${num(VEC_LIMIT)}, so this is a window rather than the whole store</span>` : ''}</div>
+    vecCard.innerHTML = `<div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Vector memory</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${num(vectors.length)} row${vectors.length === 1 ? '' : 's'} the Closed-Won workflow has embedded into pgvector${
+          vecCapped ? ` · <span class="text-amber-700">capped at ${num(VEC_LIMIT)}, so this is a window rather than the whole store</span>` : ''}</div>
       </div></div>
       <div style="max-height:50vh;overflow-y:auto">${shown.map(x => `
         <div class="list-item" style="cursor:default;align-items:flex-start"${usedVectors.has(x) ? '' : ' data-orphan="1"'}>
           <div style="flex:1;min-width:0">
-            <div class="mono" style="font-weight:500;font-size:12px">${esc(x.deal_id || 'no deal_id')}</div>
-            <div class="ds-cell-sub" style="white-space:normal">${esc(String(x.content || '').slice(0, 220))}${
+            <div class="font-label-numeric-sm" style="font-weight:500;font-size:12px">${esc(x.deal_id || 'no deal_id')}</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(String(x.content || '').slice(0, 220))}${
               String(x.content || '').length > 220 ? '…' : ''}</div>
           </div>
           <div style="text-align:right;flex-shrink:0">
-            <div class="ds-cell-sub">${esc(ago(x.created_at))}</div>
-            ${usedVectors.has(x) ? '' : '<div class="ds-cell-sub t-hot">no row in the recorded sales</div>'}
+            <div class="font-body-sm text-body-sm text-on-surface-variant">${esc(ago(x.created_at))}</div>
+            ${usedVectors.has(x) ? '' : '<div class="font-body-sm text-body-sm text-on-surface-variant text-red-700">no row in the recorded sales</div>'}
           </div>
         </div>`).join('')}
         ${vectors.length > shown.length
-          ? `<div class="list-item" style="cursor:default"><div class="ds-cell-sub">${num(vectors.length - shown.length)} more embedded row${vectors.length - shown.length === 1 ? '' : 's'} not shown</div></div>`
+          ? `<div class="list-item" style="cursor:default"><div class="font-body-sm text-body-sm text-on-surface-variant">${num(vectors.length - shown.length)} more embedded row${vectors.length - shown.length === 1 ? '' : 's'} not shown</div></div>`
           : ''}</div>`;
   }
 
@@ -1670,16 +1783,16 @@ SCREENS.deals = async host => {
          those is in TONE, so the note can only ever appear on a genuinely
          unrecognised v_needs_attention.severity, which is exactly right. */
       return `<div class="list-item"${attrs}>
-        <span class="material-symbols-outlined t-${t}" style="font-size:20px" aria-hidden="true">${esc(a.icon || 'warning')}</span>
+        <span class="material-symbols-outlined ${toneText(t)}" style="font-size:20px" aria-hidden="true">${esc(a.icon || 'warning')}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${pill(str(a.severity) || 'ALERT', t, { verbatim: !!str(a.severity) })}<span>${esc(a.title)}</span>
           </div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(a.detail)}</div>
-          ${a.fix ? `<div class="ds-cell-sub t-muted" style="white-space:normal;margin-top:4px">${esc(a.fix)}</div>` : ''}
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(a.detail)}</div>
+          ${a.fix ? `<div class="font-body-sm text-body-sm text-on-surface-variant text-outline" style="white-space:normal;margin-top:4px">${esc(a.fix)}</div>` : ''}
         </div>
-        <div class="ds-cell-sub num" style="white-space:nowrap" title="${esc(a.atNote || '')}">${esc(a.at ? ago(a.at) : '—')}</div>
-        ${idx >= 0 ? '<span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
+        <div class="font-body-sm text-body-sm text-on-surface-variant tabular-nums" style="white-space:nowrap" title="${esc(a.atNote || '')}">${esc(a.at ? ago(a.at) : '—')}</div>
+        ${idx >= 0 ? '<span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">chevron_right</span>' : ''}
       </div>`;
     };
 
@@ -1743,8 +1856,8 @@ SCREENS.deals = async host => {
         : '',
     ].filter(Boolean);
     const foot = `<div class="list-item" style="cursor:default">
-      <span class="material-symbols-outlined t-muted" style="font-size:18px" aria-hidden="true">info</span>
-      <div class="ds-cell-sub" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
+      <span class="material-symbols-outlined text-outline" style="font-size:18px" aria-hidden="true">info</span>
+      <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${notes.map(esc).join('<br>')}</div></div>`;
 
     if (!fromView.length && !fromHere.length) {
       /* "Nothing needs you" and "nothing could be checked" are opposite facts
@@ -1780,11 +1893,11 @@ SCREENS.deals = async host => {
           : viewErr
             ? `${checked.length ? checkedList + '.' : 'None of the derived checks could run.'} That is only the half of this strip the screen derives itself — the database's own list did not load.`
             : `The attention list returned no row for this screen, and ${checked.length ? checkedList + '.' : 'none of the derived checks could run.'}`;
-      attnHost.innerHTML = `<div class="card" style="display:flex;gap:10px;align-items:flex-start">
-        <span class="material-symbols-outlined t-${ranHere && !viewErr ? 'ok' : 'muted'}" aria-hidden="true">${ranHere && !viewErr ? 'task_alt' : 'help'}</span>
+      attnHost.innerHTML = `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm p-space-md" style="display:flex;gap:10px;align-items:flex-start">
+        <span class="material-symbols-outlined ${ranHere && !viewErr ? 'text-emerald-700' : 'text-outline'}" aria-hidden="true">${ranHere && !viewErr ? 'task_alt' : 'help'}</span>
         <div style="flex:1">
           <div style="font-weight:500">${esc(head)}</div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(line)}${notes.length ? '<br>' + notes.map(esc).join('<br>') : ''}</div>
+          <div class="font-body-sm text-body-sm text-on-surface-variant" style="white-space:normal">${esc(line)}${notes.length ? '<br>' + notes.map(esc).join('<br>') : ''}</div>
         </div></div>`;
       return;
     }
@@ -1799,10 +1912,10 @@ SCREENS.deals = async host => {
         attnCapped ? ` — the read was capped at ${num(ATTN_LIMIT)} rows, so this is a window and there may be more` : ''
       } · ${num(fromHere.length)} derived here`
       + (deals == null ? ' · the deal rows did not load' : ` from the ${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} on this screen`);
-    attnHost.innerHTML = `<div class="card flush">
-      <div class="card-head"><div>
-        <div class="card-title">Needs attention</div>
-        <div class="card-sub">${esc(counted)}</div>
+    attnHost.innerHTML = `<div class="rounded-xl bg-surface-container-lowest border border-outline-variant/60 overflow-hidden shadow-sm">
+      <div class="px-space-md py-3 bg-surface-container-low border-b border-outline-variant/60 flex flex-wrap items-center justify-between gap-space-sm"><div>
+        <div class="font-headline-md text-headline-md text-on-surface">Needs attention</div>
+        <div class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">${esc(counted)}</div>
       </div><div style="flex:1"></div></div>
       <div>${fromView.map(item).join('')}${fromHere.map(item).join('')}${foot}</div></div>`;
 
@@ -1822,6 +1935,13 @@ SCREENS.deals = async host => {
   }
   paintAttention();
 
+  footHost.innerHTML = trustFooter({
+    source: 'purchase_history · deals_embeddings · finance_quotes',
+    asOf: dubaiStamp(new Date().toISOString()),
+    evidence: deals ? `${num(deals.length)} ${plural(deals.length, 'deal', 'deals')} read${vectors ? ` · ${num(vectors.length)} embedded` : ''}` : 'deal read failed',
+    actor: myRole() || '—',
+  });
+
   /* ── One deal, in full ─────────────────────────────────────────────────── */
   function openDeal(d) {
     const v = vectorFor(d);
@@ -1835,9 +1955,9 @@ SCREENS.deals = async host => {
        as the database returned it. */
     const rowKeys = Object.keys(d).sort();
     const fmt = (k, val) => {
-      if (val == null || val === '') return '<span class="t-muted">—</span>';
+      if (val == null || val === '') return '<span class="text-outline">—</span>';
       if (/_aed$|^net_margin$/.test(k) && n0(val) != null) return esc(aed(val));
-      if (typeof val === 'object') return `<span class="mono">${esc(JSON.stringify(val).slice(0, 200))}</span>`;
+      if (typeof val === 'object') return `<span class="font-label-numeric-sm">${esc(JSON.stringify(val).slice(0, 200))}</span>`;
       return esc(String(val).slice(0, 300));
     };
 
@@ -1848,17 +1968,17 @@ SCREENS.deals = async host => {
        there is no sale-date column, so a resolved unit still leaves the sale
        cycle unmeasurable. */
     const unitBlock = !col.unit
-      ? `<span class="t-warm">Not answerable.</span> <span class="t-muted">The recorded sales has no column linking a deal to an inventory unit, and the vehicle above is free text typed into the deal form rather than a reference. inventory carries no deal reference and no sale date either, so which car left the lot for this money is not recorded on either side. It cannot be looked up, only re-entered — which is why there is no control below offering to fix it.</span>`
+      ? `<span class="text-amber-700">Not answerable.</span> <span class="text-outline">The recorded sales has no column linking a deal to an inventory unit, and the vehicle above is free text typed into the deal form rather than a reference. inventory carries no deal reference and no sale date either, so which car left the lot for this money is not recorded on either side. It cannot be looked up, only re-entered — which is why there is no control below offering to fix it.</span>`
       : !ref
-        ? `<span class="t-warm">Not linked.</span> <span class="t-muted">The ${esc(col.unit)} column is empty on this row.</span>`
+        ? `<span class="text-amber-700">Not linked.</span> <span class="text-outline">The ${esc(col.unit)} column is empty on this row.</span>`
         : !inv
-          ? `<span class="mono">${esc(ref)}</span> <span class="t-muted">— inventory could not be read (${esc(invErr)}), so this reference could not be resolved.</span>`
+          ? `<span class="font-label-numeric-sm">${esc(ref)}</span> <span class="text-outline">— inventory could not be read (${esc(invErr)}), so this reference could not be resolved.</span>`
           : !u
-            ? `<span class="mono">${esc(ref)}</span> <span class="t-warm">— no inventory row has this id (the stock number) or VIN among the ${num(inv.length)} read${invCapped ? `, and that read was capped at ${num(INV_LIMIT)}` : ''}.</span>`
-            : `<span class="mono">${esc(unitLabel(u))}</span> ${pill(str(u.status) || 'No status', lower(u.status) === 'available' ? 'hot' : lower(u.status) === 'sold' ? 'ok' : 'warm', { verbatim: !!str(u.status) })}
-               <div class="ds-cell-sub">${lower(u.status) === 'available'
-                 ? '<span class="t-hot">Still marked Available — it can be sold again.</span> '
-                 : ''}<span class="t-muted">inventory records no sale date, so this car\'s time on the lot cannot be measured against the deal above. ${
+            ? `<span class="font-label-numeric-sm">${esc(ref)}</span> <span class="text-amber-700">— no inventory row has this id (the stock number) or VIN among the ${num(inv.length)} read${invCapped ? `, and that read was capped at ${num(INV_LIMIT)}` : ''}.</span>`
+            : `<span class="font-label-numeric-sm">${esc(unitLabel(u))}</span> ${pill(str(u.status) || 'No status', lower(u.status) === 'available' ? 'hot' : lower(u.status) === 'sold' ? 'ok' : 'warm', { verbatim: !!str(u.status) })}
+               <div class="font-body-sm text-body-sm text-on-surface-variant">${lower(u.status) === 'available'
+                 ? '<span class="text-red-700">Still marked Available — it can be sold again.</span> '
+                 : ''}<span class="text-outline">inventory records no sale date, so this car\'s time on the lot cannot be measured against the deal above. ${
                  n0(u.days_in_stock) != null
                    ? `days_in_stock reads ${esc(num(u.days_in_stock))} and keeps counting from acquisition, so it is not that figure.`
                    : 'days_in_stock counts from acquisition and does not stop at a sale, so it is not that figure either.'}</span></div>`;
@@ -1871,76 +1991,123 @@ SCREENS.deals = async host => {
        Nothing on this screen computes any of them. */
     const qs = quotesFor(d);
     const quoteBlock = !quotes
-      ? `<span class="t-warm">Unknown.</span> <span class="t-muted">The finance quotes could not be read (${esc(quoteErr)}), so whether a quote is on file for this customer could not be checked. This is unknown, not none.</span>`
+      ? `<span class="text-amber-700">Unknown.</span> <span class="text-outline">The finance quotes could not be read (${esc(quoteErr)}), so whether a quote is on file for this customer could not be checked. This is unknown, not none.</span>`
       : (qs && qs.length)
-        ? `<span class="t-ok">${num(qs.length)} quote${qs.length === 1 ? '' : 's'} on file</span> <span class="ds-cell-sub">${qs.slice(0, 3).map(quoteLine).join(' · ')}${qs.length > 3 ? ` · and ${num(qs.length - 3)} more` : ''}</span>
-           <div class="ds-cell-sub t-muted">Matched to this customer through NEXUS’s identity rules — The recorded sales carries no quote reference, so this is the same PERSON, not a link between the two rows. The figures are on the Finance Desk; this screen does not restate them.</div>`
-        : `<span class="t-warm">No record of one.</span> <span class="t-muted">${identityOf(d).ok
+        ? `<span class="text-emerald-700">${num(qs.length)} quote${qs.length === 1 ? '' : 's'} on file</span> <span class="font-body-sm text-body-sm text-on-surface-variant">${qs.slice(0, 3).map(quoteLine).join(' · ')}${qs.length > 3 ? ` · and ${num(qs.length - 3)} more` : ''}</span>
+           <div class="font-body-sm text-body-sm text-on-surface-variant text-outline">Matched to this customer through NEXUS’s identity rules — The recorded sales carries no quote reference, so this is the same PERSON, not a link between the two rows. The figures are on the Finance Desk; this screen does not restate them.</div>`
+        : `<span class="text-amber-700">No record of one.</span> <span class="text-outline">${identityOf(d).ok
             ? `No the finance quotes row is filed under any of the ${num(identityOf(d).keys.length)} key${identityOf(d).keys.length === 1 ? '' : 's'} this customer is recorded under${quotesCapped ? `, within the ${num(QUOTE_LIMIT)} quotes that were read` : ''}.`
             : 'This deal row carries no key that identifies anybody, so it could not be matched against the finance quotes at all.'} That says the RECORD is missing. It does not say the customer was never quoted: the Finance Calculator has logged runs whose own summary is "Quote issued" beside the finance quotes row that did not land, and a quote lost that way is indistinguishable here from one that was never asked for.</span>`;
 
-    openDrawer(`
-      <div class="drawer-head">
-        <div style="flex:1;min-width:0">
-          <div class="card-title">${esc(nameOf(d) || 'Unnamed customer')}</div>
-          <div class="card-sub">${esc(get(d, 'vehicle') || 'No vehicle recorded')}${
-            a == null ? '' : ' · ' + esc(aed(a))}${dateOf(d) ? ' · closed ' + esc(day10(dateOf(d))) : ''}</div>
-        </div>
-        <button class="btn ghost" id="ddClose" aria-label="Close deal details">
-          <span class="material-symbols-outlined">close</span></button>
-      </div>
-      <div class="drawer-body">
-        <div class="section">
-          <div class="label-caps">Deal</div>
-          <dl class="kv" style="margin-top:8px">
+    /* Deal 360 (deals-pipeline-deal-360-desk--80d495): the export's eight
+       tabs over the same facts this drawer has always held. Customer, Vehicle,
+       Finance and Audit carry the rows; Trade-in and Documents are COMING SOON
+       because no table holds either; Tasks and Approval say plainly that a
+       closed-won deal is recorded without a task list or an approval step. */
+    const KV = 'grid grid-cols-[minmax(8rem,max-content)_1fr] gap-x-space-md gap-y-2 font-body-sm text-body-sm [&>dt]:text-outline [&>dd]:text-on-surface';
+    const BOX = 'p-space-md bg-surface rounded-lg border border-outline-variant/30 flex flex-col gap-3';
+    const LBL = 'font-table-header text-table-header uppercase text-outline tracking-wider font-semibold pb-2 border-b border-outline-variant/20';
+    const marginHtml = m == null
+      ? '<span class="text-outline">No margin column, and no amount and cost to subtract</span>'
+      : `${esc(aed(m))}${a
+          ? ` <span class="text-on-surface-variant">(${esc(pct(m / a * 100))})</span>`
+          : ` <span class="text-outline">(no percentage — ${a == null ? 'this row records no sale amount' : 'the sale amount on this row is zero'}, so there is nothing to take a percentage of)</span>`}`;
+    const TABS = [
+      { key: 'customer', label: 'Customer', html: `<div class="${BOX}"><div class="${LBL}">Primary contact record</div>
+          <dl class="${KV}">
             <dt>Customer</dt><dd>${esc(nameOf(d) || '—')}</dd>
             <dt>Phone</dt><dd>${phoneLine(d)}</dd>
             <dt>Email</dt><dd>${contactLine(d, '—')}</dd>
+            <dt>Lead</dt><dd>${d.lead_id != null ? `Lead ${esc(String(d.lead_id))}` : '<span class="text-outline">Not recorded — the deal was typed in, or the address was edited after picking a lead. It does not mean no lead exists.</span>'}</dd>
+            <dt>Closed on</dt><dd>${dateOf(d) ? esc(day10(dateOf(d))) + ` <span class="text-on-surface-variant">${esc(ago(dateOf(d)))}</span>` : '<span class="text-outline">Not recorded</span>'}</dd>
+          </dl></div>` },
+      { key: 'vehicle', label: 'Vehicle', html: `<div class="${BOX}"><div class="${LBL}">Vehicle sold</div>
+          <dl class="${KV}">
             <dt>Vehicle</dt><dd>${esc(get(d, 'vehicle') || '—')}</dd>
             <dt>Inventory unit</dt><dd>${unitBlock}</dd>
-            <dt>Amount</dt><dd class="num">${a == null ? '<span class="t-muted">Not recorded</span>' : esc(aed(a))}</dd>
-            <dt>Gross margin</dt><dd class="num">${m == null
-              ? '<span class="t-muted">No margin column, and no amount and cost to subtract</span>'
-              : `${esc(aed(m))}${a
-                  ? ` <span class="ds-cell-sub">(${esc(pct(m / a * 100))})</span>`
-                  : ` <span class="ds-cell-sub t-muted">(no percentage — ${a == null ? 'this row records no sale amount' : 'the sale amount on this row is zero'}, so there is nothing to take a percentage of)</span>`}`}</dd>
-            <dt>Closed on</dt><dd>${dateOf(d) ? esc(day10(dateOf(d))) + ` <span class="ds-cell-sub">${esc(ago(dateOf(d)))}</span>` : '<span class="t-muted">Not recorded</span>'}</dd>
+          </dl></div>` },
+      { key: 'tradein', label: 'Trade-in', dot: true, html: comingSoonPanel({ kind: 'coming-soon', icon: 'swap_horiz', title: 'Trade-in appraisal',
+          body: 'A trade-in taken against this deal will show here. No table records a trade-in today, so nothing is shown — not a zero equity figure.',
+          prerequisite: 'Needs the trade-in desk' }) },
+      { key: 'finance', label: 'Finance', html: `<div class="${BOX}"><div class="${LBL}">Consideration &amp; finance</div>
+          <dl class="${KV}">
+            <dt>Amount</dt><dd class="tabular-nums">${a == null ? '<span class="text-outline">Not recorded</span>' : esc(aed(a))}</dd>
+            <dt>Gross margin</dt><dd class="tabular-nums">${marginHtml}</dd>
             <dt>Finance quote</dt><dd>${quoteBlock}</dd>
           </dl>
-        </div>
-
-        <div class="section">
-          <div class="label-caps">Vector memory</div>
+          <p class="font-body-sm text-body-sm text-on-surface-variant">No payment, APR or down payment is printed here: those are the Finance Calculator's figures and live on the Finance Desk.</p></div>` },
+      { key: 'documents', label: 'Documents', dot: true, html: comingSoonPanel({ kind: 'coming-soon', icon: 'folder_open',
+          title: 'Deal documents', body: 'Sale agreements, RTA transfer papers and receipts will attach here. Deals carry no document store today; KYC documents are filed per customer on Compliance.',
+          prerequisite: 'Needs a deal document store' }) },
+      { key: 'tasks', label: 'Tasks', html: emptyState({ icon: 'checklist', title: 'No tasks are recorded against deals',
+          body: 'A closed-won deal is stored as one row with no task list behind it. Follow-ups on the customer are worked from Leads and the Action Center.' }) },
+      { key: 'approval', label: 'Approval', html: emptyState({ icon: 'verified_user', title: 'No approval step on a closed-won deal',
+          body: 'Recording a deal goes straight to the Closed-Won workflow; no approver signs it off, so there is no approval to show here.' }) },
+      { key: 'audit', label: 'Audit', html: `<div class="${BOX}"><div class="${LBL}">Vector memory</div>
           ${vecErr
-            ? `<div class="ds-cell-sub" style="margin-top:8px">The deal history could not be read (${esc(vecErr)}), so whether this deal is embedded is unknown.</div>`
+            ? `<p class="font-body-sm text-body-sm text-on-surface-variant">The deal history could not be read (${esc(vecErr)}), so whether this deal is embedded is unknown.</p>`
             : v
-              ? `<div style="margin-top:8px">${pill('Embedded', 'ok', { verbatim: false })}</div>
-                 <div class="ds-cell-sub mono" style="margin-top:8px">${esc(v.deal_id || 'no deal_id')}</div>
-                 <div class="quote" style="margin-top:8px;white-space:pre-wrap">${esc(String(v.content || 'The vector row carries no content.'))}</div>
-                 <div class="ds-cell-sub" style="margin-top:8px">Embedded ${esc(ago(v.created_at))}</div>`
-              : `<div class="ds-cell-sub" style="margin-top:8px">${vecCapped
+              ? `<div>${pill('Embedded', 'ok', { verbatim: false })}</div>
+                 <div class="font-label-numeric-sm text-label-numeric-sm text-on-surface-variant">${esc(v.deal_id || 'no deal_id')}</div>
+                 <div class="p-2.5 rounded bg-surface-container-low font-body-sm text-body-sm text-on-surface italic whitespace-pre-wrap">${esc(String(v.content || 'The vector row carries no content.'))}</div>
+                 <div class="font-body-sm text-body-sm text-on-surface-variant">Embedded ${esc(ago(v.created_at))}</div>`
+              : `<p class="font-body-sm text-body-sm text-on-surface-variant">${vecCapped
                   ? `No match inside the ${num(VEC_LIMIT)} vector rows that were read. This deal may still be embedded outside that window.`
-                  : 'No row in the deal history matches this deal, so Ask AI cannot quote it.'}</div>`}
+                  : 'No row in the deal history matches this deal, so Ask AI cannot quote it.'}</p>`}
         </div>
+        <div class="${BOX}"><div class="${LBL}">Row as stored</div>
+          <dl class="${KV}">
+            ${rowKeys.map(k => `<dt class="font-label-numeric-sm">${esc(k)}</dt><dd class="break-all">${fmt(k, d[k])}</dd>`).join('')}
+          </dl></div>` },
+    ];
+    const TAB_ON = 'px-2.5 py-1 text-xs font-semibold rounded bg-primary-container text-on-primary whitespace-nowrap flex items-center gap-1';
+    const TAB_OFF = 'px-2.5 py-1 text-xs font-semibold rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface whitespace-nowrap flex items-center gap-1';
+    const PANE_ON = 'space-y-space-md';
+    const PANE_OFF = 'hidden';
 
-        <div class="section">
-          <div class="label-caps">Row as stored</div>
-          <dl class="kv" style="margin-top:8px">
-            ${rowKeys.map(k => `<dt class="mono">${esc(k)}</dt><dd>${fmt(k, d[k])}</dd>`).join('')}
-          </dl>
+    openDeskDrawer(`
+      <div class="p-space-md bg-surface-container-low flex flex-col gap-2 shrink-0">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-space-sm min-w-0">
+            <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-primary-container text-on-primary font-bold whitespace-nowrap">DEAL 360</span>
+            <span class="font-headline-md text-headline-md font-bold text-on-surface truncate">${dateOf(d) ? `Closed ${esc(day10(dateOf(d)))}` : 'Closed-won deal'}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-label-numeric-sm text-label-numeric-sm px-2 py-0.5 rounded bg-[#E6F4EF] text-[#157A5B] font-bold uppercase whitespace-nowrap">Closed-won</span>
+            <button type="button" class="${BTN.icon}" id="ddClose" aria-label="Close deal details"><span class="material-symbols-outlined text-[20px]">close</span></button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-1 bg-surface-container-lowest p-2.5 rounded-lg border border-outline-variant/30">
+          <div class="min-w-0"><span class="text-[11px] font-table-header uppercase text-outline tracking-wider block">Customer &amp; vehicle</span>
+            <div class="font-body-sm text-body-sm font-bold text-on-surface truncate">${esc(nameOf(d) || 'Unnamed customer')}</div>
+            <div class="text-xs text-on-surface-variant truncate">${esc(get(d, 'vehicle') || 'No vehicle recorded')}</div></div>
+          <div class="text-right"><span class="text-[11px] font-table-header uppercase text-outline tracking-wider block">Consideration &amp; margin</span>
+            <div class="font-label-numeric-md text-label-numeric-md font-bold text-on-surface">${a == null ? '—' : esc(aed(a))}</div>
+            <div class="text-xs text-on-surface-variant">${m == null ? 'Margin not recorded' : `Gross ${esc(aed(m))}`}${dateOf(d) ? ` · closed ${esc(day10(dateOf(d)))}` : ''}</div></div>
         </div>
       </div>
-      <div class="drawer-foot">
-        <button class="btn" id="ddDone">Close</button>
-        <button class="btn" disabled title="${esc(NO_REEMBED)}">Re-embed this deal</button>
+      <div class="px-space-md bg-surface-container-lowest overflow-x-auto flex items-center gap-1 py-1.5 shrink-0" role="tablist">
+        ${TABS.map((t, i) => `<button type="button" role="tab" data-dtab="${t.key}" class="${i === 0 ? TAB_ON : TAB_OFF}">${esc(t.label)}${t.dot ? '<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>' : ''}</button>`).join('')}
+      </div>
+      <div class="flex-1 overflow-y-auto p-space-md bg-surface-container-low/40">
+        ${TABS.map((t, i) => `<div data-dpane="${t.key}" class="${i === 0 ? PANE_ON : PANE_OFF}">${t.html}</div>`).join('')}
+      </div>
+      <div class="p-space-md bg-surface-container-lowest shrink-0 shadow-[0_-2px_6px_rgba(0,0,0,0.03)] flex flex-wrap items-center gap-space-sm">
+        <button type="button" class="${BTN.secondary}" id="ddDone">Close</button>
+        <button type="button" class="${BTN.secondary}" disabled title="${esc(NO_REEMBED)}">Re-embed this deal</button>
         ${/* Only offered where there is a unit to mark. A disabled button says
               "this is blocked", which invites someone to go and unblock it; with
               no link column there is no unit to act on and nothing to unblock,
               so the control is absent and the Inventory unit row above carries
               the sentence instead. */
-          col.unit ? `<button class="btn" disabled title="${esc(NO_UNIT_FIX)}">Mark unit sold</button>` : ''}
+          col.unit ? `<button type="button" class="${BTN.secondary}" disabled title="${esc(NO_UNIT_FIX)}">Mark unit sold</button>` : ''}
       </div>`);
 
+    const dr = document.getElementById('drawer');
+    dr?.querySelectorAll('[data-dtab]').forEach(btn => btn.addEventListener('click', () => {
+      dr.querySelectorAll('[data-dtab]').forEach(b => { b.className = b === btn ? TAB_ON : TAB_OFF; });
+      dr.querySelectorAll('[data-dpane]').forEach(p => { p.className = p.dataset.dpane === btn.dataset.dtab ? PANE_ON : PANE_OFF; });
+    }));
     $('ddClose')?.addEventListener('click', closeDrawer);
     $('ddDone')?.addEventListener('click', closeDrawer);
   }
