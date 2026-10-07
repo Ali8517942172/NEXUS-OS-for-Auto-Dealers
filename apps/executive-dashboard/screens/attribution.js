@@ -65,12 +65,10 @@
 
 import { db } from '../lib/data.js';
 import { el } from '../lib/dom.js';
-import { aed, dubaiDate, dubaiStamp, esc, num, pct, pill } from '../lib/format.js';
+import { aed, dubaiDate, dubaiStamp, esc, num, pct } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
-import { kpi, panel, table } from '../lib/ui.js';
 /* The one definition of the v_attribution_sale_chain reduction, which both this
    screen and Revenue Recovery print `Confirmed revenue` from. It used to exist
    here as well, verbatim in its shared half, so the same figure had two
@@ -80,17 +78,18 @@ import { kpi, panel, table } from '../lib/ui.js';
    while this file is registered through `import.meta.glob` because it may not be
    on disk. The dependency points that way round on purpose. */
 import { saleFacts } from './revenue.js';
+import { SX, BANNER, BANNER_ICON, kpi, panel, table, pill, stateEmpty, unknownPill, linkBtn, wireGo, engineHeader, engineFooter } from './revenue.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const bold   = h => `<div style="font-weight:600">${h}</div>`;
-const wrap   = h => `<div style="white-space:normal">${h}</div>`;
-const mono   = v => `<span class="mono">${esc(str(v))}</span>`;
+const muted  = h => `<div class="${SX.sub}">${h}</div>`;
+const hot    = h => `<div class="${SX.hot}">${h}</div>`;
+const bold   = h => `<div class="${SX.bold}">${h}</div>`;
+const wrap   = h => `<div class="${SX.wrap}">${h}</div>`;
+const mono   = v => `<span class="${SX.mono}">${esc(str(v))}</span>`;
 
 /* A read failure, said in one sentence, in the place the figure would have
    been. Never a bare dash: a dash beside "Hops evidenced" reads as zero, and
@@ -106,7 +105,7 @@ const readFailed = (what, err) =>
    state with no reason attached is a gap in the engine, not a gap in the data,
    and saying so is more useful than printing nothing. */
 const unknownCell = (state, reason) =>
-  `<span class="pill unknown"><span class="dot"></span>${esc(str(state) || 'UNKNOWN')}</span>`
+  `${unknownPill(str(state) || 'UNKNOWN')}`
   + muted(esc(str(reason)) || 'The engine records no reason for this state, which is itself a gap.');
 
 /* Reads shared between panels are memoised so two panels describing the same
@@ -132,30 +131,26 @@ const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e })
    silently did nothing, or bounced the operator elsewhere, would be worse than
    a disabled one, so the button says which of the two it is before it is
    pressed. */
-const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
-};
+/* linkBtn() and wireGo() come from the engine-desk kit in screens/revenue.js. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.attribution = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto another screen and restyle one nobody converted. A wrapper
-     cannot leak — go() removes it with the rest of the subtree. Same pattern as
-     screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* The root is the Stitch scope (`nx-stitch` switches on the scoped reset the
+     design classes were drawn against). It is a wrapper this screen appends and
+     NOT a class on `#screen`, for the reason the old `.ds-screen` wrapper gave:
+     lib/nav.js empties `#screen` between renders without touching its classes,
+     so a class set there would follow the operator onto another screen.
+     Design: design/stitch/attribution-multi-channel-revenue-engine--803cc4.html. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
+  root.insertAdjacentHTML('beforeend', engineHeader({
+    title: 'Attribution',
+    sub: 'Campaign → lead → conversation → vehicle → deal → sale: what this database can evidence about how money arrived, hop by hop.',
+    actionsHtml: linkBtn('revenue', 'Open Revenue Recovery') + linkBtn('deals', 'Open Deals'),
+  }));
+  wireGo(root);
 
   /* Every path is a literal so QUALITY_GATE.mjs can extract it and check each
      column name against the live catalogue. Do not move these into a map keyed
@@ -266,19 +261,19 @@ SCREENS.attribution = async host => {
          particular fact is the one a buyer asks about first. */
       const campaign = F && F.campaign;
       const campaignBanner = campaign
-        ? `<div class="banner hot">
-             <span class="material-symbols-outlined" style="font-size:20px">campaign</span>
+        ? `<div class="${BANNER.hot}">
+             <span class="${BANNER_ICON}">campaign</span>
              <div>
                ${bold('&ldquo;Which channel made me money?&rdquo; cannot be answered — and this screen will not guess.')}
-               <div class="ds-cell-sub" style="margin-top:6px">${esc(str(campaign.finding))}</div>
+               <div class="${SX.sub}">${esc(str(campaign.finding))}</div>
                ${str(campaign.unlocked_by)
                   ? muted('<strong>What would answer it:</strong> ' + esc(str(campaign.unlocked_by)))
                   : muted('The engine records no integration that would close this hop, which is itself a gap.')}
              </div>
            </div>`
         : (m.err
-            ? `<div class="section">${readFailed('The attribution link map', m.err)}</div>`
-            : `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">rule</span>
+            ? `<div class="${SX.note}">${readFailed('The attribution link map', m.err)}</div>`
+            : `<div class="${BANNER.warm}"><span class="${BANNER_ICON}">rule</span>
                  <div>Nothing at all is recorded about the step from a campaign to a lead, so this screen cannot say
                  what is known about that link either way. That is a gap in the record, not a campaign that resolved.</div>
                </div>`);
@@ -349,16 +344,16 @@ SCREENS.attribution = async host => {
               + 'ones countable instead of invisible. Each carries the basis it was established on, or refused on.'));
 
       return campaignBanner
-        + `<div class="grid g5" style="margin-top:16px">${hopTile}${coverageTile}${saleTile}${revenueTile}${edgeTile}</div>
+        + `<div class="${SX.g5}">${hopTile}${coverageTile}${saleTile}${revenueTile}${edgeTile}</div>
 
-           <div class="banner info" style="margin-top:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">hub</span>
+           <div class="${BANNER.info}">
+             <span class="${BANNER_ICON}">hub</span>
              <div>
                ${bold('This screen never draws a link the database cannot stand behind.')}
                ${muted('An exact text match is shown as a refusal, not as a link. A column that exists and is empty is '
                  + 'shown as unknown, not as none. A hop whose table does not exist at all is shown as absent, and the '
                  + 'integration that would create it is named beside it. The green and red below are read from the '
-                 + 'engine&rsquo;s own <span class="mono">is_evidence</span> flag; no severity map in this screen has '
+                 + `engine&rsquo;s own <span class="${SX.mono}">is_evidence</span> flag; no severity map in this screen has `
                  + 'an opinion about any of these words.')}
              </div>
            </div>`;
@@ -394,20 +389,20 @@ SCREENS.attribution = async host => {
     },
     render: ({ rows }) => {
       if (!rows.length) {
-        return `<div class="banner warm">
-          <span class="material-symbols-outlined" style="font-size:20px">help</span>
+        return `<div class="${BANNER.warm}">
+          <span class="${BANNER_ICON}">help</span>
           <div>${bold('Nothing came back, not even an UNKNOWN row.')}
-          <div class="ds-cell-sub" style="margin-top:6px">This function emits the UNKNOWN bucket even when it is
+          <div class="${SX.sub}">This function emits the UNKNOWN bucket even when it is
           empty, so an empty answer means the question could not be asked for this account rather than that there
           were no enquiries.</div></div></div>`;
       }
       const known = rows.filter(r => String(r.ad_platform || '').toUpperCase() !== 'UNKNOWN');
       const unknown = rows.find(r => String(r.ad_platform || '').toUpperCase() === 'UNKNOWN');
       const lead = !known.length
-        ? `<div class="banner hot">
-             <span class="material-symbols-outlined" style="font-size:20px">error</span>
+        ? `<div class="${BANNER.hot}">
+             <span class="${BANNER_ICON}">error</span>
              <div>${bold('Not one enquiry has a recorded platform.')}
-             <div class="ds-cell-sub" style="margin-top:6px">Every lead this dealership holds arrived before NEXUS was
+             <div class="${SX.sub}">Every lead this dealership holds arrived before NEXUS was
              recording where enquiries come from, so there is nothing to attribute spend against. This is the reason
              the campaign question above cannot be answered, stated as a number.</div></div></div>`
         : '';
@@ -464,7 +459,7 @@ SCREENS.attribution = async host => {
 
       const rows = table([
         { label: 'Hop', strong: true, render: h =>
-            wrap(`<div class="mono">${esc(str(h.edge))}</div>`)
+            wrap(`<div class="${SX.mono}">${esc(str(h.edge))}</div>`)
             + muted(`${esc(str(h.from_node))} &rarr; ${esc(str(h.to_node))}`) },
         { label: 'State', render: h => evidencePill(h)
             + muted(str(h.basis_confidence)
@@ -473,7 +468,7 @@ SCREENS.attribution = async host => {
         { label: 'Established how', render: h => {
             const L = legend.get(up(h.basis));
             return wrap(`<div>${esc(L ? str(L.label) : str(h.basis))}</div>`)
-              + muted(`<span class="mono">${esc(str(h.basis))}</span>`
+              + muted(`<span class="${SX.mono}">${esc(str(h.basis))}</span>`
                 + (L
                     ? ` &middot; ${L.is_evidence === true ? 'may be reasoned from' : 'display only — never reasoned from'}`
                     : ' &middot; this screen could not read the basis vocabulary, so what it means is not stated here')); } },
@@ -490,26 +485,26 @@ SCREENS.attribution = async host => {
       ], F.hops);
 
       const unlockBlock = F.unlocks.length
-        ? `<div class="section" style="margin-top:16px">
-             <div class="label-caps">What would close each break, in the engine&rsquo;s own order of value</div>
+        ? `<div class="${SX.note}">
+             <div class="${SX.caps}">What would close each break, in the engine&rsquo;s own order of value</div>
              ${table([
                { label: 'Rank', align: 'r', strong: true, render: h => (n0(h.unlock_rank) != null
                    ? num(h.unlock_rank)
-                   : '<span class="t-muted">unranked</span>') },
+                   : `<span class="${SX.dim}">unranked</span>`) },
                { label: 'Hop', render: h => mono(h.edge) },
                { label: 'The integration that would close it', render: h => wrap(esc(str(h.unlocked_by))) },
                { label: 'Where it is measured', render: h => muted(esc(str(h.source_ref))
                    || 'The engine names no source for this hop.') },
              ], F.unlocks)}
-             ${muted('Ordered by the engine&rsquo;s own <span class="mono">unlock_rank</span>, which is how much '
+             ${muted(`Ordered by the engine&rsquo;s own <span class="${SX.mono}">unlock_rank</span>, which is how much `
                + 'attribution each one buys — not by how easy it is. None of these is a coding task waiting on '
                + 'somebody: each is a system writing down something it already knows at the moment it knows it.')}
            </div>`
-        : `<div class="section" style="margin-top:16px">${muted('No hop names an integration that would unlock it. '
+        : `<div class="${SX.note}">${muted('No hop names an integration that would unlock it. '
             + 'Either every break is closed or the map records no remedy, and this screen cannot tell those apart.')}</div>`;
 
       const foot = b.err
-        ? `<div class="section">${readFailed('The basis vocabulary', b.err)}</div>`
+        ? `<div class="${SX.note}">${readFailed('The basis vocabulary', b.err)}</div>`
         : '';
 
       return rows + unlockBlock + foot;
@@ -555,12 +550,12 @@ SCREENS.attribution = async host => {
       const detail = S.sales.map(sale => {
         const chain = Array.isArray(sale.chain) ? sale.chain : [];
         const hops = chain.length
-          ? `<div class="timeline">${chain.map(h => `<div class="tl-item">
-               <div class="tl-dot"></div>
-               <div class="tl-body">
+          ? `<div class="${SX.timeline}">${chain.map(h => `<div class="${SX.tlItem}">
+               <span class="${SX.tlDot}"></span>
+               <div class="flex flex-col gap-1 min-w-0">
                  ${bold(`${esc(str(h.hop))} ${hopPill(h)}`)}
                  ${muted(esc(str(h.note)) || 'No note is recorded for this hop.')}
-                 ${muted(`established on <span class="mono">${esc(str(h.basis) || 'no basis recorded')}</span>`)}
+                 ${muted(`established on <span class="${SX.mono}">${esc(str(h.basis) || 'no basis recorded')}</span>`)}
                </div></div>`).join('')}</div>`
           : muted('The view returned no chain for this sale, so no hop can be shown. That is a missing explanation, '
               + 'not an unbroken chain.');
@@ -569,10 +564,10 @@ SCREENS.attribution = async host => {
            It is the most valuable sentence on this screen and the easiest one
            for a reader to skim past inside a row. */
         const vehicle = up(sale.vehicle_state) === 'RESOLVED'
-          ? `<div class="banner info"><span class="material-symbols-outlined" style="font-size:20px">directions_car</span>
+          ? `<div class="${BANNER.info}"><span class="${BANNER_ICON}">directions_car</span>
                <div>${bold('The vehicle on this sale is identified.')}
                ${muted(esc(str(sale.vehicle_note)) || 'The engine records no note for this hop.')}</div></div>`
-          : `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">block</span>
+          : `<div class="${BANNER.warm}"><span class="${BANNER_ICON}">block</span>
                <div>
                  ${bold(`The vehicle hop is refused: ${esc(str(sale.vehicle_state) || 'UNKNOWN')}`)}
                  ${muted(esc(str(sale.vehicle_note)) || 'The engine records no reason for refusing this hop.')}
@@ -584,31 +579,31 @@ SCREENS.attribution = async host => {
                    + 'A person can confirm the link, and until one does this stays unknown.')}
                </div></div>`;
 
-        const facts = `<div class="grid g3" style="margin-top:12px">
+        const facts = `<div class="${SX.g3}">
             ${kpi('Revenue', (up(sale.revenue_state) === 'CONFIRMED' && n0(sale.revenue_aed) != null)
               ? aed(sale.revenue_aed)
-              : `<span class="pill unknown"><span class="dot"></span>${esc(str(sale.revenue_state) || 'UNKNOWN')}</span>`,
+              : `${unknownPill(str(sale.revenue_state) || 'UNKNOWN')}`,
               muted(esc(str(sale.revenue_note)) || 'The engine records no note about this figure.'),
               (up(sale.revenue_state) === 'CONFIRMED' ? 't-won' : ''))}
             ${kpi('Gross margin', n0(sale.gross_margin_aed) != null
               ? aed(sale.gross_margin_aed)
-              : `<span class="pill unknown"><span class="dot"></span>${esc(str(sale.margin_state) || 'UNKNOWN')}</span>`,
+              : `${unknownPill(str(sale.margin_state) || 'UNKNOWN')}`,
               muted(esc(str(sale.margin_note))
                 || 'The engine records no reason for withholding a margin figure, which is itself a gap.'))}
             ${kpi('Hops evidenced', `${num(sale.hops_evidenced)} / ${num(sale.hops_total)}`,
               muted(str(sale.first_break)
-                ? `The earliest hop that did not resolve is <span class="mono">${esc(str(sale.first_break))}</span>.`
+                ? `The earliest hop that did not resolve is <span class="${SX.mono}">${esc(str(sale.first_break))}</span>.`
                 : 'The engine names no first break on this chain.'))}
           </div>`;
 
-        return `<div class="section" style="margin-top:16px">
+        return `<div class="${SX.note}">
             ${bold(`${esc(maskText(str(sale.customer_name) || 'Customer not named'))} &mdash; ${esc(str(sale.vehicle_text) || 'vehicle not named')}`)}
             ${muted(`Recorded ${esc(dubaiDate(sale.purchase_date))}`
               + (sale.recorded_at ? ` &middot; entered ${esc(dubaiStamp(sale.recorded_at))}` : '')
-              + (str(sale.deal_id) ? ` &middot; deal <span class="mono">${esc(str(sale.deal_id))}</span>` : ''))}
+              + (str(sale.deal_id) ? ` &middot; deal <span class="${SX.mono}">${esc(str(sale.deal_id))}</span>` : ''))}
             ${facts}
             ${vehicle}
-            <div class="label-caps" style="margin-top:14px">The chain, hop by hop</div>
+            <div class="${SX.caps}">The chain, hop by hop</div>
             ${hops}
           </div>`;
       }).join('');
@@ -620,7 +615,7 @@ SCREENS.attribution = async host => {
             : 'not one carries a computable gross margin — the cost sits on an inventory unit no column ties a sale to. '
               + 'Unknown, not zero.'));
 
-      return detail + `<div class="section">${foot}</div>`;
+      return detail + `<div class="${SX.note}">${foot}</div>`;
     },
   }).then(wireGo);
 
@@ -646,7 +641,7 @@ SCREENS.attribution = async host => {
         breaks.set(k, (breaks.get(k) || 0) + 1);
       });
       const breakLine = [...breaks.entries()]
-        .map(([k, n]) => `${num(n)} at <span class="mono">${esc(k)}</span>`).join(', ');
+        .map(([k, n]) => `${num(n)} at <span class="${SX.mono}">${esc(k)}</span>`).join(', ');
 
       const body = table([
         { label: 'Lead', strong: true, render: l =>
@@ -682,7 +677,7 @@ SCREENS.attribution = async host => {
         { label: 'Hops', align: 'r', render: l =>
             `<div>${num(l.hops_evidenced)} / ${num(l.hops_total)}</div>`
             + muted(str(l.first_break)
-                ? `breaks at <span class="mono">${esc(str(l.first_break))}</span>`
+                ? `breaks at <span class="${SX.mono}">${esc(str(l.first_break))}</span>`
                 : 'no break recorded') },
       ], leads);
 
@@ -693,8 +688,8 @@ SCREENS.attribution = async host => {
       /* The free text, shown for what it is. Two of these hold an operator note
          about a wrong number rather than a vehicle at all, and that is exactly
          why the engine refuses to read a unit out of them. */
-      const interest = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">What each customer actually wrote, and why it is not a link</div>
+      const interest = `<div class="${SX.note}">
+          <div class="${SX.caps}">What each customer actually wrote, and why it is not a link</div>
           ${table([
             { label: 'Lead', strong: true, render: l => esc(maskText(str(l.lead_name) || ('Lead ' + str(l.lead_id)))) },
             { label: 'Vehicle interest, verbatim', render: l => wrap(str(l.vehicle_interest_text)
@@ -702,14 +697,14 @@ SCREENS.attribution = async host => {
                 : muted('No vehicle interest text is recorded on this lead.')) },
             { label: 'Units sharing model words', align: 'r', render: l => (n0(l.vehicle_text_candidates) != null
                 ? num(l.vehicle_text_candidates)
-                : '<span class="t-muted">not counted</span>') },
+                : `<span class="${SX.dim}">not counted</span>`) },
             { label: 'Verdict', render: l => (up(l.vehicle_state) === 'RESOLVED'
                 ? pill(str(l.vehicle_state), 'ok', { verbatim: true })
                 : pill(str(l.vehicle_state) || 'UNKNOWN', 'hot', { verbatim: true })) },
           ], leads)}
         </div>`;
 
-      return body + `<div class="section" style="margin-top:16px">${note}</div>` + interest;
+      return body + `<div class="${SX.note}">${note}</div>` + interest;
     },
   }).then(wireGo);
 
@@ -745,7 +740,7 @@ SCREENS.attribution = async host => {
         byType.set(k, c);
       });
 
-      const head = `<div class="grid g3">
+      const head = `<div class="${SX.g3}">
           ${kpi('Events read', num(events.length),
             muted('Every event this account can read, newest first. The stream is capped at 500 rows; where a '
               + 'dealership has more, the counts beside it describe the rows on this page and say so.'))}
@@ -764,13 +759,13 @@ SCREENS.attribution = async host => {
             withUnit.length ? '' : 't-hot')}
         </div>`;
 
-      const summary = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">By event type</div>
+      const summary = `<div class="${SX.note}">
+          <div class="${SX.caps}">By event type</div>
           ${table([
             { label: 'Event', strong: true, render: r => mono(r.k) },
             { label: 'Read', align: 'r', render: r => num(r.n) },
             { label: 'Resolving to no customer', align: 'r', render: r => (r.noLead
-                ? `<span class="t-hot">${num(r.noLead)}</span>`
+                ? `<span class="${SX.hotTx}">${num(r.noLead)}</span>`
                 : num(0)) },
           ], [...byType.entries()].map(([k, c]) => ({ k, n: c.n, noLead: c.noLead })))}
           ${muted('A zero in the right-hand column is a real count of the rows on this page: every event of that type '
@@ -778,8 +773,8 @@ SCREENS.attribution = async host => {
             + 'at all, and this table cannot see one.')}
         </div>`;
 
-      const list = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">The stream, newest first</div>
+      const list = `<div class="${SX.note}">
+          <div class="${SX.caps}">The stream, newest first</div>
           ${table([
             { label: 'When', strong: true, render: x =>
                 `<div>${esc(dubaiStamp(x.occurred_at))}</div>`
@@ -794,20 +789,20 @@ SCREENS.attribution = async host => {
                 : unknownCell(x.unit_basis || 'NO_LINK_FIELD', x.unit_note)) },
             { label: 'Amount', align: 'r', render: x => (n0(x.amount_aed) != null
                 ? `<div>${aed(x.amount_aed)}</div>` + muted(esc(str(x.amount_kind)))
-                : `<span class="t-muted">${esc(str(x.amount_kind) || 'NONE')}</span>`) },
+                : `<span class="${SX.dim}">${esc(str(x.amount_kind) || 'NONE')}</span>`) },
             { label: 'Detail', render: x => wrap(muted(esc(str(x.detail).slice(0, 200))
                 || 'No detail is recorded against this event.')) },
           ], events)}
         </div>`;
 
-      const foot = b.err ? `<div class="section">${readFailed('The basis vocabulary', b.err)}</div>` : '';
+      const foot = b.err ? `<div class="${SX.note}">${readFailed('The basis vocabulary', b.err)}</div>` : '';
       /* legend is read for the same reason as everywhere else on this screen —
          so the words below come from the database rather than from here. */
       const legendNote = legend.size
         ? muted(`${num(legend.size)} bases are defined in this database, and the panel below prints all of them.`)
         : '';
 
-      return head + summary + list + (legendNote ? `<div class="section">${legendNote}</div>` : '') + foot;
+      return head + summary + list + (legendNote ? `<div class="${SX.note}">${legendNote}</div>` : '') + foot;
     },
   }).then(wireGo);
 
@@ -828,10 +823,10 @@ SCREENS.attribution = async host => {
       const events = ev.err ? null : (ev.v || []);
 
       const legendTable = bases == null
-        ? `<div class="section">${readFailed('The basis vocabulary', b.err)}</div>`
+        ? `<div class="${SX.note}">${readFailed('The basis vocabulary', b.err)}</div>`
         : table([
             { label: 'Basis', strong: true, render: k =>
-                wrap(`<div>${esc(str(k.label))}</div>`) + muted(`<span class="mono">${esc(str(k.basis))}</span>`) },
+                wrap(`<div>${esc(str(k.label))}</div>`) + muted(`<span class="${SX.mono}">${esc(str(k.basis))}</span>`) },
             { label: 'Evidence?', render: k => (k.is_evidence === true
                 ? pill('May be reasoned from', 'ok', { verbatim: false })
                 : k.is_evidence === false
@@ -869,8 +864,8 @@ SCREENS.attribution = async host => {
         ['Evidence', F
           ? `${num(F.evidenced.length)} of ${num(F.hops.length)} hops can carry evidence at all; `
             + `${num(F.asEvidence)} of ${num(F.instances)} measured candidate links are evidence rather than a `
-            + 'recorded refusal. Read from <span class="mono">The links between actions and sales</span> and '
-            + '<span class="mono">attribution_link_basis</span>.'
+            + `recorded refusal. Read from <span class="${SX.mono}">The links between actions and sales</span> and `
+            + `<span class="${SX.mono}">attribution_link_basis</span>.`
           : 'The link map could not be read, so nothing is claimed about evidence on this page.'],
         ['Confidence', bases && bases.length
           ? `Every link carries the default confidence of its basis: ${esc(bases.map(k => str(k.default_confidence))
@@ -892,17 +887,22 @@ SCREENS.attribution = async host => {
           : 'No event carries a timestamp on this render, so the freshness of these figures is not stated.'],
         ['Tenant', tenantLine],
         ['Action', F && F.firstUnlock
-          ? `Highest-value break to close: <span class="mono">${esc(str(F.firstUnlock.edge))}</span> — `
+          ? `Highest-value break to close: <span class="${SX.mono}">${esc(str(F.firstUnlock.edge))}</span> — `
             + esc(str(F.firstUnlock.unlocked_by))
           : 'No unlock is ranked on this render, so no next step is named.'],
       ];
 
-      const stripHtml = `<div class="section" style="margin-top:16px">
-          <div class="label-caps">Where this page stands</div>
-          <dl class="kv">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
+      const stripHtml = `<div class="${SX.note}">
+          <div class="${SX.caps}">Where this page stands</div>
+          <dl class="${SX.kv}">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>
         </div>`;
 
       return legendTable + stripHtml;
     },
   }).then(wireGo);
+
+  root.insertAdjacentHTML('beforeend', engineFooter({
+    source: 'v_attribution_link_map · v_attribution_sale_chain · v_attribution_lead_chain · v_attribution_events · rpc/nexus_lead_attribution_summary',
+    evidence: 'Links drawn only where attribution_link_basis marks the basis as evidence',
+  }));
 };

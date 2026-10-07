@@ -54,12 +54,12 @@
 
 import { db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { aed, dubaiStamp, esc, num, pill } from '../lib/format.js';
+import { aed, dubaiStamp, esc, mins, num } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
-import { closeDrawer, kpi, openDrawer, panel, table } from '../lib/ui.js';
-import { openModal, modalError } from '../lib/modal.js';
+import { modalError } from '../lib/modal.js';
 import { displayName } from '../lib/privacy.js';
+import { BTN, errorState, skeleton, openStitchDrawer } from '../lib/stitch-ui.js';
+import { SX, BANNER, BANNER_ICON, stitchModal, kpi, panel, table, pill, stateEmpty, linkBtn, wireGo, engineHeader, engineFooter, evidenceChain, STEP_TEXT, STEP_LIST } from './revenue.js';
 
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
@@ -236,13 +236,13 @@ async function call(fn, body) {
 function evidenceList(ev) {
   const rows = Array.isArray(ev) ? ev : [];
   if (!rows.length) {
-    return `<div class="ds-cell-sub">The engine attached no evidence to this recommendation. That is not the
+    return `<div class="${SX.sub}">The engine attached no evidence to this recommendation. That is not the
       same as there being none — it is this row carrying none, and nothing is inferred from the gap.</div>`;
   }
-  return `<ul style="margin:0;padding-left:18px;display:grid;gap:6px">${rows.map(e => {
+  return `<ul class="${STEP_LIST}">${rows.map(e => {
     const fact = str(e && e.fact), src = str(e && e.source);
-    if (!fact) return `<li><span class="mono">${esc(JSON.stringify(e))}</span></li>`;
-    return `<li>${esc(fact)}${src ? `<div class="ds-cell-sub" style="white-space:normal">${esc(src)}</div>` : ''}</li>`;
+    if (!fact) return `<li><span class="${SX.mono}">${esc(JSON.stringify(e))}</span></li>`;
+    return `<li>${esc(fact)}${src ? `<div class="text-[10px] text-outline">${esc(src)}</div>` : ''}</li>`;
   }).join('')}</ul>`;
 }
 
@@ -254,8 +254,8 @@ function actionCard(r, ctx) {
   const owner = str(r.assigned_to_name)
     ? esc(r.assigned_to_name)
     : (str(r.assigned_role) || str(r.engine_owner_role)
-        ? `${esc(str(r.assigned_role) || str(r.engine_owner_role))} <span class="chip">a role, not a person</span>`
-        : '<span class="t-muted">Nobody named</span>');
+        ? `${esc(str(r.assigned_role) || str(r.engine_owner_role))} <span class="${SX.chip}">a role, not a person</span>`
+        : `<span class="${SX.dim}">Nobody named</span>`);
 
   /* The engine may have changed its mind since this was proposed. Saying so is
      the whole point of freezing its words on the row: a manager approving a
@@ -263,63 +263,84 @@ function actionCard(r, ctx) {
      after. `null` means the engine has no current row for this unit, which is
      a third state and is worded as one. */
   const drift = r.engine_still_agrees === false
-    ? `<div class="banner warm" style="margin:0 0 12px">
-         <span class="material-symbols-outlined" style="font-size:20px">change_circle</span>
+    ? `<div class="${BANNER.warm}">
+         <span class="${BANNER_ICON}">change_circle</span>
          <div>The engine no longer recommends ${esc(r.recommendation)} for this unit — it now says
               <strong>${esc(str(r.engine_now_recommendation) || 'nothing')}</strong>.
               What you see below is what it said when this action was raised, on
               ${esc(dubaiStamp(r.proposed_at))}, because that is what the decision has to be judged against.</div></div>`
     : (r.engine_still_agrees == null && r.status !== 'REJECTED' && r.status !== 'CANCELLED'
-        ? `<div class="banner warm" style="margin:0 0 12px">
-             <span class="material-symbols-outlined" style="font-size:20px">help</span>
+        ? `<div class="${BANNER.warm}">
+             <span class="${BANNER_ICON}">help</span>
              <div>The engine has no current row for this unit, so this dashboard cannot say whether it still
                   recommends ${esc(r.recommendation)}. That is unknown, not agreement.</div></div>`
         : '');
 
   const money = r.engine_impact_aed == null
-    ? '<span class="t-muted">No monetary impact claimed</span>'
-    : `${aed(r.engine_impact_aed)} <span class="chip">at risk, not recoverable</span>`;
+    ? `<span class="${SX.dim}">No monetary impact claimed</span>`
+    : `${aed(r.engine_impact_aed)} <span class="${SX.chip}">at risk, not recoverable</span>`;
 
-  return `<div class="card" data-action="${esc(r.id)}" style="display:grid;gap:14px">
+  /* The evidence chain — action-center--31efb6's stepper. RESULT is pending
+     until outcome_state says something other than NONE_YET; the money in it
+     goes through recoveryEvidence() exactly like the outcome block below, so a
+     figure without its four evidence columns is never shown here either. */
+  const ev = recoveryEvidence(r);
+  const pending = !str(r.outcome_state) || up(r.outcome_state) === 'NONE_YET';
+  const evCount = Array.isArray(r.engine_evidence) ? r.engine_evidence.length : null;
+  const actionStep = `<p class="${STEP_TEXT}"><strong>${esc(L.label)}</strong></p>`
+    + `<p class="${STEP_TEXT} ${SX.dim}">${esc(L.blurb)}</p>`
+    + (r.decided_at ? `<p class="${STEP_TEXT}">Decided by ${esc(str(r.decided_by_name) || 'an account with no staff record')}, ${esc(dubaiStamp(r.decided_at))}</p>` : '')
+    + (r.executed_at ? `<p class="${STEP_TEXT}">Carried out by ${esc(str(r.executed_by_name) || 'somebody')}, ${esc(dubaiStamp(r.executed_at))}</p>` : '');
+  const resultStep = `${pending ? '' : `<div class="${SX.row}">${pill(str(r.outcome_state), '', { verbatim: true })}</div>`}${
+      ev.state === 'ATTRIBUTED'
+        ? `<p class="${STEP_TEXT}"><strong>${aed(ev.amount)}</strong> attributed, not confirmed as caused</p>`
+        : ev.state === 'UNSUPPORTED'
+          ? `<p class="${STEP_TEXT} ${SX.hotTx}">An amount is recorded with nothing behind it — not shown</p>`
+          : ''}<p class="${STEP_TEXT} ${SX.dim}">${esc(str(r.outcome_sentence) || 'No outcome linked.')}</p>`;
+
+  return `<article class="bg-surface-container-lowest rounded-xl p-4 border border-outline-variant/40 shadow-sm flex flex-col gap-3" data-action="${esc(r.id)}">
     ${drift}
-    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
-      ${pill(str(r.recommendation), recTone(r.recommendation), { verbatim: true })}
-      ${pill(L.label, L.tone, { verbatim: false })}
-      ${r.engine_overall_risk ? pill(`${str(r.engine_overall_risk)} risk`, riskTone(r.engine_overall_risk), { verbatim: false }) : ''}
-      ${r.engine_confidence ? `<span class="chip" title="${esc(str(r.engine_confidence_basis))}">confidence ${esc(str(r.engine_confidence).toLowerCase())}</span>` : ''}
-      <div style="flex:1"></div>
-      <div class="ds-cell-sub">${esc(dubaiStamp(r.proposed_at))}</div>
-    </div>
-
-    <div>
-      <div class="card-title">${esc(recAsk(r.recommendation))}</div>
-      <div class="card-sub" style="margin-top:4px">
-        <strong>${esc(str(r.unit_model) || 'Unit with no model recorded')}</strong>
-        · <span class="mono">${esc(r.unit_id)}</span>
-        ${r.unit_vin ? `· <span class="mono">${esc(r.unit_vin)}</span>` : ''}
-        ${r.unit_status ? `· ${esc(r.unit_status)}` : ''}
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-container-low/70 p-3 rounded-lg">
+      <div class="flex items-center gap-2.5 flex-wrap min-w-0">
+        <span class="font-label-numeric-md text-label-numeric-md font-bold text-primary bg-primary-fixed/60 px-2 py-0.5 rounded">${esc(r.unit_id)}</span>
+        <span class="font-body-md text-body-md font-semibold text-on-surface">${esc(str(r.unit_model) || 'Unit with no model recorded')}</span>
+        ${r.unit_vin ? `<span class="font-label-numeric-sm text-[10px] px-1.5 py-0.5 rounded bg-surface-container-highest text-secondary uppercase">VIN ${esc(r.unit_vin)}</span>` : ''}
+        ${r.unit_status ? `<span class="font-body-sm text-body-sm text-outline">${esc(r.unit_status)}</span>` : ''}
+        <span class="font-label-numeric-sm text-[11px] text-outline">raised ${esc(dubaiStamp(r.proposed_at))}</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0 flex-wrap">
+        ${pill(L.label, L.tone, { verbatim: false })}
+        ${r.engine_overall_risk ? pill(`${str(r.engine_overall_risk)} risk`, riskTone(r.engine_overall_risk), { verbatim: false }) : ''}
+        ${r.engine_confidence ? `<span class="${SX.chip}" title="${esc(str(r.engine_confidence_basis))}">confidence ${esc(str(r.engine_confidence).toLowerCase())}</span>` : ''}
+        <div class="text-right"><span class="font-table-header text-[9px] text-outline uppercase block">Margin at risk</span>
+          <span class="font-label-numeric-md text-label-numeric-md text-error font-bold">${r.engine_impact_aed == null ? 'none claimed' : aed(r.engine_impact_aed)}</span></div>
       </div>
     </div>
 
-    <div><div class="label-caps">Why</div>
-      <div style="margin-top:6px">${esc(str(r.engine_reason) || 'The engine recorded no reason on this row.')}</div></div>
+    ${evidenceChain({
+      recommendation: `<div class="${SX.row}">${pill(str(r.recommendation), recTone(r.recommendation), { verbatim: true })}</div>`
+        + `<p class="${STEP_TEXT} mt-1">${esc(recAsk(r.recommendation))}</p>`,
+      reason: `<p class="${STEP_TEXT}">${esc(str(r.engine_reason) || 'The engine recorded no reason on this row.')}</p>`,
+      evidenceCount: evCount,
+      evidence: evidenceList(r.engine_evidence),
+      action: actionStep,
+      resultPending: pending,
+      result: resultStep,
+    })}
 
-    <div><div class="label-caps">Evidence</div>
-      <div style="margin-top:6px">${evidenceList(r.engine_evidence)}</div></div>
-
-    <div class="grid g2" style="gap:14px">
-      <div><div class="label-caps">Who should act</div>
-        <div style="margin-top:6px">${owner}</div>
-        ${str(r.assigned_to_name) ? '' : `<div class="ds-cell-sub" style="white-space:normal">NEXUS holds no verified role directory for this dealership, so it names the role the engine asked for rather than putting a person's name against work it cannot confirm they own.</div>`}
+    <div class="${SX.g2}">
+      <div class="${SX.note}"><div class="${SX.caps}">Who should act</div>
+        <div class="font-body-sm text-body-sm text-on-surface">${owner}</div>
+        ${str(r.assigned_to_name) ? '' : `<div class="${SX.sub}">NEXUS holds no verified role directory for this dealership, so it names the role the engine asked for rather than putting a person's name against work it cannot confirm they own.</div>`}
       </div>
-      <div><div class="label-caps">If nobody acts</div>
-        <div style="margin-top:6px">${money}</div>
-        <div class="ds-cell-sub" style="white-space:normal">${esc(str(r.cost_of_doing_nothing) || str(r.engine_impact_basis) || 'Nothing is claimed about the cost of waiting on this one.')}</div>
+      <div class="${SX.note}"><div class="${SX.caps}">If nobody acts</div>
+        <div class="font-body-sm text-body-sm text-on-surface">${money}</div>
+        <div class="${SX.sub}">${esc(str(r.cost_of_doing_nothing) || str(r.engine_impact_basis) || 'Nothing is claimed about the cost of waiting on this one.')}</div>
       </div>
     </div>
 
     ${decisionStrip(r, ctx)}
-  </div>`;
+  </article>`;
 }
 
 /* The decided/outcome footer. Present on every card, including the ones that
@@ -328,26 +349,26 @@ function actionCard(r, ctx) {
 function decisionStrip(r, ctx) {
   const bits = [];
   if (r.decided_at) {
-    bits.push(`<div><div class="label-caps">Decision</div>
-      <div style="margin-top:6px">${esc(life(r.status).label)} by ${esc(str(r.decided_by_name) || 'an account with no staff record')}
+    bits.push(`<div><div class="${SX.caps}">Decision</div>
+      <div class="font-body-sm text-body-sm text-on-surface">${esc(life(r.status).label)} by ${esc(str(r.decided_by_name) || 'an account with no staff record')}
         on ${esc(dubaiStamp(r.decided_at))}
-        <span class="chip" title="${esc('The basis on which this account was allowed to decide. a TENANT_ basis is authority from the account itself; STAFF_ROLE_POLICY is a job title the dealership has granted approval to.')}">${esc(str(r.decided_by_authority) || 'authority not recorded')}</span></div>
-      ${r.decision_reason_label ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:4px"><strong>${esc(r.decision_reason_label)}</strong> — ${esc(str(r.decision_reason_meaning))}
-         ${r.decision_says_engine_was_wrong === true ? '<span class="chip">recorded as the engine being wrong</span>' : ''}
-         ${r.decision_says_engine_was_wrong === false ? '<span class="chip">the engine was right; the answer was still no</span>' : ''}</div>` : ''}
-      ${r.decision_note ? `<div class="ds-cell-sub" style="white-space:normal;margin-top:4px">${esc(r.decision_note)}</div>` : ''}
-      ${r.defer_until ? `<div class="ds-cell-sub" style="margin-top:4px">Due again ${esc(String(r.defer_until))}${r.deferral_now_due ? ' — that date has passed' : ''}</div>` : ''}
+        <span class="${SX.chip}" title="${esc('The basis on which this account was allowed to decide. a TENANT_ basis is authority from the account itself; STAFF_ROLE_POLICY is a job title the dealership has granted approval to.')}">${esc(str(r.decided_by_authority) || 'authority not recorded')}</span></div>
+      ${r.decision_reason_label ? `<div class="${SX.sub}"><strong>${esc(r.decision_reason_label)}</strong> — ${esc(str(r.decision_reason_meaning))}
+         ${r.decision_says_engine_was_wrong === true ? `<span class="${SX.chip}">recorded as the engine being wrong</span>` : ''}
+         ${r.decision_says_engine_was_wrong === false ? `<span class="${SX.chip}">the engine was right; the answer was still no</span>` : ''}</div>` : ''}
+      ${r.decision_note ? `<div class="${SX.sub}">${esc(r.decision_note)}</div>` : ''}
+      ${r.defer_until ? `<div class="${SX.sub}">Due again ${esc(String(r.defer_until))}${r.deferral_now_due ? ' — that date has passed' : ''}</div>` : ''}
       </div>`);
   }
   if (r.executed_at) {
-    bits.push(`<div><div class="label-caps">Carried out</div>
-      <div style="margin-top:6px">${esc(str(r.executed_by_name) || 'somebody')} on ${esc(dubaiStamp(r.executed_at))}</div>
-      ${r.execution_note ? `<div class="ds-cell-sub" style="white-space:normal">${esc(r.execution_note)}</div>` : ''}
-      ${r.execution_failure ? `<div class="ds-cell-sub t-hot" style="white-space:normal">${esc(r.execution_failure)}</div>` : ''}</div>`);
+    bits.push(`<div><div class="${SX.caps}">Carried out</div>
+      <div class="font-body-sm text-body-sm text-on-surface">${esc(str(r.executed_by_name) || 'somebody')} on ${esc(dubaiStamp(r.executed_at))}</div>
+      ${r.execution_note ? `<div class="${SX.sub}">${esc(r.execution_note)}</div>` : ''}
+      ${r.execution_failure ? `<div class="${SX.hot}">${esc(r.execution_failure)}</div>` : ''}</div>`);
   }
   if (r.escalated_at && r.status === 'PROPOSED') {
-    bits.push(`<div class="banner hot" style="margin:0">
-      <span class="material-symbols-outlined" style="font-size:20px">error</span>
+    bits.push(`<div class="${BANNER.hot}">
+      <span class="${BANNER_ICON}">error</span>
       <div><strong>Escalated ${esc(dubaiStamp(r.escalated_at))}.</strong> ${esc(str(r.escalation_reason))}</div></div>`);
   }
 
@@ -358,23 +379,23 @@ function decisionStrip(r, ctx) {
      figure is present but the four evidence columns do not back it, the figure
      is withheld and the disagreement is named — see recoveryEvidence(). */
   const ev = recoveryEvidence(r);
-  bits.push(`<div><div class="label-caps">Outcome</div>
-    <div style="margin-top:6px">${
+  bits.push(`<div><div class="${SX.caps}">Outcome</div>
+    <div class="font-body-sm text-body-sm text-on-surface">${
       ev.state === 'NOT_RECORDED'
-        ? '<span class="t-muted">Nothing recovered has been recorded</span>'
+        ? `<span class="${SX.dim}">Nothing recovered has been recorded</span>`
       : ev.state === 'ATTRIBUTED'
-        ? `${aed(ev.amount)} <span class="chip" title="${esc(ev.basis)}">attributed, not confirmed</span>`
-        : '<span class="t-hot">An amount is recorded here with nothing behind it — it is not shown</span>'}</div>
-    ${ev.state === 'UNSUPPORTED' ? `<div class="banner hot" style="margin:8px 0 0">
-      <span class="material-symbols-outlined" style="font-size:20px">report</span>
+        ? `${aed(ev.amount)} <span class="${SX.chip}" title="${esc(ev.basis)}">attributed, not confirmed</span>`
+        : `<span class="${SX.hotTx}">An amount is recorded here with nothing behind it — it is not shown</span>`}</div>
+    ${ev.state === 'UNSUPPORTED' ? `<div class="${BANNER.hot}">
+      <span class="${BANNER_ICON}">report</span>
       <div>${esc(unsupportedRecoverySentence(ev))}</div></div>` : ''}
-    <div class="ds-cell-sub" style="white-space:normal">${esc(str(r.outcome_sentence) || 'No outcome state recorded on this row.')}</div>
-    ${r.outcome_sale_vehicle ? `<div class="ds-cell-sub" style="margin-top:4px">Linked sale: ${esc(r.outcome_sale_vehicle)} · ${r.outcome_sale_amount_aed == null ? 'amount not recorded' : esc(aed(r.outcome_sale_amount_aed))} · ${esc(String(r.outcome_sale_date || 'no date'))}</div>` : ''}
+    <div class="${SX.sub}">${esc(str(r.outcome_sentence) || 'No outcome state recorded on this row.')}</div>
+    ${r.outcome_sale_vehicle ? `<div class="${SX.sub}">Linked sale: ${esc(r.outcome_sale_vehicle)} · ${r.outcome_sale_amount_aed == null ? 'amount not recorded' : esc(aed(r.outcome_sale_amount_aed))} · ${esc(String(r.outcome_sale_date || 'no date'))}</div>` : ''}
   </div>`);
 
-  return `<div style="display:grid;gap:14px;border-top:1px solid var(--border-subtle);padding-top:14px">
-    ${bits.join('')}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${buttons(r, ctx)}</div>
+  return `<div class="flex flex-col gap-3 border-t border-outline-variant/40 pt-3">
+    <div class="${SX.g2}">${bits.join('')}</div>
+    <div class="flex items-center justify-end gap-2 flex-wrap">${buttons(r, ctx)}</div>
   </div>`;
 }
 
@@ -387,17 +408,17 @@ function buttons(r, ctx) {
   const may = !!(ctx && ctx.may_decide);
   const why = esc(str(ctx && ctx.refusal_reason) || 'This account may not decide inventory actions.');
   const gate = may ? '' : ` disabled title="${why}"`;
-  const open = `<button class="btn ghost sm" data-open="${esc(r.id)}">History</button>`;
+  const open = `<button class="${BTN.secondary}" data-open="${esc(r.id)}">History</button>`;
 
   if (r.status === 'PROPOSED' || (r.status === 'DEFERRED')) {
-    return `<button class="btn primary" data-decide="APPROVE" data-id="${esc(r.id)}"${gate}>Approve</button>
-      <button class="btn danger" data-decide="REJECT" data-id="${esc(r.id)}"${gate}>Reject</button>
-      <button class="btn" data-decide="DEFER" data-id="${esc(r.id)}"${gate}>Defer</button>
+    return `<button class="${BTN.primary}" data-decide="APPROVE" data-id="${esc(r.id)}"${gate}>Approve</button>
+      <button class="${BTN.destructive}" data-decide="REJECT" data-id="${esc(r.id)}"${gate}>Reject</button>
+      <button class="${BTN.secondary}" data-decide="DEFER" data-id="${esc(r.id)}"${gate}>Defer</button>
       ${open}`;
   }
   if (r.status === 'APPROVED') {
-    return `<button class="btn primary" data-exec="${esc(r.id)}">Record that this was carried out</button>
-      <button class="btn" data-cancel="${esc(r.id)}"${gate}>Withdraw</button>${open}`;
+    return `<button class="${BTN.primary}" data-exec="${esc(r.id)}">Record that this was carried out</button>
+      <button class="${BTN.secondary}" data-cancel="${esc(r.id)}"${gate}>Withdraw</button>${open}`;
   }
   return open;
 }
@@ -417,41 +438,41 @@ function decideDialog(r, decision, codes, after) {
      pass would be built from. Saying that here is cheaper than discovering
      later that every note reads "no". */
   const preamble = isReject
-    ? `<div class="banner info" style="margin-bottom:14px">
-         <span class="material-symbols-outlined" style="font-size:20px">school</span>
+    ? `<div class="${BANNER.info}">
+         <span class="${BANNER_ICON}">school</span>
          <div>A rejection is a useful result, not a failure. The reason you pick is the only record
               NEXUS will have that this recommendation was wrong, so it is required and so is a note.</div></div>`
     : isDefer
-    ? `<div class="banner info" style="margin-bottom:14px">
-         <span class="material-symbols-outlined" style="font-size:20px">schedule</span>
+    ? `<div class="${BANNER.info}">
+         <span class="${BANNER_ICON}">schedule</span>
          <div>A deferral stays on the queue and becomes due again on the date you set. It is not a rejection
               and it is not an approval.</div></div>`
-    : `<div class="banner info" style="margin-bottom:14px">
-         <span class="material-symbols-outlined" style="font-size:20px">info</span>
+    : `<div class="${BANNER.info}">
+         <span class="${BANNER_ICON}">info</span>
          <div>Approving records a decision. It does not change a price, does not message anybody and does not
               recover any money — nothing is dispatched from this build. The action then waits for somebody to
               record that they carried it out.</div></div>`;
 
   const body = `${preamble}
-    <div class="ds-cell-sub" style="margin-bottom:14px">
-      <strong>${esc(str(r.unit_model) || r.unit_id)}</strong> · <span class="mono">${esc(r.unit_id)}</span>
+    <div class="${SX.sub}">
+      <strong>${esc(str(r.unit_model) || r.unit_id)}</strong> · <span class="${SX.mono}">${esc(r.unit_id)}</span>
       · ${esc(str(r.recommendation))}</div>
-    <div class="grid" style="gap:14px">
-      ${(isReject || isDefer) ? `<div class="field"><label for="acRc">Reason${isReject ? ' (required)' : ''}</label>
-        <select id="acRc">
+    <div class="${SX.stack}">
+      ${(isReject || isDefer) ? `<div class="${SX.field}"><label class="${SX.label}" for="acRc">Reason${isReject ? ' (required)' : ''}</label>
+        <select class="${SX.input}" id="acRc">
           <option value="">Choose a reason…</option>
           ${usable.map(c => `<option value="${esc(c.code)}">${esc(c.label)}</option>`).join('')}
         </select>
-        <div class="hint" id="acRcHint">The list is closed on purpose: free text cannot be counted.</div></div>` : ''}
-      ${isDefer ? `<div class="field"><label for="acUntil">Due again on (optional)</label>
-        <input type="date" id="acUntil" /><div class="hint">Must be in the future, or it is due the moment you set it.</div></div>` : ''}
-      <div class="field"><label for="acNote">Note${isReject ? ' (required)' : ''}</label>
-        <textarea id="acNote" rows="3" placeholder="${esc(isReject ? 'What does the engine not know about this car?' : 'Anything the next person needs to know.')}"></textarea></div>
+        <div class="${SX.hint}" id="acRcHint">The list is closed on purpose: free text cannot be counted.</div></div>` : ''}
+      ${isDefer ? `<div class="${SX.field}"><label class="${SX.label}" for="acUntil">Due again on (optional)</label>
+        <input type="date" class="${SX.input}" id="acUntil" /><div class="${SX.hint}">Must be in the future, or it is due the moment you set it.</div></div>` : ''}
+      <div class="${SX.field}"><label class="${SX.label}" for="acNote">Note${isReject ? ' (required)' : ''}</label>
+        <textarea class="${SX.input}" id="acNote" rows="3" placeholder="${esc(isReject ? 'What does the engine not know about this car?' : 'Anything the next person needs to know.')}"></textarea></div>
     </div>`;
 
-  const m = openModal(title, body,
-    `<button class="btn primary" id="acGo">${esc(isReject ? 'Record rejection' : isDefer ? 'Record deferral' : 'Approve')}</button>
-     <button class="btn ghost" id="acCancel">Cancel</button>`);
+  const m = stitchModal(title, body,
+    `<button class="${BTN.primary}" id="acGo">${esc(isReject ? 'Record rejection' : isDefer ? 'Record deferral' : 'Approve')}</button>
+     <button class="${BTN.secondary}" id="acCancel">Cancel</button>`);
 
   const hint = m.wrap.querySelector('#acRcHint');
   m.wrap.querySelector('#acRc')?.addEventListener('change', e => {
@@ -475,7 +496,7 @@ function decideDialog(r, decision, codes, after) {
         /* A refusal is not an exception. The database answered, and its sentence
            is better than anything this file could write, so it is shown as-is. */
         btn.disabled = false; btn.textContent = 'Try again';
-        m.msg(`<span class="t-hot">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
+        m.msg(`<span class="${SX.hotTx}">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
         return;
       }
       m.close();
@@ -490,20 +511,20 @@ function decideDialog(r, decision, codes, after) {
 }
 
 function executeDialog(r, after) {
-  const m = openModal('Record that this was carried out',
-    `<div class="banner warm" style="margin-bottom:14px">
-       <span class="material-symbols-outlined" style="font-size:20px">warning</span>
+  const m = stitchModal('Record that this was carried out',
+    `<div class="${BANNER.warm}">
+       <span class="${BANNER_ICON}">warning</span>
        <div>This records a claim about the real world against your name. NEXUS did not do this and cannot
             check it — nothing is dispatched from this build.</div></div>
-     <div class="ds-cell-sub" style="margin-bottom:14px"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
-       · <span class="mono">${esc(r.unit_id)}</span> · ${esc(str(r.recommendation))}</div>
-     <div class="grid" style="gap:14px">
-       <div class="field"><label for="acEx">What did you do?</label>
-         <textarea id="acEx" rows="3" placeholder="e.g. price reviewed with the sales manager and left unchanged"></textarea></div>
-       <div class="field"><label><input type="checkbox" id="acFail" /> It was attempted and did not happen</label>
-         <div class="hint">Recorded as a failure, in the same words the rest of NEXUS uses for one.</div></div>
+     <div class="${SX.sub}"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
+       · <span class="${SX.mono}">${esc(r.unit_id)}</span> · ${esc(str(r.recommendation))}</div>
+     <div class="${SX.stack}">
+       <div class="${SX.field}"><label class="${SX.label}" for="acEx">What did you do?</label>
+         <textarea class="${SX.input}" id="acEx" rows="3" placeholder="e.g. price reviewed with the sales manager and left unchanged"></textarea></div>
+       <div class="${SX.field}"><label class="flex items-center gap-2 font-body-sm text-body-sm font-semibold text-on-surface"><input type="checkbox" id="acFail" /> It was attempted and did not happen</label>
+         <div class="${SX.hint}">Recorded as a failure, in the same words the rest of NEXUS uses for one.</div></div>
      </div>`,
-    `<button class="btn primary" id="acGo">Record</button><button class="btn ghost" id="acCancel">Cancel</button>`);
+    `<button class="${BTN.primary}" id="acGo">Record</button><button class="${BTN.secondary}" id="acCancel">Cancel</button>`);
   m.wrap.querySelector('#acCancel').addEventListener('click', m.close);
   m.wrap.querySelector('#acGo').addEventListener('click', async () => {
     const btn = m.wrap.querySelector('#acGo');
@@ -516,7 +537,7 @@ function executeDialog(r, after) {
       });
       if (!row.ok) {
         btn.disabled = false; btn.textContent = 'Try again';
-        m.msg(`<span class="t-hot">${esc(row.refusal_reason || row.refusal_code)}</span>`);
+        m.msg(`<span class="${SX.hotTx}">${esc(row.refusal_reason || row.refusal_code)}</span>`);
         return;
       }
       m.close();
@@ -529,18 +550,18 @@ function executeDialog(r, after) {
    See "Record the outcome" in the screen below for what these may and may not
    claim. Neither sends an amount. */
 function outcomeDialog(r, after) {
-  const m = openModal('Link a recorded sale to this action',
-    `<div class="banner warm" style="margin-bottom:14px">
-       <span class="material-symbols-outlined" style="font-size:20px">warning</span>
+  const m = stitchModal('Link a recorded sale to this action',
+    `<div class="${BANNER.warm}">
+       <span class="${BANNER_ICON}">warning</span>
        <div>Linking a sale ATTRIBUTES it to this action against your name. It does not show that the action caused
             the sale. The recorded sales carry no reference to a car, so the list below is only sales whose
             description shares words with this unit — a prompt for you, not evidence.</div></div>
-     <div class="ds-cell-sub" style="margin-bottom:14px"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
-       · <span class="mono">${esc(r.unit_id)}</span> · carried out ${esc(dubaiStamp(r.executed_at))}</div>
-     <div id="ocList">${stateLoading(3)}</div>
-     <div class="field" style="margin-top:14px"><label for="ocNote">How do you know this sale belongs to this action? (required)</label>
-       <textarea id="ocNote" rows="3"></textarea></div>`,
-    `<button class="btn primary" id="acGo" disabled>Link this sale</button><button class="btn ghost" id="acCancel">Cancel</button>`);
+     <div class="${SX.sub}"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
+       · <span class="${SX.mono}">${esc(r.unit_id)}</span> · carried out ${esc(dubaiStamp(r.executed_at))}</div>
+     <div id="ocList">${skeleton({ rows: 3 })}</div>
+     <div class="${SX.field}"><label class="${SX.label}" for="ocNote">How do you know this sale belongs to this action? (required)</label>
+       <textarea class="${SX.input}" id="ocNote" rows="3"></textarea></div>`,
+    `<button class="${BTN.primary}" id="acGo" disabled>Link this sale</button><button class="${BTN.secondary}" id="acCancel">Cancel</button>`);
   m.wrap.querySelector('#acCancel').addEventListener('click', m.close);
   const go_ = m.wrap.querySelector('#acGo');
   db(`rpc/action_outcome_candidates?p_action_id=${encodeURIComponent(r.id)}`).then(list => {
@@ -553,13 +574,13 @@ function outcomeDialog(r, after) {
         + 'can be tied to it, close it with “No sale can be tied” instead.');
       return;
     }
-    host.innerHTML = `<div class="grid" style="gap:8px">${rowsC.map((c, i) => `
-      <label class="list-item" style="cursor:pointer"><input type="radio" name="ocPick" value="${i}" />
+    host.innerHTML = `<div class="flex flex-col gap-2">${rowsC.map((c, i) => `
+      <label class="${SX.pick}"><input type="radio" name="ocPick" value="${i}" class="mt-1" />
         <div><div><strong>${esc(str(c.vehicle) || 'No vehicle recorded')}</strong> · ${c.amount_aed == null ? 'amount not recorded' : aed(c.amount_aed)}
           · ${esc(str(c.purchase_date) || 'no date')}</div>
-          <div class="ds-cell-sub">${esc(displayName(c.customer_name))} · ${esc(num(c.shared_tokens))} shared words · ${esc(str(c.link_evidence))}</div></div>
+          <div class="${SX.sub}">${esc(displayName(c.customer_name))} · ${esc(num(c.shared_tokens))} shared words · ${esc(str(c.link_evidence))}</div></div>
       </label>`).join('')}</div>
-      <div class="ds-cell-sub" style="white-space:normal;margin-top:8px">${esc(str(rowsC[0].evidence_note))}</div>`;
+      <div class="${SX.sub}">${esc(str(rowsC[0].evidence_note))}</div>`;
     host.querySelectorAll('input[name=ocPick]').forEach(x => x.addEventListener('change', () => { go_.disabled = false; }));
     go_.addEventListener('click', async () => {
       const pick = host.querySelector('input[name=ocPick]:checked');
@@ -573,7 +594,7 @@ function outcomeDialog(r, after) {
         });
         if (!row.ok) {
           go_.disabled = false; go_.textContent = 'Try again';
-          m.msg(`<span class="t-hot">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
+          m.msg(`<span class="${SX.hotTx}">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
           return;
         }
         m.close();
@@ -584,19 +605,19 @@ function outcomeDialog(r, after) {
     });
   }).catch(e => {
     const host = m.wrap.querySelector('#ocList');
-    if (host) host.innerHTML = stateError('the candidate sales', e);
+    if (host) host.innerHTML = errorState({ what: 'the candidate sales', err: e });
   });
 }
 
 function notAttributableDialog(r, after) {
-  const m = openModal('No sale can be tied to this action',
-    `<div class="ds-cell-sub" style="margin-bottom:14px;white-space:normal">This closes the action on the record as having
+  const m = stitchModal('No sale can be tied to this action',
+    `<div class="${SX.sub}">This closes the action on the record as having
        no attributable outcome. No figure is written and none is implied. Say what is missing — it is what the next
        person reads.</div>
-     <div class="ds-cell-sub" style="margin-bottom:14px"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
-       · <span class="mono">${esc(r.unit_id)}</span></div>
-     <div class="field"><label for="naNote">What is missing (required)</label><textarea id="naNote" rows="3"></textarea></div>`,
-    `<button class="btn primary" id="acGo">Close as not attributable</button><button class="btn ghost" id="acCancel">Cancel</button>`);
+     <div class="${SX.sub}"><strong>${esc(str(r.unit_model) || r.unit_id)}</strong>
+       · <span class="${SX.mono}">${esc(r.unit_id)}</span></div>
+     <div class="${SX.field}"><label class="${SX.label}" for="naNote">What is missing (required)</label><textarea class="${SX.input}" id="naNote" rows="3"></textarea></div>`,
+    `<button class="${BTN.primary}" id="acGo">Close as not attributable</button><button class="${BTN.secondary}" id="acCancel">Cancel</button>`);
   m.wrap.querySelector('#acCancel').addEventListener('click', m.close);
   m.wrap.querySelector('#acGo').addEventListener('click', async () => {
     const btn = m.wrap.querySelector('#acGo');
@@ -607,7 +628,7 @@ function notAttributableDialog(r, after) {
       });
       if (!row.ok) {
         btn.disabled = false; btn.textContent = 'Try again';
-        m.msg(`<span class="t-hot">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
+        m.msg(`<span class="${SX.hotTx}">${esc(row.refusal_reason || row.refusal_code || 'The database refused this and gave no reason, which is itself a defect.')}</span>`);
         return;
       }
       m.close();
@@ -618,43 +639,40 @@ function notAttributableDialog(r, after) {
 
 /* ── The history drawer ─────────────────────────────────────────────────── */
 async function historyDrawer(r) {
-  openDrawer(`<div class="drawer-head">
-      <div style="flex:1"><div class="card-title">${esc(str(r.unit_model) || r.unit_id)}</div>
-        <div class="card-sub"><span class="mono">${esc(r.unit_id)}</span> · ${esc(str(r.recommendation))}</div></div>
-      <button class="btn ghost sm" id="acClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
-    </div><div class="drawer-body" id="acHist">${stateLoading(5)}</div>`);
-  $('acClose').addEventListener('click', closeDrawer);
+  openStitchDrawer({ icon: 'history', title: str(r.unit_model) || r.unit_id,
+    sub: `${r.unit_id} · ${str(r.recommendation)}`,
+    bodyHtml: `<div id="acHist">${skeleton({ rows: 5 })}</div>` });
 
   let rows = null, err = null;
   try { rows = await readTimeline(r.id); } catch (e) { err = e.message; }
   const host = $('acHist');
   if (!host) return;
-  if (err) { host.innerHTML = stateError('this action’s history', err); return; }
+  if (err) { host.innerHTML = errorState({ what: 'this action’s history', err }); return; }
   if (!rows.length) {
     host.innerHTML = stateEmpty('No steps recorded',
       'This action has no timeline rows, which should not happen — proposing one writes the first. Treat it as a defect, not as an action that never moved.');
     return;
   }
   host.innerHTML = `
-    <div class="section"><div class="label-caps">What happened</div>
-      <div class="ds-cell-sub" style="white-space:normal;margin-bottom:10px">
+    <div class="${SX.note}"><div class="${SX.caps}">What happened</div>
+      <div class="${SX.sub}">
         Two different words on every line. <strong>Step</strong> is what happened to this action.
-        <strong>Audit</strong> is how <span class="mono">NEXUS’s own rule for what a run achieved</span> classifies the row that was
-        written to <span class="mono">The activity log</span> for it — the same vocabulary the Automation screen uses.
+        <strong>Audit</strong> is how <span class="${SX.mono}">NEXUS’s own rule for what a run achieved</span> classifies the row that was
+        written to <span class="${SX.mono}">The activity log</span> for it — the same vocabulary the Automation screen uses.
         A rejection is a recorded SUCCESS: the system succeeded at recording that a person said no.</div>
-      <div style="display:grid;gap:12px">${rows.map(t => `
-        <div style="border-left:2px solid var(--border);padding-left:12px">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="${SX.timeline}">${rows.map(t => `
+        <div class="${SX.tlItem}"><span class="${SX.tlDot}"></span>
+          <div class="${SX.row}">
             <strong>${esc(t.event)}</strong>
-            ${t.audit_outcome_class ? `<span class="chip" title="${esc(`This run was recorded as ${str(t.audit_status) || 'having no status'}`)}">audit: ${esc(t.audit_outcome_class)}</span>` : '<span class="chip">no audit row linked</span>'}
-            <div style="flex:1"></div><div class="ds-cell-sub">${esc(dubaiStamp(t.at))}</div>
+            ${t.audit_outcome_class ? `<span class="${SX.chip}" title="${esc(`This run was recorded as ${str(t.audit_status) || 'having no status'}`)}">audit: ${esc(t.audit_outcome_class)}</span>` : `<span class="${SX.chip}">no audit row linked</span>`}
+            <span class="font-label-numeric-sm text-[11px] text-outline ml-auto">${esc(dubaiStamp(t.at))}</span>
           </div>
-          <div class="ds-cell-sub" style="white-space:normal">${esc(str(t.actor_name) || 'no staff record')}${t.actor_authority ? ` · ${esc(t.actor_authority)}` : ''}</div>
-          ${t.detail ? `<div style="margin-top:4px;white-space:normal">${esc(t.detail)}</div>` : ''}
+          <div class="${SX.sub}">${esc(str(t.actor_name) || 'no staff record')}${t.actor_authority ? ` · ${esc(t.actor_authority)}` : ''}</div>
+          ${t.detail ? `<div class="font-body-sm text-body-sm text-on-surface whitespace-normal">${esc(t.detail)}</div>` : ''}
         </div>`).join('')}</div></div>
-    <div class="section"><div class="label-caps">Audit rows behind this</div>
-      <div class="ds-cell-sub" style="white-space:normal">Every line above with an audit chip is a real entry in the
-        activity log, filed under <span class="mono">Inventory Action Center</span>.
+    <div class="${SX.note}"><div class="${SX.caps}">Audit rows behind this</div>
+      <div class="${SX.sub}">Every line above with an audit chip is a real entry in the
+        activity log, filed under <span class="${SX.mono}">Inventory Action Center</span>.
         It is deliberately kept out of the automation register: these are decisions people took in this dashboard,
         not automation runs, and mixing them into automation health would make both numbers mean less.</div></div>`;
 }
@@ -668,24 +686,28 @@ let NOTICE = null;
 onIdentityChange(() => { NOTICE = null; });
 
 SCREENS.actions = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto another screen and restyle one nobody converted. A wrapper
-     cannot leak — go() removes it with the rest of the subtree. Same pattern as
-     screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* The root is the Stitch scope (`nx-stitch` switches on the scoped reset the
+     design classes were drawn against). It is a wrapper this screen appends and
+     NOT a class on `#screen`, for the reason the old `.ds-screen` wrapper gave:
+     lib/nav.js empties `#screen` between renders without touching its classes,
+     so a class set there would follow the operator onto another screen.
+     Design: design/stitch/action-center-next-best-actions-queue--be8f47.html (primary), --31efb6 and --b76b17. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
+  root.insertAdjacentHTML('beforeend', engineHeader({
+    title: 'Action Center',
+    sub: 'What the engines recommend, who has to decide it, what was done, and the outcome — recommendation to result, on the record.',
+    actionsHtml: linkBtn('inventory', 'Open Inventory') + linkBtn('revenue', 'Open Revenue Recovery'),
+  }));
+  wireGo(root);
 
-  const notice = el('div'); root.appendChild(notice);
-  const strip  = el('div', 'grid g5'); strip.innerHTML = stateLoading(2); root.appendChild(strip);
-  const body   = el('div'); body.style.marginTop = '16px'; root.appendChild(body);
+  const notice = el('div', 'empty:hidden'); root.appendChild(notice);
+  const strip  = el('div', SX.g5); strip.innerHTML = skeleton({ rows: 2 }); root.appendChild(strip);
+  const body   = el('div', 'flex flex-col gap-space-lg'); root.appendChild(body);
 
   const say = msg => {
-    notice.innerHTML = `<div class="banner info" style="margin-bottom:16px">
-      <span class="material-symbols-outlined" style="font-size:20px">check_circle</span><div>${msg}</div></div>`;
+    notice.innerHTML = `<div class="${BANNER.info}">
+      <span class="${BANNER_ICON}">check_circle</span><div>${msg}</div></div>`;
   };
   /* A write re-renders the screen through go(), which runs this function again
      from scratch, so the confirmation has to survive one render. It lives in a
@@ -709,7 +731,7 @@ SCREENS.actions = async host => {
 
   if (rowsErr) {
     strip.remove();
-    body.innerHTML = stateError('the action queue', rowsErr);
+    body.innerHTML = errorState({ what: 'the action queue', err: rowsErr });
     return;
   }
 
@@ -737,8 +759,13 @@ SCREENS.actions = async host => {
   const flagged = (engine || []).filter(u => up(u.recommendation) !== 'HOLD');
   const unraised = flagged.filter(u => !live.has(u.id));
 
-  const exposureWaiting = waiting.reduce((s, r) => s + (Number(r.engine_impact_aed) || 0), 0);
-  const anyImpactMissing = waiting.some(r => r.engine_impact_aed == null);
+  /* Partitioned before summing (QUALITY_GATE S5b): only rows that carry a
+     figure are added, and the rows that do not are counted separately and
+     named in the tile, so "no exposure claimed" and "not computed" are never
+     folded into one zero. */
+  const sizedWaiting = waiting.filter(r => r.engine_impact_aed != null && !Number.isNaN(Number(r.engine_impact_aed)));
+  const exposureWaiting = sizedWaiting.reduce((s, r) => s + Number(r.engine_impact_aed), 0);
+  const anyImpactMissing = sizedWaiting.length < waiting.length;
 
   strip.innerHTML = [
     kpi('Waiting on a decision', num(waiting.length),
@@ -763,31 +790,42 @@ SCREENS.actions = async host => {
      rpc/action_approver_context, not inferred here — the browser has no
      business deciding this and the database would refuse it anyway. */
   const authority = ctxErr
-    ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">help</span>
+    ? `<div class="${BANNER.warm}"><span class="${BANNER_ICON}">help</span>
         <div>This screen could not read who you are (${esc(ctxErr)}), so it cannot say whether you may decide
              anything. The buttons are left enabled and the database will answer — it is the only thing that
              decides this — but expect a refusal if you are not an approver.</div></div>`
     : ctx && ctx.may_decide
-    ? `<div class="banner info"><span class="material-symbols-outlined" style="font-size:20px">verified_user</span>
+    ? `<div class="${BANNER.info}"><span class="${BANNER_ICON}">verified_user</span>
         <div>You may approve, reject and defer actions here on authority
              <strong>${esc(str(ctx.authority))}</strong>${up(str(ctx.authority)).startsWith('TENANT_')
-               ? ` — that is your account role at this dealership (<span class="mono">${esc(str(ctx.tenant_role))}</span>), not your job title (<span class="mono">${esc(str(ctx.staff_role) || 'none recorded')}</span>). Every decision records which of the two it was.`
+               ? ` — that is your account role at this dealership (<span class="${SX.mono}">${esc(str(ctx.tenant_role))}</span>), not your job title (<span class="${SX.mono}">${esc(str(ctx.staff_role) || 'none recorded')}</span>). Every decision records which of the two it was.`
                : ` — a job title this dealership has granted approval to.`}</div></div>`
-    : `<div class="banner hot"><span class="material-symbols-outlined" style="font-size:20px">lock</span>
+    : `<div class="${BANNER.hot}"><span class="${BANNER_ICON}">lock</span>
         <div><strong>You cannot decide actions here.</strong> ${esc(str(ctx && ctx.refusal_reason) || 'The database gave no reason, which is itself a defect.')}
              ${ctx && ctx.tenant_has_any_approver === false
                ? ' Until somebody at this dealership holds an approving role, every decision attempt is escalated and recorded as such, and nothing is approved by default.'
                : ''}</div></div>`;
 
-  body.innerHTML = `<div style="margin-bottom:16px">${authority}</div>`;
+  /* action-center--be8f47's two columns: the proposal workstream on the left,
+     "Record the outcome" and the desk telemetry in the rail on the right. */
+  body.innerHTML = `${authority}
+    <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_18rem] gap-space-lg items-start">
+      <div class="flex flex-col gap-space-lg min-w-0" data-main></div>
+      <div class="flex flex-col gap-space-lg min-w-0" data-rail></div>
+    </div>`;
+  const main = body.querySelector('[data-main]');
+  const rail = body.querySelector('[data-rail]');
 
   const section = (title, sub, list, empty) => {
-    const wrap = el('div'); wrap.style.marginBottom = '20px';
-    wrap.innerHTML = `<div class="card-head" style="margin-bottom:10px">
-        <div><div class="card-title">${esc(title)}</div><div class="card-sub">${sub}</div></div></div>
-      ${list.length ? `<div class="grid" style="gap:14px">${list.map(r => actionCard(r, ctx)).join('')}</div>`
-                    : `<div class="card">${empty}</div>`}`;
-    body.appendChild(wrap);
+    const wrap = el('section', 'flex flex-col gap-3');
+    wrap.innerHTML = `<div class="flex flex-col gap-0.5">
+        <div class="flex items-center gap-2 flex-wrap"><span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+          <h2 class="font-headline-md text-headline-md text-on-surface">${esc(title)}</h2>
+          <span class="${SX.chip}">${num(list.length)}</span></div>
+        <p class="font-body-sm text-body-sm text-on-surface-variant">${sub}</p></div>
+      ${list.length ? `<div class="flex flex-col gap-3">${list.map(r => actionCard(r, ctx)).join('')}</div>`
+                    : empty}`;
+    main.appendChild(wrap);
     return wrap;
   };
 
@@ -832,28 +870,35 @@ SCREENS.actions = async host => {
   const awaitingOutcome = rows.filter(r => r.status === 'EXECUTED'
     && !['ATTRIBUTED', 'NOT_ATTRIBUTABLE'].includes(up(r.outcome_state)));
   const byIdAll = new Map(rows.map(r => [r.id, r]));
-  const outcomeCard = el('div'); outcomeCard.style.marginBottom = '20px'; body.appendChild(outcomeCard);
+  const outcomeCard = el('div'); rail.appendChild(outcomeCard);
   panel(outcomeCard, {
+    icon: 'fact_check',
     title: 'Record the outcome',
     sub: 'Carried-out actions that nobody has closed yet. Link a recorded sale, or say on the record that none can be '
        + 'tied to it. Estimated, attributed and confirmed are different words: linking a sale here makes it attributed, '
        + 'nothing more',
     load: async () => awaitingOutcome,
-    render: list => table([
-      { label: 'Unit', render: r => `<div>${esc(str(r.unit_model) || r.unit_id)}</div><div class="ds-cell-sub mono">${esc(r.unit_id)}</div>` },
-      { label: 'Recommended', render: r => pill(str(r.recommendation), recTone(r.recommendation), { verbatim: true }) },
-      { label: 'Carried out', render: r => `<div>${esc(dubaiStamp(r.executed_at))}</div><div class="ds-cell-sub">${esc(str(r.executed_by_name) || 'no staff record')}</div>` },
-      { label: 'Outcome so far', render: r => `<div class="ds-cell-sub" style="white-space:normal">${esc(str(r.outcome_sentence) || 'No outcome recorded.')}</div>` },
-      { label: '', align: 'r', render: r => {
-          const may = !!(ctx && ctx.may_decide);
-          const gate = may ? '' : ` disabled title="${esc(str(ctx && ctx.refusal_reason) || 'This account may not record an outcome.')}"`;
-          return `<button class="btn sm primary" data-link="${esc(r.id)}"${gate}>Link a sale</button>
-            <button class="btn sm" data-noattr="${esc(r.id)}"${gate}>No sale can be tied</button>`;
-        } },
-    ], list, {
-      empty: stateEmpty('No carried-out action is waiting for an outcome',
-        'Every action recorded as carried out has already been linked to a sale or closed as not attributable — or none has been carried out yet.'),
-    }),
+    /* A list of tiles rather than a table: this lives in the rail of
+       action-center--be8f47 ("Target Executed Action Overview" + the two
+       reconciliation choices), where five columns do not fit. */
+    render: list => (list.length ? `<div class="${SX.stack}">${list.map(r => {
+        const may = !!(ctx && ctx.may_decide);
+        const gate = may ? '' : ` disabled title="${esc(str(ctx && ctx.refusal_reason) || 'This account may not record an outcome.')}"`;
+        return `<div class="bg-surface-container-low rounded-lg p-3 flex flex-col gap-2">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0"><div class="font-label-numeric-sm text-label-numeric-sm font-bold text-primary">${esc(r.unit_id)} · EXECUTED</div>
+              <div class="font-body-md text-body-md font-semibold text-on-surface">${esc(str(r.unit_model) || r.unit_id)}</div></div>
+            ${pill(str(r.recommendation), recTone(r.recommendation), { verbatim: true })}
+          </div>
+          <div class="${SX.sub}">Carried out ${esc(dubaiStamp(r.executed_at))} by ${esc(str(r.executed_by_name) || 'no staff record')}</div>
+          <div class="${SX.sub}">${esc(str(r.outcome_sentence) || 'No outcome recorded.')}</div>
+          <div class="flex flex-col gap-2 pt-1">
+            <button type="button" class="${BTN.primary}" data-link="${esc(r.id)}"${gate}>Link a recorded sale</button>
+            <button type="button" class="${BTN.secondary}" data-noattr="${esc(r.id)}"${gate}>Close — no sale can be tied</button>
+          </div></div>`;
+      }).join('')}</div>`
+      : stateEmpty('No carried-out action is waiting for an outcome',
+        'Every action recorded as carried out has already been linked to a sale or closed as not attributable — or none has been carried out yet.', 'task_alt')),
   }).then(card => {
     card.querySelectorAll('[data-link]').forEach(b => b.addEventListener('click', () => {
       if (b.disabled) return;
@@ -867,42 +912,43 @@ SCREENS.actions = async host => {
 
   /* Closed actions are a table, not cards: they are read for the record, not
      for a decision, and the reason code is the column that matters. */
-  const closedCard = el('div'); body.appendChild(closedCard);
+  const closedCard = el('div'); main.appendChild(closedCard);
   panel(closedCard, {
+    icon: 'history',
     title: 'Decided',
     sub: `${num(closed.length)} closed ${plural(closed.length, 'action', 'actions')} — including every rejection, which is the most useful thing on this screen`,
     load: async () => closed,
     render: list => table([
-      { label: 'Unit', render: r => `<div>${esc(str(r.unit_model) || r.unit_id)}</div><div class="ds-cell-sub mono">${esc(r.unit_id)}</div>` },
+      { label: 'Unit', render: r => `<div>${esc(str(r.unit_model) || r.unit_id)}</div><div class="${SX.subMono}">${esc(r.unit_id)}</div>` },
       { label: 'Recommended', render: r => pill(str(r.recommendation), recTone(r.recommendation), { verbatim: true }) },
       { label: 'What was decided', render: r => pill(life(r.status).label, life(r.status).tone, { verbatim: false }) },
       { label: 'Why', render: r => r.decision_reason_label
-          ? `<div>${esc(r.decision_reason_label)}</div><div class="ds-cell-sub" style="white-space:normal">${esc(str(r.decision_note))}</div>`
-          : `<div class="ds-cell-sub">${esc(str(r.decision_note) || 'No reason recorded')}</div>` },
-      { label: 'Decided by', render: r => `<div>${esc(str(r.decided_by_name) || '—')}</div><div class="ds-cell-sub">${esc(str(r.decided_by_authority) || '')}</div>` },
+          ? `<div>${esc(r.decision_reason_label)}</div><div class="${SX.sub}">${esc(str(r.decision_note))}</div>`
+          : `<div class="${SX.sub}">${esc(str(r.decision_note) || 'No reason recorded')}</div>` },
+      { label: 'Decided by', render: r => `<div>${esc(str(r.decided_by_name) || '—')}</div><div class="${SX.sub}">${esc(str(r.decided_by_authority) || '')}</div>` },
       /* Same three-way test as the card footer, from the same function. The
          cell cannot carry the full sentence, so UNSUPPORTED gets the words and
          the tooltip and never the figure; the card below states it in full. */
       { label: 'Recovered', align: 'r', render: r => {
           const ev = recoveryEvidence(r);
           if (ev.state === 'NOT_RECORDED')
-            return `<span class="t-muted" title="${esc(str(r.outcome_sentence))}">nothing recorded</span>`;
+            return `<span class="${SX.dim}" title="${esc(str(r.outcome_sentence))}">nothing recorded</span>`;
           if (ev.state === 'ATTRIBUTED')
-            return `${aed(ev.amount)}<div class="ds-cell-sub">attributed</div>`;
-          return `<span class="t-hot" title="${esc(unsupportedRecoverySentence(ev))}">not shown</span>`
-            + `<div class="ds-cell-sub">an amount with no evidence behind it</div>`;
+            return `${aed(ev.amount)}<div class="${SX.sub}">attributed</div>`;
+          return `<span class="${SX.hotTx}" title="${esc(unsupportedRecoverySentence(ev))}">not shown</span>`
+            + `<div class="${SX.sub}">an amount with no evidence behind it</div>`;
         } },
     ], list, {
       empty: stateEmpty('Nothing has been decided yet',
         'No action has been approved, rejected, deferred or withdrawn. Once one is, the reason lands here and stays.'),
-      onRow: null,
-    }) + `<div class="ds-cell-sub" style="padding:12px 16px;white-space:normal;border-top:1px solid var(--border-subtle)">
+      onRow: true,
+    }) + `<div class="${SX.sub}">
       The Recovered column is empty on every row until somebody links a real recorded sale to an action.
-      <span class="mono">The recorded sales</span> holds no reference to an inventory unit — not a VIN, not a stock
+      <span class="${SX.mono}">The recorded sales</span> holds no reference to an inventory unit — not a VIN, not a stock
       number — so NEXUS cannot tie a sale to a car by itself, and it will not guess. Approving something does not
       recover money and neither does carrying it out. A figure only appears where the row carries all four of
-      <span class="mono">outcome_state = ATTRIBUTED</span>, <span class="mono">outcome_purchase_id</span>,
-      <span class="mono">attribution_basis</span> and <span class="mono">recovered_value_basis</span>; where an
+      <span class="${SX.mono}">outcome_state = ATTRIBUTED</span>, <span class="${SX.mono}">outcome_purchase_id</span>,
+      <span class="${SX.mono}">attribution_basis</span> and <span class="${SX.mono}">recovered_value_basis</span>; where an
       amount is present without them the amount is withheld and the row is flagged as a fault.</div>`,
   }).then(card => {
     card.querySelectorAll('tbody tr').forEach((tr, i) => {
@@ -913,24 +959,25 @@ SCREENS.actions = async host => {
 
   /* The engine's own list, for units nobody has raised an action on. This is
      where an action enters the system. */
-  const engineCard = el('div'); engineCard.style.marginTop = '20px'; body.appendChild(engineCard);
+  const engineCard = el('div'); main.appendChild(engineCard);
   panel(engineCard, {
+    icon: 'radar',
     title: 'Flagged by the engine, no action raised',
-    sub: 'Straight from <span class="mono">sentinel_inventory_actions()</span>, worst first. Raising one freezes what the engine says today onto a record a person then answers.',
+    sub: `Straight from <span class="${SX.mono}">sentinel_inventory_actions()</span>, worst first. Raising one freezes what the engine says today onto a record a person then answers.`,
     load: async () => { if (engineErr) throw new Error(engineErr); return unraised; },
     render: list => table([
       { label: 'Unit', render: u => {
           const prior = lastClosed.get(u.id);
-          return `<div>${esc(str(u.model) || u.id)}</div><div class="ds-cell-sub mono">${esc(u.id)}</div>`
-            + (prior ? `<div class="ds-cell-sub" style="white-space:normal">Already answered once: ${esc(life(prior.status).label.toLowerCase())} by ${esc(str(prior.decided_by_name) || 'somebody')} on ${esc(dubaiStamp(prior.decided_at))}${prior.decision_reason_label ? ` — ${esc(prior.decision_reason_label)}` : ''}. The engine still flags it.</div>` : '');
+          return `<div>${esc(str(u.model) || u.id)}</div><div class="${SX.subMono}">${esc(u.id)}</div>`
+            + (prior ? `<div class="${SX.sub}">Already answered once: ${esc(life(prior.status).label.toLowerCase())} by ${esc(str(prior.decided_by_name) || 'somebody')} on ${esc(dubaiStamp(prior.decided_at))}${prior.decision_reason_label ? ` — ${esc(prior.decision_reason_label)}` : ''}. The engine still flags it.</div>` : '');
         } },
       { label: 'Recommended', render: u => pill(str(u.recommendation), recTone(u.recommendation), { verbatim: true }) },
       { label: 'Risk', render: u => pill(str(u.overall_risk), riskTone(u.overall_risk), { verbatim: true }) },
-      { label: 'Days in stock', align: 'r', render: u => (u.days_in_stock == null ? '<span class="t-muted">unknown</span>' : num(u.days_in_stock)) },
+      { label: 'Days in stock', align: 'r', render: u => (u.days_in_stock == null ? `<span class="${SX.dim}">unknown</span>` : num(u.days_in_stock)) },
       { label: 'At risk', align: 'r', render: u => (u.impact_aed == null
-          ? '<span class="t-muted">none claimed</span>'
-          : `${aed(u.impact_aed)}<div class="ds-cell-sub">exposure</div>`) },
-      { label: '', align: 'r', render: u => `<button class="btn sm" data-raise="${esc(u.id)}">Raise action</button>` },
+          ? `<span class="${SX.dim}">none claimed</span>`
+          : `${aed(u.impact_aed)}<div class="${SX.sub}">exposure</div>`) },
+      { label: '', align: 'r', render: u => `<button class="${BTN.secondary}" data-raise="${esc(u.id)}">Raise action</button>` },
     ], list, {
       empty: stateEmpty('Every flagged unit already has a live action',
         'The engine is recommending something on ' + num(flagged.length) + ' ' + plural(flagged.length, 'unit', 'units') + ', and each of them already has an action open on this screen.'),
@@ -940,11 +987,43 @@ SCREENS.actions = async host => {
       b.disabled = true; b.textContent = 'Raising…';
       try {
         const row = await call('action_propose', { p_unit_id: b.dataset.raise });
-        if (!row.ok) { b.disabled = false; b.textContent = 'Raise action'; say(`<span class="t-hot">${esc(row.refusal_reason)}</span>`); return; }
+        if (!row.ok) { b.disabled = false; b.textContent = 'Raise action'; say(`<span class="${SX.hotTx}">${esc(row.refusal_reason)}</span>`); return; }
         reload(row.idempotent ? 'That unit already had an open action — no second one was created.' : 'Action raised. It is now waiting on a decision.');
-      } catch (e) { b.disabled = false; b.textContent = 'Raise action'; say(`<span class="t-hot">${esc(e.message)}</span>`); }
+      } catch (e) { b.disabled = false; b.textContent = 'Raise action'; say(`<span class="${SX.hotTx}">${esc(e.message)}</span>`); }
     }));
   });
+
+  /* ── Desk telemetry ──────────────────────────────────────────────────────
+     action-center--be8f47 "Floor SLA Telemetry", measured from this queue's own
+     timestamps and nothing else. Time to decision is decided_at − proposed_at
+     over the actions a person has answered, shown with how many it is taken
+     over; the outcome line is three counts, never a rate, because a percentage
+     of a handful of actions reads as a performance figure it is not. */
+  const answered = rows.filter(r => r.decided_at && r.proposed_at)
+    .map(r => (new Date(r.decided_at).getTime() - new Date(r.proposed_at).getTime()) / 60000)
+    .filter(m => Number.isFinite(m) && m >= 0).sort((a, b) => a - b);
+  const median = answered.length
+    ? (answered.length % 2 ? answered[(answered.length - 1) / 2] : (answered[answered.length / 2 - 1] + answered[answered.length / 2]) / 2)
+    : null;
+  const executed = rows.filter(r => r.status === 'EXECUTED');
+  const attributedN = rows.filter(r => up(r.outcome_state) === 'ATTRIBUTED').length;
+  const notAttrN = rows.filter(r => up(r.outcome_state) === 'NOT_ATTRIBUTABLE').length;
+  const tele = el('section', 'bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/30 p-5 flex flex-col gap-3');
+  tele.innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[20px]">speed</span>
+      <h2 class="font-headline-md text-headline-md text-on-surface">Desk telemetry</h2></div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="bg-surface-container-low rounded-lg p-3 flex flex-col gap-1">
+        <span class="font-table-header text-table-header uppercase tracking-wider text-secondary">Median time to decision</span>
+        <span class="font-label-numeric-lg text-headline-lg font-bold text-on-surface">${median == null ? '—' : esc(mins(median))}</span>
+        <span class="${SX.sub}">${median == null ? 'No action has been answered yet, so there is nothing to time.' : `Over ${num(answered.length)} answered ${plural(answered.length, 'action', 'actions')}.`}</span>
+      </div>
+      <div class="bg-surface-container-low rounded-lg p-3 flex flex-col gap-1">
+        <span class="font-table-header text-table-header uppercase tracking-wider text-secondary">Carried out → outcome</span>
+        <span class="font-label-numeric-lg text-headline-lg font-bold text-on-surface">${num(attributedN)} / ${num(executed.length)}</span>
+        <span class="${SX.sub}">${num(attributedN)} attributed, ${num(notAttrN)} closed as not attributable, of ${num(executed.length)} carried out. Attributed is not confirmed as caused.</span>
+      </div>
+    </div>`;
+  rail.appendChild(tele);
 
   /* Wiring for the cards. Delegated from `body` because the sections are built
      in one pass and a card can be re-rendered by a reload. */
@@ -959,20 +1038,25 @@ SCREENS.actions = async host => {
     const cn = e.target.closest('[data-cancel]');
     if (cn && !cn.disabled) {
       const r = byId.get(cn.dataset.cancel); if (!r) return;
-      const m = openModal('Withdraw this action',
-        `<div class="ds-cell-sub" style="margin-bottom:14px">Withdrawing closes the action without carrying it out. Say why —
+      const m = stitchModal('Withdraw this action',
+        `<div class="${SX.sub}">Withdrawing closes the action without carrying it out. Say why —
            it is recorded against your name and it is what the next person reads.</div>
-         <div class="field"><label for="acWhy">Why</label><textarea id="acWhy" rows="3"></textarea></div>`,
-        `<button class="btn danger" id="acGo">Withdraw</button><button class="btn ghost" id="acCancel">Cancel</button>`);
+         <div class="${SX.field}"><label class="${SX.label}" for="acWhy">Why</label><textarea class="${SX.input}" id="acWhy" rows="3"></textarea></div>`,
+        `<button class="${BTN.destructive}" id="acGo">Withdraw</button><button class="${BTN.secondary}" id="acCancel">Cancel</button>`);
       m.wrap.querySelector('#acCancel').addEventListener('click', m.close);
       m.wrap.querySelector('#acGo').addEventListener('click', async () => {
         const btn = m.wrap.querySelector('#acGo'); btn.disabled = true; btn.textContent = 'Withdrawing…';
         try {
           const row = await call('action_cancel', { p_action_id: r.id, p_note: m.wrap.querySelector('#acWhy').value.trim() || null });
-          if (!row.ok) { btn.disabled = false; btn.textContent = 'Try again'; m.msg(`<span class="t-hot">${esc(row.refusal_reason)}</span>`); return; }
+          if (!row.ok) { btn.disabled = false; btn.textContent = 'Try again'; m.msg(`<span class="${SX.hotTx}">${esc(row.refusal_reason)}</span>`); return; }
           m.close(); reload('Withdrawn.');
         } catch (err) { btn.disabled = false; btn.textContent = 'Try again'; modalError(m, err); }
       });
     }
   });
+
+  root.insertAdjacentHTML('beforeend', engineFooter({
+    source: 'v_inventory_action_queue · v_inventory_action_timeline · rpc/sentinel_inventory_actions · rpc/action_approver_context',
+    evidence: `${num(rows.length)} recorded ${plural(rows.length, 'action', 'actions')}; every write goes through an authorised function`,
+  }));
 };

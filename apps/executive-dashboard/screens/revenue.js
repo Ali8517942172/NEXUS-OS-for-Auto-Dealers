@@ -73,23 +73,293 @@
       here" is an answer and "the engine could not put a figure to this" is a
       gap. */
 
-import { db } from '../lib/data.js';
+import { db, ME, SESSION } from '../lib/data.js';
 import { el } from '../lib/dom.js';
-import { aed, dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
+import { aed, dubaiDate, dubaiStamp, esc, nf, num, pill as fmtPill } from '../lib/format.js';
 import { maskText } from '../lib/privacy.js';
 import { healthWords } from '../lib/health.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { stateEmpty } from '../lib/states.js';
-import { kpi, panel, table } from '../lib/ui.js';
+import { tenantLabel, tenantState } from '../lib/tenant.js';
+import { BTN, emptyState, errorState, moneyTile, comingSoonPanel, openStitchModal, sectionHeader, skeleton, trustFooter } from '../lib/stitch-ui.js';
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ENGINE-DESK KIT — the Stitch rendering of the six Revenue Recovery
+   screens (this one, Lead Recovery, Deal Rescue, Attribution, Policy and the
+   Action Center). Added 7 Oct 2026 with the Google Stitch redesign.
+
+   WHY IT LIVES HERE. The six screens were built on lib/ui.js panel(), kpi()
+   and table(), lib/format.js pill() and lib/states.js stateEmpty(). Their
+   logic — every read, every refusal, every "unknown is not zero" branch — is
+   unchanged by the redesign; only the markup is. So the kit keeps those five
+   signatures EXACTLY and swaps what they draw, which lets each screen change
+   its imports and its literal class strings and nothing else. It is exported
+   from this module for the reason `saleFacts` below is: app.js imports
+   revenue.js statically, so it is always in the bundle, and the four engine
+   screens that may not be on disk import from it rather than the other way
+   round. A shared lib/ module would be the tidier home and is outside the
+   files this pass owns.
+
+   Every class string is copied from the route exports in design/stitch/
+   (revenue-recovery-money-leaks-engine--467051 above all; the stepper from
+   action-center-next-best-actions-queue--31efb6) and is written out in full:
+   a variant is picked from a map of complete strings, never assembled, because
+   Tailwind cannot see a class that only exists at runtime
+   (scripts/stitch-classes.mjs fails the build on one). */
+
+/* Plain class strings for the markup the screens still write by hand. */
+export const SX = {
+  sub:   'font-body-sm text-body-sm text-on-surface-variant mt-0.5 whitespace-normal',
+  subMono: 'font-label-numeric-sm text-label-numeric-sm text-secondary mt-0.5',
+  tlBody: 'flex flex-col gap-1 min-w-0',
+  hot:   'font-body-sm text-body-sm text-error font-medium mt-0.5 whitespace-normal',
+  bold:  'font-body-md text-body-md font-semibold text-on-surface',
+  wrap:  'whitespace-normal min-w-0',
+  mono:  'font-label-numeric-sm text-label-numeric-sm',
+  dim:   'text-on-surface-variant',
+  hotTx: 'text-error font-semibold',
+  wonTx: 'text-[#157A5B] font-semibold',
+  caps:  'font-table-header text-table-header uppercase tracking-wider text-secondary',
+  /* The "section" note box: the Narrative Audit banner's surface. */
+  note:  'bg-surface-container-low rounded-xl p-4 flex flex-col gap-2',
+  quote: 'border-l-4 border-primary/40 bg-surface-container-low rounded-r-lg px-4 py-3 font-body-md text-body-md text-on-surface whitespace-pre-line',
+  g2: 'grid grid-cols-1 md:grid-cols-2 gap-4',
+  g3: 'grid grid-cols-1 md:grid-cols-3 gap-4',
+  g4: 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4',
+  g5: 'grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4',
+  stack: 'flex flex-col gap-3',
+  row:   'flex items-center gap-2 flex-wrap',
+  kv: 'grid grid-cols-1 md:grid-cols-[minmax(11rem,15rem)_1fr] gap-x-6 gap-y-2.5 font-body-sm text-body-sm text-on-surface [&>dt]:font-semibold [&>dt]:text-secondary [&>dd]:min-w-0',
+  chip: 'inline-flex items-center px-1.5 py-0.5 rounded font-label-numeric-sm text-[11px] bg-surface-container-highest text-secondary whitespace-nowrap',
+  /* Human Decision Audit Ledger / hop chain: a left rule with a dot per item. */
+  timeline: 'flex flex-col gap-3 border-l-2 border-outline-variant/50 ml-1.5 pl-4',
+  tlItem:   'relative flex flex-col gap-1',
+  tlDot:    'absolute -left-[1.3rem] top-1.5 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-surface-container-low',
+  /* Form anatomy, from the outcome form in action-center--31efb6. */
+  field: 'flex flex-col gap-1.5',
+  label: 'font-body-sm text-body-sm font-semibold text-on-surface',
+  input: 'w-full px-3 py-2 rounded-lg border border-outline-variant bg-surface-container-lowest font-body-md text-body-md text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20',
+  hint:  'font-body-sm text-body-sm text-on-surface-variant',
+  frow:  'grid grid-cols-1 sm:grid-cols-2 gap-3',
+  pick:  'flex items-start gap-3 p-3 rounded-lg border border-outline-variant/50 bg-surface-container-lowest hover:bg-surface-container-low cursor-pointer',
+};
+
+/* The Narrative Audit banner of revenue--467051, in the three tones the screens
+   use. The first child span is the icon and takes the tone's colour. */
+export const BANNER = {
+  info: 'bg-surface-container-low rounded-xl p-4 flex items-start gap-3 font-body-sm text-body-sm text-on-surface [&>span:first-child]:text-primary',
+  warm: 'bg-amber-50 border border-amber-200/70 rounded-xl p-4 flex items-start gap-3 font-body-sm text-body-sm text-amber-950 [&>span:first-child]:text-amber-700',
+  hot:  'bg-error-container/40 border border-error/20 rounded-xl p-4 flex items-start gap-3 font-body-sm text-body-sm text-on-error-container [&>span:first-child]:text-error',
+};
+export const BANNER_ICON = 'material-symbols-outlined text-[22px] shrink-0 mt-0.5';
+export const banner = (tone, icon, innerHtml) =>
+  `<div class="${BANNER[tone] || BANNER.info}"><span class="${BANNER_ICON}">${esc(icon)}</span><div class="flex flex-col gap-1 min-w-0">${innerHtml}</div></div>`;
+
+/* ── pill(label, tone, opts) ───────────────────────────────────────────────
+   lib/format.js decides everything that matters about a pill — the tone a word
+   maps to, and whether the "no wording for that status" note is attached — and
+   this keeps all of it by rendering through it and only replacing the two class
+   attributes it wrote. The hex palette is the one stitch-ui.js tempChip() uses
+   (leads-*, deals-pipeline-*). */
+const PILL_BASE = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-label-numeric-sm text-[11px] font-semibold tracking-wide whitespace-nowrap w-fit';
+const PILL = {
+  hot:     `${PILL_BASE} bg-[#FDECEA] text-[#C8321F]`,
+  warm:    `${PILL_BASE} bg-[#FEF3E2] text-[#96570A]`,
+  cold:    `${PILL_BASE} bg-[#E8F1FB] text-[#2563A8]`,
+  ok:      `${PILL_BASE} bg-[#E6F4EF] text-[#157A5B]`,
+  won:     `${PILL_BASE} bg-[#E6F4EF] text-[#157A5B]`,
+  dead:    `${PILL_BASE} bg-[#E4E6EC] text-[#3F4757]`,
+  open:    `${PILL_BASE} bg-[#F1EAFA] text-[#5B2E8C]`,
+  vip:     `${PILL_BASE} bg-primary-fixed text-primary`,
+  unknown: `${PILL_BASE} bg-surface-container text-on-surface-variant`,
+};
+const DOT = {
+  hot: 'w-1.5 h-1.5 rounded-full bg-[#C8321F]', warm: 'w-1.5 h-1.5 rounded-full bg-[#96570A]',
+  cold: 'w-1.5 h-1.5 rounded-full bg-[#2563A8]', ok: 'w-1.5 h-1.5 rounded-full bg-[#157A5B]',
+  won: 'w-1.5 h-1.5 rounded-full bg-[#157A5B]', dead: 'w-1.5 h-1.5 rounded-full bg-[#3F4757]',
+  open: 'w-1.5 h-1.5 rounded-full bg-[#5B2E8C]', vip: 'w-1.5 h-1.5 rounded-full bg-primary',
+  unknown: 'w-1.5 h-1.5 rounded-full bg-outline',
+};
+export const pill = (label, t, opts) => {
+  let k = 'unknown';
+  return fmtPill(label, t, opts)
+    .replace(/^<span class="pill ([a-z]*)"/, (_, tone) => { k = PILL[tone] ? tone : 'unknown'; return `<span class="${PILL[k]}"`; })
+    .replace('<span class="dot"></span>', () => `<span class="${DOT[k]}"></span>`);
+};
+/* The engine's own "unknown" word as a grey pill — what the screens used to
+   write by hand as `<span class="pill unknown"><span class="dot"></span>…`. */
+export const unknownPill = word => `<span class="${PILL.unknown}"><span class="${DOT.unknown}"></span>${esc(word)}</span>`;
+export const hotPill = word => `<span class="${PILL.hot}"><span class="${DOT.hot}"></span>${esc(word)}</span>`;
+
+/* ── kpi(label, valueHtml, subHtml, tone) ───────────────────────────────────
+   revenue--467051 "High-Level Metric Ledger Cards". `tone` keeps the legacy
+   words ('t-hot', 't-won', '') so no caller changes; a long value (a sentence
+   such as "Nothing confirmed") drops a size rather than wrapping mid-figure. */
+const KPI_VAL = {
+  '':      'font-label-numeric-lg text-headline-lg font-bold text-on-surface leading-tight break-words',
+  't-hot': 'font-label-numeric-lg text-headline-lg font-bold text-error leading-tight break-words',
+  't-won': 'font-label-numeric-lg text-headline-lg font-bold text-[#157A5B] leading-tight break-words',
+};
+const KPI_VAL_LONG = {
+  '':      'font-body-lg text-body-lg font-semibold text-on-surface leading-snug break-words',
+  't-hot': 'font-body-lg text-body-lg font-semibold text-error leading-snug break-words',
+  't-won': 'font-body-lg text-body-lg font-semibold text-[#157A5B] leading-snug break-words',
+};
+export function kpi(label, value, sub, cls = '') {
+  const long = String(value).replace(/<[^>]*>/g, '').length > 16;
+  const v = (long ? KPI_VAL_LONG : KPI_VAL)[cls] || (long ? KPI_VAL_LONG : KPI_VAL)[''];
+  return `<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm border border-outline-variant/40 flex flex-col gap-2 min-w-0">
+    <span class="font-body-sm text-body-sm text-on-surface-variant uppercase tracking-wider">${esc(label)}</span>
+    <div class="${v}">${value}</div>
+    ${sub ? `<div class="min-w-0">${sub}</div>` : ''}</div>`;
+}
+
+/* ── table(cols, rows, opts) ────────────────────────────────────────────────
+   revenue--467051 "Inventory Table". Same contract as lib/ui.js table():
+   `cols` is [{ label, align: 'r', strong, render }], a row carries data-i, and
+   `opts.onRow` marks rows `clickable` (screens/policy.js selects on it). */
+const TH = { l: 'px-4 py-3 text-left whitespace-nowrap', r: 'px-4 py-3 text-right whitespace-nowrap' };
+const TD = {
+  l:  'px-4 py-3 align-top text-left',
+  ls: 'px-4 py-3 align-top text-left font-semibold',
+  r:  'px-4 py-3 align-top text-right font-label-numeric-md text-label-numeric-md',
+  rs: 'px-4 py-3 align-top text-right font-label-numeric-md text-label-numeric-md font-bold',
+};
+const TR = { plain: 'hover:bg-surface-container-low/60 transition-colors', click: 'clickable hover:bg-surface-container-low transition-colors cursor-pointer' };
+export function table(cols, rows, opts = {}) {
+  if (!rows.length) return opts.empty || stateEmpty('Nothing here yet', 'No rows matched.');
+  const head = cols.map(c => `<th class="${c.align === 'r' ? TH.r : TH.l}">${esc(c.label)}</th>`).join('');
+  const body = rows.map((r, i) => `<tr class="${opts.onRow ? TR.click : TR.plain}" data-i="${i}">${cols.map(c =>
+    `<td class="${TD[(c.align === 'r' ? 'r' : 'l') + (c.strong ? 's' : '')]}">${c.render(r)}</td>`).join('')}</tr>`).join('');
+  return `<div class="rounded-xl border border-outline-variant/40 bg-surface-container-lowest overflow-x-auto">
+    <table class="w-full text-left border-collapse">
+      <thead><tr class="bg-surface-container-low text-secondary font-table-header text-table-header uppercase">${head}</tr></thead>
+      <tbody class="divide-y divide-outline-variant/20 text-on-surface font-body-sm text-body-sm">${body}</tbody>
+    </table></div>`;
+}
+
+/* ── stateEmpty(title, body, icon) — states-components §5.1 ─────────────── */
+export const stateEmpty = (title, body, icon = 'inbox') => emptyState({ icon, title, body });
+
+/* ── panel(host, { title, sub, actions, load, render, icon, open }) ─────────
+   Same contract as lib/ui.js panel(), including the thenable that remembers
+   what the caller wired so a Retry re-wires it. `sub` is trusted markup, as it
+   always was (several carry &rsquo;). Default: the white section card of
+   revenue--467051 §2 ("Margin Exposed on Stock"). `open: true` is §1's shape —
+   a dot heading over content that sits on the page itself. */
+export function panel(host, { title, sub, actions, load, render, icon, open = false }) {
+  const card = el('section', open ? 'flex flex-col gap-4' : 'bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/30 overflow-hidden');
+  host.appendChild(card);
+  const wirings = [];
+  const rewire = () => {
+    for (const fn of wirings) {
+      try { fn(card); } catch (e) { console.error('panel: re-wiring failed after retry', e); }
+    }
+  };
+  const headHtml = title ? `<div class="${open ? 'flex flex-col md:flex-row md:items-center justify-between gap-3' : 'p-5 flex flex-col md:flex-row md:items-start justify-between gap-3'}">
+      <div class="space-y-0.5 min-w-0">
+        <div class="flex items-center gap-2">${icon
+          ? `<span class="material-symbols-outlined text-primary text-[20px]">${esc(icon)}</span>`
+          : '<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>'}
+          <h2 class="font-headline-md text-headline-md text-on-surface">${esc(title)}</h2></div>
+        ${sub ? `<p class="font-body-sm text-body-sm text-on-surface-variant max-w-4xl">${sub}</p>` : ''}
+      </div>
+      ${actions ? `<div class="flex items-center gap-2 flex-wrap shrink-0">${actions}</div>` : ''}
+    </div>` : '';
+  const attempt = async () => {
+    card.innerHTML = `${headHtml}<div class="${open ? 'flex flex-col gap-4' : 'px-5 pb-5 flex flex-col gap-4'}" data-pbody>${skeleton({ rows: 3 })}</div>`;
+    const body = card.querySelector('[data-pbody]');
+    try {
+      const data = await load();
+      body.innerHTML = render(data, card);
+    } catch (e) {
+      body.innerHTML = errorState({ what: title || 'data', err: e, retry: 'x' });
+      body.querySelector('[data-retry]')?.addEventListener('click', () => { attempt().then(rewire); });
+    }
+  };
+  const first = attempt().then(() => card);
+  return {
+    then(onOk, onErr) {
+      if (typeof onOk === 'function') wirings.push(onOk);
+      return first.then(onOk, onErr);
+    },
+    catch(onErr) { return first.catch(onErr); },
+    finally(onDone) { return first.finally(onDone); },
+  };
+}
+
+/* ── evidenceChain(steps) ───────────────────────────────────────────────────
+   action-center--31efb6 "5-STEP HORIZONTAL EVIDENCE-CHAIN STEPPER":
+   Recommendation → Reason → Evidence (N) → Action → Result. Every step body is
+   trusted markup the caller built from real columns; the RESULT step renders
+   as the export's "Strictly Pending" tile until an outcome exists, and the
+   caller decides that from outcome_state, never from a figure being present. */
+const STEP = {
+  1: { tile: 'flex flex-col bg-surface-container-lowest p-2.5 rounded-lg shadow-sm min-w-0', head: 'font-table-header text-[10px] leading-tight text-primary font-bold uppercase whitespace-nowrap', icon: 'material-symbols-outlined text-primary text-[16px]' },
+  2: { tile: 'flex flex-col bg-surface-container-lowest p-2.5 rounded-lg shadow-sm min-w-0', head: 'font-table-header text-[10px] leading-tight text-error font-bold uppercase whitespace-nowrap', icon: 'material-symbols-outlined text-error text-[16px]' },
+  3: { tile: 'flex flex-col bg-surface-container-lowest p-2.5 rounded-lg shadow-sm min-w-0', head: 'font-table-header text-[10px] leading-tight text-secondary font-bold uppercase whitespace-nowrap', icon: 'material-symbols-outlined text-secondary text-[16px]' },
+  4: { tile: 'flex flex-col bg-surface-container-lowest p-2.5 rounded-lg shadow-sm min-w-0', head: 'font-table-header text-[10px] leading-tight text-tertiary-container font-bold uppercase whitespace-nowrap', icon: 'material-symbols-outlined text-tertiary-container text-[16px]' },
+  5: { tile: 'flex flex-col bg-surface-container-lowest p-2.5 rounded-lg shadow-sm min-w-0', head: 'font-table-header text-[10px] leading-tight text-[#157A5B] font-bold uppercase whitespace-nowrap', icon: 'material-symbols-outlined text-[#157A5B] text-[16px]' },
+  pending: { tile: 'flex flex-col bg-surface-container-high/60 p-2.5 rounded-lg justify-between min-w-0', head: 'font-table-header text-[10px] leading-tight text-outline font-bold uppercase whitespace-nowrap', icon: 'material-symbols-outlined text-outline text-[16px]' },
+};
+export const STEP_TEXT = 'font-body-sm text-[11px] text-on-surface leading-relaxed whitespace-normal';
+export const STEP_LIST = 'space-y-1 font-body-sm text-[11px] text-on-surface leading-snug whitespace-normal';
+export const PENDING_TAG = 'font-label-numeric-sm text-[10px] px-2 py-1 rounded bg-surface-container-highest text-secondary font-bold uppercase tracking-wide inline-block';
+export function evidenceChain({ recommendation, reason, evidenceCount, evidence, action, result, resultPending }) {
+  const step = (n, key, title, icon, bodyHtml) => {
+    const s = STEP[key];
+    return `<div class="${s.tile}">
+      <div class="flex items-center justify-between flex-wrap mb-1.5 gap-x-2 gap-y-1"><span class="${s.head}">${n}. ${esc(title)}</span>
+        <span class="${s.icon}">${esc(icon)}</span></div>${bodyHtml}</div>`;
+  };
+  const evTitle = evidenceCount == null ? 'Evidence' : `Evidence (${nf.format(evidenceCount)})`;
+  return `<div class="bg-surface-container-low/40 rounded-lg p-3" data-evidence-chain>
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+      ${step(1, 1, 'Recommendation', 'psychology', recommendation)}
+      ${step(2, 2, 'Reason', 'warning', reason)}
+      ${step(3, 3, evTitle, 'dataset', evidence)}
+      ${step(4, 4, 'Action', 'send', action)}
+      ${resultPending
+        ? step(5, 'pending', 'Result', 'hourglass_empty', `<div class="my-auto text-center py-1"><span class="${PENDING_TAG}">○ Pending</span></div>${result || ''}`)
+        : step(5, 5, 'Result', 'task_alt', result)}
+    </div></div>`;
+}
+
+/* lib/modal.js openModal()'s positional signature over the Stitch dialog, so
+   the Policy and Action Center dialogs keep their bodies and their wiring
+   (same { wrap, close, msg } handle; lib/modal.js modalError() still works). */
+export const stitchModal = (title, bodyHtml, footHtml) =>
+  openStitchModal({ title, bodyHtml: `<div class="flex flex-col gap-3">${bodyHtml}</div>`, footHtml });
+
+/* The page header and footer every engine screen shares. */
+export const engineHeader = ({ title, sub, actionsHtml }) =>
+  sectionHeader({ eyebrow: 'Revenue recovery', title, sub, actionsHtml });
+export function engineFooter({ source, evidence }) {
+  const who = (ME && (ME.name || ME.email)) || (SESSION && SESSION.user && SESSION.user.email) || null;
+  const t = tenantLabel(tenantState());
+  return trustFooter({ source, asOf: dubaiStamp(new Date().toISOString()), evidence,
+    actor: who ? (t ? `${who} · ${t}` : who) : null });
+}
+/* A link button to another screen, in the Stitch secondary style, and its
+   wiring. Same rule the screens already followed: a screen not in this build
+   is a disabled button that says so, never a click that does nothing. */
+export const linkBtn = (id, label) => (SCREENS[id]
+  ? `<button type="button" class="${BTN.secondary} whitespace-nowrap" data-go="${esc(id)}">${esc(label)}</button>`
+  : `<button type="button" class="${BTN.secondary} whitespace-nowrap" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
+export const wireGo = card => {
+  card.querySelectorAll('[data-go]').forEach(b => {
+    if (b.disabled) return;
+    b.addEventListener('click', () => go(b.dataset.go));
+  });
+};
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const bold   = h => `<div style="font-weight:600">${h}</div>`;
+const muted  = h => `<div class="${SX.sub}">${h}</div>`;
+const hot    = h => `<div class="${SX.hot}">${h}</div>`;
+const bold   = h => `<div class="${SX.bold}">${h}</div>`;
 
 /* One clause out of the engine's own "what I cannot tell you" paragraph, which
    is written as CANNOT SIZE: … CANNOT SEE: … CANNOT CONFIRM: …
@@ -135,15 +405,7 @@ const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e })
    would be worse than a disabled one: this codebase's own rule is that a click
    which appears to work and does nothing is the single outcome that must not
    happen. So the button says which of the two it is before it is pressed. */
-const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
-};
+/* linkBtn() and wireGo() are the kit's, above. */
 
 /* A read that failed, said in one sentence, in the place the figure would have
    been. Never a bare dash: a dash beside "Leads at risk" reads as zero, and
@@ -197,16 +459,22 @@ export const saleFacts = rows => {
    The screen
    ══════════════════════════════════════════════════════════════════════════ */
 SCREENS.revenue = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto another screen and restyle one nobody converted. A wrapper
-     cannot leak — go() removes it with the rest of the subtree. Same pattern as
-     screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* The root is the Stitch scope (`nx-stitch` switches on the scoped reset the
+     design classes were drawn against). It is a wrapper this screen appends and
+     NOT a class on `#screen`, for the reason the old `.ds-screen` wrapper gave:
+     lib/nav.js empties `#screen` between renders without touching its classes,
+     so a class set there would follow the operator onto another screen. Design:
+     design/stitch/revenue-recovery-money-leaks-engine--467051.html (primary)
+     and --a2b2bd. */
+  host.innerHTML = '';
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
+  root.insertAdjacentHTML('beforeend', engineHeader({
+    title: 'Revenue Recovery',
+    sub: 'Where the money is, what each engine can prove about it, and what it refuses to add up.',
+    actionsHtml: linkBtn('actions', 'Open Action Center') + linkBtn('leadrecovery', 'Open Lead Recovery'),
+  }));
+  wireGo(root);
 
   /* ── The reads ──────────────────────────────────────────────────────────
      Every path is a literal so that QUALITY_GATE.mjs can extract it and check
@@ -295,6 +563,7 @@ SCREENS.revenue = async host => {
           this screen refuses to print.
      ══════════════════════════════════════════════════════════════════════ */
   panel(root, {
+    open: true,
     title: 'Where the money is, and what NEXUS can prove about it',
     sub: 'Five findings from four engines. Each figure is the one its own engine produced, in its own units, '
        + 'beside what it excludes. Nothing on this page is added to anything else on this page.',
@@ -473,24 +742,43 @@ SCREENS.revenue = async host => {
           : 'The sale chain could not be read.',
       });
 
-      const ledger = `<div class="table-wrap"><table class="data"><thead><tr>
-          <th>Word</th><th>What it means</th><th class="r">Today</th><th>How that figure was arrived at</th>
-        </tr></thead><tbody>${ledgerRows.map(w => `<tr>
-          <td class="strong">${esc(w.word)}</td>
-          <td>${muted(esc(w.means))}</td>
-          <td class="r num strong">${w.value}</td>
-          <td>${muted(w.why)}</td>
-        </tr>`).join('')}</tbody></table></div>`;
+      /* The three words as the three Stitch money tiles (states-components §2),
+         side by side and never summed: each amount is the same derivation the
+         ledger row beneath it explains, and a tile without a figure prints "—"
+         and says why rather than a zero. */
+      const estAmount = (sized && sized.length) ? sized.reduce((a, d) => a + Number(d.opportunity_value_aed), 0) : null;
+      const moneyRow = `<div class="${SX.g3}">
+          ${moneyTile({ kind: 'estimated', label: 'What leaks might be worth', amount: estAmount,
+            sub: estAmount == null ? '' : `Over ${nf.format(sized.length)} of ${nf.format(leads.length)} leads`,
+            unknownWhy: leads ? 'Not computed: no lead on file can be sized' : 'Not known: the lead rows could not be read',
+            footLeft: 'Before anybody acts', footRight: 'Lead Recovery' })}
+          ${moneyTile({ kind: 'attributed', label: 'Produced by a recorded action', amount: attributed === 0 ? 0 : null,
+            sub: attributed === 0 ? 'No action in either lane carries an attributed outcome' : '',
+            unknownWhy: attributed != null ? 'Outcomes are attributed; their value is not summed here' : 'Not known: the action lanes could not be read',
+            footLeft: 'Inventory + lead recovery lanes', footRight: 'Never summed' })}
+          ${moneyTile({ kind: 'confirmed', label: 'Revenue a sale produced', amount: S && S.confirmed.length ? S.revenue : null,
+            sub: S && S.confirmed.length ? `${nf.format(S.confirmed.length)} confirmed ${plural(S.confirmed.length, 'sale', 'sales')} on file — none attributed to NEXUS` : '',
+            unknownWhy: S ? 'Nothing confirmed: no sale on file carries a confirmed amount' : 'Not known: the sale chain could not be read',
+            footLeft: 'Sale record', footRight: 'Not recovered' })}
+        </div>`;
 
-      return `<div class="grid g5">${exposureTile}${riskTile}${dealTile}${decisionTile}${recoveryTile}</div>
+      const ledger = table([
+        { label: 'Word', strong: true, render: w => esc(w.word) },
+        { label: 'What it means', render: w => muted(esc(w.means)) },
+        { label: 'Today', align: 'r', strong: true, render: w => w.value },
+        { label: 'How that figure was arrived at', render: w => muted(w.why) },
+      ], ledgerRows);
 
-        <div class="section" style="margin-top:18px">
-          <div class="label-caps">Three words that are not interchangeable</div>
+      return `<div class="${SX.g5}">${exposureTile}${riskTile}${dealTile}${decisionTile}${recoveryTile}</div>
+
+        <div class="${SX.stack}">
+          <div class="${SX.caps}">Three words that are not interchangeable</div>
+          ${moneyRow}
           ${ledger}
         </div>
 
-        <div class="banner info">
-          <span class="material-symbols-outlined" style="font-size:20px">functions</span>
+        <div class="${BANNER.info}">
+          <span class="${BANNER_ICON}">functions</span>
           <div>
             ${bold('There is no total &ldquo;revenue at risk&rdquo; on this page, and there is not going to be one.')}
             ${muted('Nothing in this system can compute it. Lead Recovery reports risk, not value: no lead carries a '
@@ -524,11 +812,11 @@ SCREENS.revenue = async host => {
       const body = F.exposed.length
         ? table([
             { label: 'Unit', strong: true, render: u =>
-                `<div>${esc(str(u.model) || str(u.id))}</div><div class="ds-cell-sub mono">${esc(str(u.id))}</div>` },
+                `<div>${esc(str(u.model) || str(u.id))}</div><div class="${SX.subMono}">${esc(str(u.id))}</div>` },
             { label: 'Ageing', render: u => pill(str(u.aging_band), '', { verbatim: true }) },
             { label: 'Risk', render: u => pill(str(u.overall_risk), '', { verbatim: true }) },
             { label: 'Days in stock', align: 'r', render: u =>
-                (n0(u.days_in_stock) == null ? '<span class="t-muted">unknown</span>' : num(u.days_in_stock)) },
+                (n0(u.days_in_stock) == null ? `<span class="${SX.dim}">unknown</span>` : num(u.days_in_stock)) },
             { label: 'Recommended', render: u => pill(str(u.recommendation), '', { verbatim: true }) },
             { label: 'Margin exposed', align: 'r', strong: true, render: u => aed(u.impact_aed) },
           ], F.exposed)
@@ -568,7 +856,7 @@ SCREENS.revenue = async host => {
         + `${plural(F.needsDecision, 'unit', 'units')} and recommends HOLD on ${num(F.hold)}.`
         + (F.computedAt ? ` Scored ${esc(dubaiStamp(F.computedAt))}.` : ''));
 
-      return body + `<div class="section" style="margin-top:16px">${notes.map(t => muted(t)).join('')}</div>`;
+      return body + `<div class="${SX.note}">${notes.map(t => muted(t)).join('')}</div>`;
     },
   }).then(wireGo);
 
@@ -590,7 +878,7 @@ SCREENS.revenue = async host => {
       const rows = q.err ? null : (q.v || []);
 
       const summary = H
-        ? `<div class="grid g4">
+        ? `<div class="${SX.g4}">
             ${kpi('Waiting on a decision', num(H.awaiting_decision), muted(n0(H.awaiting_decision)
                 /* Both plurals key off undecided_with_no_figure, which is the
                    subject of the clause. Keying them off awaiting_decision put
@@ -614,20 +902,20 @@ SCREENS.revenue = async host => {
                 : 'No completed sale has been linked to any of these actions. Nothing has been recovered because '
                   + 'nothing has been connected — an evidence gap, not a result'))}
           </div>`
-        : `<div class="section">${readFailed('Action Center health', h.err)}</div>`;
+        : `<div class="${SX.note}">${readFailed('Action Center health', h.err)}</div>`;
 
       const list = rows == null
-        ? `<div class="section">${readFailed('The action queue', q.err)}</div>`
+        ? `<div class="${SX.note}">${readFailed('The action queue', q.err)}</div>`
         : table([
             { label: 'Unit', strong: true, render: a =>
                 `<div>${esc(str(a.unit_model) || str(a.unit_id))}</div>`
-                + `<div class="ds-cell-sub mono">${esc(str(a.unit_id))}</div>` },
+                + `<div class="${SX.subMono}">${esc(str(a.unit_id))}</div>` },
             { label: 'Recommended', render: a => pill(str(a.recommendation), '', { verbatim: true }) },
             { label: 'Status', render: a => pill(str(a.status), '', { verbatim: true }) },
             { label: 'Exposure at stake', align: 'r', render: a => (up(a.engine_impact_kind) === 'NONE'
-                ? '<span class="t-muted">none claimed</span>'
+                ? `<span class="${SX.dim}">none claimed</span>`
                 : n0(a.engine_impact_aed) == null
-                  ? '<span class="t-muted">not sized</span>'
+                  ? `<span class="${SX.dim}">not sized</span>`
                   : aed(a.engine_impact_aed)) },
             { label: 'Outcome', render: a => muted(esc(str(a.outcome_sentence)
                 || 'The database records no outcome sentence against this action.')) },
@@ -649,7 +937,7 @@ SCREENS.revenue = async host => {
             + (H.last_activity_at ? `Last activity ${esc(dubaiStamp(H.last_activity_at))}.` : 'No activity recorded.'))
         : '';
 
-      return summary + list + (foot ? `<div class="section" style="margin-top:16px">${foot}</div>` : '');
+      return summary + list + (foot ? `<div class="${SX.note}">${foot}</div>` : '');
     },
   }).then(wireGo);
 
@@ -673,7 +961,7 @@ SCREENS.revenue = async host => {
          below it — one figure, one derivation. Where the two disagree the
          screen says so rather than quietly preferring one of them. */
       const head = C
-        ? `<div class="grid g4">
+        ? `<div class="${SX.g4}">
             ${kpi('At risk', num(C.leads_at_risk), muted(n0(C.leads_at_risk)
                 ? 'Each one is listed below with the evidence behind it'
                 : 'No measurable recovery opportunity is currently detected. The engine scored every lead on file and '
@@ -695,10 +983,10 @@ SCREENS.revenue = async host => {
                     + `(${aed(C.confirmed_revenue_aed)}), and none is linked to an action here. `
                     + 'Confirmed is not attributed'))}
           </div>`
-        : `<div class="section">${readFailed('Lead Recovery coverage', c.err)}</div>`;
+        : `<div class="${SX.note}">${readFailed('Lead Recovery coverage', c.err)}</div>`;
 
       const mismatch = (C && leads && Number(C.leads_total) !== leads.length)
-        ? `<div class="banner warm"><span class="material-symbols-outlined" style="font-size:20px">rule</span><div>
+        ? `<div class="${BANNER.warm}"><span class="${BANNER_ICON}">rule</span><div>
              The coverage view counts ${num(C.leads_total)} ${plural(C.leads_total, 'lead', 'leads')} and the lead list
              returned ${num(leads.length)}. Two reads of one engine disagree, so the counts above are the coverage
              view's and the rows below are the list's. Neither has been adjusted to agree with the other.
@@ -706,18 +994,18 @@ SCREENS.revenue = async host => {
         : '';
 
       const list = leads == null
-        ? `<div class="section">${readFailed('The lead list', l.err)}</div>`
+        ? `<div class="${SX.note}">${readFailed('The lead list', l.err)}</div>`
         : table([
             { label: 'Lead', strong: true, render: d =>
                 `<div>${esc(maskText(str(d.lead_name) || ('Lead ' + str(d.lead_id))))}</div>`
-                + `<div class="ds-cell-sub mono">#${esc(str(d.lead_id))} · ${esc(str(d.lead_status) || 'no status')}</div>` },
+                + `<div class="${SX.subMono}">#${esc(str(d.lead_id))} · ${esc(str(d.lead_status) || 'no status')}</div>` },
             { label: 'State', render: d => pill(str(d.state), '', { verbatim: true }) },
             { label: 'Risk', render: d => pill(str(d.risk_level), '', { verbatim: true }) },
             { label: 'Why', render: d => muted(esc(str(d.risk_basis)
                 || 'The database records no basis for this risk level.')) },
             { label: 'What it could be worth', render: d => (n0(d.opportunity_value_aed) != null
                 ? aed(d.opportunity_value_aed)
-                : `<span class="t-muted">${esc(str(d.opportunity_value_state) || 'UNKNOWN')}</span>`
+                : `<span class="${SX.dim}">${esc(str(d.opportunity_value_state) || 'UNKNOWN')}</span>`
                   + muted(esc(str(d.opportunity_value_basis).replace(/^UNKNOWN\.\s*/i, ''))
                       || 'The database records no basis for withholding this figure.')) },
           ], leads, {
@@ -731,9 +1019,9 @@ SCREENS.revenue = async host => {
          paraphrase would be a second copy of a business fact that drifts the
          first time the view is edited. */
       const blind = C && str(C.what_this_engine_cannot_tell_you)
-        ? `<div class="section">
-             <div class="label-caps">What this engine cannot tell you</div>
-             <div class="quote">${esc(str(C.what_this_engine_cannot_tell_you))}</div>
+        ? `<div class="${SX.note}">
+             <div class="${SX.caps}">What this engine cannot tell you</div>
+             <div class="${SX.quote}">${esc(str(C.what_this_engine_cannot_tell_you))}</div>
            </div>`
         : '';
 
@@ -753,7 +1041,7 @@ SCREENS.revenue = async host => {
             + 'conversation on those handles is invisible to every figure on this page.')
         : '';
 
-      return head + mismatch + list + blind + (detector ? `<div class="section">${detector}</div>` : '');
+      return head + mismatch + list + blind + (detector ? `<div class="${SX.note}">${detector}</div>` : '');
     },
   }).then(wireGo);
 
@@ -776,7 +1064,7 @@ SCREENS.revenue = async host => {
       const ready = rd.err ? null : (rd.v || []);
       const met = ready ? ready.filter(p => p.met_now === true).length : null;
 
-      const head = `<div class="grid g3">
+      const head = `<div class="${SX.g3}">
         ${deals == null
           ? kpi('Deals in flight', num(null), readFailed('Deal Rescue', r.err))
           : kpi('Deals in flight', num(deals.length), muted(deals.length
@@ -801,14 +1089,14 @@ SCREENS.revenue = async host => {
         : table([
             { label: 'What it is', strong: true, render: k =>
                 `<div>${esc(str(k.customer_label) || str(k.candidate_ref) || 'unnamed row')}</div>`
-                + `<div class="ds-cell-sub">${esc(str(k.candidate_kind))} · `
-                + `<span class="mono">${esc(str(k.source_table))}</span></div>` },
+                + `<div class="${SX.sub}">${esc(str(k.candidate_kind))} · `
+                + `<span class="${SX.mono}">${esc(str(k.source_table))}</span></div>` },
             { label: 'Verdict', render: k => pill(str(k.verdict), '', { verbatim: true }) },
             { label: 'Why it is not a deal', render: k => muted(esc(str(k.verdict_basis)
                 || 'The database records no reason for this verdict, which is itself a gap.')) },
             { label: 'Value', align: 'r', render: k => (n0(k.deal_value_aed) != null
                 ? aed(k.deal_value_aed)
-                : `<span class="t-muted">${esc(str(k.deal_value_state) || 'UNKNOWN')}</span>`) },
+                : `<span class="${SX.dim}">${esc(str(k.deal_value_state) || 'UNKNOWN')}</span>`) },
           ], cands, {
             empty: stateEmpty('Nothing was examined',
               'The candidate view returned no rows at all, so it found nothing that could even be considered — which '
@@ -816,13 +1104,13 @@ SCREENS.revenue = async host => {
           });
 
       const readyBlock = ready == null
-        ? `<div class="section">${readFailed('The readiness list', rd.err)}</div>`
-        : `<div class="section" style="margin-top:16px">
-             <div class="label-caps">What would have to exist before this engine has anything to rank</div>
+        ? `<div class="${SX.note}">${readFailed('The readiness list', rd.err)}</div>`
+        : `<div class="${SX.note}">
+             <div class="${SX.caps}">What would have to exist before this engine has anything to rank</div>
              ${table([
                { label: 'Prerequisite', strong: true, render: p =>
-                   `<div style="white-space:normal">${esc(str(p.requirement))}</div>`
-                   + `<div class="ds-cell-sub mono">${esc(str(p.id))} · ${esc(str(p.kind))}</div>` },
+                   `<div class="${SX.wrap}">${esc(str(p.requirement))}</div>`
+                   + `<div class="${SX.subMono}">${esc(str(p.id))} · ${esc(str(p.kind))}</div>` },
                { label: 'Met', render: p => (p.met_now === true
                    ? pill('Met', 'ok', { verbatim: false })
                    : pill('Not met', 'hot', { verbatim: false })) },
@@ -839,7 +1127,7 @@ SCREENS.revenue = async host => {
         + 'integrations with systems the sales floor already uses. Until they exist this engine reports honestly that '
         + 'it has nothing to rank, and that is the correct output rather than a defect.');
 
-      return head + candTable + readyBlock + `<div class="section">${note}</div>`;
+      return head + candTable + readyBlock + `<div class="${SX.note}">${note}</div>`;
     },
   }).then(wireGo);
 
@@ -865,7 +1153,7 @@ SCREENS.revenue = async host => {
       const facing = consts ? consts.filter(k => k.reaches_a_customer === true).length : null;
       const blocked = consts ? consts.filter(k => up(k.migration_state) === 'BLOCKED_ON_VERIFICATION').length : null;
 
-      const head = `<div class="grid g4">
+      const head = `<div class="${SX.g4}">
         ${rules == null
           ? kpi('Rule versions on record', num(null), readFailed('The policy rules', ru.err))
           : kpi('Rule versions on record', num(rules.length),
@@ -894,15 +1182,15 @@ SCREENS.revenue = async host => {
       </div>`;
 
       const ruleTable = rules == null
-        ? `<div class="section">${readFailed('The policy rules', ru.err)}</div>`
+        ? `<div class="${SX.note}">${readFailed('The policy rules', ru.err)}</div>`
         : table([
             { label: 'Rule', strong: true, render: k =>
-                `<div class="mono">${esc(str(k.rule_name))}</div>`
-                + `<div class="ds-cell-sub">${esc(str(k.jurisdiction))} · ${esc(str(k.rule_type))} · `
+                `<div class="${SX.mono}">${esc(str(k.rule_name))}</div>`
+                + `<div class="${SX.sub}">${esc(str(k.jurisdiction))} · ${esc(str(k.rule_type))} · `
                 + `v${esc(str(k.version))} · ${esc(str(k.status))}</div>` },
             { label: 'Value', render: k => (str(k.value_display)
-                ? `<span class="mono">${esc(str(k.value_display))}</span>`
-                : '<span class="t-muted">no value recorded — the row is a question, not an answer</span>') },
+                ? `<span class="${SX.mono}">${esc(str(k.value_display))}</span>`
+                : `<span class="${SX.dim}">no value recorded — the row is a question, not an answer</span>`) },
             { label: 'Authority', render: k => pill(str(k.authority), '', { verbatim: true }) },
             { label: 'Source', render: k => muted(esc(str(k.source_name) || 'No source recorded.')) },
           ], rules, {
@@ -913,18 +1201,18 @@ SCREENS.revenue = async host => {
 
       const constTable = consts == null
         ? ''
-        : `<div class="section" style="margin-top:16px">
-             <div class="label-caps">Constants still hard-coded${facing ? `, ${num(facing)} of which reach a customer` : ''}</div>
+        : `<div class="${SX.note}">
+             <div class="${SX.caps}">Constants still hard-coded${facing ? `, ${num(facing)} of which reach a customer` : ''}</div>
              ${table([
                { label: 'Where', strong: true, render: k =>
-                   `<div class="mono" style="white-space:normal">${esc(str(k.location))}</div>`
-                   + `<div class="ds-cell-sub">${esc(str(k.layer))} · ${esc(str(k.kind))}</div>` },
-               { label: 'Value in force', render: k => `<span class="mono">${esc(str(k.current_value))}</span>` },
+                   `<div class="${SX.mono}">${esc(str(k.location))}</div>`
+                   + `<div class="${SX.sub}">${esc(str(k.layer))} · ${esc(str(k.kind))}</div>` },
+               { label: 'Value in force', render: k => `<span class="${SX.mono}">${esc(str(k.current_value))}</span>` },
                { label: 'Reaches a customer', render: k => (k.reaches_a_customer === true
                    ? pill('Yes', 'hot', { verbatim: false })
                    : pill('No', 'cold', { verbatim: false })) },
                { label: 'State', render: k => pill(str(k.migration_state), '', { verbatim: true }) },
-               { label: 'Would become', render: k => muted(`<span class="mono">${esc(str(k.proposed_rule_type))}`
+               { label: 'Would become', render: k => muted(`<span class="${SX.mono}">${esc(str(k.proposed_rule_type))}`
                    + ` / ${esc(str(k.proposed_rule_name))}</span>`) },
              ], consts, {
                empty: stateEmpty('No hard-coded constant was found',
@@ -941,7 +1229,7 @@ SCREENS.revenue = async host => {
             + 'papered over.')
         : '';
 
-      return head + ruleTable + constTable + (note ? `<div class="section">${note}</div>` : '');
+      return head + ruleTable + constTable + (note ? `<div class="${SX.note}">${note}</div>` : '');
     },
   }).then(wireGo);
 
@@ -962,7 +1250,7 @@ SCREENS.revenue = async host => {
           + 'is claimed. An empty ledger, not a zero result.', 'receipt_long');
       }
 
-      const head = `<div class="grid g3">
+      const head = `<div class="${SX.g3}">
         ${S.confirmed.length
           ? kpi('Confirmed revenue', aed(S.revenue),
               muted(`Summed over ${num(S.confirmed.length)} of ${num(S.sales.length)} `
@@ -1014,15 +1302,15 @@ SCREENS.revenue = async host => {
       const detail = S.sales.map(s => {
         const chain = Array.isArray(s.chain) ? s.chain : [];
         const hops = chain.length
-          ? `<div class="timeline">${chain.map(h => `<div class="tl-item">
-               <div class="tl-dot"></div>
-               <div class="tl-body">
+          ? `<div class="${SX.timeline}">${chain.map(h => `<div class="${SX.tlItem}">
+               <span class="${SX.tlDot}"></span>
+               <div class="flex flex-col gap-1 min-w-0">
                  ${bold(`${esc(str(h.hop))} ${pill(str(h.state), '', { verbatim: true })}`)}
                  ${muted(esc(str(h.note) || 'No note is recorded for this hop.'))}
                </div></div>`).join('')}</div>`
           : muted('The view returned no chain for this sale, so no hop can be shown. That is a missing explanation, '
               + 'not an unbroken chain.');
-        return `<div class="section" style="margin-top:16px">
+        return `<div class="${SX.note}">
             ${bold(`${esc(maskText(str(s.customer_name) || 'Customer not named'))} — ${esc(str(s.vehicle_text) || 'vehicle not named')}`)}
             ${muted(`${aed(s.revenue_aed)} on ${esc(dubaiDate(s.purchase_date))} · `
               + `${num(s.hops_evidenced)} of ${num(s.hops_total)} hops evidenced · `
@@ -1034,4 +1322,22 @@ SCREENS.revenue = async host => {
       return head + detail;
     },
   }).then(wireGo);
+
+  /* The two leak lanes of revenue--a2b2bd's tab strip that have no engine
+     behind them. Stock, lead and deal leaks are the panels above; marketing and
+     customer leaks are shown as what they are — not built — rather than as a
+     zero, which would read as "no leak". */
+  const roadmap = el('div', SX.g2);
+  roadmap.innerHTML = comingSoonPanel({ kind: 'planned', icon: 'campaign', title: 'Marketing leaks',
+      body: 'Spend that produced no enquiry, or enquiries no campaign can be credited with. Nothing on this page measures it: this database holds no campaign or ad-spend record.',
+      prerequisite: 'A campaign and ad-spend feed — see Attribution, where the campaign hop is the first break.' })
+    + comingSoonPanel({ kind: 'planned', icon: 'groups', title: 'Customer leaks',
+      body: 'Owners drifting away after the sale — missed service, lapsed warranty, no repeat purchase. There is no service or ownership history here to read it from.',
+      prerequisite: 'Your DMS service and ownership history connected.' });
+  root.appendChild(roadmap);
+
+  root.insertAdjacentHTML('beforeend', engineFooter({
+    source: 'Profit Sentinel · Action Center · Lead Recovery · Deal Rescue · Policy · Attribution views',
+    evidence: 'Each figure from its own engine, read on open; nothing is added across engines',
+  }));
 };

@@ -64,23 +64,22 @@
 
 import { db, dbWrite, onIdentityChange } from '../lib/data.js';
 import { $, el } from '../lib/dom.js';
-import { dubaiDate, dubaiStamp, esc, num, pill } from '../lib/format.js';
+import { dubaiDate, dubaiStamp, esc, num } from '../lib/format.js';
 import { SCREENS, go } from '../lib/nav.js';
-import { openModal } from '../lib/modal.js';
-import { stateEmpty, stateError, stateLoading } from '../lib/states.js';
 import { tenantLabel, tenantState } from '../lib/tenant.js';
-import { closeDrawer, kpi, openDrawer, panel, table } from '../lib/ui.js';
+import { BTN, errorState, skeleton, openStitchDrawer } from '../lib/stitch-ui.js';
+import { SX, BANNER, BANNER_ICON, stitchModal, kpi, panel, table, pill, stateEmpty, unknownPill, linkBtn, wireGo, engineHeader, engineFooter } from './revenue.js';
 
 /* ── Small local vocabulary ───────────────────────────────────────────────── */
 const str = v => String(v == null ? '' : v).trim();
 const up  = v => str(v).toUpperCase();
 const n0  = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const plural = (c, one, many) => (Number(c) === 1 ? one : many);
-const muted  = h => `<div class="ds-cell-sub">${h}</div>`;
-const hot    = h => `<div class="ds-cell-sub t-hot">${h}</div>`;
-const bold   = h => `<div style="font-weight:600">${h}</div>`;
-const wrap   = h => `<div style="white-space:normal">${h}</div>`;
-const mono   = v => `<span class="mono">${esc(str(v))}</span>`;
+const muted  = h => `<div class="${SX.sub}">${h}</div>`;
+const hot    = h => `<div class="${SX.hot}">${h}</div>`;
+const bold   = h => `<div class="${SX.bold}">${h}</div>`;
+const wrap   = h => `<div class="${SX.wrap}">${h}</div>`;
+const mono   = v => `<span class="${SX.mono}">${esc(str(v))}</span>`;
 
 const readFailed = (what, err) =>
   hot(`${esc(what)} could not be read (${esc(str(err && err.message) || 'no reason given')}), so nothing is claimed `
@@ -143,15 +142,7 @@ const shared = make => {
 };
 const settle = pr => pr.then(v => ({ v, err: null }), e => ({ v: null, err: e }));
 
-const linkBtn = (id, label) => (SCREENS[id]
-  ? `<button class="btn sm" data-go="${esc(id)}">${esc(label)}</button>`
-  : `<button class="btn sm ghost" disabled title="${esc(label)} is not part of this build: the navigation offers the screen and no module in this bundle registers it.">${esc(label)} — not in this build</button>`);
-const wireGo = card => {
-  card.querySelectorAll('[data-go]').forEach(b => {
-    if (b.disabled) return;
-    b.addEventListener('click', () => go(b.dataset.go));
-  });
-};
+/* linkBtn() and wireGo() come from the engine-desk kit in screens/revenue.js. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    The screen
@@ -163,19 +154,23 @@ let NOTICE = null;
 onIdentityChange(() => { NOTICE = null; });
 
 SCREENS.policy = async host => {
-  /* `.ds-screen` is the class lib/design-system.css gates its handful of
-     upgrades to existing chrome behind. It goes on a wrapper this screen
-     appends, and NOT on `#screen`, because lib/nav.js empties `#screen` between
-     renders without touching its classes: a class set there would follow the
-     operator onto Leads or Money Leaks and restyle a screen nobody converted.
-     A wrapper cannot leak — go() removes it with the rest of the subtree. Same
-     pattern as screens/inventory.js, screens/leads.js, screens/overview.js,
-     screens/money-leaks.js, screens/conversations.js and screens/setup.js. */
-  const root = el('div', 'ds-screen');
+  /* The root is the Stitch scope (`nx-stitch` switches on the scoped reset the
+     design classes were drawn against). It is a wrapper this screen appends and
+     NOT a class on `#screen`, for the reason the old `.ds-screen` wrapper gave:
+     lib/nav.js empties `#screen` between renders without touching its classes,
+     so a class set there would follow the operator onto another screen.
+     Design: design/stitch/policy-revenue-governance-rule-engine--dc78bf.html. */
+  const root = el('div', 'nx-stitch flex flex-col gap-space-lg');
   host.appendChild(root);
+  root.insertAdjacentHTML('beforeend', engineHeader({
+    title: 'Policy',
+    sub: 'The rules every engine runs on — what each one cites, who checked it, and which may be quoted to a customer.',
+    actionsHtml: linkBtn('compliance', 'Open Compliance') + linkBtn('finance', 'Open Finance Desk'),
+  }));
+  wireGo(root);
   if (NOTICE) {
     const n = el('div');
-    n.innerHTML = `<div class="banner info"><span class="material-symbols-outlined">check_circle</span><div>${NOTICE}</div></div>`;
+    n.innerHTML = `<div class="${BANNER.info}"><span class="${BANNER_ICON}">check_circle</span><div>${NOTICE}</div></div>`;
     root.appendChild(n);
     NOTICE = null;
   }
@@ -329,8 +324,8 @@ SCREENS.policy = async host => {
          printed with the engine's own note, and the engine's own note is what
          says which is the most urgent. */
       const urgent = K && K.facingLaw.length
-        ? `<div class="banner hot" style="margin-top:16px">
-             <span class="material-symbols-outlined" style="font-size:20px">gavel</span>
+        ? `<div class="${BANNER.hot}">
+             <span class="${BANNER_ICON}">gavel</span>
              <div>
                ${bold(`${num(K.facingLaw.length)} customer-facing `
                  + `${plural(K.facingLaw.length, 'figure asserts a rule this project does not own', 'figures assert rules this project does not own')}.`)}
@@ -341,15 +336,15 @@ SCREENS.policy = async host => {
              </div>
            </div>`
         : K
-          ? `<div class="banner info" style="margin-top:16px">
-               <span class="material-symbols-outlined" style="font-size:20px">gavel</span>
+          ? `<div class="${BANNER.info}">
+               <span class="${BANNER_ICON}">gavel</span>
                <div>${muted('No constant in the survey both reaches a customer and asserts a jurisdiction rule. '
                  + 'That is what the survey records, as of the date it was taken.')}</div>
              </div>`
           : '';
 
-      const orthogonal = `<div class="banner info" style="margin-top:16px">
-          <span class="material-symbols-outlined" style="font-size:20px">rule</span>
+      const orthogonal = `<div class="${BANNER.info}">
+          <span class="${BANNER_ICON}">rule</span>
           <div>
             ${bold('&ldquo;In force&rdquo; and &ldquo;checked&rdquo; are two different questions, and this engine keeps them apart.')}
             ${muted('One answer says whether a rule is in force. A separate one says whether a person has checked '
@@ -359,7 +354,7 @@ SCREENS.policy = async host => {
           </div>
         </div>`;
 
-      return `<div class="grid g5">${versionsTile}${verifiedTile}${reliableTile}${safeTile}${constTile}</div>`
+      return `<div class="${SX.g5}">${versionsTile}${verifiedTile}${reliableTile}${safeTile}${constTile}</div>`
         + urgent + orthogonal;
     },
   }).then(wireGo);
@@ -380,8 +375,8 @@ SCREENS.policy = async host => {
           + 'and this engine cannot say what any of them should be.', 'gavel');
       }
 
-      const axis = (words, counts, means, strange, title, caption, labels) => `<div class="section">
-          <div class="label-caps">${esc(title)}</div>
+      const axis = (words, counts, means, strange, title, caption, labels) => `<div class="${SX.note}">
+          <div class="${SX.caps}">${esc(title)}</div>
           ${table([
             /* `verbatim` is a claim about PROVENANCE — that this label is a
                value the database handed us — so it is true only where a row
@@ -398,7 +393,7 @@ SCREENS.policy = async host => {
                 /* A real zero, and it says what it is a zero OF. Not a dash:
                    the state exists in this database's vocabulary and simply has
                    nothing in it right now. */
-                : `<span class="t-muted">none of ${num(F.rules.length)}</span>`) },
+                : `<span class="${SX.dim}">none of ${num(F.rules.length)}</span>`) },
             { label: 'What it means', render: w => wrap(muted(esc(w.means))) },
           ], words.map(k => ({ k, label: stateLabel(k, labels), n: counts.get(k) || 0, means: means[k] || 'No meaning is recorded for this state.' }))
             .concat(strange.map(k => ({ k, label: stateLabel(k, labels), n: counts.get(k) || 0,
@@ -420,8 +415,8 @@ SCREENS.policy = async host => {
           + ', counted on the other axis. A version is never edited in place: superseding inserts a new row and closes '
           + 'the old one, so the evidence behind a quote issued last March survives this March&rsquo;s rule change.', LIFECYCLE_LABEL);
 
-      const cross = `<div class="banner ${F.reliable.length ? 'info' : 'warm'}">
-          <span class="material-symbols-outlined" style="font-size:20px">fact_check</span>
+      const cross = `<div class="${F.reliable.length ? BANNER.info : BANNER.warm}">
+          <span class="${BANNER_ICON}">fact_check</span>
           <div>${muted(`Read the two tables together. `
             + (F.reliable.length
                 ? `${num(F.reliable.length)} of ${num(F.rules.length)} `
@@ -443,7 +438,7 @@ SCREENS.policy = async host => {
                       + 'version is in both sets.')))}</div>
         </div>`;
 
-      return `<div class="grid g2">${left}${right}</div>` + cross;
+      return `<div class="${SX.g2}">${left}${right}</div>` + cross;
     },
   }).then(wireGo);
 
@@ -464,15 +459,15 @@ SCREENS.policy = async host => {
 
       const body = table([
         { label: 'Rule', strong: true, render: k =>
-            wrap(`<div class="mono">${esc(str(k.rule_name))}</div>`)
+            wrap(`<div class="${SX.mono}">${esc(str(k.rule_name))}</div>`)
             + muted(`${esc(str(k.jurisdiction))} &middot; ${esc(str(k.rule_type))} &middot; v${esc(str(k.version))}`
               + (k.is_global_rule === true ? ' &middot; global' : ' &middot; this dealership')) },
         { label: 'Value', render: k => (str(k.value_display)
-            ? `<div class="mono">${esc(str(k.value_display))}</div>`
+            ? `<div class="${SX.mono}">${esc(str(k.value_display))}</div>`
             /* No value is not a missing value: the row was created as a
                question on purpose, so that a consumer looking for the figure
                finds an explicit unknown instead of nothing at all. */
-            : `<span class="pill unknown"><span class="dot"></span>NO VALUE STATED</span>`
+            : unknownPill('NO VALUE STATED')
               + muted('Registered as a question rather than an answer. Nothing may be computed from it and no claim '
                 + 'may be made on it.')) },
         /* The reader's word, with the stored token preserved as the pill's
@@ -498,9 +493,9 @@ SCREENS.policy = async host => {
             + muted(wrap(esc(str(k.authority_reason))
                 || 'The engine records no reason for this grading, which is itself a gap.')) },
         { label: 'What it cites', render: k => wrap(
-            `<div>${esc(str(k.source_name)) || '<span class="t-muted">no source named</span>'}</div>`
+            `<div>${esc(str(k.source_name)) || `<span class="${SX.dim}">no source named</span>`}</div>`
             + (str(k.source_document)
-                ? muted(`<span class="mono">${esc(str(k.source_document))}</span>`)
+                ? muted(`<span class="${SX.mono}">${esc(str(k.source_document))}</span>`)
                 : muted('No document, file or line is recorded against this rule.'))
             + (str(k.source_url) ? muted(esc(str(k.source_url))) : '')) },
       ], F.rules, { onRow: true });
@@ -508,10 +503,10 @@ SCREENS.policy = async host => {
       /* The engine's own notes, given room. They carry the reasoning a table
          cell cannot — including which of these the engine itself considers most
          urgent, and why. Printed unaltered. */
-      const notes = F.rules.filter(k => str(k.notes)).map(k => `<div class="section" style="margin-top:14px">
-          ${bold(`<span class="mono">${esc(str(k.rule_name))}</span> `
+      const notes = F.rules.filter(k => str(k.notes)).map(k => `<div class="${SX.note}">
+          ${bold(`<span class="${SX.mono}">${esc(str(k.rule_name))}</span> `
             + pill(str(k.authority) || 'UNKNOWN', k.may_be_relied_on === true ? 'ok' : 'hot', { verbatim: true }))}
-          <div class="quote">${esc(str(k.notes))}</div>
+          <div class="${SX.quote}">${esc(str(k.notes))}</div>
           ${muted(`Added by ${esc(str(k.added_by) || 'nobody named')}`
             + (k.added_at ? ` on ${esc(dubaiStamp(k.added_at))}` : '')
             + (k.updated_at ? `, last changed ${esc(dubaiStamp(k.updated_at))}` : '')
@@ -519,11 +514,11 @@ SCREENS.policy = async host => {
         </div>`).join('');
 
       const notesBlock = notes
-        ? `<div class="section" style="margin-top:16px">
-             <div class="label-caps">What each rule&rsquo;s author wrote about it, unaltered</div>
+        ? `<div class="${SX.note}">
+             <div class="${SX.caps}">What each rule&rsquo;s author wrote about it, unaltered</div>
              ${notes}
            </div>`
-        : `<div class="section" style="margin-top:16px">${muted('No rule carries a note. Every rule here is therefore '
+        : `<div class="${SX.note}">${muted('No rule carries a note. Every rule here is therefore '
             + 'a value and a citation with no account of how it was arrived at.')}</div>`;
 
       return body + muted('Click a row for every version of that rule, each beside the one it replaced.') + notesBlock;
@@ -552,8 +547,8 @@ SCREENS.policy = async host => {
     render: rows => {
       const auth = rows || [];
       if (!auth.length) {
-        return `<div class="banner hot">
-            <span class="material-symbols-outlined" style="font-size:20px">block</span>
+        return `<div class="${BANNER.hot}">
+            <span class="${BANNER_ICON}">block</span>
             <div>
               ${bold('The safe read is empty, and that is the engine working.')}
               ${muted('Nothing on record clears all four bars, so every consumer that asks this engine for a value '
@@ -567,15 +562,15 @@ SCREENS.policy = async host => {
       }
       return table([
         { label: 'Rule', strong: true, render: k =>
-            wrap(`<div class="mono">${esc(str(k.rule_name))}</div>`)
+            wrap(`<div class="${SX.mono}">${esc(str(k.rule_name))}</div>`)
             + muted(`${esc(str(k.jurisdiction))} &middot; ${esc(str(k.rule_type))} &middot; v${esc(str(k.version))}`) },
         { label: 'Value', render: k => (str(k.value_display)
-            ? `<span class="mono">${esc(str(k.value_display))}</span>`
-            : '<span class="t-muted">no value rendered, which cannot happen in this view and is a defect if seen</span>') },
+            ? `<span class="${SX.mono}">${esc(str(k.value_display))}</span>`
+            : `<span class="${SX.dim}">no value rendered, which cannot happen in this view and is a defect if seen</span>`) },
         { label: 'In force from', render: k => (str(k.effective_from)
             ? `<div>${esc(dubaiDate(k.effective_from))}</div>`
               + muted(str(k.effective_to) ? `until ${esc(dubaiDate(k.effective_to))}` : 'open-ended')
-            : '<span class="t-muted">no effective date</span>') },
+            : `<span class="${SX.dim}">no effective date</span>`) },
         { label: 'Verified', render: k => `<div>${esc(dubaiDate(k.verification_date))}</div>`
             + muted(`by ${esc(str(k.verified_by) || 'nobody named')} &middot; `
               + `confidence ${esc(str(k.confidence) || 'not stated')}`) },
@@ -602,7 +597,7 @@ SCREENS.policy = async host => {
           + 'tell those two apart. A survey that has not been taken is not a clean one.', 'done_all');
       }
 
-      const head = `<div class="grid g4">
+      const head = `<div class="${SX.g4}">
           ${kpi('In the survey', num(K.consts.length),
             muted(`Across ${num(K.byLayer.size)} ${plural(K.byLayer.size, 'layer', 'layers')}: `
               + [...K.byLayer.entries()].map(([l, n]) => `${num(n)} ${esc(l.toLowerCase())}`).join(', ') + '.'))}
@@ -630,16 +625,16 @@ SCREENS.policy = async host => {
         </div>`;
 
       const list = (rows2, title, caption) => (rows2.length
-        ? `<div class="section" style="margin-top:16px">
-             <div class="label-caps">${esc(title)}</div>
+        ? `<div class="${SX.note}">
+             <div class="${SX.caps}">${esc(title)}</div>
              ${table([
                { label: 'Where', strong: true, render: k =>
-                   wrap(`<div class="mono">${esc(str(k.location))}</div>`)
+                   wrap(`<div class="${SX.mono}">${esc(str(k.location))}</div>`)
                    + muted(`${esc(str(k.layer))} &middot; ${esc(str(k.kind))}`)
-                   + (str(k.snippet) ? muted(`<span class="mono">${esc(str(k.snippet))}</span>`) : '') },
+                   + (str(k.snippet) ? muted(`<span class="${SX.mono}">${esc(str(k.snippet))}</span>`) : '') },
                { label: 'Value in force', render: k => (str(k.current_value)
-                   ? `<span class="mono">${esc(str(k.current_value))}</span>`
-                   : '<span class="t-muted">the survey records no value for this constant</span>') },
+                   ? `<span class="${SX.mono}">${esc(str(k.current_value))}</span>`
+                   : `<span class="${SX.dim}">the survey records no value for this constant</span>`) },
                { label: 'Reaches a customer', render: k => (k.reaches_a_customer === true
                    ? pill('Yes', 'hot', { verbatim: false })
                    : k.reaches_a_customer === false
@@ -652,7 +647,7 @@ SCREENS.policy = async host => {
                            : 'A rule row exists and it is not authoritative, so the code cannot be repointed at it yet.')
                        : 'No rule row exists for this constant yet.') },
                { label: 'Would become', render: k => (str(k.proposed_rule_name)
-                   ? muted(`<span class="mono">${esc(str(k.proposed_rule_type))} / ${esc(str(k.proposed_rule_name))}</span>`)
+                   ? muted(`<span class="${SX.mono}">${esc(str(k.proposed_rule_type))} / ${esc(str(k.proposed_rule_name))}</span>`)
                    : muted('No destination rule is proposed for this constant.')) },
                { label: 'What the survey says about it', render: k => wrap(muted(esc(str(k.note))
                    || 'The survey records no note against this constant.')) },
@@ -661,7 +656,7 @@ SCREENS.policy = async host => {
            </div>`
         : '');
 
-      const facing = list(K.facing, 'Reaching a customer — these come first, and the ordering is the survey&rsquo;s own',
+      const facing = list(K.facing, 'Reaching a customer — these come first, and the ordering is the survey’s own',
         'Read the notes rather than the numbers. One of these is not a figure at all: it is a sentence naming a '
         + 'regulator, sent over WhatsApp, resting on constants nobody has checked against the instrument. The survey '
         + 'says which, in its own words.');
@@ -673,7 +668,7 @@ SCREENS.policy = async host => {
         + 'This is a point-in-time survey of source files and database objects, so a constant added since is not in '
         + 'it — the absence of a row here is not evidence that a constant does not exist.');
 
-      return head + facing + hidden + `<div class="section">${foot}</div>`;
+      return head + facing + hidden + `<div class="${SX.note}">${foot}</div>`;
     },
   }).then(wireGo);
 
@@ -709,16 +704,16 @@ SCREENS.policy = async host => {
     title: 'Your dealership’s house rules',
     sub: 'Rules this dealership states for itself. A house rule may tighten what the platform allows and can never '
        + 'loosen it. Global and regulator rules are shown above and cannot be changed from here',
-    actions: '<button class="btn sm primary" data-pol="propose">Propose a house rule</button>',
+    actions: `<button class="${BTN.primary}" data-pol="propose">Propose a house rule</button>`,
     load: () => readRules(),
     render: rows => {
       const mine = (rows || []).filter(k => k.is_global_rule !== true);
       const list = table([
-        { label: 'Rule', strong: true, render: k => `<div class="mono">${esc(str(k.rule_name))}</div>`
+        { label: 'Rule', strong: true, render: k => `<div class="${SX.mono}">${esc(str(k.rule_name))}</div>`
             + muted(`${esc(str(k.rule_type))} &middot; v${esc(str(k.version))}`) },
         { label: 'Value', render: k => (str(k.value_display)
-            ? `<span class="mono">${esc(str(k.value_display))}</span>`
-            : '<span class="pill unknown"><span class="dot"></span>NO VALUE STATED</span>') },
+            ? `<span class="${SX.mono}">${esc(str(k.value_display))}</span>`
+            : unknownPill('NO VALUE STATED')) },
         { label: 'Checked', render: k => pill(stateLabel(str(k.verification_status) || 'NOT RECORDED', VERIFICATION_LABEL), '',
             { verbatim: !VERIFICATION_LABEL[str(k.verification_status)] }) },
         { label: 'In force', render: k => pill(stateLabel(str(k.status) || 'NOT RECORDED', LIFECYCLE_LABEL), '',
@@ -726,17 +721,17 @@ SCREENS.policy = async host => {
         { label: '', align: 'r', render: k => {
             const open = !['SUPERSEDED', 'WITHDRAWN'].includes(up(k.status));
             const id = esc(str(k.id));
-            return `<button class="btn sm ghost" data-hist="${esc(str(k.rule_name))}" data-jur="${esc(str(k.jurisdiction))}">History</button>`
-              + (open ? ` <button class="btn sm" data-pol="verify" data-id="${id}">Verify</button>`
-                  + ` <button class="btn sm" data-pol="supersede" data-id="${id}">Supersede</button>`
-                  + ` <button class="btn sm danger" data-pol="withdraw" data-id="${id}">Withdraw</button>` : '');
+            return `<button class="${BTN.secondary}" data-hist="${esc(str(k.rule_name))}" data-jur="${esc(str(k.jurisdiction))}">History</button>`
+              + (open ? ` <button class="${BTN.secondary}" data-pol="verify" data-id="${id}">Verify</button>`
+                  + ` <button class="${BTN.secondary}" data-pol="supersede" data-id="${id}">Supersede</button>`
+                  + ` <button class="${BTN.destructive}" data-pol="withdraw" data-id="${id}">Withdraw</button>` : '');
           } },
       ], mine, {
         empty: stateEmpty('This dealership has stated no house rule',
           'Every rule on record is a platform or regulator rule. Propose one to record a position of your own — it '
           + 'starts as a draft and nothing reads it as checked until an approver verifies it against a source.', 'gavel'),
       });
-      return list + `<div class="section">${muted('Who may do what is decided by the database, not this screen: '
+      return list + `<div class="${SX.note}">${muted('Who may do what is decided by the database, not this screen: '
         + 'proposing needs a dealership account, and verifying, superseding or withdrawing needs the same approval '
         + 'authority as an inventory action. A refusal is shown in the database&rsquo;s own words.')}</div>`;
     },
@@ -757,42 +752,42 @@ SCREENS.policy = async host => {
      refusal falls back to the user-safe clause lib/errors.js wrote. */
   const refusalHtml = e => {
     const r = e && e.refusal;
-    if (!r || !r.message) return `<span class="t-hot">${esc(str(e && e.message) || 'The change did not go through.')}</span>`;
-    return `<div class="t-hot">${esc(r.message)}</div>`
-      + (r.detail ? muted(`Code: <span class="mono">${esc(r.detail)}</span>`) : '')
+    if (!r || !r.message) return `<span class="${SX.hotTx}">${esc(str(e && e.message) || 'The change did not go through.')}</span>`;
+    return `<div class="${SX.hotTx}">${esc(r.message)}</div>`
+      + (r.detail ? muted(`Code: <span class="${SX.mono}">${esc(r.detail)}</span>`) : '')
       + (r.hint ? muted(esc(r.hint)) : '');
   };
-  const field = (id, label, input, hint) => `<div class="field"><label for="${id}">${esc(label)}</label>${input}`
-    + (hint ? `<div class="hint">${esc(hint)}</div>` : '') + '</div>';
+  const field = (id, label, input, hint) => `<div class="${SX.field}"><label class="${SX.label}" for="${id}">${esc(label)}</label>${input}`
+    + (hint ? `<div class="${SX.hint}">${esc(hint)}</div>` : '') + '</div>';
   const val = (m, id) => (m.wrap.querySelector('#' + id)?.value || '').trim();
   const orNull = v => (v === '' ? null : v);
   const done = (m, text) => { m.close(); NOTICE = text; go('policy'); };
 
   async function proposeDialog() {
-    const m = openModal('Propose a house rule', `<div class="form-stack">
-        <div class="banner info banner-flush"><span class="material-symbols-outlined">info</span>
+    const m = stitchModal('Propose a house rule', `<div class="${SX.stack}">
+        <div class="${BANNER.info}"><span class="${BANNER_ICON}">info</span>
           <div>This records a rule as a draft under this dealership&rsquo;s own name (TENANT_HOUSE). It is not checked
           and nothing may quote it until an approver verifies it. Leave the value empty to register the rule as a
           question.</div></div>
-        <div class="frow">
-          ${field('pRt', 'Rule type', '<select id="pRt"><option value="">Loading…</option></select>')}
-          ${field('pName', 'Rule name', '<input id="pName" type="text" maxlength="80" placeholder="e.g. MIN_DEPOSIT_PCT">',
+        <div class="${SX.frow}">
+          ${field('pRt', 'Rule type', `<select class="${SX.input}" id="pRt"><option value="">Loading…</option></select>`)}
+          ${field('pName', 'Rule name', `<input class="${SX.input}" id="pName" type="text" maxlength="80" placeholder="e.g. MIN_DEPOSIT_PCT">`,
             'Capital letters, digits and underscores.')}
         </div>
-        <div class="frow">
-          ${field('pUnit', 'Unit', '<select id="pUnit"><option value="">Loading…</option></select>')}
-          ${field('pVal', 'Value (optional)', '<input id="pVal" type="text" maxlength="200">',
+        <div class="${SX.frow}">
+          ${field('pUnit', 'Unit', `<select class="${SX.input}" id="pUnit"><option value="">Loading…</option></select>`)}
+          ${field('pVal', 'Value (optional)', `<input class="${SX.input}" id="pVal" type="text" maxlength="200">`,
             'A number for a numeric unit, words otherwise.')}
         </div>
-        ${field('pSrc', 'Where this comes from (required)', '<input id="pSrc" type="text" maxlength="200">',
+        ${field('pSrc', 'Where this comes from (required)', `<input class="${SX.input}" id="pSrc" type="text" maxlength="200">`,
           'Name the source even for an unchecked rule — a person, a document, a policy.')}
-        <div class="frow">
-          ${field('pDoc', 'Document or reference (optional)', '<input id="pDoc" type="text" maxlength="200">')}
-          ${field('pFrom', 'In force from (optional)', '<input id="pFrom" type="date">')}
+        <div class="${SX.frow}">
+          ${field('pDoc', 'Document or reference (optional)', `<input class="${SX.input}" id="pDoc" type="text" maxlength="200">`)}
+          ${field('pFrom', 'In force from (optional)', `<input class="${SX.input}" id="pFrom" type="date">`)}
         </div>
-        ${field('pNotes', 'Notes (optional)', '<textarea id="pNotes" rows="2"></textarea>')}
+        ${field('pNotes', 'Notes (optional)', `<textarea class="${SX.input}" id="pNotes" rows="2"></textarea>`)}
       </div>`,
-      '<button class="btn primary" id="pGo">Propose</button><button class="btn ghost" id="pCancel">Cancel</button>');
+      `<button class="${BTN.primary}" id="pGo">Propose</button><button class="${BTN.secondary}" id="pCancel">Cancel</button>`);
     m.wrap.querySelector('#pCancel').addEventListener('click', m.close);
     let units = [];
     Promise.all([readTypes(), readUnits()]).then(([types, us]) => {
@@ -801,14 +796,14 @@ SCREENS.policy = async host => {
         `<option value="${esc(str(t.code))}">${esc(str(t.label) || str(t.code))}</option>`).join('');
       m.wrap.querySelector('#pUnit').innerHTML = units.map(u =>
         `<option value="${esc(str(u.code))}">${esc(str(u.label) || str(u.code))}</option>`).join('');
-    }).catch(e => m.msg(`<span class="t-hot">The rule types and units could not be read (${esc(str(e && e.message))}), so a rule cannot be proposed right now.</span>`));
+    }).catch(e => m.msg(`<span class="${SX.hotTx}">The rule types and units could not be read (${esc(str(e && e.message))}), so a rule cannot be proposed right now.</span>`));
     m.wrap.querySelector('#pGo').addEventListener('click', async () => {
       const btn = m.wrap.querySelector('#pGo');
       const unit = val(m, 'pUnit');
       const kind = up((units.find(u => str(u.code) === unit) || {}).value_kind);
       const raw = val(m, 'pVal');
       if (raw && kind === 'NUMERIC' && Number.isNaN(Number(raw))) {
-        m.msg('<span class="t-hot">That unit is numeric, so the value must be a number. Nothing was written.</span>');
+        m.msg(`<span class="${SX.hotTx}">That unit is numeric, so the value must be a number. Nothing was written.</span>`);
         return;
       }
       btn.disabled = true; btn.textContent = 'Proposing…';
@@ -850,30 +845,30 @@ SCREENS.policy = async host => {
     const A = RULE_ACTION[kind];
     const numeric = up(k.value_kind) === 'NUMERIC';
     const form = kind === 'verify'
-      ? field('rSrc', 'Source you checked (optional — keeps the recorded one if empty)', '<input id="rSrc" type="text" maxlength="200">')
-        + field('rDoc', 'Document, article or reference', '<input id="rDoc" type="text" maxlength="200">',
+      ? field('rSrc', 'Source you checked (optional — keeps the recorded one if empty)', `<input class="${SX.input}" id="rSrc" type="text" maxlength="200">`)
+        + field('rDoc', 'Document, article or reference', `<input class="${SX.input}" id="rDoc" type="text" maxlength="200">`,
           'A verified rule must name a document or a link.')
-        + field('rUrl', 'Link (optional)', '<input id="rUrl" type="text" maxlength="400">')
-        + `<div class="frow">${field('rFrom', 'In force from', '<input id="rFrom" type="date">',
+        + field('rUrl', 'Link (optional)', `<input class="${SX.input}" id="rUrl" type="text" maxlength="400">`)
+        + `<div class="${SX.frow}">${field('rFrom', 'In force from', `<input class="${SX.input}" id="rFrom" type="date">`,
             'Only needed if this version has no start date yet.')}
-           ${field('rConf', 'Confidence', '<select id="rConf"><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>')}</div>`
-        + field('rNotes', 'Notes (optional)', '<textarea id="rNotes" rows="2"></textarea>')
+           ${field('rConf', 'Confidence', `<select class="${SX.input}" id="rConf"><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select>`)}</div>`
+        + field('rNotes', 'Notes (optional)', `<textarea class="${SX.input}" id="rNotes" rows="2"></textarea>`)
       : kind === 'supersede'
-        ? `<div class="frow">${field('rVal', `New value${numeric ? ' (a number)' : ''}`, '<input id="rVal" type="text" maxlength="200">')}
-             ${field('rFrom', 'In force from (required)', '<input id="rFrom" type="date">',
+        ? `<div class="${SX.frow}">${field('rVal', `New value${numeric ? ' (a number)' : ''}`, `<input class="${SX.input}" id="rVal" type="text" maxlength="200">`)}
+             ${field('rFrom', 'In force from (required)', `<input class="${SX.input}" id="rFrom" type="date">`,
                'Must be after the current version’s start date.')}</div>`
-          + field('rSrc', 'Where the new value comes from (required)', '<input id="rSrc" type="text" maxlength="200">')
-          + field('rDoc', 'Document or reference (optional)', '<input id="rDoc" type="text" maxlength="200">')
-          + field('rNotes', 'Notes (optional)', '<textarea id="rNotes" rows="2"></textarea>')
-        : field('rWhy', 'Why (required)', '<textarea id="rWhy" rows="3"></textarea>');
-    const m = openModal(A.title, `<div class="form-stack">
-        <div class="banner ${kind === 'withdraw' ? 'warm' : 'info'} banner-flush"><span class="material-symbols-outlined">${kind === 'withdraw' ? 'warning' : 'info'}</span>
+          + field('rSrc', 'Where the new value comes from (required)', `<input class="${SX.input}" id="rSrc" type="text" maxlength="200">`)
+          + field('rDoc', 'Document or reference (optional)', `<input class="${SX.input}" id="rDoc" type="text" maxlength="200">`)
+          + field('rNotes', 'Notes (optional)', `<textarea class="${SX.input}" id="rNotes" rows="2"></textarea>`)
+        : field('rWhy', 'Why (required)', `<textarea class="${SX.input}" id="rWhy" rows="3"></textarea>`);
+    const m = stitchModal(A.title, `<div class="${SX.stack}">
+        <div class="${kind === 'withdraw' ? BANNER.warm : BANNER.info}"><span class="${BANNER_ICON}">${kind === 'withdraw' ? 'warning' : 'info'}</span>
           <div>${esc(A.what)}</div></div>
-        <div class="cell-sub"><span class="mono">${esc(str(k.rule_name))}</span> &middot; v${esc(str(k.version))} &middot;
-          ${str(k.value_display) ? `value <span class="mono">${esc(str(k.value_display))}</span>` : 'no value stated'}</div>
+        <div class="${SX.sub}"><span class="${SX.mono}">${esc(str(k.rule_name))}</span> &middot; v${esc(str(k.version))} &middot;
+          ${str(k.value_display) ? `value <span class="${SX.mono}">${esc(str(k.value_display))}</span>` : 'no value stated'}</div>
         ${form}
       </div>`,
-      `<button class="btn ${kind === 'withdraw' ? 'danger' : 'primary'}" id="rGo">${esc(A.go)}</button><button class="btn ghost" id="rCancel">Cancel</button>`);
+      `<button class="${kind === 'withdraw' ? BTN.destructive : BTN.primary}" id="rGo">${esc(A.go)}</button><button class="${BTN.secondary}" id="rCancel">Cancel</button>`);
     m.wrap.querySelector('#rCancel').addEventListener('click', m.close);
     m.wrap.querySelector('#rGo').addEventListener('click', async () => {
       const btn = m.wrap.querySelector('#rGo');
@@ -885,7 +880,7 @@ SCREENS.policy = async host => {
       } else if (kind === 'supersede') {
         const raw = val(m, 'rVal');
         if (raw && numeric && Number.isNaN(Number(raw))) {
-          m.msg('<span class="t-hot">This rule is numeric, so the new value must be a number. Nothing was written.</span>');
+          m.msg(`<span class="${SX.hotTx}">This rule is numeric, so the new value must be a number. Nothing was written.</span>`);
           return;
         }
         body = { p_rule_id: k.id, p_effective_from: orNull(val(m, 'rFrom')), p_source_name: val(m, 'rSrc'),
@@ -908,38 +903,35 @@ SCREENS.policy = async host => {
   }
 
   async function historyDrawer(jur, ruleName) {
-    openDrawer(`<div class="drawer-head">
-        <div class="drawer-head-main"><h2 class="mono">${esc(ruleName)}</h2>
-          <div class="card-sub">Every version of this rule, each beside the one it replaced</div></div>
-        <button class="btn ghost sm" id="polClose" aria-label="Close"><span class="material-symbols-outlined">close</span></button>
-      </div><div class="drawer-body" id="polHist">${stateLoading(4)}</div>`);
-    $('polClose').addEventListener('click', closeDrawer);
+    openStitchDrawer({ icon: 'history', title: ruleName,
+      sub: 'Every version of this rule, each beside the one it replaced',
+      bodyHtml: `<div id="polHist">${skeleton({ rows: 4 })}</div>` });
     const host = $('polHist');
     let rows;
-    try { rows = await readHistory(jur, ruleName); } catch (e) { if (host) host.innerHTML = stateError('this rule’s history', e); return; }
+    try { rows = await readHistory(jur, ruleName); } catch (e) { if (host) host.innerHTML = errorState({ what: 'this rule’s history', err: e }); return; }
     if (!host) return;
     if (!rows.length) {
       host.innerHTML = stateEmpty('No version history came back',
         'The history view returned nothing for this rule name, so no earlier version is claimed and none is ruled out.', 'history');
       return;
     }
-    const v = (n, t) => (n != null ? esc(String(n)) : str(t) ? esc(str(t)) : '<span class="t-muted">no value</span>');
-    host.innerHTML = `<div class="timeline">${rows.map(h => `
-      <div class="tl-item"><span class="tl-dot"></span><div class="tl-body">
-        <div class="tl-meta"><span class="chip">v${esc(str(h.version))}</span>
+    const v = (n, t) => (n != null ? esc(String(n)) : str(t) ? esc(str(t)) : `<span class="${SX.dim}">no value</span>`);
+    host.innerHTML = `<div class="${SX.timeline}">${rows.map(h => `
+      <div class="${SX.tlItem}"><span class="${SX.tlDot}"></span><div class="flex flex-col gap-1 min-w-0">
+        <div class="${SX.row}"><span class="${SX.chip}">v${esc(str(h.version))}</span>
           ${esc(stateLabel(str(h.status), LIFECYCLE_LABEL))} &middot; ${esc(stateLabel(str(h.verification_status), VERIFICATION_LABEL))}
           &middot; ${esc(str(h.jurisdiction))}</div>
-        <div class="tl-text">Value ${v(h.value_numeric, h.value_text)} ${esc(str(h.unit))}
+        <div class="${SX.bold}">Value ${v(h.value_numeric, h.value_text)} ${esc(str(h.unit))}
           ${str(h.effective_from) ? `&middot; from ${esc(dubaiDate(h.effective_from))}` : '&middot; no start date'}
           ${str(h.effective_to) ? ` to ${esc(dubaiDate(h.effective_to))}` : ''}</div>
-        <div class="cell-sub cell-sub-wrap">Source: ${esc(str(h.source_name) || 'none named')}${str(h.source_document) ? ` &middot; ${esc(str(h.source_document))}` : ''}.
+        <div class="${SX.sub}">Source: ${esc(str(h.source_name) || 'none named')}${str(h.source_document) ? ` &middot; ${esc(str(h.source_document))}` : ''}.
           Added by ${esc(str(h.added_by) || 'nobody named')}${h.added_at ? ` on ${esc(dubaiStamp(h.added_at))}` : ''}.
           ${str(h.verified_by) ? `Verified by ${esc(str(h.verified_by))}${h.verification_date ? ` on ${esc(dubaiDate(h.verification_date))}` : ''}.` : 'Not verified.'}</div>
         ${h.previous_value_numeric != null || str(h.previous_value_text) || str(h.previous_source_name)
-          ? `<div class="cell-sub cell-sub-wrap">Replaced: value ${v(h.previous_value_numeric, h.previous_value_text)}`
+          ? `<div class="${SX.sub}">Replaced: value ${v(h.previous_value_numeric, h.previous_value_text)}`
             + `${str(h.previous_effective_from) ? `, in force from ${esc(dubaiDate(h.previous_effective_from))}` : ''}`
             + `${str(h.previous_source_name) ? `, sourced to ${esc(str(h.previous_source_name))}` : ''}.</div>`
-          : '<div class="cell-sub">First version — nothing before it.</div>'}
+          : `<div class="${SX.sub}">First version — nothing before it.</div>`}
       </div></div>`).join('')}</div>`;
   }
 
@@ -1016,7 +1008,12 @@ SCREENS.policy = async host => {
             : 'Not established on this render.'],
       ];
 
-      return `<dl class="kv">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+      return `<dl class="${SX.kv}">${strip.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
     },
   }).then(wireGo);
+
+  root.insertAdjacentHTML('beforeend', engineFooter({
+    source: 'v_policy_rule · v_policy_authoritative · v_policy_unmigrated_constant · v_policy_rule_history',
+    evidence: 'Citations printed exactly as stored; only verified, in-force rules reach the safe read',
+  }));
 };
