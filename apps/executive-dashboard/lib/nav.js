@@ -1,126 +1,116 @@
 /* NEXUS OS — lib/nav.js
-   Split out of the original monolithic app.js on 17 Aug 2026. The body below is
-   the original code, moved not rewritten. */
+   Split out of the original monolithic app.js on 17 Aug 2026. The NAV list,
+   the sidebar and the dealership scope chip were rebuilt from the Google Stitch
+   app-shell designs on 7 Oct 2026; routing (go()) is the original code. */
 import { $, el } from './dom.js';
 import { esc } from './format.js';
 import { stateError, stateLoading } from './states.js';
 import { closeDrawer } from './ui.js';
 import { extraTenants, hasNoTenant, loadTenant, tenantLabel, tenantState } from './tenant.js';
 
+
+/* ── The navigation, as designed in Google Stitch (7 Oct 2026) ──────────────
+   design/stitch/app-shell-master-specification-navigation-hierarchy--2b6343
+   .html is the visual reference: five groups — Work, Revenue Recovery, Assets,
+   Intelligence, Operations — and a bottom block. Every id that existed before
+   the redesign is still here, so every bookmark and deep link still lands; what
+   moved is only which group a screen sits in, to match the design.
+
+   Four kinds of item, and each says what it is in words as well as colour:
+     · a working screen                   — no mark
+     · `mark: 'partial'`                  — ◐ PARTIAL: real, but answers only part
+                                            of its question today
+     · `roadmap: 'soon' | 'planned'`      — ○ COMING SOON / ◇ PLANNED: a screen
+                                            that renders no live data at all; it
+                                            sits in the group's collapsed
+                                            "+N coming soon" row, never among the
+                                            working screens
+     · `sidebar: false`                   — routable (a link from another screen
+                                            reaches it) but has no sidebar row;
+                                            Vehicle 360 is opened from Inventory
+
+   The founder console is not in this list, and must never be again. It moved
+   out of the dealer app on 22 Sep 2026 into its own page (founder/index.html,
+   served at /founder) so that a dealer -- or a screen recording of this app
+   made while the founder is signed in -- shows no founder UI at all. Every id
+   below names a dealership's own screen.
+
+   Ids are [a-z0-9_] on purpose: QUALITY_GATE.mjs S1 parses them out of this
+   block, and a screen module registers itself as `SCREENS.<id> = …`. */
 const NAV = [
-  /* The founder console is not in this list, and must never be again. It
-     moved out of the dealer app on 22 Sep 2026 into its own page
-     (founder/index.html, served at /founder) so that a dealer -- or a screen
-     recording of this app made while the founder is signed in -- shows no
-     founder UI at all. Every id below names a dealership's own screen. */
-  { group: 'Work', accent: '#2563C9', accentDark: '#7FA8F5', items: [
-    /* ── Today's Money Leaks ─────────────────────────────────────────────────
-       First, and the app's default landing screen, because it is the only one
-       that answers a question rather than reporting a state: where is money
-       leaking right now, and what should be done about it. LAUNCH.md names it
-       "the primary owner view".
-
-       It sits ABOVE Overview rather than inside Revenue recovery on purpose.
-       Revenue recovery is the group of engines and Revenue Recovery is their
-       ledger, engine by engine; this screen is the morning order of work
-       assembled across all of them, and a reader looking for "what do I do
-       today" should not have to know which engine owns their problem. */
-    { id:'moneyleaks',    title:"Today's Money Leaks", icon:'water_drop' },
-    { id:'overview',      title:'Overview',        icon:'dashboard' },
-    { id:'leads',         title:'Leads',           icon:'person_search' },
-    /* ── Record a Lead ───────────────────────────────────────────────────────
-       Added 18 Sep 2026, directly under Leads, because it is the only screen in
-       the product through which a PERSON can put an enquiry in — and at this
-       dealership that is the only lead path that works at all. Measured the day
-       it was built: `lead_event` holds one row in its entire life, the two
-       active ingest endpoints (`phone_call`, `walk_in`) are both manual with no
-       provider behind either, and the four automatic ones are disabled.
-
-       It sits in Work rather than beside Setup on purpose. Setup is read once
-       and never again; this is the thing a salesperson does with a customer
-       standing in front of them, several times a day, and a door that is not in
-       the walking route is a door nobody opens. The dialog behind it already
-       existed in lib/manual-lead-form.js and was reachable only from a button
-       in the Leads filter bar, which is where it went unused. */
-    { id:'recordlead',    title:'Record a Lead',   icon:'edit_note' },
-    /* Lead Sources sits directly under Leads because it answers the question
-       that screen cannot: not who enquired, but which door they came through,
-       how much of that origin NEXUS could verify, and what arrived and was
-       then lost before anybody saw it. */
-    { id:'leadsources',   title:'Lead Sources',    icon:'alt_route' },
-    { id:'channels',      title:'Channels',        icon:'hub' },
-    /* Integrations: the dealer's own DMS/CRM/phone system connects here through
-       REST API keys and signed outgoing webhooks. NEXUS sits on top; nothing is replaced. */
-    { id:'integrations',  title:'Integrations',    icon:'integration_instructions' },
-    { id:'conversations', title:'Conversations',   icon:'forum' },
-    /* Appointments sits under Conversations because that is where a visit is
-       arranged and this is the only screen that says what became of it. It
-       renders the six words a showroom visit can be in separately and never
-       averages them: asked, offered and agreed are three different facts and
-       only the third is a booking. NX995 built the tables; until this screen
-       there was nothing that could read them. */
-    { id:'appointments',  title:'Appointments',    icon:'event' },
-    { id:'compliance',    title:'Compliance',      icon:'verified_user' },
+  { group: 'Work', tag: 'CORE', items: [
+    { id:'overview',      title:'Overview',            icon:'dashboard' },
+    /* Today's Money Leaks is still the app's default landing screen (app.js and
+       `current` below): it is the only one that answers a question rather than
+       reporting a state. Stitch places it second in the group, under Overview. */
+    { id:'moneyleaks',    title:"Today's Money Leaks", icon:'trending_down' },
+    { id:'myqueue',       title:'My Queue',            icon:'inbox',         mark:'partial' },
+    { id:'ownerbrief',    title:'Owner Brief',         icon:'shield_lock',   mark:'partial' },
+    { id:'leads',         title:'Leads',               icon:'person_search' },
+    /* Record a Lead: the only surface through which a walk-in or a phone call
+       can be entered at all (18 Sep 2026). */
+    { id:'recordlead',    title:'Record a Lead',       icon:'person_add' },
+    { id:'deals',         title:'Deals',               icon:'handshake' },
+    { id:'appointments',  title:'Appointments',        icon:'calendar_today' },
+    { id:'conversations', title:'Conversations',       icon:'chat' },
+    { id:'calls',         title:'Calls & Voice',       icon:'call',              roadmap:'planned' },
   ]},
-  /* ── Revenue Recovery ────────────────────────────────────────────────────
-     PRODUCT.md's thesis in one group: find where money is leaking, decide the
-     next best action, execute it, and measure what came back. Revenue Recovery
-     is the aggregate — the screen an owner opens first — and the four beneath
-     it are the individual engines it summarises, in the order the money moves:
-     the lead, then the deal, then the attribution of whatever the deal
-     produced, then the rules all three of them apply.
-
-     It sits above Assets rather than inside Operations because Operations is
-     where work is carried out and this group is where the case for doing that
-     work is made.
-
-     THE FOUR ENGINE SCREENS ARE SEPARATE MODULES AND MAY NOT ALL BE PRESENT.
-     They are offered here regardless, on purpose: a navigation that hides a
-     screen when its module is missing gives the operator no way to tell a
-     feature that does not exist from one that failed to load, and app.js loads
-     them by glob precisely so a module that has not landed cannot break the
-     build. go() below renders an explicit "not in this build" state for an id
-     the registry does not hold. */
-  { group: 'Revenue recovery', accent: '#157A5B', accentDark: '#5FD0A6', items: [
-    { id:'revenue',      title:'Revenue Recovery', icon:'savings' },
-    { id:'leadrecovery', title:'Lead Recovery',    icon:'restore' },
-    { id:'dealrescue',   title:'Deal Rescue',      icon:'handyman' },
-    { id:'attribution',  title:'Attribution',      icon:'hub' },
-    { id:'policy',       title:'Policy',           icon:'gavel' },
+  /* PRODUCT.md's thesis in one group: Revenue Recovery is the aggregate and the
+     engines beneath it are what it summarises. The engine modules are loaded by
+     glob in app.js, so a module that has not landed renders go()'s explicit
+     "not part of this build" state rather than breaking the bundle. */
+  { group: 'Revenue Recovery', items: [
+    { id:'revenue',         title:'Revenue Recovery',          icon:'currency_exchange' },
+    { id:'attribution',     title:'Attribution',               icon:'hub' },
+    { id:'leadrecovery',    title:'Lead Recovery',             icon:'published_with_changes' },
+    { id:'dealrescue',      title:'Deal Rescue',               icon:'emergency' },
+    { id:'policy',          title:'Policy',                    icon:'gavel' },
+    { id:'stockmatch',      title:'Stock-to-Lead Matching',    icon:'join_inner',      roadmap:'soon' },
+    { id:'dealroom',        title:'Deal Room',                 icon:'meeting_room',    roadmap:'soon' },
+    { id:'servicerecovery', title:'Service Revenue Recovery',  icon:'car_repair',      roadmap:'planned' },
   ]},
-  { group: 'Assets', accent: '#B26A00', accentDark: '#F0B454', items: [
-    { id:'inventory',   title:'Inventory',   icon:'directions_car' },
-    { id:'competitors', title:'Competitors', icon:'trending_up' },
+  { group: 'Assets', items: [
+    { id:'inventory',   title:'Inventory',                icon:'directions_car' },
+    { id:'vehicle360',  title:'Vehicle 360',              icon:'directions_car',  mark:'partial', sidebar:false },
+    { id:'tradein',     title:'Trade-In Desk',            icon:'sync_alt',        roadmap:'planned' },
+    { id:'acquisition', title:'Acquisition Advisor',      icon:'shopping_cart',   roadmap:'planned' },
+    { id:'recon',       title:'Reconditioning Tracker',   icon:'build_circle',    roadmap:'planned' },
+    { id:'marketplace', title:'Marketplace Performance',  icon:'storefront',      roadmap:'planned' },
   ]},
-  { group: 'Intelligence', accent: '#7C3AED', accentDark: '#B79BF7', items: [
-    { id:'ask',      title:'Ask AI',        icon:'auto_awesome' },
-    { id:'finance',  title:'Finance Desk',  icon:'calculate' },
-    { id:'customers',title:'Customer 360',  icon:'contacts' },
+  { group: 'Intelligence', items: [
+    { id:'customers',      title:'Customer 360',            icon:'badge' },
+    { id:'ask',            title:'Ask AI',                  icon:'smart_toy' },
+    { id:'finance',        title:'Finance Desk',            icon:'calculate' },
+    { id:'competitors',    title:'Competitors',             icon:'monitoring' },
+    { id:'ownership360',   title:'Ownership 360',           icon:'manage_history',  roadmap:'planned' },
+    { id:'marketsentinel', title:'Market Sentinel',         icon:'radar',           roadmap:'planned' },
+    { id:'eventgraph',     title:'Dealership Event Graph',  icon:'schema',          roadmap:'planned' },
+    { id:'benchmarking',   title:'Dealer Benchmarking',     icon:'leaderboard',     roadmap:'planned' },
   ]},
-  { group: 'Operations', accent: '#0E7490', accentDark: '#58C6DC', items: [
-    /* The Action Center. It sits at the top of Operations because it is the only
-       screen in the app where a person is expected to answer something rather
-       than read something: everything on it is waiting on a decision. */
-    { id:'actions',    title:'Action Center', icon:'task_alt' },
-    { id:'campaigns',  title:'Campaigns', icon:'campaign' },
-    { id:'deals',      title:'Deals',     icon:'handshake' },
-    { id:'automation', title:'Automation', icon:'account_tree' },
-    { id:'team',       title:'Team',       icon:'groups' },
+  { group: 'Operations', items: [
+    /* The Action Center: the only screen where a person is expected to answer
+       something rather than read something. */
+    { id:'actions',        title:'Action Center',   icon:'task_alt' },
+    { id:'channels',       title:'Channels',        icon:'alt_route' },
+    { id:'leadsources',    title:'Lead Sources',    icon:'source' },
+    { id:'integrations',   title:'Integrations',    icon:'integration_instructions' },
+    { id:'automation',     title:'Automation',      icon:'precision_manufacturing' },
+    { id:'campaigns',      title:'Campaigns',       icon:'campaign' },
+    { id:'exceptions',     title:'Exceptions',      icon:'error_outline',   mark:'partial' },
+    { id:'compliance',     title:'Compliance',      icon:'verified_user' },
+    { id:'team',           title:'Team',            icon:'groups' },
+    { id:'customerportal', title:'Customer Portal', icon:'person_pin',      roadmap:'planned' },
   ]},
-  { group: '', accent: '#64748B', accentDark: '#A8B6D1', items: [
-    /* ── Setup ───────────────────────────────────────────────────────────────
-       Added 14 Sep 2026. It sits beside Settings, at the bottom and outside
-       every working group, because it is not a screen anybody works from: it
-       is read once at the beginning of a dealership's life and then, ideally,
-       never again. Putting it at the top would give a dealership that is
-       already running a permanent reminder of a job it finished months ago.
-
-       An owner who has NOT finished is not expected to find it here. The banner
-       at the top of Today's Money Leaks brings them to it, and it renders only
-       while something is still outstanding. */
-    { id:'setup',        title:'Setup',        icon:'rocket_launch' },
-    { id:'subscription', title:'Subscription', icon:'workspace_premium' },
-    { id:'settings',     title:'Settings',     icon:'settings' },
+  /* The bottom block. Setup is read once at the beginning of a dealership's
+     life, so it sits here rather than in a working group; Group & Branches and
+     Markets & Localization are Settings' roadmap. */
+  { group: '', bottom: true, items: [
+    { id:'whatscoming',  title:"What's Coming",          icon:'rocket_launch' },
+    { id:'setup',        title:'Setup',                  icon:'tune' },
+    { id:'subscription', title:'Subscription',           icon:'workspace_premium' },
+    { id:'settings',     title:'Settings',               icon:'settings' },
+    { id:'branches',     title:'Group & Branches',       icon:'account_tree',  roadmap:'planned' },
+    { id:'localization', title:'Markets & Localization', icon:'translate',     roadmap:'planned' },
   ]},
 ];
 const SCREENS = {};
@@ -133,102 +123,176 @@ const flatNav = () => NAV.flatMap(g => g.items);
    id to go() when there is no hash to honour. */
 let current = 'moneyleaks';
 
+
 /* ── Which dealership is this? ───────────────────────────────────────────────
    Until 2 Sep 2026 there was one dealership and the question had no answer
-   because it had no meaning. It has both now, and a signed-in user could still
-   not see it anywhere on any of the fourteen screens.
+   because it had no meaning. It has both now.
 
-   It goes in the topbar rather than the sidebar brand because the brand names
-   the PRODUCT — the sidebar says NEXUS OS to every customer — and this names
-   whose rows are underneath the page title. It reuses the existing `.pill`, so
-   no stylesheet changes and it sits with the connection pill, which is the
-   other thing on the page that describes the session rather than the data.
+   Since the Stitch shell (7 Oct 2026) it is said in two places, both in the
+   topbar: the first segment of the breadcrumb, and the scope chip with its
+   menu (app-shell-scope-menu-active-latency-warning--068c5d). The brand in the
+   sidebar names the PRODUCT; these name whose rows are underneath the page.
 
    It never renders a guess. Not-loaded, failed and unknown each get their own
    words, because "—" beside a dealership name reads as a dealership called
-   "—", and this codebase has shipped that class of caption before. */
-function tenantPill() {
-  const bar = document.querySelector('.topbar');
-  if (!bar) return null;
-  let pill = $('tenantState');
-  if (!pill) {
-    pill = el('div', 'pill', '<span class="dot"></span>…');
-    pill.id = 'tenantState';
-    const conn = $('connState');
-    if (conn && conn.parentNode === bar) bar.insertBefore(pill, conn);
-    else bar.appendChild(pill);
-  }
-  return pill;
+   "—", and this codebase has shipped that class of caption before. The menu
+   offers no switch: this build answers as one dealership (see lib/tenant.js),
+   and "All rooftops" is shown as COMING SOON rather than as a control. */
+const SCOPE_BTN = {
+  idle: 'flex items-center gap-1.5 px-space-sm py-1 rounded-lg bg-surface-container-low hover:bg-surface-container font-body-sm text-body-sm text-on-surface transition-colors',
+  warn: 'flex items-center gap-1.5 px-space-sm py-1 rounded-lg bg-error-container text-on-error-container font-body-sm text-body-sm transition-colors',
+};
+function tenantWords(s = tenantState()) {
+  if (!s.loaded) return { label: 'Checking account…', tone: 'idle',
+    why: 'Reading which dealership this account belongs to.' };
+  if (!s.ok) return { label: 'Dealership unknown', tone: 'warn',
+    why: 'The membership read failed, so this page cannot say which dealership the rows below belong to. '
+      + 'It is not a claim that they belong to none — the screens still read whatever the database allows this account to read.' };
+  if (hasNoTenant(s)) return { label: 'No dealership', tone: 'warn',
+    why: 'This account is not a member of any dealership, so every tenant-scoped table reads back empty for it.' };
+  const label = tenantLabel(s);
+  const extra = extraTenants(s);
+  return { label: label || 'Dealership', tone: 'idle', dealership: label, extra,
+    why: label
+      ? `Every figure on every screen is scoped to ${label}. Rows belonging to any other dealership are refused by the database, not filtered here.`
+        + (extra ? ` This account is also a member of ${extra} other ${extra === 1 ? 'dealership' : 'dealerships'}; the database answers as ${label} and this build has no way to switch, so nothing from the ${extra === 1 ? 'other one' : 'others'} appears anywhere.` : '')
+      : 'The dealership this account belongs to has a membership row but no readable name.' };
 }
 
 function paintTenantPill() {
-  const pill = tenantPill();
-  if (!pill) return;
-  const s = tenantState();
-  if (!s.loaded) {
-    pill.className = 'pill';
-    pill.innerHTML = '<span class="dot"></span>Checking account…';
-    pill.title = 'Reading which dealership this account belongs to.';
-    return;
+  const w = tenantWords();
+  const crumb = $('crumbTenant');
+  if (crumb) { crumb.textContent = w.label; crumb.title = w.why; }
+  const btn = $('scopeBtn');
+  if (btn) {
+    btn.className = SCOPE_BTN[w.tone] || SCOPE_BTN.idle;
+    btn.title = w.why;
+    const lab = $('scopeLabel');
+    if (lab) lab.textContent = w.label;
   }
-  if (!s.ok) {
-    pill.className = 'pill warm';
-    pill.innerHTML = '<span class="dot"></span>Dealership unknown';
-    pill.title = `The membership read failed (${s.error}), so this page cannot say which dealership the rows below belong to. `
-      + 'It is not a claim that they belong to none — the screens still read whatever the database allows this account to read.';
-    return;
+  const menu = $('scopeMenuBody');
+  if (menu) {
+    const currentRow = w.dealership
+      ? `<div class="group flex items-start gap-2.5 p-2.5 rounded-lg bg-surface-container-high/40">
+           <div class="mt-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-on-primary flex-shrink-0">
+             <span class="material-symbols-outlined text-[13px] font-bold">check</span></div>
+           <div class="flex flex-col flex-1 min-w-0">
+             <span class="font-body-sm text-body-sm font-semibold text-on-surface truncate">${esc(w.dealership)}</span>
+             <div class="flex items-center gap-2 mt-1">
+               <span class="font-label-numeric-sm text-table-header px-1.5 bg-tertiary-fixed text-on-tertiary-fixed rounded font-semibold uppercase">ACTIVE</span>
+               <span class="font-body-sm text-table-header text-outline truncate">Every screen reads this dealership</span>
+             </div></div></div>`
+      : `<div class="p-2.5 font-body-sm text-body-sm text-on-surface-variant">${esc(w.why)}</div>`;
+    const extra = w.extra
+      ? `<div class="p-2.5 font-body-sm text-table-header text-on-surface-variant">This account also belongs to ${esc(w.extra)} other ${w.extra === 1 ? 'dealership' : 'dealerships'}. This build answers as ${esc(w.dealership)} and cannot switch.</div>`
+      : '';
+    menu.innerHTML = currentRow + extra;
   }
-  if (hasNoTenant(s)) {
-    pill.className = 'pill hot';
-    pill.innerHTML = '<span class="dot"></span>No dealership';
-    pill.title = 'This account is not a member of any dealership, so every tenant-scoped table reads back empty for it.';
-    return;
-  }
-  const label = tenantLabel(s);
-  const extra = extraTenants(s);
-  pill.className = 'pill vip';
-  pill.innerHTML = `<span class="dot"></span>${esc(label || 'Dealership')}`;
-  pill.title = label
-    ? `Every figure on every screen is scoped to ${label}. Rows belonging to any other dealership are refused by the database, not filtered here.`
-      + (extra
-        ? ` This account is also a member of ${extra} other ${extra === 1 ? 'dealership' : 'dealerships'}; the database answers as ${label} and this build has no way to switch, so nothing from the ${extra === 1 ? 'other one' : 'others'} appears anywhere.`
-        : '')
-    : 'The dealership this account belongs to has a membership row but no readable name.';
 }
+
+/* ── The sidebar ─────────────────────────────────────────────────────────────
+   Markup and classes are the master spec's (…--2b6343). Two rules carried over
+   from the pre-Stitch sidebar, because they are about truth rather than looks:
+
+   · Every nav row owns a badge span, `badge-<id>`, that lib/badges.js fills
+     from v_needs_attention. The span exists from the start and is hidden with
+     the legacy `.hide` (display:none !important) until there is a count.
+   · Active and idle are two COMPLETE class strings, swapped whole. A class
+     assembled from fragments is one Tailwind never generates
+     (scripts/stitch-classes.mjs). */
+const NAV_ROW = {
+  idle:    'nx-nav-item w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg text-inverse-on-surface hover:bg-surface-variant hover:text-on-surface transition-colors',
+  active:  'nx-nav-item w-full flex items-center justify-between px-space-sm py-1.5 transition-colors bg-primary-container text-on-primary font-medium rounded-lg shadow-sm',
+  roadmap: 'nx-nav-item w-full flex items-center justify-between px-space-sm py-1.5 rounded-lg opacity-60 text-inverse-on-surface hover:bg-surface-variant hover:text-on-surface transition-colors',
+};
+const MARK = {
+  partial: '<span class="font-label-numeric-sm text-table-header text-tertiary-fixed whitespace-nowrap">◐ PARTIAL</span>',
+  soon:    '<span class="font-label-numeric-sm text-table-header text-outline-variant whitespace-nowrap">○ COMING SOON</span>',
+  planned: '<span class="font-label-numeric-sm text-table-header text-outline-variant whitespace-nowrap">◇ PLANNED</span>',
+};
+const rowClass = (item, active) => (active ? NAV_ROW.active : (item.roadmap ? NAV_ROW.roadmap : NAV_ROW.idle));
+
+function navRow(item) {
+  const a = el('a', rowClass(item, false));
+  a.href = `#${item.id}`;
+  a.dataset.screen = item.id;
+  a.innerHTML = `<div class="flex items-center gap-space-sm min-w-0">
+      <span class="material-symbols-outlined text-[18px]">${esc(item.icon)}</span>
+      <span class="font-body-sm text-body-sm truncate">${esc(item.title)}</span></div>
+    <span class="flex items-center gap-1.5 shrink-0">
+      <span class="nx-nav-badge hide font-label-numeric-sm text-table-header bg-error text-on-error px-1.5 rounded font-bold" id="badge-${esc(item.id)}"></span>
+      ${MARK[item.roadmap || item.mark] || ''}</span>`;
+  a.addEventListener('click', e => { e.preventDefault(); go(item.id); });
+  return a;
+}
+
+/* The collapsed "+N coming soon" row that ends a group. It is a real button
+   (the export draws a div) so it can be reached and opened from the keyboard. */
+function comingSoonRow(items) {
+  const wrap = el('div', 'flex flex-col space-y-0.5');
+  const toggle = el('button', 'w-full flex items-center justify-between px-space-sm py-1 rounded text-outline hover:text-inverse-on-surface cursor-pointer text-table-header font-table-header');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.innerHTML = `<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">expand_more</span>+${items.length} coming soon</span>
+    <span class="text-label-numeric-sm font-label-numeric-sm">${items.some(i => i.roadmap === 'soon') ? '○' : '◇'}</span>`;
+  const list = el('div', 'hide flex flex-col space-y-0.5');
+  items.forEach(i => list.appendChild(navRow(i)));
+  toggle.addEventListener('click', () => {
+    const open = list.classList.contains('hide');
+    list.classList.toggle('hide', !open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.querySelector('.material-symbols-outlined').textContent = open ? 'expand_less' : 'expand_more';
+  });
+  wrap.appendChild(toggle);
+  wrap.appendChild(list);
+  return { wrap, list, toggle };
+}
+
+const OPENERS = new Map();   // roadmap id -> opens its collapsed group
 
 function buildNav() {
   const nav = $('nav');
+  const bottom = $('navBottom');
   nav.innerHTML = '';
+  if (bottom) bottom.innerHTML = '';
+  OPENERS.clear();
   /* Kicked off here because buildNav() is the first thing the shell does once
      a session exists, so by the time the first screen has awaited its own reads
      this is normally already resolved and go() below does not wait at all. */
   paintTenantPill();
   loadTenant().then(paintTenantPill);
   NAV.forEach(group => {
-    const items = group.items;
-    if (!items.length) return;
-    const wrap = el('div', 'nav-group');
-    /* The module colour. It is set on the GROUP and read by the icon only —
-       never by the label — so every nav word keeps the one text colour whose
-       contrast styles.css has already accounted for. A sidebar that colours
-       its text is a sidebar with six different contrast ratios in it. */
-    /* Two accent sets, because one cannot serve both surfaces. `--nav-accent`
-       is the light-surface value (kept for the group label rule and for any
-       future light sidebar); `--nav-accent-dark` is the value measured against
-       the navy sidebar in styles.css. Each is written here once and neither is
-       derived from the other -- a lightened-at-runtime accent is how a module
-       colour silently drops below 4.5:1. */
-    if (group.accent) wrap.style.setProperty('--nav-accent', group.accent);
-    if (group.accentDark) wrap.style.setProperty('--nav-accent-dark', group.accentDark);
-    if (group.group) wrap.appendChild(el('div', 'nav-group-label', esc(group.group)));
-    items.forEach(item => {
-      const b = el('button', 'nav-item', `<span class="material-symbols-outlined">${item.icon}</span><span>${esc(item.title)}</span><span class="nav-badge hide" id="badge-${item.id}"></span>`);
-      b.dataset.screen = item.id;
-      b.addEventListener('click', () => go(item.id));
-      wrap.appendChild(b);
-    });
-    nav.appendChild(wrap);
+    const live = group.items.filter(i => !i.roadmap && i.sidebar !== false);
+    const soon = group.items.filter(i => i.roadmap);
+    const wrap = el('div', 'flex flex-col space-y-0.5');
+    if (group.group) {
+      wrap.appendChild(el('div', 'px-space-sm py-1 font-table-header text-table-header uppercase text-outline tracking-wider flex items-center justify-between',
+        `<span>${esc(group.group)}</span>${group.tag ? `<span class="font-label-numeric-sm text-table-header text-outline-variant">${esc(group.tag)}</span>` : ''}`));
+    }
+    live.forEach(i => wrap.appendChild(navRow(i)));
+    if (soon.length) {
+      const row = comingSoonRow(soon);
+      soon.forEach(i => OPENERS.set(i.id, () => {
+        if (row.list.classList.contains('hide')) row.toggle.click();
+      }));
+      wrap.appendChild(row.wrap);
+    }
+    ((group.bottom && bottom) ? bottom : nav).appendChild(wrap);
   });
+}
+
+/* Repaints which row is active. A roadmap row's collapsed group is opened so
+   the active row is visible — otherwise a deep link to #tradein would leave the
+   sidebar showing nothing selected. */
+function paintActive(id) {
+  document.querySelectorAll('.nx-nav-item').forEach(a => {
+    const item = flatNav().find(i => i.id === a.dataset.screen);
+    if (!item) return;
+    const on = item.id === id;
+    a.className = rowClass(item, on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  OPENERS.get(id)?.();
 }
 
 /* ── Render generation ──────────────────────────────────────────────────────
@@ -313,8 +377,16 @@ function go(id) {
   if (!SCREENS[id] && !flatNav().some(i => i.id === id)) id = 'moneyleaks';
   current = id;
   location.hash = id;
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
-  $('pageTitle').textContent = flatNav().find(i => i.id === id)?.title || 'NEXUS OS';
+  paintActive(id);
+  /* The breadcrumb: dealership / group / screen. The group is the sidebar's,
+     so a reader can find the screen again. */
+  const item = flatNav().find(i => i.id === id);
+  $('pageTitle').textContent = item?.title || 'NEXUS OS';
+  const grp = $('crumbGroup');
+  if (grp) grp.textContent = NAV.find(g => g.items.includes(item))?.group || 'NEXUS OS';
+  /* lib/shell.js times the freshness chip from this: a new screen starts with
+     nothing loaded, whatever the previous one had read. */
+  window.dispatchEvent(new CustomEvent('nexus:navigate', { detail: { id } }));
   closeDrawer();
   const host = $('screen');
   host.innerHTML = '';
@@ -356,4 +428,4 @@ function go(id) {
 
 /* ── Drawer ──────────────────────────────────────────────────────────────── */
 
-export { NAV, SCREENS, flatNav, current, buildNav, go, currentGeneration, staleRender, paintTenantPill };
+export { NAV, SCREENS, flatNav, current, buildNav, go, currentGeneration, staleRender, paintTenantPill, tenantWords };

@@ -293,7 +293,33 @@ async function failure(res, label) {
   return err;
 }
 
-async function db(path) {
+/* ── Freshness ──────────────────────────────────────────────────────────────
+   The topbar's freshness chip (lib/shell.js) says how long ago the screen on
+   view last read its data, and turns to "Data delayed" when a read fails or
+   the screen has not read anything for a while. It learns that from this one
+   event, raised on every db() read, because every read in the app comes
+   through here. `background: true` marks a read no screen is waiting on (the
+   badge poller), so a poll every minute cannot make a stale screen look fresh.
+   Fire-and-forget: a listener that throws must not fail the read. */
+function announceRead(ok, opts) {
+  try {
+    window.dispatchEvent(new CustomEvent('nexus:read',
+      { detail: { ok, at: Date.now(), background: !!(opts && opts.background) } }));
+  } catch { /* no window (tests) or a listener threw: the read stands */ }
+}
+
+async function db(path, opts) {
+  try {
+    const rows = await dbRead(path);
+    announceRead(true, opts);
+    return rows;
+  } catch (e) {
+    announceRead(false, opts);
+    throw e;
+  }
+}
+
+async function dbRead(path) {
   const label = `GET /rest/v1/${path}`;
   const res = await request(`${SUPABASE_URL}/rest/v1/${path}`, { headers: await headers() }, label);
   if (!res.ok) throw await failure(res, label);

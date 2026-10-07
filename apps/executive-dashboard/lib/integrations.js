@@ -42,6 +42,85 @@ function autoAllowed(autoProbe, name) {
   return false;
 }
 
+/* The two read-only checks, at module scope since 7 Oct 2026 so that the
+   topbar's system-health popover (lib/shell.js, via runCheck below) runs the
+   SAME probes the Settings and Automation tiles run, rather than a second copy
+   that could drift. Everything said inside renderIntegrations() about what may
+   and may not be added here applies to both callers. */
+const CHECKS = [
+  { name: 'NEXUS data', probe: async () => { await db('leads?select=id&limit=1', { background: true }); return 'Connected'; } },
+  { name: 'Automation', probe: async () => {
+      if (!N8N_BASE) throw new Error('This deployment is not configured to reach it');
+      const r = await fetch(`${N8N_BASE}/healthz`, { cache: 'no-store' }).catch(() => null);
+      if (!r) throw new Error('Unreachable from the browser');
+      /* This line used to return the string "HTTP <status>" on the non-ok
+         branch, and a probe that RETURNS is a probe that succeeded: the loop below
+         painted the green dot with the caption "HTTP 502". The n8n box is a
+         single small VM and has crashed twice; a 502 out of its reverse proxy
+         is the exact state this tile exists to catch. screens/settings.js
+         reads this tile back by its colour, so the green dot classified n8n
+         as up, suppressed the n8n-down CRITICAL alert and printed
+         "connectivity: Supabase and n8n both answered" while every workflow
+         call — Ask AI, the finance desk, drip enrolment, WhatsApp replies —
+         was dead. An answer is not a healthy answer. */
+      if (!r.ok) throw new Error(`HTTP ${r.status}${r.statusText ? ` ${r.statusText}` : ''}`);
+      return 'Reachable';
+    }},
+  /* Finance Calc used to be probed here, on the grounds that the calculator
+     is pure JavaScript inside n8n and therefore free. The calculation is
+     free; the invocation is not. The workflow's `Audit Log` node writes a row
+     on EVERY call, rejections included, and this helper runs on mount of both
+     Settings and Automation and again on every "Re-run checks" click.
+
+     The probe sent { vehicleValue: 1, loanPayoffAmount: 0, creditScore: 700 }
+     and no lead_email — unchanged since the probe was written — so every call
+     it made is identifiable in audit_log by the rejection that payload and
+     only that payload produces: "vehicleValue must be a realistic vehicle
+     valuation of at least AED 5000. lead_email is required…". There are
+     exactly 10 such rows (one 17 Aug, seven through the 24 Aug working
+     session, one 28 Aug), plus the 6 NOT_EXECUTED input_error rows of 31 Aug,
+     once the workflow began classifying bad input that way — consecutive
+     execution ids 7722-7724 and 7741-7743, which is what repeatedly opening a
+     page looks like. So 16 of Finance Calc's 60 logged runs in the 30-day
+     window were manufactured by opening a health page: the dashboard was
+     generating better than a quarter of the runs the dashboard reports, and
+     the success rate shown on the same screen was computed over its own
+     noise. A health check must not create business activity.
+
+     It also painted green either way. `r.status === 'success' ? 'Responding'
+     : 'Reachable'` RETURNS on both branches, and a probe that returns is a
+     probe that succeeded — the same defect fixed on the n8n tile above, so a
+     refused quote drew the same green dot as a good one.
+
+     Do not re-add it. There is no read-only substitute: the only endpoint is
+     POST /webhook/finance-calc, which runs the workflow; a GET is not
+     registered and its 404 would prove nothing the n8n tile above does not
+     already prove. Sending a `healthcheck: true` marker would be the same
+     execution and the same audit row — the deployed workflow has no branch
+     that honours one — so pretending otherwise here would only move the lie.
+     It is listed as unprobed below, which is what this panel already does
+     with everything it cannot check for free.
+
+     One correction to the audit that raised this, so the number is not
+     re-derived wrongly later: it reported 52 of 60, treating all 46 REJECTED
+     rows as the probe's and describing them as "quote refused by validation"
+     with an empty error list. Only one row in the table has an empty error
+     list, and the largest REJECTED group — 23 rows inside half an hour on
+     30 Aug — complains that the AECB credit score is missing, which this
+     probe always supplied. Those are somebody using the finance desk, not
+     this file. The real figure is 16, the defect is identical, and one
+     manufactured run would have been one too many. */
+];
+
+/* One check by name: { ok: true, detail } or { ok: false, detail }. Never
+   throws. `detail` is the probe's own short sentence. */
+async function runCheck(name) {
+  const c = CHECKS.find(x => x.name === name);
+  if (!c) return { ok: false, detail: 'No such check' };
+  try { return { ok: true, detail: await c.probe() }; }
+  catch (e) { return { ok: false, detail: String((e && e.message) || e).slice(0, 120) }; }
+}
+
 async function renderIntegrations(node, opts = {}) {
   /* The TILE NAMES are what a dealership reads, so they name the capability
      rather than the supplier behind it (CONTROL-PLANE.md 5.5 and Part 4: which
@@ -49,70 +128,7 @@ async function renderIntegrations(node, opts = {}) {
      these names in its auto-probe allow-list and again when it reads the tiles
      back, so the three places have to agree — if you rename one, rename all
      three. */
-  const checks = [
-    { name: 'NEXUS data', probe: async () => { await db('leads?select=id&limit=1'); return 'Connected'; } },
-    { name: 'Automation', probe: async () => {
-        if (!N8N_BASE) throw new Error('This deployment is not configured to reach it');
-        const r = await fetch(`${N8N_BASE}/healthz`, { cache: 'no-store' }).catch(() => null);
-        if (!r) throw new Error('Unreachable from the browser');
-        /* This line used to return the string "HTTP <status>" on the non-ok
-           branch, and a probe that RETURNS is a probe that succeeded: the loop below
-           painted the green dot with the caption "HTTP 502". The n8n box is a
-           single small VM and has crashed twice; a 502 out of its reverse proxy
-           is the exact state this tile exists to catch. screens/settings.js
-           reads this tile back by its colour, so the green dot classified n8n
-           as up, suppressed the n8n-down CRITICAL alert and printed
-           "connectivity: Supabase and n8n both answered" while every workflow
-           call — Ask AI, the finance desk, drip enrolment, WhatsApp replies —
-           was dead. An answer is not a healthy answer. */
-        if (!r.ok) throw new Error(`HTTP ${r.status}${r.statusText ? ` ${r.statusText}` : ''}`);
-        return 'Reachable';
-      }},
-    /* Finance Calc used to be probed here, on the grounds that the calculator
-       is pure JavaScript inside n8n and therefore free. The calculation is
-       free; the invocation is not. The workflow's `Audit Log` node writes a row
-       on EVERY call, rejections included, and this helper runs on mount of both
-       Settings and Automation and again on every "Re-run checks" click.
-
-       The probe sent { vehicleValue: 1, loanPayoffAmount: 0, creditScore: 700 }
-       and no lead_email — unchanged since the probe was written — so every call
-       it made is identifiable in audit_log by the rejection that payload and
-       only that payload produces: "vehicleValue must be a realistic vehicle
-       valuation of at least AED 5000. lead_email is required…". There are
-       exactly 10 such rows (one 17 Aug, seven through the 24 Aug working
-       session, one 28 Aug), plus the 6 NOT_EXECUTED input_error rows of 31 Aug,
-       once the workflow began classifying bad input that way — consecutive
-       execution ids 7722-7724 and 7741-7743, which is what repeatedly opening a
-       page looks like. So 16 of Finance Calc's 60 logged runs in the 30-day
-       window were manufactured by opening a health page: the dashboard was
-       generating better than a quarter of the runs the dashboard reports, and
-       the success rate shown on the same screen was computed over its own
-       noise. A health check must not create business activity.
-
-       It also painted green either way. `r.status === 'success' ? 'Responding'
-       : 'Reachable'` RETURNS on both branches, and a probe that returns is a
-       probe that succeeded — the same defect fixed on the n8n tile above, so a
-       refused quote drew the same green dot as a good one.
-
-       Do not re-add it. There is no read-only substitute: the only endpoint is
-       POST /webhook/finance-calc, which runs the workflow; a GET is not
-       registered and its 404 would prove nothing the n8n tile above does not
-       already prove. Sending a `healthcheck: true` marker would be the same
-       execution and the same audit row — the deployed workflow has no branch
-       that honours one — so pretending otherwise here would only move the lie.
-       It is listed as unprobed below, which is what this panel already does
-       with everything it cannot check for free.
-
-       One correction to the audit that raised this, so the number is not
-       re-derived wrongly later: it reported 52 of 60, treating all 46 REJECTED
-       rows as the probe's and describing them as "quote refused by validation"
-       with an empty error list. Only one row in the table has an empty error
-       list, and the largest REJECTED group — 23 rows inside half an hour on
-       30 Aug — complains that the AECB credit score is missing, which this
-       probe always supplied. Those are somebody using the finance desk, not
-       this file. The real figure is 16, the defect is identical, and one
-       manufactured run would have been one too many. */
-  ];
+  const checks = CHECKS;
   /* The one thing in this module that still calls a workflow, and it stays
      manual for that reason: it spends OpenRouter tokens, and — like the finance
      probe above — the Ask-AI workflow logs every call, so each press adds a row
@@ -223,4 +239,4 @@ async function renderIntegrations(node, opts = {}) {
    S10 · Customer 360
    ========================================================================== */
 
-export { renderIntegrations };
+export { renderIntegrations, runCheck, CHECKS };

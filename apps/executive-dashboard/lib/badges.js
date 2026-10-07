@@ -110,7 +110,14 @@ let LAST = { ...NO_SNAPSHOT };
    it. The badges themselves are wiped for the same reason a failed read wipes
    them — a count that is silently four hours and one dealership old is worse
    than no count. */
-onIdentityChange(() => { LAST = { ...NO_SNAPSHOT }; try { clearAll(); } catch { /* no DOM yet at boot */ } });
+onIdentityChange(() => { LAST = { ...NO_SNAPSHOT }; try { clearAll(); announce(); } catch { /* no DOM yet at boot */ } });
+
+/* The topbar bell and its notifications drawer (lib/shell.js) are painted from
+   this same snapshot, so they can never disagree with the sidebar. They learn
+   that a new snapshot exists from this event. */
+function announce() {
+  try { window.dispatchEvent(new CustomEvent('nexus:attention')); } catch { /* no window */ }
+}
 
 function paintOne(screen, n, title) {
   const badge = $(`badge-${screen}`);
@@ -125,7 +132,9 @@ function paintOne(screen, n, title) {
    sitting over a screen that is now clean — a badge that can go up but never
    down is worse than no badge, because it teaches the operator to ignore it. */
 function clearAll() {
-  document.querySelectorAll('.nav-badge').forEach(b => {
+  /* `.nx-nav-badge` since the Stitch sidebar (7 Oct 2026): the legacy
+     `.nav-badge` styling in styles.css must not reach the new rows. */
+  document.querySelectorAll('.nx-nav-badge').forEach(b => {
     b.textContent = '';
     b.classList.add('hide');
     b.title = '';
@@ -141,7 +150,7 @@ async function refreshBadges() {
   try {
     /* `title`, `detail` and `at` are selected for the collapse above and for
        nothing else — they are what identifies two rows as the same item. */
-    const rows = await db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen&limit=500');
+    const rows = await db('v_needs_attention?select=kind,severity,ref,title,detail,at,screen&limit=500', { background: true });
     /* Collapse BEFORE the severity filter, in that order, because that is the
        order Overview's panel does it in: the row that survives a group is the
        newest, and the count must use that row's severity rather than whichever
@@ -197,11 +206,13 @@ async function refreshBadges() {
         : '');
 
     LAST.homeless = homeless;
+    announce();
     return { ok: true, grand, homeless, collapsed, screens: bySeverity.size };
   } catch (e) {
     LAST = { at: new Date().toISOString(), rows: null, error: e.message,
              homeless: 0, distinct: null, collapsed: 0 };
     clearAll();
+    announce();
     return { ok: false, error: e.message };
   }
 }
