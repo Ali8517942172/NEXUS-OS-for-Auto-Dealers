@@ -121,7 +121,7 @@ const EXEMPT_LINES = new Map([
   // helpers exercised against composed titles, labels and partial names) --
   // 43 lines added above this statement. Same `fixtureResidue` template,
   // re-read, unchanged.
-  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5334])],
+  ['apps/executive-dashboard/QUALITY_GATE.mjs', new Set([5393])],
 
   // Prose in a historical audit. Quotes a drop-table string as an input the status
   // allowlist validator REJECTS - it is the negative test case, not a statement.
